@@ -246,13 +246,11 @@ SET dialect = 'clickhouse_json';
 
 ## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
 
-<BetaBadge />
-
 **別名**: `allow_experimental_json_lazy_type_hints`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Lazy JSON 型ヒントがベータになりました。設定 'allow_experimental_json_lazy_type_hints' の別名です。"}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "Lazy JSON 型ヒント用の新しい実験的設定です。当時この設定は `allow_experimental_json_lazy_type_hints` という名前でしたが、現在その名前はこの設定の別名になっています。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Lazy JSON 型ヒントがベータになりました。設定 'allow_experimental_json_lazy_type_hints' の別名です。"}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "Lazy JSON 型ヒント用の新しい実験的設定です。当時この設定は `allow_experimental_json_lazy_type_hints` という名前でしたが、現在その名前はこの設定の別名になっています。"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "0"},{"label": "Lazy `JSON` 型ヒントが GA になりました。別名 `allow_experimental_json_lazy_type_hints` にも同様に適用されます。"}]}]} />
 
 [JSON](/ja/reference/data-types/newjson) 型の Lazy 型ヒントを有効にします。
 

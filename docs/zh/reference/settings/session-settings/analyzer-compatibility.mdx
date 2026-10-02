@@ -61,7 +61,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "强制从投影中解析 JOIN USING 里的标识符"}]}]} />
 
-强制从投影中解析 JOIN USING 里的标识符 (例如，在 `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` 中，JOIN 将根据 `t1.a + 1 = t2.b` 执行，而不是 `t1.b = t2.b`) 。还会考虑 SELECT 列表中子表达式上定义的别名 (例如，在 `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` 中，JOIN 将根据 `t1.a + 1 = t2.b` 执行)。当匹配的别名定义在 SELECT 列表中的子表达式上而非顶层别名时，将对此查询禁用并行副本。对于发送到远程服务器的查询 (`Distributed` 表、`remote` 表函数) ，仅当标识符在远程服务器上完全无法解析时，此类查询才会因异常被拒绝；如果该别名遮蔽了左表中的实际列，远程服务器会改为基于该列执行 JOIN，因此结果可能与本地执行不同。
+强制从投影中解析 JOIN USING 里的标识符 (例如，在 `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` 中，JOIN 将根据 `t1.a + 1 = t2.b` 执行，而不是 `t1.b = t2.b`) 。还会考虑在查询中其他位置定义的别名，包括 `WITH` 子句中、SELECT 列表中子表达式上，以及其他子句中定义的别名 (例如，在 `WITH a + 1 AS b SELECT count() FROM t1 JOIN t2 USING (b)` 和 `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` 中，JOIN 均根据 `t1.a + 1 = t2.b` 执行)。当匹配的别名不是 SELECT 列表中的顶层别名时，将对此查询禁用并行副本。对于发送到远程服务器的查询 (`Distributed` 表、`remote` 表函数) ，仅当标识符在远程服务器上完全无法解析时，此类查询才会因异常被拒绝；如果该别名遮蔽了左表中的实际列，远程服务器会改为基于该列执行 JOIN，因此结果可能与本地执行不同。
 
 ## analyzer_compatibility_multiple_joins_qualify_column_names {#analyzer_compatibility_multiple_joins_qualify_column_names}
 

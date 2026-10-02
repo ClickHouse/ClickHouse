@@ -428,7 +428,7 @@ ALTER TABLE iceberg_table DROP PARTITION 2;
 ALTER TABLE iceberg_table DROP PARTITION (2, 5);
 ```
 
-Para uma partição definida por uma transformação, você pode fornecer o valor da chave de partição já transformado como um literal ou aplicar a mesma expressão de transformação a um valor original. As transformações compatíveis são `identity`, `icebergBucket`, `icebergTruncate`, `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum` e `toRelativeHourNum`. Para uma partição de uma única coluna, a expressão de transformação deve ser envolvida por `tuple(...)`:
+Para uma partição definida por uma transformação, você pode fornecer o valor da chave de partição já transformado como um literal ou aplicar a mesma expressão de transformação a um valor original. As transformações compatíveis são `identity`, `icebergBucket`, `icebergTruncate`, `icebergYear`, `icebergMonth`, `icebergDay` e `icebergHour`; os aliases de `PARTITION BY` `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum` e `toRelativeHourNum` são aceitos e avaliados como essas transformações. Para uma partição de uma única coluna, a expressão de transformação deve ser envolvida por `tuple(...)`:
 
 ```sql
 ALTER TABLE iceberg_table DROP PARTITION 0;
@@ -525,24 +525,17 @@ value: 993
 
 ### Compactação {#iceberg-writes-compaction}
 
-O ClickHouse oferece suporte à compactação de tabelas Iceberg. Atualmente, ele pode mesclar arquivos de exclusão por posição aos arquivos de dados enquanto atualiza os metadados. Os IDs de snapshots anteriores e seus timestamps permanecem inalterados, portanto o recurso de viagem no tempo ainda pode ser usado com os mesmos valores.
+A compactação de dados (mesclagem de arquivos de exclusão por posição em arquivos de dados) não está implementada na compilação de código aberto: nessa compilação, `OPTIMIZE TABLE` em uma tabela Iceberg retorna `NOT_IMPLEMENTED`. A geração reescrita não é publicada de forma atômica, portanto não há garantia de qual geração será resolvida pelo leitor.
 
-Como usá-lo:
+A compactação de manifestos consolida os arquivos de manifesto de uma tabela. Ela exige a versão 2 do formato Iceberg: tabelas das versões 1 e 3 são rejeitadas. Uma tabela criptografada cujos arquivos de dados contêm `key_metadata` por arquivo também é rejeitada quando seus manifestos precisam ser reescritos.
 
 ```sql
 SET allow_experimental_iceberg_compaction = 1
 
-OPTIMIZE TABLE iceberg_writes_example;
-
-SELECT *
-FROM iceberg_writes_example
-FORMAT VERTICAL;
-
-Row 1:
-──────
-x: Ivanov
-y: 993
+OPTIMIZE TABLE iceberg_writes_example MANIFEST;
 ```
+
+Para liberar espaço ocupado por arquivos, use [`expire_snapshots`](#iceberg-expire-snapshots). Esse comando exige a versão de formato 2 e rejeita tabelas que usam um catálogo transacional.
 
 ### Expirar snapshots {#iceberg-expire-snapshots}
 
@@ -655,15 +648,16 @@ Cada referência de snapshot (`refs` nos metadados do Iceberg) pode substituir e
 O privilégio `ALTER TABLE EXECUTE` é necessário, e ele é um privilégio filho de `ALTER TABLE` na hierarquia de controle de acesso do ClickHouse. Você pode concedê-lo especificamente ou por meio do privilégio pai:
 
 ```sql
--- Conceder apenas a permissão EXECUTE
+-- Grant only EXECUTE permission
 GRANT ALTER TABLE EXECUTE ON my_iceberg_table TO my_user;
 
--- Ou conceder todas as permissões de ALTER TABLE (inclui ALTER TABLE EXECUTE)
+-- Or grant all ALTER TABLE permissions (includes ALTER TABLE EXECUTE)
 GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 ```
 
 <Note>
   * Somente tabelas Iceberg format version 2 são suportadas (snapshots v1 não garantem `manifest-list`, que é necessário para identificar com segurança os arquivos a serem removidos)
+  * Tabelas baseadas em um catálogo transacional são rejeitadas com `NOT_IMPLEMENTED`
   * O snapshot atual é sempre preservado, mesmo que seja mais antigo que o timestamp especificado
   * Exige que a configuração `allow_insert_into_iceberg` esteja habilitada
   * Exige que a configuração `allow_experimental_expire_snapshots` esteja habilitada

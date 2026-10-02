@@ -913,10 +913,13 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
   Если текстовый индекс не определен, функция выполняет полное сканирование столбца, которое на порядки медленнее, чем поиск по индексу.
 </Note>
 
-Перед поиском функция токенизирует аргументы `input` и `phrase` с помощью токенизатора, указанного для текстового индекса.
+Перед поиском функция токенизирует `input`, а также `phrase`, если тот имеет тип `String`, с помощью токенизатора, указанного для текстового индекса.
 Если для столбца не определен текстовый индекс, вместо него используется токенизатор `splitByNonAlpha` — если только токенизатор не передан как необязательный третий аргумент.
-Аргумент токенизатора должен быть одним из следующих: `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK` или `icu`.
-Обратите внимание, что `splitByRegexp` не поддерживается для `hasPhrase`, когда текстовый индекс также определяет постпроцессор.
+Аргумент токенизатора должен иметь одно из следующих значений: `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `array`, `ngrams`, `asciiCJK` или `icu`.
+
+Если `input` имеет тип [Array(String)](/ru/reference/data-types/array), его элементы токенизируются, как и любые другие входные данные, а полученные токены образуют единую последовательность для каждой строки, поэтому фраза может охватывать два элемента. При использовании токенизатора `array` каждый элемент считается одним токеном — это позволяет выполнять поиск по столбцу уже токенизированных значений.
+Если `phrase` имеет тип [Array(String)](/ru/reference/data-types/array), его элементы задают искомые токены в указанном порядке
+с учетом повторений. Пустые элементы фразы игнорируются, поскольку ни один токенизатор не создает пустых токенов.
 
 <Note>
   Когда текстовый индекс определяет [предобработчик](/ru/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (например, `lowerUTF8`), `hasPhrase` применяет его к `input` и `phrase` перед токенизацией.
@@ -938,8 +941,8 @@ hasPhrase(input, phrase[, tokenizer])
 
 **Аргументы**
 
-* `input` — Входной столбец. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring)
-* `phrase` — Искомая фраза. [`const String`](/ru/reference/data-types/string)
+* `input` — Входной столбец. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring) или [`Nullable(String)`](/ru/reference/data-types/nullable) или [`Nullable(FixedString)`](/ru/reference/data-types/nullable) или [`Array(String)`](/ru/reference/data-types/array) или [`Array(FixedString)`](/ru/reference/data-types/array) или [`Array(Nullable(String))`](/ru/reference/data-types/array) или [`Array(Nullable(FixedString))`](/ru/reference/data-types/array)
+* `phrase` — Искомая фраза. [`const String`](/ru/reference/data-types/string) или [`const Array(String)`](/ru/reference/data-types/array)
 * `tokenizer` — Используемый токенизатор. Необязательный параметр, по умолчанию — `splitByNonAlpha`. [`const String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
@@ -970,6 +973,30 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 ┌─hasPhrase('the quick brown fox jumps', 'quick fox')─┐
 │                                                   0 │
 └─────────────────────────────────────────────────────┘
+```
+
+**Последовательность токенов в виде массивов**
+
+```sql title=Query
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])
+```
+
+```response title=Response
+┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])─┐
+│                                                               1 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Фраза, охватывающая два элемента**
+
+```sql title=Query
+SELECT hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])
+```
+
+```response title=Response
+┌─hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])─┐
+│                                                         1 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequence {#hasSubsequence}

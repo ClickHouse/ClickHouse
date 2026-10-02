@@ -184,6 +184,10 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
   これは、デフォルトであるクエリのテキスト送信時に機能します。[`serialize_query_plan = 1`](/ja/reference/settings/session-settings/serialize#serialize_query_plan) を指定すると、イニシエーターは代わりに構築済みの読み取りプランを送信します。このようなプランを実行するリモートサーバーは独自の行ポリシーを適用しないため、`local_table` 上の `Distributed` テーブルを読み取ると、フィルタリングされていない行が返されます。行ポリシーを適用する必要があるユーザーには、`serialize_query_plan = 0` を使用してください。[issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891) を参照してください。
 </Warning>
 
+## Join テーブル {#join-tables}
+
+[Join](/ja/reference/engines/table-engines/special/join) テーブルは事前に構築されたハッシュテーブルであり、`JOIN` や `joinGet` はこれをそのまま読み取ります。そのため、これらの処理では行をフィルタできません。このようなテーブルにポリシー (データベース全体を対象とする `ON db.*` ポリシーを含む) を設定すると、テーブルに対する通常の `SELECT` にはフィルタが適用されます。一方で、ポリシーが有効な間は、そのテーブルに対する `JOIN` および `joinGet` クエリが `ACCESS_DENIED` エラーで失敗します。
+
 ## ON CLUSTER 句 {#on-cluster-clause}
 
 クラスター全体に対して行ポリシーを作成できます。詳しくは[分散DDL](/ja/reference/statements/distributed-ddl)を参照してください。これにより、クラスター内のすべてのサーバー上のローカルテーブルにポリシーを簡単に作成できます。

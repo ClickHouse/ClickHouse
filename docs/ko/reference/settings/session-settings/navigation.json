@@ -115,6 +115,7 @@
     "ko/reference/settings/session-settings/log",
     "ko/reference/settings/session-settings/log-queries",
     "ko/reference/settings/session-settings/log-query",
+    "ko/reference/settings/session-settings/logsql",
     "ko/reference/settings/session-settings/low-cardinality",
     "ko/reference/settings/session-settings/materialize",
     "ko/reference/settings/session-settings/materialize-statistics-on-insert",

@@ -94,6 +94,16 @@ Véase también:
 
 Limita el tamaño máximo del búfer adaptativo utilizado al escribir en archivos contenedores (por ejemplo, archivos tar
 
+## array_count_legacy_uint32_result {#array_count_legacy_uint32_result}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`arrayCount` ahora devuelve `UInt64` en lugar de `UInt32`, de modo que el resultado sea exacto para arrays con más de `4294967295` elementos coincidentes. Establezca esta configuración en `true` para devolver `UInt32` como antes."}]}]} />
+
+Si está habilitada, la función `arrayCount` devuelve `UInt32`, como antes de la versión 26.10, en lugar de `UInt64`. El resultado `UInt32` se desborda silenciosamente en arrays con más de `4294967295` elementos coincidentes. Esta configuración también restablece el carácter constante del resultado anterior a la versión 26.10: un predicado que se reduce a la constante false produce en ese caso una columna de resultado constante, incluso para un array no constante.
+
+Durante una actualización progresiva, habilítela en los servidores ya actualizados para los usuarios con los que se ejecutan en ellos las consultas distribuidas. Así, las consultas distribuidas iniciadas por servidores aún no actualizados se mantienen exactamente igual (un initiator antiguo no reenvía esta configuración, por lo que, de lo contrario, las expresiones sensibles al tipo que se evalúan localmente en los segmentos actualizados verían `UInt64`). Elimínela una vez finalizada la actualización. El usuario con el que se ejecuta una consulta en el segmento depende de la configuración del cluster: si hay un `secret` entre servidores configurado, es el usuario actual del initiator; en caso contrario, es el usuario indicado en la definición del cluster o en la función de tabla `remote` (`default` si no se especifica). La opción más sencilla y robusta es habilitar la configuración para todos los usuarios de los servidores actualizados.
+
 ## arrow_flight_request_descriptor_type {#arrow_flight_request_descriptor_type}
 
 <SettingsInfoBlock type="ArrowFlightDescriptorType" default_value="path" />
@@ -371,6 +381,7 @@ Valores admitidos:
 * `polyglot` — transpila SQL de otros dialectos (MySQL, PostgreSQL, etc.) a ClickHouse SQL. Requiere la configuración experimental `allow_experimental_polyglot_dialect`.
 * `promql` — PromQL (Prometheus Query Language) evaluado sobre una tabla TimeSeries, configurada mediante las opciones `promql_database`, `promql_table` y `promql_evaluation_time`.
 * `clickhouse_json` — en lugar de texto SQL, la consulta se interpreta como un AST JSON (la salida de `parseQueryToJSON`). La consulta `SET` se sigue reconociendo en formato sin procesar para poder volver a cambiar el dialecto. Requiere la configuración experimental `enable_json_ast_dialect`.
+* `logsql` — LogsQL, el lenguaje de consulta de logs de VictoriaLogs, traducido a consultas `SELECT` sobre la tabla de logs configurada mediante las opciones `logsql_database` y `logsql_table`. Requiere la configuración experimental `allow_experimental_logsql_dialect`.
 
 - `trino` — Trino SQL: traduce la sintaxis de Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) y asigna los nombres de las funciones de Trino a sus equivalentes de ClickHouse. Requiere la configuración experimental `enable_trino_dialect`.
 
@@ -907,9 +918,9 @@ Si está habilitada, las funciones &#39;least&#39; y &#39;greatest&#39; devuelve
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Una función no determinista junto a la función `arrayJoin` devuelve un valor distinto en cada fila de salida, igual que con la cláusula `ARRAY JOIN`. Esta configuración restaura un único valor por fila de origen."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Las funciones no deterministas y dependientes del bloque junto a la función `arrayJoin` se evalúan igual que con la cláusula `ARRAY JOIN`."}]}]} />
 
-Determina cómo se evalúa una función no determinista junto a la función `arrayJoin` cuando no depende del valor expandido, por ejemplo `rand()` o `generateUUIDv4()` en el mismo `SELECT`. De forma predeterminada, devuelve un valor distinto en cada fila de salida, igual que con la cláusula `ARRAY JOIN`. Habilítela para recuperar el comportamiento de versiones anteriores: un único valor por fila de origen, que se repite en todas las filas expandidas a partir de ella.
+Determina cómo se evalúan las funciones no deterministas y dependientes del bloque junto a la función `arrayJoin`. De forma predeterminada, `rand()` devuelve un valor distinto en cada fila de salida y `runningDifference` o `neighbor` ven los bloques de la expansión, igual que con la cláusula `ARRAY JOIN`. Habilítela para recuperar el comportamiento de versiones anteriores.
 
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 

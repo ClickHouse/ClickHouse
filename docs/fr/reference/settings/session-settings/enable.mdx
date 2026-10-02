@@ -252,13 +252,11 @@ SET dialect = 'clickhouse_json';
 
 ## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
 
-<BetaBadge />
-
-**Aliases** : `allow_experimental_json_lazy_type_hints`
+**Alias** : `allow_experimental_json_lazy_type_hints`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Les indications de type JSON différées sont désormais en bêta. Un alias pour le paramètre 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "Nouveau paramètre expérimental pour les indications de type JSON différées. Le paramètre s'appelait alors `allow_experimental_json_lazy_type_hints`, nom qui en est désormais un alias."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Les indications de type JSON différées sont désormais en bêta. Un alias pour le paramètre 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "Nouveau paramètre expérimental pour les indications de type JSON différées. Le paramètre s'appelait alors `allow_experimental_json_lazy_type_hints`, nom qui en est désormais un alias."}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "0"},{"label": "Les indications de type `JSON` différées sont désormais en disponibilité générale (GA). Cela s'applique également à l'alias `allow_experimental_json_lazy_type_hints`."}]}]} />
 
 Active les indications de type différées pour le type [JSON](/fr/reference/data-types/newjson).
 

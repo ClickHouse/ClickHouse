@@ -246,13 +246,11 @@ SET dialect = 'clickhouse_json';
 
 ## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
 
-<BetaBadge />
-
 **별칭**: `allow_experimental_json_lazy_type_hints`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "지연 JSON 타입 힌트가 베타로 전환되었습니다. 설정 'allow_experimental_json_lazy_type_hints'의 별칭입니다."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "지연 JSON 타입 힌트를 위한 새 실험적 설정입니다. 당시에는 설정 이름이 `allow_experimental_json_lazy_type_hints`였으며, 현재 이 이름은 해당 설정의 별칭입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "지연 JSON 타입 힌트가 베타로 전환되었습니다. 설정 'allow_experimental_json_lazy_type_hints'의 별칭입니다."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "지연 JSON 타입 힌트를 위한 새 실험적 설정입니다. 당시에는 설정 이름이 `allow_experimental_json_lazy_type_hints`였으며, 현재 이 이름은 해당 설정의 별칭입니다."}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "0"},{"label": "지연 `JSON` 타입 힌트가 일반 제공(GA)으로 전환되었습니다. 이는 별칭 `allow_experimental_json_lazy_type_hints`에도 적용됩니다."}]}]} />
 
 [JSON](/ko/reference/data-types/newjson) 타입에 지연 타입 힌트를 활성화합니다.
 

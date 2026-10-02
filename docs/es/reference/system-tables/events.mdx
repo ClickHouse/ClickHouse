@@ -339,6 +339,10 @@ Cuántos mensajes se han descartado de text&#95;log porque la cola de logs asín
 
 Número de mensajes (aceptados o descartados) que se han enviado a la cola asíncrona de text&#95;log
 
+### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
+
+Número de veces que la selección automática de réplicas paralelas generó un plan candidato con réplicas paralelas para compararlo con el plan de un solo nodo. No todos estos planes llegan a utilizarse: se generan para estimar su coste y se descartan cuando el plan de un solo nodo resulta más ventajoso
+
 ### AzureClients {#azureclients}
 
 Número de clients creados para contenedores de Azure Blob Storage.
@@ -594,10 +598,6 @@ Número de veces que la escritura de un file segment en la caché del sistema de
 ### CachedReadBufferCreateBufferMicroseconds {#cachedreadbuffercreatebuffermicroseconds}
 
 Tiempo de preparación del búfer
-
-### CachedReadBufferPredownloadedBytes {#cachedreadbufferpredownloadedbytes}
-
-Bytes leídos desde el origen de la caché del sistema de archivos. Los segmentos de la caché se leen de izquierda a derecha en su totalidad; es posible que necesitemos predescargar alguna parte del segmento que no sea relevante para la tarea actual solo para llegar a los datos necesarios
 
 ### CachedReadBufferPredownloadedFromSourceBytes {#cachedreadbufferpredownloadedfromsourcebytes}
 

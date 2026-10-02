@@ -94,6 +94,16 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 限制写入归档文件时使用的自适应缓冲区的最大大小 (例如，tar 归档
 
+## array_count_legacy_uint32_result {#array_count_legacy_uint32_result}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`arrayCount` 现在返回 `UInt64` 而不是 `UInt32`，因此即使数组中匹配元素超过 `4294967295` 个，结果也是精确的。将此设置设为 `true` 可恢复为以前的行为，返回 `UInt32`。"}]}]} />
+
+启用后，函数 `arrayCount` 将与 26.10 版本之前一样返回 `UInt32`，而不是 `UInt64`。如果数组中匹配元素超过 `4294967295` 个，`UInt32` 结果会在无任何提示的情况下溢出回绕。该设置还会恢复 26.10 之前结果的常量性：当谓词折叠为常量 false 时，即使数组不是常量，也会生成常量结果列。
+
+在滚动升级期间，请在已升级的服务器上，为在这些服务器上执行分布式查询所使用的用户启用此设置，以确保由尚未升级的服务器发起的分布式查询完全不受影响 (旧的发起服务器不会转发此设置，否则在已升级分片上本地计算的类型敏感表达式将得到 `UInt64`) ；升级完成后再移除该设置。分片端查询以哪个用户身份运行取决于集群配置：如果配置了服务器间 `secret`，则为发起服务器的当前用户；否则为集群定义或 `remote` 表函数中指定的用户 (未指定时为 `default`) 。最简单可靠的做法是为已升级服务器上的所有用户启用此设置。
+
 ## arrow_flight_request_descriptor_type {#arrow_flight_request_descriptor_type}
 
 <SettingsInfoBlock type="ArrowFlightDescriptorType" default_value="path" />
@@ -350,6 +360,7 @@ SETTINGS convert_query_to_cnf = true;
 * `polyglot` — 将其他方言 (MySQL、PostgreSQL 等) 的 SQL 转译为 ClickHouse SQL。需要启用 Experimental 设置 `allow_experimental_polyglot_dialect`。
 * `promql` — PromQL (Prometheus 查询语言) ，基于由 `promql_database`、`promql_table` 和 `promql_evaluation_time` 设置指定的 TimeSeries 表进行计算。
 * `clickhouse_json` — 查询将不作为 SQL 文本处理，而是解释为 JSON AST (`parseQueryToJSON` 的输出) 。仍可使用普通形式的 `SET` 查询，以便切换回其他方言。需要启用 Experimental 设置 `enable_json_ast_dialect`。
+* `logsql` — LogsQL，即 VictoriaLogs 的日志查询语言，会被转换为 `SELECT` 查询，作用于由 `logsql_database` 和 `logsql_table` 设置指定的日志表。需要启用 Experimental 设置 `allow_experimental_logsql_dialect`。
 * `trino` — Trino SQL：转换 Trino 语法 (`ARRAY[...]`、`TRY_CAST`、`UNNEST` 等) ，并将 Trino 函数名映射为对应的 ClickHouse 函数。需要启用 Experimental 设置 `enable_trino_dialect`。
 
 ## discard_query_data {#discard_query_data}
@@ -884,9 +895,9 @@ HSTS 的过期时长。0 表示禁用 HSTS。
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "与 `arrayJoin` 函数并列的非确定性函数会在每个输出行上生成不同的值，与 `ARRAY JOIN` 子句的行为一致。该设置可恢复为每个源行只生成一个值。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "与 `arrayJoin` 函数并列的非确定性函数和依赖块的函数，其求值方式与 `ARRAY JOIN` 子句一致。"}]}]} />
 
-控制与 `arrayJoin` 函数并列、且不依赖于被展开值的非确定性函数 (例如同一 `SELECT` 中的 `rand()` 或 `generateUUIDv4()`) 的求值方式。默认情况下，此类函数会在每个输出行上生成不同的值，与 `ARRAY JOIN` 子句的行为一致。启用此设置可恢复旧版本的行为：每个源行只生成一个值，并在该行展开得到的所有行中重复使用。
+控制与 `arrayJoin` 函数并列的非确定性函数和依赖块的函数的求值方式。默认情况下，`rand()` 会在每个输出行上生成不同的值，而 `runningDifference` 或 `neighbor` 处理的是展开后的块，与 `ARRAY JOIN` 子句的行为一致。启用此设置可恢复旧版本的行为。
 
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 

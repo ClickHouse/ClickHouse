@@ -338,6 +338,10 @@ DNS 解析结果中发现的 HTTP 连接新地址总数
 
 已发送到 text&#95;log 异步队列的消息总数 (包括已接收和已丢弃的消息)
 
+### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
+
+自动并行副本机制构建使用并行副本的候选计划、以便与单节点计划进行比较的次数。此类计划并不一定会被采用：构建它们是为了估算成本，若单节点计划胜出，则会被丢弃
+
 ### AzureClients {#azureclients}
 
 已创建的 Azure Blob 存储容器客户端的数量。
@@ -593,10 +597,6 @@ BlobKiller 线程的执行次数
 ### CachedReadBufferCreateBufferMicroseconds {#cachedreadbuffercreatebuffermicroseconds}
 
 准备 buffer 所用时间
-
-### CachedReadBufferPredownloadedBytes {#cachedreadbufferpredownloadedbytes}
-
-从文件系统缓存源读取的字节数。缓存分段会作为一个整体按从左到右的顺序读取，因此为了获取所需数据，可能需要预下载分段中与当前任务无关的部分
 
 ### CachedReadBufferPredownloadedFromSourceBytes {#cachedreadbufferpredownloadedfromsourcebytes}
 

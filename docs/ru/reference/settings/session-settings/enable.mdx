@@ -251,13 +251,11 @@ SET dialect = 'clickhouse_json';
 
 ## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
 
-<BetaBadge />
-
 **Псевдонимы**: `allow_experimental_json_lazy_type_hints`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Ленивые подсказки типов JSON теперь в статусе бета. Псевдоним для настройки 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "Новая экспериментальная настройка для ленивых подсказок типов JSON. На тот момент настройка называлась `allow_experimental_json_lazy_type_hints`, а теперь это её псевдоним."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Ленивые подсказки типов JSON теперь в статусе бета. Псевдоним для настройки 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "Новая экспериментальная настройка для ленивых подсказок типов JSON. На тот момент настройка называлась `allow_experimental_json_lazy_type_hints`, а теперь это её псевдоним."}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "0"},{"label": "Ленивые подсказки типов `JSON` теперь в статусе GA. Это также относится к псевдониму `allow_experimental_json_lazy_type_hints`."}]}]} />
 
 Включает ленивые подсказки типов для типа [JSON](/ru/reference/data-types/newjson).
 

@@ -913,10 +913,13 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
   텍스트 인덱스가 정의되어 있지 않으면 이 함수는 브루트 포스(전체 스캔)을 수행하며, 이는 인덱스 조회보다 훨씬 느립니다.
 </Note>
 
-검색 전에 이 함수는 텍스트 인덱스에 지정된 토크나이저를 사용해 `input` 인수와 `phrase` 인수를 모두 토큰화합니다.
+검색 전에 이 함수는 텍스트 인덱스에 지정된 토크나이저를 사용해 `input`을 토큰화하고, `phrase`가 `String`이면 `phrase`도 토큰화합니다.
 컬럼에 텍스트 인덱스가 정의되어 있지 않으면, 선택적 세 번째 인수로 토크나이저를 제공한 경우를 제외하고 `splitByNonAlpha` 토크나이저를 대신 사용합니다.
-토크나이저 인수는 `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, `icu` 중 하나여야 합니다.
-텍스트 인덱스에 후처리기도 정의되어 있으면 `hasPhrase`에서 `splitByRegexp`는 지원되지 않습니다.
+토크나이저 인수는 `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `array`, `ngrams`, `asciiCJK`, `icu` 중 하나여야 합니다.
+
+`input`이 [Array(String)](/ko/reference/data-types/array)이면 각 원소는 다른 입력과 동일하게 토큰화되고, 그 토큰들이 행마다 하나의 시퀀스를 이루므로 구문이 두 원소에 걸쳐 일치할 수 있습니다. `array` 토크나이저를 사용하면 각 원소가 하나의 토큰이 되며, 이미 토큰화된 값으로 이루어진 컬럼은 이 방식으로 검색합니다.
+`phrase`가 [Array(String)](/ko/reference/data-types/array)이면 각 원소가 검색할 토큰이 되며, 순서를 지키고
+중복도 포함하여 검색합니다. 어떤 토크나이저도 빈 토큰을 생성하지 않으므로 빈 구문 원소는 무시됩니다.
 
 <Note>
   텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index)가 정의되어 있으면(예: `lowerUTF8`), `hasPhrase`는 토큰화 전에 이를 `input`과 `phrase` 모두에 적용합니다.
@@ -938,8 +941,8 @@ hasPhrase(input, phrase[, tokenizer])
 
 **인수**
 
-* `input` — 입력 컬럼입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring)
-* `phrase` — 검색할 구문입니다. [`const String`](/ko/reference/data-types/string)
+* `input` — 입력 컬럼입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`Nullable(String)`](/ko/reference/data-types/nullable) 또는 [`Nullable(FixedString)`](/ko/reference/data-types/nullable) 또는 [`Array(String)`](/ko/reference/data-types/array) 또는 [`Array(FixedString)`](/ko/reference/data-types/array) 또는 [`Array(Nullable(String))`](/ko/reference/data-types/array) 또는 [`Array(Nullable(FixedString))`](/ko/reference/data-types/array)
+* `phrase` — 검색할 구문입니다. [`const String`](/ko/reference/data-types/string) 또는 [`const Array(String)`](/ko/reference/data-types/array)
 * `tokenizer` — 사용할 토크나이저입니다. 선택 사항이며, 기본값은 `splitByNonAlpha`입니다. [`const String`](/ko/reference/data-types/string)
 
 **반환 값**
@@ -970,6 +973,30 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 ┌─hasPhrase('the quick brown fox jumps', 'quick fox')─┐
 │                                                   0 │
 └─────────────────────────────────────────────────────┘
+```
+
+**배열로 지정한 토큰 시퀀스**
+
+```sql title=Query
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])
+```
+
+```response title=Response
+┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])─┐
+│                                                               1 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**두 원소에 걸친 구문**
+
+```sql title=Query
+SELECT hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])
+```
+
+```response title=Response
+┌─hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])─┐
+│                                                         1 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequence {#hasSubsequence}

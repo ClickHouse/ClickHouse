@@ -339,6 +339,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Количество сообщений (принятых или отброшенных), отправленных в асинхронную очередь для text&#95;log
 
+### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
+
+Количество случаев, когда механизм автоматических параллельных реплик строил план-кандидат с параллельными репликами для сравнения с планом выполнения на одном узле. Используется не каждый такой план: он строится лишь для оценки стоимости и отбрасывается, если план для одного узла оказывается выгоднее
+
 ### AzureClients {#azureclients}
 
 Количество созданных клиентов для контейнеров Azure Blob Storage.
@@ -594,10 +598,6 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### CachedReadBufferCreateBufferMicroseconds {#cachedreadbuffercreatebuffermicroseconds}
 
 Время на подготовку буфера
-
-### CachedReadBufferPredownloadedBytes {#cachedreadbufferpredownloadedbytes}
-
-Байты, прочитанные из источника файлового кэша. Сегменты кэша читаются целиком слева направо, поэтому может потребоваться предварительно загрузить часть сегмента, не относящуюся к текущей задаче, чтобы добраться до нужных данных
 
 ### CachedReadBufferPredownloadedFromSourceBytes {#cachedreadbufferpredownloadedfromsourcebytes}
 

@@ -28,24 +28,6 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 * 0 - 비활성화
 * 1 - 활성화
 
-## query_plan_aggregation_in_order {#query_plan_aggregation_in_order}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "22.12"},{"label": "1"},{"label": "쿼리 계획 관련 일부 리팩터링 활성화"}]}]} />
-
-순서 기반 집계에 대한 쿼리 계획 수준 최적화를 켜거나 끕니다.
-설정 [`query_plan_enable_optimizations`](/ko/reference/settings/session-settings/query-plan#query_plan_enable_optimizations)의 값이 1일 때만 적용됩니다.
-
-<Note>
-  이 설정은 개발자가 디버깅 목적으로만 사용해야 하는 전문가 수준의 설정입니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
-
-가능한 값:
-
-* 0 - 비활성화
-* 1 - 활성화
-
 ## query_plan_convert_any_join_to_semi_or_anti_join {#query_plan_convert_any_join_to_semi_or_anti_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -69,6 +51,14 @@ JOIN 이후의 필터가 일치하지 않는 행 또는 일치하는 행에 대�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "1"},{"label": "`JOIN` 이후의 필터가 항상 기본값을 걸러내는 경우 `OUTER JOIN`을 `INNER JOIN`으로 변환하도록 허용합니다"}]}]} />
 
 `JOIN` 이후의 필터가 항상 기본값을 걸러내는 경우 `OUTER JOIN`을 `INNER JOIN`으로 변환하도록 허용합니다
+
+## query_plan_convert_outer_join_to_inner_join_transitively {#query_plan_convert_outer_join_to_inner_join_transitively}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "`query_plan_convert_outer_join_to_inner_join`을 확장하여 쿼리 계획의 상위 단계에 있는 필터와 이를 감싸는 `JOIN`의 조건까지 고려하도록 하는 새로운 설정입니다. `query_plan_convert_outer_join_to_inner_join`이 활성화된 경우에만 적용됩니다."}]}]} />
+
+`query_plan_convert_outer_join_to_inner_join`을 확장하여 쿼리 계획의 상위 단계에 있는 필터와 이를 감싸는 `JOIN`의 조건까지 고려하도록 합니다. `query_plan_convert_outer_join_to_inner_join`이 활성화된 경우에만 적용됩니다.
 
 ## query_plan_direct_read_from_text_index {#query_plan_direct_read_from_text_index}
 
@@ -132,6 +122,25 @@ JOIN 이후의 필터가 일치하지 않는 행 또는 일치하는 행에 대�
 
 <Note>
   이 설정은 개발자가 디버깅 목적으로만 사용해야 하는 전문가 수준의 설정입니다. 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+</Note>
+
+가능한 값:
+
+* 0 - 비활성화
+* 1 - 활성화
+
+## query_plan_filter_push_down_below_limit_by {#query_plan_filter_push_down_below_limit_by}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`LIMIT BY` 키 컬럼에 대한 필터를 `LIMIT BY` 단계 아래로 푸시하는 동작을 제어하는 새로운 설정입니다. 필터를 `LIMIT BY` 위에 유지하려면 false로 설정하십시오."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "`LIMIT BY` 키 컬럼에 대한 필터를 `LIMIT BY` 단계 아래로 푸시하는 동작을 제어하는 새로운 설정입니다. 필터를 `LIMIT BY` 위에 유지하려면 false로 설정하십시오."}]}]} />
+
+`LIMIT BY` 키 컬럼에 대한 필터를 `LIMIT BY` 단계 아래로 푸시하는 동작을 켜거나 끕니다.
+[query&#95;plan&#95;enable&#95;optimizations](/ko/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 설정이 1일 때만 적용됩니다.
+이 설정은 [query&#95;plan&#95;filter&#95;push&#95;down](/ko/reference/settings/session-settings/query-plan#query_plan_filter_push_down) 설정과 별개로 적용됩니다. `JOIN` 런타임 필터가 추가되면 해당 설정이 꺼져 있더라도 푸시다운 패스가 실행됩니다.
+
+<Note>
+  이 설정은 개발자가 디버깅 용도로만 사용해야 하는 전문가 수준의 설정입니다. 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
 </Note>
 
 가능한 값:
@@ -424,14 +433,6 @@ primary key 집합을 구성하고 이를 인덱스 분석에 활용하여 Repla
 
 객체 스토리지에서 Parquet 파일(Iceberg 테이블 포함)을 읽을 때 지연 머티리얼라이즈 최적화를 사용합니다. `ORDER BY ... LIMIT n` 쿼리에서는 정렬 및 필터링에 필요하지 않은 컬럼을 `LIMIT`를 통과한 `n`개의 행에 대해서만 읽습니다. `query_plan_optimize_lazy_materialization`이 활성화된 경우에만 적용됩니다.
 
-## query_plan_optimize_prewhere {#query_plan_optimize_prewhere}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "지원되는 스토리지에서 필터를 PREWHERE 표현식으로 푸시다운하도록 허용합니다"}]}]} />
-
-지원되는 스토리지에서 필터를 PREWHERE 표현식으로 푸시다운하도록 허용합니다
-
 ## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -487,22 +488,6 @@ wide `String` / `FixedString` 인수를 대체하므로 해당 인수는 더 이
 `ORDER BY ... LIMIT BY` 쿼리에 대한 쿼리 계획 수준 최적화의 활성화 여부를 제어합니다. `LIMIT BY` 컬럼이 `ORDER BY` 절의 접두사인 경우, 각 병렬 정렬 스트림은 하나로 머지되기 전에 `LIMIT BY`를 적용하므로 최종 머지와 이후 파이프라인 단계에서 처리되는 행 수가 줄어듭니다. `LIMIT BY`로 많은 비율의 행이 제외되는 쿼리의 속도를 높입니다.
 
 이 설정은 [query&#95;plan&#95;enable&#95;optimizations](/ko/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 설정이 1일 때만 적용됩니다.
-
-가능한 값:
-
-* 0 - 비활성화
-* 1 - 활성화
-
-## query_plan_read_in_order {#query_plan_read_in_order}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-쿼리 계획 수준에서 read in-order 최적화를 켜거나 끕니다.
-설정 [`query_plan_enable_optimizations`](/ko/reference/settings/session-settings/query-plan#query_plan_enable_optimizations)이 1일 때만 적용됩니다.
-
-<Note>
-  이 설정은 개발자가 디버깅 목적으로만 사용해야 하는 전문가 수준의 설정입니다. 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
 
 가능한 값:
 

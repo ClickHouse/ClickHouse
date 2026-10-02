@@ -28,24 +28,6 @@ Valores possíveis:
 * 0 - Desativar
 * 1 - Ativar
 
-## query_plan_aggregation_in_order {#query_plan_aggregation_in_order}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "22.12"},{"label": "1"},{"label": "Ativa algumas refatorações relacionadas ao plano de consulta"}]}]} />
-
-Ativa/desativa a otimização de agregação em ordem no nível do plano de consulta.
-Só tem efeito se a configuração [`query_plan_enable_optimizations`](/pt-BR/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) for 1.
-
-<Note>
-  Esta é uma configuração para especialistas que deve ser usada apenas para depuração por desenvolvedores. A configuração pode mudar no futuro de maneiras incompatíveis com versões anteriores ou ser removida.
-</Note>
-
-Valores possíveis:
-
-* 0 - Desabilitar
-* 1 - Habilitar
-
 ## query_plan_convert_any_join_to_semi_or_anti_join {#query_plan_convert_any_join_to_semi_or_anti_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -69,6 +51,14 @@ Permite converter `JOIN` em uma subconsulta com `IN` se as colunas de saída est
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "1"},{"label": "Permite converter OUTER JOIN em INNER JOIN se o filtro após JOIN sempre excluir os valores padrão"}]}]} />
 
 Permite converter `OUTER JOIN` em `INNER JOIN` se o filtro após `JOIN` sempre excluir os valores padrão
+
+## query_plan_convert_outer_join_to_inner_join_transitively {#query_plan_convert_outer_join_to_inner_join_transitively}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração que estende `query_plan_convert_outer_join_to_inner_join` para considerar um filtro em um nível superior do plano e as condições de um `JOIN` externo que o envolve. Só tem efeito quando `query_plan_convert_outer_join_to_inner_join` está habilitada."}]}]} />
+
+Estende `query_plan_convert_outer_join_to_inner_join` para considerar um filtro em um nível superior do plano e as condições de um `JOIN` externo que o envolve. Só tem efeito quando `query_plan_convert_outer_join_to_inner_join` está habilitada.
 
 ## query_plan_direct_read_from_text_index {#query_plan_direct_read_from_text_index}
 
@@ -138,6 +128,25 @@ Valores possíveis:
 
 * 0 - Desabilita
 * 1 - Habilita
+
+## query_plan_filter_push_down_below_limit_by {#query_plan_filter_push_down_below_limit_by}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para controlar o envio de um filtro sobre as colunas-chave do `LIMIT BY` para abaixo do passo `LIMIT BY`. Defina-a como false para manter o filtro acima do `LIMIT BY`."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração para controlar o envio de um filtro sobre as colunas-chave do `LIMIT BY` para abaixo do passo `LIMIT BY`. Defina-a como false para manter o filtro acima do `LIMIT BY`."}]}]} />
+
+Ativa ou desativa o envio de filtros sobre as colunas-chave do `LIMIT BY` para abaixo do passo `LIMIT BY`.
+Só tem efeito se a configuração [query&#95;plan&#95;enable&#95;optimizations](/pt-BR/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) for 1.
+É lida independentemente de [query&#95;plan&#95;filter&#95;push&#95;down](/pt-BR/reference/settings/session-settings/query-plan#query_plan_filter_push_down): a etapa de push-down também é executada, mesmo com essa configuração desativada, sempre que um filtro de tempo de execução de `JOIN` for adicionado.
+
+<Note>
+  Esta é uma configuração para especialistas, que deve ser usada apenas por desenvolvedores para depuração. A configuração pode mudar no futuro de forma incompatível com versões anteriores ou ser removida.
+</Note>
+
+Valores possíveis:
+
+* 0 - Desativar
+* 1 - Habilitar
 
 ## query_plan_fuse_filter_into_array_join {#query_plan_fuse_filter_into_array_join}
 
@@ -425,14 +434,6 @@ Use a otimização de materialização lazy para ler arquivos Parquet locais com
 
 Use a otimização de materialização lazy para ler arquivos Parquet do armazenamento de objetos (incluindo tabelas Iceberg): em consultas `ORDER BY ... LIMIT n`, as colunas desnecessárias para ordenação e filtragem são lidas apenas para as `n` linhas que permanecem após o `LIMIT`. Só tem efeito se `query_plan_optimize_lazy_materialization` estiver habilitada.
 
-## query_plan_optimize_prewhere {#query_plan_optimize_prewhere}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Permitir o push down do filtro para a expressão PREWHERE em armazenamentos compatíveis"}]}]} />
-
-Permitir o push down do filtro para a expressão PREWHERE em armazenamentos compatíveis
-
 ## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -499,22 +500,6 @@ Valores possíveis:
 
 * 0 - Desabilitado
 * 1 - Habilitado
-
-## query_plan_read_in_order {#query_plan_read_in_order}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-Ativa ou desativa a otimização de leitura em ordem no nível do plano de consulta.
-Só tem efeito se a configuração [`query_plan_enable_optimizations`](/pt-BR/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) for 1.
-
-<Note>
-  Esta é uma configuração de nível especialista que deve ser usada apenas para depuração por desenvolvedores. A configuração pode mudar no futuro de formas incompatíveis com versões anteriores ou ser removida.
-</Note>
-
-Valores possíveis:
-
-* 0 - Desativa
-* 1 - Ativa
 
 ## query_plan_read_in_order_through_join {#query_plan_read_in_order_through_join}
 

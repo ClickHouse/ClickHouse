@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudOnlyBadge } from "/snippets/es/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -30,10 +31,13 @@ El analizador es la infraestructura de análisis y planificación de consultas q
 
 <ExperimentalBadge />
 
+<CloudOnlyBadge />
+
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
+Solo tiene efecto en ClickHouse Cloud, donde configura la compactación de Iceberg en segundo plano.
 Permite eliminar archivos de datos antiguos durante la compactación de Iceberg.
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
@@ -101,6 +105,7 @@ Activa las funciones hash experimentales
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
 Permite usar &#39;OPTIMIZE&#39; explícitamente en tablas Iceberg.
+En los builds de código abierto solo se admite `OPTIMIZE TABLE ... MANIFEST`; la compactación de datos (`OPTIMIZE TABLE` sin `MANIFEST`) devuelve `NOT_IMPLEMENTED`.
 
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
@@ -111,6 +116,40 @@ Permite usar &#39;OPTIMIZE&#39; explícitamente en tablas Iceberg.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
 Habilita el dialecto Kusto Query Language (KQL), una alternativa a SQL.
+
+## allow_experimental_logsql_dialect {#allow_experimental_logsql_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para habilitar el dialecto LogsQL (el lenguaje de consulta de logs de VictoriaLogs)."}]}]} />
+
+Habilita LogsQL, el lenguaje de consulta de logs de VictoriaLogs. Las consultas escritas en este dialecto se traducen a consultas SELECT sobre la tabla especificada en la configuración `logsql_table`.
+
+Uso:
+
+```sql
+SET allow_experimental_logsql_dialect = 1;
+SET logsql_table = 'logs';
+SET dialect = 'logsql';
+
+_time:1h error | stats by (host) count()
+```
+
+Una consulta `SET` completa e independiente se sigue analizando como SQL sin procesar para que se pueda
+volver a cambiar de dialecto; una consulta LogsQL que simplemente empieza con la palabra `set` conserva su significado.
+Los ajustes `logsql_time_column` y `logsql_message_column` definen las columnas
+a las que hacen referencia el campo `_time` y el campo predeterminado (mensaje).
+
+A diferencia de VictoriaLogs, que almacena todos los campos como cadenas, las consultas traducidas se ejecutan
+sobre el esquema de tabla existente. Las principales desviaciones del contrato que se derivan de ello son:
+
+* Los filtros de texto (palabras, frases, prefijos, expresiones regulares) requieren columnas de tipo `String` y no convierten las columnas numéricas a texto.
+* Los filtros de comparación numérica comparan las columnas numéricas de forma nativa (de forma exacta para valores enteros y decimales, siempre que el literal comparado quepa en `Int128` o `Decimal256(38)`; un valor de mayor rango, p. ej., un entero mayor que 1e38 en un campo `UInt256`, se compara con precisión `Float64`, al igual que los pasos enteros de los buckets de `stats by (<field>:<step>)`). En las columnas `String`, solo se analiza fila por fila el texto numérico simple; los valores expresados en la gramática numérica de LogsQL (p. ej., `10KiB`, `1h30m`) no se analizan fila por fila.
+* Las funciones estadísticas numéricas (`sum`, `avg`, `median`, `quantile`, `stddev`, `rate_sum`) analizan el valor numérico de cada campo y omiten los valores que no son números, igual que VictoriaLogs. Los valores son de tipo `Float64`, por lo que una columna numérica se agrega con precisión `Float64` y no de forma exacta.
+* El pipe `math` requiere que las columnas de los operandos sean numéricas; las columnas `String` no se convierten implícitamente.
+* Los resultados de las consultas se devuelven con los tipos de las columnas subyacentes, no como cadenas.
 
 ## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
 

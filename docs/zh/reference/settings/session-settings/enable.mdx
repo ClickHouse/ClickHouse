@@ -247,13 +247,11 @@ SET dialect = 'clickhouse_json';
 
 ## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
 
-<BetaBadge />
-
 **别名**：`allow_experimental_json_lazy_type_hints`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "惰性 JSON 类型提示现已进入 Beta 阶段。设置 'allow_experimental_json_lazy_type_hints' 的别名。"}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "新增用于惰性 JSON 类型提示的实验性设置。当时该设置名为 `allow_experimental_json_lazy_type_hints`，现在它是此设置的别名。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "惰性 JSON 类型提示现已进入 Beta 阶段。设置 'allow_experimental_json_lazy_type_hints' 的别名。"}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "新增用于惰性 JSON 类型提示的实验性设置。当时该设置名为 `allow_experimental_json_lazy_type_hints`，现在它是此设置的别名。"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "0"},{"label": "惰性 `JSON` 类型提示现已正式可用，别名 `allow_experimental_json_lazy_type_hints` 同样适用。"}]}]} />
 
 为 [JSON](/zh/reference/data-types/newjson) 类型启用惰性类型提示。
 

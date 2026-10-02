@@ -94,6 +94,16 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 يحدّد الحجم الأقصى للمخزن المؤقت المتكيّف المستخدم عند الكتابة إلى ملفات الأرشيف (على سبيل المثال، أرشيفات tar
 
+## array_count_legacy_uint32_result {#array_count_legacy_uint32_result}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "أصبحت الدالة `arrayCount` تُرجع النوع `UInt64` بدلاً من `UInt32`، لتكون النتيجة دقيقة في المصفوفات التي تحتوي على أكثر من `4294967295` عنصراً مطابقاً. اضبط هذا الإعداد على `true` لإرجاع `UInt32` كما كان سابقاً."}]}]} />
+
+عند تفعيل هذا الإعداد، تُرجع الدالة `arrayCount` النوع `UInt32` كما كانت تفعل قبل الإصدار 26.10، بدلاً من `UInt64`. ونتيجة `UInt32` يحدث فيها التفاف صامت (تجاوز للحد) في المصفوفات التي تحتوي على أكثر من `4294967295` عنصراً مطابقاً. كما يُعيد هذا الإعداد ثبوتية النتيجة إلى ما كانت عليه قبل الإصدار 26.10، فالمسند الذي يُختزل إلى القيمة الثابتة false يُنتج حينئذٍ عمودَ نتيجة ثابتاً حتى مع مصفوفة غير ثابتة.
+
+أثناء الترقية المتدرجة، فعّل هذا الإعداد على الخوادم المُرقّاة للمستخدمين الذين تُنفَّذ الاستعلامات الموزعة على هذه الخوادم بحساباتهم، وذلك لإبقاء الاستعلامات الموزعة التي تبدأها الخوادم غير المُرقّاة بعدُ دون أي تغيير (إذ لا يُمرِّر الخادم المُبادِر القديم هذا الإعداد، ولولا ذلك لرأت التعبيرات الحساسة للنوع التي تُقيَّم محلياً على المقاطع المُرقّاة النوعَ `UInt64`)، ثم أزِله بعد اكتمال الترقية. ويتوقف المستخدم الذي يُنفَّذ بحسابه الاستعلام على جانب المقطع على تهيئة العنقود: فإذا هُيّئ `secret` بين الخوادم، فهو المستخدم الحالي للخادم المُبادِر؛ وإلا فهو المستخدم المحدد في تعريف العنقود أو في دالة الجدول `remote` (وهو `default` ما لم يُحدَّد غيره). وأبسط نهج موثوق هو تفعيل هذا الإعداد لجميع مستخدمي الخوادم المُرقّاة.
+
 ## arrow_flight_request_descriptor_type {#arrow_flight_request_descriptor_type}
 
 <SettingsInfoBlock type="ArrowFlightDescriptorType" default_value="path" />
@@ -371,6 +381,7 @@ SETTINGS convert_query_to_cnf = true;
 * `polyglot` — يترجم SQL من لهجات أخرى، مثل MySQL وPostgreSQL، إلى ClickHouse SQL. يتطلب الإعداد التجريبي `allow_experimental_polyglot_dialect`.
 * `promql` — PromQL (لغة استعلام Prometheus)، ويُقيَّم على جدول TimeSeries ويُضبط من خلال الإعدادات `promql_database` و`promql_table` و`promql_evaluation_time`.
 * `clickhouse_json` — بدلًا من نص SQL، يُفسَّر الاستعلام على أنه JSON AST (ناتج `parseQueryToJSON`). يظل استعلام `SET` معروفًا بصيغته العادية، بحيث يمكن التبديل مجددًا إلى لهجة أخرى. يتطلب الإعداد التجريبي `enable_json_ast_dialect`.
+* `logsql` — LogsQL، لغة استعلام السجلات في VictoriaLogs، وتُترجَم إلى استعلامات `SELECT` على جدول السجلات المُهيَّأ عبر الإعدادين `logsql_database` و`logsql_table`. يتطلب الإعداد التجريبي `allow_experimental_logsql_dialect`.
 * `trino` — Trino SQL: يترجم صياغة Trino (`ARRAY[...]` و`TRY_CAST` و`UNNEST` وغيرها) ويطابق أسماء دوال Trino مع نظيراتها في ClickHouse. يتطلب الإعداد التجريبي `enable_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
@@ -905,9 +916,9 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "أصبحت الدالة غير الحتمية المستخدمة إلى جانب الدالة `arrayJoin` تُعيد قيمة مختلفة في كل صف إخراج، كما هو الحال مع عبارة `ARRAY JOIN`. ويُعيد هذا الإعداد السلوك السابق: قيمة واحدة لكل صف مصدر."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "أصبحت الدوال غير الحتمية والدوال المعتمدة على الكتلة المستخدمة إلى جانب الدالة `arrayJoin` تُقيَّم كما هو الحال مع عبارة `ARRAY JOIN`."}]}]} />
 
-يحدد هذا الإعداد كيفية تقييم الدالة غير الحتمية المستخدمة إلى جانب الدالة `arrayJoin` عندما لا تعتمد على القيمة الناتجة عن الضم، مثل `rand()` أو `generateUUIDv4()` ضمن عبارة `SELECT` نفسها. افتراضيًا، تُعيد الدالة قيمة مختلفة في كل صف إخراج، كما هو الحال مع عبارة `ARRAY JOIN`. فعّل هذا الإعداد للحصول على سلوك الإصدارات الأقدم، أي قيمة واحدة لكل صف مصدر تتكرر في جميع الصفوف الموسَّعة الناتجة عنه.
+يحدد هذا الإعداد كيفية تقييم الدوال غير الحتمية والدوال المعتمدة على الكتلة المستخدمة إلى جانب الدالة `arrayJoin`. افتراضيًا، تُعيد `rand()` قيمة مختلفة في كل صف إخراج، وتتعامل `runningDifference` أو `neighbor` مع كتل التوسيع، كما هو الحال مع عبارة `ARRAY JOIN`. فعّل هذا الإعداد للحصول على سلوك الإصدارات الأقدم.
 
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 

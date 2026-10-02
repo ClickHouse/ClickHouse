@@ -183,6 +183,10 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
   يعمل هذا ما دام query تُرسَل كنص، وهو السلوك الافتراضي. عند استخدام [`serialize_query_plan = 1`](/ar/reference/settings/session-settings/serialize#serialize_query_plan)، يرسل initiator بدلاً من ذلك plan قراءة مُعدّة مسبقاً، ولا يطبّق remote server الذي ينفّذ هذه plan سياسات الصفوف الخاصة به. لذلك، تُرجع قراءة table من نوع `Distributed` عبر `local_table` صفوفاً غير مُرشّحة. أبقِ `serialize_query_plan = 0` للمستخدمين الذين يجب فرض سياسات الصفوف عليهم. راجع [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
 </Warning>
 
+## جداول Join {#join-tables}
+
+جدول [Join](/ar/reference/engines/table-engines/special/join) هو جدول تجزئة مُعدّ مسبقًا تقرؤه عمليات `JOIN` أو `joinGet` كما هو، ولذلك يتعذّر تصفية صفوفه أثناءها. وتؤدي السياسة المطبّقة على جدول كهذا، بما في ذلك سياسة `ON db.*` الشاملة لقاعدة البيانات بأكملها، إلى تصفية نتائج استعلام `SELECT` العادي من الجدول، لكن ما دامت هذه السياسة سارية، فإن استعلامات `JOIN` و`joinGet` على هذا الجدول تفشل بالخطأ `ACCESS_DENIED`.
+
 ## عبارة ON CLUSTER {#on-cluster-clause}
 
 تسمح بإنشاء سياسات الصفوف على مستوى العنقود، راجع [DDL الموزع](/ar/reference/statements/distributed-ddl). وهذه أيضًا طريقة ملائمة لإنشاء السياسة على الجداول المحلية لكل خادم في العنقود.

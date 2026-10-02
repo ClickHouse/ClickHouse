@@ -28,24 +28,6 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
-## query_plan_aggregation_in_order {#query_plan_aggregation_in_order}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "22.12"},{"label": "1"},{"label": "تمكين بعض إعادة الهيكلة المتعلقة بخطة الاستعلام"}]}]} />
-
-يُبدّل تحسين التجميع بالترتيب على مستوى خطة الاستعلام.
-لا يسري مفعوله إلا إذا كان الإعداد [`query_plan_enable_optimizations`](/ar/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) مضبوطًا على 1.
-
-<Note>
-  هذا إعداد مخصص للخبراء، ويجب ألا يستخدمه إلا المطورون لأغراض تصحيح الأخطاء. قد يتغير هذا الإعداد مستقبلًا على نحو غير متوافق مع الإصدارات السابقة أو قد يُزال.
-</Note>
-
-القيم الممكنة:
-
-* 0 - تعطيل
-* 1 - تمكين
-
 ## query_plan_convert_any_join_to_semi_or_anti_join {#query_plan_convert_any_join_to_semi_or_anti_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -69,6 +51,14 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "1"},{"label": "السماح بتحويل OUTER JOIN إلى INNER JOIN إذا كانت التصفية بعد JOIN تستبعد دائمًا القيم الافتراضية"}]}]} />
 
 السماح بتحويل `OUTER JOIN` إلى `INNER JOIN` إذا كانت التصفية بعد `JOIN` تستبعد دائمًا القيم الافتراضية
+
+## query_plan_convert_outer_join_to_inner_join_transitively {#query_plan_convert_outer_join_to_inner_join_transitively}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد يوسّع نطاق `query_plan_convert_outer_join_to_inner_join` ليأخذ في الحسبان عامل تصفية في مستوى أعلى من الخطة، وكذلك شروط `JOIN` المحيط به. لا يسري مفعوله إلا عند تفعيل `query_plan_convert_outer_join_to_inner_join`."}]}]} />
+
+يوسّع نطاق `query_plan_convert_outer_join_to_inner_join` ليأخذ في الحسبان عامل تصفية في مستوى أعلى من الخطة، وكذلك شروط `JOIN` المحيط به. لا يسري مفعوله إلا عند تفعيل `query_plan_convert_outer_join_to_inner_join`.
 
 ## query_plan_direct_read_from_text_index {#query_plan_direct_read_from_text_index}
 
@@ -138,6 +128,25 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 * 0 - تعطيل
 * 1 - تمكين
+
+## query_plan_filter_push_down_below_limit_by {#query_plan_filter_push_down_below_limit_by}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد للتحكم في دفع عامل التصفية المطبَّق على أعمدة مفتاح `LIMIT BY` إلى ما دون خطوة `LIMIT BY`. اضبطه على false لإبقاء عامل التصفية فوق `LIMIT BY`."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد للتحكم في دفع عامل التصفية المطبَّق على أعمدة مفتاح `LIMIT BY` إلى ما دون خطوة `LIMIT BY`. اضبطه على false لإبقاء عامل التصفية فوق `LIMIT BY`."}]}]} />
+
+يفعّل أو يعطّل دفع عوامل التصفية المطبَّقة على أعمدة مفتاح `LIMIT BY` إلى ما دون خطوة `LIMIT BY`.
+لا يسري مفعوله إلا إذا كانت قيمة الإعداد [query&#95;plan&#95;enable&#95;optimizations](/ar/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) تساوي 1.
+تُقرأ قيمته بمعزل عن الإعداد [query&#95;plan&#95;filter&#95;push&#95;down](/ar/reference/settings/session-settings/query-plan#query_plan_filter_push_down)؛ إذ تُنفَّذ مرحلة الدفع إلى الأسفل حتى عند تعطيل ذلك الإعداد، وذلك بمجرد إضافة عامل تصفية وقت التشغيل الخاص بـ `JOIN`.
+
+<Note>
+  هذا إعداد مخصص للخبراء، ولا ينبغي أن يستخدمه إلا المطورون لأغراض تصحيح الأخطاء. وقد يتغير هذا الإعداد مستقبلًا بطرق غير متوافقة مع الإصدارات السابقة، أو قد تتم إزالته.
+</Note>
+
+القيم الممكنة:
+
+* 0 - تعطيل
+* 1 - تفعيل
 
 ## query_plan_fuse_filter_into_array_join {#query_plan_fuse_filter_into_array_join}
 
@@ -425,14 +434,6 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 استخدم تحسين التجسيد الكسول عند قراءة ملفات Parquet من تخزين الكائنات (بما في ذلك جداول Iceberg): في استعلامات `ORDER BY ... LIMIT n`، لا تُقرأ الأعمدة غير اللازمة للفرز والتصفية إلا للصفوف الـ `n` التي تبقى بعد تطبيق `LIMIT`. لا يسري هذا الإعداد إلا إذا كان `query_plan_optimize_lazy_materialization` مفعّلًا.
 
-## query_plan_optimize_prewhere {#query_plan_optimize_prewhere}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "السماح بتمرير عامل التصفية إلى تعبير PREWHERE لوحدات التخزين المدعومة"}]}]} />
-
-السماح بتمرير عامل التصفية إلى تعبير PREWHERE لوحدات التخزين المدعومة
-
 ## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -494,22 +495,6 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 يُفعّل أو يعطّل تحسينًا على مستوى خطة الاستعلام لاستعلامات `ORDER BY ... LIMIT BY`. عندما تكون أعمدة `LIMIT BY` بادئة لعبارة `ORDER BY`، يطبّق كل دفق فرز متوازٍ `LIMIT BY` قبل دمج التدفقات في دفق واحد، مما يقلل عدد الصفوف التي تعالجها عملية الدمج النهائية ومراحل المسار اللاحقة. ويؤدي ذلك إلى تسريع الاستعلامات التي يستبعد فيها `LIMIT BY` نسبة كبيرة من الصفوف.
 
 لا يسري هذا إلا إذا كانت قيمة الإعداد [query&#95;plan&#95;enable&#95;optimizations](/ar/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) تساوي 1.
-
-القيم الممكنة:
-
-* 0 - تعطيل
-* 1 - تمكين
-
-## query_plan_read_in_order {#query_plan_read_in_order}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-يُفعِّل أو يعطِّل تحسين القراءة بالترتيب على مستوى خطة الاستعلام.
-ولا يكون له تأثير إلا إذا كان الإعداد [`query_plan_enable_optimizations`](/ar/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) مضبوطًا على 1.
-
-<Note>
-  هذا إعداد مخصّص للخبراء، وينبغي ألا يُستخدم إلا من قِبل المطورين لأغراض تصحيح الأخطاء. وقد يتغير هذا الإعداد مستقبلًا بطرق غير متوافقة مع الإصدارات السابقة، أو قد تتم إزالته.
-</Note>
 
 القيم الممكنة:
 

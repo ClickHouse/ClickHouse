@@ -28,24 +28,6 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-## query_plan_aggregation_in_order {#query_plan_aggregation_in_order}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "22.12"},{"label": "1"},{"label": "Active certaines refactorisations autour du plan de requête"}]}]} />
-
-Active ou désactive l’optimisation d’agrégation dans l’ordre au niveau du plan de requête.
-Ne prend effet que si le paramètre [`query_plan_enable_optimizations`](/fr/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) vaut 1.
-
-<Note>
-  Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs que pour le débogage. Ce paramètre pourra à l’avenir changer de manière non rétrocompatible ou être supprimé.
-</Note>
-
-Valeurs possibles :
-
-* 0 - Désactiver
-* 1 - Activer
-
 ## query_plan_convert_any_join_to_semi_or_anti_join {#query_plan_convert_any_join_to_semi_or_anti_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -69,6 +51,14 @@ Permet de convertir un `JOIN` en sous-requête avec `IN` si les colonnes de sort
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "1"},{"label": "Permet de convertir OUTER JOIN en INNER JOIN si le filtre appliqué après JOIN exclut toujours les valeurs par défaut"}]}]} />
 
 Permet de convertir `OUTER JOIN` en `INNER JOIN` si le filtre appliqué après `JOIN` exclut toujours les valeurs par défaut
+
+## query_plan_convert_outer_join_to_inner_join_transitively {#query_plan_convert_outer_join_to_inner_join_transitively}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre qui étend `query_plan_convert_outer_join_to_inner_join` afin de prendre en compte un filtre situé plus haut dans le plan ainsi que les conditions d'une `JOIN` englobante. N'a d'effet que si `query_plan_convert_outer_join_to_inner_join` est activé."}]}]} />
+
+Étend `query_plan_convert_outer_join_to_inner_join` afin de prendre en compte un filtre situé plus haut dans le plan ainsi que les conditions d&#39;une `JOIN` englobante. N&#39;a d&#39;effet que si `query_plan_convert_outer_join_to_inner_join` est activé.
 
 ## query_plan_direct_read_from_text_index {#query_plan_direct_read_from_text_index}
 
@@ -138,6 +128,25 @@ Valeurs possibles :
 
 * 0 - Désactiver
 * 1 - Activer
+
+## query_plan_filter_push_down_below_limit_by {#query_plan_filter_push_down_below_limit_by}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant de contrôler le déplacement d'un filtre portant sur les colonnes clés du `LIMIT BY` sous l'étape `LIMIT BY`. Définissez-le sur false pour conserver le filtre au-dessus du `LIMIT BY`."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre permettant de contrôler le déplacement d'un filtre portant sur les colonnes clés du `LIMIT BY` sous l'étape `LIMIT BY`. Définissez-le sur false pour conserver le filtre au-dessus du `LIMIT BY`."}]}]} />
+
+Active ou désactive le déplacement des filtres portant sur les colonnes clés du `LIMIT BY` sous l&#39;étape `LIMIT BY`.
+Ne prend effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations](/fr/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) vaut 1.
+Ce paramètre est lu indépendamment de [query&#95;plan&#95;filter&#95;push&#95;down](/fr/reference/settings/session-settings/query-plan#query_plan_filter_push_down) : la passe de déplacement des filtres s&#39;exécute également lorsque ce dernier est désactivé, dès lors qu&#39;un filtre d&#39;exécution de `JOIN` a été ajouté.
+
+<Note>
+  Il s&#39;agit d&#39;un paramètre réservé aux experts, qui ne doit être utilisé que par des développeurs à des fins de débogage. Ce paramètre est susceptible d&#39;évoluer à l&#39;avenir de manière non rétrocompatible, voire d&#39;être supprimé.
+</Note>
+
+Valeurs possibles :
+
+* 0 - Désactivé
+* 1 - Activé
 
 ## query_plan_fuse_filter_into_array_join {#query_plan_fuse_filter_into_array_join}
 
@@ -425,14 +434,6 @@ Utilise l&#39;optimisation de matérialisation différée lors de la lecture de 
 
 Utilise l&#39;optimisation de matérialisation différée pour lire des fichiers Parquet depuis le stockage d&#39;objets, y compris les tables Iceberg : pour les requêtes `ORDER BY ... LIMIT n`, les colonnes inutiles pour le tri et le filtrage ne sont lues que pour les `n` lignes conservées après application de `LIMIT`. Ne prend effet que si `query_plan_optimize_lazy_materialization` est activé.
 
-## query_plan_optimize_prewhere {#query_plan_optimize_prewhere}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Permet de pousser le filtre dans l'expression PREWHERE pour les moteurs de stockage pris en charge"}]}]} />
-
-Permet de pousser le filtre dans l&#39;expression PREWHERE pour les moteurs de stockage pris en charge
-
 ## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -494,22 +495,6 @@ Valeurs possibles :
 Active ou désactive une optimisation au niveau du plan de requête pour les requêtes `ORDER BY ... LIMIT BY`. Lorsque les colonnes de `LIMIT BY` sont un préfixe de la clause `ORDER BY`, chaque flux trié en parallèle applique `LIMIT BY` avant que les flux ne soient fusionnés en un seul, ce qui réduit le nombre de lignes traitées par la fusion finale et les étapes suivantes du pipeline. Accélère les requêtes dans lesquelles `LIMIT BY` écarte une grande partie des lignes.
 
 Ne prend effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations](/fr/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) vaut 1.
-
-Valeurs possibles :
-
-* 0 - Désactiver
-* 1 - Activer
-
-## query_plan_read_in_order {#query_plan_read_in_order}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-Active ou désactive l’optimisation de lecture ordonnée au niveau du plan de requête.
-Ne prend effet que si le paramètre [`query_plan_enable_optimizations`](/fr/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) est défini sur 1.
-
-<Note>
-  Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs que pour le débogage. Ce paramètre peut évoluer ultérieurement de manière non rétrocompatible ou être supprimé.
-</Note>
 
 Valeurs possibles :
 

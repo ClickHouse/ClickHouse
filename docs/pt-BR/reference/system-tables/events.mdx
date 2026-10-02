@@ -339,6 +339,10 @@ Quantas mensagens foram descartadas do text&#95;log porque a fila de log assínc
 
 Número de mensagens (aceitas ou descartadas) enviadas para a fila assíncrona do text&#95;log
 
+### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
+
+Número de vezes que o recurso automático de réplicas paralelas construiu um plano candidato com réplicas paralelas para compará-lo ao plano de nó único. Nem todo plano desse tipo é utilizado: ele é construído para que seu custo seja estimado e é descartado quando o plano de nó único é o vencedor
+
 ### AzureClients {#azureclients}
 
 Número de clientes criados para contêineres do Azure Blob Storage.
@@ -594,10 +598,6 @@ Número de vezes em que a gravação de um file segment no cache do sistema de a
 ### CachedReadBufferCreateBufferMicroseconds {#cachedreadbuffercreatebuffermicroseconds}
 
 Tempo para preparar o buffer
-
-### CachedReadBufferPredownloadedBytes {#cachedreadbufferpredownloadedbytes}
-
-Bytes lidos da origem do cache do sistema de arquivos. Os segmentos do cache são lidos da esquerda para a direita como um todo; portanto, pode ser necessário baixar previamente alguma parte do segmento que não é relevante para a tarefa atual apenas para chegar aos dados necessários
 
 ### CachedReadBufferPredownloadedFromSourceBytes {#cachedreadbufferpredownloadedfromsourcebytes}
 

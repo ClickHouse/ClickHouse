@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -30,11 +31,14 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 <ExperimentalBadge />
 
+<CloudOnlyBadge />
+
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Новая настройка"}]}]} />
 
-Разрешает удалять старые файлы данных во время compaction в Iceberg.
+Действует только в ClickHouse Cloud, где управляет фоновой компакцией Iceberg.
+Разрешает удалять старые файлы данных во время компакции в Iceberg.
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
@@ -101,6 +105,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Новая настройка"}]}]} />
 
 Разрешает явно использовать `OPTIMIZE` для таблиц Iceberg.
+В сборках с открытым исходным кодом поддерживается только `OPTIMIZE TABLE ... MANIFEST`; при компакции данных (`OPTIMIZE TABLE` без `MANIFEST`) возвращается ошибка `NOT_IMPLEMENTED`.
 
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
@@ -111,6 +116,40 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Новая настройка"}]}]} />
 
 Включает диалект Kusto Query Language (KQL) — альтернативу SQL.
+
+## allow_experimental_logsql_dialect {#allow_experimental_logsql_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Новая настройка, включающая диалект LogsQL (язык запросов к журналам VictoriaLogs)."}]}]} />
+
+Включает LogsQL — язык запросов к журналам VictoriaLogs. Запросы на этом диалекте преобразуются в SELECT-запросы к таблице, заданной настройкой `logsql_table`.
+
+Использование:
+
+```sql
+SET allow_experimental_logsql_dialect = 1;
+SET logsql_table = 'logs';
+SET dialect = 'logsql';
+
+_time:1h error | stats by (host) count()
+```
+
+Полный самостоятельный запрос `SET` по-прежнему разбирается как обычный SQL, чтобы можно было
+вернуться к прежнему диалекту; запрос LogsQL, который лишь начинается со слова `set`, сохраняет своё значение.
+Настройки `logsql_time_column` и `logsql_message_column` задают столбцы,
+на которые ссылаются поле `_time` и поле по умолчанию (поле сообщения).
+
+В отличие от VictoriaLogs, где каждое поле хранится как строка, транслированные запросы выполняются
+над существующей схемой таблицы. Отсюда вытекают основные отступления от контракта:
+
+* Текстовые фильтры (слова, фразы, префиксы, регулярные выражения) рассчитаны на столбцы типа `String` и не преобразуют числовые столбцы в текст.
+* Фильтры числового сравнения сравнивают числовые столбцы нативно (точно — для целых и десятичных значений, если сравниваемый литерал помещается в `Int128` или `Decimal256(38)`; более широкое значение, например целое число больше 1e38 в поле `UInt256`, сравнивается с точностью `Float64`, как и целочисленные шаги бакетов в `stats by (<field>:<step>)`). Для столбцов типа `String` построчно разбирается только обычный числовой текст; значения в числовой грамматике LogsQL (например, `10KiB`, `1h30m`) построчно не разбираются.
+* Числовые статистические функции (`sum`, `avg`, `median`, `quantile`, `stddev`, `rate_sum`), как и в VictoriaLogs, разбирают числовое значение каждого поля, пропуская нечисловые значения. Значения имеют тип `Float64`, поэтому числовой столбец агрегируется не точно, а с точностью `Float64`.
+* Пайп `math` требует числовых столбцов-операндов; столбцы типа `String` к числовому типу не приводятся.
+* Результаты запросов возвращаются с типами исходных столбцов, а не в виде строк.
 
 ## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
 

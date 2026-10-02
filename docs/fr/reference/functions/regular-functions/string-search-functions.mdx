@@ -906,17 +906,20 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 Introduit dans : v26.4.0
 
-Vérifie si `input` contient tous les tokens de `phrase` dans un ordre consécutif.
+Vérifie si `input` contient tous les jetons de `phrase` dans un ordre consécutif.
 
 <Note>
   La colonne `input` doit avoir un [index de texte](/fr/reference/engines/table-engines/mergetree-family/textindexes) défini pour des performances optimales.
   Si aucun index de texte n&#39;est défini, la fonction effectue un balayage exhaustif de la colonne, plusieurs ordres de grandeur plus lent qu&#39;une recherche via l’index.
 </Note>
 
-Avant la recherche, la fonction tokenise les arguments `input` et `phrase` à l&#39;aide du tokenizer spécifié pour l&#39;index de texte.
+Avant la recherche, la fonction tokenise `input` ainsi que `phrase`, si ce dernier est de type `String`, à l&#39;aide du tokenizer spécifié pour l&#39;index de texte.
 Si aucun index de texte n&#39;est défini pour la colonne, le tokenizer `splitByNonAlpha` est utilisé à la place — sauf si un tokenizer est fourni comme troisième argument facultatif.
-L&#39;argument tokenizer doit être l&#39;un de `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK` ou `icu`.
-Notez que `splitByRegexp` n&#39;est pas pris en charge pour `hasPhrase` lorsque l&#39;index de texte définit également un postprocessor.
+L&#39;argument tokenizer doit être l&#39;un de `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `array`, `ngrams`, `asciiCJK` ou `icu`.
+
+Si `input` est de type [Array(String)](/fr/reference/data-types/array), ses éléments sont tokenisés comme toute autre entrée et leurs jetons forment une seule séquence par ligne, de sorte qu’une phrase peut s’étendre sur deux éléments. Avec le tokenizer `array`, chaque élément constitue un jeton, ce qui permet d’effectuer une recherche dans une colonne de valeurs déjà tokenisées.
+Si `phrase` est de type [Array(String)](/fr/reference/data-types/array), ses éléments constituent les jetons à rechercher, dans l’ordre et
+en conservant les doublons. Les éléments vides de `phrase` sont ignorés, car aucun tokenizer ne produit de jeton vide.
 
 <Note>
   Lorsqu&#39;un index de texte définit un [preprocessor](/fr/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (par exemple `lowerUTF8`), `hasPhrase` l&#39;applique à la fois à `input` et à `phrase` avant la tokenisation.
@@ -924,8 +927,8 @@ Notez que `splitByRegexp` n&#39;est pas pris en charge pour `hasPhrase` lorsque 
   Cette incohérence est tolérée afin d&#39;améliorer la facilité d&#39;utilisation de la recherche en texte intégral.
 </Note>
 
-Contrairement à [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) et [`hasAllTokens`](#hasAllTokens), `hasPhrase` exige que les tokens apparaissent dans le même ordre
-et sans aucun token intermédiaire. Par exemple, `hasPhrase('the quick brown fox', 'quick fox')` renvoie 0
+Contrairement à [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) et [`hasAllTokens`](#hasAllTokens), `hasPhrase` exige que les jetons apparaissent dans le même ordre
+et sans aucun jeton intermédiaire. Par exemple, `hasPhrase('the quick brown fox', 'quick fox')` renvoie 0
 car &quot;brown&quot; apparaît entre &quot;quick&quot; et &quot;fox&quot;.
 
 **Syntaxe**
@@ -934,17 +937,17 @@ car &quot;brown&quot; apparaît entre &quot;quick&quot; et &quot;fox&quot;.
 hasPhrase(input, phrase[, tokenizer])
 ```
 
-**Alias** : `matchPhrase`
+**Alias** : `matchPhrase`
 
 **Arguments**
 
-* `input` — La colonne d’entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring)
-* `phrase` — Phrase à rechercher. [`const String`](/fr/reference/data-types/string)
+* `input` — La colonne d’entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Nullable(String)`](/fr/reference/data-types/nullable) ou [`Nullable(FixedString)`](/fr/reference/data-types/nullable) ou [`Array(String)`](/fr/reference/data-types/array) ou [`Array(FixedString)`](/fr/reference/data-types/array) ou [`Array(Nullable(String))`](/fr/reference/data-types/array) ou [`Array(Nullable(FixedString))`](/fr/reference/data-types/array)
+* `phrase` — Phrase à rechercher. [`const String`](/fr/reference/data-types/string) ou [`const Array(String)`](/fr/reference/data-types/array)
 * `tokenizer` — Le tokenizer à utiliser. Facultatif, `splitByNonAlpha` est utilisé par défaut. [`const String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
-Renvoie `1` si la phrase est trouvée sous la forme d’une séquence consécutive de tokens, sinon `0`. [`UInt8`](/fr/reference/data-types/int-uint)
+Renvoie `1` si la phrase est trouvée sous la forme d’une séquence consécutive de jetons, sinon `0`. [`UInt8`](/fr/reference/data-types/int-uint)
 
 **Exemples**
 
@@ -960,7 +963,7 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick brown')
 └───────────────────────────────────────────────────────┘
 ```
 
-**Tokens non consécutifs**
+**Jetons non consécutifs**
 
 ```sql title=Query
 SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
@@ -970,6 +973,30 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 ┌─hasPhrase('the quick brown fox jumps', 'quick fox')─┐
 │                                                   0 │
 └─────────────────────────────────────────────────────┘
+```
+
+**Séquence de jetons fournie sous forme de tableaux**
+
+```sql title=Query
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])
+```
+
+```response title=Response
+┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])─┐
+│                                                               1 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Phrase répartie sur deux éléments**
+
+```sql title=Query
+SELECT hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])
+```
+
+```response title=Response
+┌─hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])─┐
+│                                                         1 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequence {#hasSubsequence}

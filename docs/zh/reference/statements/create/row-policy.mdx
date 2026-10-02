@@ -184,6 +184,10 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
   此机制仅在查询以文本形式发送时生效，默认即为此方式。使用 [`serialize_query_plan = 1`](/zh/reference/settings/session-settings/serialize#serialize_query_plan) 时，发起节点会改为发送已构建的读取计划；执行该计划的远程服务器不会应用其自身的行策略。因此，通过 `local_table` 读取 `Distributed` 表会返回未过滤的行。对于必须强制执行行策略的用户，请保持 `serialize_query_plan = 0`。参见 [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891)。
 </Warning>
 
+## Join 表 {#join-tables}
+
+[Join](/zh/reference/engines/table-engines/special/join) 表是预先构建好的哈希表，`JOIN` 或 `joinGet` 会直接按原样读取，因此无法在此过程中对其中的行进行过滤。作用于此类表的策略 (包括数据库级别的 `ON db.*` 策略) 会对该表的普通 `SELECT` 查询生效并过滤结果；但只要该策略处于生效状态，针对该表的 `JOIN` 和 `joinGet` 查询都会失败，并返回 `ACCESS_DENIED` 错误。
+
 ## ON CLUSTER 子句 {#on-cluster-clause}
 
 允许在集群中创建行策略，参见 [Distributed DDL](/zh/reference/statements/distributed-ddl)。这也是在集群中每台服务器的本地表上创建策略的便捷方式。

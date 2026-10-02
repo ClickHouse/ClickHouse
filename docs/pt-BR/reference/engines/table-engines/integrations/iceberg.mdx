@@ -145,7 +145,7 @@ ALTER TABLE iceberg_table DROP PARTITION 2;
 ALTER TABLE iceberg_table DROP PARTITION (2, 5);
 ```
 
-Para uma partição definida com uma transformação, você pode fornecer o valor da chave de partição já transformado como um literal ou a mesma expressão de transformação aplicada a um valor bruto da origem. As transformações compatíveis são `identity`, `icebergBucket`, `icebergTruncate`, `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum` e `toRelativeHourNum`. Para uma partição de coluna única, a forma com expressão de transformação deve ser envolvida em `tuple(...)`:
+Para uma partição definida com uma transformação, você pode fornecer o valor da chave de partição já transformado como um literal ou a mesma expressão de transformação aplicada a um valor bruto da origem. As transformações compatíveis são `identity`, `icebergBucket`, `icebergTruncate`, `icebergYear`, `icebergMonth`, `icebergDay` e `icebergHour`; os aliases de `PARTITION BY` `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum` e `toRelativeHourNum` são aceitos e avaliados como essas transformações. Para uma partição de coluna única, a forma com expressão de transformação deve ser envolvida em `tuple(...)`:
 
 ```sql
 ALTER TABLE iceberg_table DROP PARTITION 0;

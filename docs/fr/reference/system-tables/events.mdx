@@ -339,6 +339,10 @@ Nombre de messages perdus dans `text_log` parce que la file d’attente des jour
 
 Nombre de messages (acceptés ou rejetés) envoyés vers la file d&#39;attente asynchrone de text&#95;log
 
+### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
+
+Nombre de fois où le mécanisme automatique de répliques parallèles a construit un plan candidat utilisant les répliques parallèles afin de le comparer au plan à nœud unique. Ces plans ne sont pas tous utilisés : chacun est construit pour en estimer le coût, puis abandonné si le plan à nœud unique l&#39;emporte
+
 ### AzureClients {#azureclients}
 
 Nombre de clients de conteneur Azure Blob Storage créés.
@@ -594,10 +598,6 @@ Nombre de fois où l&#39;écriture d&#39;un file segment dans le cache du systè
 ### CachedReadBufferCreateBufferMicroseconds {#cachedreadbuffercreatebuffermicroseconds}
 
 Temps de préparation du tampon
-
-### CachedReadBufferPredownloadedBytes {#cachedreadbufferpredownloadedbytes}
-
-Octets lus depuis la source du cache du système de fichiers. Les segments du cache sont lus intégralement de gauche à droite ; il peut donc être nécessaire de télécharger à l’avance une partie du segment non pertinente pour la tâche en cours, simplement pour atteindre les données nécessaires.
 
 ### CachedReadBufferPredownloadedFromSourceBytes {#cachedreadbufferpredownloadedfromsourcebytes}
 

@@ -145,7 +145,7 @@ ALTER TABLE iceberg_table DROP PARTITION 2;
 ALTER TABLE iceberg_table DROP PARTITION (2, 5);
 ```
 
-对于通过变换定义的分区，既可以直接以字面量形式提供变换后的分区键值，也可以对原始源值应用相同的变换表达式。支持的变换包括 `identity`、`icebergBucket`、`icebergTruncate`、`toYearNumSinceEpoch`、`toMonthNumSinceEpoch`、`toRelativeDayNum` 和 `toRelativeHourNum`。对于单列分区，采用变换表达式形式时必须将其包裹在 `tuple(...)` 中：
+对于通过变换定义的分区，既可以直接以字面量形式提供变换后的分区键值，也可以对原始源值应用相同的变换表达式。支持的变换包括 `identity`、`icebergBucket`、`icebergTruncate`、`icebergYear`、`icebergMonth`、`icebergDay` 和 `icebergHour`；`PARTITION BY` 中的别名 `toYearNumSinceEpoch`、`toMonthNumSinceEpoch`、`toRelativeDayNum` 和 `toRelativeHourNum` 同样可用，并会作为上述对应变换进行求值。对于单列分区，采用变换表达式形式时必须将其包裹在 `tuple(...)` 中：
 
 ```sql
 ALTER TABLE iceberg_table DROP PARTITION 0;

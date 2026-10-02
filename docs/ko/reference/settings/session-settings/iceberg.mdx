@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 바탕으로 자동 생성됩니다.
 
@@ -92,11 +93,14 @@ https://iceberg.apache.org/docs/1.5.2/configuration/ 를 참조하십시오.
 
 ## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
 
+<CloudOnlyBadge />
+
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1000"},{"label": "새로운 설정"}]}]} />
 
-Iceberg의 compaction 데이터 파일 수에 대한 임계값입니다.
+ClickHouse Cloud에서만 적용되며, 백그라운드 Iceberg 컴팩션을 구성하는 데 사용됩니다.
+Iceberg의 컴팩션 데이터 파일 수에 대한 임계값입니다.
 
 ## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 

@@ -338,6 +338,10 @@ syslog의 비동기 큐로 전송된 메시지 수(수락되었거나 삭제된 
 
 text&#95;log의 비동기 큐로 전송된 메시지 수(수락되었거나 폐기된 메시지 포함)
 
+### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
+
+자동 병렬 레플리카 기능이 단일 노드 계획과 비교하기 위해 병렬 레플리카를 사용하는 후보 계획을 생성한 횟수입니다. 이렇게 생성된 계획이 모두 사용되지는 않습니다. 이 계획은 비용을 산정하기 위해 생성되며, 단일 노드 계획이 더 유리하다고 판단되면 폐기됩니다
+
 ### AzureClients {#azureclients}
 
 생성된 Azure Blob Storage 컨테이너 클라이언트 수입니다.
@@ -593,10 +597,6 @@ Merge 모드에서 패치 파트를 적용하기 위한 인덱스를 생성하�
 ### CachedReadBufferCreateBufferMicroseconds {#cachedreadbuffercreatebuffermicroseconds}
 
 버퍼 준비에 걸린 시간
-
-### CachedReadBufferPredownloadedBytes {#cachedreadbufferpredownloadedbytes}
-
-파일 시스템 캐시 소스에서 읽은 바이트 수입니다. 캐시 세그먼트는 전체를 왼쪽에서 오른쪽으로 읽기 때문에, 필요한 데이터에 도달하려면 현재 작업과 무관한 세그먼트 일부도 미리 다운로드해야 할 수 있습니다.
 
 ### CachedReadBufferPredownloadedFromSourceBytes {#cachedreadbufferpredownloadedfromsourcebytes}
 

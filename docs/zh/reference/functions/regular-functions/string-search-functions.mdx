@@ -913,13 +913,16 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
   如果未定义 文本索引，该函数会执行穷举列扫描，其速度比索引查找慢几个数量级。
 </Note>
 
-搜索前，该函数会使用为 文本索引 指定的分词器，对 `input` 和 `phrase` 参数进行标记化。
+搜索前，该函数会使用为 文本索引 指定的分词器对 `input` 进行分词；当 `phrase` 为 `String` 时，也会对其进行分词。
 如果该列未定义 文本索引，则改用 `splitByNonAlpha` 分词器——除非通过可选的第三个参数提供了分词器。
-`tokenizer` 参数必须是 `splitByNonAlpha`、`splitByString`、`splitByRegexp`、`ngrams`、`asciiCJK` 或 `icu` 之一。
-请注意，当 文本索引 还定义了后处理器时，`hasPhrase` 不支持 `splitByRegexp`。
+`tokenizer` 参数必须是 `splitByNonAlpha`、`splitByString`、`splitByRegexp`、`array`、`ngrams`、`asciiCJK` 或 `icu` 之一。
+
+如果 `input` 是 [Array(String)](/zh/reference/data-types/array)，其元素会像其他输入一样进行分词，且每行的所有标记组成一个序列，因此一个短语可以跨越两个元素。使用 `array` 分词器时，每个元素即为一个标记，可借此搜索由已分词的值组成的列。
+如果 `phrase` 是 [Array(String)](/zh/reference/data-types/array)，其元素即为要搜索的标记，按顺序匹配且
+包括重复项。空的短语元素会被忽略，因为任何分词器都不会生成空标记。
 
 <Note>
-  当 文本索引 定义了 [预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasPhrase` 会在标记化前将其应用于 `input` 和 `phrase`。
+  当 文本索引 定义了 [预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasPhrase` 会在分词前将其应用于 `input` 和 `phrase`。
   预处理器仅在 文本索引 路径上生效，因此，使用 文本索引 的查询与不使用 文本索引 的查询，结果可能不同 (例如 `SETTINGS use_skip_indexes = 0`) 。
   为了提高全文检索的易用性，可以容忍这种不一致。
 </Note>
@@ -938,8 +941,8 @@ hasPhrase(input, phrase[, tokenizer])
 
 **参数**
 
-* `input` — 输入列。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring)
-* `phrase` — 要搜索的短语。[`const String`](/zh/reference/data-types/string)
+* `input` — 输入列。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`Nullable(String)`](/zh/reference/data-types/nullable) 或 [`Nullable(FixedString)`](/zh/reference/data-types/nullable) 或 [`Array(String)`](/zh/reference/data-types/array) 或 [`Array(FixedString)`](/zh/reference/data-types/array) 或 [`Array(Nullable(String))`](/zh/reference/data-types/array) 或 [`Array(Nullable(FixedString))`](/zh/reference/data-types/array)
+* `phrase` — 要搜索的短语。[`const String`](/zh/reference/data-types/string) 或 [`const Array(String)`](/zh/reference/data-types/array)
 * `tokenizer` — 使用的分词器。可选，默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
 
 **返回值**
@@ -970,6 +973,30 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 ┌─hasPhrase('the quick brown fox jumps', 'quick fox')─┐
 │                                                   0 │
 └─────────────────────────────────────────────────────┘
+```
+
+**以 array 形式指定的标记序列**
+
+```sql title=Query
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])
+```
+
+```response title=Response
+┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])─┐
+│                                                               1 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**跨越两个元素的短语**
+
+```sql title=Query
+SELECT hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])
+```
+
+```response title=Response
+┌─hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])─┐
+│                                                         1 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequence {#hasSubsequence}

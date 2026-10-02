@@ -184,6 +184,10 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
   Это работает, пока запрос передаётся в виде текста, что используется по умолчанию. При [`serialize_query_plan = 1`](/ru/reference/settings/session-settings/serialize#serialize_query_plan) инициатор вместо этого передаёт уже сформированный план чтения, а удалённый сервер, выполняющий такой план, не применяет собственные ROW POLICY. Поэтому чтение таблицы `Distributed` через `local_table` возвращает неотфильтрованные строки. Для пользователей, к которым должны применяться ROW POLICY, сохраняйте значение `serialize_query_plan = 0`. См. [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
 </Warning>
 
+## Таблицы Join {#join-tables}
+
+Таблица [Join](/ru/reference/engines/table-engines/special/join) — это заранее подготовленная хеш-таблица, которую `JOIN` или `joinGet` считывают целиком, поэтому отфильтровать её строки при этом невозможно. Политика для такой таблицы, в том числе политика на уровне всей базы данных `ON db.*`, фильтрует обычный `SELECT` из таблицы, однако, пока она действует, запросы `JOIN` и `joinGet` к этой таблице завершаются ошибкой `ACCESS_DENIED`.
+
 ## Предложение ON CLUSTER {#on-cluster-clause}
 
 Позволяет создавать политики строк в кластере, см. [Distributed DDL](/ru/reference/statements/distributed-ddl). Это также удобный способ создать политику для локальных таблиц каждого сервера кластера.

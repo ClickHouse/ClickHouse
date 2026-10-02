@@ -1068,7 +1068,13 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 
 Estima o benefício que um índice de exclusão hipotético traria para uma consulta `SELECT`, *sem* materializar o índice em disco. Defina um ou mais candidatos com [`CREATE HYPOTHETICAL INDEX`](/pt-BR/reference/statements/hypothetical-index#create-hypothetical-index) e execute `EXPLAIN WHATIF SELECT ...` para ver a aplicabilidade, a estimativa de marcas lidas, a estimativa de bytes e a taxa de descarte de cada candidato.
 
-Projeções hipotéticas definidas com [`CREATE HYPOTHETICAL PROJECTION`](/pt-BR/reference/statements/hypothetical-projection#create-hypothetical-projection) também são candidatas. Para estimar uma projeção normal, seu índice primário é construído em memória sobre as partes que a consulta leria e, em seguida, é podado como seria o de uma projeção materializada. O relatório mostra as marcas e linhas que a leitura da projeção acessaria, um `read_ratio` em relação à leitura da tabela base (abaixo de `1x` significa menos trabalho; acima, mais) e um `verdict` com a justificativa. A decisão segue a regra do otimizador: a projeção vence quando lê menos marcas que a tabela base ou o mesmo número de marcas ao atender a um `ORDER BY` externo. São listadas com `status: not_applicable` e ainda não são estimadas: projeções agregadas, projeções com uma cláusula `WHERE` ou índices de exclusão próprios (`WITH SETTINGS add_minmax_index_*`), projeções ordenadas pela ordem de commit (`TYPE commit_order` e sua forma de consulta `_block_number, _block_offset`), projeções cuja chave de ordenação não está entre as colunas que armazenam (por exemplo, `ORDER BY _part_offset`), projeções que armazenam `_block_number` (o processo de gravação só as constrói quando uma parte é mesclada) e projeções que não fornecem todas as colunas lidas pela consulta. `force_optimize_projection`, `force_optimize_projection_name` e `preferred_optimize_projection_name` são ignorados. A contagem de marcas é modelada com grânulos dimensionados da mesma forma que no processo de gravação: um tamanho de grânulo para cada bloco recebido. Os blocos recebidos dependem de como a parte da projeção é gravada: um bloco consolidado para uma inserção ou materialização, ou sequências de `merge_max_block_size` para uma mesclagem. Como a parte não registra essa informação, a estimativa é calculada para cada uma dessas organizações. Quando elas produzem resultados diferentes na comparação com a leitura da tabela base, o relatório apresenta o intervalo e `verdict: too close to call` em vez de uma decisão. Se a definição de uma projeção deixou de ser compatível com a tabela, o relatório informa esse motivo.
+Projeções hipotéticas definidas com [`CREATE HYPOTHETICAL PROJECTION`](/pt-BR/reference/statements/hypothetical-projection#create-hypothetical-projection) também são candidatas. Para estimar uma projeção normal, seu índice primário é construído em memória sobre as partes que a consulta leria e, em seguida, é podado como seria o de uma projeção materializada.
+
+O relatório mostra as marcas e linhas que a projeção leria, um `read_ratio` em relação à leitura da tabela base e um `verdict` indicando se o otimizador a escolheria. Com `force_optimize_projection = 1` ou `prefer_optimize_projection = 1`, o otimizador usa qualquer projeção utilizável; assim, uma projeção que ele não escolheria pelo custo é informada como `chosen (forced)`.
+
+Quando o resultado depende de como a parte da projeção seria organizada, `marks_span` apresenta o intervalo, e uma decisão que poderia pender para qualquer lado é informada como `too close to call`. Em tabelas grandes, a estimativa lê uma amostra de grânulos (consulte `projection_scan_budget_rows`).
+
+Projeções agregadas, projeções com uma cláusula `WHERE`, com índices de exclusão próprios, com chave baseada na ordem de commit ou em coluna virtual, ou que armazenam `_block_number`, e projeções que não cobrem todas as colunas lidas pela consulta são informadas como `not_applicable`. `force_optimize_projection_name` e `preferred_optimize_projection_name` são ignorados, e `force_optimize_projection` não faz a instrução falhar.
 
 **Sintaxe**
 
@@ -1078,6 +1084,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 
 **Configurações**
 
+* `projection_scan_budget_rows` — quantas linhas uma estimativa de projeção pode ler antes de recorrer a uma amostra de grânulos. Padrão: `10000000`. `0` significa sem limite; `max_rows_to_read` pode reduzi-lo. Uma amostra lê pelo menos cerca de 30 grânulos, além de um por parte. Quando `max_rows_to_read` não permite isso, a estimativa fica como `unsupported`.
 * `empirical` — `1` (padrão) aplica o índice em memória aos grânulos restantes após o descarte inicial para medir a taxa de descarte (um limite superior). `0` ignora essa etapa. Em ambos os casos, se `empirical` não produzir um resultado (por estar desabilitado ou porque o índice não pode ser avaliado em memória), o estimador recorre às [estatísticas](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) da coluna e, se elas também não estiverem disponíveis, apresenta apenas um resumo da aplicabilidade.
 
 **Saída**
@@ -1106,11 +1113,11 @@ Estimation:
 ```
 
 * `source` — como a estimativa foi gerada.
-  * `empirical`: construiu o índice em memória sobre os grânulos remanescentes após o pruning de referência e contou os grânulos que o índice pularia. Este é um limite superior — veja as limitações em [`CREATE HYPOTHETICAL INDEX`](/pt-BR/reference/statements/hypothetical-index#limitations).
+  * `empirical`: construiu o índice em memória sobre os grânulos remanescentes após a poda de referência e contou os grânulos que o índice pularia. Este é um limite superior — veja as limitações em [`CREATE HYPOTHETICAL INDEX`](/pt-BR/reference/statements/hypothetical-index#limitations).
   * `statistical`: derivado de estatísticas de coluna. Usado quando a estimativa empírica está desabilitada (`empirical = 0`) ou não conseguiu produzir um resultado, e há estatísticas de coluna definidas nas colunas relevantes.
   * `applicability_only`: o índice é aplicável ao predicado, mas nem a estimativa empírica nem a estatística produziram um resultado (por exemplo, `empirical = 0` e nenhuma estatística de coluna definida). Informa `skip_ratio: 0.0%` como um limite conservador.
 * `empirical_reason` — por que a estimativa empírica não pôde ser executada. Exibido apenas com `empirical_status: unsupported`. Por exemplo, um valor diferente de zero para `merge_tree_min_rows_for_seek` ou `merge_tree_min_bytes_for_seek` faz com que uma leitura real agrupe intervalos de marcas, algo que a contagem por grânulo não modela; portanto, a estimativa recorre a `statistical` ou `applicability_only`.
-* `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Mostra que fração da tabela restou após o pruning por PK, partição e índices existentes, ou seja, a entrada para o índice hipotético.
+* `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Mostra que fração da tabela restou após a poda por PK, partição e índices existentes, ou seja, a entrada para o índice hipotético. Para uma projeção, `sampled_marks` é `<marks read> / <marks in the parts the query reads>`, e um primeiro número menor que o segundo significa que a estimativa usou uma amostra.
 * `est_bytes` — uma estimativa dos bytes lidos, derivada do tamanho médio de linha da tabela; por isso, é aproximada e varia conforme o armazenamento e a compressão. A linha de referência aparece apenas quando a consulta lê linhas; a linha de cada candidato, apenas quando a estimativa de bytes da linha de referência é conhecida.
 
 A configuração é escrita inline entre `WHATIF` e `SELECT` — não há palavra-chave `SETTINGS` (isso corresponde à forma como outras variantes de `EXPLAIN` aceitam suas opções).
@@ -1192,7 +1199,7 @@ Se nenhum dos dois caminhos estiver disponível (por exemplo, `empirical = 0` e 
 
 **Projeções hipotéticas**
 
-Uma projeção normal é estimada da mesma forma, com base nas partes que a consulta leria após a eliminação por chave primária e por partição:
+Uma projeção normal é estimada da mesma forma, com base nas partes que a consulta leria após a poda por chave primária e por partição:
 
 ```sql
 CREATE TABLE t (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;

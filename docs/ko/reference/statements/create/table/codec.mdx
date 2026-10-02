@@ -106,7 +106,7 @@ ClickHouse는 범용 코덱과 특수 코덱을 지원합니다.
 
 ### DoubleDelta {#doubledelta}
 
-`DoubleDelta(bytes_size)` — 델타의 델타를 계산하여 압축된 바이너리 형식으로 기록합니다. `bytes_size`는 [Delta](#delta) 코덱의 `delta_bytes`와 유사한 의미를 갖습니다. `bytes_size`를 인수로 지정하는 방식은 더 이상 권장되지 않으며 향후 릴리스에서 지원이 제거될 예정입니다. 시계열 데이터처럼 스트라이드가 일정한 단조 시퀀스에서 최적의 압축률을 얻을 수 있습니다. 모든 숫자 타입에 사용할 수 있습니다. Gorilla TSDB에서 사용되는 알고리즘을 구현하고, 이를 확장하여 64비트 타입을 지원합니다. 32비트 델타에는 추가로 1비트를 사용합니다. 즉, 4비트 프리픽스 대신 5비트 프리픽스를 사용합니다. 자세한 내용은 [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf)의 「Compressing Time Stamps」를 참조하십시오. DoubleDelta는 데이터 전처리 코덱이므로 단독으로 사용할 수 없습니다.
+`DoubleDelta(bytes_size)` — 델타의 델타를 계산하여 압축된 바이너리 형식으로 기록합니다. `bytes_size`는 [Delta](#delta) 코덱의 `delta_bytes`와 유사한 의미를 갖습니다. `bytes_size`를 인수로 지정하는 방식은 사용 중단 예정이며 향후 릴리스에서 지원이 제거될 예정입니다. 시계열 데이터처럼 스트라이드가 일정한 단조 시퀀스에서 최적의 압축률을 얻을 수 있습니다. 모든 숫자 타입에 사용할 수 있습니다. Gorilla TSDB에서 사용되는 알고리즘을 구현하고, 이를 확장하여 64비트 타입을 지원합니다. 32비트 델타에는 추가로 1비트를 사용합니다. 즉, 4비트 프리픽스 대신 5비트 프리픽스를 사용합니다. 자세한 내용은 [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf)의 「Compressing Time Stamps」를 참조하십시오.
 
 ### GCD {#gcd}
 

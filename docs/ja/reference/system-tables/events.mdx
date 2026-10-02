@@ -338,6 +338,10 @@ syslog の非同期キューに送信されたメッセージ数 (受け入れ�
 
 text&#95;log の非同期キューに送信されたメッセージ (受け付けられたもの、または破棄されたもの) の総数
 
+### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
+
+自動並列レプリカが、単一ノードのプランとの比較用に、並列レプリカを使用する候補プランを構築した回数です。こうして構築されたプランが必ず使用されるとは限りません。プランはコスト見積もりのために構築されるものであり、単一ノードのプランが優位と判断された場合は破棄されます
+
 ### AzureClients {#azureclients}
 
 作成された Azure Blob Storage コンテナークライアントの数。
@@ -593,10 +597,6 @@ Merge モードでパッチパートを適用するための索引の構築に�
 ### CachedReadBufferCreateBufferMicroseconds {#cachedreadbuffercreatebuffermicroseconds}
 
 バッファ準備時間
-
-### CachedReadBufferPredownloadedBytes {#cachedreadbufferpredownloadedbytes}
-
-ファイルシステムキャッシュの取得元から読み取られたバイト数。キャッシュセグメントは全体を左から右へ読み取るため、必要なデータに到達するだけでも、現在のタスクには関係のないセグメントの一部を事前ダウンロードする必要が生じる場合があります
 
 ### CachedReadBufferPredownloadedFromSourceBytes {#cachedreadbufferpredownloadedfromsourcebytes}
 

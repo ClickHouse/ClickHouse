@@ -145,7 +145,7 @@ ALTER TABLE iceberg_table DROP PARTITION 2;
 ALTER TABLE iceberg_table DROP PARTITION (2, 5);
 ```
 
-変換を用いて定義されたパーティションでは、変換済みのパーティションキーの値をリテラルとして指定することも、変換前の元の値に同じ変換式を適用して指定することもできます。サポートされている変換は `identity`、`icebergBucket`、`icebergTruncate`、`toYearNumSinceEpoch`、`toMonthNumSinceEpoch`、`toRelativeDayNum`、`toRelativeHourNum` です。単一カラムのパーティションで変換式を使用する場合は、`tuple(...)` で囲む必要があります:
+変換を用いて定義されたパーティションでは、変換済みのパーティションキーの値をリテラルとして指定することも、変換前の元の値に同じ変換式を適用して指定することもできます。サポートされている変換は `identity`、`icebergBucket`、`icebergTruncate`、`icebergYear`、`icebergMonth`、`icebergDay`、`icebergHour` です。また、`PARTITION BY` で使用される別名 `toYearNumSinceEpoch`、`toMonthNumSinceEpoch`、`toRelativeDayNum`、`toRelativeHourNum` も指定でき、これらの変換として評価されます。単一カラムのパーティションで変換式を使用する場合は、`tuple(...)` で囲む必要があります:
 
 ```sql
 ALTER TABLE iceberg_table DROP PARTITION 0;

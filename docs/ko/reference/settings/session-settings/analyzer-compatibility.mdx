@@ -61,7 +61,7 @@ Nested에 복합 식별자를 추가할 수 있도록 합니다. 이 설정을 �
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "projection에서 JOIN USING의 식별자를 해석하도록 강제합니다"}]}]} />
 
-projection에서 JOIN USING의 식별자를 해석하도록 강제합니다(예: `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)`에서는 `t1.b = t2.b`가 아니라 `t1.a + 1 = t2.b`를 기준으로 조인이 수행됩니다). SELECT 목록 내 하위 표현식에 정의된 별칭도 고려됩니다(예: `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)`에서는 `t1.a + 1 = t2.b`를 기준으로 조인이 수행됩니다). 일치하는 별칭이 최상위 별칭이 아니라 SELECT 목록 내 하위 표현식에 정의된 경우, 해당 쿼리에서는 병렬 레플리카가 비활성화됩니다. 원격 서버로 전송되는 쿼리(`Distributed` 테이블, `remote` 테이블 함수)는 원격 서버에서 식별자를 전혀 해석할 수 없는 경우에만 예외와 함께 거부됩니다. 별칭이 왼쪽 테이블의 실제 컬럼을 가리는 경우 원격 서버는 대신 해당 컬럼을 기준으로 조인하므로, 결과가 로컬 실행과 다를 수 있습니다.
+projection에서 JOIN USING의 식별자를 해석하도록 강제합니다(예: `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)`에서는 `t1.b = t2.b`가 아니라 `t1.a + 1 = t2.b`를 기준으로 조인이 수행됩니다). `WITH` 절, SELECT 목록 내 하위 표현식, 기타 절 등 쿼리의 다른 위치에 정의된 별칭도 고려됩니다(예: `WITH a + 1 AS b SELECT count() FROM t1 JOIN t2 USING (b)` 및 `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)`에서는 `t1.a + 1 = t2.b`를 기준으로 조인이 수행됩니다). 일치하는 별칭이 SELECT 목록의 최상위 별칭이 아닌 경우, 해당 쿼리에서는 병렬 레플리카가 비활성화됩니다. 원격 서버로 전송되는 쿼리(`Distributed` 테이블, `remote` 테이블 함수)는 원격 서버에서 식별자를 전혀 해석할 수 없는 경우에만 예외와 함께 거부됩니다. 별칭이 왼쪽 테이블의 실제 컬럼을 가리는 경우 원격 서버는 대신 해당 컬럼을 기준으로 조인하므로, 결과가 로컬 실행과 다를 수 있습니다.
 
 ## analyzer_compatibility_multiple_joins_qualify_column_names {#analyzer_compatibility_multiple_joins_qualify_column_names}
 

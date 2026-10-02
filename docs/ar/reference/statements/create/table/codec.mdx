@@ -106,7 +106,7 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 ### DoubleDelta {#doubledelta}
 
-`DoubleDelta(bytes_size)` — يحسب دلتا الفروق ويكتبها بصيغة ثنائية مدمجة. يحمل `bytes_size` معنى مشابهاً لـ `delta_bytes` في برنامج ترميز [Delta](#delta). أصبح تحديد `bytes_size` كوسيط مهجوراً، وستُزال دعمه في إصدار مستقبلي. تتحقق أفضل معدلات الضغط للتسلسلات الرتيبة ذات stride ثابت، مثل بيانات السلاسل الزمنية. يمكن استخدامه مع أي نوع رقمي. يطبق الخوارزمية المستخدمة في Gorilla TSDB، مع توسيعها لدعم الأنواع ذات 64 بت. يستخدم بتاً إضافياً واحداً لفروق 32 بت: بادئات من 5 بت بدلاً من بادئات من 4 بت. لمزيد من المعلومات، راجع Compressing Time Stamps في [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf). يُعد DoubleDelta برنامج ترميز لإعداد البيانات، أي لا يمكن استخدامه بصورة مستقلة.
+`DoubleDelta(bytes_size)` — يحسب دلتا الفروق ويكتبها بصيغة ثنائية مضغوطة. يحمل `bytes_size` معنى مشابهاً لـ `delta_bytes` في برنامج ترميز [دلتا](#delta). تم إهمال تحديد `bytes_size` كوسيطة، وستُزال دعمه في إصدار مستقبلي. تتحقق أفضل معدلات الضغط للتسلسلات الرتيبة ذات stride ثابت، مثل بيانات السلاسل الزمنية. يمكن استخدامه مع أي نوع رقمي. يطبق الخوارزمية المستخدمة في Gorilla TSDB، مع توسيعها لدعم الأنواع ذات 64 بت. يستخدم بتاً إضافياً واحداً لفروق 32 بت: بادئات من 5 بت بدلاً من بادئات من 4 بت. لمزيد من المعلومات، راجع Compressing Time Stamps في [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
 
 ### GCD {#gcd}
 

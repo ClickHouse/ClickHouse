@@ -94,6 +94,16 @@ HTTP CORS 헤더를 추가합니다.
 
 아카이브 파일(예: tar 아카이브)에 쓸 때 사용하는 적응형 버퍼의 최대 크기를 제한합니다
 
+## array_count_legacy_uint32_result {#array_count_legacy_uint32_result}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "이제 `arrayCount`는 `UInt32` 대신 `UInt64`를 반환하므로, 조건과 일치하는 원소가 `4294967295`개를 초과하는 배열에서도 정확한 결과를 얻을 수 있습니다. 이전처럼 `UInt32`를 반환하려면 이 설정을 `true`로 지정하십시오."}]}]} />
+
+이 설정을 활성화하면 `arrayCount` 함수는 `UInt64` 대신 26.10 이전 버전과 같이 `UInt32`를 반환합니다. `UInt32` 결과는 조건과 일치하는 원소가 `4294967295`개를 초과하는 배열에서 아무런 경고 없이 오버플로되어 값이 순환합니다. 또한 이 설정은 결과의 상수성(constness)도 26.10 이전 방식으로 되돌립니다. 즉, 프레디케이트가 상수 false로 축약되면 배열이 상수가 아니더라도 상수 결과 컬럼이 생성됩니다.
+
+롤링 업그레이드 중에는 아직 업그레이드되지 않은 서버가 시작한 분산 쿼리의 동작이 전혀 바뀌지 않도록, 업그레이드된 서버에서 분산 쿼리를 실행하는 사용자에 대해 이 설정을 활성화하고 업그레이드가 완료되면 제거하십시오. 이전 버전의 initiator는 이 설정을 전달하지 않으므로, 설정을 활성화하지 않으면 업그레이드된 세그먼트에서 로컬로 평가되는 유형에 민감한 표현식이 `UInt64`를 받게 됩니다. 세그먼트 측 쿼리를 어떤 사용자로 실행할지는 클러스터 구성에 따라 달라집니다. interserver `secret`이 구성되어 있으면 initiator의 현재 사용자로 실행되고, 그렇지 않으면 클러스터 정의 또는 `remote` 테이블 함수에 지정된 사용자(지정하지 않은 경우 `default`)로 실행됩니다. 가장 간단하면서도 확실한 방법은 업그레이드된 서버의 모든 사용자에 대해 이 설정을 활성화하는 것입니다.
+
 ## arrow_flight_request_descriptor_type {#arrow_flight_request_descriptor_type}
 
 <SettingsInfoBlock type="ArrowFlightDescriptorType" default_value="path" />
@@ -360,6 +370,7 @@ true로 설정하면 DESCRIBE 쿼리 결과에 컬럼명과 타입만 포함됩�
 * `polyglot` — 다른 방언(MySQL, PostgreSQL 등)의 SQL을 ClickHouse SQL로 트랜스파일합니다. 실험적 설정 `allow_experimental_polyglot_dialect`이 필요합니다.
 * `promql` — `promql_database`, `promql_table`, `promql_evaluation_time` 설정으로 구성된 TimeSeries 테이블에서 평가되는 PromQL(Prometheus Query Language)입니다.
 * `clickhouse_json` — SQL 텍스트 대신 쿼리를 JSON AST(`parseQueryToJSON`의 출력)로 해석합니다. 방언을 다시 전환할 수 있도록 일반 형식의 `SET` 쿼리도 계속 인식됩니다. 실험적 설정 `enable_json_ast_dialect`이 필요합니다.
+* `logsql` — VictoriaLogs의 로그 쿼리 언어인 LogsQL입니다. `logsql_database` 및 `logsql_table` 설정으로 구성된 로그 테이블에 대한 `SELECT` 쿼리로 변환됩니다. 실험적 설정 `allow_experimental_logsql_dialect`이 필요합니다.
 * `trino` — Trino SQL: Trino 구문(`ARRAY[...]`, `TRY_CAST`, `UNNEST` 등)을 변환하고 Trino 함수 이름을 이에 상응하는 ClickHouse 함수로 매핑합니다. 실험적 설정 `enable_trino_dialect`이 필요합니다.
 
 ## discard_query_data {#discard_query_data}
@@ -895,9 +906,9 @@ true로 설정하면 `KILL QUERY`는 현재 실행 중인 `KILL` SQL 문을 제�
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`arrayJoin` 함수와 함께 사용된 비결정적 함수는 `ARRAY JOIN` 절과 마찬가지로 출력 행마다 서로 다른 값을 반환합니다. 이 설정을 사용하면 원본 행당 하나의 값을 반환하던 기존 방식으로 되돌릴 수 있습니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`arrayJoin` 함수와 함께 사용된 비결정적 함수 및 블록 의존 함수는 `ARRAY JOIN` 절과 마찬가지 방식으로 평가됩니다."}]}]} />
 
-`arrayJoin` 함수와 함께 사용된 비결정적 함수가 조인된 값에 의존하지 않을 때(예: 동일한 `SELECT` 내의 `rand()` 또는 `generateUUIDv4()`) 이 함수를 평가하는 방식을 지정합니다. 기본적으로는 `ARRAY JOIN` 절과 마찬가지로 출력 행마다 서로 다른 값을 반환합니다. 이 설정을 활성화하면 이전 버전의 동작으로 돌아갑니다. 즉, 원본 행당 하나의 값을 생성하고, 해당 행에서 확장된 모든 행에 같은 값을 반복해서 사용합니다.
+`arrayJoin` 함수와 함께 사용된 비결정적 함수 및 블록 의존 함수를 평가하는 방식을 지정합니다. 기본적으로는 `ARRAY JOIN` 절과 마찬가지로 `rand()`는 출력 행마다 서로 다른 값을 반환하고, `runningDifference` 또는 `neighbor`는 확장된 결과의 블록을 기준으로 동작합니다. 이 설정을 활성화하면 이전 버전의 동작으로 돌아갑니다.
 
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 

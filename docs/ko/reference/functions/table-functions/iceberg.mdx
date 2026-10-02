@@ -428,7 +428,7 @@ ALTER TABLE iceberg_table DROP PARTITION 2;
 ALTER TABLE iceberg_table DROP PARTITION (2, 5);
 ```
 
-변환을 사용해 정의한 파티션에는 변환된 파티션 키 값을 리터럴로 지정하거나, 변환 전 원본 값에 동일한 변환 표현식을 적용해 지정할 수 있습니다. 지원되는 변환은 `identity`, `icebergBucket`, `icebergTruncate`, `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum`, `toRelativeHourNum`입니다. 단일 컬럼 파티션에서는 변환 표현식을 `tuple(...)`로 감싸야 합니다:
+변환을 사용해 정의한 파티션에는 변환된 파티션 키 값을 리터럴로 지정하거나, 변환 전 원본 값에 동일한 변환 표현식을 적용해 지정할 수 있습니다. 지원되는 변환은 `identity`, `icebergBucket`, `icebergTruncate`, `icebergYear`, `icebergMonth`, `icebergDay`, `icebergHour`입니다. `PARTITION BY` 별칭인 `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum`, `toRelativeHourNum`도 사용할 수 있으며, 이들은 해당 변환으로 평가됩니다. 단일 컬럼 파티션에서는 변환 표현식을 `tuple(...)`로 감싸야 합니다:
 
 ```sql
 ALTER TABLE iceberg_table DROP PARTITION 0;
@@ -525,24 +525,17 @@ value: 993
 
 ### 컴팩션 {#iceberg-writes-compaction}
 
-ClickHouse는 Iceberg 테이블의 컴팩션을 지원합니다. 현재는 메타데이터를 업데이트하면서 포지션 삭제 파일을 데이터 파일(data files)로 머지할 수 있습니다. 이전 스냅샷 ID와 타임스탬프는 변경되지 않으므로, 동일한 값으로 time-travel 기능을 계속 사용할 수 있습니다.
+데이터 컴팩션(포지션 삭제 파일을 데이터 파일로 머지하는 작업)은 오픈 소스 빌드에 구현되어 있지 않으며, 오픈 소스 빌드에서 Iceberg 테이블에 `OPTIMIZE TABLE`을 실행하면 `NOT_IMPLEMENTED`가 반환됩니다. 재작성된 세대를 원자적으로 게시하지 않으므로, 리더가 어느 세대를 읽게 될지는 정의되지 않습니다.
 
-사용 방법:
+매니페스트 컴팩션은 테이블의 매니페스트 파일을 통합하는 작업입니다. 이 작업에는 Iceberg 형식 버전 2가 필요하며, 버전 1 및 버전 3 테이블은 거부됩니다. 데이터 파일마다 개별 `key_metadata`가 포함된 암호화된 테이블도 매니페스트를 재작성해야 하는 경우에는 거부됩니다.
 
 ```sql
 SET allow_experimental_iceberg_compaction = 1
 
-OPTIMIZE TABLE iceberg_writes_example;
-
-SELECT *
-FROM iceberg_writes_example
-FORMAT VERTICAL;
-
-Row 1:
-──────
-x: Ivanov
-y: 993
+OPTIMIZE TABLE iceberg_writes_example MANIFEST;
 ```
+
+파일을 회수하려면 [`expire_snapshots`](#iceberg-expire-snapshots)를 사용하십시오. 이 기능은 형식 버전 2에서만 동작하며, 트랜잭션 카탈로그(transactional catalog)를 사용하는 테이블에는 적용할 수 없습니다.
 
 ### 스냅샷 만료 {#iceberg-expire-snapshots}
 
@@ -630,7 +623,7 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 
 #### 스냅샷 보존 정책 {#iceberg-snapshot-retention-policy}
 
-`expire_snapshots` 명령은 [Iceberg 스냅샷 retention policy](https://iceberg.apache.org/spec/#snapshot-retention-policy)를 따릅니다. 보존 설정은 Iceberg 테이블 속성과 참조별 재정의 값으로 구성됩니다.
+`expire_snapshots` 명령은 [Iceberg 스냅샷 보존 정책](https://iceberg.apache.org/spec/#snapshot-retention-policy)를 따릅니다. 보존 설정은 Iceberg 테이블 속성과 참조별 재정의 값으로 구성됩니다.
 
 | 속성                                     | 범위  | 기본값                                                                | 설명                                            |
 | -------------------------------------- | --- | ------------------------------------------------------------------ | --------------------------------------------- |
@@ -655,15 +648,16 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 `ALTER TABLE EXECUTE` 권한이 필요합니다. 이 권한은 ClickHouse 접근 제어 계층 구조에서 `ALTER TABLE`의 하위 권한입니다. 이 권한만 개별적으로 부여하거나 상위 권한을 통해 부여할 수 있습니다.
 
 ```sql
--- EXECUTE 권한만 부여
+-- Grant only EXECUTE permission
 GRANT ALTER TABLE EXECUTE ON my_iceberg_table TO my_user;
 
--- 또는 모든 ALTER TABLE 권한 부여 (ALTER TABLE EXECUTE 포함)
+-- Or grant all ALTER TABLE permissions (includes ALTER TABLE EXECUTE)
 GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 ```
 
 <Note>
   * Iceberg 형식 버전 2 테이블만 지원됩니다(v1 스냅샷은 정리 작업에 필요한 파일을 안전하게 식별하는 데 필요한 `manifest-list`를 보장하지 않음)
+  * 트랜잭션 카탈로그 기반 테이블은 `NOT_IMPLEMENTED` 오류와 함께 거부됩니다
   * 지정된 타임스탬프보다 오래된 경우에도 현재 스냅샷은 항상 유지됩니다
   * `allow_insert_into_iceberg` setting이 활성화되어 있어야 합니다
   * `allow_experimental_expire_snapshots` setting이 활성화되어 있어야 합니다

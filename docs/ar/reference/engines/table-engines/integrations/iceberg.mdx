@@ -145,7 +145,7 @@ ALTER TABLE iceberg_table DROP PARTITION 2;
 ALTER TABLE iceberg_table DROP PARTITION (2, 5);
 ```
 
-بالنسبة إلى التقسيم المُعرَّف باستخدام تحويل، يمكنك تمرير قيمة مفتاح التقسيم بعد تحويلها مسبقًا على هيئة قيمة حرفية، أو تمرير تعبير التحويل نفسه مطبَّقًا على قيمة المصدر الخام. التحويلات المدعومة هي `identity` و`icebergBucket` و`icebergTruncate` و`toYearNumSinceEpoch` و`toMonthNumSinceEpoch` و`toRelativeDayNum` و`toRelativeHourNum`. أما في حالة التقسيم القائم على عمود واحد، فيجب إحاطة صيغة تعبير التحويل بـ `tuple(...)`:
+بالنسبة إلى التقسيم المُعرَّف باستخدام تحويل، يمكنك تمرير قيمة مفتاح التقسيم بعد تحويلها مسبقًا على هيئة قيمة حرفية، أو تمرير تعبير التحويل نفسه مطبَّقًا على قيمة المصدر الخام. التحويلات المدعومة هي `identity` و`icebergBucket` و`icebergTruncate` و`icebergYear` و`icebergMonth` و`icebergDay` و`icebergHour`؛ كما تُقبَل الأسماء البديلة المستخدمة في `PARTITION BY`، وهي `toYearNumSinceEpoch` و`toMonthNumSinceEpoch` و`toRelativeDayNum` و`toRelativeHourNum`، وتُقيَّم بوصفها التحويلات المقابلة لها. أما في حالة التقسيم القائم على عمود واحد، فيجب إحاطة صيغة تعبير التحويل بـ `tuple(...)`:
 
 ```sql
 ALTER TABLE iceberg_table DROP PARTITION 0;

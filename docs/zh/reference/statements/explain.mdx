@@ -1068,7 +1068,13 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 
 在*不*将索引物化到磁盘的前提下，估算假设的跳过索引能为 `SELECT` 查询带来的收益。先使用 [`CREATE HYPOTHETICAL INDEX`](/zh/reference/statements/hypothetical-index#create-hypothetical-index) 定义一个或多个候选索引，再运行 `EXPLAIN WHATIF SELECT ...`，即可查看每个候选索引的以下信息：是否适用、预计读取的标记数、预计字节数以及跳过比例。
 
-使用 [`CREATE HYPOTHETICAL PROJECTION`](/zh/reference/statements/hypothetical-projection#create-hypothetical-projection) 定义的假设投影同样可以作为候选项。对于普通投影，系统会基于查询将要读取的数据分片，在内存中构建其主索引，并按照已物化投影的裁剪方式进行裁剪，从而完成估算。报告会给出读取该投影所涉及的标记数和行数、相对于基表读取的 `read_ratio` (低于 `1x` 表示工作量更少，高于则表示更多) ，以及 `verdict` 及其依据。判定遵循优化器的规则：若投影读取的标记数少于基表，或标记数相同但能满足外层 `ORDER BY`，则选用投影。以下投影会被标记为 `status: not_applicable`，目前暂不支持估算：聚合投影；带有 `WHERE` 子句或自带跳过索引 (`WITH SETTINGS add_minmax_index_*`) 的投影；按提交顺序排序的投影 (`TYPE commit_order` 及其 `_block_number, _block_offset` 查询形式) ；排序键不在其存储列中的投影 (例如 `ORDER BY _part_offset`) ；存储了 `_block_number` 的投影 (写入器仅在数据分片合并时才会构建此类投影) ；以及未提供查询所需全部列的投影。`force_optimize_projection`、`force_optimize_projection_name` 和 `preferred_optimize_projection_name` 会被忽略。标记数的建模方式与写入器划分粒度的方式一致：写入器每接收一个块，就按一个粒度大小进行划分。至于具体接收哪些块，则取决于写入投影分片的路径——插入或物化时为一个经过合并压缩的块，合并时则为一系列 `merge_max_block_size` 大小的块——而数据分片并不会记录这些信息，因此系统会针对每种布局分别计算估算值。若不同布局与基表读取的比较结论不一致，报告将给出取值范围并返回 `verdict: too close to call`，而不给出明确判定。如果某个投影的定义已不再适配该表，报告会注明相应原因。
+使用 [`CREATE HYPOTHETICAL PROJECTION`](/zh/reference/statements/hypothetical-projection#create-hypothetical-projection) 定义的假设PROJECTION同样可以作为候选项。对于普通PROJECTION，系统会基于查询将要读取的parts，在内存中构建其主索引，并按照已物化PROJECTION的裁剪方式进行裁剪，从而完成估算。
+
+报告会给出该PROJECTION将读取的标记数和行数、相对于基表读取的 `read_ratio`，以及表明优化器是否会选用该PROJECTION的 `verdict`。当设置 `force_optimize_projection = 1` 或 `prefer_optimize_projection = 1` 时，优化器会使用任何可用的PROJECTION，因此对于按成本本不会被选中的PROJECTION，报告会将其标记为 `chosen (forced)`。
+
+当结果取决于PROJECTION分片的布局方式时，`marks_span` 会给出取值范围；若判定结论难以确定，则报告为 `too close to call`。对于大表，估算只会读取部分粒度作为样本 (参见 `projection_scan_budget_rows`) 。
+
+以下PROJECTION会被报告为 `not_applicable`：聚合PROJECTION；带有 `WHERE` 子句、自带跳过索引、以提交顺序或虚拟列作为键、或存储了 `_block_number` 的PROJECTION；以及未覆盖查询所需全部列的PROJECTION。`force_optimize_projection_name` 和 `preferred_optimize_projection_name` 会被忽略，且 `force_optimize_projection` 不会导致该语句执行失败。
 
 **语法**
 
@@ -1078,6 +1084,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 
 **设置**
 
+* `projection_scan_budget_rows` — PROJECTION估算在改为对粒度进行抽样之前最多可读取的行数。默认值：`10000000`。`0` 表示不限制；`max_rows_to_read` 可进一步降低该上限。抽样至少会读取约 30 个粒度，且每个parts至少读取一个；如果 `max_rows_to_read` 的限制无法满足这一要求，则估算结果为 `unsupported`。
 * `empirical` — `1` (默认值) 在内存中对基线裁剪后剩余的粒度应用索引，以测量跳过率 (上界) 。`0` 不执行这一步。无论取何值，如果经验估算未得出结果 (因为已禁用，或无法在内存中评估索引) ，估算器就会改用列[统计信息](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)；如果两者都不可用，最终仅汇总索引是否适用。
 
 **输出**
@@ -1106,11 +1113,11 @@ Estimation:
 ```
 
 * `source` — 估算的来源。
-  * `empirical`：在内存中基于经过基线剪枝后的粒度构建索引，并统计该索引原本可以跳过的粒度数。这是一个上界——请参阅 [`CREATE HYPOTHETICAL INDEX`](/zh/reference/statements/hypothetical-index#limitations) 中的限制。
+  * `empirical`：在内存中基于经过基线裁剪后的粒度构建索引，并统计该索引原本可以跳过的粒度数。这是一个上界——请参阅 [`CREATE HYPOTHETICAL INDEX`](/zh/reference/statements/hypothetical-index#limitations) 中的限制。
   * `statistical`：根据列统计信息推导得出。当经验估算被禁用 (`empirical = 0`) ，或经验估算无法得出结果，且相关列已定义列统计信息时使用。
   * `applicability_only`：该索引适用于该谓词，但经验估算和统计估算都未得出结果 (例如 `empirical = 0` 且未定义列统计信息) 。作为保守上界，会报告 `skip_ratio: 0.0%`。
 * `empirical_reason` — 经验估算无法运行的原因。仅在 `empirical_status: unsupported` 时显示。例如，非零的 `merge_tree_min_rows_for_seek` 或 `merge_tree_min_bytes_for_seek` 会使实际读取合并标记范围，而按粒度计数未对此建模，因此估算会回退到 `statistical` 或 `applicability_only`。
-* `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`。显示在经过 PK、分区和现有索引剪枝后，表中有多少比例的数据被保留下来，即假设索引的输入。
+* `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`。显示在经过 PK、分区和现有索引裁剪后，表中有多少比例的数据被保留下来，即假设索引的输入。对于 PROJECTION，`sampled_marks` 为 `<marks read> / <marks in the parts the query reads>`；若第一个数字小于第二个数字，则说明该估算基于样本。
 * `est_bytes` — 读取字节数的估算值，由表的平均行大小推导而来，因此只是近似值，并会随存储和压缩情况而变化。只有当查询读取行时才会显示 baseline 行；只有在已知 baseline 字节估算值时，才会显示各候选项对应的行。
 
 该设置以内联方式写在 `WHATIF` 与 `SELECT` 之间——没有 `SETTINGS` 关键字 (这与其他 `EXPLAIN` 变体接受选项的方式一致) 。
@@ -1119,7 +1126,7 @@ Estimation:
 
 **组合行 (多个候选项)**
 
-当有两个或更多候选项以经验方式评估时，`EXPLAIN WHATIF` 会在各候选项的行之后追加一个名为 `(combined: idx_a, idx_b, ...)` 的额外块，用于报告同时拥有*所有*这些索引时的联合收益：在实际读取中，只有通过*每一个*跳过索引的粒度才会被保留，因此组合估算是各候选项保留粒度的交集。也正因如此，其 `skip_ratio` 至少不低于最佳的单个候选项——互补的索引组合起来能剪枝更多数据，而冗余的索引则不会改变该值。
+当有两个或更多候选项以经验方式评估时，`EXPLAIN WHATIF` 会在各候选项的行之后追加一个名为 `(combined: idx_a, idx_b, ...)` 的额外块，用于报告同时拥有*所有*这些索引时的联合收益：在实际读取中，只有通过*每一个*跳过索引的粒度才会被保留，因此组合估算是各候选项保留粒度的交集。也正因如此，其 `skip_ratio` 至少不低于最佳的单个候选项——互补的索引组合起来能裁剪更多数据，而冗余的索引则不会改变该值。
 
 只有 `source: empirical` 的候选项才会参与计算，因为组合行是通过对它们按粒度的保留集合求交集构建而成的。以 `statistical` 或 `applicability_only` 方式估算的候选项没有按粒度的数据，因此会被排除；所以只有当至少两个候选项得出了经验估算时，才会显示组合块，否则将省略该块 (例如在 `empirical = 0` 时) 。其估算字段的含义与单个候选项的经验块相同，只是 `elapsed_us` 为 `0`——组合估算是由各候选项的扫描结果推导得出的，并未执行新的扫描。合成的 `(combined: ...)` 名称仅用作报告标签，不能用于 `force_data_skipping_indices`。
 
@@ -1157,9 +1164,9 @@ Estimation:
   sampled_marks:    100 / 100
 ```
 
-假设性 `minmax` 会将标记数从 100 个剪枝至 1 个——`skip_ratio: 99.0%`。 (`est_bytes` 根据平均行大小估算，因此具体数值会有所不同。)
+假设性 `minmax` 会将标记数从 100 个裁剪至 1 个——`skip_ratio: 99.0%`。 (`est_bytes` 根据平均行大小估算，因此具体数值会有所不同。)
 
-**统计估算示例**
+**统计示例**
 
 列[统计信息](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)默认处于关闭状态。要触发 `statistical` 路径，请先在相关列上定义统计信息，然后等待物化变更完成：
 
@@ -1190,9 +1197,9 @@ Estimation:
 
 如果这两种路径都不可用 (例如 `empirical = 0` 且未定义列统计信息) ，估算器会报告 `source: applicability_only`，以及保守的 `skip_ratio: 0.0%`。
 
-**假设投影**
+**假设PROJECTION**
 
-普通投影也采用相同的方式估算，即基于查询在经过主键和分区裁剪后将要读取的 parts 进行估算：
+普通PROJECTION也采用相同的方式估算，即基于查询在经过主键和分区裁剪后将要读取的 parts 进行估算：
 
 ```sql
 CREATE TABLE t (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;
@@ -1225,7 +1232,7 @@ Estimation:
   elapsed_us:       1126
 ```
 
-`marks` 和 `rows` 指投影自身读取时会涉及的标记和行，而不是基表读取量中的一部分，因为投影粒度与基表粒度包含的行不同。`read_ratio` 是这些标记数与基表标记数之比，因此 `0.02x` 表示读取工作量只有基表的五十分之一，`15x` 表示是基表的十五倍。`verdict` 按照优化器自身的规则判定——标记数少于基表，或标记数相同且投影能满足查询的 `ORDER BY` 要求——因此候选项即使是 `applicable`，也未必会被选中。
+`marks` 和 `rows` 指PROJECTION自身读取时会涉及的标记和行，而不是基表读取量中的一部分，因为PROJECTION粒度与基表粒度包含的行不同。`read_ratio` 是这些标记数与基表标记数之比，因此 `0.02x` 表示读取工作量只有基表的五十分之一，`15x` 表示是基表的十五倍。`verdict` 按照优化器自身的规则判定——标记数少于基表，或标记数相同且PROJECTION能满足查询的 `ORDER BY` 要求——因此候选项即使是 `applicable`，也未必会被选中。
 
 ### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 

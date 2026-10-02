@@ -28,24 +28,6 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 - Отключить
 * 1 - Включить
 
-## query_plan_aggregation_in_order {#query_plan_aggregation_in_order}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "22.12"},{"label": "1"},{"label": "Выполнен некоторый рефакторинг, связанный с планом запроса"}]}]} />
-
-Включает или отключает оптимизацию агрегации в порядке выполнения на уровне плана запроса.
-Действует только в том случае, если значение настройки [`query_plan_enable_optimizations`](/ru/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) равно 1.
-
-<Note>
-  Это настройка экспертного уровня, которую разработчикам следует использовать только для отладки. В будущем настройка может измениться обратно несовместимым образом или быть удалена.
-</Note>
-
-Возможные значения:
-
-* 0 - Отключено
-* 1 - Включено
-
 ## query_plan_convert_any_join_to_semi_or_anti_join {#query_plan_convert_any_join_to_semi_or_anti_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -69,6 +51,14 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "1"},{"label": "Разрешает преобразовывать OUTER JOIN в INNER JOIN, если фильтр после JOIN всегда исключает значения по умолчанию"}]}]} />
 
 Разрешает преобразовывать `OUTER JOIN` в `INNER JOIN`, если фильтр после `JOIN` всегда исключает значения по умолчанию
+
+## query_plan_convert_outer_join_to_inner_join_transitively {#query_plan_convert_outer_join_to_inner_join_transitively}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Новая настройка, расширяющая `query_plan_convert_outer_join_to_inner_join`: дополнительно учитываются фильтр, расположенный выше по плану, и условия внешнего `JOIN`. Действует только при включенной настройке `query_plan_convert_outer_join_to_inner_join`."}]}]} />
+
+Расширяет действие `query_plan_convert_outer_join_to_inner_join`: дополнительно учитываются фильтр, расположенный выше по плану запроса, и условия внешнего `JOIN`. Действует только при включенной настройке `query_plan_convert_outer_join_to_inner_join`.
 
 ## query_plan_direct_read_from_text_index {#query_plan_direct_read_from_text_index}
 
@@ -138,6 +128,25 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 * 0 - Отключить
 * 1 - Включить
+
+## query_plan_filter_push_down_below_limit_by {#query_plan_filter_push_down_below_limit_by}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новая настройка, управляющая опусканием фильтра по столбцам ключа `LIMIT BY` ниже шага `LIMIT BY`. Установите значение false, чтобы фильтр оставался выше `LIMIT BY`."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Новая настройка, управляющая опусканием фильтра по столбцам ключа `LIMIT BY` ниже шага `LIMIT BY`. Установите значение false, чтобы фильтр оставался выше `LIMIT BY`."}]}]} />
+
+Включает или отключает опускание фильтров по столбцам ключа `LIMIT BY` ниже шага `LIMIT BY`.
+Действует, только если настройка [query&#95;plan&#95;enable&#95;optimizations](/ru/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) равна 1.
+Учитывается независимо от [query&#95;plan&#95;filter&#95;push&#95;down](/ru/reference/settings/session-settings/query-plan#query_plan_filter_push_down): проход опускания фильтров выполняется даже при отключённой настройке, если был добавлен runtime-фильтр `JOIN`.
+
+<Note>
+  Это настройка экспертного уровня, предназначенная только для отладки разработчиками. В будущем она может быть изменена без сохранения обратной совместимости или удалена.
+</Note>
+
+Возможные значения:
+
+* 0 — отключено
+* 1 — включено
 
 ## query_plan_fuse_filter_into_array_join {#query_plan_fuse_filter_into_array_join}
 
@@ -424,14 +433,6 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Использовать оптимизацию отложенной материализации при чтении файлов Parquet из объектного хранилища (включая таблицы Iceberg): в запросах `ORDER BY ... LIMIT n` столбцы, не необходимые для сортировки и фильтрации, считываются только для `n` строк, оставшихся после применения `LIMIT`. Действует только при включенной настройке `query_plan_optimize_lazy_materialization`.
 
-## query_plan_optimize_prewhere {#query_plan_optimize_prewhere}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Разрешает проталкивать фильтр в выражение PREWHERE для поддерживаемых хранилищ"}]}]} />
-
-Разрешает проталкивать фильтр в выражение PREWHERE для поддерживаемых хранилищ
-
 ## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -496,22 +497,6 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 * 0 - Отключить
 * 1 - Включить
-
-## query_plan_read_in_order {#query_plan_read_in_order}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-Включает или отключает оптимизацию чтения in-order на уровне плана запроса.
-Действует, только если значение настройки [`query_plan_enable_optimizations`](/ru/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) равно 1.
-
-<Note>
-  Это настройка экспертного уровня, которую разработчикам следует использовать только для отладки. В будущем эта настройка может измениться обратно несовместимым образом или быть удалена.
-</Note>
-
-Возможные значения:
-
-* 0 - Отключено
-* 1 - Включено
 
 ## query_plan_read_in_order_through_join {#query_plan_read_in_order_through_join}
 

@@ -913,14 +913,17 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
   إذا لم يكن هناك فهرس نصي مُعرّف، فستُجري الدالة مسحًا كاملًا للعمود بالقوة الغاشمة، وهو أبطأ بعدة مراتب من البحث عبر الفهرس.
 </Note>
 
-قبل البحث، تُجزِّئ الدالة كلًّا من الوسيطين `input` و`phrase` إلى رموز باستخدام مُقسِّم الرموز المحدد للفهرس النصي.
-إذا لم يكن للعمود فهرس نصي مُعرّف، فسيُستخدم بدلًا من ذلك مُقسِّم الرموز `splitByNonAlpha` — ما لم يتم تمرير مُقسِّم رموز باعتباره الوسيط الثالث الاختياري.
-يجب أن يكون وسيط مُقسِّم الرموز واحدًا من `splitByNonAlpha` أو `splitByString` أو `splitByRegexp` أو `ngrams` أو `asciiCJK` أو `icu`.
-لاحظ أن `splitByRegexp` غير مدعوم لـ `hasPhrase` عندما يعرّف الفهرس النصي أيضًا معالجًا لاحقًا.
+قبل البحث، تُجزِّئ الدالة الوسيط `input`، وكذلك الوسيط `phrase` عندما يكون من النوع `String`، إلى رموز باستخدام مُقسِّم الرموز المحدد للفهرس النصي.
+إذا لم يكن للعمود فهرس نصي مُعرّف، فسيُستخدم بدلًا من ذلك مُقسِّم الرموز `splitByNonAlpha` — ما لم يتم تمرير مُقسِّم رموز باعتباره الوسيط الثالث الاختياري.
+يجب أن يكون وسيط مُقسِّم الرموز واحدًا من `splitByNonAlpha` أو `splitByString` أو `splitByRegexp` أو `array` أو `ngrams` أو `asciiCJK` أو `icu`.
+
+إذا كان `input` من النوع [Array(String)](/ar/reference/data-types/array)، فتُجزَّأ عناصره إلى رموز كأي إدخال آخر، وتُشكّل رموزها تسلسلًا واحدًا لكل صف، لذا قد تمتد العبارة عبر عنصرين. ومع مُقسِّم الرموز `array` يكون كل عنصر رمزًا واحدًا، وبهذه الطريقة يُبحث في عمود يحتوي على قيم مُجزَّأة إلى رموز مسبقًا.
+إذا كان `phrase` من النوع [Array(String)](/ar/reference/data-types/array)، فإن عناصره هي الرموز المراد البحث عنها، بالترتيب ومع
+احتساب العناصر المكررة. تُتجاهل عناصر العبارة الفارغة، لأنه لا يوجد مُقسِّم رموز يُنتج رمزًا فارغًا.
 
 <Note>
-  عندما يعرّف الفهرس النصي [معالجًا مسبقًا](/ar/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (على سبيل المثال `lowerUTF8`)، تطبّقه `hasPhrase` على كلٍّ من `input` و`phrase` قبل تجزئتهما إلى رموز.
-  لا يُطبَّق المعالج المسبق إلا في مسار الفهرس النصي، لذلك قد تختلف النتائج بين الاستعلامات التي تستخدم الفهرس النصي والاستعلامات التي لا تستخدمه (مثل `SETTINGS use_skip_indexes = 0`).
+  عندما يعرّف الفهرس النصي [معالجًا مسبقًا](/ar/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (على سبيل المثال `lowerUTF8`)، تطبّقه `hasPhrase` على كلٍّ من `input` و`phrase` قبل تجزئتهما إلى رموز.
+  لا يُطبَّق المعالج المسبق إلا في مسار الفهرس النصي، لذلك قد تختلف النتائج بين الاستعلامات التي تستخدم الفهرس النصي والاستعلامات التي لا تستخدمه (مثل `SETTINGS use_skip_indexes = 0`).
   يُتسامح مع هذا التباين لتحسين سهولة استخدام البحث بالنص الكامل.
 </Note>
 
@@ -928,7 +931,7 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 ومن دون أي رموز فاصلة بينها. على سبيل المثال، تُرجع `hasPhrase('the quick brown fox', 'quick fox')` القيمة 0
 لأن &quot;brown&quot; تظهر بين &quot;quick&quot; و&quot;fox&quot;.
 
-**البنية**
+**الصيغة**
 
 ```sql
 hasPhrase(input, phrase[, tokenizer])
@@ -938,9 +941,9 @@ hasPhrase(input, phrase[, tokenizer])
 
 **وسيطات الدالة**
 
-* `input` — عمود الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
-* `phrase` — العبارة المراد البحث عنها. [`const String`](/ar/reference/data-types/string)
-* `tokenizer` — مُقسِّم الرموز المراد استخدامها. اختياري، والقيمة الافتراضية هي `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
+* `input` — عمود الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Nullable(String)`](/ar/reference/data-types/nullable) أو [`Nullable(FixedString)`](/ar/reference/data-types/nullable) أو [`Array(String)`](/ar/reference/data-types/array) أو [`Array(FixedString)`](/ar/reference/data-types/array) أو [`Array(Nullable(String))`](/ar/reference/data-types/array) أو [`Array(Nullable(FixedString))`](/ar/reference/data-types/array)
+* `phrase` — العبارة المراد البحث عنها. [`const String`](/ar/reference/data-types/string) أو [`const Array(String)`](/ar/reference/data-types/array)
+* `tokenizer` — مُقسِّم الرموز المراد استخدامها. اختياري، والقيمة الافتراضية هي `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
@@ -970,6 +973,30 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 ┌─hasPhrase('the quick brown fox jumps', 'quick fox')─┐
 │                                                   0 │
 └─────────────────────────────────────────────────────┘
+```
+
+**تسلسل رموز مُمرَّر على هيئة مصفوفات**
+
+```sql title=Query
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])
+```
+
+```response title=Response
+┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])─┐
+│                                                               1 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**عبارة تمتد عبر عنصرين**
+
+```sql title=Query
+SELECT hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])
+```
+
+```response title=Response
+┌─hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])─┐
+│                                                         1 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequence {#hasSubsequence}

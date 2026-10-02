@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
@@ -30,11 +31,14 @@ v26.9부터 사용되지 않음(obsolete): 분석기는 더 이상 비활성화�
 
 <ExperimentalBadge />
 
+<CloudOnlyBadge />
+
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
-Iceberg compaction 중 오래된 data files를 정리하도록 허용합니다.
+ClickHouse Cloud에서만 적용되며, 백그라운드 Iceberg 컴팩션을 구성합니다.
+Iceberg 컴팩션 중 오래된 data files를 정리하도록 허용합니다.
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
@@ -101,6 +105,7 @@ Engine=MaterializedPostgreSQL(...)를 사용하는 데이터베이스 생성이 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
 Iceberg 테이블에서 &#39;OPTIMIZE&#39;를 명시적으로 사용할 수 있도록 합니다.
+오픈 소스 빌드에서는 `OPTIMIZE TABLE ... MANIFEST`만 지원되며, 데이터 컴팩션(`MANIFEST` 없이 실행하는 `OPTIMIZE TABLE`)을 수행하면 `NOT_IMPLEMENTED`가 반환됩니다.
 
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
@@ -111,6 +116,37 @@ Iceberg 테이블에서 &#39;OPTIMIZE&#39;를 명시적으로 사용할 수 있�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
 SQL의 대안인 Kusto Query Language (KQL) 방언을 활성화합니다.
+
+## allow_experimental_logsql_dialect {#allow_experimental_logsql_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "LogsQL 방언(VictoriaLogs의 로그 쿼리 언어)을 활성화하는 새로운 설정입니다."}]}]} />
+
+VictoriaLogs의 로그 쿼리 언어인 LogsQL을 활성화합니다. 이 방언으로 작성한 쿼리는 `logsql_table` 설정에 지정된 테이블을 조회하는 SELECT 쿼리로 변환됩니다.
+
+사용법:
+
+```sql
+SET allow_experimental_logsql_dialect = 1;
+SET logsql_table = 'logs';
+SET dialect = 'logsql';
+
+_time:1h error | stats by (host) count()
+```
+
+완전한 독립형 `SET` 쿼리는 방언을 다시 전환할 수 있도록 여전히 일반 SQL(plain SQL)로 파싱됩니다. 단순히 `set`이라는 단어로 시작하는 LogsQL 쿼리는 원래 의미를 그대로 유지합니다.
+`logsql_time_column` 및 `logsql_message_column` 설정은 `_time` 필드와 기본(메시지) 필드가 참조하는 컬럼을 지정합니다.
+
+모든 필드를 문자열로 저장하는 VictoriaLogs와 달리, 변환된 쿼리는 기존 테이블 스키마를 대상으로 실행됩니다. 이에 따른 주요 계약상 차이점은 다음과 같습니다.
+
+* 텍스트 필터(단어, 구문, 프리픽스, 정규식)는 `String` 기반 컬럼을 대상으로 하며, 숫자 컬럼을 텍스트로 변환하지 않습니다.
+* 숫자 비교 필터는 숫자 컬럼을 네이티브 방식으로 비교합니다(비교 대상 리터럴이 `Int128` 또는 `Decimal256(38)` 범위에 들어가면 정수 및 10진수 값은 정확하게 비교됩니다. 그보다 큰 값, 예를 들어 `UInt256` 필드에서 1e38을 초과하는 정수는 `Float64` 정밀도로 비교되며, `stats by (<field>:<step>)`의 정수 버킷 간격도 마찬가지입니다). `String` 컬럼은 일반 숫자 텍스트만 행 단위로 파싱되며, LogsQL 숫자 문법을 따르는 값(예: `10KiB`, `1h30m`)은 행 단위로 파싱되지 않습니다.
+* 숫자 통계 함수(`sum`, `avg`, `median`, `quantile`, `stddev`, `rate_sum`)는 VictoriaLogs와 마찬가지로 모든 필드의 숫자 값을 파싱하며, 숫자가 아닌 값은 건너뜁니다. 이 값은 `Float64`이므로 숫자 컬럼은 정확한 값이 아닌 `Float64` 정밀도로 집계됩니다.
+* `math` 파이프에는 숫자형 피연산자 컬럼이 필요하며, `String` 컬럼은 강제 변환되지 않습니다.
+* 쿼리 결과는 문자열이 아닌 원본 컬럼의 타입으로 반환됩니다.
 
 ## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
 

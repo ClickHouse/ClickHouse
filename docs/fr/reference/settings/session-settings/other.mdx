@@ -94,6 +94,16 @@ Voir aussi :
 
 Limite la taille maximale du tampon adaptatif utilisé pour l’écriture dans des fichiers d’archive (par exemple, des archives tar
 
+## array_count_legacy_uint32_result {#array_count_legacy_uint32_result}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`arrayCount` renvoie désormais `UInt64` au lieu de `UInt32`, afin que le résultat soit exact pour les tableaux comportant plus de `4294967295` éléments correspondants. Définissez ce paramètre sur `true` pour renvoyer `UInt32` comme auparavant."}]}]} />
+
+Lorsque ce paramètre est activé, la fonction `arrayCount` renvoie `UInt32` au lieu de `UInt64`, comme avant la version 26.10. Le résultat `UInt32` déborde silencieusement pour les tableaux comportant plus de `4294967295` éléments correspondants. Ce paramètre rétablit également le caractère constant du résultat tel qu&#39;il était avant la version 26.10 : un prédicat qui se réduit à la constante false produit alors une colonne de résultat constante, même pour un tableau non constant.
+
+Lors d&#39;une mise à niveau progressive, activez-le sur les serveurs déjà mis à niveau pour les utilisateurs sous lesquels les requêtes distribuées s&#39;y exécutent, afin que les requêtes distribuées initiées par des serveurs pas encore mis à niveau restent strictement inchangées (un ancien initiateur ne transmet pas ce paramètre ; sans cela, les expressions sensibles au type évaluées localement sur les serveurs partitionnés mis à niveau obtiendraient `UInt64`), puis supprimez-le une fois la mise à niveau terminée. L&#39;utilisateur sous lequel une requête s&#39;exécute côté serveur partitionné dépend de la configuration du cluster : si un `secret` interserveur est configuré, il s&#39;agit de l&#39;utilisateur courant de l&#39;initiateur ; sinon, il s&#39;agit de l&#39;utilisateur indiqué dans la définition du cluster ou dans la fonction de table `remote` (`default` par défaut). L&#39;approche la plus simple et la plus fiable consiste à activer ce paramètre pour tous les utilisateurs des serveurs mis à niveau.
+
 ## arrow_flight_request_descriptor_type {#arrow_flight_request_descriptor_type}
 
 <SettingsInfoBlock type="ArrowFlightDescriptorType" default_value="path" />
@@ -371,6 +381,7 @@ Valeurs prises en charge :
 * `polyglot` — convertit le SQL provenant d&#39;autres dialectes (MySQL, PostgreSQL, etc.) en ClickHouse SQL. Nécessite le paramètre expérimental `allow_experimental_polyglot_dialect`.
 * `promql` — PromQL (langage de requêtes Prometheus) évalué sur une table TimeSeries, configurée à l&#39;aide des paramètres `promql_database`, `promql_table` et `promql_evaluation_time`.
 * `clickhouse_json` — au lieu d&#39;un texte SQL, la requête est interprétée comme un AST JSON (la sortie de `parseQueryToJSON`). La requête `SET` reste reconnue sous sa forme habituelle afin de pouvoir rétablir le dialecte. Nécessite le paramètre expérimental `enable_json_ast_dialect`.
+* `logsql` — LogsQL, le langage de requêtes de log de VictoriaLogs, traduit en requêtes `SELECT` sur la table de log configurée à l&#39;aide des paramètres `logsql_database` et `logsql_table`. Nécessite le paramètre expérimental `allow_experimental_logsql_dialect`.
 * `trino` — Trino SQL : traduit la syntaxe Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, etc.) et fait correspondre les noms de fonctions Trino à leurs équivalents ClickHouse. Nécessite le paramètre expérimental `enable_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
@@ -906,9 +917,9 @@ S&#39;il est activé, les fonctions &#39;least&#39; et &#39;greatest&#39; renvoi
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Une fonction non déterministe utilisée à côté de la fonction `arrayJoin` renvoie une valeur différente pour chaque ligne de sortie, comme avec la clause `ARRAY JOIN`. Ce paramètre rétablit une valeur unique par ligne source."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Les fonctions non déterministes et dépendantes des blocs utilisées à côté de la fonction `arrayJoin` sont évaluées comme avec la clause `ARRAY JOIN`."}]}]} />
 
-Détermine la manière dont est évaluée une fonction non déterministe utilisée à côté de la fonction `arrayJoin` lorsqu&#39;elle ne dépend pas de la valeur jointe, par exemple `rand()` ou `generateUUIDv4()` dans le même `SELECT`. Par défaut, elle renvoie une valeur différente pour chaque ligne de sortie, comme avec la clause `ARRAY JOIN`. Activez ce paramètre pour retrouver le comportement des versions antérieures : une seule valeur par ligne source, répétée sur toutes les lignes issues de l&#39;expansion de cette ligne.
+Détermine la manière dont sont évaluées les fonctions non déterministes et dépendantes des blocs utilisées à côté de la fonction `arrayJoin`. Par défaut, `rand()` renvoie une valeur différente pour chaque ligne de sortie et `runningDifference` ou `neighbor` voient les blocs issus de l&#39;expansion, comme avec la clause `ARRAY JOIN`. Activez ce paramètre pour retrouver le comportement des versions antérieures.
 
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 

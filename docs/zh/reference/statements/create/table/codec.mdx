@@ -106,7 +106,7 @@ ClickHouse 支持通用编解码器和专用编解码器。
 
 ### DoubleDelta {#doubledelta}
 
-`DoubleDelta(bytes_size)` — 计算二阶差分，并以紧凑的二进制形式写入。`bytes_size` 的含义与 [Delta](#delta) 编解码器中的 `delta_bytes` 类似。将 `bytes_size` 指定为参数的方式已弃用，未来版本将不再支持。对于步长固定的单调序列 (例如时间序列数据) ，可实现最佳压缩率。可用于任何数值类型。实现了 Gorilla TSDB 使用的算法，并将其扩展为支持 64 位类型。对于 32 位差分值，会额外使用 1 比特：使用 5 比特前缀而非 4 比特前缀。有关更多信息，请参阅 [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) 中的《Compressing Time Stamps》。DoubleDelta 是一种数据准备编解码器，即不能单独使用。
+`DoubleDelta(bytes_size)` — 计算二阶差分，并以紧凑的二进制形式写入。`bytes_size` 的含义与 [Delta](#delta) 编解码器中的 `delta_bytes` 类似。将 `bytes_size` 指定为参数的方式已弃用，未来版本将不再支持。对于步长固定的单调序列 (例如时间序列数据) ，可实现最佳压缩率。可用于任何数值类型。实现了 Gorilla TSDB 使用的算法，并将其扩展为支持 64 位类型。对于 32 位差分值，会额外使用 1 比特：使用 5 比特前缀而非 4 比特前缀。有关更多信息，请参阅 [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) 中的《Compressing Time Stamps》。
 
 ### GCD {#gcd}
 

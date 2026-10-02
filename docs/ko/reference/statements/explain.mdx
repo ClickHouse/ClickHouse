@@ -1068,7 +1068,13 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 
 가상 스킵 인덱스를 디스크에 구체화하지 *않고* 해당 인덱스가 `SELECT` 쿼리에 얼마나 도움이 될지 추정합니다. [`CREATE HYPOTHETICAL INDEX`](/ko/reference/statements/hypothetical-index#create-hypothetical-index)로 후보를 하나 이상 정의한 다음 `EXPLAIN WHATIF SELECT ...`를 실행하면 후보별 적용 가능 여부, 예상 읽기 마크 수, 예상 바이트 수, 스킵 비율을 확인할 수 있습니다.
 
-[`CREATE HYPOTHETICAL PROJECTION`](/ko/reference/statements/hypothetical-projection#create-hypothetical-projection)으로 정의한 가상 프로젝션도 후보에 포함됩니다. 일반 프로젝션은 쿼리가 읽을 파트를 대상으로 메모리에 프라이머리 인덱스를 구축하고, 구체화된 프로젝션과 같은 방식으로 프루닝하여 추정합니다. 보고서에는 프로젝션을 읽을 때 접근하는 마크와 행의 수, 기반 테이블(base table)을 읽을 때와 비교한 `read_ratio`(`1x` 미만이면 작업량이 적고 초과하면 많음), 판단 근거를 담은 `verdict`가 표시됩니다. 이는 프로젝션이 기반 테이블보다 적은 마크를 읽거나, 같은 수의 마크를 읽으면서 바깥쪽 `ORDER BY`를 처리할 수 있으면 프로젝션을 선택하는 최적화기 규칙을 따릅니다. 다음 항목은 `status: not_applicable`로 표시되며 아직 추정 대상이 아닙니다. 집계 프로젝션, `WHERE` 절이나 자체 스킵 인덱스(`WITH SETTINGS add_minmax_index_*`)가 있는 프로젝션, 커밋 순서로 정렬되는 프로젝션(`TYPE commit_order` 및 해당 프로젝션의 `_block_number, _block_offset` 쿼리 형태), 정렬 키가 저장된 컬럼에 포함되지 않는 프로젝션(예: `ORDER BY _part_offset`), `_block_number`를 저장하는 프로젝션(기록기는 파트가 머지될 때만 이를 생성함), 쿼리가 읽는 컬럼을 모두 제공하지 않는 프로젝션입니다. `force_optimize_projection`, `force_optimize_projection_name`, `preferred_optimize_projection_name`은 무시됩니다. 마크 수는 기록기가 전달받은 블록마다 그래뉼 크기를 정하는 방식을 재현하여 추정합니다. 어떤 블록이 전달되는지는 프로젝션 파트를 기록하는 경로에 따라 달라집니다. 삽입이나 머티리얼라이즈 시에는 하나로 합쳐진 블록이, 머지 시에는 `merge_max_block_size` 크기의 연속 블록이 전달됩니다. 파트에는 이 정보가 기록되지 않으므로 각 블록 구성 방식에 대해 추정치를 계산합니다. 구성 방식에 따라 기반 테이블 읽기와의 비교 결과가 달라지면, 보고서에는 단일 판단 결과 대신 추정 범위와 `verdict: too close to call`이 표시됩니다. 정의가 더 이상 테이블에 맞지 않는 프로젝션은 그 사유와 함께 보고됩니다.
+[`CREATE HYPOTHETICAL PROJECTION`](/ko/reference/statements/hypothetical-projection#create-hypothetical-projection)으로 정의한 가상 프로젝션도 후보에 포함됩니다. 일반 프로젝션은 쿼리가 읽을 파트를 대상으로 메모리에 프라이머리 인덱스를 구축하고, 구체화된 프로젝션과 같은 방식으로 프루닝하여 추정합니다.
+
+보고서에는 프로젝션이 읽을 마크와 행의 수, 기반 테이블(base table)을 읽을 때와 비교한 `read_ratio`, 최적화기가 해당 프로젝션을 선택할지에 대한 `verdict`가 표시됩니다. `force_optimize_projection = 1` 또는 `prefer_optimize_projection = 1`이 설정되면 최적화기는 사용 가능한 모든 프로젝션을 사용하므로, 비용 기준으로는 선택되지 않을 프로젝션도 `chosen (forced)`로 보고됩니다.
+
+결과가 프로젝션 파트의 구성 방식에 따라 달라지는 경우 `marks_span`에 범위가 표시되며, 어느 쪽으로든 결정될 수 있는 판단은 `too close to call`로 보고됩니다. 대용량 테이블에서는 그래뉼의 표본을 읽어 추정합니다(`projection_scan_budget_rows` 참고).
+
+집계 프로젝션, `WHERE` 절이나 자체 스킵 인덱스가 있는 프로젝션, 커밋 순서 키나 가상 컬럼 키를 사용하거나 `_block_number`를 저장하는 프로젝션, 쿼리가 읽는 컬럼을 모두 포함하지 않는 프로젝션은 `not_applicable`로 보고됩니다. `force_optimize_projection_name`과 `preferred_optimize_projection_name`은 무시되며, `force_optimize_projection`이 설정되어도 SQL 문이 실패하지 않습니다.
 
 **구문**
 
@@ -1078,7 +1084,8 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 
 **설정**
 
-* `empirical` — `1`(기본값)은 기준 프루닝 후 남은 그래뉼에 인덱스를 메모리상에서 적용해 건너뛰기 비율의 상한을 측정합니다. `0`은 이 단계를 건너뜁니다. 어느 쪽이든 경험적 평가로 결과를 얻지 못하면(비활성화되었거나 인덱스를 메모리에서 평가할 수 없는 경우) 추정기는 컬럼 [통계](/ko/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)로 폴백합니다. 컬럼 통계도 사용할 수 없으면 적용 가능 여부만 요약합니다.
+* `projection_scan_budget_rows` — 프로젝션을 추정할 때 그래뉼 샘플링으로 전환하기 전까지 읽을 수 있는 최대 행 수입니다. 기본값: `10000000`. `0`은 제한이 없음을 의미하며, `max_rows_to_read`로 이 값을 낮출 수 있습니다. 샘플링 시에는 최소 약 30개의 그래뉼과 파트당 1개의 그래뉼을 읽으며, `max_rows_to_read`가 이를 허용하지 않으면 추정 결과는 `unsupported`가 됩니다.
+* `empirical` — `1`(기본값)은 기준 프루닝 후 남은 그래뉼에 인덱스를 메모리상에서 적용해 스킵 비율의 상한을 측정합니다. `0`은 이 단계를 건너뜁니다. 어느 쪽이든 경험적 평가로 결과를 얻지 못하면(비활성화되었거나 인덱스를 메모리에서 평가할 수 없는 경우) 추정기는 컬럼 [통계](/ko/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)로 폴백합니다. 컬럼 통계도 사용할 수 없으면 적용 가능 여부만 요약합니다.
 
 **출력**
 
@@ -1110,8 +1117,8 @@ Estimation:
   * `statistical`: 컬럼 통계를 바탕으로 도출됩니다. empirical이 비활성화된 경우(`empirical = 0`) 또는 empirical이 결과를 산출하지 못했고 관련 컬럼에 컬럼 통계가 정의되어 있을 때 사용됩니다.
   * `applicability_only`: 인덱스는 프레디케이트에 적용할 수 있지만 경험적 추정과 statistical 추정 모두 결과를 산출하지 못한 경우입니다(예: `empirical = 0`이고 컬럼 통계가 정의되지 않은 경우). 보수적인 상한값으로 `skip_ratio: 0.0%`를 보고합니다.
 * `empirical_reason` — 경험적 추정을 실행할 수 없는 이유입니다. `empirical_status: unsupported`일 때만 표시됩니다. 예를 들어 `merge_tree_min_rows_for_seek` 또는 `merge_tree_min_bytes_for_seek`가 0이 아니면 실제 읽기에서 마크 범위가 병합되지만, 그래뉼별 개수는 이를 모델링하지 않으므로 추정치는 `statistical` 또는 `applicability_only`로 대체됩니다.
-* `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. 테이블에서 PK, 파티션, 기존 인덱스 프루닝을 거친 뒤 남은 비율, 즉 가상 인덱스의 입력이 되는 범위를 보여줍니다.
-* `est_bytes` — 읽기 바이트 수의 추정치입니다. 테이블의 평균 행 크기를 바탕으로 계산하므로 근사치이며, 스토리지와 Compression에 따라 달라집니다. 기준선 행은 쿼리가 행을 읽을 때만 표시되며, 각 후보 행은 기준선 바이트 추정치를 알 수 있을 때만 표시됩니다.
+* `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. 테이블에서 PK, 파티션, 기존 인덱스 프루닝을 거친 뒤 남은 비율, 즉 가상 인덱스의 입력이 되는 범위를 보여줍니다. 프로젝션의 경우 `sampled_marks`는 `<marks read> / <marks in the parts the query reads>`이며, 첫 번째 숫자가 두 번째 숫자보다 작으면 추정에 샘플을 사용했음을 의미합니다.
+* `est_bytes` — 읽기 바이트 수의 추정치입니다. 테이블의 평균 행 크기를 바탕으로 계산하므로 근사치이며, 스토리지와 압축에 따라 달라집니다. 기준선 행은 쿼리가 행을 읽을 때만 표시되며, 각 후보 행은 기준선 바이트 추정치를 알 수 있을 때만 표시됩니다.
 
 이 설정은 `WHATIF`와 `SELECT` 사이에 인라인으로 작성하며, `SETTINGS` keyword는 없습니다(다른 `EXPLAIN` 변형이 옵션을 받는 방식과 동일합니다).
 
@@ -1159,7 +1166,7 @@ Estimation:
 
 가상의 `minmax`는 마크 100개를 1개로 프루닝하며, 스킵 비율은 `skip_ratio: 99.0%`입니다. (`est_bytes`는 평균 행 크기를 바탕으로 한 추정치이므로 정확한 값은 달라질 수 있습니다.)
 
-**통계 기반 예시**
+**통계 예시**
 
 컬럼 [통계](/ko/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)는 기본적으로 비활성화되어 있습니다. `statistical` 경로를 테스트하려면 먼저 관련 컬럼에 이를 정의하고 구체화 mutation이 완료될 때까지 기다리십시오:
 

@@ -61,7 +61,7 @@ JOIN の左端のテーブルに指定された `FINAL` 修飾子が、他のす
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "JOIN USING 内のIdentifierを projection から解決するよう強制する"}]}]} />
 
-JOIN USING 内のIdentifierを projection から解決するよう強制します (たとえば、`SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` では、`t1.b = t2.b` ではなく `t1.a + 1 = t2.b` で JOIN が実行されます) 。SELECT リスト内の部分式で定義された別名も考慮されます (たとえば、`SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` では、`t1.a + 1 = t2.b` で JOIN が実行されます) 。一致する別名がトップレベルの別名ではなく SELECT リスト内の部分式で定義されている場合、そのクエリでは並列レプリカが無効になります。リモートサーバーに送信されるクエリ (`Distributed` テーブル、`remote` テーブル関数) では、リモートサーバー上でIdentifierをまったく解決できない場合にのみ、そのクエリは例外で拒否されます。別名が左テーブルの実際のカラムを隠している場合、リモートサーバーは代わりにそのカラムで JOIN を実行するため、結果がローカル実行と異なる可能性があります。
+JOIN USING 内のIdentifierを projection から解決するよう強制します (たとえば、`SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` では、`t1.b = t2.b` ではなく `t1.a + 1 = t2.b` で JOIN が実行されます) 。`WITH` 句、SELECT リスト内の部分式、その他の句など、クエリ内の別の場所で定義された別名も考慮されます (たとえば、`WITH a + 1 AS b SELECT count() FROM t1 JOIN t2 USING (b)` や `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` では、`t1.a + 1 = t2.b` で JOIN が実行されます) 。一致する別名が SELECT リストのトップレベルの別名でない場合、そのクエリでは並列レプリカが無効になります。リモートサーバーに送信されるクエリ (`Distributed` テーブル、`remote` テーブル関数) では、リモートサーバー上でIdentifierをまったく解決できない場合にのみ、そのクエリは例外で拒否されます。別名が左テーブルの実際のカラムを隠している場合、リモートサーバーは代わりにそのカラムで JOIN を実行するため、結果がローカル実行と異なる可能性があります。
 
 ## analyzer_compatibility_multiple_joins_qualify_column_names {#analyzer_compatibility_multiple_joins_qualify_column_names}
 

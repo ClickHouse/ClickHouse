@@ -145,7 +145,7 @@ ALTER TABLE iceberg_table DROP PARTITION 2;
 ALTER TABLE iceberg_table DROP PARTITION (2, 5);
 ```
 
-변환(transform)으로 정의된 파티션은 이미 변환된 파티션 키 값을 리터럴로 지정하거나, 원시(raw) 소스 값에 동일한 변환 표현식을 적용한 형태로 지정할 수 있습니다. 지원되는 변환은 `identity`, `icebergBucket`, `icebergTruncate`, `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum`, `toRelativeHourNum`입니다. 단일 컬럼 파티션이라면 변환 표현식 형태를 반드시 `tuple(...)`로 감싸야 합니다:
+변환(transform)으로 정의된 파티션은 이미 변환된 파티션 키 값을 리터럴로 지정하거나, 원시(raw) 소스 값에 동일한 변환 표현식을 적용한 형태로 지정할 수 있습니다. 지원되는 변환은 `identity`, `icebergBucket`, `icebergTruncate`, `icebergYear`, `icebergMonth`, `icebergDay`, `icebergHour`입니다. `PARTITION BY` 별칭인 `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum`, `toRelativeHourNum`도 사용할 수 있으며, 이들은 해당 변환으로 평가됩니다. 단일 컬럼 파티션이라면 변환 표현식 형태를 반드시 `tuple(...)`로 감싸야 합니다:
 
 ```sql
 ALTER TABLE iceberg_table DROP PARTITION 0;

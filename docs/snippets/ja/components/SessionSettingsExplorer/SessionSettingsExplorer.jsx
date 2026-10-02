@@ -120,7 +120,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "allow_experimental_*",
-      count: 19,
+      count: 20,
       settings: [
         { name: "allow_experimental_analyzer", path: "/allow-experimental#allow_experimental_analyzer", default: "1" },
         { name: "allow_experimental_cleanup_old_data_files_compaction", path: "/allow-experimental#allow_experimental_cleanup_old_data_files_compaction", default: "0" },
@@ -132,6 +132,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "allow_experimental_hash_functions", path: "/allow-experimental#allow_experimental_hash_functions", default: "0" },
         { name: "allow_experimental_iceberg_compaction", path: "/allow-experimental#allow_experimental_iceberg_compaction", default: "0" },
         { name: "allow_experimental_kusto_dialect", path: "/allow-experimental#allow_experimental_kusto_dialect", default: "0" },
+        { name: "allow_experimental_logsql_dialect", path: "/allow-experimental#allow_experimental_logsql_dialect", default: "0" },
         { name: "allow_experimental_nlp_functions", path: "/allow-experimental#allow_experimental_nlp_functions", default: "0" },
         { name: "allow_experimental_object_storage_queue_hive_partitioning", path: "/allow-experimental#allow_experimental_object_storage_queue_hive_partitioning", default: "0" },
         { name: "allow_experimental_paimon_storage_engine", path: "/allow-experimental#allow_experimental_paimon_storage_engine", default: "0" },
@@ -1416,6 +1417,17 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       children: []
     },
     {
+      label: "logsql_*",
+      count: 4,
+      settings: [
+        { name: "logsql_database", path: "/logsql#logsql_database", default: '""' },
+        { name: "logsql_message_column", path: "/logsql#logsql_message_column", default: "_msg" },
+        { name: "logsql_table", path: "/logsql#logsql_table", default: '""' },
+        { name: "logsql_time_column", path: "/logsql#logsql_time_column", default: "_time" }
+      ],
+      children: []
+    },
+    {
       label: "low_cardinality_*",
       count: 3,
       settings: [
@@ -2127,10 +2139,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "optimize_rewrite_*",
-      count: 6,
+      count: 7,
       settings: [
         { name: "optimize_rewrite_aggregate_function_with_if", path: "/optimize-rewrite#optimize_rewrite_aggregate_function_with_if", default: "1" },
         { name: "optimize_rewrite_array_exists_to_has", path: "/optimize-rewrite#optimize_rewrite_array_exists_to_has", default: "1" },
+        { name: "optimize_rewrite_array_filter_length_to_array_count", path: "/optimize-rewrite#optimize_rewrite_array_filter_length_to_array_count", default: "1" },
         { name: "optimize_rewrite_has_to_in", path: "/optimize-rewrite#optimize_rewrite_has_to_in", default: "1" },
         { name: "optimize_rewrite_like_perfect_affix", path: "/optimize-rewrite#optimize_rewrite_like_perfect_affix", default: "1" },
         { name: "optimize_rewrite_regexp_functions", path: "/optimize-rewrite#optimize_rewrite_regexp_functions", default: "1" },
@@ -2327,19 +2340,20 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "query_plan_*",
-      count: 54,
+      count: 53,
       settings: [
         { name: "query_plan_aggregation_bucket_top_k", path: "/query-plan#query_plan_aggregation_bucket_top_k", default: "1" },
-        { name: "query_plan_aggregation_in_order", path: "/query-plan#query_plan_aggregation_in_order", default: "1" },
         { name: "query_plan_convert_any_join_to_semi_or_anti_join", path: "/query-plan#query_plan_convert_any_join_to_semi_or_anti_join", default: "1" },
         { name: "query_plan_convert_join_to_in", path: "/query-plan#query_plan_convert_join_to_in", default: "0" },
         { name: "query_plan_convert_outer_join_to_inner_join", path: "/query-plan#query_plan_convert_outer_join_to_inner_join", default: "1" },
+        { name: "query_plan_convert_outer_join_to_inner_join_transitively", path: "/query-plan#query_plan_convert_outer_join_to_inner_join_transitively", default: "1" },
         { name: "query_plan_direct_read_from_text_index", path: "/query-plan#query_plan_direct_read_from_text_index", default: "1" },
         { name: "query_plan_display_internal_aliases", path: "/query-plan#query_plan_display_internal_aliases", default: "0" },
         { name: "query_plan_enable_multithreading_after_window_functions", path: "/query-plan#query_plan_enable_multithreading_after_window_functions", default: "1" },
         { name: "query_plan_enable_optimizations", path: "/query-plan#query_plan_enable_optimizations", default: "1" },
         { name: "query_plan_execute_functions_after_sorting", path: "/query-plan#query_plan_execute_functions_after_sorting", default: "1" },
         { name: "query_plan_filter_push_down", path: "/query-plan#query_plan_filter_push_down", default: "1" },
+        { name: "query_plan_filter_push_down_below_limit_by", path: "/query-plan#query_plan_filter_push_down_below_limit_by", default: "1" },
         { name: "query_plan_fuse_filter_into_array_join", path: "/query-plan#query_plan_fuse_filter_into_array_join", default: "1" },
         { name: "query_plan_join_shard_by_pk_ranges", path: "/query-plan#query_plan_join_shard_by_pk_ranges", default: "0" },
         { name: "query_plan_join_swap_table", path: "/query-plan#query_plan_join_swap_table", default: "auto" },
@@ -2367,12 +2381,10 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_plan_optimize_lazy_materialization", path: "/query-plan#query_plan_optimize_lazy_materialization", default: "1" },
         { name: "query_plan_optimize_lazy_materialization_for_file", path: "/query-plan#query_plan_optimize_lazy_materialization_for_file", default: "1" },
         { name: "query_plan_optimize_lazy_materialization_for_object_storage", path: "/query-plan#query_plan_optimize_lazy_materialization_for_object_storage", default: "1" },
-        { name: "query_plan_optimize_prewhere", path: "/query-plan#query_plan_optimize_prewhere", default: "1" },
         { name: "query_plan_propagate_predicate_across_join", path: "/query-plan#query_plan_propagate_predicate_across_join", default: "1" },
         { name: "query_plan_push_down_limit", path: "/query-plan#query_plan_push_down_limit", default: "1" },
         { name: "query_plan_push_down_volume_reducing_functions", path: "/query-plan#query_plan_push_down_volume_reducing_functions", default: "1" },
         { name: "query_plan_push_limit_by_into_sort", path: "/query-plan#query_plan_push_limit_by_into_sort", default: "1" },
-        { name: "query_plan_read_in_order", path: "/query-plan#query_plan_read_in_order", default: "1" },
         { name: "query_plan_read_in_order_through_join", path: "/query-plan#query_plan_read_in_order_through_join", default: "1" },
         { name: "query_plan_remove_redundant_distinct", path: "/query-plan#query_plan_remove_redundant_distinct", default: "1" },
         { name: "query_plan_remove_redundant_sorting", path: "/query-plan#query_plan_remove_redundant_sorting", default: "1" },
@@ -3033,7 +3045,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "その他",
-      count: 145,
+      count: 146,
       settings: [
         { name: "adaptive_aggregator_freeze_threshold", path: "/other#adaptive_aggregator_freeze_threshold", default: "16384" },
         { name: "adaptive_aggregator_freeze_threshold_bytes", path: "/other#adaptive_aggregator_freeze_threshold_bytes", default: "4194304" },
@@ -3042,6 +3054,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "analyzer_inline_views", path: "/other#analyzer_inline_views", default: "0" },
         { name: "any_join_distinct_right_table_keys", path: "/other#any_join_distinct_right_table_keys", default: "0" },
         { name: "archive_adaptive_buffer_max_size_bytes", path: "/other#archive_adaptive_buffer_max_size_bytes", default: "8388608" },
+        { name: "array_count_legacy_uint32_result", path: "/other#array_count_legacy_uint32_result", default: "0" },
         { name: "arrow_flight_request_descriptor_type", path: "/other#arrow_flight_request_descriptor_type", default: "path" },
         { name: "arrow_flight_request_timeout_sec", path: "/other#arrow_flight_request_timeout_sec", default: "300" },
         { name: "backup_slow_all_threads_after_retryable_s3_error", path: "/other#backup_slow_all_threads_after_retryable_s3_error", default: "0" },

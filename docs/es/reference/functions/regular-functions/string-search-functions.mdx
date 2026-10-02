@@ -913,10 +913,13 @@ Comprueba si `input` contiene todos los tokens de `phrase` en orden consecutivo.
   Si no se define ningún índice de texto, la función realiza una exploración por fuerza bruta de la columna, que es varios órdenes de magnitud más lenta que una búsqueda mediante índice.
 </Note>
 
-Antes de realizar la búsqueda, la función tokeniza tanto los argumentos `input` como `phrase` mediante el tokenizador especificado para el índice de texto.
+Antes de realizar la búsqueda, la función tokeniza `input` y, cuando es de tipo `String`, también `phrase`, mediante el tokenizador especificado para el índice de texto.
 Si la columna no tiene definido ningún índice de texto, se usará en su lugar el tokenizador `splitByNonAlpha`, a menos que se proporcione un tokenizador como tercer argumento opcional.
-El argumento `tokenizer` debe ser uno de `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK` o `icu`.
-Ten en cuenta que `splitByRegexp` no es compatible con `hasPhrase` cuando el índice de texto también define un posprocesamiento.
+El argumento `tokenizer` debe ser uno de `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `array`, `ngrams`, `asciiCJK` o `icu`.
+
+Si `input` es un [Array(String)](/es/reference/data-types/array), sus elementos se tokenizan como cualquier otra entrada y sus tokens forman una única secuencia por fila, por lo que una frase puede abarcar dos elementos. Con el tokenizador `array`, cada elemento es un token; así es como se busca en una columna de valores ya tokenizados.
+Si `phrase` es un [Array(String)](/es/reference/data-types/array), sus elementos son los tokens que se deben buscar, en orden e
+incluyendo los duplicados. Los elementos vacíos de la frase se ignoran, ya que ningún tokenizador produce un token vacío.
 
 <Note>
   Cuando un índice de texto define un [preprocesador](/es/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (por ejemplo, `lowerUTF8`), `hasPhrase` lo aplica tanto a `input` como a `phrase` antes de la tokenización.
@@ -938,8 +941,8 @@ hasPhrase(input, phrase[, tokenizer])
 
 **Argumentos**
 
-* `input` — La columna de entrada. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring)
-* `phrase` — La frase que se desea buscar. [`const String`](/es/reference/data-types/string)
+* `input` — La columna de entrada. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring) o [`Nullable(String)`](/es/reference/data-types/nullable) o [`Nullable(FixedString)`](/es/reference/data-types/nullable) o [`Array(String)`](/es/reference/data-types/array) o [`Array(FixedString)`](/es/reference/data-types/array) o [`Array(Nullable(String))`](/es/reference/data-types/array) o [`Array(Nullable(FixedString))`](/es/reference/data-types/array)
+* `phrase` — La frase que se desea buscar. [`const String`](/es/reference/data-types/string) o [`const Array(String)`](/es/reference/data-types/array)
 * `tokenizer` — El tokenizador que se va a usar. Opcional; el valor predeterminado es `splitByNonAlpha`. [`const String`](/es/reference/data-types/string)
 
 **Valor devuelto**
@@ -970,6 +973,30 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 ┌─hasPhrase('the quick brown fox jumps', 'quick fox')─┐
 │                                                   0 │
 └─────────────────────────────────────────────────────┘
+```
+
+**Secuencia de tokens como arrays**
+
+```sql title=Query
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])
+```
+
+```response title=Response
+┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])─┐
+│                                                               1 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Frase que abarca dos elementos**
+
+```sql title=Query
+SELECT hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])
+```
+
+```response title=Response
+┌─hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])─┐
+│                                                         1 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequence {#hasSubsequence}

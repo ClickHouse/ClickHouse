@@ -106,7 +106,7 @@ ClickHouse は、汎用コーデックと特殊用途のコーデックをサポ
 
 ### DoubleDelta {#doubledelta}
 
-`DoubleDelta(bytes_size)` — デルタの差を計算し、コンパクトなバイナリ形式で書き込みます。`bytes_size` は、[Delta](#delta) コーデック の `delta_bytes` と同様の意味を持ちます。引数としての `bytes_size` の指定は非推奨であり、今後のリリースでサポートが削除されます。時系列データのように stride が一定の単調な数列では、最適な圧縮率が得られます。任意の数値型で使用できます。Gorilla TSDB で使用されるアルゴリズムを実装し、64 ビット型をサポートするように拡張しています。32 ビットのデルタでは追加で 1 ビットを使用し、4 ビットのプレフィックスではなく 5 ビットのプレフィックスを使用します。詳細については、[Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) の「Compressing Time Stamps」を参照してください。DoubleDelta はデータ準備 コーデック であるため、単独では使用できません。
+`DoubleDelta(bytes_size)` — デルタの差を計算し、compact なバイナリ形式で書き込みます。`bytes_size` は、[Delta](#delta) コーデック の `delta_bytes` と同様の意味を持ちます。引数としての `bytes_size` の指定は非推奨であり、今後のリリースでサポートが削除されます。時系列データのように stride が一定の単調な数列では、最適な圧縮率が得られます。任意の数値型で使用できます。Gorilla TSDB で使用されるアルゴリズムを実装し、64 ビット型をサポートするように拡張しています。32 ビットのデルタでは追加で 1 ビットを使用し、4 ビットのプレフィックスではなく 5 ビットのプレフィックスを使用します。詳細については、[Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) の「Compressing Time Stamps」を参照してください。
 
 ### GCD {#gcd}
 

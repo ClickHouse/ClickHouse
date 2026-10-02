@@ -94,6 +94,16 @@ HTTP CORS ヘッダーを追加して書き込みます。
 
 アーカイブファイル (たとえば tar アーカイブ) への書き込み時に使用されるアダプティブバッファの最大サイズを制限します
 
+## array_count_legacy_uint32_result {#array_count_legacy_uint32_result}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`arrayCount` は `UInt32` ではなく `UInt64` を返すようになりました。これにより、条件に一致する要素が `4294967295` 個を超える配列でも正確な結果が得られます。従来どおり `UInt32` を返すには、この設定を `true` にしてください。"}]}]} />
+
+有効にすると、関数 `arrayCount` は `UInt64` ではなく、バージョン 26.10 より前と同様に `UInt32` を返します。`UInt32` の結果は、条件に一致する要素が `4294967295` 個を超える配列では警告なしにラップアラウンドします。また、この設定は結果の定数性も 26.10 より前の挙動に戻します。つまり、定数 false に畳み込まれる述語は、配列が非定数であっても定数の結果カラムを生成します。
+
+ローリングアップグレード中は、アップグレード済みのサーバー上で分散クエリを実行するユーザーに対してこの設定を有効にしてください。これにより、未アップグレードのサーバーがイニシエーターとなる分散クエリの挙動を完全に維持できます (旧バージョンのイニシエーターはこの設定を転送しないため、有効にしないと、アップグレード済みの分片上でローカルに評価される型依存の式が `UInt64` を受け取ることになります) 。アップグレードが完了したら、この設定は削除してください。分片側のクエリをどのユーザーで実行するかは、クラスターの設定によって異なります。interserver `secret` が設定されている場合はイニシエーターの現在のユーザー、それ以外の場合はクラスター定義または `remote` テーブル関数で指定されたユーザー (指定がない場合は `default`) となります。最も簡単かつ確実なのは、アップグレード済みサーバーのすべてのユーザーに対してこの設定を有効にする方法です。
+
 ## arrow_flight_request_descriptor_type {#arrow_flight_request_descriptor_type}
 
 <SettingsInfoBlock type="ArrowFlightDescriptorType" default_value="path" />
@@ -359,6 +369,7 @@ true の場合、DESCRIBE クエリの結果にはカラム名と型のみが含
 * `polyglot` — 他のdialect (MySQL、PostgreSQLなど) のSQLをClickHouse SQLにトランスパイルします。実験的設定の`allow_experimental_polyglot_dialect`が必要です。
 * `promql` — `promql_database`、`promql_table`、`promql_evaluation_time`設定で構成されたTimeSeriesテーブルに対して評価されるPromQL (Prometheus Query Language) 。
 * `clickhouse_json` — SQLテキストの代わりに、クエリをJSON AST (`parseQueryToJSON`の出力) として解釈します。dialectを元に戻せるよう、`SET`クエリは引き続き通常の形式で認識されます。実験的設定の`enable_json_ast_dialect`が必要です。
+* `logsql` — VictoriaLogsのログクエリ言語であるLogsQL。`logsql_database`および`logsql_table`設定で指定されたログテーブルに対する`SELECT`クエリに変換されます。実験的設定の`allow_experimental_logsql_dialect`が必要です。
 * `trino` — Trino SQL: Trinoの構文 (`ARRAY[...]`、`TRY_CAST`、`UNNEST`など) を変換し、Trinoの関数名をClickHouseの同等のものにマッピングします。実験的設定の`enable_trino_dialect`が必要です。
 
 ## discard_query_data {#discard_query_data}
@@ -893,9 +904,9 @@ true に設定すると、`KILL QUERY` は、実行中の `KILL` ステートメ
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`arrayJoin` 関数と併用される非決定論的関数は、`ARRAY JOIN` 句の場合と同様に、出力行ごとに異なる値を返すようになりました。この設定を有効にすると、ソース行ごとに 1 つの値を返す従来の動作に戻ります。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`arrayJoin` 関数と併用される非決定論的関数およびブロック依存の関数は、`ARRAY JOIN` 句の場合と同様に評価されるようになりました。"}]}]} />
 
-`arrayJoin` 関数と同じ `SELECT` 内で使用される非決定論的関数 (例: `rand()` や `generateUUIDv4()`) が、展開される値に依存しない場合の評価方法を制御します。デフォルトでは、`ARRAY JOIN` 句の場合と同様に、出力行ごとに異なる値を返します。有効にすると旧バージョンと同じ動作になり、ソース行ごとに 1 つの値が生成され、その行から展開されたすべての行で同じ値が使われます。
+`arrayJoin` 関数と併用される非決定論的関数およびブロック依存の関数の評価方法を制御します。デフォルトでは、`ARRAY JOIN` 句の場合と同様に、`rand()` は出力行ごとに異なる値を返し、`runningDifference` や `neighbor` は展開後のブロックを参照します。有効にすると旧バージョンと同じ動作になります。
 
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 

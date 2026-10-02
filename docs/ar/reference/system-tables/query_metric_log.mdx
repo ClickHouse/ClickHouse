@@ -855,7 +855,6 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_CachedReadBufferReadFromSourceBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المقروءة من filesystem cache source (من remote fs، إلخ)
 * `ProfileEvent_CachedReadBufferPredownloadedFromSourceBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المقروءة من filesystem cache source لأغراض predownload (من remote fs، إلخ)
 * `ProfileEvent_CachedReadBufferReadFromCacheBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المقروءة من filesystem cache
-* `ProfileEvent_CachedReadBufferPredownloadedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المقروءة من filesystem cache source. تتم قراءة segments الخاصة بالـ cache بالكامل من اليسار إلى اليمين، وقد نحتاج إلى predownload لبعض part من segment غير المرتبط بالمهمة الحالية فقط للوصول إلى البيانات المطلوبة
 * `ProfileEvent_CachedReadBufferCacheWriteBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المكتوبة من source (remote fs، إلخ) إلى filesystem cache
 * `ProfileEvent_CachedReadBufferCacheWriteMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في كتابة البيانات إلى ذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_CachedReadBufferCacheWriteStopped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي توقفت فيها كتابة مقطع ملف في ذاكرة التخزين المؤقت لنظام الملفات أثناء التنزيل (بسبب فشل حجز المساحة أو الكتابة إلى الذاكرة المؤقتة)، وبعد ذلك تستمر القراءة مع تجاوز الذاكرة المؤقتة
@@ -887,8 +886,8 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_FilesystemCacheReserveAttempts` ([UInt64](/ar/reference/data-types/int-uint)) — عدد محاولات حجز المساحة في ذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_FilesystemCacheFailedReserveAttempts` ([UInt64](/ar/reference/data-types/int-uint)) — عدد محاولات حجز المساحة الفاشلة في ذاكرة التخزين المؤقت للملفات.
 * `ProfileEvent_FilesystemCacheEvictMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت طرد ذاكرة التخزين المؤقت لنظام الملفات
-* `ProfileEvent_FilesystemCacheGetOrSetMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت `getOrSet()` لذاكرة التخزين المؤقت لنظام الملفات
-* `ProfileEvent_FilesystemCacheGetMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت `get()` لذاكرة التخزين المؤقت لنظام الملفات
+* `ProfileEvent_FilesystemCacheGetOrSetMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت getOrSet() لذاكرة التخزين المؤقت لنظام الملفات
+* `ProfileEvent_FilesystemCacheGetMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت get() لذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_FilesystemCacheBackgroundEvictedFileSegments` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مقاطع الملفات التي أُزيلت من الذاكرة المؤقتة بواسطة الخيط الخلفي
 * `ProfileEvent_FilesystemCacheBackgroundEvictedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات التي أُزيلت من الذاكرة المؤقتة بواسطة الخيط الخلفي
 * `ProfileEvent_FilesystemCacheIdleClientEvictions` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أُزيلت فيها جميع إدخالات الذاكرة المؤقتة لعميل ذاكرة تخزين مؤقت موزعة خامل (`user_id`) لعدم حدوث أي وصول خلال `idle_client_ttl_sec`.
@@ -1561,6 +1560,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_IndexGenericExclusionSearchAlgorithm` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات استخدام خوارزمية الاستبعاد العامة للبحث على علامات الفهرس
 * `ProfileEvent_IndexGenericExclusionSearchStepLimitReached` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي وصل فيها البحث العام للاستبعاد عبر علامات الفهرس إلى merge&#95;tree&#95;generic&#95;exclusion&#95;search&#95;max&#95;steps وقَبِل نطاقات العلامات المتبقية دون تقسيم إضافي
 * `ProfileEvent_ParallelReplicasQueryCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستعلامات (والاستعلامات الفرعية) المنفذة باستخدام النسخ المتماثلة المتوازية أثناء تنفيذ الاستعلام
+* `ProfileEvent_AutomaticParallelReplicasProbePlansBuilt` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي بنت فيها آلية النسخ المتماثلة المتوازية التلقائية خطة مرشحة باستخدام النسخ المتماثلة المتوازية لمقارنتها بخطة العقدة الواحدة. لا تُستخدم كل خطة من هذا النوع: إذ تُبنى لتقدير تكلفتها، وتُهمَل عندما تتفوق خطة العقدة الواحدة
 * `ProfileEvent_DistributedConnectionReconnectCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات إعادة الاتصال بخوادم أخرى أثناء تنفيذ الاستعلام الموزع. قد يحدث ذلك عند الحصول على اتصال قديم من مجمع الاتصالات
 * `ProfileEvent_DistributedConnectionConnectCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات الاتصال بخوادم أخرى أثناء تنفيذ الاستعلام الموزع. يحدث ذلك عند إنشاء اتصال جديد بدلًا من استخدام اتصال موجود من المجمع.
 * `ProfileEvent_RefreshableViewRefreshSuccess` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات تحديث العروض المادية القابلة للتحديث بنجاح

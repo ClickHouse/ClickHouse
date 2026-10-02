@@ -1069,7 +1069,13 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 
 Estima el beneficio que tendría un índice de omisión hipotético en una consulta `SELECT`, *sin* materializar el índice en disco. Defina uno o más candidatos con [`CREATE HYPOTHETICAL INDEX`](/es/reference/statements/hypothetical-index#create-hypothetical-index) y, a continuación, ejecute `EXPLAIN WHATIF SELECT ...` para ver, para cada candidato, su aplicabilidad, las marcas leídas estimadas, los bytes estimados y la proporción de omisión.
 
-Las proyecciones hipotéticas definidas con [`CREATE HYPOTHETICAL PROJECTION`](/es/reference/statements/hypothetical-projection#create-hypothetical-projection) también son candidatas. Una proyección normal se estima construyendo su índice primario en memoria sobre las partes que leería la consulta y podándolo del mismo modo en que se podaría una proyección materializada. El informe indica las marcas y filas que abarcaría la lectura de la proyección, un `read_ratio` respecto a la lectura de la tabla base (por debajo de `1x` significa menos trabajo; por encima, más) y un `verdict` con el motivo correspondiente, según la regla del optimizador: la proyección gana cuando lee menos marcas que la tabla base, o el mismo número si además resuelve un `ORDER BY` externo. Se muestran como `status: not_applicable` y todavía no se estiman: las proyecciones de agregación, las proyecciones con una cláusula `WHERE` o con índices de omisión propios (`WITH SETTINGS add_minmax_index_*`), las proyecciones ordenadas por orden de commit (`TYPE commit_order` y su forma de consulta `_block_number, _block_offset`), las proyecciones cuya clave de ordenación no figura entre las columnas que almacenan (por ejemplo, `ORDER BY _part_offset`), las proyecciones que almacenan `_block_number` (el escritor solo las construye cuando se fusiona una parte) y las proyecciones que no proporcionan todas las columnas que lee la consulta. Se ignoran `force_optimize_projection`, `force_optimize_projection_name` y `preferred_optimize_projection_name`. El número de marcas se modela dimensionando los gránulos igual que lo hace el escritor, con un tamaño de gránulo por cada bloque que recibe. Cuáles son esos bloques depende de la ruta que escribe la parte de la proyección (un único bloque combinado en una inserción o una materialización; series de `merge_max_block_size` en una fusión), y una parte no registra nada de ello, por lo que la estimación se calcula para cada una de esas disposiciones. Si los resultados no coinciden al compararlos con la lectura base, el informe muestra el rango y `verdict: too close to call` en lugar de una decisión. Si la definición de una proyección ya no se ajusta a la tabla, se notifica indicando ese motivo.
+Las proyecciones hipotéticas definidas con [`CREATE HYPOTHETICAL PROJECTION`](/es/reference/statements/hypothetical-projection#create-hypothetical-projection) también son candidatas. En el caso de una proyección normal, la estimación construye su índice primario en memoria sobre las partes que leería la consulta y lo poda del mismo modo en que se podaría una proyección materializada.
+
+El informe indica las marcas y filas que leería, un `read_ratio` respecto a la lectura de la tabla base y un `verdict` sobre si el optimizador la elegiría. Con `force_optimize_projection = 1` o `prefer_optimize_projection = 1`, el optimizador utiliza cualquier proyección utilizable, por lo que una proyección que no elegiría por coste se notifica como `chosen (forced)`.
+
+Cuando el resultado depende de cómo se dispondría la parte de la proyección, `marks_span` indica el rango, y una decisión que podría decantarse hacia cualquiera de los dos lados se notifica como `too close to call`. En tablas grandes, la estimación lee una muestra de gránulos (consulte `projection_scan_budget_rows`).
+
+Las proyecciones de agregación, las proyecciones con una cláusula `WHERE`, con índices de omisión propios, con una clave basada en el orden de commit o en columnas virtuales, o con un `_block_number` almacenado, así como las proyecciones que no cubren todas las columnas que lee la consulta, se notifican como `not_applicable`. Se ignoran `force_optimize_projection_name` y `preferred_optimize_projection_name`, y `force_optimize_projection` no hace que la sentencia falle.
 
 **Sintaxis**
 
@@ -1079,6 +1085,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 
 **Configuración**
 
+* `projection_scan_budget_rows` — número de filas que puede leer la estimación de una proyección antes de recurrir a una muestra de gránulos. Valor predeterminado: `10000000`. `0` significa sin límite; `max_rows_to_read` puede reducirlo. Una muestra lee al menos unos 30 gránulos y uno por parte, y cuando `max_rows_to_read` no lo permite, la estimación es `unsupported`.
 * `empirical` — `1` (valor predeterminado) evalúa el índice en memoria sobre los gránulos podados por la línea base para medir la proporción de gránulos que se pueden omitir (un límite superior). `0` omite este procedimiento. Si la evaluación empírica no produce un resultado (porque está deshabilitada o porque el índice no puede evaluarse en memoria), el estimador recurre a las [estadísticas](/es/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) de columna. Si tampoco están disponibles, ofrece un resumen que solo indica si el índice es aplicable.
 
 **Salida**
@@ -1111,7 +1118,7 @@ Estimation:
   * `statistical`: se deriva de las estadísticas de columnas. Se usa cuando `empirical` está deshabilitado (`empirical = 0`) o cuando `empirical` no pudo producir un resultado, y hay estadísticas de columnas definidas en las columnas relevantes.
   * `applicability_only`: el índice es aplicable al predicado, pero ni la estimación `empirical` ni la `statistical` produjeron un resultado (p. ej., `empirical = 0` y no hay estadísticas de columnas definidas). Informa `skip_ratio: 0.0%` como límite conservador.
 * `empirical_reason` — por qué no pudo ejecutarse la estimación empírica. Se muestra solo con `empirical_status: unsupported`. Por ejemplo, un valor distinto de cero para `merge_tree_min_rows_for_seek` o `merge_tree_min_bytes_for_seek` hace que una lectura real fusione intervalos de marcas, algo que el recuento por gránulo no modela, por lo que la estimación recurre a `statistical` o `applicability_only`.
-* `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Muestra qué fracción de la tabla quedó tras la poda por PK, partición e índices existentes; es decir, la entrada del índice hipotético.
+* `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Muestra qué fracción de la tabla quedó tras la poda por PK, partición e índices existentes; es decir, la entrada del índice hipotético. Para una proyección, `sampled_marks` es `<marks read> / <marks in the parts the query reads>`, y un primer número menor que el segundo indica que la estimación usó una muestra.
 * `est_bytes` — una estimación de los bytes leídos, derivada del tamaño medio de fila de la tabla, por lo que es aproximada y varía según el almacenamiento y la compresión. La línea de base aparece solo cuando la consulta lee filas; la línea por candidato, solo cuando se conoce la estimación de bytes de la línea de base.
 
 La configuración se escribe en línea entre `WHATIF` y `SELECT`; no hay palabra clave `SETTINGS` (esto coincide con cómo otras variantes de `EXPLAIN` aceptan sus opciones).
@@ -1160,7 +1167,7 @@ Estimation:
 
 El índice hipotético `minmax` podaría las marcas de 100 a 1, con un `skip_ratio: 99.0%`. (`est_bytes` se estima a partir del tamaño medio de fila, por lo que la cifra exacta puede variar).
 
-**Ejemplo estadístico**
+**Ejemplo con estadísticas**
 
 Las [estadísticas de columna](/es/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) están desactivadas de forma predeterminada. Para usar la ruta `statistical`, defínalas primero en las columnas correspondientes y espere a que finalice la mutación de materialización:
 

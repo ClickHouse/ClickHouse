@@ -913,10 +913,13 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
   テキスト索引が定義されていない場合、この関数はカラム全体を総当たりでスキャンするを実行します。これは索引ルックアップと比べて桁違いに低速です。
 </Note>
 
-検索を行う前に、この関数はテキスト索引に指定されたトークナイザーを使用して、`input` 引数と `phrase` 引数の両方をトークン化します。
+検索を行う前に、この関数はテキスト索引に指定されたトークナイザーを使用して、`input` と、`String` の場合は `phrase` をトークン化します。
 カラムにテキスト索引が定義されていない場合は、省略可能な第 3 引数としてトークナイザーが指定されていない限り、代わりに `splitByNonAlpha` トークナイザーが使用されます。
-トークナイザー引数には、`splitByNonAlpha`、`splitByString`、`splitByRegexp`、`ngrams`、`asciiCJK`、`icu` のいずれかを指定する必要があります。
-テキスト索引でもポストプロセッサが定義されている場合、`hasPhrase` では `splitByRegexp` がサポートされないことに注意してください。
+トークナイザー引数には、`splitByNonAlpha`、`splitByString`、`splitByRegexp`、`array`、`ngrams`、`asciiCJK`、`icu` のいずれかを指定する必要があります。
+
+`input` が [Array(String)](/ja/reference/data-types/array) の場合、その要素は他の入力と同様にトークン化され、行ごとに 1 つのトークン列としてまとめられるため、フレーズが 2 つの要素にまたがることもあります。`array` トークナイザーを使用すると各要素がそのまま 1 つのトークンとなるため、すでにトークン化済みの値を格納したカラムを検索できます。
+`phrase` が [Array(String)](/ja/reference/data-types/array) の場合、その要素が検索対象のトークンとなり、順序どおり、
+重複も含めて扱われます。空のトークンを生成するトークナイザーは存在しないため、空のフレーズ要素は無視されます。
 
 <Note>
   テキスト索引で [プリプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (たとえば `lowerUTF8`) が定義されている場合、`hasPhrase` はトークン化の前にそれを `input` と `phrase` の両方に適用します。
@@ -938,8 +941,8 @@ hasPhrase(input, phrase[, tokenizer])
 
 **引数**
 
-* `input` — 入力カラム。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring)
-* `phrase` — 検索対象のフレーズ。[`const String`](/ja/reference/data-types/string)
+* `input` — 入力カラム。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`Nullable(String)`](/ja/reference/data-types/nullable) または [`Nullable(FixedString)`](/ja/reference/data-types/nullable) または [`Array(String)`](/ja/reference/data-types/array) または [`Array(FixedString)`](/ja/reference/data-types/array) または [`Array(Nullable(String))`](/ja/reference/data-types/array) または [`Array(Nullable(FixedString))`](/ja/reference/data-types/array)
+* `phrase` — 検索対象のフレーズ。[`const String`](/ja/reference/data-types/string) または [`const Array(String)`](/ja/reference/data-types/array)
 * `tokenizer` — 使用するトークナイザー。省略可能で、デフォルト値は `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
 
 **戻り値**
@@ -970,6 +973,30 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 ┌─hasPhrase('the quick brown fox jumps', 'quick fox')─┐
 │                                                   0 │
 └─────────────────────────────────────────────────────┘
+```
+
+**配列で指定したトークン列**
+
+```sql title=Query
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])
+```
+
+```response title=Response
+┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])─┐
+│                                                               1 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**2つの要素にまたがるフレーズ**
+
+```sql title=Query
+SELECT hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])
+```
+
+```response title=Response
+┌─hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])─┐
+│                                                         1 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequence {#hasSubsequence}

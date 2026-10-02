@@ -145,7 +145,7 @@ ALTER TABLE iceberg_table DROP PARTITION 2;
 ALTER TABLE iceberg_table DROP PARTITION (2, 5);
 ```
 
-Для партиции, определённой с помощью преобразования, можно указать либо уже преобразованное значение ключа партиционирования в виде литерала, либо то же выражение преобразования, применённое к исходному необработанному значению. Поддерживаются следующие преобразования: `identity`, `icebergBucket`, `icebergTruncate`, `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum` и `toRelativeHourNum`. Если партиция задана по одному столбцу, выражение преобразования необходимо обернуть в `tuple(...)`:
+Для партиции, определённой с помощью преобразования, можно указать либо уже преобразованное значение ключа партиционирования в виде литерала, либо то же выражение преобразования, применённое к исходному необработанному значению. Поддерживаются следующие преобразования: `identity`, `icebergBucket`, `icebergTruncate`, `icebergYear`, `icebergMonth`, `icebergDay` и `icebergHour`; псевдонимы `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum` и `toRelativeHourNum` из `PARTITION BY` также допускаются и вычисляются как соответствующие преобразования. Если партиция задана по одному столбцу, выражение преобразования необходимо обернуть в `tuple(...)`:
 
 ```sql
 ALTER TABLE iceberg_table DROP PARTITION 0;

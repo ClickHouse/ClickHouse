@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
@@ -30,11 +31,14 @@ v26.9 以降、この設定は廃止されています。アナライザは無�
 
 <ExperimentalBadge />
 
+<CloudOnlyBadge />
+
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
-Iceberg compaction 時に古い data files をクリーンアップできるようにします。
+ClickHouse Cloud でのみ有効で、バックグラウンドで実行される Iceberg のコンパクションを設定します。
+Iceberg コンパクション 時に古い data files をクリーンアップできるようにします。
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
@@ -101,6 +105,7 @@ catalog&#95;type = &#39;paimon&#95;rest&#39; を使用する実験的なデー�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
 Iceberg テーブルで &#39;OPTIMIZE&#39; を明示的に使用できるようにします。
+オープンソースビルドでサポートされているのは `OPTIMIZE TABLE ... MANIFEST` のみです。データのコンパクション (`MANIFEST` を指定しない `OPTIMIZE TABLE`) を実行すると `NOT_IMPLEMENTED` が返されます。
 
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
@@ -111,6 +116,37 @@ Iceberg テーブルで &#39;OPTIMIZE&#39; を明示的に使用できるよう�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
 SQL の代替となる Kusto Query Language (KQL) 方言を有効にします。
+
+## allow_experimental_logsql_dialect {#allow_experimental_logsql_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "LogsQL ダイアレクト（VictoriaLogs のログクエリ言語）を有効にする新しい設定。"}]}]} />
+
+VictoriaLogs のログクエリ言語である LogsQL を有効にします。このダイアレクトで記述したクエリは、`logsql_table` 設定で指定したテーブルに対する SELECT クエリに変換されます。
+
+使用方法:
+
+```sql
+SET allow_experimental_logsql_dialect = 1;
+SET logsql_table = 'logs';
+SET dialect = 'logsql';
+
+_time:1h error | stats by (host) count()
+```
+
+単独で完結した `SET` クエリは、ダイアレクトを元に戻せるよう、引き続き通常の SQL としてパースされます。一方、単に `set` という単語で始まるだけの LogsQL クエリは、本来の意味のまま扱われます。
+`logsql_time_column` および `logsql_message_column` 設定では、`_time` フィールドおよびデフォルト (メッセージ) フィールドが参照するカラムを指定します。
+
+すべてのフィールドを文字列として保存する VictoriaLogs とは異なり、変換後のクエリは既存のテーブルスキーマに対して実行されます。このため、主に以下の点で仕様が異なります。
+
+* テキストフィルタ (単語、フレーズ、プレフィックス、正規表現) は `String` 型のカラムを前提としており、数値カラムをテキストに変換することはありません。
+* 数値比較フィルタは数値カラムをネイティブに比較します (比較対象のリテラルが `Int128` または `Decimal256(38)` に収まる限り、整数値および小数値は厳密に比較されます。それを超える値、たとえば `UInt256` フィールド内の 1e38 を超える整数は `Float64` の精度で比較され、`stats by (<field>:<step>)` の整数バケットのステップも同様です) 。`String` カラムでは、単純な数値テキストのみが行ごとにパースされます。LogsQL の数値文法で表された値 (例: `10KiB`、`1h30m`) は行ごとにはパースされません。
+* 数値統計関数 (`sum`、`avg`、`median`、`quantile`、`stddev`、`rate_sum`) は、VictoriaLogs と同様に各フィールドの数値をパースし、数値でない値はスキップします。値は `Float64` として扱われるため、数値カラムは厳密な値ではなく `Float64` の精度で集計されます。
+* `math` パイプのオペランドには数値カラムが必要です。`String` カラムは型変換されません。
+* クエリ結果は文字列ではなく、基になるカラムの型のまま返されます。
 
 ## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
 

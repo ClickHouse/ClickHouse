@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -30,10 +31,13 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 <ExperimentalBadge />
 
+<CloudOnlyBadge />
+
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
+لا يسري مفعول هذا الإعداد إلا في ClickHouse Cloud، حيث يُستخدم لتهيئة دمج Iceberg في الخلفية.
 يتيح تنظيف ملفات البيانات القديمة أثناء دمج Iceberg.
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
@@ -101,6 +105,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
 السماح بالاستخدام الصريح لـ &#39;OPTIMIZE&#39; مع جداول Iceberg.
+في الإصدارات مفتوحة المصدر، لا يُدعم سوى `OPTIMIZE TABLE ... MANIFEST`؛ أما دمج البيانات (`OPTIMIZE TABLE` من دون `MANIFEST`) فيُعيد الخطأ `NOT_IMPLEMENTED`.
 
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
@@ -111,6 +116,39 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
 يتيح استخدام لهجة Kusto Query Language (KQL) كبديل لـ SQL.
+
+## allow_experimental_logsql_dialect {#allow_experimental_logsql_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد لتمكين لهجة LogsQL (لغة استعلام السجلات في VictoriaLogs)."}]}]} />
+
+يُمكِّن LogsQL، وهي لغة استعلام السجلات في VictoriaLogs. تُحوَّل الاستعلامات المكتوبة بهذه اللهجة إلى استعلامات SELECT تُنفَّذ على الجدول المحدد في الإعداد `logsql_table`.
+
+الاستخدام:
+
+```sql
+SET allow_experimental_logsql_dialect = 1;
+SET logsql_table = 'logs';
+SET dialect = 'logsql';
+
+_time:1h error | stats by (host) count()
+```
+
+لا يزال استعلام `SET` المستقل الكامل يُحلَّل على أنه SQL عادي، وذلك لإتاحة العودة إلى اللهجة السابقة؛ أما استعلام LogsQL الذي يبدأ فحسب بكلمة `set` فيحتفظ بمعناه.
+يُهيّئ الإعدادان `logsql_time_column` و`logsql_message_column` الأعمدة
+التي يشير إليها الحقل `_time` والحقل الافتراضي (حقل الرسالة).
+
+على عكس VictoriaLogs الذي يخزّن كل حقل على هيئة string، تُنفَّذ الاستعلامات المُترجَمة
+على مخطط الجدول الحالي. ويترتب على ذلك أبرز أوجه الاختلاف التالية عن العقد:
+
+* تتوقع عوامل تصفية النص (الكلمات، والعبارات، والبادئات، والتعبيرات النمطية) أعمدةً من نوع `String`، ولا تحوّل الأعمدة الرقمية إلى نص.
+* تقارن عوامل تصفية المقارنة الرقمية الأعمدةَ الرقمية مقارنةً أصلية (بدقة تامة للقيم الصحيحة والعشرية، ما دامت القيمة الحرفية المُقارَنة تتسع ضمن `Int128` أو `Decimal256(38)`؛ أما القيمة الأوسع، مثل عدد صحيح يتجاوز 1e38 في حقل من نوع `UInt256`، فتُقارَن بدقة `Float64`، وكذلك الحال مع خطوات الحاويات الصحيحة في `stats by (<field>:<step>)`). أما أعمدة `String`، فلا يُحلَّل منها لكل صف سوى النص الرقمي البسيط؛ ولا تُحلَّل لكل صف القيم المكتوبة وفق صياغة الأرقام في LogsQL (مثل `10KiB` و`1h30m`).
+* تحلّل الدوال الإحصائية الرقمية (`sum` و`avg` و`median` و`quantile` و`stddev` و`rate_sum`) القيمةَ الرقمية لكل حقل، متخطيةً القيم غير الرقمية، كما هو الحال في VictoriaLogs. وبما أن القيم من نوع `Float64`، فإن العمود الرقمي يُجمَّع بدقة `Float64` لا بدقة تامة.
+* يتطلب الـ pipe ‏`math` أعمدة معاملات رقمية؛ ولا تُحوَّل أعمدة `String` قسرًا.
+* تُعاد نتائج الاستعلام بأنواع الأعمدة الأساسية، لا على هيئة strings.
 
 ## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
 

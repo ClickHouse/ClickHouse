@@ -252,13 +252,11 @@ SET dialect = 'clickhouse_json';
 
 ## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
 
-<BetaBadge />
-
-**Aliases**: `allow_experimental_json_lazy_type_hints`
+**Alias**: `allow_experimental_json_lazy_type_hints`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Las indicaciones de tipo diferidas de JSON ahora están en Beta. Un alias para la configuración 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "Nueva configuración experimental para las indicaciones de tipo diferidas de JSON. En ese momento, el SETTING se llamaba `allow_experimental_json_lazy_type_hints`, que ahora es un alias suyo."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Las indicaciones de tipo diferidas de JSON ahora están en Beta. Un alias para la configuración 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "Nueva configuración experimental para las indicaciones de tipo diferidas de JSON. En ese momento, el SETTING se llamaba `allow_experimental_json_lazy_type_hints`, que ahora es un alias suyo."}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "0"},{"label": "Las indicaciones de tipo diferidas de `JSON` ahora están en GA. Esto también se aplica al alias `allow_experimental_json_lazy_type_hints`."}]}]} />
 
 Habilita las indicaciones de tipo diferidas para el tipo [JSON](/es/reference/data-types/newjson).
 

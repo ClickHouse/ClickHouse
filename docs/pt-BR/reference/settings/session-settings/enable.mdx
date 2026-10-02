@@ -251,13 +251,11 @@ SET dialect = 'clickhouse_json';
 
 ## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
 
-<BetaBadge />
-
 **Aliases**: `allow_experimental_json_lazy_type_hints`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Os Lazy Type Hints para JSON agora são Beta. Um alias para a configuração 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "Nova configuração experimental para Lazy Type Hints de JSON. Na época, a configuração se chamava `allow_experimental_json_lazy_type_hints`, que agora é um alias dela."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Os Lazy Type Hints para JSON agora são Beta. Um alias para a configuração 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "Nova configuração experimental para Lazy Type Hints de JSON. Na época, a configuração se chamava `allow_experimental_json_lazy_type_hints`, que agora é um alias dela."}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "0"},{"label": "Os Lazy Type Hints para `JSON` agora são GA. Isso também se aplica ao alias `allow_experimental_json_lazy_type_hints`."}]}]} />
 
 Habilita os Lazy Type Hints para o tipo [JSON](/pt-BR/reference/data-types/newjson).
 

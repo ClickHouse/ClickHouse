@@ -14,9 +14,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/reference/system-tables/merge_tree_settings) et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="merge_selector_algorithm">
-  ## merge_selector_algorithm
-</div>
+## merge_selector_algorithm {#merge_selector_algorithm}
 
 <ExperimentalBadge />
 
@@ -24,9 +22,7 @@ Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/r
 
 L’algorithme de sélection des parts pour l’attribution des fusions
 
-<div id="merge_selector_base">
-  ## merge_selector_base
-</div>
+## merge_selector_base {#merge_selector_base}
 
 <SettingsInfoBlock type="Float" default_value="5" />
 
@@ -34,18 +30,14 @@ Influe sur l&#39;amplification d&#39;écriture des
 fusions assignées (paramètre réservé aux experts ; ne le modifiez pas si vous ne comprenez pas
 ce qu&#39;il fait). Fonctionne avec les sélecteurs de fusion Simple et StochasticSimple
 
-<div id="merge_selector_blurry_base_scale_factor">
-  ## merge_selector_blurry_base_scale_factor
-</div>
+## merge_selector_blurry_base_scale_factor {#merge_selector_blurry_base_scale_factor}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Détermine à quel moment la logique s&#39;active en fonction du nombre de parts dans la
 partition. Plus le facteur est élevé, plus la réaction sera tardive.
 
-<div id="merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once">
-  ## merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once
-</div>
+## merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once {#merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -55,9 +47,7 @@ Active une heuristique pour le sélecteur de fusion simple afin de réduire la l
 Cela augmente le nombre de fusions concurrentes, ce qui peut aider à réduire les
 erreurs TOO&#95;MANY&#95;PARTS, mais augmente en contrepartie l&#39;amplification des écritures.
 
-<div id="merge_selector_enable_heuristic_to_remove_small_parts_at_right">
-  ## merge_selector_enable_heuristic_to_remove_small_parts_at_right
-</div>
+## merge_selector_enable_heuristic_to_remove_small_parts_at_right {#merge_selector_enable_heuristic_to_remove_small_parts_at_right}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -65,9 +55,7 @@ Active l’heuristique de sélection des parts à fusionner, qui supprime les pe
 de la plage si leur taille est inférieure au ratio spécifié (0.01) de sum&#95;size.
 Fonctionne avec les sélecteurs de fusion Simple et StochasticSimple
 
-<div id="merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent">
-  ## merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent
-</div>
+## merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent {#merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent}
 
 <ExperimentalBadge />
 
@@ -78,9 +66,17 @@ Fonctionne avec les sélecteurs de fusion Simple et StochasticSimple
 Contrôle la valeur de l’exposant utilisée dans les formules qui définissent la courbe de réduction. Diminuer l’exposant
 réduit la largeur des fusions, ce qui augmente l’amplification d’écriture. L’inverse est également vrai.
 
-<div id="merge_selector_window_size">
-  ## merge_selector_window_size
-</div>
+## merge_selector_min_age_to_disable_right_tail_heuristic {#merge_selector_min_age_to_disable_right_tail_heuristic}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
+
+Si la valeur est supérieure à zéro et que `merge_selector_enable_heuristic_to_remove_small_parts_at_right` est activé,
+désactive cette heuristique pour les plages dont toutes les parts ont au moins ce nombre de secondes d&#39;ancienneté. `0` désactive cette vérification.
+S&#39;applique aux sélecteurs de fusion Simple et StochasticSimple.
+
+## merge_selector_window_size {#merge_selector_window_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 

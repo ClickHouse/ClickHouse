@@ -118,6 +118,20 @@ doc_type: 'reference'
   يُؤخَذ فيها كل نوع من القيود غير المعيّنة من ملف التعريف السابق، ويُستبدَل كل
   نوع من القيود المعيّنة بالقيمة من ملف التعريف الجديد.
 
+## القيود والإعداد `compatibility` {#constraints-and-compatibility}
+
+يُعيد الإعداد [`compatibility`](/ar/reference/settings/session-settings/compatibility#compatibility)
+الإعدادات التي لم يحدّدها المستخدم إلى القيم الافتراضية لإصدار سابق. ولا يطبّق أبدًا قيمةً ترفضها
+القيود: إذ يحتفظ الإعداد بقيمته الافتراضية إذا كانت القيمة الافتراضية السابقة خارج نطاق `min`/`max`
+الخاص به، أو كانت إحدى قيمه المدرجة في `disallowed`، أو كان الإعداد `const`. وينطبق الأمر نفسه على الإعدادات المنتمية إلى مستوى
+يعطّله [`allow_feature_tier`](/ar/reference/settings/server-settings/settings/allow#allow_feature_tier).
+أمّا الإعداد `readonly` فلا يقيّد `compatibility` على هذا النحو، بل يحدّد ما إذا كان يُسمح للاستعلام بتعيين
+`compatibility` أصلًا.
+
+لا تتبع إعدادات `MergeTree` إلا قيمة `compatibility` الخاصة بملف التعريف الافتراضي، الذي يحدّد القيم الافتراضية
+لجميع الجداول على مستوى الخادم. وهنا أيضًا يحتفظ الإعداد بقيمته الافتراضية إذا رفض القيمةَ الافتراضية السابقة قيدٌ مسبوقٌ بالبادئة `merge_tree_`
+في ملف التعريف الافتراضي، أو رفضها `allow_feature_tier`.
+
 ## وضع القراءة فقط {#read-only}
 
 يُفعَّل وضع القراءة فقط عبر الإعداد `readonly`، ولا ينبغي الخلط بينه وبين نوع القيد `readonly`. فعندما تكون `readonly = 1`، يبقى بالإمكان تغيير إعدادٍ كان سيُرفض لولا ذلك، إذا سمح بذلك القيد `changeable_in_readonly`. ولمعرفة دلالة قيم هذا الإعداد، راجع [مرجع الإعدادات](/ar/reference/settings/session-settings/other#readonly)؛ ولمعرفة أصناف الاستعلامات التي تسمح بها كل قيمة، وكيفية ضبطها عبر HTTP interface، راجع [أذونات الاستعلامات](/ar/concepts/features/configuration/settings/permissions-for-queries#readonly).

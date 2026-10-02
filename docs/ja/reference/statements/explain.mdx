@@ -1067,7 +1067,13 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 
 仮想的なスキップ索引が `SELECT` クエリにどの程度の効果をもたらすかを、ディスク上に索引をマテリアライズ*せずに*推定します。[`CREATE HYPOTHETICAL INDEX`](/ja/reference/statements/hypothetical-index#create-hypothetical-index) で 1 つ以上の候補を定義してから `EXPLAIN WHATIF SELECT ...` を実行すると、各候補について適用可否、推定読み取りマーク数、推定バイト数、スキップ率を確認できます。
 
-[`CREATE HYPOTHETICAL PROJECTION`](/ja/reference/statements/hypothetical-projection#create-hypothetical-projection) で定義した仮説的なプロジェクションも候補になります。通常のプロジェクションの推定では、クエリが読み取るパーツを対象にそのプライマリインデックスをメモリ上に構築し、マテリアライズ済みのプロジェクションと同じ方法で絞り込みを行います。レポートには、プロジェクションの読み取りで対象となるマーク数と行数、基となるテーブルの読み取りに対する `read_ratio` (`1x` 未満なら作業量が少なく、`1x` を超えれば多いことを意味します) 、および判定理由付きの `verdict` が示されます。判定はオプティマイザのルールに従い、プロジェクションの読み取りマーク数が基となるテーブルより少ない場合、または同数でも外側の `ORDER BY` を満たす場合に、プロジェクションが選ばれます。次のものは `status: not_applicable` として表示され、現時点では推定されません: 集約プロジェクション、`WHERE` 句または独自のスキップ索引 (`WITH SETTINGS add_minmax_index_*`) を持つプロジェクション、コミット順で並べられたプロジェクション (`TYPE commit_order` およびそのクエリ形式である `_block_number, _block_offset`) 、ソートキーが自身の格納するカラムに含まれないプロジェクション (例: `ORDER BY _part_offset`) 、`_block_number` を格納するプロジェクション (ライターはパーツのマージ時にしかこれを構築しません) 、およびクエリが読み取るカラムをすべて提供していないプロジェクション。`force_optimize_projection`、`force_optimize_projection_name`、`preferred_optimize_projection_name` は無視されます。マーク数は、ライターと同じ方法でグラニュールのサイズを決めることでモデル化されます。つまり、ライターに渡されるブロックごとに 1 つのグラニュールサイズが用いられます。どのようなブロックが渡されるかはプロジェクションパーツを書き込む経路によって異なり、挿入やマテリアライズではまとめられた 1 つのブロック、マージでは `merge_max_block_size` 単位のブロックの連なりになります。パーツにはこの情報が一切記録されないため、推定はこれらのレイアウトそれぞれについて計算されます。基となるテーブルの読み取りとの比較結果がレイアウト間で一致しない場合、レポートは判定を下さず、範囲と `verdict: too close to call` を示します。定義がテーブルに適合しなくなったプロジェクションは、その理由とともに報告されます。
+[`CREATE HYPOTHETICAL PROJECTION`](/ja/reference/statements/hypothetical-projection#create-hypothetical-projection) で定義した仮説的なプロジェクションも候補になります。通常のプロジェクションの推定では、クエリが読み取るパーツを対象にそのプライマリインデックスをメモリ上に構築し、マテリアライズ済みのプロジェクションと同じ方法で絞り込みを行います。
+
+レポートには、読み取ることになるマーク数と行数、基となるテーブルの読み取りに対する `read_ratio`、およびオプティマイザがそのプロジェクションを選択するかどうかを示す `verdict` が示されます。`force_optimize_projection = 1` または `prefer_optimize_projection = 1` が指定されている場合、オプティマイザは使用可能なプロジェクションであればどれでも使用するため、コストの観点からは選ばれないプロジェクションも `chosen (forced)` として報告されます。
+
+結果がプロジェクションパーツのレイアウトに依存する場合は、`marks_span` に範囲が示され、どちらとも判断できない判定は `too close to call` として報告されます。大きなテーブルでは、推定はグラニュールのサンプルを読み取って行われます (`projection_scan_budget_rows` を参照)。
+
+集約プロジェクション、`WHERE` 句、独自のスキップ索引、コミット順または仮想カラムのキー、あるいは格納された `_block_number` を持つプロジェクション、およびクエリが読み取るカラムをすべてカバーしていないプロジェクションは、`not_applicable` として報告されます。`force_optimize_projection_name` と `preferred_optimize_projection_name` は無視され、`force_optimize_projection` によってステートメントが失敗することはありません。
 
 **構文**
 
@@ -1077,7 +1083,8 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 
 **設定**
 
-* `empirical` — `1` (デフォルト) では、ベースラインによるプルーニング後に残ったグラニュールに対し、メモリ上で索引を評価してスキップ率 (上限値) を測定します。`0` では、この処理を行いません。どちらの設定でも、実測で結果が得られない場合 (無効になっている場合や、メモリ上で索引を評価できない場合) は、推定器がカラムの[統計情報](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)を使用します。どちらも利用できない場合は、適用可能かどうかのみを示す要約に切り替えます。
+* `projection_scan_budget_rows` — プロジェクションの推定が、グラニュールのサンプリングに切り替わる前に読み取ってよい行数です。デフォルト: `10000000`。`0` は無制限を意味し、`max_rows_to_read` でこの値を引き下げることもできます。サンプリングでは少なくとも約 30 個のグラニュールを読み取り、かつパーツごとに 1 つ以上のグラニュールを読み取ります。`max_rows_to_read` によってこれが許容されない場合、推定は `unsupported` になります。
+* `empirical` — `1` (デフォルト) では、ベースラインによるプルーニング後に残ったグラニュールに対し、メモリ上で索引を評価してスキップ率 (上限値) を測定します。`0` では、この処理を行いません。どちらの設定でも、実測で結果が得られない場合 (無効になっている場合や、メモリ上で索引を評価できない場合) は、推定器がカラム [STATISTICS](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)を使用します。どちらも利用できない場合は、適用可能かどうかのみを示す要約に切り替えます。
 
 **出力**
 
@@ -1105,11 +1112,11 @@ Estimation:
 ```
 
 * `source` — 推定値の算出方法を示します。
-  * `empirical`: ベースラインで pruned されたグラニュールを対象に、メモリ内で索引を構築し、その索引によってスキップされるグラニュール数を数えます。これは上限値です。制限事項については [`CREATE HYPOTHETICAL INDEX`](/ja/reference/statements/hypothetical-index#limitations) を参照してください。
+  * `empirical`: ベースラインで プルーニングされたグラニュールを対象に、メモリ内で索引を構築し、その索引によってスキップされるグラニュール数を数えます。これは上限値です。制限事項については [`CREATE HYPOTHETICAL INDEX`](/ja/reference/statements/hypothetical-index#limitations) を参照してください。
   * `statistical`: カラム STATISTICS から導出されます。empirical が無効化されている場合 (`empirical = 0`) 、または empirical で結果を生成できず、かつ関連するカラムにカラム STATISTICS が定義されている場合に使用されます。
   * `applicability_only`: 索引は predicate に適用可能ですが、empirical と statistical のいずれでも結果を生成できなかったことを示します (たとえば `empirical = 0` でカラム STATISTICS が定義されていない場合) 。保守的な上限として `skip_ratio: 0.0%` を返します。
 * `empirical_reason` — 経験的推定を実行できなかった理由です。`empirical_status: unsupported` の場合にのみ表示されます。たとえば、`merge_tree_min_rows_for_seek` または `merge_tree_min_bytes_for_seek` がゼロ以外の場合、実際の読み取りではマーク範囲が統合されますが、グラニュールごとのカウントではこれをモデル化しないため、推定は `statistical` または `applicability_only` にフォールバックします。
-* `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`。テーブル全体のうち、PK、partition、既存の索引による pruning を通過した割合、つまり仮想索引への入力となる部分を示します。
+* `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`。テーブル全体のうち、PK、partition、既存の索引による 枝刈り を通過した割合、つまり仮想索引への入力となる部分を示します。プロジェクションの場合、`sampled_marks` は `<marks read> / <marks in the parts the query reads>` を表し、最初の数値が 2 番目の数値より小さければ、推定にサンプルが使われたことを意味します。
 * `est_bytes` — 読み取られるバイト数の推定値です。テーブルの平均行サイズから導出されるため概算であり、ストレージや圧縮によって変動します。ベースラインの行はクエリが行を読み取る場合にのみ表示され、候補ごとの行はベースラインのバイト推定値がわかっている場合にのみ表示されます。
 
 この設定は `WHATIF` と `SELECT` の間にインラインで記述します。`SETTINGS` キーワードはありません (これは、他の `EXPLAIN` バリアントでオプションを受け付ける方法と一致しています) 。
@@ -1158,7 +1165,7 @@ Estimation:
 
 仮想的な `minmax` によって、マーク数は 100 から 1 に絞り込まれます。スキップ率は `skip_ratio: 99.0%` です。(`est_bytes` は平均行サイズに基づく推定値のため、正確な値は変動します。)
 
-**統計に基づく例**
+**統計ベースの例**
 
 [カラム STATISTICS](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)はデフォルトで無効になっています。`statistical` パスを試すには、まず対象のカラムでこれらを定義し、materialize mutation が完了するまで待ちます:
 

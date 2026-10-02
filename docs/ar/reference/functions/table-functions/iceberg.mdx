@@ -428,14 +428,14 @@ ALTER TABLE iceberg_table DROP PARTITION 2;
 ALTER TABLE iceberg_table DROP PARTITION (2, 5);
 ```
 
-إذا كان التقسيم مُعرَّفًا باستخدام تحويل، فيمكنك تقديم قيمة مفتاح التقسيم بعد تحويلها بوصفها قيمة حرفية، أو تقديم تعبير التحويل نفسه مطبّقًا على قيمة المصدر الخام. التحويلات المدعومة هي `identity` و`icebergBucket` و`icebergTruncate` و`toYearNumSinceEpoch` و`toMonthNumSinceEpoch` و`toRelativeDayNum` و`toRelativeHourNum`. وإذا كان التقسيم قائمًا على عمود واحد، فيجب وضع تعبير التحويل داخل `tuple(...)`:
+إذا كان التقسيم مُعرَّفًا باستخدام تحويل، فيمكنك تقديم قيمة مفتاح التقسيم بعد تحويلها بوصفها قيمة حرفية، أو تقديم تعبير التحويل نفسه مطبّقًا على قيمة المصدر الخام. التحويلات المدعومة هي `identity` و`icebergBucket` و`icebergTruncate` و`icebergYear` و`icebergMonth` و`icebergDay` و`icebergHour`؛ كما تُقبل الأسماء البديلة `toYearNumSinceEpoch` و`toMonthNumSinceEpoch` و`toRelativeDayNum` و`toRelativeHourNum` المستخدمة في `PARTITION BY`، وتُقيَّم على أنها هذه التحويلات. وإذا كان التقسيم قائمًا على عمود واحد، فيجب وضع تعبير التحويل داخل `tuple(...)`:
 
 ```sql
 ALTER TABLE iceberg_table DROP PARTITION 0;
 ALTER TABLE iceberg_table DROP PARTITION tuple(icebergBucket(4, 'apple'));
 ```
 
-ترفض العملية استخدام أيٍّ من الإعدادات `iceberg_snapshot_id` أو `iceberg_timestamp_ms` أو `iceberg_metadata_file_path` إذا ضُبط صراحةً. وهي تعدّل الحالة الحالية للجدول، لا لقطة تاريخية أو إصدارًا من البيانات الوصفية جرى اختياره صراحةً.
+ترفض العملية استخدام أيٍّ من الإعدادات `iceberg_snapshot_id` أو `iceberg_timestamp_ms` أو `iceberg_metadata_file_path` إذا ضُبط صراحةً. وهي تعدّل الحالة الحالية للجدول، لا لقطة تاريخية أو إصدارًا من البيانات الوصفية جرى اختياره صراحةً.
 
 الصيغتان `DROP PARTITION ID '...'` و`DROP PARTITION ALL` غير مدعومتين. وحذف تقسيم غير موجود لا يُحدث أي تغيير. ولا تحذف العملية ملفات البيانات فعليًا. وتظل الصفوف المحذوفة متاحة عبر اللقطات السابقة، كما تظل هذه اللقطات متاحة لاستعلامات السفر عبر الزمن إلى أن تنتهي صلاحيتها وتُزال ملفاتها.
 
@@ -525,24 +525,17 @@ value: 993
 
 ### الدمج {#iceberg-writes-compaction}
 
-يدعم ClickHouse دمج جداول Iceberg. حاليًا، يمكنه دمج ملفات الحذف حسب الموضع في ملفات البيانات مع تحديث البيانات الوصفية. وتبقى معرّفات اللقطات السابقة والطوابع الزمنية من دون تغيير، لذا يظل بالإمكان استخدام ميزة السفر عبر الزمن بالمعرّفات والقيم الزمنية نفسها.
+لم يُنفَّذ دمج البيانات (أي دمج ملفات الحذف حسب الموضع في ملفات البيانات) في الإصدار مفتوح المصدر، إذ يُرجع الأمر `OPTIMIZE TABLE` على جدول Iceberg الخطأ `NOT_IMPLEMENTED` في هذا الإصدار. كما أنه لا ينشر الجيل المُعاد كتابته بشكل ذرّي، ولذلك لا يمكن تحديد الجيل الذي سيعتمده القارئ.
 
-كيفية استخدامه:
+يجمع دمج ملفات البيان ملفات البيان الخاصة بالجدول ويوحّدها. ويتطلب ذلك الإصدار 2 من صيغة Iceberg، إذ تُرفض جداول الإصدارين 1 و3. كما يُرفض الجدول المشفّر الذي تحمل ملفات بياناته الحقل `key_metadata` لكل ملف على حدة، إذا احتاجت ملفات البيان الخاصة به إلى إعادة الكتابة.
 
 ```sql
 SET allow_experimental_iceberg_compaction = 1
 
-OPTIMIZE TABLE iceberg_writes_example;
-
-SELECT *
-FROM iceberg_writes_example
-FORMAT VERTICAL;
-
-Row 1:
-──────
-x: Ivanov
-y: 993
+OPTIMIZE TABLE iceberg_writes_example MANIFEST;
 ```
+
+لاسترداد المساحة التي تشغلها الملفات، استخدم [`expire_snapshots`](#iceberg-expire-snapshots). يتطلب ذلك الإصدار 2 من الصيغة، ويرفض الجداول المستندة إلى catalog معاملاتي.
 
 ### حذف اللقطات منتهية الصلاحية {#iceberg-expire-snapshots}
 
@@ -628,9 +621,9 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 6. في الوضع العادي: يحذف فعليًا قوائم البيان وملفات البيان وملفات البيانات التي لم يعد من الممكن الوصول إليها
 7. في وضع `dry_run = 1`: يتخطى الخطوتين 5 و6 ويُرجع فقط المقاييس المحسوبة
 
-#### سياسة الاحتفاظ باللقطات {#iceberg-snapshot-retention-policy}
+#### سياسة الاستبقاء للقطات {#iceberg-snapshot-retention-policy}
 
-يراعي الأمر `expire_snapshots` [سياسة الاحتفاظ بلقطات Iceberg](https://iceberg.apache.org/spec/#snapshot-retention-policy). يُضبط الاحتفاظ عبر خصائص جدول Iceberg وعمليات التجاوز على مستوى كل مرجع:
+يراعي الأمر `expire_snapshots` [سياسة الاستبقاء للقطات Iceberg](https://iceberg.apache.org/spec/#snapshot-retention-policy). يُضبط الاحتفاظ عبر خصائص جدول Iceberg وعمليات التجاوز على مستوى كل مرجع:
 
 | Property                               | Scope | Default                                                                      | Description                                                                    |
 | -------------------------------------- | ----- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
@@ -642,7 +635,7 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 
 **تقييم الاحتفاظ:**
 
-* **لكل فرع** (بما في ذلك `main`): يُتتبَّع تسلسل الأسلاف بدءًا من رأس الفرع. ويُحتفَظ باللقطات ما دام أحد الشرطين التاليين متحققًا:
+* **لكل فرع** (بما في ذلك `main`): يُتتبَّع تسلسل الأسلاف بدءًا من رأس الفرع. ويُحتفَظ باللقطات ما دام أحد الشرطين التاليين متحققًا:
   * أن تكون اللقطة من أول `min-snapshots-to-keep` في التسلسل
   * أن يكون عمر اللقطة ضمن `max-snapshot-age-ms` (أي `now - timestamp-ms <= max-snapshot-age-ms`)
 * **بالنسبة إلى `tags`**: يُحتفَظ باللقطة المشار إليها ما لم يكن `tag` قد تجاوز `max-ref-age-ms` الخاص به، وعندها يُزال مرجع `tag`
@@ -663,11 +656,12 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 ```
 
 <Note>
-  * لا تُدعَم إلا جداول Iceberg ذات تنسيق الإصدار 2 (إذ لا تضمن لقطات v1 وجود `manifest-list`، وهو مطلوب لتحديد الملفات المراد تنظيفها بأمان)
+  * لا تُدعَم إلا جداول Iceberg ذات صيغة الإصدار 2 (إذ لا تضمن لقطات v1 وجود `manifest-list`، وهو مطلوب لتحديد الملفات المراد تنظيفها بأمان)
+  * تُرفَض الجداول المستندة إلى catalog معاملاتي بالخطأ `NOT_IMPLEMENTED`
   * تُحفَظ اللقطة الحالية دائمًا، حتى إذا كانت أقدم من الطابع الزمني المحدد
   * يتطلب تمكين الإعداد `allow_insert_into_iceberg`
   * يتطلب تمكين الإعداد `allow_experimental_expire_snapshots`
-  * يُطبَّق التفويض الخاص بـ catalog نفسه (مثل مصادقة REST catalog وAWS Glue IAM وغيرها) بشكل مستقل عندما يحدّث ClickHouse البيانات الوصفية
+  * يُطبَّق التفويض الخاص بـ catalog نفسه (مثل مصادقة REST catalog وAWS Glue IAM وغيرها) بشكل مستقل عندما يحدّث ClickHouse البيانات الوصفية
 </Note>
 
 ### إزالة الملفات اليتيمة {#iceberg-remove-orphan-files}

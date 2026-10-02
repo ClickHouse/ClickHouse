@@ -184,6 +184,10 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
   Isso funciona quando a consulta é enviada como texto, que é o padrão. Com [`serialize_query_plan = 1`](/pt-BR/reference/settings/session-settings/serialize#serialize_query_plan), o iniciador envia um plano de leitura já criado, e um servidor remoto que executa esse plano não aplica suas próprias políticas de linha. Portanto, a leitura de uma tabela `Distributed` sobre `local_table` retorna linhas não filtradas. Mantenha `serialize_query_plan = 0` para usuários cujas políticas de linha devam ser aplicadas. Consulte a [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
 </Warning>
 
+## Tabelas Join {#join-tables}
+
+Uma tabela [Join](/pt-BR/reference/engines/table-engines/special/join) é uma tabela hash previamente preparada que um `JOIN` ou `joinGet` lê exatamente como está, de modo que suas linhas não podem ser filtradas nesse momento. Uma política aplicada a essa tabela, incluindo uma política `ON db.*` válida para todo o banco de dados, filtra um `SELECT` simples na tabela; porém, enquanto ela estiver em vigor, as consultas `JOIN` e `joinGet` nessa tabela falham com `ACCESS_DENIED`.
+
 ## Cláusula ON CLUSTER {#on-cluster-clause}
 
 Permite criar políticas de linha em um cluster. Consulte [DDL distribuído](/pt-BR/reference/statements/distributed-ddl). Essa também é uma maneira prática de criar a política nas tabelas locais de cada servidor do cluster.

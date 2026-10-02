@@ -591,7 +591,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_MergeTreeDataWriterSortingBlocksMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 对块进行排序所花费的时间
 * `ProfileEvent_MergeTreeDataWriterMergingBlocksMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 合并输入块所花费的时间 (适用于特殊的 MergeTree 引擎)
 * `ProfileEvent_MergeTreeDataWriterProjectionsCalculationMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 计算投影所花费的时间
-* `ProfileEvent_MergeTreeDataProjectionWriterSortingBlocksMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 对块进行排序所花费的时间 (对于 projection，其键可能与表的排序键不同)
+* `ProfileEvent_MergeTreeDataProjectionWriterSortingBlocksMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 对块进行排序所花费的时间 (对于 projection，其键可能与表的 sorting key 不同)
 * `ProfileEvent_MergeTreeDataProjectionWriterMergingBlocksMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 合并块所花费的时间
 * `ProfileEvent_InsertedWideParts` ([UInt64](/zh/reference/data-types/int-uint)) — 以 wide 格式插入的 parts 数量。
 * `ProfileEvent_InsertedCompactParts` ([UInt64](/zh/reference/data-types/int-uint)) — 以 Compact 格式插入的 parts 数量。
@@ -855,7 +855,6 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_CachedReadBufferReadFromSourceBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从文件系统缓存源读取的字节数 (来自远程文件系统等)
 * `ProfileEvent_CachedReadBufferPredownloadedFromSourceBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 为预下载而从文件系统缓存源读取的字节数 (来自远程文件系统等)
 * `ProfileEvent_CachedReadBufferReadFromCacheBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从文件系统缓存读取的字节数
-* `ProfileEvent_CachedReadBufferPredownloadedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从文件系统缓存源读取的字节数。缓存分段会作为整体按从左到右的顺序读取，因此，为了获取所需数据，可能需要预先下载该分段中与当前任务无关的部分数据
 * `ProfileEvent_CachedReadBufferCacheWriteBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从源 (远程文件系统等) 写入文件系统缓存的字节数
 * `ProfileEvent_CachedReadBufferCacheWriteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 将数据写入文件系统缓存所花费的时间
 * `ProfileEvent_CachedReadBufferCacheWriteStopped` ([UInt64](/zh/reference/data-types/int-uint)) — 将 File 段写入文件系统缓存时，因下载过程中停止 (空间预留或缓存写入失败) 而改为绕过缓存继续读取的次数
@@ -1516,8 +1515,8 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_CoordinatedMergesMergeCoordinatorSelectMergesMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在合并协调器内部使用合并选择器查找合并任务所花费的总时间
 * `ProfileEvent_CoordinatedMergesMergeCoordinatorLockStateForShareCount` ([UInt64](/zh/reference/data-types/int-uint)) — 以共享方式获取协调器状态锁的总次数
 * `ProfileEvent_CoordinatedMergesMergeCoordinatorLockStateExclusivelyCount` ([UInt64](/zh/reference/data-types/int-uint)) — 以独占方式获取协调器状态锁的总次数
-* `ProfileEvent_CoordinatedMergesMergeCoordinatorLockStateForShareMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 以共享方式锁定协调器状态 mutex 所花费的总时间
-* `ProfileEvent_CoordinatedMergesMergeCoordinatorLockStateExclusivelyMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 以独占方式锁定协调器状态 mutex 所花费的总时间
+* `ProfileEvent_CoordinatedMergesMergeCoordinatorLockStateForShareMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 以共享方式锁定协调器状态互斥锁所花费的总时间
+* `ProfileEvent_CoordinatedMergesMergeCoordinatorLockStateExclusivelyMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 以独占方式锁定协调器状态互斥锁所花费的总时间
 * `ProfileEvent_CoordinatedMergesMergeWorkerUpdateCount` ([UInt64](/zh/reference/data-types/int-uint)) — 合并工作线程更新的总次数
 * `ProfileEvent_CoordinatedMergesMergeWorkerUpdateMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 工作线程更新其已分配合并任务的本地状态所花费的总时间
 * `ProfileEvent_CoordinatedMergesMergeAssignmentRequest` ([UInt64](/zh/reference/data-types/int-uint)) — 合并分配请求的总次数
@@ -1535,7 +1534,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_WasmGuestExecuteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 执行 WebAssembly 代码所花费的时间
 * `ProfileEvent_WasmTotalExecuteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 执行 WebAssembly 代码所花费的时间
 * `ProfileEvent_WasmModuleInstatiate` ([UInt64](/zh/reference/data-types/int-uint)) — 已创建的 WebAssembly 隔离区数量
-* `ProfileEvent_ExecutableUserDefinedFunctionInvocations` ([UInt64](/zh/reference/data-types/int-uint)) — 可执行和 executable&#95;pool 用户自定义函数的调用次数。
+* `ProfileEvent_ExecutableUserDefinedFunctionInvocations` ([UInt64](/zh/reference/data-types/int-uint)) — executable 和 executable&#95;pool 用户自定义函数的调用次数。
 * `ProfileEvent_ExecutableUserDefinedFunctionElapsedMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 执行 executable 和 executable&#95;pool 用户自定义函数所花费的挂钟时间 (微秒) 。
 * `ProfileEvent_ExecutableUserDefinedFunctionUserTimeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — executable 和 executable&#95;pool 用户自定义函数子进程消耗的用户态 CPU 时间 (微秒) 。
 * `ProfileEvent_ExecutableUserDefinedFunctionSystemTimeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — executable 和 executable&#95;pool 用户自定义函数子进程消耗的内核态 CPU 时间 (微秒) 。
@@ -1561,6 +1560,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_IndexGenericExclusionSearchAlgorithm` ([UInt64](/zh/reference/data-types/int-uint)) — 在索引标记上使用通用排除搜索算法的次数
 * `ProfileEvent_IndexGenericExclusionSearchStepLimitReached` ([UInt64](/zh/reference/data-types/int-uint)) — 在索引标记上执行通用排除搜索时，达到 merge&#95;tree&#95;generic&#95;exclusion&#95;search&#95;max&#95;steps 并接受剩余标记范围、不再继续拆分的次数
 * `ProfileEvent_ParallelReplicasQueryCount` ([UInt64](/zh/reference/data-types/int-uint)) — 单次查询执行期间使用并行副本执行的 (子) 查询数量
+* `ProfileEvent_AutomaticParallelReplicasProbePlansBuilt` ([UInt64](/zh/reference/data-types/int-uint)) — 自动并行副本机制构建并行副本候选计划以与单节点计划比较的次数。这类计划不一定会被采用：构建后会估算其成本，如果单节点计划更优，则丢弃该候选计划
 * `ProfileEvent_DistributedConnectionReconnectCount` ([UInt64](/zh/reference/data-types/int-uint)) — 在分布式查询执行期间重新连接其他服务器的次数。当从连接池中获取到过期连接时，可能会发生这种情况
 * `ProfileEvent_DistributedConnectionConnectCount` ([UInt64](/zh/reference/data-types/int-uint)) — 在分布式查询执行期间连接其他服务器的次数。当建立新连接而不是使用连接池中的现有连接时会发生
 * `ProfileEvent_RefreshableViewRefreshSuccess` ([UInt64](/zh/reference/data-types/int-uint)) — 可刷新materialized view 刷新的次数

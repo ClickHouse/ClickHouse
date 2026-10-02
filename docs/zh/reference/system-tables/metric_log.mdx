@@ -849,7 +849,6 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_CachedReadBufferReadFromSourceBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从文件系统缓存源读取的字节数 (来自远程文件系统等)
 * `ProfileEvent_CachedReadBufferPredownloadedFromSourceBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 为预下载从文件系统缓存源读取的字节数 (来自远程文件系统等)
 * `ProfileEvent_CachedReadBufferReadFromCacheBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从文件系统缓存读取的字节数
-* `ProfileEvent_CachedReadBufferPredownloadedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从文件系统缓存源读取的字节数。缓存分段会作为一个整体按从左到右的顺序读取，因此可能需要预下载与当前任务无关的某个分段部分，才能获取所需数据
 * `ProfileEvent_CachedReadBufferCacheWriteBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从源 (远程文件系统等) 写入文件系统缓存的字节数
 * `ProfileEvent_CachedReadBufferCacheWriteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 将数据写入文件系统缓存所花费的时间
 * `ProfileEvent_CachedReadBufferCacheWriteStopped` ([UInt64](/zh/reference/data-types/int-uint)) — 下载过程中将 File 段写入文件系统缓存被中止的次数 (空间预留或缓存写入失败) ，之后读取会绕过缓存继续进行
@@ -1555,6 +1554,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_IndexGenericExclusionSearchAlgorithm` ([UInt64](/zh/reference/data-types/int-uint)) — 在索引标记上使用通用排除搜索算法的次数
 * `ProfileEvent_IndexGenericExclusionSearchStepLimitReached` ([UInt64](/zh/reference/data-types/int-uint)) — 在索引标记上执行通用排除搜索时，达到 merge&#95;tree&#95;generic&#95;exclusion&#95;search&#95;max&#95;steps 并接受剩余标记范围、不再继续拆分的次数
 * `ProfileEvent_ParallelReplicasQueryCount` ([UInt64](/zh/reference/data-types/int-uint)) — 单次查询执行期间，使用并行副本执行的 (子) 查询数量
+* `ProfileEvent_AutomaticParallelReplicasProbePlansBuilt` ([UInt64](/zh/reference/data-types/int-uint)) — 自动并行副本构建基于并行副本的候选计划、用于与单节点计划比较的次数。此类计划不一定都会被采用：构建它们是为了估算成本，若单节点计划更优，则会将其丢弃
 * `ProfileEvent_DistributedConnectionReconnectCount` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式查询执行期间，与其他服务器重新建立连接的次数。当从连接池中获取到过期连接时，可能会发生这种情况
 * `ProfileEvent_DistributedConnectionConnectCount` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式查询执行期间，与其他服务器建立连接的次数。当建立新连接而不是使用连接池中的现有连接时，就会发生这种情况。
 * `ProfileEvent_RefreshableViewRefreshSuccess` ([UInt64](/zh/reference/data-types/int-uint)) — 可刷新materialized view 成功刷新的次数

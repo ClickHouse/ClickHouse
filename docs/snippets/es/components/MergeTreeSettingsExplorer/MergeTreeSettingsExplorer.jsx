@@ -465,7 +465,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "merge_selector_*",
-      count: 7,
+      count: 8,
       settings: [
         { name: "merge_selector_algorithm", path: "/merge-selector#merge_selector_algorithm", default: "Simple" },
         { name: "merge_selector_base", path: "/merge-selector#merge_selector_base", default: "5" },
@@ -473,6 +473,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", path: "/merge-selector#merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", default: "1" },
         { name: "merge_selector_enable_heuristic_to_remove_small_parts_at_right", path: "/merge-selector#merge_selector_enable_heuristic_to_remove_small_parts_at_right", default: "1" },
         { name: "merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent", path: "/merge-selector#merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent", default: "5" },
+        { name: "merge_selector_min_age_to_disable_right_tail_heuristic", path: "/merge-selector#merge_selector_min_age_to_disable_right_tail_heuristic", default: "0" },
         { name: "merge_selector_window_size", path: "/merge-selector#merge_selector_window_size", default: "1000" }
       ],
       children: []
