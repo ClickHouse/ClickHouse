@@ -40,6 +40,10 @@ SELECT name FROM system.tables WHERE database = currentDatabase() AND name IN (S
 -- namesake in the other database is not enumerated.
 SELECT database = currentDatabase(), table FROM system.parts WHERE (database, table) IN ((currentDatabase(), 't_a')) ORDER BY table SETTINGS log_comment = '05228 parts tuple';
 SELECT database = currentDatabase(), name FROM system.tables WHERE (database, name) IN ((currentDatabase(), 't_a')) ORDER BY name SETTINGS log_comment = '05228 tables tuple';
+SELECT DISTINCT database = currentDatabase(), table FROM system.columns WHERE (database, table) IN ((currentDatabase(), 't_a')) ORDER BY table SETTINGS log_comment = '05228 columns tuple';
+SELECT database = currentDatabase(), table FROM system.constraints WHERE (database, table) IN ((currentDatabase(), 't_a')) ORDER BY table SETTINGS log_comment = '05228 constraints tuple';
+SELECT database = currentDatabase(), table FROM system.data_skipping_indices WHERE (database, table) IN ((currentDatabase(), 't_a')) ORDER BY table SETTINGS log_comment = '05228 data_skipping_indices tuple';
+SELECT database = currentDatabase(), table FROM system.projections WHERE (database, table) IN ((currentDatabase(), 't_a')) ORDER BY table SETTINGS log_comment = '05228 projections tuple';
 -- And without the shortlist, both are.
 SELECT database = currentDatabase(), name FROM system.tables WHERE database IN (currentDatabase(), {CLICKHOUSE_DATABASE_1:String}) AND name = 't_a' ORDER BY 1 DESC SETTINGS log_comment = '05228 tables tuple control';
 

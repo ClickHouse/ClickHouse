@@ -153,9 +153,14 @@ void StorageSystemIcebergHistory::fillData(
     auto filter_databases = [&]()
     {
         const auto & catalog = DatabaseCatalog::instance();
+        /// The block filter below only sees `database`, so it cannot use a condition that names the
+        /// database together with the table, such as `(database, table) IN ((db, t))`; the extraction
+        /// reads that shape too, and shortlists the databases first.
+        const auto database_name_filter = extractNameFilter(predicate, "database", context_copy);
         MutableColumnPtr database_column = ColumnString::create();
         for (const auto & [name, db] : catalog.getDatabases({.with_datalake_catalogs = true, .with_remote_databases = false}))
-            database_column->insert(name);
+            if (!database_name_filter || database_name_filter(name))
+                database_column->insert(name);
 
         Block databases_block{
             {std::move(database_column), std::make_shared<DataTypeString>(), "database"},

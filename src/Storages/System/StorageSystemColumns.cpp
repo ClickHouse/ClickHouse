@@ -431,6 +431,7 @@ private:
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
     std::optional<ActionsDAG> virtual_columns_filter;
+    IDatabase::FilterByNameFunction database_name_filter;
     IDatabase::FilterByNameFunction table_name_filter;
 };
 
@@ -444,9 +445,12 @@ void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
         block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "database"));
         block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "table"));
 
-        /// Read the condition on `table` before the sets below are built: that build drops the
-        /// elements of an `IN` over a subquery, and the extraction needs them (it builds such a set
-        /// itself, keeping them).
+        /// Read the conditions on `database` and `table` before the sets below are built: that build
+        /// drops the elements of an `IN` over a subquery, and the extraction needs them (it builds such
+        /// a set itself, keeping them). The block filter of the databases below only sees `database`,
+        /// so it cannot use a condition that names the database together with the table, such as
+        /// `(database, table) IN ((db, t))`; the extraction reads that shape too.
+        database_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "database", context);
         table_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "table", context);
 
         virtual_columns_filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
@@ -501,6 +505,8 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
         {
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
                 continue; /// We don't want to show the internal database for temporary tables in system.columns
+            if (database_name_filter && !database_name_filter(database_name))
+                continue;
             database_column_mut->insert(database_name);
         }
 
@@ -508,7 +514,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
         if (context->hasSessionContext())
         {
             external_tables = context->getSessionContext()->getExternalTables();
-            if (!external_tables.empty())
+            if (!external_tables.empty() && (!database_name_filter || database_name_filter("")))
                 database_column_mut->insertDefault(); /// Empty database for external tables.
         }
 

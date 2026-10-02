@@ -219,6 +219,7 @@ private:
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
     ExpressionActionsPtr virtual_columns_filter;
+    IDatabase::FilterByNameFunction database_name_filter;
     IDatabase::FilterByNameFunction table_name_filter;
 };
 
@@ -237,6 +238,10 @@ void ReadFromSystemConstraints::applyFilters(ActionDAGNodes added_filter_nodes)
         /// It is read before the filter below is built: that build drops the elements of an `IN`
         /// over a subquery, and the extraction needs them (it builds such a set itself, keeping them).
         table_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "table", context);
+        /// The filter below only sees `database`, so it cannot use a condition that names the
+        /// database together with the table, such as `(database, table) IN ((db, t))`; the
+        /// extraction reads that shape too, and shortlists the databases first.
+        database_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "database", context);
 
         auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
         if (dag)
@@ -278,6 +283,8 @@ void ReadFromSystemConstraints::initializePipeline(QueryPipelineBuilder & pipeli
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue;
         if (database->isExternal())
+            continue;
+        if (database_name_filter && !database_name_filter(database_name))
             continue;
         column->insert(database_name);
     }
