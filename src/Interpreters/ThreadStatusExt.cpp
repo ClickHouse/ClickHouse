@@ -3,6 +3,7 @@
 #include <Common/OSThreadNiceValue.h>
 #include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
+#include <Common/MemoryTrackerSwitcher.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -129,6 +130,12 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
                 elem->throwIfKilled();
         }
     };
+}
+
+ThreadGroup::~ThreadGroup()
+{
+    MemoryTrackerSwitcher query_memory_scope(&memory_tracker);
+    String{}.swap(shared_data.query_for_logs);
 }
 
 ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group)
@@ -396,6 +403,8 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 
     if (boundToOSThread())
         thread_group_->linkThread(thread_id);
+    local_data.plan_step_index.reset();
+    local_data.pipeline_processor_index.reset();
     thread_group = thread_group_;
     try
     {
@@ -450,6 +459,13 @@ void ThreadStatus::detachFromGroup()
         finalizePerformanceCounters();
     }
 
+    clearQueryId();
+    String{}.swap(local_data.query_for_logs);
+    local_data.query_is_canceled_predicate = {};
+    local_data.throw_if_query_canceled_predicate = {};
+    fatal_error_callback = {};
+    flushUntrackedMemory();
+
     performance_counters.setParent(&ProfileEvents::global_counters);
 
     memory_tracker.reset();
@@ -482,12 +498,8 @@ void ThreadStatus::detachFromGroup()
     Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
 #endif
 
-    clearQueryId();
     query_context.reset();
-
     local_data = {};
-
-    fatal_error_callback = {};
 
 }
 
