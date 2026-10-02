@@ -113,7 +113,6 @@ class ClickHouseProc:
         self.proc_2 = None
         self.pid = 0
         int(Utils.cpu_count() / 2)
-        self.seaweedfs_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
         # The failing sub-command + its ClickHouse error tail from
@@ -160,52 +159,11 @@ class ClickHouseProc:
 """)
 
     def start_seaweedfs(self, test_type):
-        os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
-        command = [
-            "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
-            test_type,
-            "./tests",
-        ]
-        with open(self.SEAWEEDFS_LOG, "w") as log_file:
-            self.seaweedfs_proc = subprocess.Popen(
-                command, stdout=log_file, stderr=subprocess.STDOUT
-            )
-        print(
-            f"Started setup_seaweedfs.sh asynchronously with PID {self.seaweedfs_proc.pid}"
+        from ci.jobs.scripts import seaweedfs_service
+
+        return seaweedfs_service.start(
+            test_type, self.SEAWEEDFS_LOG, f"{Utils.cwd()}/ci/tmp"
         )
-
-        # Wait for setup_seaweedfs.sh to fully exit, not just for the bucket to
-        # be listable: the server's S3 disks authenticate at startup and need
-        # the whole identity/bucket setup in place. The seaweedfs server is
-        # nohup'd and outlives the script, so waiting on the script is safe.
-        # Its internal waits are bounded (60s each), so pad the timeout.
-        try:
-            returncode = self.seaweedfs_proc.wait(timeout=240)
-        except subprocess.TimeoutExpired:
-            print(
-                "Failed to start seaweedfs: setup_seaweedfs.sh did not finish in time"
-            )
-            self.seaweedfs_proc.kill()
-            return False
-        if returncode != 0:
-            print(f"setup_seaweedfs.sh exited with code {returncode}")
-            return False
-
-        # pass the credentials explicitly: the setup script no longer writes
-        # ~/.aws, and without them the aws cli would sign with the runner's
-        # instance-role credentials, which SeaweedFS does not know
-        access_key = os.environ.get("SEAWEEDFS_ACCESS_KEY", "clickhouse")
-        secret_key = os.environ.get("SEAWEEDFS_SECRET_KEY", "clickhouse")
-        if not Shell.check(
-            f"AWS_ACCESS_KEY_ID={access_key} AWS_SECRET_ACCESS_KEY={secret_key} "
-            "AWS_DEFAULT_REGION=us-east-1 "
-            "aws --endpoint-url http://localhost:11111 s3 ls s3://test",
-            verbose=False,
-            retries=3,
-        ):
-            print("Failed to start seaweedfs: bucket test not reachable")
-            return False
-        return True
 
     def start_azurite(self):
         # Raise the open files limit before launching azurite-rs.

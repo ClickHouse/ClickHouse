@@ -345,6 +345,38 @@ xml_dir = os.path.dirname(os.path.abspath(args.file[0].name))
 tree = et.parse(args.file[0])
 root = tree.getroot()
 
+
+def expand_includes(parent, source_dir, stack):
+    """Inline <fragment> children in order, with paths relative to their source file."""
+    index = 0
+    while index < len(parent):
+        element = parent[index]
+        if element.tag != "include":
+            if element.tag in ("query", "settings") and element.get("file"):
+                path = os.path.join(source_dir, element.get("file"))
+                element.set("file", os.path.relpath(path, xml_dir))
+            expand_includes(element, source_dir, stack)
+            index += 1
+            continue
+
+        filename = element.get("file")
+        if not filename or len(element.attrib) != 1:
+            raise ValueError('<include> requires exactly one attribute: file="..."')
+        path = os.path.realpath(os.path.join(source_dir, filename))
+        if path in stack:
+            raise ValueError(f"Cyclic performance-test include: {' -> '.join((*stack, path))}")
+        fragment = et.parse(path).getroot()
+        if fragment.tag != "fragment":
+            raise ValueError(f"Performance-test include {path} must have a <fragment> root")
+        expand_includes(fragment, os.path.dirname(path), (*stack, path))
+        parent.remove(element)
+        children = list(fragment)
+        parent[index:index] = children
+        index += len(children)
+
+
+expand_includes(root, xml_dir, (os.path.realpath(args.file[0].name),))
+
 reportStageEnd("parse")
 
 # Process query parameters

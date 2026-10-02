@@ -453,6 +453,15 @@ function run_tests
         test_files=("${test_files[@]}")
     fi
 
+    for test in "${test_files[@]}"
+    do
+        if rg -q 'requires_s3="1"' "$test"
+        then
+            echo "Cannot compare $test: perf_s3 requires the Praktika performance job for S3 provisioning and per-side namespaces" >&2
+            exit 1
+        fi
+    done
+
     if [ "$run_only_changed_tests" -ne 0 ]; then
         if [ ${#test_files[@]} -eq 0 ]; then
             time "$script_dir/report.py" --no-tests-run > report.html
