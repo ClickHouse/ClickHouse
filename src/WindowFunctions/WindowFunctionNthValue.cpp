@@ -50,13 +50,13 @@ struct WindowFunctionNthValue final : public StatelessWindowFunction
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
     {
-        const auto & current_block = transform->blocks.blockAt(transform->current.location.block);
+        const auto & current_block = transform->blocks.blockAt(transform->peers.current().location.block);
         IColumn & to = *current_block.result_columns[function_index];
         const auto & workspace = transform->workspaces[function_index];
 
         Int64 offset = (*current_block.materialized_columns[
                 workspace.argument_column_indices[1]])[
-            transform->current.location.row].safeGet<Int64>();
+            transform->peers.current().location.row].safeGet<Int64>();
 
         /// Either overflow or really negative value, both is not acceptable.
         if (offset <= 0)
@@ -67,10 +67,10 @@ struct WindowFunctionNthValue final : public StatelessWindowFunction
         }
 
         --offset;
-        const auto target_row = transform->blocks.move(transform->frame.bounds().start, offset);
+        const auto target_row = transform->blocks.move(transform->frame.bounds().start.location, offset);
         if (!target_row
-            || *target_row < transform->frame.bounds().start
-            || transform->frame.bounds().end <= *target_row)
+            || *target_row < transform->frame.bounds().start.location
+            || transform->frame.bounds().end.location <= *target_row)
         {
             // Offset is outside the frame.
             to.insertDefault();

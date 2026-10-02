@@ -87,23 +87,23 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
 
         Float64 result = 0;
 
-        if (transform->frame.bounds().start < transform->frame.bounds().end)
+        if (transform->frame.bounds().start.location < transform->frame.bounds().end.location)
         {
-            RowNumber frame_back = transform->blocks.prev(transform->frame.bounds().end);
+            RowNumber frame_back = transform->blocks.prev(transform->frame.bounds().end.location);
             Float64 back_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, frame_back);
 
-            if (transform->prev_frame.start <= transform->frame.bounds().start
-                && transform->frame.bounds().start < transform->prev_frame.end
-                && transform->prev_frame.end <= transform->frame.bounds().end)
+            if (transform->prev_frame.start.location <= transform->frame.bounds().start.location
+                && transform->frame.bounds().start.location < transform->prev_frame.end.location
+                && transform->prev_frame.end.location <= transform->frame.bounds().end.location)
             {
-                for (RowNumber i = transform->prev_frame.start; i < transform->frame.bounds().start; i = transform->blocks.next(i))
+                for (RowNumber i = transform->prev_frame.start.location; i < transform->frame.bounds().start.location; i = transform->blocks.next(i))
                 {
                     Float64 prev_val = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_VALUE, i);
                     Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
                     result -= std::exp((prev_t - back_t) / decay_length) * prev_val;
                 }
                 result += std::exp((state.previous_time - back_t) / decay_length) * state.previous_sum;
-                for (RowNumber i = transform->prev_frame.end; i < transform->frame.bounds().end; i = transform->blocks.next(i))
+                for (RowNumber i = transform->prev_frame.end.location; i < transform->frame.bounds().end.location; i = transform->blocks.next(i))
                 {
                     Float64 prev_val = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_VALUE, i);
                     Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
@@ -112,7 +112,7 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
             }
             else
             {
-                for (RowNumber i = transform->frame.bounds().start; i < transform->frame.bounds().end; i = transform->blocks.next(i))
+                for (RowNumber i = transform->frame.bounds().start.location; i < transform->frame.bounds().end.location; i = transform->blocks.next(i))
                 {
                     Float64 prev_val = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_VALUE, i);
                     Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
@@ -180,13 +180,13 @@ struct WindowFunctionExponentialTimeDecayedMax final : public StatelessWindowFun
     {
         Float64 result = std::numeric_limits<Float64>::quiet_NaN();
 
-        if (transform->frame.bounds().start < transform->frame.bounds().end)
+        if (transform->frame.bounds().start.location < transform->frame.bounds().end.location)
         {
             result = std::numeric_limits<Float64>::lowest();
-            RowNumber frame_back = transform->blocks.prev(transform->frame.bounds().end);
+            RowNumber frame_back = transform->blocks.prev(transform->frame.bounds().end.location);
             Float64 back_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, frame_back);
 
-            for (RowNumber i = transform->frame.bounds().start; i < transform->frame.bounds().end; i = transform->blocks.next(i))
+            for (RowNumber i = transform->frame.bounds().start.location; i < transform->frame.bounds().end.location; i = transform->blocks.next(i))
             {
                 Float64 value = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_VALUE, i);
                 Float64 t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
@@ -250,22 +250,22 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
 
         Float64 result = 0;
 
-        if (transform->frame.bounds().start < transform->frame.bounds().end)
+        if (transform->frame.bounds().start.location < transform->frame.bounds().end.location)
         {
-            RowNumber frame_back = transform->blocks.prev(transform->frame.bounds().end);
+            RowNumber frame_back = transform->blocks.prev(transform->frame.bounds().end.location);
             Float64 back_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, frame_back);
 
-            if (transform->prev_frame.start <= transform->frame.bounds().start
-                && transform->frame.bounds().start < transform->prev_frame.end
-                && transform->prev_frame.end <= transform->frame.bounds().end)
+            if (transform->prev_frame.start.location <= transform->frame.bounds().start.location
+                && transform->frame.bounds().start.location < transform->prev_frame.end.location
+                && transform->prev_frame.end.location <= transform->frame.bounds().end.location)
             {
-                for (RowNumber i = transform->prev_frame.start; i < transform->frame.bounds().start; i = transform->blocks.next(i))
+                for (RowNumber i = transform->prev_frame.start.location; i < transform->frame.bounds().start.location; i = transform->blocks.next(i))
                 {
                     Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
                     result -= std::exp((prev_t - back_t) / decay_length);
                 }
                 result += std::exp((state.previous_time - back_t) / decay_length) * state.previous_sum;
-                for (RowNumber i = transform->prev_frame.end; i < transform->frame.bounds().end; i = transform->blocks.next(i))
+                for (RowNumber i = transform->prev_frame.end.location; i < transform->frame.bounds().end.location; i = transform->blocks.next(i))
                 {
                     Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
                     result += std::exp((prev_t - back_t) / decay_length);
@@ -273,7 +273,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
             }
             else
             {
-                for (RowNumber i = transform->frame.bounds().start; i < transform->frame.bounds().end; i = transform->blocks.next(i))
+                for (RowNumber i = transform->frame.bounds().start.location; i < transform->frame.bounds().end.location; i = transform->blocks.next(i))
                 {
                     Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
                     result += std::exp((prev_t - back_t) / decay_length);
@@ -346,16 +346,16 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
         Float64 sum = 0;
         Float64 result = std::numeric_limits<Float64>::quiet_NaN();
 
-        if (transform->frame.bounds().start < transform->frame.bounds().end)
+        if (transform->frame.bounds().start.location < transform->frame.bounds().end.location)
         {
-            RowNumber frame_back = transform->blocks.prev(transform->frame.bounds().end);
+            RowNumber frame_back = transform->blocks.prev(transform->frame.bounds().end.location);
             Float64 back_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, frame_back);
 
-            if (transform->prev_frame.start <= transform->frame.bounds().start
-                && transform->frame.bounds().start < transform->prev_frame.end
-                && transform->prev_frame.end <= transform->frame.bounds().end)
+            if (transform->prev_frame.start.location <= transform->frame.bounds().start.location
+                && transform->frame.bounds().start.location < transform->prev_frame.end.location
+                && transform->prev_frame.end.location <= transform->frame.bounds().end.location)
             {
-                for (RowNumber i = transform->prev_frame.start; i < transform->frame.bounds().start; i = transform->blocks.next(i))
+                for (RowNumber i = transform->prev_frame.start.location; i < transform->frame.bounds().start.location; i = transform->blocks.next(i))
                 {
                     Float64 prev_val = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_VALUE, i);
                     Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
@@ -370,7 +370,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
                     count += decay * state.previous_count;
                 }
 
-                for (RowNumber i = transform->prev_frame.end; i < transform->frame.bounds().end; i = transform->blocks.next(i))
+                for (RowNumber i = transform->prev_frame.end.location; i < transform->frame.bounds().end.location; i = transform->blocks.next(i))
                 {
                     Float64 prev_val = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_VALUE, i);
                     Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
@@ -381,7 +381,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
             }
             else
             {
-                for (RowNumber i = transform->frame.bounds().start; i < transform->frame.bounds().end; i = transform->blocks.next(i))
+                for (RowNumber i = transform->frame.bounds().start.location; i < transform->frame.bounds().end.location; i = transform->blocks.next(i))
                 {
                     Float64 prev_val = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_VALUE, i);
                     Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
