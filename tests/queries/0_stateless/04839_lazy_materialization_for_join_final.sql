@@ -12,6 +12,7 @@ SET query_plan_optimize_join_order_limit = 0;
 SET join_algorithm = 'hash';
 SET enable_parallel_replicas = 0;
 -- Lazy FINAL needs the filter in PREWHERE.
+SET optimize_move_to_prewhere = 1;
 SET optimize_move_to_prewhere_if_final = 1;
 
 DROP TABLE IF EXISTS f;
