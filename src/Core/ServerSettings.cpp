@@ -2212,9 +2212,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "user_defined_executable_functions_config",
         "user_defined_executable_function_drivers_config",
         "nb_models",
-        "dictionary",
         /// Definition elements of the files loaded by the three `*_config` globs above;
         /// they are top-level keys when those files are placed in `config.d`.
+        "dictionary",
         "function",
         "functions",
         "driver",

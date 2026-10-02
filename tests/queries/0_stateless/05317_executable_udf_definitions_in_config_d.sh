@@ -10,15 +10,11 @@ work="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_udf_config_d"
 rm -rf "$work"
 mkdir -p "$work/config.d"
 
+pid=""
 cleanup() {
-    if [ -s "$work/pid" ]; then
-        local pid
-        pid=$(cat "$work/pid")
+    if [ -n "$pid" ]; then
         kill "$pid" 2>/dev/null
-        for _ in {1..600}; do
-            kill -0 "$pid" 2>/dev/null || break
-            sleep 0.1
-        done
+        wait "$pid" 2>/dev/null
     fi
     rm -rf "$work"
 }
@@ -97,9 +93,8 @@ cat > "$work/config.d/test_driver.xml" <<'EOF'
 </clickhouse>
 EOF
 
-# The subshell keeps the server out of this shell's jobs, so stopping it prints nothing on stderr.
-( $CLICKHOUSE_BINARY server --config-file="$work/config.xml" > "$work/stdout.log" 2>&1 & echo $! > "$work/pid" ) 2>/dev/null
-pid=$(cat "$work/pid")
+$CLICKHOUSE_BINARY server --config-file="$work/config.xml" > "$work/stdout.log" 2>&1 &
+pid=$!
 
 port=""
 for _ in {1..1200}; do
