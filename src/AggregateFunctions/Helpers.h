@@ -200,7 +200,10 @@ static IAggregateFunction * createWithDecimalType(const IDataType & argument_typ
     if (which.idx == TypeIndex::Decimal128) return new AggregateFunctionTemplate<Decimal128, bool_param>(args...);
     if (which.idx == TypeIndex::Decimal256) return new AggregateFunctionTemplate<Decimal256, bool_param>(args...);
     if constexpr (AggregateFunctionTemplate<DateTime64, bool_param>::DateTime64Supported)
+    {
         if (which.idx == TypeIndex::DateTime64) return new AggregateFunctionTemplate<DateTime64, bool_param>(args...);
+        if (which.idx == TypeIndex::Time64) return new AggregateFunctionTemplate<Time64, bool_param>(args...);
+    }
     return nullptr;
 }
 
