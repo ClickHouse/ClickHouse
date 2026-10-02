@@ -28,14 +28,19 @@
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstring>
 
 #include "config.h"
 
-#if USE_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE || defined(__SSSE3__)
 #    include <immintrin.h>
+#endif
+
+#if defined(__aarch64__) && defined(__ARM_NEON)
+#    include <arm_neon.h>
 #endif
 
 #if USE_EMBEDDED_COMPILER
@@ -491,7 +496,6 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
     {
         /// For floating point, findExtremeMinIndex/MaxIndex skip NaN (NaN is always last).
         /// This matches the standard nan_direction_hint convention: ASC with hint >= 0, DESC with hint <= 0.
-        /// stability::Stable: We might return any value, not the first.
         const bool nan_direction_ok = !is_floating_point<T>
             || (direction == IColumn::PermutationSortDirection::Ascending && nan_direction_hint >= 0)
             || (direction == IColumn::PermutationSortDirection::Descending && nan_direction_hint <= 0);
@@ -760,13 +764,10 @@ void ColumnVector<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_
     memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
 }
 
+/// Clears the lowest set bit. Clang turns this into `blsr` where the target has BMI.
 static inline UInt64 blsr(UInt64 mask)
 {
-#ifdef __BMI__
-    return _blsr_u64(mask);
-#else
-    return mask & (mask-1);
-#endif
+    return mask & (mask - 1);
 }
 
 /// If mask is a number of this kind: [0]*[1]* function returns the length of the cluster of 1s.
@@ -874,90 +875,158 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 }
 )
 
+#if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
 namespace
 {
-template <typename T, typename Container>
-void resize(Container & res_data, size_t reserve_size)
+using UInt8x16 = UInt8 __attribute__((vector_size(16)));
+
+/// Returns `source[control[i]]` in lane `i`; every index must be less than 16.
+ALWAYS_INLINE UInt8x16 shuffleBytes(UInt8x16 source, UInt8x16 control)
 {
-#if defined(MEMORY_SANITIZER)
-    res_data.resize_fill(reserve_size, static_cast<T>(0)); // MSan doesn't recognize that all allocated memory is written by AVX-512 intrinsics.
+#if defined(__SSSE3__)
+    return std::bit_cast<UInt8x16>(_mm_shuffle_epi8(std::bit_cast<__m128i>(source), std::bit_cast<__m128i>(control)));
 #else
-    res_data.resize(reserve_size);
+    return std::bit_cast<UInt8x16>(vqtbl1q_u8(std::bit_cast<uint8x16_t>(source), std::bit_cast<uint8x16_t>(control)));
 #endif
 }
+
+#if defined(__AVX2__)
+using UInt32x8 = UInt32 __attribute__((vector_size(32)));
+using UInt8x8 = UInt8 __attribute__((vector_size(8)));
+
+/// Returns `source[control[i]]` in lane `i`. Clang lowers this loop to a single `vpermd`.
+ALWAYS_INLINE UInt32x8 permuteDwords(UInt32x8 source, UInt32x8 control)
+{
+    UInt32x8 res{};
+    for (size_t i = 0; i < 8; ++i)
+        res[i] = source[control[i]];
+    return res;
 }
 
-DECLARE_X86_ICELAKE_SPECIFIC_CODE(
+/// 4 and 8-byte elements are permuted as dwords in a 32-byte vector (`vpermd`), which moves twice as many rows per lookup.
+/// It needs AVX2: without it the 32-byte permute is split or scalarized and is slower than two 16-byte shuffles.
+/// NEON has no such permute, so ARM keeps the 16-byte shuffle.
 template <size_t ELEMENT_WIDTH>
-inline void compressStoreAVX512(const void *src, void *dst, const UInt64 mask)
+constexpr bool COMPRESS_DWORDS = ELEMENT_WIDTH >= 4;
+#else
+template <size_t ELEMENT_WIDTH>
+constexpr bool COMPRESS_DWORDS = false;
+#endif
+
+/// One shuffle handles 8 rows of 1-byte elements (a 256-entry table of 16 bytes would be too large for 16 rows),
+/// otherwise the rows of a 16-byte vector (32-byte for `COMPRESS_DWORDS`).
+template <size_t ELEMENT_WIDTH>
+constexpr size_t COMPRESS_ROWS = ELEMENT_WIDTH == 1 ? 8 : (COMPRESS_DWORDS<ELEMENT_WIDTH> ? 32 : 16) / ELEMENT_WIDTH;
+
+/// For each mask of `COMPRESS_ROWS` rows, the control that moves the selected elements to the front: byte indices,
+/// or dword indices for `COMPRESS_DWORDS`.
+template <size_t ELEMENT_WIDTH>
+alignas(16) constexpr auto compress_table = []
 {
-    __m512i vsrc = _mm512_loadu_si512(src);
-    if constexpr (ELEMENT_WIDTH == 1)
-        _mm512_mask_compressstoreu_epi8(dst, static_cast<__mmask64>(mask), vsrc);
-    else if constexpr (ELEMENT_WIDTH == 2)
-        _mm512_mask_compressstoreu_epi16(dst, static_cast<__mmask32>(mask), vsrc);
-    else if constexpr (ELEMENT_WIDTH == 4)
-        _mm512_mask_compressstoreu_epi32(dst, static_cast<__mmask16>(mask), vsrc);
-    else if constexpr (ELEMENT_WIDTH == 8)
-        _mm512_mask_compressstoreu_epi64(dst, static_cast<__mmask8>(mask), vsrc);
+    constexpr size_t rows = COMPRESS_ROWS<ELEMENT_WIDTH>;
+    constexpr size_t units = COMPRESS_DWORDS<ELEMENT_WIDTH> ? ELEMENT_WIDTH / 4 : ELEMENT_WIDTH;
+    std::array<std::array<UInt8, 16>, 1 << rows> table{};
+    for (size_t mask = 0; mask < table.size(); ++mask)
+    {
+        size_t out = 0;
+        for (size_t row = 0; row < rows; ++row)
+        {
+            if ((mask >> row) & 1)
+            {
+                for (size_t unit = 0; unit < units; ++unit)
+                    table[mask][out++] = static_cast<UInt8>(row * units + unit);
+            }
+        }
+    }
+    return table;
+}();
+
+/// Writes the rows of the block at `data_pos` selected by `mask` to `res` and returns their number. Mixed blocks are compressed
+/// with a table-driven byte shuffle. Up to `SIMD_ELEMENTS` elements from `res` may be written, past the returned count.
+/// `res` may alias `data_pos` if it is not ahead of it (filtering in place): each store ends within the rows already loaded.
+template <typename T, size_t SIMD_ELEMENTS>
+ALWAYS_INLINE size_t compressBlock(UInt64 mask, const T * data_pos, T * res)
+{
+    static constexpr size_t ELEMENT_WIDTH = sizeof(T);
+    static constexpr size_t ROWS = COMPRESS_ROWS<ELEMENT_WIDTH>;
+    static constexpr size_t BYTES = ROWS * ELEMENT_WIDTH;
+    static constexpr UInt64 ROWS_MASK = (1ULL << ROWS) - 1;
+
+    if (mask == static_cast<UInt64>(-1))
+    {
+        memmove(res, data_pos, SIMD_ELEMENTS * ELEMENT_WIDTH);
+        return SIMD_ELEMENTS;
+    }
+
+    size_t count = 0;
+    if (static_cast<size_t>(std::popcount(mask)) <= SIMD_ELEMENTS / ROWS)
+    {
+        /// Few selected rows: copying them one by one is cheaper than one shuffle per `ROWS` rows.
+        while (mask)
+        {
+            res[count++] = data_pos[std::countr_zero(mask)];
+            mask = blsr(mask);
+        }
+        return count;
+    }
+
+    for (size_t i = 0; i < SIMD_ELEMENTS; i += ROWS, mask >>= ROWS)
+    {
+        const UInt64 rows_mask = mask & ROWS_MASK;
+#if defined(__AVX2__)
+        if constexpr (COMPRESS_DWORDS<ELEMENT_WIDTH>)
+        {
+            UInt32x8 source;
+            memcpy(&source, data_pos + i, sizeof(source));
+            UInt8x8 control_bytes;
+            memcpy(&control_bytes, compress_table<ELEMENT_WIDTH>[rows_mask].data(), sizeof(control_bytes));
+            const UInt32x8 compressed = permuteDwords(source, __builtin_convertvector(control_bytes, UInt32x8));
+            memcpy(res + count, &compressed, sizeof(compressed));
+            count += std::popcount(rows_mask);
+            continue;
+        }
+#endif
+        UInt8x16 source{};
+        memcpy(&source, data_pos + i, BYTES);
+        UInt8x16 control;
+        memcpy(&control, compress_table<ELEMENT_WIDTH>[rows_mask].data(), sizeof(control));
+        UInt8x16 compressed = shuffleBytes(source, control);
+        memcpy(res + count, &compressed, BYTES);
+        count += std::popcount(rows_mask);
+    }
+    return count;
 }
 
+/// Filters whole blocks of `SIMD_ELEMENTS` rows into `res_data`.
 template <typename T, typename Container, size_t SIMD_ELEMENTS>
-inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
+void doFilterAlignedShuffle(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
 {
-    static constexpr size_t VEC_LEN = 64;   /// AVX512 vector length - 64 bytes
-    static constexpr size_t ELEMENT_WIDTH = sizeof(T);
-    static constexpr size_t ELEMENTS_PER_VEC = VEC_LEN / ELEMENT_WIDTH;
-    static constexpr UInt64 KMASK = 0xffffffffffffffff >> (64 - ELEMENTS_PER_VEC);
-
     size_t current_offset = res_data.size();
     size_t reserve_size = res_data.size();
     size_t alloc_size = SIMD_ELEMENTS * 2;
+    /// A local copy: the compiler cannot keep `res_data.data()` in a register across byte stores that may alias it.
+    T * res = res_data.data();
 
     while (filt_pos < filt_end_aligned)
     {
-        /// to avoid calling resize too frequently, resize to reserve buffer.
+        /// `compressBlock` writes up to `SIMD_ELEMENTS` elements from `current_offset`.
         if (reserve_size - current_offset < SIMD_ELEMENTS)
         {
             reserve_size += alloc_size;
-            resize<T>(res_data, reserve_size);
+            res_data.resize(reserve_size);
+            res = res_data.data();
             alloc_size *= 2;
         }
 
-        UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
-
-        if (0xffffffffffffffff == mask)
-        {
-            for (size_t i = 0; i < SIMD_ELEMENTS; i += ELEMENTS_PER_VEC)
-                _mm512_storeu_si512(reinterpret_cast<void *>(&res_data[current_offset + i]),
-                        _mm512_loadu_si512(reinterpret_cast<const void *>(data_pos + i)));
-            current_offset += SIMD_ELEMENTS;
-        }
-        else
-        {
-            if (mask)
-            {
-                for (size_t i = 0; i < SIMD_ELEMENTS; i += ELEMENTS_PER_VEC)
-                {
-                    compressStoreAVX512<ELEMENT_WIDTH>(reinterpret_cast<const void *>(data_pos + i),
-                            reinterpret_cast<void *>(&res_data[current_offset]), mask & KMASK);
-                    current_offset += std::popcount(mask & KMASK);
-                    /// prepare mask for next iter, if ELEMENTS_PER_VEC = 64, no next iter
-                    if constexpr (ELEMENTS_PER_VEC < 64)
-                    {
-                        mask >>= ELEMENTS_PER_VEC;
-                    }
-                }
-            }
-        }
+        current_offset += compressBlock<T, SIMD_ELEMENTS>(bytes64MaskToBits64Mask(filt_pos), data_pos, res + current_offset);
 
         filt_pos += SIMD_ELEMENTS;
         data_pos += SIMD_ELEMENTS;
     }
-    /// Resize to the real size.
     res_data.resize_exact(current_offset);
 }
-)
+}
+#endif
 
 template <typename T>
 ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
@@ -984,10 +1053,9 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     static constexpr size_t SIMD_ELEMENTS = 64;
     const UInt8 * filt_end_aligned = filt_pos + size / SIMD_ELEMENTS * SIMD_ELEMENTS;
 
-#if USE_MULTITARGET_CODE
-    static constexpr bool VBMI2_CAPABLE = sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8;
-    if (VBMI2_CAPABLE && isArchSupported(TargetArch::x86_64_icelake))
-        TargetSpecific::x86_64_icelake::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
+#if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
+    if constexpr (sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8)
+        doFilterAlignedShuffle<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
     else
 #endif
     {
@@ -1030,8 +1098,18 @@ void ColumnVector<T>::filter(const IColumn::Filter & filt)
     static constexpr size_t SIMD_ELEMENTS = 64;
     const UInt8 * filt_end_aligned = filt_pos + size / SIMD_ELEMENTS * SIMD_ELEMENTS;
 
-    InPlaceResultInserter<T> inserter(result_data, result_size);
-    TargetSpecific::Default::doFilterAligned<T, InPlaceResultInserter<T>, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, inserter);
+#if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
+    if constexpr (sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8)
+    {
+        for (; filt_pos < filt_end_aligned; filt_pos += SIMD_ELEMENTS, data_pos += SIMD_ELEMENTS)
+            result_size += compressBlock<T, SIMD_ELEMENTS>(bytes64MaskToBits64Mask(filt_pos), data_pos, result_data + result_size);
+    }
+    else
+#endif
+    {
+        InPlaceResultInserter<T> inserter(result_data, result_size);
+        TargetSpecific::Default::doFilterAligned<T, InPlaceResultInserter<T>, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, inserter);
+    }
 
     while (filt_pos < filt_end)
     {
