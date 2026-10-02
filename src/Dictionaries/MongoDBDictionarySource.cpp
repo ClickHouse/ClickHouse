@@ -2,6 +2,7 @@
 
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Common/Exception.h>
+#include <Common/maskURIPassword.h>
 
 #if USE_MONGODB
 #include <Dictionaries/MongoDBDictionarySource.h>
@@ -15,7 +16,6 @@
 #include <Poco/URI.h>
 
 #include <bsoncxx/builder/basic/array.hpp>
-#include <Common/maskURIPassword.h>
 
 using bsoncxx::builder::basic::kvp;
 using bsoncxx::builder::basic::make_document;
