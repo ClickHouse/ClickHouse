@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-darwin
+# Tags: long, no-fasttest, no-darwin
 # Tag no-fasttest: Kafka is not in the fast test build.
+# Tag long: starts dozens of clickhouse-local instances.
 #
 # Carrier-specific replay gates: a gate is emitted exactly once when a carrier needs it, and never
 # for a schema without one. Alias and canonical spellings of a setting are both accepted.
