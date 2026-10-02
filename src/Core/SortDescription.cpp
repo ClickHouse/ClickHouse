@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/TypeTree.h>
 
 #include <string_view>
 #include <unordered_set>
@@ -24,7 +25,6 @@
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
-#include <DataTypes/TypeTree.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #endif
