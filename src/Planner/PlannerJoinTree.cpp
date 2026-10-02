@@ -1085,6 +1085,63 @@ void parseAdditionalFilterAstIfNeeded(const StoragePtr & storage,
     }
 }
 
+/// AST-level counterpart of `containsFunctionVolatileInScopeOfQuery`, for filters that are not part of the
+/// query tree. A function that is not found in `FunctionFactory` is treated as volatile (fail-close).
+bool astContainsFunctionVolatileInScopeOfQuery(const ASTPtr & ast, const ContextPtr & context)
+{
+    if (!ast)
+        return false;
+
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (!function->name.empty() && function->name != "lambda")
+        {
+            auto builder = FunctionFactory::instance().tryGet(function->name, context);
+            if (!builder || !builder->isDeterministicInScopeOfQuery() || builder->isStateful())
+                return true;
+        }
+    }
+
+    for (const auto & child : ast->children)
+    {
+        if (astContainsFunctionVolatileInScopeOfQuery(child, context))
+            return true;
+    }
+    return false;
+}
+
+/// Whether a table read inside the `LATERAL` subquery gets a hidden filter (a row policy or
+/// `additional_table_filters`) with a function volatile within the query. These filters are attached at
+/// table-read planning time, so `containsFunctionVolatileInScopeOfQuery` on the query tree does not see them,
+/// but they are subject to the same problem: the subquery is evaluated once per distinct value of the
+/// correlated columns, so left rows with the same correlated values would share one evaluation of the filter.
+bool lateralSubqueryHasVolatileHiddenFilter(const QueryTreeNodePtr & node, const ContextPtr & query_context)
+{
+    if (!node)
+        return false;
+
+    if (const auto * table_node = node->as<TableNode>())
+    {
+        const auto & storage = table_node->getStorage();
+
+        if (auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, query_context);
+            row_policy_filter && astContainsFunctionVolatileInScopeOfQuery(row_policy_filter->expression, query_context))
+            return true;
+
+        SelectQueryInfo additional_filter_query_info;
+        parseAdditionalFilterAstIfNeeded(storage, table_node->getAlias(), additional_filter_query_info, query_context);
+        if (astContainsFunctionVolatileInScopeOfQuery(additional_filter_query_info.additional_filter_ast, query_context))
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (lateralSubqueryHasVolatileHiddenFilter(child, query_context))
+            return true;
+    }
+    return false;
+}
+
 /// Apply filters from additional_table_filters setting. Expects
 /// `parseAdditionalFilterAstIfNeeded` to have been called earlier so
 /// `table_expression_query_info.additional_filter_ast` is populated.
@@ -3955,6 +4012,12 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "LATERAL JOIN subquery must not contain functions or table functions that are non-deterministic "
                         "within a query (e.g. rand, generateUUIDv4, rowNumberInAllBlocks, generateRandom), because it is not "
+                        "evaluated separately for every row of the left side");
+
+                if (lateralSubqueryHasVolatileHiddenFilter(right_table_expression, planner_context->getQueryContext()))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "LATERAL JOIN subquery must not read a table with a row policy or `additional_table_filters` "
+                        "that contain functions non-deterministic within a query (e.g. rand), because the subquery is not "
                         "evaluated separately for every row of the left side");
 
                 ColumnIdentifiers correlated_column_identifiers;
