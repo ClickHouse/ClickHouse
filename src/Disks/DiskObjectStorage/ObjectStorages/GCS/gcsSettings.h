@@ -125,6 +125,10 @@ struct GCSObjectStorageSettings
     /// disk does. Left unset on the SQL surface: `getGCSClient` then resolves the server-wide
     /// configuration itself, mirroring what `S3::ClientFactory` does for a non-disk client.
     std::shared_ptr<ProxyConfigurationResolver> proxy_resolver;
+    /// Proxy of the token requests of the refresh-token credentials, resolved the same way for the
+    /// scheme of `google_adc_token_uri`, which may differ from the scheme of the storage endpoint. The
+    /// same object as `proxy_resolver` when the schemes match.
+    std::shared_ptr<ProxyConfigurationResolver> token_proxy_resolver;
 
     /// Disk-only knobs.
     /// Whether this object storage backs a server-configured disk rather than the SQL surface.

@@ -103,6 +103,21 @@ struct PocoRestProxyErrorReportOption
     using Type = std::function<void(const Poco::Net::HTTPClientSession::ProxyConfig &)>;
 };
 
+/// The proxy provider and error reporter of the token requests of the `PocoRestAuthorizedUserOption`
+/// credential, used there instead of `PocoRestProxyConfigProviderOption` / `PocoRestProxyErrorReportOption`.
+/// The proxy is resolved by the scheme of the request (`<proxy><http>` or `<proxy><https>`), and the
+/// token endpoint can use a different scheme than the storage endpoint, so it may need a different
+/// resolver. Unset means the token requests use the storage options.
+struct PocoRestTokenProxyConfigProviderOption
+{
+    using Type = std::function<Poco::Net::HTTPClientSession::ProxyConfig()>;
+};
+
+struct PocoRestTokenProxyErrorReportOption
+{
+    using Type = std::function<void(const Poco::Net::HTTPClientSession::ProxyConfig &)>;
+};
+
 /// Called by the transport with the method of every storage request, before it borrows a session for
 /// it, so that ClickHouse can apply its request-rate throttlers (`s3_max_get_rps` / `s3_max_put_rps`
 /// and their bursts, the same limits the S3 transport applies in `PocoHTTPClient`). It may block for

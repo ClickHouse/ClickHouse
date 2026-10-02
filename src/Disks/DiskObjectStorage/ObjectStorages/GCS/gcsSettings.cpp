@@ -366,8 +366,14 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     /// The same lookup order an S3 disk uses (`S3Settings::loadFromConfigForObjectStorage`): the
     /// disk-local `<proxy>` section first, then the server-wide `<proxy>` configuration, then the
     /// `http_proxy` / `https_proxy` / `no_proxy` environment variables.
+    const auto proxy_protocol = gcsProxyProtocol(result.endpoint_override);
     result.proxy_resolver = ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
-        gcsProxyProtocol(result.endpoint_override), config_prefix, config);
+        proxy_protocol, config_prefix, config);
+    /// The token endpoint is a second destination with its own scheme (Google's default one is `https`).
+    const auto token_proxy_protocol = gcsProxyProtocol(result.google_adc_token_uri);
+    result.token_proxy_resolver = token_proxy_protocol == proxy_protocol
+        ? result.proxy_resolver
+        : ProxyConfigurationResolverProvider::getFromOldSettingsFormat(token_proxy_protocol, config_prefix, config);
 
     result.for_disk = true;
     result.read_only = config.getBool(config_prefix + ".readonly", false);
@@ -447,7 +453,8 @@ bool GCSObjectStorageSettings::describesSameClientAs(const GCSObjectStorageSetti
         /// remote one cannot be asked what it would answer without querying it), so only the very
         /// same resolver object is known to describe the same transport. The cost of the
         /// conservative answer is a copy that falls back to read + write.
-        && proxy_resolver == other.proxy_resolver;
+        && proxy_resolver == other.proxy_resolver
+        && token_proxy_resolver == other.token_proxy_resolver;
 }
 
 GCSCredentialSource chooseGCSCredentialSource(const GCSObjectStorageSettings & settings)
@@ -569,6 +576,16 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
         if (!authorized_user.token_uri.empty())
             context->getRemoteHostFilter().checkURL(Poco::URI(authorized_user.token_uri));
         options.set<::ClickHouse::PocoRestAuthorizedUserOption>(std::move(authorized_user));
+
+        /// The proxy is chosen by the scheme of the request, and the token endpoint may use another
+        /// scheme than the storage endpoint, so its requests get a resolver of their own. Resolved as
+        /// for the storage requests below: from the disk, else from the server-wide configuration.
+        auto token_proxy_resolver = settings.token_proxy_resolver;
+        if (!token_proxy_resolver)
+            token_proxy_resolver = ProxyConfigurationResolverProvider::get(
+                gcsProxyProtocol(settings.google_adc_token_uri), context->getConfigRef());
+        options.set<::ClickHouse::PocoRestTokenProxyConfigProviderOption>(makeGCSProxyConfigProvider(token_proxy_resolver));
+        options.set<::ClickHouse::PocoRestTokenProxyErrorReportOption>(makeGCSProxyErrorReporter(token_proxy_resolver));
     }
 
     if (!settings.endpoint_override.empty())

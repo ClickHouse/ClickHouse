@@ -647,12 +647,23 @@ class PocoRestClient : public RestClient {
       // left in place are the anonymous ones this mode pairs the option with.
       //
       // The per-request headers go too: they were configured for the storage endpoint, and the token
-      // endpoint is a different service that has no reason to receive them. The timeouts, CA bundle
-      // and proxy are deliberately kept -- the exchange travels the same network.
+      // endpoint is a different service that has no reason to receive them. The timeouts and CA
+      // bundle are deliberately kept -- the exchange travels the same network. So is the proxy, unless
+      // a separate one was resolved for the scheme of the token endpoint.
       auto credential_options = options_;
       credential_options.unset<::ClickHouse::PocoRestAuthorizedUserOption>();
       credential_options.unset<CustomHeadersOption>();
       credential_options.unset<::ClickHouse::PocoRestRequestThrottleOption>();
+      if (credential_options.has<::ClickHouse::PocoRestTokenProxyConfigProviderOption>()) {
+        credential_options.set<::ClickHouse::PocoRestProxyConfigProviderOption>(
+            credential_options.get<::ClickHouse::PocoRestTokenProxyConfigProviderOption>());
+        credential_options.unset<::ClickHouse::PocoRestTokenProxyConfigProviderOption>();
+      }
+      if (credential_options.has<::ClickHouse::PocoRestTokenProxyErrorReportOption>()) {
+        credential_options.set<::ClickHouse::PocoRestProxyErrorReportOption>(
+            credential_options.get<::ClickHouse::PocoRestTokenProxyErrorReportOption>());
+        credential_options.unset<::ClickHouse::PocoRestTokenProxyErrorReportOption>();
+      }
       credentials_ = oauth2_internal::Decorate(
           std::make_shared<oauth2_internal::AuthorizedUserCredentials>(
               std::move(info), credential_options,

@@ -577,7 +577,7 @@ These are the parameters of a disk defined in the server configuration. A dynami
 | `s3_max_get_rps`, `s3_max_get_burst` | Request-rate limit of the GET requests (downloads, metadata requests, listings): requests per second, and how many can be issued at once before the limit applies. The same keys, defaults and fallback to the query-level settings as for the `s3` disk type. | `0` (unlimited); burst: the rate |
 | `s3_max_put_rps`, `s3_max_put_burst` | Request-rate limit of the PUT, POST and PATCH requests (uploads, server-side copies). DELETE requests are not limited. | `0` (unlimited); burst: the rate |
 | `readonly`                  | Only allow reading from the disk.                                                                                                                    | `false`       |
-| `proxy`                     | Proxy configuration in the same format as for the `s3` disk type; the server-wide `<proxy>` section and proxy environment variables also apply.      | -             |
+| `proxy`                     | Proxy configuration in the same format as for the `s3` disk type; the server-wide `<proxy>` section and proxy environment variables also apply. The proxy is chosen by the scheme of each destination, so the requests to `google_adc_token_uri` use the proxy for its scheme. | -             |
 
 If none of the explicit credential parameters is set, and `use_environment_credentials` is not `0`, the client falls back to [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials) (a key file referenced by the `GOOGLE_APPLICATION_CREDENTIALS` environment variable, or the metadata server on GCE/GKE).
 
