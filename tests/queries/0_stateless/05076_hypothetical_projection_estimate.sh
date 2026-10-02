@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # the implicit minmax indices of add_minmax_index_for_numeric_columns change the plans and estimates this test pins
 
 # count() must reach the read step and the real projection must be allowed to win
-PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, optimize_read_in_order = 1"
+PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, optimize_read_in_order = 1, prefer_optimize_projection = 0"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est; DROP TABLE IF EXISTS t_real;
@@ -88,7 +88,6 @@ compare p_b "(SELECT a, b, v ORDER BY b)" "SELECT a, b, v FROM TABLE ORDER BY b"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);
     EXPLAIN WHATIF SELECT a, b, v FROM t_est ORDER BY b SETTINGS ${PIN}, optimize_read_in_order = 0;
-    EXPLAIN WHATIF SELECT a, b, v FROM t_est ORDER BY b SETTINGS ${PIN}, query_plan_read_in_order = 0;
     EXPLAIN WHATIF SELECT a, b, v FROM t_est ORDER BY b SETTINGS ${PIN}, query_plan_enable_optimizations = 0;
 " | grep -E '^\s+reason:' | awk '{$1=$1; print}'
 

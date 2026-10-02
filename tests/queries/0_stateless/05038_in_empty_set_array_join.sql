@@ -1,4 +1,4 @@
--- Random settings limits: optimize_move_to_prewhere=(1, 1); query_plan_optimize_prewhere=(1, 1)
+-- Random settings limits: optimize_move_to_prewhere=(1, 1)
 
 DROP TABLE IF EXISTS t_in_empty_set;
 DROP TABLE IF EXISTS t_in_empty_set_nullable;

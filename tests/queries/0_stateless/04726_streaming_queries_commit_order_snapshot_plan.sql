@@ -4,7 +4,6 @@ SET enable_analyzer = 1;
 SET optimize_use_projections = 1;
 SET optimize_read_in_order = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET enable_streaming_queries = 1;
 
 -- This test inspects the plan shape and index pruning of the `commit_order` projection read,

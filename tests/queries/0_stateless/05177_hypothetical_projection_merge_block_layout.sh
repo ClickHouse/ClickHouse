@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # the implicit minmax indices of add_minmax_index_for_numeric_columns change the plans and estimates this test pins
 
 # count() must reach the read step and the real projection must be allowed to win
-PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, optimize_read_in_order = 1"
+PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, optimize_read_in_order = 1, prefer_optimize_projection = 0"
 
 # the merge's block size sets the granule size, and a part records neither the blocks it was handed
 # nor the cuts the merge made, so the estimate spans the layouts and the real one has to fall inside

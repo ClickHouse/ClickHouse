@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # the implicit minmax indices of add_minmax_index_for_numeric_columns change the plans and estimates this test pins
 
-PIN="optimize_use_projections = 1, optimize_use_implicit_projections = 0, optimize_read_in_order = 1"
+PIN="optimize_use_projections = 1, optimize_use_implicit_projections = 0, optimize_read_in_order = 1, prefer_optimize_projection = 0"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_off_est; DROP TABLE IF EXISTS t_off_real;

@@ -7471,10 +7471,6 @@ Allow to merge expressions into JOIN step during join reordering optimization.
 Allow to convert `JOIN` to subquery with `IN` if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
 )", 0, \
         {"25.4", false, false, "New setting"}) \
-    DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
-Allow to push down filter to PREWHERE expression for supported storages
-)", 0, \
-        {"24.2", true, true, "Allow to push down filter to PREWHERE expression for supported storages"}) \
     DECLARE(Bool, optimize_prewhere_after_pushdown, false, R"(
 Run a second `PREWHERE` promotion pass after later query plan optimizations may have
 deposited additional filters above a `MergeTree` read step (e.g. predicate pushdown through
@@ -7522,35 +7518,8 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_read_in_order, true, R"(
-Toggles the read in-order optimization query-plan-level optimization.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-<Note>
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-</Note>
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
     DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0, \
         {"25.12", false, true, "New setting"}) \
-    DECLARE(Bool, query_plan_aggregation_in_order, true, R"(
-Toggles the aggregation in-order query-plan-level optimization.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-<Note>
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-</Note>
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0, \
-        {"22.12", 0, 1, "Enable some refactoring around query plan"}) \
     DECLARE(Bool, query_plan_remove_redundant_sorting, true, R"(
 Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
@@ -10821,6 +10790,14 @@ Enable experimental table function `eval`.
         {"26.5", true, true, "Obsolete setting, the logical join step is now always used."}, \
         {"25.2", false, true, "Enable new step"}, \
         {"25.1", false, false, "New join step, internal change"}) \
+    MAKE_OBSOLETE(M, Bool, query_plan_read_in_order, true, \
+        {"26.10", true, true, "Obsolete setting: the read-in-order optimization is now always applied at the query plan level, and the legacy interpreter-level implementation (`ReadInOrderOptimizer`) was removed. Use `optimize_read_in_order` to toggle the optimization."}) \
+    MAKE_OBSOLETE(M, Bool, query_plan_optimize_prewhere, true, \
+        {"26.10", true, true, "Obsolete setting: moving conditions from `WHERE` to `PREWHERE` is now always done at the query plan level, and the legacy AST-based implementation in `InterpreterSelectQuery` was removed. Use `optimize_move_to_prewhere` to toggle the optimization."}, \
+        {"24.2", true, true, "Allow to push down filter to PREWHERE expression for supported storages"}) \
+    MAKE_OBSOLETE(M, Bool, query_plan_aggregation_in_order, true, \
+        {"26.10", true, true, "Obsolete setting: the aggregation-in-order optimization is now always applied at the query plan level, and the legacy interpreter-level implementation was removed. Use `optimize_aggregation_in_order` to toggle the optimization."}, \
+        {"22.12", 0, 1, "Enable some refactoring around query plan"}) \
     MAKE_OBSOLETE(M, Bool, parallel_replicas_insert_select_local_pipeline, true, \
         {"26.10", true, true, "Obsolete setting: whether the initiator runs the local pipeline of a distributed `INSERT SELECT` is decided by `parallel_replicas_local_plan` and `parallel_replicas_prefer_local_replica` alone, and it is still skipped when `max_execution_time_leaf` imposes a different timeout contract. Set `parallel_replicas_local_plan = 0` to leave all the reading to the remote replicas."}, \
         {"25.5", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}, \

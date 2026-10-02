@@ -100,7 +100,7 @@ void CompletedPipelineExecutor::execute()
                 break;
 
             if (is_cancelled_callback())
-                data->executor->cancel();
+                data->executor->cancel(IProcessor::CancelReason::CancelledByUser);
         }
 
         if (data->has_exception)
@@ -117,7 +117,7 @@ void CompletedPipelineExecutor::cancel()
 {
     /// Cancel execution if it wasn't finished.
     if (data && !data->is_finished && data->executor)
-        data->executor->cancel();
+        data->executor->cancel(IProcessor::CancelReason::CancelledByUser);
 }
 
 CompletedPipelineExecutor::~CompletedPipelineExecutor()
