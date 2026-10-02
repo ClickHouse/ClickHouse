@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- no-parallel: enables a global failpoint.
 
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/114603.
