@@ -13,6 +13,9 @@ namespace DB
   */
 class ParserShowTablesQuery : public IParserBase
 {
+public:
+    std::map<String, Documentation> getDocumentation() const override;
+
 protected:
     const char * getName() const override { return "SHOW [FULL] [TEMPORARY] TABLES|DATABASES|CLUSTERS|CLUSTER|MERGES 'name' [[NOT] [I]LIKE 'str'] [LIMIT expr]"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
