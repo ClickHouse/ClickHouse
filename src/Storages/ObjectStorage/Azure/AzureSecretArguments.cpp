@@ -172,6 +172,31 @@ void maskUnshowableAzureConnectionOverrides(FunctionSecretArgumentsFinder & find
     }
 }
 
+/// The raw indexes of the arguments the Azure parser assigns slots to: it strips `extra_credentials(...)` first.
+std::vector<size_t> azureSlotArguments(const FunctionSecretArgumentsFinder & finder)
+{
+    std::vector<size_t> result;
+    for (size_t i = 0, size = finder.function->arguments->size(); i < size; ++i)
+    {
+        const auto f = finder.function->arguments->at(i)->getFunction();
+        if (!f || f->name() != "extra_credentials")
+            result.push_back(i);
+    }
+    return result;
+}
+
+/// After the collection name every argument must be an override or `extra_credentials(...)`; a positional one is
+/// invalid but logged before validation rejects it, and can be a credential.
+void maskPositionalsAfterAzureCollection(FunctionSecretArgumentsFinder & finder, size_t start)
+{
+    for (size_t i = start, size = finder.function->arguments->size(); i < size; ++i)
+    {
+        const auto f = finder.function->arguments->at(i)->getFunction();
+        if (!f || (f->name() != "equals" && f->name() != "extra_credentials"))
+            finder.markSecretArgument(i);
+    }
+}
+
 void findAzureBlobStorageFunctionSecretArguments(FunctionSecretArgumentsFinder & finder, bool is_cluster_function)
 {
     /// azureBlobStorageCluster('cluster_name', 'conn_string/storage_account_url', ...) has 'conn_string/storage_account_url' as its second argument.
@@ -180,6 +205,7 @@ void findAzureBlobStorageFunctionSecretArguments(FunctionSecretArgumentsFinder &
     if (!is_cluster_function && finder.isNamedCollectionName(0))
     {
         /// azureBlobStorage(named_collection, ..., account_key = 'account_key', ...)
+        maskPositionalsAfterAzureCollection(finder, 1);
         if (maskAzureConnectionString(finder, -1, true, 1))
             return;
         maskUnshowableAzureConnectionOverrides(finder, 1);
@@ -189,6 +215,7 @@ void findAzureBlobStorageFunctionSecretArguments(FunctionSecretArgumentsFinder &
     if (is_cluster_function && finder.isNamedCollectionName(1))
     {
         /// azureBlobStorageCluster(cluster, named_collection, ..., account_key = 'account_key', ...)
+        maskPositionalsAfterAzureCollection(finder, 2);
         if (maskAzureConnectionString(finder, -1, true, 2))
             return;
         maskUnshowableAzureConnectionOverrides(finder, 2);
@@ -196,20 +223,24 @@ void findAzureBlobStorageFunctionSecretArguments(FunctionSecretArgumentsFinder &
         return;
     }
 
-    if (maskAzureConnectionString(finder, url_arg_idx))
+    /// Slot `n` is the raw argument `arg(n)`; past the end it is an index no argument has.
+    const auto slot_arguments = azureSlotArguments(finder);
+    auto arg = [&](size_t slot) { return slot < slot_arguments.size() ? slot_arguments[slot] : finder.function->arguments->size(); };
+
+    if (maskAzureConnectionString(finder, arg(url_arg_idx)))
         return;
 
-    if (url_arg_idx < finder.function->arguments->size())
-        maskUnshowableAzureConnectionValue(finder, url_arg_idx, *finder.function->arguments->at(url_arg_idx), false);
+    if (arg(url_arg_idx) < finder.function->arguments->size())
+        maskUnshowableAzureConnectionValue(finder, arg(url_arg_idx), *finder.function->arguments->at(arg(url_arg_idx)), false);
 
     /// We should check other arguments first because we don't need to do any replacement in case of
     /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
     /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
-    size_t count = finder.function->arguments->size();
+    size_t count = slot_arguments.size();
     if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
     {
         String fourth_arg;
-        if (finder.tryGetStringFromArgument(url_arg_idx + 3, &fourth_arg))
+        if (finder.tryGetStringFromArgument(arg(url_arg_idx + 3), &fourth_arg))
         {
             if (fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg))
                 return;
@@ -218,7 +249,7 @@ void findAzureBlobStorageFunctionSecretArguments(FunctionSecretArgumentsFinder &
 
     /// We're going to replace 'account_key' with '[HIDDEN]' if account_key is used in the signature
     if (url_arg_idx + 4 < count)
-        finder.markSecretArgument(url_arg_idx + 4);
+        finder.markSecretArgument(arg(url_arg_idx + 4));
 }
 
 void findAzureBlobStorageTableEngineSecretArguments(FunctionSecretArgumentsFinder & finder)
@@ -240,28 +271,32 @@ void findAzureBlobStorageTableEngineSecretArguments(FunctionSecretArgumentsFinde
         return;
     }
 
+    /// Slot `n` is the raw argument `arg(n)`; past the end it is an index no argument has.
+    const auto slot_arguments = azureSlotArguments(finder);
+    auto arg = [&](size_t slot) { return slot < slot_arguments.size() ? slot_arguments[slot] : finder.function->arguments->size(); };
+
     /// We should check other arguments first because we don't need to do any replacement in case of
     /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
-    size_t count = finder.function->arguments->size();
+    size_t count = slot_arguments.size();
     bool fourth_argument_is_format = false;
     if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
     {
         String fourth_arg;
-        if (finder.tryGetStringFromArgument(url_arg_idx + 3, &fourth_arg))
+        if (finder.tryGetStringFromArgument(arg(url_arg_idx + 3), &fourth_arg))
             fourth_argument_is_format = fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg);
     }
     /// Which argument holds a credential: the two-argument shape takes a shared access signature beside
     /// the url (`endpoint.sas_auth`), the longer ones an `account_key` - unless the fourth names a format.
     std::optional<size_t> credential_arg_idx;
     if (count == url_arg_idx + 2)
-        credential_arg_idx = url_arg_idx + 1;
+        credential_arg_idx = arg(url_arg_idx + 1);
     else if (!fourth_argument_is_format && (url_arg_idx + 4 < count))
-        credential_arg_idx = url_arg_idx + 4;
+        credential_arg_idx = arg(url_arg_idx + 4);
 
     /// The engine reads this argument as a connection string or as a plain account url; a value of
     /// another shape is read by neither rule below, and a hidden connection string replaces it whole.
     String connection_value;
-    const auto shape = finder.tryGetStringFromArgument(url_arg_idx, &connection_value)
+    const auto shape = finder.tryGetStringFromArgument(arg(url_arg_idx), &connection_value)
         ? classifyAzureConnectionValue(connection_value)
         : AzureConnectionValue::Unmaskable;
     if (shape == AzureConnectionValue::Unmaskable || (shape == AzureConnectionValue::ConnectionString && credential_arg_idx))
@@ -270,7 +305,7 @@ void findAzureBlobStorageTableEngineSecretArguments(FunctionSecretArgumentsFinde
         return;
     }
 
-    if (maskAzureConnectionString(finder, url_arg_idx))
+    if (maskAzureConnectionString(finder, arg(url_arg_idx)))
         return;
 
     if (credential_arg_idx)
