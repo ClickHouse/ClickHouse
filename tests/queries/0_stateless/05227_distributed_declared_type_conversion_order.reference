@@ -62,3 +62,10 @@
 50
 -- an equal-width sign change does not preserve the order
 1000
+-- a single shard groups and deduplicates by its own type, so a key over the column is refused there
+100
+99	1
+99	1
+-- an Enum without negative values converts to an unsigned integer as is
+2
+1

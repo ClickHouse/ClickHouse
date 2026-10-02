@@ -264,41 +264,45 @@ UInt64 getMaximumFileNumber(const std::string & dir_path)
     return res;
 }
 
-/// The columns of the table the storage is asked about that the query's sorting key expressions read,
-/// on the analyzer path: only those cross the cast below the shards' sort, so only their conversion can
-/// corrupt the merged order. A column of another table (a joined one, a subquery) or of another scope
-/// (a lambda's argument) is not cast by this storage, whatever its name is, so a mere name coincidence
-/// with a sloppily declared column of this table refuses nothing.
-struct SortedByColumns
+/// The columns of the table the storage is asked about that the shards evaluate a key over, on the
+/// analyzer path: the columns read by the sorting key expressions, and, when the shards finalize the
+/// query's reductions, by the GROUP BY and LIMIT BY keys and by a DISTINCT projection. Only those
+/// cross the cast below a shard's sort or reduction, so only their conversion can corrupt the result.
+/// A column of another table (a joined one, a subquery) or of another scope (a lambda's argument) is
+/// not cast by this storage, whatever its name is, so a mere name coincidence with a sloppily declared
+/// column of this table refuses nothing.
+struct KeyColumns
 {
-    /// The source columns of the sorting key could not be established, and every column of the table
-    /// has to be treated as sorted by. Set when the query comes without a query tree (the old analyzer
+    /// The source columns of the keys could not be established, and every column of the table has
+    /// to be treated as a key column. Set when the query comes without a query tree (the old analyzer
     /// cannot be enabled since 26.9, so this is a safeguard) and for a column whose origin cannot be
-    /// traced (see `getSortedByColumns`).
+    /// traced (see `getKeyColumns`).
     bool unknown = false;
     NameSet names;
 
-    /// The query does not rely on the shards' order at all: it has no ORDER BY, or its sorting key
-    /// reads no column of this table (a constant such as `ORDER BY tuple()`, or a joined table's column).
+    /// The query relies neither on the shards' order nor on their reductions: it has none of the keys
+    /// above, or they read no column of this table (a constant such as `ORDER BY tuple()`, or a joined
+    /// table's column).
     bool none() const { return !unknown && names.empty(); }
 };
 
-SortedByColumns getSortedByColumns(const SelectQueryInfo & query_info)
+KeyColumns getKeyColumns(const SelectQueryInfo & query_info, bool shards_finalize_reductions)
 {
-    SortedByColumns result;
+    KeyColumns result;
 
     if (!query_info.query_tree)
     {
         /// Internal reads (e.g. of external tables) come with an empty `SelectQueryInfo`, and the old
-        /// interpreter still fills only the AST. Without an ORDER BY nothing relies on the shards'
-        /// order; with one, its source columns cannot be traced from the AST, so check all of them.
+        /// interpreter still fills only the AST. Without the keys nothing relies on the shards; with
+        /// them, their source columns cannot be traced from the AST, so check all of them.
         const auto * select = query_info.query ? query_info.query->as<ASTSelectQuery>() : nullptr;
-        result.unknown = select && select->orderBy();
+        result.unknown = select
+            && (select->orderBy() || (shards_finalize_reductions && (select->groupBy() || select->limitBy() || select->distinct)));
         return result;
     }
 
     const auto * query_node = query_info.query_tree->as<QueryNode>();
-    if (!query_node || !query_node->hasOrderBy())
+    if (!query_node)
         return result;
 
     /// Positional arguments and `ORDER BY ALL` are already resolved to columns here.
@@ -362,7 +366,22 @@ SortedByColumns getSortedByColumns(const SelectQueryInfo & query_info)
             if (child)
                 self(child, self);
     };
-    collect(query_node->getOrderByNode(), collect);
+    if (query_node->hasOrderBy())
+        collect(query_node->getOrderByNode(), collect);
+
+    if (shards_finalize_reductions)
+    {
+        /// A shard groups and deduplicates by its own type, and the cast to the declared one comes after
+        /// it: `String` values '1' and '01' are distinct groups on the shard and both become `1` as `Int8`.
+        /// `DISTINCT ON` is already rewritten into LIMIT BY here.
+        if (query_node->hasGroupBy())
+            collect(query_node->getGroupByNode(), collect);
+        if (query_node->hasLimitBy())
+            collect(query_node->getLimitByNode(), collect);
+        if (query_node->isDistinct())
+            collect(query_node->getProjectionNode(), collect);
+    }
+
     return result;
 }
 
@@ -638,6 +657,8 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         }
     }
 
+    const auto stage = chooseQueryProcessingStage(to_stage, settings, nodes, query_info);
+
     /// The query was analyzed against the columns declared here, but a shard resolves the remote
     /// table's own columns and sorts by those. `read` casts the shard's result to the declared types
     /// only afterwards (`createLocalPlan`, `RemoteQueryExecutor::adaptBlockStructure`), so a cast that
@@ -650,17 +671,26 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     /// tree), so there is no stage to fall back to: refuse the query instead of returning wrong rows.
     /// `StorageMerge` refuses the same conversion for its children by dropping to `FetchColumns`.
     /// Only the columns the query sorts by matter: without ORDER BY the shards' sort is not relied
-    /// upon at all (a DISTINCT or GROUP BY is redone on the initiator over the converted values), and
-    /// a column that no sorting key expression reads is just carried along, so a table with one
-    /// sloppily declared column keeps working as long as nothing orders by it.
+    /// upon at all, and a column that no sorting key expression reads is just carried along, so a
+    /// table with one sloppily declared column keeps working as long as nothing orders by it.
+    /// The same holds for GROUP BY, LIMIT BY and DISTINCT, but only while the initiator redoes them
+    /// over the converted values: at `Complete` and the stages above it (a single shard,
+    /// `distributed_group_by_no_merge`, a GROUP BY by the sharding key) a shard finalizes them by its
+    /// own type, and a conversion that merges distinct values leaves duplicate groups behind.
     if (nodes > 0)
     {
-        const auto sorted_by_columns = getSortedByColumns(query_info);
-        if (!sorted_by_columns.none())
+        const auto key_columns = getKeyColumns(query_info, stage >= QueryProcessingStage::Complete);
+        if (!key_columns.none())
             checkRemoteTableConversionPreservesOrder(
-                local_context, storage_snapshot, cluster, sorted_by_columns.unknown ? std::nullopt : std::make_optional(sorted_by_columns.names));
+                local_context, storage_snapshot, cluster, key_columns.unknown ? std::nullopt : std::make_optional(key_columns.names));
     }
 
+    return stage;
+}
+
+QueryProcessingStage::Enum StorageDistributed::chooseQueryProcessingStage(
+    QueryProcessingStage::Enum to_stage, const Settings & settings, size_t nodes, const SelectQueryInfo & query_info) const
+{
     if (settings[Setting::distributed_group_by_no_merge])
     {
         if (settings[Setting::distributed_group_by_no_merge] == DISTRIBUTED_GROUP_BY_NO_MERGE_AFTER_AGGREGATION)
@@ -722,7 +752,7 @@ void StorageDistributed::checkRemoteTableConversionPreservesOrder(
     ContextPtr local_context,
     const StorageSnapshotPtr & storage_snapshot,
     const ClusterPtr & cluster,
-    const std::optional<NameSet> & order_by_columns) const
+    const std::optional<NameSet> & key_columns) const
 {
     if (remote_table_function_ptr)
         return;
@@ -748,11 +778,11 @@ void StorageDistributed::checkRemoteTableConversionPreservesOrder(
     const auto remote_metadata = remote_table_storage->getInMemoryMetadataPtr(local_context, false);
     for (const auto & remote_column : remote_metadata->getColumns().get(order_relevant_columns))
     {
-        /// A column the query does not sort by is converted above the shards' sort like any other
+        /// A column no key reads is converted above the shards' sort and reductions like any other
         /// expression: its values are wrong nowhere, they are simply carried along, so a mismatch
-        /// there is none of this check's business. `std::nullopt` means the sorted-by columns are
-        /// unknown and every column has to be checked.
-        if (order_by_columns && !order_by_columns->contains(remote_column.name))
+        /// there is none of this check's business. `std::nullopt` means the key columns are unknown
+        /// and every column has to be checked.
+        if (key_columns && !key_columns->contains(remote_column.name))
             continue;
 
         auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, remote_column.name);
@@ -760,8 +790,9 @@ void StorageDistributed::checkRemoteTableConversionPreservesOrder(
             throw Exception(
                 ErrorCodes::INCOMPATIBLE_COLUMNS,
                 "Column {} has type {} in the shard table {} and type {} in the Distributed table {}, and converting "
-                "between them does not preserve the order: the shards would sort by {} and the initiator would merge "
-                "their streams as if they were sorted by {}, so ORDER BY cannot be processed. Declare the column with "
+                "between them does not preserve the order or the distinctness of values: the shards would sort, group or "
+                "deduplicate by {} and the initiator would treat their result as if it were done by {}, so the query "
+                "cannot be processed. Declare the column with "
                 "the shard table's type, or with a type it converts to without reordering, such as a wider integer or "
                 "a Nullable of it",
                 backQuoteIfNeed(remote_column.name),

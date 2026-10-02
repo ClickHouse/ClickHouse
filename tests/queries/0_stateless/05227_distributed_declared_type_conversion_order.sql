@@ -27,6 +27,10 @@ DROP TABLE IF EXISTS dist_mixed;
 DROP TABLE IF EXISTS dim;
 DROP TABLE IF EXISTS t_arr;
 DROP TABLE IF EXISTS dist_arr;
+DROP TABLE IF EXISTS t_enum;
+DROP TABLE IF EXISTS dist_enum_u8;
+DROP TABLE IF EXISTS t_enum_neg;
+DROP TABLE IF EXISTS dist_enum_neg_u16;
 
 CREATE TABLE t_str (s String) ENGINE = MergeTree ORDER BY s;
 INSERT INTO t_str SELECT toString(number % 21) FROM numbers(100);
@@ -155,6 +159,35 @@ CREATE TABLE dist_u32 (A UInt32) ENGINE = Distributed('test_cluster_two_shards_l
 SELECT DISTINCT A FROM dist_u32 ORDER BY A ASC LIMIT 3; -- { serverError INCOMPATIBLE_COLUMNS }
 SELECT count() FROM (SELECT DISTINCT A FROM dist_u32);
 
+SELECT '-- a single shard groups and deduplicates by its own type, so a key over the column is refused there';
+-- At `Complete` the shard finalizes DISTINCT, GROUP BY and LIMIT BY by `String`, where '1' and '01' are
+-- distinct, and the cast to `Int8` after it would leave duplicate `1`s behind.
+SELECT DISTINCT s FROM dist_one_int8; -- { serverError INCOMPATIBLE_COLUMNS }
+SELECT s, count() FROM dist_one_int8 GROUP BY s; -- { serverError INCOMPATIBLE_COLUMNS }
+SELECT * FROM dist_one_int8 LIMIT 1 BY s; -- { serverError INCOMPATIBLE_COLUMNS }
+SELECT DISTINCT ON (s) s FROM dist_one_int8; -- { serverError INCOMPATIBLE_COLUMNS }
+-- The same with several shards when each of them processes the query to the end.
+SELECT DISTINCT s FROM dist_int8 SETTINGS distributed_group_by_no_merge = 1; -- { serverError INCOMPATIBLE_COLUMNS }
+SELECT s, count() FROM dist_int8 GROUP BY s SETTINGS distributed_group_by_no_merge = 2; -- { serverError INCOMPATIBLE_COLUMNS }
+-- A query without such keys is still processed.
+SELECT count() FROM dist_one_int8;
+SELECT k, count() FROM dist_mixed GROUP BY k ORDER BY k DESC LIMIT 1 SETTINGS distributed_group_by_no_merge = 1;
+
+SELECT '-- an Enum without negative values converts to an unsigned integer as is';
+CREATE TABLE t_enum (v Enum8('a' = 1, 'b' = 2)) ENGINE = MergeTree ORDER BY v;
+INSERT INTO t_enum SELECT if(number % 2 = 0, 'a', 'b') FROM numbers(10);
+CREATE TABLE dist_enum_u8 (v UInt8) ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_enum);
+SELECT DISTINCT v FROM dist_enum_u8 ORDER BY v DESC;
+-- A negative value wraps around in an unsigned integer, so the order is not preserved.
+CREATE TABLE t_enum_neg (v Enum8('a' = -1, 'b' = 2)) ENGINE = MergeTree ORDER BY v;
+INSERT INTO t_enum_neg SELECT if(number % 2 = 0, 'a', 'b') FROM numbers(10);
+CREATE TABLE dist_enum_neg_u16 (v UInt16) ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_enum_neg);
+SELECT DISTINCT v FROM dist_enum_neg_u16 ORDER BY v DESC; -- { serverError INCOMPATIBLE_COLUMNS }
+
+DROP TABLE dist_enum_neg_u16;
+DROP TABLE t_enum_neg;
+DROP TABLE dist_enum_u8;
+DROP TABLE t_enum;
 DROP TABLE dist_u32;
 DROP TABLE dist_arr;
 DROP TABLE t_arr;

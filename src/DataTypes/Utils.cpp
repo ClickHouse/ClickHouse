@@ -261,7 +261,8 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
 
     /// An `Enum` is `static_cast` to the target's field type, so the order survives only when that
     /// mapping is the identity: the target must agree on the values AND be wide enough not to
-    /// truncate, which `contains` does not check. An unmatched `to` falls through to the unwrapping.
+    /// truncate, which `contains` does not check. An unsigned target keeps every value as is only
+    /// when none of them is negative. An unmatched `to` falls through to the unwrapping.
     if (const auto * from_enum = dynamic_cast<const IDataTypeEnum *>(&from))
     {
         if (const auto * to_enum = dynamic_cast<const IDataTypeEnum *>(&to))
@@ -269,8 +270,23 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
             if (from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory() && to_enum->contains(*from_enum))
                 return true;
         }
-        else if (which_to.isInt() && from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory())
-            return true;
+        else if (from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory())
+        {
+            if (which_to.isInt())
+                return true;
+
+            if (which_to.isUInt())
+            {
+                auto has_negative = [](const auto & values)
+                {
+                    return std::any_of(values.begin(), values.end(), [](const auto & value) { return value.second < 0; });
+                };
+                if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(&from); enum8 && !has_negative(enum8->getValues()))
+                    return true;
+                if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(&from); enum16 && !has_negative(enum16->getValues()))
+                    return true;
+            }
+        }
     }
 
     /// Widening an integer keeps the order when the signedness is preserved or the target is
