@@ -2,6 +2,8 @@
 -- the row group with the smallest (largest) k is read first and the others are skipped
 [[0], [1], [2]] at most 3 row groups read: True
 [[19999], [19998], [19997]] at most 3 row groups read: True
+-- with input_format_parquet_preserve_order the row groups are read in file order, so none is skipped
+[[0], [1], [2]] at most 3 row groups read: False
 -- results identical with and without the optimization
 OK
 OK

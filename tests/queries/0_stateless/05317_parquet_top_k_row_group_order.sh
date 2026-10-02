@@ -52,6 +52,9 @@ echo "-- the row group with the smallest (largest) k is read first and the other
 run_json "SELECT k FROM file('${DIR}/t.parquet') ORDER BY k LIMIT 3"
 run_json "SELECT k FROM file('${DIR}/t.parquet') ORDER BY k DESC LIMIT 3"
 
+echo "-- with input_format_parquet_preserve_order the row groups are read in file order, so none is skipped"
+run_json "SELECT k FROM file('${DIR}/t.parquet') ORDER BY k LIMIT 3 SETTINGS input_format_parquet_preserve_order = 1"
+
 echo "-- results identical with and without the optimization"
 queries=(
     "SELECT k, v FROM file('${DIR}/t.parquet') ORDER BY k LIMIT 7"
