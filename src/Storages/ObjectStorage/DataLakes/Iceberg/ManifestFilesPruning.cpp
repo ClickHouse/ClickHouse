@@ -252,14 +252,14 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
 namespace
 {
 
-Field decodePartitionDecimal(const String & bytes, const IDataType & type)
+Field decodePartitionValue(const Field & value, const IDataType & type)
 {
-    auto decoded = deserializeDecimalFromBinaryRepr(bytes, type);
+    auto decoded = partitionValueToFieldOfType(value, type);
     if (!decoded.has_value())
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
             "Iceberg partition value of a decimal column is {} bytes long, which does not fit into {}",
-            bytes.size(),
+            value.safeGet<String>().size(),
             type.getName());
     return *decoded;
 }
@@ -458,10 +458,8 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
                 // NULL_LAST
                 if (field.isNull())
                     field = POSITIVE_INFINITY;
-                else if (field.getType() == Field::Types::Int64 && WhichDataType(type).isDateTime64()) /// clickhouse used to write timestamp as simple long in avro
-                    field = DecimalField<Decimal64>(field.safeGet<Int64>(), getDecimalScale(*type));
-                else if (field.getType() == Field::Types::String && WhichDataType(type).isDecimal())
-                    field = decodePartitionDecimal(field.safeGet<String>(), *type);
+                else
+                    field = decodePartitionValue(field, *type);
             }
 
             bool can_be_true = partition_key_condition->mayBeTrueInRange(
