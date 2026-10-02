@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <string_view>
+#include <vector>
 
 namespace DB
 {
@@ -13,14 +15,10 @@ namespace DB
 /// table holds `adaptive_aggregator_freeze_threshold` keys and freezes. From that point a row
 /// whose key the table already holds (a frequent key, learned for free from the first rows)
 /// keeps aggregating in place with zero coordination, while a miss (a rare key) is not inserted
-/// anywhere: it becomes a delayed record in one of the 256 backlogs, chosen by the two-level
-/// bucket of the key's hash. A record is the key value itself with a run-length count when the
-/// only aggregate is count, and otherwise the key plus its row's aggregate-argument values,
-/// gathered into dense per-block columns at publish so the source block is released; both
-/// carry the precomputed routing hash. Nothing is drained while production runs unless memory
-/// demands it: past the external-aggregation threshold a pressure sweep drains the backlogs
-/// early into the shared routing table and, if that is not enough, spills the routing table
-/// through the ordinary external-aggregation machinery, so the memory bound holds.
+/// anywhere: it becomes a delayed record, appended to the thread's own buffer of the partition its
+/// key's hash falls in. A partition is a slice of a two-level bucket. A record carries the key's hash and
+/// bytes, plus a run-length count when the only aggregate is count, or the row's aggregate-argument values
+/// otherwise; it never points into the source block, so the block is released.
 ///
 /// Two guards hand the work back to the baseline path, with its ordinary byte-triggered
 /// two-level conversion, when freezing cannot pay. A table that consumes many times the
@@ -35,36 +33,29 @@ namespace DB
 /// statistics, so later runs of the query skip the engagement altogether instead of
 /// re-measuring the stream.
 ///
-/// Merge phase: at the end of input every local table converts to two-level and the standard
-/// bucket-parallel merge runs, except that the merge task owning bucket b first drains backlog b
-/// into the destination's bucket b (it is the exclusive owner, so no locks are needed) and only
-/// then folds the locals' bucket b in as usual.
+/// Merge phase: at the end of input every thread hands its partitions to the session and its local table converts
+/// to two-level. The merge task owning bucket b then merges the bucket's partitions a few at a time: it drains every
+/// thread's records of those partitions and the locals' cells routed to them into one table sized for them, converts
+/// that table into a chunk and frees the partitions' memory, so the table stays in the cache and the staged memory
+/// shrinks as the merge proceeds.
 ///
 /// The net effect: frequent keys stay in small cache-resident tables, and a rare key is stored
 /// and emplaced exactly once, by one thread, instead of once per thread that saw it.
 struct AdaptiveAggregationSession;
 using AdaptiveAggregationSessionPtr = std::shared_ptr<AdaptiveAggregationSession>;
 
-/// Per-transform context of the adaptive aggregation: the thread's lifecycle phase, per-block
-/// staging for the missed rows, and the buffered chunks awaiting coalescing.
+/// Per-transform context of the adaptive aggregation: the thread's lifecycle phase, its staged records, and the
+/// per-block staging of the missed rows.
 struct AdaptiveAggregationProducer;
 
-/// All delayed records of one consumed block, grouped by bucket. A published chunk is
-/// immutable; only the producer building a chunk holds it mutably.
-struct StagedChunk;
-using StagedChunkPtr = std::shared_ptr<const StagedChunk>;
-using MutableStagedChunkPtr = std::shared_ptr<StagedChunk>;
+/// The record layout of the aggregate arguments that general payloads stage.
+struct AdaptiveArgumentLayout;
 
-/// A published chunk's shared aggregate-instruction preparation (see `prepareStagedChunk`).
-struct StagedChunkPreparation;
+/// The working memory an adaptive merge task keeps across the buckets it merges.
+struct AdaptiveMergeScratch;
 
-/// Who owns a staged key once it is emplaced into a table: the merge-time drain borrows the
-/// chunk's bytes (the chunks are retained until after the conversion), while a pressure-time
-/// drain copies them into the bucket's arena, because freeing the chunks is its purpose.
-enum class AdaptiveKeyStorage
-{
-    BorrowFromChunk,
-    CopyToArena,
-};
+/// The staged records of one partition as contiguous byte ranges of whole records: a producer's chunk, or a block
+/// read back from a spill stream.
+using AdaptiveRecordRanges = std::vector<std::string_view>;
 
 }
