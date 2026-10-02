@@ -5,6 +5,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <Interpreters/ProcessList.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -117,10 +118,12 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
 
     data->rethrowExceptionIfHas();
 
-    bool is_execution_finished
-        = !data->executor->checkTimeLimitSoft() || (lazy_format ? lazy_format->isFinished() : data->is_finished.load());
+    const bool time_limit_exceeded = pipeline.process_list_element && !pipeline.process_list_element->checkTimeLimitSoft();
+    if (time_limit_exceeded)
+        data->executor->cancel(IProcessor::CancelReason::CancelledByTimeout);
 
-    if (is_execution_finished)
+    const bool execution_finished = time_limit_exceeded || (lazy_format ? lazy_format->isFinished() : data->is_finished.load());
+    if (execution_finished)
     {
         /// If lazy format is finished, we don't cancel pipeline but wait for main thread to be finished.
         data->is_finished = true;
@@ -179,7 +182,7 @@ void PullingAsyncPipelineExecutor::cancel()
     cancelWithExceptionHandling([&]()
     {
         if (!data->is_finished && data->executor)
-            data->executor->cancel();
+            data->executor->cancel(IProcessor::CancelReason::CancelledByUser);
     });
 
     /// The following code is needed to rethrow exception from PipelineExecutor.

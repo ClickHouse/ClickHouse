@@ -34,6 +34,8 @@ Or skip the install: try [ClickHouse Cloud](https://console.clickhouse.cloud/sig
 * [Contact us](https://clickhouse.com/company/contact) to discuss your use case with a ClickHouse expert.
 
 ## Monthly Release & Community Call
+The [ClickHouse **26.9** Release Call](https://www.youtube.com/watch?v=wLrTlU5LLWI) took place on September 17, 2026 — watch the recording and the [slides](https://presentations.clickhouse.com/2026-release-26.9/).
+
 The [ClickHouse **26.8** Release Call](https://www.youtube.com/watch?v=5A9gRYE0v2M) took place on August 27, 2026 — watch the recording and the [slides](https://presentations.clickhouse.com/2026-release-26.8/).
 
 The [ClickHouse **26.7** Release Call](https://www.youtube.com/watch?v=mKBNLaFOVDA) took place on July 23, 2026 — watch the recording and the [slides](https://presentations.clickhouse.com/2026-release-26.7/).
