@@ -18,7 +18,7 @@ struct ProjectionDescription;
 struct WhatIfSettings;
 struct HypotheticalProjections;
 
-/// plans the query again with these hypothetical projections weighed by the optimizer, filling their outcomes
+/// plans the query again so that the optimizer weighs these hypothetical projections and records their results
 using WeighHypotheticalProjections = std::function<void(const std::shared_ptr<HypotheticalProjections> &)>;
 
 /// the stored definition re-checked against the current table, empty with reason set when it no longer fits

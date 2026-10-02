@@ -10,8 +10,8 @@
 namespace DB
 {
 
-/// Projections that exist only as in-memory parts, for `EXPLAIN WHATIF`. The projection optimization
-/// weighs them like materialized ones and records how each fared, but never reads one.
+/// projections for `EXPLAIN WHATIF` that exist only as in-memory parts
+/// the projection optimization weighs them as materialized projections and records the result, but it never reads them
 struct HypotheticalProjections
 {
     std::list<ProjectionDescription> projections;
@@ -20,15 +20,15 @@ struct HypotheticalProjections
 
     struct Outcome
     {
-        /// marks and rows the projection read would take, set once the projection was analyzed
+        /// the marks and the rows of the projection read, set after the analysis of the projection
         std::optional<UInt64> marks;
         UInt64 rows = 0;
         bool chosen = false;
-        /// chosen only because `force_optimize_projection` or `prefer_optimize_projection` lifted a rejection
+        /// chosen only because `force_optimize_projection` or `prefer_optimize_projection` cancels a rejection
         bool forced = false;
-        /// the projection order serves the query's ORDER BY
+        /// the projection order serves the ORDER BY of the query
         bool serves_order = false;
-        /// the query has neither a filter nor an ORDER BY a projection could serve
+        /// the query has no filter and no ORDER BY that a projection can serve
         bool nothing_to_serve = false;
         String reason;
     };

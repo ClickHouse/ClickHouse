@@ -123,10 +123,10 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
 /// `DistributedReadBucket` and `buildDistributedFinalPipe` live in `MergeTreeFinalMerge.h`.
 
-/// This step is created to read from MergeTree* table.
-/// For now, it takes a list of parts and creates source from it.
 struct HypotheticalProjections;
 
+/// This step is created to read from MergeTree* table.
+/// For now, it takes a list of parts and creates source from it.
 class ReadFromMergeTree final : public SourceStepWithFilter
 {
 public:
@@ -586,7 +586,7 @@ public:
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
 
-    /// `EXPLAIN WHATIF` candidates the projection optimization weighs next to the table's own projections
+    /// hypothetical projections that the projection optimization weighs together with the projections of the table
     void setHypotheticalProjections(std::shared_ptr<HypotheticalProjections> projections) { hypothetical_projections = std::move(projections); }
     const std::shared_ptr<HypotheticalProjections> & getHypotheticalProjections() const { return hypothetical_projections; }
     bool isTopKPrewhereQueryConditionCacheAllowed() const { return allow_top_k_prewhere_query_condition_cache; }

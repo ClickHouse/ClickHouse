@@ -217,7 +217,7 @@ bool buildProjectionPart(
     return true;
 }
 
-/// replay the writer over a sequence of blocks: one granule size per block, marks filled by the writer's own rules
+/// replays the writer over a sequence of blocks, with one granule size for each block and the mark rules of the writer
 std::vector<size_t> simulateWriterMarks(
     const ProjectionPartData & data,
     MergeTreeDataPartType part_type,
@@ -251,9 +251,9 @@ std::vector<size_t> simulateWriterMarks(
         const size_t granule_rows = computeIndexGranularity(
             block_rows, block_bytes, granularity_bytes, fixed_granularity_rows, /* blocks_are_granules */ false, adaptive_marks);
 
-        /// rows the mark left open by the previous block still takes
+        /// the rows that still go into the mark that the previous block left open
         size_t open_rows_missing = granularity.getTotalRows() - written;
-        /// the wide writer first shrinks an open mark wider than this block's granule
+        /// first, the wide writer shrinks an open mark that is wider than the granule of this block
         if (part_type == MergeTreeDataPartType::Wide && open_rows_missing > granule_rows)
         {
             granularity.adjustLastMark(std::max(granularity.getLastMarkRows() - open_rows_missing, granule_rows));
@@ -267,7 +267,7 @@ std::vector<size_t> simulateWriterMarks(
         written += block_rows;
     }
 
-    /// closing the part trims the last mark to the rows that reached it
+    /// when the writer closes the part, it trims the last mark to the rows that it got
     if (granularity.getTotalRows() > written)
         granularity.adjustLastMark(granularity.getLastMarkRows() - (granularity.getTotalRows() - written));
 
@@ -277,9 +277,9 @@ std::vector<size_t> simulateWriterMarks(
     return mark_rows;
 }
 
-/// the projection part as each layout the writer could leave it: in memory, with its primary index, never written.
-/// With rows of one width the merge's own block size sets the granule size; once the widths vary it is where
-/// the merge cut its blocks, and a merge cuts at every source it drains - hence `uneven_rows` picks the likeliest.
+/// builds the projection part in memory for each layout that the writer can leave, with its primary index
+/// with rows of one width, the merge block size sets the granule size
+/// with rows of different widths, the merge cuts its blocks at each source, so `uneven_rows` selects the likeliest layout
 std::array<MergeTreeDataPartPtr, 3> buildSyntheticProjectionParts(
     ProjectionPartData & data,
     const ProjectionDescription & projection,
@@ -305,8 +305,8 @@ std::array<MergeTreeDataPartPtr, 3> buildSyntheticProjectionParts(
     const bool granularity_per_block = part_type == MergeTreeDataPartType::Compact
         || (adaptive_marks && !mt_settings[MergeTreeSetting::use_const_adaptive_granularity]);
 
-    /// an insert or a materialization writes one squashed block, a merge runs of `merge_max_block_size`
-    /// cut shorter at every source it drains; a part records none of it, so build each
+    /// an insert or a materialization writes one squashed block, and a merge writes blocks of `merge_max_block_size`
+    /// a merge also cuts a block at each source, and a part does not record which writer it had, so build all layouts
     const size_t merge_rows = mt_settings[MergeTreeSetting::merge_max_block_size];
     const size_t merge_bytes = mt_settings[MergeTreeSetting::merge_max_block_size_bytes];
     /// one granule worth of bytes is the shortest run whose width can still move the granule size
@@ -348,7 +348,7 @@ std::array<MergeTreeDataPartPtr, 3> buildSyntheticProjectionParts(
             index_columns.push_back(std::move(index_column));
         }
 
-        /// `Synthetic` never touches the part directory, `CreateFresh` could delete a leftover `.tmp_proj`
+        /// `Synthetic` does not change the part directory, but `CreateFresh` can delete a leftover `.tmp_proj`
         auto part = const_cast<IMergeTreeDataPart &>(*parent_part)
                         .getProjectionPartBuilder(projection.name, &projection, PartDirIntent::Synthetic, /* is_temp_projection */ true)
                         .withPartType(MergeTreeDataPartType::Compact)
@@ -363,7 +363,7 @@ std::array<MergeTreeDataPartPtr, 3> buildSyntheticProjectionParts(
         return part;
     };
 
-    /// equal layouts share one part, and a single layout stands in for all three
+    /// equal layouts use the same part, and one layout replaces all three when it is the only one
     std::vector<MergeTreeDataPartPtr> built(layouts.size());
     for (size_t i = 0; i < layouts.size(); ++i)
     {
@@ -402,8 +402,8 @@ bool tryEstimateProjection(
 
     Stopwatch watch;
 
-    /// the optimizer weighs the projection as if materialized: first every part in its likeliest layout,
-    /// then every part in each layout the writer could leave, to see if the choice depends on the layout
+    /// the optimizer weighs the projection as a materialized projection, first with each part in its likeliest layout
+    /// then it weighs each layout that the writer can leave, to find if the choice changes with the layout
     std::array<HypotheticalProjectionsPtr, 4> scenarios;
     for (auto & scenario : scenarios)
     {
@@ -548,7 +548,7 @@ bool tryEstimateProjection(
                 "the same {} would be read, and the projection order {}",
                 marks_text(projection_marks),
                 outcome.serves_order ? "serves the ORDER BY" : "serves no ORDER BY");
-        /// another projection can win without the base table losing
+        /// the projection is better than the base table, but another projection is better than it
         if (chosen_in == 0 && projection_marks < baseline_marks)
             result.verdict_reason = outcome.reason;
     }
@@ -712,7 +712,7 @@ WhatIfCandidateResult evaluateProjection(
         return result;
     }
 
-    /// named in the reason when it overrides the cost; the optimizer reads it from the read's own context
+    /// the reason names the setting when it overrides the cost, and the optimizer reads it from the context of the read
     const auto & read_settings = read_step->getContext()->getSettingsRef();
     const std::string_view relaxing_setting = read_settings[Setting::force_optimize_projection] ? "force_optimize_projection"
         : read_settings[Setting::prefer_optimize_projection] ? "prefer_optimize_projection" : "";

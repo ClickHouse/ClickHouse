@@ -298,7 +298,7 @@ struct NormalProjectionCandidate : public ProjectionCandidate
 {
 };
 
-/// what the chooser learned about each candidate beyond its marks, for `EXPLAIN WHATIF`
+/// facts about each candidate, other than its marks, that `EXPLAIN WHATIF` reports
 struct CandidateTraits
 {
     std::unordered_set<const ProjectionDescription *> forced;
@@ -306,7 +306,7 @@ struct CandidateTraits
     bool nothing_to_serve = false;
 };
 
-/// how each hypothetical projection fared
+/// records the result of each hypothetical projection
 static void recordHypotheticalOutcomes(
     HypotheticalProjections & hypothetical,
     const UseProjectionsResult & result,
@@ -773,7 +773,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     if (hypothetical)
     {
         recordHypotheticalOutcomes(*hypothetical, result, candidates, best_candidate, traits);
-        /// a hypothetical projection is weighed, never read
+        /// the optimizer weighs a hypothetical projection but never reads it
         if (hypothetical->contains(best_candidate->projection))
             return result;
     }

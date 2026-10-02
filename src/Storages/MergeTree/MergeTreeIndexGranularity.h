@@ -92,8 +92,9 @@ size_t computeIndexGranularity(
     bool blocks_are_granules,
     bool can_use_adaptive_index_granularity);
 
-/// The marks a writer appends for a block of `rows_in_block` rows, whose first `index_offset` rows go into
-/// the mark the previous block left open. A wide part leaves the last mark open, a compact part closes it.
+/// append the marks that a writer adds for a block of `rows_in_block` rows
+/// the first `index_offset` rows go into the mark that the previous block left open
+/// a wide part leaves its last mark open, and a compact part closes it
 void fillIndexGranularityForWidePart(
     MergeTreeIndexGranularity & index_granularity, size_t index_offset, size_t index_granularity_for_block, size_t rows_in_block);
 void fillIndexGranularityForCompactPart(
