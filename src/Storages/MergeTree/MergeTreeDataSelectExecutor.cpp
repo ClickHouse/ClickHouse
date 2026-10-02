@@ -21,7 +21,6 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/Statistics/StatisticsPartPruner.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Parsers/ASTLiteral.h>
@@ -97,7 +96,7 @@ namespace Setting
     extern const SettingsBool per_part_index_stats;
     extern const SettingsBool apply_deleted_mask;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsString force_data_skipping_indices;
+    extern const SettingsString force_data_skipping_indexes;
     extern const SettingsBool force_index_by_date;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_rows_to_read;
@@ -113,9 +112,10 @@ namespace Setting
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
+    extern const SettingsBool distributed_index_analysis;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
-    extern const SettingsBool secondary_indices_enable_bulk_filtering;
+    extern const SettingsBool secondary_indexes_enable_bulk_filtering;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_statistics_for_part_pruning;
@@ -996,9 +996,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const auto original_num_parts = parts_with_ranges.size();
     const Settings & settings = context->getSettingsRef();
 
-    if (use_skip_indexes && settings[Setting::force_data_skipping_indices].changed)
+    if (use_skip_indexes && settings[Setting::force_data_skipping_indexes].changed)
     {
-        const auto & indices_str = settings[Setting::force_data_skipping_indices].toString();
+        const auto & indices_str = settings[Setting::force_data_skipping_indexes].toString();
         auto forced_indices = parseIdentifiersOrStringLiterals(indices_str, settings);
 
         if (forced_indices.empty())
@@ -1583,8 +1583,14 @@ MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits
     return row_limits;
 }
 
-UInt64 MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(UInt64 condition_hash, const ReadFromMergeTree::Indexes & indexes)
+UInt64 MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(
+    UInt64 condition_hash, const ReadFromMergeTree::Indexes & indexes, bool distributed_index_analysis)
 {
+    /// Without an effective skip index no exclusion depends on the index profile, so the bare key is
+    /// sound. Not under distributed_index_analysis: replicas may prune with skip indexes this set lacks.
+    if (indexes.skip_indexes.empty() && !distributed_index_analysis)
+        return condition_hash;
+
     SipHash hash;
     hash.update(condition_hash);
     hash.update(indexes.use_skip_indexes);
@@ -1635,9 +1641,7 @@ static bool isTopKFilterFunction(const ActionsDAG::Node * node)
         && node->function_base->getName() == "__topKFilter";
 }
 
-/// Plain `SELECT ... WHERE <predicate>` entries are keyed on `<predicate>` alone, so strip internal
-/// TopK nodes before probing reuse. `__topKFilter` is merged into the PREWHERE after the pass that
-/// builds this DAG, so the shapes stripped here no longer originate from that optimizer path.
+/// Plain `SELECT ... WHERE <predicate>` entries are keyed on `<predicate>` alone, so strip internal TopK nodes before probing reuse.
 static std::optional<size_t> getTopKReusePredicateOnlyConditionHash(const ActionsDAG::Node * node)
 {
     if (!node)
@@ -1657,8 +1661,6 @@ static std::optional<size_t> getTopKReusePredicateOnlyConditionHash(const Action
         if (where_children.empty())
             return std::nullopt;
 
-        /// Nothing was stripped, so this root is already the node a plain
-        /// `SELECT ... WHERE <predicate>` keys on.
         if (where_children.size() == node->children.size())
             return node->getHash();
 
@@ -1793,10 +1795,17 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         /// salted with the effective skip-index profile, computed from the same (top-k-salted)
         /// condition hash the write side used, so only a query that ran the same set of indexes
         /// consults them. See getSkipIndexProfiledConditionHash and issue #108519.
-        UInt64 profiled_condition_hash = getSkipIndexProfiledConditionHash(condition_hash, indexes);
+        UInt64 profiled_condition_hash
+            = getSkipIndexProfiledConditionHash(condition_hash, indexes, settings[Setting::distributed_index_analysis]);
+        const bool probe_profiled_condition_hash = profiled_condition_hash != condition_hash;
         const bool also_probe_topk_reuse_predicate_only_hash = has_topk_reuse_predicate_only_hash;
         const UInt64 topk_reuse_predicate_only_profiled_hash = also_probe_topk_reuse_predicate_only_hash
-            ? getSkipIndexProfiledConditionHash(topk_reuse_predicate_only_hash, indexes) : 0;
+            ? getSkipIndexProfiledConditionHash(
+                topk_reuse_predicate_only_hash, indexes, settings[Setting::distributed_index_analysis])
+            : 0;
+        const bool probe_topk_reuse_predicate_only_profiled_hash
+            = also_probe_topk_reuse_predicate_only_hash
+            && topk_reuse_predicate_only_profiled_hash != topk_reuse_predicate_only_hash;
 
         Stats stats;
 
@@ -1827,13 +1836,16 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             /// QueryConditionCacheHits/Misses event regardless of how many keys are probed: count
             /// the hit/miss ourselves and suppress the per-read events on every lookup.
             auto row_level_marks_opt = query_condition_cache->read(storage_id.uuid, part_name, condition_hash, /*increment_profile_events=*/false);
-            auto skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, part_name, profiled_condition_hash, /*increment_profile_events=*/false);
+            std::optional<QueryConditionCache::MatchingMarks> skip_index_marks_opt;
+            if (probe_profiled_condition_hash)
+                skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, part_name, profiled_condition_hash, /*increment_profile_events=*/false);
             std::optional<QueryConditionCache::MatchingMarks> topk_reuse_predicate_only_row_level_marks_opt;
             std::optional<QueryConditionCache::MatchingMarks> topk_reuse_predicate_only_skip_index_marks_opt;
             if (also_probe_topk_reuse_predicate_only_hash)
             {
                 topk_reuse_predicate_only_row_level_marks_opt = query_condition_cache->read(storage_id.uuid, part_name, topk_reuse_predicate_only_hash, /*increment_profile_events=*/false);
-                topk_reuse_predicate_only_skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, part_name, topk_reuse_predicate_only_profiled_hash, /*increment_profile_events=*/false);
+                if (probe_topk_reuse_predicate_only_profiled_hash)
+                    topk_reuse_predicate_only_skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, part_name, topk_reuse_predicate_only_profiled_hash, /*increment_profile_events=*/false);
             }
             if (!row_level_marks_opt && !skip_index_marks_opt
                 && !topk_reuse_predicate_only_row_level_marks_opt && !topk_reuse_predicate_only_skip_index_marks_opt)

@@ -1259,7 +1259,7 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
 /* derived-to-base cast on a real `this` before adding it, so we never need a forged-pointer */
 /* probe to compute the Impl->Data base distance. */
 #define SETTING_EXTERN_ENTRY_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    SettingIndex<Owner_, SettingField##TYPE> NAME{  \
+    extern const SettingIndex<Owner_, SettingField##TYPE> NAME{  \
         offsetof(Traits_::Data, TYPE##_) \
         + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
         }; /* NOLINT(misc-use-internal-linkage) */
