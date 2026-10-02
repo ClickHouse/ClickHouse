@@ -203,13 +203,22 @@ $ clickhouse-local --copy < data.json > data.csv
 
 Par défaut, `clickhouse-local` a accès aux données d’un serveur ClickHouse situé sur le même hôte et ne dépend pas de la configuration du serveur. Il prend également en charge le chargement de la configuration du serveur à l’aide de l’argument `--config-file`. Pour les données temporaires, un répertoire temporaire de données unique est créé par défaut.
 
-Utilisation de base (Linux) :
+Lorsque `--config-file` n’est pas spécifié, `clickhouse-local` recherche un fichier de configuration dans les emplacements suivants, dans cet ordre, et utilise le premier trouvé :
+
+1. `./config.xml`, `./config.yaml`, `./config.yml`
+2. `./clickhouse-local.xml`, `./clickhouse-local.yaml`, `./clickhouse-local.yml`
+3. `$HOME/.clickhouse-local/config.xml`, `$HOME/.clickhouse-local/config.yaml`, `$HOME/.clickhouse-local/config.yml`
+4. `/etc/clickhouse-local/config.xml`, `/etc/clickhouse-local/config.yaml`, `/etc/clickhouse-local/config.yml`
+
+Un fichier de configuration peut être rédigé en XML ou en YAML, dans le même format que pour le serveur ClickHouse — voir [« Fichiers de configuration »](/fr/operations/configuration-files).
+
+Utilisation de base (Linux) :
 
 ```bash
 $ clickhouse-local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
 ```
 
-Utilisation de base (Mac) :
+Utilisation de base (Mac) :
 
 ```bash
 $ ./clickhouse local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
@@ -219,7 +228,7 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
   `clickhouse-local` est également pris en charge sur Windows via WSL2.
 </Note>
 
-Arguments :
+Arguments :
 
 * `-S`, `--structure` — structure de table des données d&#39;entrée.
 * `--input-format` — format d&#39;entrée, `TSV` par défaut.
@@ -231,18 +240,18 @@ Arguments :
 * `-f`, `--format`, `--output-format` — format de sortie, `TSV` par défaut.
 * `-d`, `--database` — base de données par défaut, `_local` par défaut.
 * `--stacktrace` — indique s&#39;il faut afficher les informations de débogage en cas d&#39;exception.
-* `--echo [ <bool> ]` — affiche chaque requête avant son exécution. Accepte une valeur booléenne facultative. Activé par défaut en mode interactif et désactivé en mode batch. Remarque : comme `--echo` accepte désormais une valeur facultative, une requête positionnelle placée immédiatement après un `--echo` seul est interprétée comme sa valeur ; utilisez plutôt `--echo --query "..."`, `--echo -q "..."`, `--echo=false` ou `stdin` redirigé.
+* `--echo [ <bool> ]` — affiche chaque requête avant son exécution. Accepte une valeur booléenne facultative. Activé par défaut en mode interactif et désactivé en mode batch. Remarque : comme `--echo` accepte désormais une valeur facultative, une requête positionnelle placée immédiatement après un `--echo` seul est interprétée comme sa valeur ; utilisez plutôt `--echo --query "..."`, `--echo -q "..."`, `--echo=false` ou `stdin` redirigé.
 * `--echo-formatted [ <bool> ]` — formate les requêtes affichées en écho. Accepte une valeur booléenne facultative. Activé par défaut en mode interactif et désactivé en mode batch.
 * `--echo-query-id [ <bool> ]` — affiche le `query_id` avant exécution. Accepte une valeur booléenne facultative. Activé par défaut en mode interactif et désactivé en mode batch.
 * `--echo-query-separator <string>` — affiche ce séparateur avant la requête affichée en écho et formatée (nécessite `--echo-formatted`), ce qui permet de distinguer plus facilement la requête saisie de sa version réaffichée après reformatage. Vide par défaut (désactivé).
 * `--highlight`, `--hilite` `<bool>` — active ou désactive la coloration syntaxique de l&#39;invite de commande et des requêtes affichées en écho. Activée par défaut. La coloration n&#39;est appliquée que lors de l&#39;écriture dans un terminal.
-* `--hints <bool>` — affiche, pendant la saisie, des indications d&#39;autocomplétion (texte « fantôme » intégré) pour la suggestion la plus pertinente lorsque le curseur se trouve à la fin de la saisie. Naviguez parmi les indications avec Haut/Bas (ou Ctrl-Haut/Ctrl-Bas) ; acceptez l&#39;indication intégrée avec Tab ou Droite ; `Enter` n&#39;accepte une indication qu&#39;après qu&#39;elle a été explicitement sélectionnée et, sinon, exécute la requête ; `Tab` ouvre également la liste classique de complétion. Nécessite `--highlight` (les indications ont besoin de couleur). Les indications de suggestion nécessitent également le mécanisme de suggestion ; `--disable_suggestion` les désactive donc. Les [commandes `/`](/fr/interfaces/client#slash-commands) du client constituent une liste statique et restent indiquées tant que `--hints` et `--highlight` sont activés. `Tab` complète les commandes `/` même lorsque les indications sont désactivées. Activé par défaut.
+* `--hints <bool>` — affiche, pendant la saisie, des indications d&#39;autocomplétion (texte « fantôme » intégré) pour la suggestion la plus pertinente lorsque le curseur se trouve à la fin de la saisie. Naviguez parmi les indications avec Haut/Bas (ou Ctrl-Haut/Ctrl-Bas) ; acceptez l&#39;indication intégrée avec Tab ou Droite ; `Enter` n&#39;accepte une indication qu&#39;après qu&#39;elle a été explicitement sélectionnée et, sinon, exécute la requête ; `Tab` ouvre également la liste classique de complétion. Nécessite `--highlight` (les indications ont besoin de couleur). Les indications de suggestion nécessitent également le mécanisme de suggestion ; `--disable_suggestion` les désactive donc. Les [commandes `/`](/fr/interfaces/client#slash-commands) du client constituent une liste statique et restent indiquées tant que `--hints` et `--highlight` sont activés. `Tab` complète les commandes `/` même lorsque les indications sont désactivées. Activé par défaut.
 * `--verbose` — affiche plus de détails sur l&#39;exécution des requêtes.
 * `--logger.console` — journalise dans la console.
 * `--logger.log` — nom du fichier de log.
 * `--logger.level` — niveau de log.
-* `--ignore-error` — ne pas arrêter le traitement si une requête a échoué : l&#39;erreur est signalée sur `stderr` et la requête suivante est traitée. Comme les erreurs sont ignorées, le processus se termine avec un code de succès même si certaines requêtes ont échoué.
-* `-c`, `--config-file` — chemin vers le fichier de configuration, au même format que pour serveur ClickHouse ; par défaut, la configuration est vide.
+* `--ignore-error` — ne pas arrêter le traitement si une requête a échoué : l&#39;erreur est signalée sur `stderr` et la requête suivante est traitée. Comme les erreurs sont ignorées, le processus se termine avec un code de succès même si certaines requêtes ont échoué.
+* `-c`, `--config-file` — chemin vers le fichier de configuration, au même format que pour le serveur ClickHouse. S&#39;il n&#39;est pas indiqué, `clickhouse-local` recherche lui-même son fichier de configuration principal (voir [« Fichiers de configuration »](#configuration-files)) ; la configuration n&#39;est vide que si aucun des fichiers recherchés n&#39;existe.
 * `--no-system-tables` — ne pas attacher les tables système.
 * `--help` — référence des arguments de `clickhouse-local`.
 * `-V`, `--version` — affiche les informations de version puis quitte.
@@ -255,7 +264,7 @@ Il existe également des arguments pour chaque variable de configuration de Clic
 hôte : il recherche son propre fichier de configuration principal et utilise le premier existant parmi les suivants :
 
 1. le chemin passé avec `--config-file` ;
-2. `./config.xml` ;
+2. `./config.xml`, `./config.yaml` ou `./config.yml` ;
 3. `./clickhouse-local.xml`, `./clickhouse-local.yaml` ou `./clickhouse-local.yml` ;
 4. `~/.clickhouse-local/config.xml`, `~/.clickhouse-local/config.yaml` ou `~/.clickhouse-local/config.yml` ;
 5. `/etc/clickhouse-local/config.xml`, `/etc/clickhouse-local/config.yaml` ou `/etc/clickhouse-local/config.yml`.

@@ -356,9 +356,7 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 
 데이터를 전송할 때 `INSERT` 쿼리에는 `POST` 메서드가 필요합니다. 이 경우 쿼리의 앞부분은 URL 매개변수에 작성하고, 삽입할 데이터는 POST로 전달할 수 있습니다. 삽입할 데이터는 예를 들어 MySQL의 탭 구분 덤프일 수 있습니다. 이렇게 하면 `INSERT` 쿼리가 MySQL의 `LOAD DATA LOCAL INFILE`를 대체합니다.
 
-<div id="examples">
-  ### 예시 {#examples}
-</div>
+### 예시 {#examples}
 
 테이블(table)을 생성하려면:
 
@@ -390,6 +388,24 @@ $ echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FO
 $ echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
 ```
 
+다른 [입력 형식](/ko/reference/formats)에도 동일하게 적용됩니다. 예를 들어 헤더 행이 있는 CSV나 행마다 JSON 객체가 하나씩 있는 형식도 사용할 수 있습니다:
+
+```bash
+$ echo -ne 'a\n13\n14\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20CSVWithNames' --data-binary @-
+$ echo '{"a":15} {"a":16}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20JSONEachRow' --data-binary @-
+```
+
+파일 내용을 삽입하려면 파일 이름 앞에 `@` 접두사를 붙여 `--data-binary`에 전달하십시오:
+
+```bash
+$ echo -ne '17\n18\n' > data.csv
+$ curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20CSV' --data-binary @data.csv
+```
+
+<Warning>
+  `-d`(`--data`) 대신 `--data-binary`를 사용하십시오. curl의 `-d @file`은 파일의 줄 바꿈을 제거하므로, 위의 두 행이 하나의 값 `1718`로 전달됩니다.
+</Warning>
+
 테이블 내용을 조회하려면:
 
 ```bash
@@ -400,6 +416,12 @@ $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 10
 11
 12
+13
+14
+15
+16
+17
+18
 1
 2
 3
@@ -419,6 +441,63 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 데이터 테이블을 반환하지 않는 요청이 성공한 경우, 빈 응답 본문이 반환됩니다.
+
+### Protobuf 데이터 삽입 {#insert-protobuf}
+
+[`Protobuf`](/ko/reference/formats/Protobuf/Protobuf)와 같은 바이너리 포맷도 같은 방식으로 전송합니다. `--data-binary`는 바이트를 변경하지 않고 그대로 전달하기 때문입니다.
+[`format_schema`](/ko/reference/settings/formats/format-schema#format_schema)처럼 포맷에 필요한 설정은 다른 설정과 마찬가지로 `query`와 함께 URL 매개변수로 전달합니다.
+
+아래 예시에서는 다음 테이블과 스키마 파일 `message.proto`를 사용합니다. 이 스키마 파일은 서버의 [`format_schema_path`](/ko/reference/settings/server-settings/settings/format#format_schema_path) 디렉터리에 있어야 합니다:
+
+```bash
+$ echo 'CREATE TABLE protobuf_messages (name String, surname String, birthDate UInt32, phoneNumbers Array(String)) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
+```
+
+```protobuf
+syntax = "proto3";
+
+message MessageType {
+  string name = 1;
+  string surname = 2;
+  uint32 birthDate = 3;
+  repeated string phoneNumbers = 4;
+}
+```
+
+이 예시에서는 삽입할 Protobuf 메시지 파일을 준비하기 위해 ClickHouse로 직접 파일을 생성합니다:
+
+```bash
+$ echo "SELECT 'Aisha' AS name, 'Khan' AS surname, 19920815 AS birthDate, ['(555) 247-8903', '(555) 612-3457'] AS phoneNumbers FORMAT Protobuf" | curl 'http://localhost:8123/?format_schema=message:MessageType' --data-binary @- > messages.bin
+```
+
+파일을 삽입하려면 `format_schema`에 스키마 파일 이름과 메시지 타입을 지정하십시오:
+
+```bash
+$ curl 'http://localhost:8123/?query=INSERT%20INTO%20protobuf_messages%20FORMAT%20Protobuf&format_schema=message:MessageType' --data-binary @messages.bin
+```
+
+ClickHouse Cloud처럼 서버에 스키마 파일을 둘 수 없다면 [`format_schema_source`](/ko/reference/settings/formats/format-schema#format_schema_source)를 `string`으로 설정하여 스키마 자체를 전송하고, [`format_schema_message_name`](/ko/reference/settings/formats/format-schema#format_schema_message_name)에 메시지 타입 이름을 지정하십시오.
+curl의 `--url-query` 옵션(curl 7.87 이상)은 각 매개변수를 URL 인코딩하므로 쿼리와 스키마를 그대로 작성할 수 있습니다:
+
+```bash
+$ curl 'http://localhost:8123/' \
+    --url-query 'query=INSERT INTO protobuf_messages FORMAT Protobuf' \
+    --url-query 'format_schema_source=string' \
+    --url-query 'format_schema=syntax = "proto3"; message MessageType { string name = 1; string surname = 2; uint32 birthDate = 3; repeated string phoneNumbers = 4; }' \
+    --url-query 'format_schema_message_name=MessageType' \
+    --data-binary @messages.bin
+```
+
+테이블 내용을 조회하려면 다음을 실행하세요:
+
+```bash
+$ curl 'http://localhost:8123/?query=SELECT%20*%20FROM%20protobuf_messages'
+Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
+Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
+```
+
+`Protobuf` 포맷에서는 각 메시지 앞에 해당 메시지의 길이가 varint 형식의 접두사로 붙어 있어야 합니다.
+접두사가 없는 단일 메시지에는 [`ProtobufSingle`](/ko/reference/formats/Protobuf/ProtobufSingle)을 사용하고, 행을 하나의 `Envelope` 메시지의 하위 메시지로 전송하는 경우에는 [`ProtobufList`](/ko/reference/formats/Protobuf/ProtobufList)를 사용하십시오.
 
 ## 압축 {#compression}
 

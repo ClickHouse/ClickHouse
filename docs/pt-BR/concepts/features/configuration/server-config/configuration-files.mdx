@@ -15,6 +15,10 @@ doc_type: 'guide'
 
 O servidor ClickHouse pode ser configurado com arquivos de configuração em sintaxe XML ou YAML.
 Na maioria dos tipos de instalação, o servidor ClickHouse usa `/etc/clickhouse-server/config.xml` como arquivo de configuração padrão, mas também é possível especificar manualmente o local do arquivo de configuração na inicialização do servidor usando a opção de linha de comando `--config-file` ou `-C`.
+Quando nenhuma dessas opções é informada, o servidor procura `config.xml`, `config.yaml` e `config.yml`, nessa ordem, no diretório de trabalho atual, e usa o primeiro que encontrar.
+Se nenhum deles existir, o servidor é iniciado com a configuração embutida no binary.
+Um arquivo indicado com `--config-file` é usado exatamente como especificado: se ele não existir, o servidor reporta um erro em vez de procurar um arquivo com outra extensão.
+O `clickhouse-keeper` segue as mesmas regras com `keeper_config.xml`, `keeper_config.yaml` e `keeper_config.yml`.
 Arquivos de configuração adicionais podem ser colocados no diretório `config.d/`, relativo ao arquivo de configuração principal, por exemplo no diretório `/etc/clickhouse-server/config.d/`.
 Os arquivos desse diretório e a configuração principal são mesclados em uma etapa de pré-processamento antes de a configuração ser aplicada no servidor ClickHouse.
 Os fragmentos de configuração são mesclados em ordem lexicográfica por seus caminhos completos. Para arquivos no diretório padrão `config.d/`, isso equivale a ordená-los pelo nome do arquivo. O diretório legado `conf.d/` também é mesclado; como `conf.d` é ordenado antes de `config.d`, todos os seus fragmentos são processados primeiro quando ambos os diretórios existem.

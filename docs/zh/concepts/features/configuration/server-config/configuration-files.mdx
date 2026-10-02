@@ -1,5 +1,5 @@
 ---
-description: '本页说明如何通过 XML 或 YAML 语法的配置文件来配置 ClickHouse server。'
+description: '本页说明如何通过 XML 或 YAML 语法的配置文件来配置 ClickHouse 服务器。'
 sidebarTitle: '配置文件'
 slug: /operations/configuration-files
 title: '配置文件'
@@ -12,10 +12,14 @@ doc_type: 'guide'
   更多详情，请参阅[“配置设置”](/zh/products/cloud/reference/settings)
 </Note>
 
-ClickHouse server 可以通过 XML 或 YAML 语法的配置文件进行配置。
-在大多数安装类型中，ClickHouse server 默认使用 `/etc/clickhouse-server/config.xml` 作为配置文件，但也可以在服务器启动时使用命令行选项 `--config-file` 或 `-C` 手动指定配置文件的位置。
+ClickHouse 服务器可以通过 XML 或 YAML 语法的配置文件进行配置。
+在大多数安装类型中，ClickHouse 服务器默认使用 `/etc/clickhouse-server/config.xml` 作为配置文件，但也可以在服务器启动时使用命令行选项 `--config-file` 或 `-C` 手动指定配置文件的位置。
+如果这两个选项均未指定，服务器会在当前工作目录中依次查找 `config.xml`、`config.yaml` 和 `config.yml`，并使用找到的第一个文件。
+如果这些文件都不存在，服务器将使用内嵌在二进制文件中的配置启动。
+通过 `--config-file` 指定的文件会被原样使用：如果该文件不存在，服务器会直接报错，而不会去查找其他扩展名的同名文件。
+`clickhouse-keeper` 遵循相同的规则，对应的文件为 `keeper_config.xml`、`keeper_config.yaml` 和 `keeper_config.yml`。
 其他配置文件可以放在相对于主配置文件的 `config.d/` 目录中，例如 `/etc/clickhouse-server/config.d/` 目录。
-在这些目录中的文件和主配置会在配置应用到 ClickHouse server 之前，通过预处理步骤先合并。
+在这些目录中的文件和主配置会在配置应用到 ClickHouse 服务器之前，通过预处理步骤先合并。
 配置片段会按其完整路径的词典序合并。对于标准 `config.d/` 目录中的文件，这等同于按文件名排序。旧版 `conf.d/` 目录也会合并；由于 `conf.d` 排在 `config.d` 之前，因此当两个目录都存在时，其中的所有片段会先被处理。
 为简化更新并提高模块化程度，最佳实践是保持默认的 `config.xml` 文件不作修改，并将额外的自定义配置放入 `config.d/` 中。
 ClickHouse Keeper 的配置位于 `/etc/clickhouse-keeper/keeper_config.xml`。

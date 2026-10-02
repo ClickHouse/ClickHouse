@@ -355,9 +355,7 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 
 `INSERT` クエリでは、データの送信に `POST` メソッドを使用する必要があります。この場合、クエリの先頭部分を URL パラメーターに記述し、挿入するデータは `POST` で渡せます。挿入するデータとしては、たとえば MySQL のタブ区切りの dump を使用できます。このように、`INSERT` クエリは MySQL の `LOAD DATA LOCAL INFILE` の代替として使用できます。
 
-<div id="examples">
-  ### 例 {#examples}
-</div>
+### 例 {#examples}
 
 テーブルを作成するには：
 
@@ -389,6 +387,24 @@ $ echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FO
 $ echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
 ```
 
+同じ方法は、他の[入力フォーマット](/ja/reference/formats)でも使用できます。たとえば、ヘッダー行付きの CSV や、1 行につき 1 つの JSON オブジェクトを含む形式などです。
+
+```bash
+$ echo -ne 'a\n13\n14\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20CSVWithNames' --data-binary @-
+$ echo '{"a":15} {"a":16}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20JSONEachRow' --data-binary @-
+```
+
+ファイルの内容を挿入するには、ファイル名の先頭に `@` を付けて `--data-binary` に渡します。
+
+```bash
+$ echo -ne '17\n18\n' > data.csv
+$ curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20CSV' --data-binary @data.csv
+```
+
+<Warning>
+  `-d` (`--data`) ではなく `--data-binary` を使用してください。curl の `-d @file` はファイル内の改行を削除するため、上記の 2 行は 1 つの値 `1718` として送信されてしまいます。
+</Warning>
+
 テーブルの内容を表示するには:
 
 ```bash
@@ -399,6 +415,12 @@ $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 10
 11
 12
+13
+14
+15
+16
+17
+18
 1
 2
 3
@@ -418,6 +440,63 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 データテーブルを返さない正常なリクエストでは、レスポンスボディは空になります。
+
+### Protobuf データを挿入する {#insert-protobuf}
+
+`--data-binary` はバイト列を変更せずにそのまま渡すため、[`Protobuf`](/ja/reference/formats/Protobuf/Protobuf) などのバイナリ形式も同じ方法で送信できます。
+[`format_schema`](/ja/reference/settings/formats/format-schema#format_schema) など、フォーマットに必要な設定は、他の設定と同様に `query` と並べて URL パラメータとして指定します。
+
+以下の例では、このテーブルと、サーバーの [`format_schema_path`](/ja/reference/settings/server-settings/settings/format#format_schema_path) ディレクトリに配置したスキーマファイル `message.proto` を使用します。
+
+```bash
+$ echo 'CREATE TABLE protobuf_messages (name String, surname String, birthDate UInt32, phoneNumbers Array(String)) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
+```
+
+```protobuf
+syntax = "proto3";
+
+message MessageType {
+  string name = 1;
+  string surname = 2;
+  uint32 birthDate = 3;
+  repeated string phoneNumbers = 4;
+}
+```
+
+挿入用の Protobuf メッセージのファイルを用意するため、この例では ClickHouse を使ってファイルを書き出します。
+
+```bash
+$ echo "SELECT 'Aisha' AS name, 'Khan' AS surname, 19920815 AS birthDate, ['(555) 247-8903', '(555) 612-3457'] AS phoneNumbers FORMAT Protobuf" | curl 'http://localhost:8123/?format_schema=message:MessageType' --data-binary @- > messages.bin
+```
+
+ファイルを挿入するには、`format_schema` でスキーマファイルとメッセージ型を指定します：
+
+```bash
+$ curl 'http://localhost:8123/?query=INSERT%20INTO%20protobuf_messages%20FORMAT%20Protobuf&format_schema=message:MessageType' --data-binary @messages.bin
+```
+
+ClickHouse Cloud のようにサーバー上にスキーマファイルを配置できない場合は、[`format_schema_source`](/ja/reference/settings/formats/format-schema#format_schema_source) を `string` に設定してスキーマ自体を送信し、[`format_schema_message_name`](/ja/reference/settings/formats/format-schema#format_schema_message_name) でメッセージ型の名前を指定します。
+curl の `--url-query` オプション (curl 7.87 以降) は各パラメータを URL エンコードするため、クエリとスキーマをそのまま記述できます。
+
+```bash
+$ curl 'http://localhost:8123/' \
+    --url-query 'query=INSERT INTO protobuf_messages FORMAT Protobuf' \
+    --url-query 'format_schema_source=string' \
+    --url-query 'format_schema=syntax = "proto3"; message MessageType { string name = 1; string surname = 2; uint32 birthDate = 3; repeated string phoneNumbers = 4; }' \
+    --url-query 'format_schema_message_name=MessageType' \
+    --data-binary @messages.bin
+```
+
+テーブルの内容を読み取るには、次のようにします。
+
+```bash
+$ curl 'http://localhost:8123/?query=SELECT%20*%20FROM%20protobuf_messages'
+Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
+Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
+```
+
+`Protobuf` では、各メッセージの先頭に、その長さを varint 形式で表したプレフィックスを付ける必要があります。
+プレフィックスなしで単一のメッセージを送信する場合は [`ProtobufSingle`](/ja/reference/formats/Protobuf/ProtobufSingle) を、1 つの `Envelope` メッセージのサブメッセージとして行を送信する場合は [`ProtobufList`](/ja/reference/formats/Protobuf/ProtobufList) を使用してください。
 
 <div id="compression">
   ## 圧縮 {#compression}

@@ -1,6 +1,6 @@
 ---
 description: 'Cette page explique comment le serveur ClickHouse peut être configuré à l’aide de fichiers
-  de configuration au format XML ou YAML.'
+  de configuration à la syntaxe XML ou YAML.'
 sidebarTitle: 'Fichiers de configuration'
 slug: /operations/configuration-files
 title: 'Fichiers de configuration'
@@ -13,11 +13,15 @@ doc_type: 'guide'
   Pour plus de détails, consultez [&quot;Configuration des paramètres&quot;](/fr/products/cloud/reference/settings)
 </Note>
 
-Le serveur ClickHouse peut être configuré à l’aide de fichiers de configuration au format XML ou YAML.
+Le serveur ClickHouse peut être configuré à l’aide de fichiers de configuration à la syntaxe XML ou YAML.
 Dans la plupart des types d’installation, le serveur ClickHouse utilise `/etc/clickhouse-server/config.xml` comme fichier de configuration par défaut, mais il est également possible d’indiquer manuellement l’emplacement du fichier de configuration au démarrage du serveur à l’aide de l’option de ligne de commande `--config-file` ou `-C`.
+Si aucune de ces options n’est fournie, le serveur recherche `config.xml`, `config.yaml` et `config.yml`, dans cet ordre, dans le répertoire de travail courant, et utilise le premier fichier trouvé.
+Si aucun de ces fichiers n’existe, le serveur démarre avec la configuration intégrée au binaire.
+Un fichier indiqué avec `--config-file` est utilisé tel quel : s’il n’existe pas, le serveur signale une erreur au lieu de rechercher un fichier portant une autre extension.
+`clickhouse-keeper` suit les mêmes règles avec `keeper_config.xml`, `keeper_config.yaml` et `keeper_config.yml`.
 Des fichiers de configuration supplémentaires peuvent être placés dans le répertoire `config.d/`, relatif au fichier de configuration principal, par exemple dans le répertoire `/etc/clickhouse-server/config.d/`.
 Les fichiers de ce répertoire et la configuration principale sont fusionnés lors d’une étape de prétraitement avant que la configuration ne soit appliquée au serveur ClickHouse.
-Les fragments de configuration sont fusionnés selon l’ordre lexicographique de leurs chemins complets. Pour les fichiers du répertoire standard `config.d/`, cela équivaut à les ordonner par nom de fichier. Le répertoire legacy `conf.d/` est également fusionné ; comme `conf.d` est trié avant `config.d`, tous ses fragments sont traités en premier lorsque les deux répertoires existent.
+Les fragments de configuration sont fusionnés selon l’ordre lexicographique de leurs chemins complets. Pour les fichiers du répertoire standard `config.d/`, cela équivaut à les ordonner par nom de fichier. Le répertoire legacy `conf.d/` est également fusionné ; comme `conf.d` est trié avant `config.d`, tous ses fragments sont traités en premier lorsque les deux répertoires existent.
 Pour simplifier les mises à jour et améliorer la modularité, il est recommandé de ne pas modifier le fichier `config.xml` par défaut et de placer toute personnalisation supplémentaire dans `config.d/`.
 La configuration de ClickHouse Keeper se trouve dans `/etc/clickhouse-keeper/keeper_config.xml`.
 De même, les fichiers de configuration supplémentaires pour Keeper doivent être placés dans `/etc/clickhouse-keeper/keeper_config.d/`.

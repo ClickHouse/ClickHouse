@@ -203,6 +203,15 @@ $ clickhouse-local --copy < data.json > data.csv
 
 По умолчанию `clickhouse-local` имеет доступ к данным сервер ClickHouse на том же хосте и не зависит от конфигурации сервера. Он также поддерживает загрузку конфигурации сервера с помощью аргумента `--config-file`. Для временных данных по умолчанию создается уникальный временный каталог.
 
+Если `--config-file` не указан, `clickhouse-local` ищет файл конфигурации в следующих местах и использует первый найденный:
+
+1. `./config.xml`, `./config.yaml`, `./config.yml`
+2. `./clickhouse-local.xml`, `./clickhouse-local.yaml`, `./clickhouse-local.yml`
+3. `$HOME/.clickhouse-local/config.xml`, `$HOME/.clickhouse-local/config.yaml`, `$HOME/.clickhouse-local/config.yml`
+4. `/etc/clickhouse-local/config.xml`, `/etc/clickhouse-local/config.yaml`, `/etc/clickhouse-local/config.yml`
+
+Файл конфигурации можно записать в формате XML или YAML — так же, как для сервера ClickHouse; см. [«Файлы конфигурации»](/ru/operations/configuration-files).
+
 Базовое использование (Linux):
 
 ```bash
@@ -242,20 +251,20 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 * `--logger.log` — имя файла журнала.
 * `--logger.level` — уровень логирования.
 * `--ignore-error` — не останавливать обработку, если запрос завершился ошибкой: сообщение об ошибке выводится в `stderr`, после чего обрабатывается следующий запрос. Поскольку ошибки игнорируются, процесс завершается с кодом успешного выполнения, даже если некоторые запросы завершились ошибкой.
-* `-c`, `--config-file` — путь к файлу конфигурации в том же формате, что и для сервера ClickHouse; по умолчанию конфигурация пуста.
+* `-c`, `--config-file` — путь к файлу конфигурации в том же формате, что и для сервера ClickHouse. Если он не указан, `clickhouse-local` самостоятельно ищет свой основной файл конфигурации (см. [«Файлы конфигурации»](#configuration-files)); конфигурация остаётся пустой, только если не найден ни один из искомых файлов.
 * `--no-system-tables` — не подключать системные таблицы.
 * `--help` — справка по аргументам для `clickhouse-local`.
 * `-V`, `--version` — вывести информацию о версии и выйти.
 
 Кроме того, для каждой переменной конфигурации ClickHouse есть аргументы, которые чаще используются вместо `--config-file`.
 
-### Конфигурационные файлы {#configuration-files}
+### Файлы конфигурации {#configuration-files}
 
 `clickhouse-local` не использует конфигурацию сервера ClickHouse, установленного на том же
 хосте, — он ищет собственный основной файл конфигурации и использует первый из найденных:
 
 1. путь, переданный через `--config-file`;
-2. `./config.xml`;
+2. `./config.xml`, `./config.yaml` или `./config.yml`;
 3. `./clickhouse-local.xml`, `./clickhouse-local.yaml` или `./clickhouse-local.yml`;
 4. `~/.clickhouse-local/config.xml`, `~/.clickhouse-local/config.yaml` или `~/.clickhouse-local/config.yml`;
 5. `/etc/clickhouse-local/config.xml`, `/etc/clickhouse-local/config.yaml` или `/etc/clickhouse-local/config.yml`.

@@ -8,16 +8,14 @@ doc_type: 'reference'
 
 Una aplicación cliente para interactuar con ClickHouse Keeper mediante su protocolo nativo.
 
-<div id="clickhouse-keeper-client">
-  ## Opciones
-</div>
+## Opciones {#clickhouse-keeper-client}
 
 * `-q QUERY`, `--query=QUERY` — Consulta que se ejecutará. Si no se pasa este parámetro, `clickhouse-keeper-client` se iniciará en modo interactivo.
 * `-h HOST`, `--host=HOST` — Host del servidor. Valor predeterminado: `localhost`.
 * `-p N`, `--port=N` — Puerto del servidor. Valor predeterminado: 9181
-* `-c FILE_PATH`, `--config-file=FILE_PATH` — Establece la ruta del archivo de configuración para obtener la cadena de conexión. Valor predeterminado: `config.xml`.
-* `--password=PASSWORD` — Contraseña para la autenticación. También puede establecerse mediante la variable de entorno `CLICKHOUSE_KEEPER_PASSWORD` o en el archivo de configuración XML, en `<zookeeper><password>`.
-* `--identity=IDENTITY` — Identidad para el esquema de autenticación `digest`. También puede establecerse mediante la variable de entorno `CLICKHOUSE_KEEPER_IDENTITY` o en el archivo de configuración XML, en `<zookeeper><identity>`.
+* `-c FILE_PATH`, `--config-file=FILE_PATH` — Establece la ruta del archivo de configuración para obtener la cadena de conexión. De forma predeterminada, se utiliza el primero de `config.xml`, `config.yaml` y `config.yml` que exista en el directorio actual.
+* `--password=PASSWORD` — Contraseña para la autenticación. También puede establecerse mediante la variable de entorno `CLICKHOUSE_KEEPER_PASSWORD` o en el archivo de configuración, en `<zookeeper><password>` (`zookeeper.password` en YAML).
+* `--identity=IDENTITY` — Identidad para el esquema de autenticación `digest`. También puede establecerse mediante la variable de entorno `CLICKHOUSE_KEEPER_IDENTITY` o en el archivo de configuración, en `<zookeeper><identity>` (`zookeeper.identity` en YAML).
 * `--connection-timeout=TIMEOUT` — Establece el tiempo de espera de la conexión en segundos. Valor predeterminado: 10s.
 * `--session-timeout=TIMEOUT` — Establece el tiempo de espera de la sesión en segundos. Valor predeterminado: 10s.
 * `--operation-timeout=TIMEOUT` — Establece el tiempo de espera de la operación en segundos. Valor predeterminado: 10s.
@@ -26,26 +24,24 @@ Una aplicación cliente para interactuar con ClickHouse Keeper mediante su proto
 * `--no-confirmation` — Si se establece, no requerirá confirmación para varios comandos. Valor predeterminado: `false` para el modo interactivo y `true` para la consulta
 * `--help` — Muestra el mensaje de ayuda.
 
-<div id="clickhouse-keeper-client-env">
-  ## Variables de entorno
-</div>
+## Variables de entorno {#clickhouse-keeper-client-env}
 
 * `CLICKHOUSE_KEEPER_PASSWORD` — Se usa como contraseña predeterminada si no se proporciona `--password` en la línea de comandos.
 * `CLICKHOUSE_KEEPER_IDENTITY` — Se usa como identidad predeterminada si no se proporciona `--identity` en la línea de comandos.
 
-<div id="clickhouse-keeper-client-auth">
-  ## Autenticación
-</div>
+## Autenticación {#clickhouse-keeper-client-auth}
 
 Al conectarse a un servidor de Keeper que requiere autenticación, la contraseña se determina según el siguiente orden de prioridad (se usa la primera coincidencia):
 
 1. Argumento de línea de comandos `--password`
 2. Variable de entorno `CLICKHOUSE_KEEPER_PASSWORD`
-3. `<zookeeper><password>` en el archivo de configuración XML especificado por `--config-file`
+3. `<zookeeper><password>` en el archivo de configuración cargado
+
+El archivo de configuración del paso 3 es el indicado mediante `--config-file` o, si se omite esa opción, el primero de `config.xml`, `config.yaml` y `config.yml` que se encuentre en el directorio actual. Se admiten tanto el formato XML como el YAML, por lo que `zookeeper.password` en un `config.yaml` funciona exactamente igual que `<zookeeper><password>` en un `config.xml`.
 
 La misma prioridad se aplica a `--identity` / `CLICKHOUSE_KEEPER_IDENTITY` / `<zookeeper><identity>`.
 
-Archivo de configuración XML de ejemplo con opciones de autenticación:
+Archivo de configuración de ejemplo con opciones de autenticación:
 
 ```xml
 <clickhouse>
@@ -59,9 +55,7 @@ Archivo de configuración XML de ejemplo con opciones de autenticación:
 </clickhouse>
 ```
 
-<div id="clickhouse-keeper-client-example">
-  ## Ejemplo
-</div>
+## Ejemplo {#clickhouse-keeper-client-example}
 
 ```bash
 ./clickhouse-keeper-client -h localhost -p 9181 --connection-timeout 30 --session-timeout 30 --operation-timeout 30
@@ -83,9 +77,7 @@ keeper foo bar
 2
 ```
 
-<div id="clickhouse-keeper-client-commands">
-  ## Comandos
-</div>
+## Comandos {#clickhouse-keeper-client-commands}
 
 * `ls '[path]' [watch_id]` -- Enumera los nodos de la ruta indicada (por defecto: cwd). Opcionalmente, establece un watch de hijos identificado por `watch_id`
 * `cd '[path]'` -- Cambia la ruta de trabajo (por defecto `.`)

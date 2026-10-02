@@ -356,9 +356,7 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 
 执行 `INSERT` 查询时，必须使用 `POST` 方法传输数据。在这种情况下，你可以将查询开头部分写在 URL 参数中，再通过 POST 传递要插入的数据。要插入的数据例如可以是从 MySQL 导出的制表符分隔转储文件。这样，`INSERT` 查询就相当于替代了 MySQL 中的 `LOAD DATA LOCAL INFILE`。
 
-<div id="examples">
-  ### 示例 {#examples}
-</div>
+### 示例 {#examples}
 
 创建表：
 
@@ -390,6 +388,24 @@ $ echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FO
 $ echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
 ```
 
+这种方法同样适用于其他任何[输入格式](/zh/reference/formats)，例如带表头的 CSV，或每行一个 JSON 对象：
+
+```bash
+$ echo -ne 'a\n13\n14\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20CSVWithNames' --data-binary @-
+$ echo '{"a":15} {"a":16}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20JSONEachRow' --data-binary @-
+```
+
+要插入文件内容，请在文件名前加上 `@` 前缀，并将其传给 `--data-binary`：
+
+```bash
+$ echo -ne '17\n18\n' > data.csv
+$ curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20CSV' --data-binary @data.csv
+```
+
+<Warning>
+  请使用 `--data-binary`，而不要使用 `-d` (`--data`) 。curl 的 `-d @file` 会去除文件中的换行符，导致上面的两行数据被合并为单个值 `1718` 发送到服务器。
+</Warning>
+
 要查看表内容：
 
 ```bash
@@ -400,6 +416,12 @@ $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 10
 11
 12
+13
+14
+15
+16
+17
+18
 1
 2
 3
@@ -419,6 +441,63 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 对于未返回数据表的成功请求，响应体为空。
+
+### 插入 Protobuf 数据 {#insert-protobuf}
+
+[`Protobuf`](/zh/reference/formats/Protobuf/Protobuf) 等二进制格式也以相同方式发送，因为 `--data-binary` 会原样传递字节。
+该格式所需的设置 (例如 [`format_schema`](/zh/reference/settings/formats/format-schema#format_schema)) 与其他设置一样，以 URL 参数的形式与 `query` 一并传递。
+
+以下示例使用此表和 schema 文件 `message.proto`，该文件放置在服务器的 [`format_schema_path`](/zh/reference/settings/server-settings/settings/format#format_schema_path) 目录中：
+
+```bash
+$ echo 'CREATE TABLE protobuf_messages (name String, surname String, birthDate UInt32, phoneNumbers Array(String)) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
+```
+
+```protobuf
+syntax = "proto3";
+
+message MessageType {
+  string name = 1;
+  string surname = 2;
+  uint32 birthDate = 3;
+  repeated string phoneNumbers = 4;
+}
+```
+
+为了获取一个包含待插入 Protobuf 消息的文件，本示例先让 ClickHouse 生成一个：
+
+```bash
+$ echo "SELECT 'Aisha' AS name, 'Khan' AS surname, 19920815 AS birthDate, ['(555) 247-8903', '(555) 612-3457'] AS phoneNumbers FORMAT Protobuf" | curl 'http://localhost:8123/?format_schema=message:MessageType' --data-binary @- > messages.bin
+```
+
+要插入该文件，请在 `format_schema` 中指定 schema 文件名和消息类型：
+
+```bash
+$ curl 'http://localhost:8123/?query=INSERT%20INTO%20protobuf_messages%20FORMAT%20Protobuf&format_schema=message:MessageType' --data-binary @messages.bin
+```
+
+如果无法将 schema 文件放到服务器上 (例如在 ClickHouse Cloud 中) ，可以将 [`format_schema_source`](/zh/reference/settings/formats/format-schema#format_schema_source) 设置为 `string`，直接发送 schema 内容，并通过 [`format_schema_message_name`](/zh/reference/settings/formats/format-schema#format_schema_message_name) 指定消息类型名称。
+curl 的 `--url-query` 选项 (curl 7.87 及更高版本) 会对每个参数进行 URL 编码，因此查询和 schema 都可以按原样书写：
+
+```bash
+$ curl 'http://localhost:8123/' \
+    --url-query 'query=INSERT INTO protobuf_messages FORMAT Protobuf' \
+    --url-query 'format_schema_source=string' \
+    --url-query 'format_schema=syntax = "proto3"; message MessageType { string name = 1; string surname = 2; uint32 birthDate = 3; repeated string phoneNumbers = 4; }' \
+    --url-query 'format_schema_message_name=MessageType' \
+    --data-binary @messages.bin
+```
+
+读取表内容：
+
+```bash
+$ curl 'http://localhost:8123/?query=SELECT%20*%20FROM%20protobuf_messages'
+Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
+Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
+```
+
+`Protobuf` 要求每条消息都以 varint 编码的长度作为前缀。
+如果是不带前缀的单条消息，请使用 [`ProtobufSingle`](/zh/reference/formats/Protobuf/ProtobufSingle)；如果各行数据作为同一条 `Envelope` 消息的子消息发送，请使用 [`ProtobufList`](/zh/reference/formats/Protobuf/ProtobufList)。
 
 ## 压缩 {#compression}
 

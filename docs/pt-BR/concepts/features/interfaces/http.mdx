@@ -356,9 +356,7 @@ Se a consulta já contiver uma cláusula `FROM`, o componente do caminho fornece
 
 O método `POST` de transmissão de dados é necessário para consultas `INSERT`. Nesse caso, você pode escrever o início da consulta no parâmetro da URL e usar o POST para enviar os dados a serem inseridos. Os dados a serem inseridos podem ser, por exemplo, um dump do MySQL separado por tabulações. Dessa forma, a consulta `INSERT` substitui o `LOAD DATA LOCAL INFILE` do MySQL.
 
-<div id="examples">
-  ### Exemplos {#examples}
-</div>
+### Exemplos {#examples}
 
 Para criar uma tabela:
 
@@ -390,6 +388,24 @@ Para inserir dados de um dump com campos separados por tabulação, especifique 
 $ echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
 ```
 
+O mesmo vale para qualquer outro [formato de entrada](/pt-BR/reference/formats), como CSV com uma linha de cabeçalho ou um objeto JSON por linha:
+
+```bash
+$ echo -ne 'a\n13\n14\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20CSVWithNames' --data-binary @-
+$ echo '{"a":15} {"a":16}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20JSONEachRow' --data-binary @-
+```
+
+Para inserir o conteúdo de um arquivo, passe o nome dele para `--data-binary` com o prefixo `@`:
+
+```bash
+$ echo -ne '17\n18\n' > data.csv
+$ curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20CSV' --data-binary @data.csv
+```
+
+<Warning>
+  Use `--data-binary`, e não `-d` (`--data`). A opção `-d @file` do curl remove as quebras de linha do arquivo; com isso, as duas linhas acima chegam como um único valor, `1718`.
+</Warning>
+
 Para ler o conteúdo da tabela:
 
 ```bash
@@ -400,6 +416,12 @@ $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 10
 11
 12
+13
+14
+15
+16
+17
+18
 1
 2
 3
@@ -418,7 +440,64 @@ Para excluir a tabela:
 $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
-Para solicitações bem-sucedidas que não retornam uma tabela de dados, retorna-se um corpo de resposta vazio.
+Para requisições bem-sucedidas que não retornam uma tabela de dados, retorna-se um corpo de resposta vazio.
+
+### Inserir dados Protobuf {#insert-protobuf}
+
+Formatos binários como [`Protobuf`](/pt-BR/reference/formats/Protobuf/Protobuf) são enviados da mesma forma, já que `--data-binary` repassa os bytes sem alterações.
+As configurações exigidas pelo formato, como [`format_schema`](/pt-BR/reference/settings/formats/format-schema#format_schema), são passadas como parâmetros de URL junto com `query`, assim como qualquer outra configuração.
+
+Os exemplos abaixo usam esta tabela e o arquivo de schema `message.proto`, localizado no diretório [`format_schema_path`](/pt-BR/reference/settings/server-settings/settings/format#format_schema_path) do servidor:
+
+```bash
+$ echo 'CREATE TABLE protobuf_messages (name String, surname String, birthDate UInt32, phoneNumbers Array(String)) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
+```
+
+```protobuf
+syntax = "proto3";
+
+message MessageType {
+  string name = 1;
+  string surname = 2;
+  uint32 birthDate = 3;
+  repeated string phoneNumbers = 4;
+}
+```
+
+Para obter um arquivo de mensagens Protobuf para fazer o insert, neste exemplo o ClickHouse gera um:
+
+```bash
+$ echo "SELECT 'Aisha' AS name, 'Khan' AS surname, 19920815 AS birthDate, ['(555) 247-8903', '(555) 612-3457'] AS phoneNumbers FORMAT Protobuf" | curl 'http://localhost:8123/?format_schema=message:MessageType' --data-binary @- > messages.bin
+```
+
+Para fazer o insert do arquivo, informe o nome do arquivo de schema e o tipo da mensagem em `format_schema`:
+
+```bash
+$ curl 'http://localhost:8123/?query=INSERT%20INTO%20protobuf_messages%20FORMAT%20Protobuf&format_schema=message:MessageType' --data-binary @messages.bin
+```
+
+Quando não for possível colocar um arquivo de schema no servidor, como no ClickHouse Cloud, envie o próprio schema com [`format_schema_source`](/pt-BR/reference/settings/formats/format-schema#format_schema_source) definido como `string` e informe o nome do tipo de mensagem em [`format_schema_message_name`](/pt-BR/reference/settings/formats/format-schema#format_schema_message_name).
+A opção `--url-query` do curl (curl 7.87 e versões posteriores) aplica codificação de URL a cada parâmetro, de modo que a consulta e o schema podem ser escritos sem alterações:
+
+```bash
+$ curl 'http://localhost:8123/' \
+    --url-query 'query=INSERT INTO protobuf_messages FORMAT Protobuf' \
+    --url-query 'format_schema_source=string' \
+    --url-query 'format_schema=syntax = "proto3"; message MessageType { string name = 1; string surname = 2; uint32 birthDate = 3; repeated string phoneNumbers = 4; }' \
+    --url-query 'format_schema_message_name=MessageType' \
+    --data-binary @messages.bin
+```
+
+Para ler o conteúdo da tabela:
+
+```bash
+$ curl 'http://localhost:8123/?query=SELECT%20*%20FROM%20protobuf_messages'
+Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
+Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
+```
+
+O formato `Protobuf` espera que cada mensagem seja precedida pelo seu comprimento, codificado como varint.
+Para uma única mensagem sem o prefixo, use [`ProtobufSingle`](/pt-BR/reference/formats/Protobuf/ProtobufSingle); para linhas enviadas como submensagens de uma única mensagem `Envelope`, use [`ProtobufList`](/pt-BR/reference/formats/Protobuf/ProtobufList).
 
 ## Compressão {#compression}
 

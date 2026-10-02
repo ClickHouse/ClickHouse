@@ -203,6 +203,15 @@ $ clickhouse-local --copy < data.json > data.csv
 
 デフォルトでは、`clickhouse-local` は同じホスト上の ClickHouseサーバーのデータにアクセスでき、サーバー設定には依存しません。また、`--config-file` 引数を使用してサーバー設定を読み込むこともできます。一時データ用には、デフォルトで一意の一時データディレクトリが作成されます。
 
+`--config-file` が指定されていない場合、`clickhouse-local` は次の場所を順に検索し、最初に見つかった設定ファイルを使用します。
+
+1. `./config.xml`, `./config.yaml`, `./config.yml`
+2. `./clickhouse-local.xml`, `./clickhouse-local.yaml`, `./clickhouse-local.yml`
+3. `$HOME/.clickhouse-local/config.xml`, `$HOME/.clickhouse-local/config.yaml`, `$HOME/.clickhouse-local/config.yml`
+4. `/etc/clickhouse-local/config.xml`, `/etc/clickhouse-local/config.yaml`, `/etc/clickhouse-local/config.yml`
+
+設定ファイルは、ClickHouseサーバーと同じフォーマットで、XML または YAML のいずれかで記述できます。詳しくは[「設定ファイル」](/ja/operations/configuration-files)を参照してください。
+
 基本的な使い方 (Linux) :
 
 ```bash
@@ -242,7 +251,7 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 * `--logger.log` — ログファイル名。
 * `--logger.level` — ログレベル。
 * `--ignore-error` — クエリが失敗しても処理を停止しません。エラーは `stderr` に報告され、次のクエリが処理されます。エラーは無視されるため、一部のクエリが失敗しても、プロセスは成功を示す終了コードで終了します。
-* `-c`, `--config-file` — ClickHouseサーバー と同じ形式の設定ファイルへのパス。デフォルトでは設定は空です。
+* `-c`, `--config-file` — ClickHouseサーバー と同じ形式の設定ファイルへのパス。指定しない場合、`clickhouse-local` はメインの設定ファイルを自動的に検索します ([&quot;設定ファイル&quot;](#configuration-files) を参照)。設定が空になるのは、検索対象のファイルがいずれも存在しない場合のみです。
 * `--no-system-tables` — システムテーブルをアタッチしません。
 * `--help` — `clickhouse-local` の引数リファレンス。
 * `-V`, `--version` — バージョン情報を表示して終了します。
@@ -254,7 +263,7 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 `clickhouse-local` は、同じホストにインストールされた ClickHouse サーバーの設定を使用しません。独自のメイン設定ファイルを探し、次のうち最初に見つかったものを使用します。
 
 1. `--config-file` で渡されたパス
-2. `./config.xml`
+2. `./config.xml`、`./config.yaml` または `./config.yml`
 3. `./clickhouse-local.xml`、`./clickhouse-local.yaml` または `./clickhouse-local.yml`
 4. `~/.clickhouse-local/config.xml`、`~/.clickhouse-local/config.yaml` または `~/.clickhouse-local/config.yml`
 5. `/etc/clickhouse-local/config.xml`、`/etc/clickhouse-local/config.yaml` または `/etc/clickhouse-local/config.yml`

@@ -355,9 +355,7 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 
 تُعد طريقة `POST` لنقل البيانات ضرورية لاستعلامات `INSERT`. في هذه الحالة، يمكنك كتابة بداية الاستعلام في معلمة `URL`، واستخدام `POST` لتمرير البيانات المراد إدراجها. ويمكن أن تكون هذه البيانات، على سبيل المثال، ملف تفريغ من MySQL مفصولًا بعلامات جدولة. وبهذه الطريقة، يحل استعلام `INSERT` محل `LOAD DATA LOCAL INFILE` في MySQL.
 
-<div id="examples">
-  ### أمثلة {#examples}
-</div>
+### أمثلة {#examples}
 
 لإنشاء جدول:
 
@@ -383,11 +381,29 @@ $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VA
 $ echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20Values' --data-binary @-
 ```
 
-لإدراج البيانات من ملف تفريغ مفصول بعلامات جدولة، حدِّد التنسيق المقابل:
+لإدراج البيانات من ملف تفريغ مفصول بعلامات جدولة، حدِّد الصيغة المقابلة:
 
 ```bash
 $ echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
 ```
+
+ينطبق الأمر نفسه على أي [صيغة إدخال](/ar/reference/formats) أخرى، مثل CSV مع صف عناوين، أو كائن JSON واحد في كل صف:
+
+```bash
+$ echo -ne 'a\n13\n14\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20CSVWithNames' --data-binary @-
+$ echo '{"a":15} {"a":16}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20JSONEachRow' --data-binary @-
+```
+
+لإدراج محتويات ملف، مرِّر اسمه إلى `--data-binary` مسبوقًا بالبادئة `@`:
+
+```bash
+$ echo -ne '17\n18\n' > data.csv
+$ curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20CSV' --data-binary @data.csv
+```
+
+<Warning>
+  استخدم `--data-binary` بدلًا من `-d` (`--data`)، إذ يحذف الخيار `-d @file` في curl محارف الأسطر الجديدة من الملف، فيصل الصفّان أعلاه على هيئة قيمة واحدة هي `1718`.
+</Warning>
 
 لقراءة محتويات الجدول:
 
@@ -399,6 +415,12 @@ $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 10
 11
 12
+13
+14
+15
+16
+17
+18
 1
 2
 3
@@ -417,7 +439,64 @@ $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
-في الطلبات الناجحة التي لا تُرجع جدول بيانات، يُعاد جسم الاستجابة فارغًا.
+في الطلبات الناجحة التي لا تُرجع جدول بيانات، يُعاد متن الاستجابة فارغًا.
+
+### إدراج بيانات Protobuf {#insert-protobuf}
+
+تُرسَل الصيغ الثنائية مثل [`Protobuf`](/ar/reference/formats/Protobuf/Protobuf) بالطريقة نفسها، إذ يمرّر `--data-binary` البايتات كما هي دون تعديل.
+أما الإعدادات التي تتطلبها الصيغة، مثل [`format_schema`](/ar/reference/settings/formats/format-schema#format_schema)، فتُمرَّر على هيئة معلمات URL إلى جانب `query`، شأنها شأن أي إعداد آخر.
+
+تستخدم الأمثلة أدناه هذا الجدول وملف المخطط `message.proto` الموجود في دليل [`format_schema_path`](/ar/reference/settings/server-settings/settings/format#format_schema_path) على الخادم:
+
+```bash
+$ echo 'CREATE TABLE protobuf_messages (name String, surname String, birthDate UInt32, phoneNumbers Array(String)) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
+```
+
+```protobuf
+syntax = "proto3";
+
+message MessageType {
+  string name = 1;
+  string surname = 2;
+  uint32 birthDate = 3;
+  repeated string phoneNumbers = 4;
+}
+```
+
+للحصول على ملف يحتوي على رسائل Protobuf لإدراجها، نستخدم في هذا المثال ClickHouse لإنشاء هذا الملف:
+
+```bash
+$ echo "SELECT 'Aisha' AS name, 'Khan' AS surname, 19920815 AS birthDate, ['(555) 247-8903', '(555) 612-3457'] AS phoneNumbers FORMAT Protobuf" | curl 'http://localhost:8123/?format_schema=message:MessageType' --data-binary @- > messages.bin
+```
+
+لإدراج الملف، حدِّد اسم ملف المخطط ونوع الرسالة في `format_schema`:
+
+```bash
+$ curl 'http://localhost:8123/?query=INSERT%20INTO%20protobuf_messages%20FORMAT%20Protobuf&format_schema=message:MessageType' --data-binary @messages.bin
+```
+
+عندما يتعذّر وضع ملف المخطط على الخادم، كما هو الحال في ClickHouse Cloud، أرسل المخطط نفسه مع ضبط [`format_schema_source`](/ar/reference/settings/formats/format-schema#format_schema_source) على `string`، وحدّد اسم نوع الرسالة في [`format_schema_message_name`](/ar/reference/settings/formats/format-schema#format_schema_message_name).
+يُرمِّز الخيار `--url-query` في curl (الإصدار 7.87 وما بعده) كل معلمة بترميز URL، ولذلك يمكن كتابة الاستعلام والمخطط كما هما:
+
+```bash
+$ curl 'http://localhost:8123/' \
+    --url-query 'query=INSERT INTO protobuf_messages FORMAT Protobuf' \
+    --url-query 'format_schema_source=string' \
+    --url-query 'format_schema=syntax = "proto3"; message MessageType { string name = 1; string surname = 2; uint32 birthDate = 3; repeated string phoneNumbers = 4; }' \
+    --url-query 'format_schema_message_name=MessageType' \
+    --data-binary @messages.bin
+```
+
+لقراءة محتويات الجدول:
+
+```bash
+$ curl 'http://localhost:8123/?query=SELECT%20*%20FROM%20protobuf_messages'
+Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
+Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
+```
+
+تتوقّع صيغة `Protobuf` أن تُسبَق كل رسالة بطولها مُرمَّزًا بصيغة varint.
+لرسالة واحدة دون هذه البادئة، استخدم [`ProtobufSingle`](/ar/reference/formats/Protobuf/ProtobufSingle)؛ أما الصفوف المُرسَلة كرسائل فرعية ضمن رسالة `Envelope` واحدة، فاستخدم لها [`ProtobufList`](/ar/reference/formats/Protobuf/ProtobufList).
 
 ## الضغط {#compression}
 
