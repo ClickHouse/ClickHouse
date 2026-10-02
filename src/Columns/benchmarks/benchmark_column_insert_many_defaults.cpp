@@ -1,5 +1,6 @@
 #include <cstddef>
 
+#include <Columns/ColumnMap.h>
 #include <Columns/IColumn.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -9,6 +10,28 @@
 using namespace DB;
 
 static constexpr size_t ROWS = 65536;
+
+struct AllocationMetrics
+{
+    size_t total_bytes = 0;
+    size_t offsets_capacity_bytes = 0;
+    size_t nested_bytes = 0;
+};
+
+static AllocationMetrics getAllocationMetrics(const IColumn & column)
+{
+    const auto & map = static_cast<const ColumnMap &>(column);
+    const auto & nested = map.getNestedColumn();
+    const auto & offsets = nested.getOffsets();
+    return {column.allocatedBytes(), offsets.capacity() * sizeof(offsets[0]), nested.getData().allocatedBytes()};
+}
+
+static void setAllocationCounters(benchmark::State & state, const AllocationMetrics & metrics)
+{
+    state.counters["retained_allocated_bytes"] = static_cast<double>(metrics.total_bytes);
+    state.counters["retained_offsets_capacity_bytes"] = static_cast<double>(metrics.offsets_capacity_bytes);
+    state.counters["retained_nested_bytes"] = static_cast<double>(metrics.nested_bytes);
+}
 
 /// Keep the inherited implementation available as a same-binary baseline.
 /// Qualifying the call deliberately bypasses ColumnMap's override.
@@ -26,7 +49,7 @@ static void BM_insertManyDefaults(benchmark::State & state)
 {
     const auto type = DataTypeFactory::instance().get(str_type);
     const size_t length = state.range(0);
-    size_t retained_allocated_bytes = 0;
+    AllocationMetrics allocation;
 
     for ([[maybe_unused]] auto _ : state)
     {
@@ -39,14 +62,14 @@ static void BM_insertManyDefaults(benchmark::State & state)
         benchmark::ClobberMemory();
 
         state.PauseTiming();
-        retained_allocated_bytes = column->allocatedBytes();
+        allocation = getAllocationMetrics(*column);
         column.reset();
         state.ResumeTiming();
     }
 
     state.SetItemsProcessed(state.iterations() * length);
     // allocatedBytes() reports retained column capacity, not peak process RSS.
-    state.counters["retained_allocated_bytes"] = static_cast<double>(retained_allocated_bytes);
+    setAllocationCounters(state, allocation);
 }
 
 template <const std::string & str_type, bool generic_defaults>
@@ -54,7 +77,7 @@ static void BM_insertManyDefaultsOneByOne(benchmark::State & state)
 {
     const auto type = DataTypeFactory::instance().get(str_type);
     const size_t length = state.range(0);
-    size_t retained_allocated_bytes = 0;
+    AllocationMetrics allocation;
 
     for ([[maybe_unused]] auto _ : state)
     {
@@ -68,13 +91,13 @@ static void BM_insertManyDefaultsOneByOne(benchmark::State & state)
         benchmark::ClobberMemory();
 
         state.PauseTiming();
-        retained_allocated_bytes = column->allocatedBytes();
+        allocation = getAllocationMetrics(*column);
         column.reset();
         state.ResumeTiming();
     }
 
     state.SetItemsProcessed(state.iterations() * length);
-    state.counters["retained_allocated_bytes"] = static_cast<double>(retained_allocated_bytes);
+    setAllocationCounters(state, allocation);
 }
 
 template <const std::string & str_type, bool generic_defaults>
@@ -82,7 +105,7 @@ static void BM_insertManyDefaultsBatches(benchmark::State & state)
 {
     const auto type = DataTypeFactory::instance().get(str_type);
     const size_t batch_size = state.range(0);
-    size_t retained_allocated_bytes = 0;
+    AllocationMetrics allocation;
 
     for ([[maybe_unused]] auto _ : state)
     {
@@ -98,13 +121,13 @@ static void BM_insertManyDefaultsBatches(benchmark::State & state)
         benchmark::ClobberMemory();
 
         state.PauseTiming();
-        retained_allocated_bytes = column->allocatedBytes();
+        allocation = getAllocationMetrics(*column);
         column.reset();
         state.ResumeTiming();
     }
 
     state.SetItemsProcessed(state.iterations() * ROWS);
-    state.counters["retained_allocated_bytes"] = static_cast<double>(retained_allocated_bytes);
+    setAllocationCounters(state, allocation);
 }
 
 template <const std::string & str_type, bool caller_reserve>
@@ -112,7 +135,7 @@ static void BM_insertManyDefaultsCallerReserve(benchmark::State & state)
 {
     const auto type = DataTypeFactory::instance().get(str_type);
     const size_t length = state.range(0);
-    size_t retained_allocated_bytes = 0;
+    AllocationMetrics allocation;
 
     for ([[maybe_unused]] auto _ : state)
     {
@@ -129,13 +152,13 @@ static void BM_insertManyDefaultsCallerReserve(benchmark::State & state)
         benchmark::ClobberMemory();
 
         state.PauseTiming();
-        retained_allocated_bytes = column->allocatedBytes();
+        allocation = getAllocationMetrics(*column);
         column.reset();
         state.ResumeTiming();
     }
 
     state.SetItemsProcessed(state.iterations() * length);
-    state.counters["retained_allocated_bytes"] = static_cast<double>(retained_allocated_bytes);
+    setAllocationCounters(state, allocation);
 }
 
 static const String type_map_uint64 = "Map(UInt64, UInt64)";
