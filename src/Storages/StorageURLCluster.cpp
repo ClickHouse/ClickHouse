@@ -120,7 +120,7 @@ void StorageURLCluster::updateQueryToSendIfNeeded(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
 
     auto * expression_list = table_function->arguments->as<ASTExpressionList>();
-    if (!expression_list)
+    if (!expression_list || expression_list->children.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
 
     TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
