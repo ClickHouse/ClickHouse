@@ -1,0 +1,30 @@
+HAVING clause
+1
+HAVING with count filter
+1
+HAVING with multiple aggregates
+1
+ORDER BY on aggregation result
+1
+ORDER BY key
+1
+ORDER BY with LIMIT
+1
+quantile
+1
+quantileExact
+1
+median
+1
+quantiles (multiple quantile levels)
+1
+Skewed distribution (one dominant key)
+1
+Skewed distribution with multiple aggregates
+1
+max_threads = 2 (minimum parallelism)
+1
+max_threads = 2 with count
+1
+max_threads = 2 with Nullable key
+1

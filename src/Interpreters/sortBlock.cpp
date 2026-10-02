@@ -6,11 +6,14 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/iota.h>
+
+#ifdef __SSE2__
+    #include <emmintrin.h>
+#endif
 
 namespace DB
 {
@@ -122,18 +125,8 @@ ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, c
     return result;
 }
 
-/// `equal_ranges`, when requested, receives the ranges (of two or more positions of the permutation) whose
-/// rows compare equal on the whole description; only supported for a full sort (no limit).
-void getBlockSortPermutationImpl(
-    const Block & block,
-    const SortDescription & description,
-    IColumn::PermutationSortStability stability,
-    UInt64 limit,
-    IColumn::Permutation & permutation,
-    EqualRanges * equal_ranges = nullptr)
+void getBlockSortPermutationImpl(const Block & block, const SortDescription & description, IColumn::PermutationSortStability stability, UInt64 limit, IColumn::Permutation & permutation)
 {
-    chassert(!equal_ranges || limit == 0);
-
     if (block.empty())
         return;
 
@@ -166,25 +159,6 @@ void getBlockSortPermutationImpl(
                 *column_with_sort_description.description.collator, direction, stability, limit, nan_direction_hint, permutation);
         else
             column->getPermutation(direction, stability, limit, nan_direction_hint, permutation);
-
-        /// The single-column sort does not track the equal ranges: the galloping search finds them in the
-        /// sorted order of the permutation, cheaply both for the long ranges of a skewed input and for the
-        /// singleton ranges of a distinct one. Every probe is a virtual comparison, so the linear probe is
-        /// kept short (as in `IColumn::getEqualRangeEndAssumeSorted`); the comparison honors the collation.
-        if (equal_ranges)
-        {
-            static constexpr size_t linear_probe = 8;
-            PartialSortingLessWithCollation compare(columns_with_sort_descriptions);
-            const size_t size = permutation.size();
-            for (size_t begin = 0; begin < size;)
-            {
-                const size_t range_end = findEqualRangeEndAssumeSorted(
-                    begin, size, linear_probe, [&](size_t pos) { return compare.compare(permutation[begin], permutation[pos]) == 0; });
-                if (range_end - begin > 1)
-                    equal_ranges->emplace_back(begin, range_end);
-                begin = range_end;
-            }
-        }
     }
     else
     {
@@ -231,9 +205,6 @@ void getBlockSortPermutationImpl(
                 "updatePermutation returned equal_ranges not sorted by `from`");
 #endif
         }
-
-        if (equal_ranges)
-            *equal_ranges = std::move(ranges);
     }
 }
 
@@ -243,39 +214,51 @@ bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limi
 {
     static_assert(sizeof(permutation[0]) == sizeof(UInt64), "Invalid permutation value size");
 
-    const size_t permutation_size = permutation.size();
-    const size_t size = limit == 0 ? permutation_size : std::min(limit, permutation_size);
+    size_t permutation_size = permutation.size();
+    size_t size = limit == 0 ? permutation_size : std::min(limit, permutation_size);
+    if (size == 0)
+        return true;
 
-    /// The identity holds exactly when every element equals its own index. A block is folded into
-    /// a single value, so the loop is branchless and vectorizes, and one check per block keeps the
-    /// early exit. Elements are compared against the first element of the block rather than their
-    /// absolute index, which keeps the vector of offsets loop invariant: with the absolute index
-    /// the compiler rebuilds that vector on every block, and on AArch64 that costs more than the
-    /// comparison itself.
-    static constexpr size_t block_size = 64;
-
-    /// Checked on its own, so a permutation that does not start at zero costs one load.
-    if (size != 0 && permutation[0] != 0)
+    if (permutation[0] != 0)
         return false;
 
     size_t i = 0;
-    for (; i + block_size <= size; i += block_size)
+
+#if defined(__SSE2__)
+    if (size >= 8)
     {
-        const UInt64 base = permutation[i];
-        UInt64 different = base ^ i;
+        static constexpr UInt64 compare_all_elements_equal_mask = (1UL << 16) - 1;
 
-        for (size_t j = 0; j < block_size; ++j)
-            different |= (permutation[i + j] - base) ^ j;
+        __m128i permutation_add_vector = { 8, 8 };
+        __m128i permutation_compare_values_vectors[4] { { 0, 1 }, { 2, 3 }, { 4, 5 }, { 6, 7 } };
 
-        if (different)
-            return false;
+        const size_t * permutation_data = permutation.data();
+
+        static constexpr size_t unroll_count = 8;
+        size_t size_unrolled = (size / unroll_count) * unroll_count;
+
+        for (; i < size_unrolled; i += 8)
+        {
+            UInt64 permutation_equals_vector_mask = compare_all_elements_equal_mask;
+
+            for (size_t j = 0; j < 4; ++j)
+            {
+                __m128i permutation_data_vector = _mm_loadu_si128(reinterpret_cast<const __m128i *>(permutation_data + i + j * 2));
+                __m128i permutation_equals_vector = _mm_cmpeq_epi8(permutation_data_vector, permutation_compare_values_vectors[j]);
+                permutation_compare_values_vectors[j] = _mm_add_epi64(permutation_compare_values_vectors[j], permutation_add_vector);
+                permutation_equals_vector_mask &= _mm_movemask_epi8(permutation_equals_vector);
+            }
+
+            if (permutation_equals_vector_mask != compare_all_elements_equal_mask)
+                return false;
+        }
     }
+#endif
 
+    i = std::max(i, static_cast<size_t>(1));
     for (; i < size; ++i)
-    {
-        if (permutation[i] != i)
+        if (permutation[i] != (permutation[i - 1] + 1))
             return false;
-    }
 
     return true;
 }
@@ -390,55 +373,6 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit,
     transformColumnsWithSharedIndex(
         columns,
         [&](const ColumnPtr & col) { return is_identity_permutation ? col->cut(0, output_rows) : col->permute(permutation, limit); });
-    block.setColumns(columns);
-}
-
-void sortBlockAndDeduplicate(Block & block, const SortDescription & description, IColumn::PermutationSortStability stability)
-{
-#ifndef NDEBUG
-    block.checkNumberOfRows();
-#endif
-    IColumn::Permutation permutation;
-    EqualRanges equal_ranges;
-    getBlockSortPermutationImpl(block, description, stability, /*limit=*/ 0, permutation, &equal_ranges);
-
-#ifndef NDEBUG
-    checkSortedWithPermutation(block, description, /*limit=*/ 0, permutation);
-#endif
-
-    Columns columns = block.getColumns();
-
-    /// No non-constant sort column: every row is equal to the first one.
-    if (permutation.empty())
-    {
-        if (block.rows() > 1)
-        {
-            transformColumnsWithSharedIndex(columns, [](const ColumnPtr & col) { return col->cut(0, 1); });
-            block.setColumns(columns);
-        }
-        return;
-    }
-
-    if (!equal_ranges.empty())
-    {
-        /// Keep the first position of each equal range. The write position never passes the read
-        /// position, so retained entries can be compacted in the existing permutation.
-        size_t read_pos = 0;
-        size_t write_pos = 0;
-        for (const auto & range : equal_ranges)
-        {
-            while (read_pos <= range.from)
-                permutation[write_pos++] = permutation[read_pos++];
-            read_pos = range.to;
-        }
-        while (read_pos < permutation.size())
-            permutation[write_pos++] = permutation[read_pos++];
-        permutation.resize(write_pos);
-    }
-    else if (isIdentityPermutation(permutation, /*limit=*/ 0))
-        return;
-
-    transformColumnsWithSharedIndex(columns, [&](const ColumnPtr & col) { return col->permute(permutation, permutation.size()); });
     block.setColumns(columns);
 }
 
