@@ -8297,27 +8297,39 @@ function canSendRawAuthHeader(value) {
     }
 }
 
-function getAuthHeaders(user, password, server_address) {
+const legacyDefaultUserServers = new Set();
+
+function getAuthServerOrigin(server_address) {
+    try {
+        return new URL(server_address, location.href).origin;
+    } catch {
+        return null;
+    }
+}
+
+function getAuthHeaders(user, password, server_address, force_legacy_default_user = false) {
     const send_raw = canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
     const headers = { 'Authorization': send_raw ? 'never' : 'ClickHouse-Play' };
+    const server_origin = getAuthServerOrigin(server_address);
 
-    /// A blank user must stay blank when talking back to the server that served this page, because
-    /// newer servers can map it through default_session_user. For a remote target we cannot assume
-    /// that support: older servers reject X-ClickHouse-Key without X-ClickHouse-User, and their
-    /// implicit HTTP user was always `default`. Make that legacy user explicit without putting the
-    /// password back into the URL.
-    let same_origin = false;
-    try {
-        same_origin = location.protocol !== 'file:' && new URL(server_address, location.href).origin === location.origin;
-    } catch {
-        /// An invalid server address will fail at fetch time; do not make auth decisions from it.
-    }
-    const header_user = !user && password && send_raw && !same_origin ? 'default' : user;
+    /// Before 26.7, a password with an omitted user worked only through the query-parameter
+    /// transport; X-ClickHouse-Key by itself was rejected. Once a credential check confirms such
+    /// an older server, preserve that behavior by sending its historical implicit user explicitly.
+    /// This keeps the password out of the URL while newer servers retain default_session_user.
+    const use_legacy_default_user = !user && password && send_raw
+        && (force_legacy_default_user || (server_origin && legacyDefaultUserServers.has(server_origin)));
+    const header_user = use_legacy_default_user ? 'default' : user;
     if (header_user)
         headers['X-ClickHouse-User'] = send_raw ? header_user : encodeURIComponent(header_user);
     if (password)
         headers['X-ClickHouse-Key'] = send_raw ? password : encodeURIComponent(password);
     return headers;
+}
+
+function serverPredatesDefaultSessionUser(version) {
+    const [major, minor] = String(version).split('.').map(Number);
+    return Number.isFinite(major) && Number.isFinite(minor)
+        && (major < 26 || (major === 26 && minor < 7));
 }
 
 /// `quiet` runs a background panel-maintenance query without touching the main result pane:
@@ -8383,11 +8395,37 @@ async function getServerStatus(server_address, user, password) {
         /// Framing is pinned off for the same reason as in `auxiliaryQuery`: the response is
         /// parsed as JSON, not as a packet stream.
         'add_http_cors_header=1&framing_output_format=None&default_format=JSONEachRow';
+    const request = headers => fetch(url, {
+        method: "POST",
+        body: "SELECT version() AS v, uptime() AS t",
+        headers,
+    });
     try {
-        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t", headers: getAuthHeaders(user, password, server_address) });
-        if (!response.ok) return false;
-        json = await response.json();
-        return json;
+        let response = await request(getAuthHeaders(user, password, server_address));
+        if (response.ok)
+            return await response.json();
+
+        /// A raw password-only request is the one header-auth case whose semantics changed in
+        /// 26.7. Probe the historical explicit `default` user only after the modern form fails,
+        /// and adopt it only when the successful probe itself proves the server is older than 26.7.
+        /// The probe runs only SELECT version()/uptime(), never the user's query.
+        const server_origin = getAuthServerOrigin(server_address);
+        const can_probe_legacy_default = !user && password
+            && canSendRawAuthHeader(user) && canSendRawAuthHeader(password)
+            && server_origin && !legacyDefaultUserServers.has(server_origin);
+        if (!can_probe_legacy_default)
+            return false;
+
+        response = await request(getAuthHeaders(user, password, server_address, true));
+        if (!response.ok)
+            return false;
+
+        const legacy_status = await response.json();
+        if (!serverPredatesDefaultSessionUser(legacy_status.v))
+            return false;
+
+        legacyDefaultUserServers.add(server_origin);
+        return legacy_status;
     } catch (e) {
         return false;
     }
