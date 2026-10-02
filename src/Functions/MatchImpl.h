@@ -539,18 +539,18 @@ struct MatchImpl
             return negate ^ (match != haystack_end);
         }
 
-        const OptimizedRegularExpression * regexp = cache.getOrSet<is_like, /*no_capture*/ true, case_insensitive>(needle).get();
+        const OptimizedRegularExpression & regexp = cache.getOrSet<is_like, /*no_capture*/ true, case_insensitive>(needle);
 
         bool is_trivial = false;
         bool required_substring_is_prefix = false; /// for `anchored` execution of the regexp.
-        regexp->getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
+        regexp.getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
 
         if (required_substr.empty())
         {
-            if (!regexp->getRE2()) /// An empty regexp. Always matches.
+            if (!regexp.getRE2()) /// An empty regexp. Always matches.
                 return !negate;
 
-            const bool match = regexp->getRE2()->Match(
+            const bool match = regexp.getRE2()->Match(
                 {haystack_data, haystack_length}, 0, haystack_length, re2::RE2::UNANCHORED, nullptr, 0);
             return negate ^ match;
         }
@@ -564,12 +564,12 @@ struct MatchImpl
         if (is_trivial)
             return !negate; /// no wildcards in pattern
 
-        if (isAnchoredLiteralMatchKind(regexp->getMatchKind()))
-            return negate ^ impl::matchesAnchoredLiteral(regexp->getMatchKind(), required_substr, haystack_begin, haystack_end, match);
+        if (isAnchoredLiteralMatchKind(regexp.getMatchKind()))
+            return negate ^ impl::matchesAnchoredLiteral(regexp.getMatchKind(), required_substr, haystack_begin, haystack_end, match);
 
         const size_t start_pos = required_substring_is_prefix ? (match - haystack_begin) : 0;
         const size_t end_pos = haystack_length;
-        const bool match2 = regexp->getRE2()->Match(
+        const bool match2 = regexp.getRE2()->Match(
             {haystack_data, haystack_length}, start_pos, end_pos, re2::RE2::UNANCHORED, nullptr, 0);
         return negate ^ match2;
     }
