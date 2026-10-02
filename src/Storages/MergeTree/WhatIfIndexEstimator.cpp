@@ -19,7 +19,7 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
-#include <Storages/MergeTree/HypotheticalProjections.h>
+#include <Storages/MergeTree/HypotheticalProjection.h>
 #include <Storages/MergeTree/WhatIfProjectionEstimator.h>
 #include <Storages/MergeTree/WhatIfSettings.h>
 #include <Storages/MergeTree/WhatIfStatisticalEstimator.h>
@@ -588,7 +588,7 @@ WhatIfResult estimateHypotheticalIndexes(
         result.candidates.push_back(std::move(combined));
     }
 
-    auto weigh = [&](const HypotheticalProjectionsPtr & hypothetical)
+    auto weigh = [&](const HypotheticalProjectionPtr & hypothetical)
     {
         InterpreterSelectQueryAnalyzer interpreter(select_query_copy->clone(), local_context, query_options);
         interpreter.applyDistributedPlanFallbackIfNeeded();
@@ -598,7 +598,7 @@ WhatIfResult estimateHypotheticalIndexes(
         collectReadSteps(weigh_plan.getRootNode(), weigh_reads);
         for (auto * weigh_read : weigh_reads)
             if (weigh_read->getMergeTreeData().getStorageID() == data.getStorageID())
-                weigh_read->setHypotheticalProjections(hypothetical);
+                weigh_read->setHypotheticalProjection(hypothetical);
         weigh_plan.optimize(QueryPlanOptimizationSettings(weigh_context));
     };
 

@@ -11,7 +11,7 @@
 namespace DB
 {
 
-struct HypotheticalProjections;
+struct HypotheticalProjection;
 
 struct ProjectionDescription;
 class MergeTreeDataSelectExecutor;
@@ -101,7 +101,7 @@ bool analyzeProjectionCandidate(
     bool allow_query_condition_cache,
     bool allow_top_k_prewhere_query_condition_cache,
     const ContextPtr & context,
-    const HypotheticalProjections * hypothetical_projections = nullptr);
+    const HypotheticalProjection * hypothetical_projection = nullptr);
 
 /// Performs part-level filtering using projection to skip irrelevant data parts.
 /// Also collects projections to build filters that will be applied during MergeTree reading for fine-grained row-level filtering.

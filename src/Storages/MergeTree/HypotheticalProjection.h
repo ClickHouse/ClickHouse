@@ -10,11 +10,11 @@
 namespace DB
 {
 
-/// projections for `EXPLAIN WHATIF` that exist only as in-memory parts
-/// the projection optimization weighs them as materialized projections and records the result, but it never reads them
-struct HypotheticalProjections
+/// a projection for `EXPLAIN WHATIF` that exists only as in-memory parts
+/// the projection optimization weighs it as a materialized projection and records the result, but it never reads it
+struct HypotheticalProjection
 {
-    explicit HypotheticalProjections(ProjectionDescription projection_) : projection(std::move(projection_)) {}
+    explicit HypotheticalProjection(ProjectionDescription projection_) : projection(std::move(projection_)) {}
 
     ProjectionDescription projection;
     /// parent part name -> in-memory projection part
@@ -45,6 +45,6 @@ struct HypotheticalProjections
     }
 };
 
-using HypotheticalProjectionsPtr = std::shared_ptr<HypotheticalProjections>;
+using HypotheticalProjectionPtr = std::shared_ptr<HypotheticalProjection>;
 
 }

@@ -16,10 +16,10 @@ namespace DB
 class MergeTreeData;
 struct ProjectionDescription;
 struct WhatIfSettings;
-struct HypotheticalProjections;
+struct HypotheticalProjection;
 
-/// plans the query again so that the optimizer weighs these hypothetical projections and records their results
-using WeighHypotheticalProjections = std::function<void(const std::shared_ptr<HypotheticalProjections> &)>;
+/// plans the query again so that the optimizer weighs this hypothetical projection and records its result
+using WeighHypotheticalProjection = std::function<void(const std::shared_ptr<HypotheticalProjection> &)>;
 
 /// re-validate a stored definition, empty with a reason if it no longer fits
 std::optional<ProjectionDescription> refreshHypotheticalProjection(
@@ -38,7 +38,7 @@ WhatIfCandidateResult evaluateProjection(
     const RangesInDataParts & baseline_parts,
     const WhatIfSettings & settings,
     bool force_requested,
-    const WeighHypotheticalProjections & weigh,
+    const WeighHypotheticalProjection & weigh,
     ContextPtr context);
 
 }

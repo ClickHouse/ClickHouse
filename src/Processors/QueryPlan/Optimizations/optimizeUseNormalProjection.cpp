@@ -28,7 +28,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST.h>
-#include <Storages/MergeTree/HypotheticalProjections.h>
+#include <Storages/MergeTree/HypotheticalProjection.h>
 
 
 namespace DB
@@ -300,7 +300,7 @@ struct NormalProjectionCandidate : public ProjectionCandidate
 
 /// records the result of the hypothetical projection, and the loop over the candidates sets the flags
 static void recordHypotheticalOutcome(
-    HypotheticalProjections & hypothetical,
+    HypotheticalProjection & hypothetical,
     const UseProjectionsResult & result,
     const std::list<NormalProjectionCandidate> & candidates,
     const NormalProjectionCandidate * best_candidate)
@@ -381,7 +381,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     for (const auto & projection : projections)
         if (projection.type == ProjectionDescription::Type::Normal)
             normal_projections.push_back(&projection);
-    const auto hypothetical = reading->getHypotheticalProjections();
+    const auto hypothetical = reading->getHypotheticalProjection();
     if (hypothetical)
     {
         normal_projections.push_back(&hypothetical->projection);

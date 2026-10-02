@@ -18,7 +18,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/MergeTree/HypotheticalProjections.h>
+#include <Storages/MergeTree/HypotheticalProjection.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
@@ -552,7 +552,7 @@ struct SampledPart
 /// then it weighs each layout that the writer can leave, to find if the choice changes with the layout
 struct Scenarios
 {
-    std::array<HypotheticalProjectionsPtr, 4> scenarios;
+    std::array<HypotheticalProjectionPtr, 4> scenarios;
     bool layouts_differ = false;
     UInt64 scanned_parts = 0;
     UInt64 scanned_marks = 0;
@@ -583,7 +583,7 @@ bool buildScenarios(
     UInt64 total_bytes_read = 0;
 
     for (auto & scenario : out.scenarios)
-        scenario = std::make_shared<HypotheticalProjections>(projection.clone());
+        scenario = std::make_shared<HypotheticalProjection>(projection.clone());
 
     for (size_t part_idx = 0; part_idx < baseline_parts.size(); ++part_idx)
     {
@@ -654,7 +654,7 @@ bool buildScenarios(
 
 /// widens the mark range by what a sample can move: the ends of the selected ranges and the share of rows selected
 void widenForSamples(
-    const std::vector<SampledPart> & samples, const HypotheticalProjections::Outcome & outcome, UInt64 & marks_low, UInt64 & marks_high)
+    const std::vector<SampledPart> & samples, const HypotheticalProjection::Outcome & outcome, UInt64 & marks_low, UInt64 & marks_high)
 {
     /// the estimate knows a range end only up to the gap between neighbouring sample rows
     /// that gap is a sampling step if the key follows the parent order
@@ -724,7 +724,7 @@ void widenForSamples(
 /// the verdict and its reason, from how the optimizer weighed the projection in each scenario
 void setVerdict(
     WhatIfCandidateResult & result,
-    const HypotheticalProjections::Outcome & outcome,
+    const HypotheticalProjection::Outcome & outcome,
     size_t chosen_in,
     size_t weighed,
     std::string_view relaxing_setting,
@@ -797,7 +797,7 @@ bool tryEstimateProjection(
     const RangesInDataParts & baseline_parts,
     UInt64 baseline_marks,
     UInt64 projection_scan_budget_rows,
-    const WeighHypotheticalProjections & weigh,
+    const WeighHypotheticalProjection & weigh,
     const ContextPtr & context)
 {
     ScanPlan plan;
@@ -891,7 +891,7 @@ WhatIfCandidateResult evaluateProjection(
     const RangesInDataParts & baseline_parts,
     const WhatIfSettings & settings,
     bool force_requested,
-    const WeighHypotheticalProjections & weigh,
+    const WeighHypotheticalProjection & weigh,
     ContextPtr context)
 {
     const auto & data = read_step->getMergeTreeData();
@@ -1041,7 +1041,7 @@ WhatIfCandidateResult evaluateProjection(
     else
     {
         /// the estimate reads no data, but the optimizer still decides if the query gives the projection something to serve
-        auto scenario = std::make_shared<HypotheticalProjections>(projection->clone());
+        auto scenario = std::make_shared<HypotheticalProjection>(projection->clone());
         weigh(scenario);
         if (scenario->outcome.nothing_to_serve && relaxing_setting.empty())
         {
