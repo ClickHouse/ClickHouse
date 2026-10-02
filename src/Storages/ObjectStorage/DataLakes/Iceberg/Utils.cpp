@@ -897,7 +897,8 @@ static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     result->set(Iceberg::f_spec_id, 0);
 
     Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
-    Int32 partition_iter = 1000;
+    /// Partition field ids start at 1000. The first field gets 1000 after the pre-increment.
+    Int32 partition_iter = 999;
     if (partition_by)
     {
         if (const auto * partition_function = partition_by->as<ASTFunction>(); partition_function && partition_function->name == "tuple")
@@ -918,8 +919,6 @@ static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
             fields->add(partition_field);
         }
     }
-    else
-        partition_iter = 0;
 
     result->set(Iceberg::f_fields, fields);
     return {result, partition_iter};
@@ -1099,6 +1098,9 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     new_metadata_file_content->set(Iceberg::f_location, path_location);
     if (format_version > 1)
         new_metadata_file_content->set(Iceberg::f_last_sequence_number, 0);
+    /// Row lineage starts at table creation. No rows yet, so the next row id is 0.
+    if (format_version >= 3)
+        new_metadata_file_content->set(Iceberg::f_next_row_id, 0);
 
     auto now = std::chrono::system_clock::now();
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
@@ -1144,13 +1146,8 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     new_metadata_file_content->set(Iceberg::f_last_partition_id, last_partition_id);
     new_metadata_file_content->set(Iceberg::f_current_snapshot_id, -1);
 
-    Poco::JSON::Object::Ptr refs = new Poco::JSON::Object;
-    Poco::JSON::Object::Ptr main_branch = new Poco::JSON::Object;
-    main_branch->set(Iceberg::f_metadata_snapshot_id, -1);
-    main_branch->set(Iceberg::f_type, "branch");
-    refs->set(Iceberg::f_main, main_branch);
-
-    new_metadata_file_content->set(Iceberg::f_refs, refs);
+    /// No snapshots yet, so no refs.
+    new_metadata_file_content->set(Iceberg::f_refs, Poco::JSON::Object::Ptr(new Poco::JSON::Object));
     new_metadata_file_content->set(Iceberg::f_snapshots, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     new_metadata_file_content->set(Iceberg::f_statistics, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     new_metadata_file_content->set(Iceberg::f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));

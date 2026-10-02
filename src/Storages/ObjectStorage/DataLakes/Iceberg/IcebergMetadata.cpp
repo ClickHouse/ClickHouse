@@ -430,6 +430,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_deletes;
+    std::optional<size_t> total_equality_deletes;
     std::optional<String> refresh_cursor;
 
     if (snapshot_object->has(f_summary))
@@ -445,6 +446,9 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         {
             total_position_deletes = summary_object->getValue<Int64>(f_total_position_deletes);
         }
+
+        if (summary_object->has(f_total_equality_deletes))
+            total_equality_deletes = summary_object->getValue<Int64>(f_total_equality_deletes);
 
         if (summary_object->has(f_refresh_cursor))
             refresh_cursor = summary_object->getValue<String>(f_refresh_cursor);
@@ -462,6 +466,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         total_rows,
         total_bytes,
         total_position_deletes,
+        total_equality_deletes,
         refresh_cursor,
         metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr);
 }
@@ -533,18 +538,12 @@ bool IcebergMetadata::optimize(
 
     if (settings[Setting::allow_experimental_iceberg_compaction])
     {
-        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        auto snapshots_info = getHistory(context);
-        compactIcebergTable(
-            snapshots_info,
-            persistent_components,
-            object_storage,
-            getMetadataLookupSettings(),
-            format_settings,
-            sample_block,
-            context,
-            write_format);
-        return true;
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "OPTIMIZE TABLE is not yet supported for Iceberg data compaction: the rewritten generation is not published "
+            "atomically (no version increment, no version hint and no catalog commit), so which generation a reader "
+            "resolves is undefined, while the previous generation's files are deleted even though retained snapshots "
+            "still reference them");
     }
     else
     {
@@ -1344,21 +1343,12 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     }
 
 
-    /// Row counts stored in the metadata layers above the manifest files are not used as
-    /// data sources, because writers derive them instead of measuring them against the data:
-    /// - the snapshot summary's `total-records` is maintained incrementally (parent total
-    ///   plus this commit's delta), so a single corrupted commit anywhere in the table
-    ///   history silently poisons every later snapshot -- observed in the wild, making
-    ///   SELECT count() disagree with a full scan of the very same table;
-    /// - the manifest-list per-entry `added_rows_count`/`existing_rows_count` are stamped
-    ///   from snapshot summary fields by some writers (ClickHouse itself among them): a
-    ///   rewritten manifest list can list every manifest with `added_rows_count = 0` taken
-    ///   from a compaction snapshot's `added-records = 0`, so trusting these counts turned
-    ///   count() into 0 on a perfectly healthy table.
-    /// The manifest files are the ground truth: the per-data-file `record_count` is a
-    /// required field in every format version, so summing it over the live data files is
-    /// exact, at the cost of opening the manifest files (served from the Iceberg metadata
-    /// cache on repeated queries).
+    if (auto total_rows = actual_data_snapshot->getTotalRows(); total_rows.has_value())
+    {
+        ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
+        return total_rows;
+    }
+
     UInt64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
@@ -1386,18 +1376,6 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
         result += *manifest_rows;
     }
 
-    const auto summary_total_rows = actual_data_snapshot->getTotalRows();
-    if (summary_total_rows.has_value() && *summary_total_rows != static_cast<size_t>(result))
-        LOG_WARNING(
-            log,
-            "Iceberg snapshot summary of table {} claims {} total rows, but its manifest files describe {} rows. "
-            "The snapshot summary is inconsistent with the table data (possibly a corrupted commit in the table "
-            "history), using the row count from the manifest files",
-            persistent_components.table_location,
-            *summary_total_rows,
-            result);
-
-    ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
     return result;
 }
 
@@ -1525,8 +1503,13 @@ void IcebergMetadata::addDeleteTransformers(
             /// get header of delete file
             Block delete_file_header;
             RelativePathWithMetadata delete_file_object(delete_file.file_path);
+            /// Equality deletes may be Parquet/ORC/Avro; only the ones that will actually seek to a
+            /// footer at the tail should skip the generic from-start prefetch.
+            auto read_settings = local_context->getReadSettings();
+            read_settings.remote_fs_settings.random_access
+                = FormatFactory::instance().checkIfFormatIsRandomAccessInput(delete_file.file_format, local_context);
             {
-                auto schema_read_buffer = createReadBuffer(delete_file_object, object_storage, local_context, log);
+                auto schema_read_buffer = createReadBuffer(delete_file_object, object_storage, local_context, log, read_settings);
                 auto schema_reader = FormatFactory::instance().getSchemaReader(delete_file.file_format, *schema_read_buffer, local_context);
                 auto columns_with_names = schema_reader->readSchema();
                 ColumnsWithTypeAndName initial_header_data;
@@ -1553,7 +1536,7 @@ void IcebergMetadata::addDeleteTransformers(
             }
             /// Then we read the content of the delete file.
             auto mutable_columns_for_set = block_for_set.cloneEmptyColumns();
-            std::unique_ptr<ReadBuffer> data_read_buffer = createReadBuffer(delete_file_object, object_storage, local_context, log);
+            std::unique_ptr<ReadBuffer> data_read_buffer = createReadBuffer(delete_file_object, object_storage, local_context, log, read_settings);
             CompressionMethod compression_method = chooseCompressionMethod(delete_file.file_path, "auto");
             auto delete_format = FormatFactory::instance().getInput(
                 delete_file.file_format,

@@ -139,7 +139,7 @@ void PushingPipelineExecutor::cancel()
     if (executor && !finished)
     {
         finished = true;
-        executor->cancel();
+        executor->cancel(IProcessor::CancelReason::CancelledByUser);
     }
 }
 

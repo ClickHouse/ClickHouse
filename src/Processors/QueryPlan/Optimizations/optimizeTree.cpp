@@ -17,6 +17,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <fmt/ranges.h>
 
@@ -249,6 +250,9 @@ void optimizeTreeSecondPass(
 
     Stack stack;
 
+    /// Before the join reordering and index analysis below, which read the join kinds it rewrites.
+    convertOuterJoinToInnerJoinTransitively(optimization_settings, root);
+
     /// Before index analysis, so the copied conjuncts take part in it, and before the runtime
     /// filters, which would hide the source filters
     bool predicates_were_propagated = false;
@@ -328,6 +332,8 @@ void optimizeTreeSecondPass(
     /// added. The plan here is already deterministic (post first pass and subplan materialization).
     setAggregationHashTableCacheKeys(optimization_settings, root);
 
+    /// Join runtime filters are registered and found in the lookup of the thread's query context, so they need a query.
+    const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && CurrentThread::tryGetQueryContext();
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
@@ -338,7 +344,7 @@ void optimizeTreeSecondPass(
         },
         [&](auto & frame_node)
         {
-            if (optimization_settings.enable_join_runtime_filters)
+            if (add_join_runtime_filters)
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
             /// Keep joins logical for `applyParallelReplicas` below: it needs the final (reordered,
             /// runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical` supports.
