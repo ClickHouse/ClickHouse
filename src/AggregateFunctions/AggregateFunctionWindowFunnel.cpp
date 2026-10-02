@@ -14,6 +14,8 @@
 #include <Common/ListWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <array>
+#include <bitset>
 #include <list>
 
 
@@ -299,6 +301,88 @@ private:
     // Allow re-entry/skipping of future steps
     bool allow_reentry;
 
+    UInt8 getEventLevelStrictIncrease(const AggregateFunctionWindowFunnelData<T>::TimestampEvents & events_list) const
+    {
+        /// Actual prefixes only read starts committed by earlier timestamp groups.
+        std::array<std::optional<UInt64>, MAX_EVENTS> committed_starts{};
+        std::array<std::optional<UInt64>, MAX_EVENTS> pending_starts{};
+        std::array<UInt8, MAX_EVENTS> pending_indices{};
+        UInt8 max_level = 0;
+        bool first_event = false;
+
+        for (size_t group_begin = 0; group_begin < events_list.size();)
+        {
+            const T & timestamp = events_list[group_begin].first;
+            size_t group_end = group_begin + 1;
+            while (group_end < events_list.size() && events_list[group_end].first == timestamp)
+                ++group_end;
+
+            size_t pending_count = 0;
+            /// Same-group reachability prevents false order violations, but never advances an actual prefix.
+            std::bitset<MAX_EVENTS> order_evidence;
+
+            for (size_t i = group_begin; i < group_end; ++i)
+            {
+                const auto event_type = events_list[i].second;
+                if (strict_order && event_type == 0)
+                {
+                    if (first_event)
+                        return max_level;
+                    continue;
+                }
+
+                const size_t event_idx = event_type - 1;
+                std::optional<UInt64> candidate_start;
+                if (event_idx == 0)
+                {
+                    candidate_start = static_cast<UInt64>(timestamp);
+                    first_event = true;
+                    /// Keep the existing unsigned window arithmetic, including wrapped deadlines.
+                    order_evidence[0] = timestamp <= *candidate_start + window;
+                }
+                else
+                {
+                    const auto & predecessor = committed_starts[event_idx - 1];
+                    if (strict_order && first_event && !predecessor && !order_evidence[event_idx - 1])
+                    {
+                        if (allow_reentry)
+                            continue;
+                        return max_level;
+                    }
+
+                    const bool time_matched = predecessor && timestamp <= *predecessor + window;
+                    /// Historical predecessor presence guards order even when its window has expired.
+                    order_evidence[event_idx] = order_evidence[event_idx - 1] || time_matched;
+                    if (time_matched)
+                        candidate_start = *predecessor;
+                }
+
+                if (candidate_start)
+                {
+                    if (!pending_starts[event_idx])
+                        pending_indices[pending_count++] = static_cast<UInt8>(event_idx);
+                    pending_starts[event_idx] = candidate_start;
+                    max_level = std::max(max_level, static_cast<UInt8>(event_idx + 1));
+                    if (max_level == events_size)
+                        return max_level;
+                }
+            }
+
+            for (size_t i = 0; i < pending_count; ++i)
+            {
+                const auto event_idx = pending_indices[i];
+                auto & committed_start = committed_starts[event_idx];
+                const auto pending_start = *pending_starts[event_idx];
+                if (!committed_start || pending_start > *committed_start)
+                    committed_start = pending_start;
+                pending_starts[event_idx].reset();
+            }
+            group_begin = group_end;
+        }
+
+        return max_level;
+    }
+
     /// Loop through the entire events_list, update the event timestamp value
     /// The level path must be 1---2---3---...---check_events_size, find the max event level that satisfied the path in the sliding window.
     /// If found, returns the max event level, else return 0.
@@ -502,7 +586,11 @@ private:
         if constexpr (Data::strict_once_enabled)
             return getEventLevelStrictOnce(data.events_list);
         else
+        {
+            if (strict_increase && !strict_deduplication)
+                return getEventLevelStrictIncrease(data.events_list);
             return getEventLevelNonStrictOnce(data.events_list);
+        }
     }
 
 public:
