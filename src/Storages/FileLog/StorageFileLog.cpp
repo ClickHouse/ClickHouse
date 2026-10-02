@@ -219,6 +219,7 @@ StorageFileLog::StorageFileLog(
 
         loadMetaFiles(LoadingStrictnessLevel::ATTACH <= mode);
         loadFiles();
+        syncFileStatistics();
 
         chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
         chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
@@ -502,6 +503,7 @@ void StorageFileLog::openFilesAndSetPos()
         auto & file_ctx = findInMap(file_infos.context_by_name, file);
         if (file_ctx.status != FileStatus::NO_CHANGE)
         {
+            setFilePolled(file_ctx.inode);
             file_ctx.reader.emplace(getFullDataPath(file));
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
@@ -549,6 +551,7 @@ void StorageFileLog::closeFilesAndStoreMeta(size_t start, size_t end)
 
         auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
         serialize(file_ctx.inode, meta);
+        setFileOffset(file_ctx.inode, meta);
     }
 }
 
@@ -563,6 +566,7 @@ void StorageFileLog::storeMetas(size_t start, size_t end)
 
         auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
         serialize(file_ctx.inode, meta);
+        setFileOffset(file_ctx.inode, meta);
     }
 }
 
@@ -650,6 +654,7 @@ size_t StorageFileLog::getTableDependentCount() const
 void StorageFileLog::threadFunc()
 {
     bool reschedule = false;
+    std::vector<UInt64> round_inodes;
     try
     {
         auto table_id = getStorageID();
@@ -673,7 +678,7 @@ void StorageFileLog::threadFunc()
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
-                if (streamToViews())
+                if (streamToViews(round_inodes))
                 {
                     LOG_TRACE(log, "Stream stalled. Reschedule.");
                     if (milliseconds_to_wait
@@ -699,6 +704,7 @@ void StorageFileLog::threadFunc()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+        setFilesException(round_inodes, getCurrentExceptionMessage(/* with_stacktrace */ false));
     }
 
     mv_attached.store(false);
@@ -727,7 +733,7 @@ void StorageFileLog::threadFunc()
     }
 }
 
-bool StorageFileLog::streamToViews()
+bool StorageFileLog::streamToViews(std::vector<UInt64> & round_inodes)
 {
     std::lock_guard lock(file_infos_mutex);
     if (running_streams)
@@ -753,6 +759,11 @@ bool StorageFileLog::streamToViews()
         LOG_INFO(log, "There is a idle table named {}, no files need to parse.", getName());
         return updateFileInfos();
     }
+
+    round_inodes.clear();
+    for (const auto & file : file_infos.file_names)
+        if (const auto & file_ctx = findInMap(file_infos.context_by_name, file); file_ctx.status != FileStatus::NO_CHANGE)
+            round_inodes.push_back(file_ctx.inode);
 
     // Create an INSERT query for streaming data
     auto insert = make_intrusive<ASTInsertQuery>();
@@ -806,6 +817,9 @@ bool StorageFileLog::streamToViews()
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
     }
+
+    setFilesConsuming(round_inodes);
+    round_inodes.clear();
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
     LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", rows.load(), table_id.getNameForLogs(), milliseconds);
@@ -955,6 +969,8 @@ Optional parameters:
 ## Description {#description}
 
 The delivered records are tracked automatically, so each record in a log file is only counted once.
+
+The read offset, the unread size, the number of records read and the last exception of every file are shown in [system.filelog_files](/reference/system-tables/filelog_files).
 
 `SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
 
@@ -1114,6 +1130,7 @@ bool StorageFileLog::updateFileInfos()
                         it->second = FileMeta{.file_name = file_name};
                     else
                         file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
+                    eraseFileStatistics(inode);
                 }
                 break;
             }
@@ -1201,7 +1218,81 @@ bool StorageFileLog::updateFileInfos()
     chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
     chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
+    syncFileStatistics();
+
     return events.empty() || file_infos.file_names.empty();
+}
+
+void StorageFileLog::syncFileStatistics()
+{
+    std::lock_guard lock(file_statistics_mutex);
+    std::erase_if(file_statistics, [&](const auto & entry) { return !file_infos.meta_by_inode.contains(entry.first); });
+    for (const auto & [inode, meta] : file_infos.meta_by_inode)
+    {
+        auto & statistics = file_statistics[inode];
+        statistics.file_name = meta.file_name;
+        statistics.offset = meta.last_writen_position;
+    }
+}
+
+void StorageFileLog::eraseFileStatistics(UInt64 inode)
+{
+    std::lock_guard lock(file_statistics_mutex);
+    file_statistics.erase(inode);
+}
+
+void StorageFileLog::setFileOffset(UInt64 inode, const FileMeta & meta)
+{
+    std::lock_guard lock(file_statistics_mutex);
+    if (auto it = file_statistics.find(inode); it != file_statistics.end())
+    {
+        it->second.file_name = meta.file_name;
+        it->second.offset = meta.last_writen_position;
+    }
+}
+
+void StorageFileLog::setFilePolled(UInt64 inode)
+{
+    const auto now = static_cast<UInt64>(time(nullptr));
+    std::lock_guard lock(file_statistics_mutex);
+    if (auto it = file_statistics.find(inode); it != file_statistics.end())
+        it->second.last_poll_time = now;
+}
+
+void StorageFileLog::addRecordsRead(UInt64 inode, size_t num_records)
+{
+    std::lock_guard lock(file_statistics_mutex);
+    if (auto it = file_statistics.find(inode); it != file_statistics.end())
+        it->second.num_records_read += num_records;
+}
+
+void StorageFileLog::setFilesException(const std::vector<UInt64> & inodes, const String & exception)
+{
+    const auto now = static_cast<UInt64>(time(nullptr));
+    std::lock_guard lock(file_statistics_mutex);
+    for (const auto inode : inodes)
+    {
+        if (auto it = file_statistics.find(inode); it != file_statistics.end())
+        {
+            it->second.last_exception = exception;
+            it->second.last_exception_time = now;
+            it->second.stuck = true;
+        }
+    }
+}
+
+void StorageFileLog::setFilesConsuming(const std::vector<UInt64> & inodes)
+{
+    std::lock_guard lock(file_statistics_mutex);
+    for (const auto inode : inodes)
+        if (auto it = file_statistics.find(inode); it != file_statistics.end())
+            it->second.stuck = false;
+}
+
+StorageFileLog::InodeToFileStatistics StorageFileLog::getFileStatistics() const
+{
+    std::lock_guard lock(file_statistics_mutex);
+    return file_statistics;
 }
 
 }

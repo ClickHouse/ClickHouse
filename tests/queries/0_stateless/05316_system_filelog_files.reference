@@ -1,0 +1,19 @@
+-- before reading
+a.jsonl	0	24	0	consuming	1
+b.jsonl	0	16	0	consuming	1
+-- after reading
+5
+a.jsonl	24	24	3	consuming	1
+b.jsonl	16	16	2	consuming	1
+1	1	1
+-- unread bytes
+8
+-- a file added and a file removed
+a.jsonl	32	32	4	consuming	1
+c.jsonl	8	8	1	consuming	1
+-- a file recreated with the same inode starts over
+a.jsonl	32	32	4	consuming	1
+c.jsonl	16	16	2	consuming	1
+-- access
+0
+2

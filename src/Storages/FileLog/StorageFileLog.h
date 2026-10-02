@@ -131,6 +131,22 @@ public:
 
     const auto & getFileLogSettings() const { return filelog_settings; }
 
+    /// Read state of one file, shown in `system.filelog_files`.
+    struct FileStatistics
+    {
+        String file_name;
+        UInt64 offset = 0;
+        UInt64 num_records_read = 0;
+        UInt64 last_poll_time = 0;
+        String last_exception;
+        UInt64 last_exception_time = 0;
+        bool stuck = false;
+    };
+    using InodeToFileStatistics = std::unordered_map<UInt64, FileStatistics>;
+
+    InodeToFileStatistics getFileStatistics() const;
+    void addRecordsRead(UInt64 inode, size_t num_records);
+
 private:
     friend class ReadFromStorageFileLog;
 
@@ -168,6 +184,10 @@ private:
 
     std::mutex file_infos_mutex;
 
+    /// Separate from `file_infos_mutex`, which a read round holds for its whole duration.
+    mutable std::mutex file_statistics_mutex;
+    InodeToFileStatistics file_statistics TSA_GUARDED_BY(file_statistics_mutex);
+
     struct TaskContext
     {
         BackgroundSchedulePoolTaskHolder holder;
@@ -190,8 +210,15 @@ private:
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
 
-    bool streamToViews();
+    bool streamToViews(std::vector<UInt64> & round_inodes);
     bool checkDependencies(const StorageID & table_id);
+
+    void syncFileStatistics();
+    void eraseFileStatistics(UInt64 inode);
+    void setFileOffset(UInt64 inode, const FileMeta & meta);
+    void setFilePolled(UInt64 inode);
+    void setFilesException(const std::vector<UInt64> & inodes, const String & exception);
+    void setFilesConsuming(const std::vector<UInt64> & inodes);
 
     bool updateFileInfos();
 
