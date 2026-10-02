@@ -16,7 +16,9 @@ SET max_rows_to_group_by = 0;
 DROP TABLE IF EXISTS t_cascades_bucket_order;
 CREATE TABLE t_cascades_bucket_order (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS index_granularity = 256, auto_statistics_types = 'uniq';
-INSERT INTO t_cascades_bucket_order SELECT number % 2000, number FROM numbers(200000);
+-- The statistics of the inserted part give the planner the group count (see `use_statistics` below).
+INSERT INTO t_cascades_bucket_order SELECT number % 2000, number FROM numbers(200000)
+    SETTINGS materialize_statistics_on_insert = 1;
 
 SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 1;

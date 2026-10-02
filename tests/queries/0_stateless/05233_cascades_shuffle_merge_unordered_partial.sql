@@ -38,6 +38,10 @@ SELECT count(), sum(s) FROM (SELECT k, sum(v) AS s FROM t_shuffle_merge_unordere
 SELECT count(), sum(s) FROM (SELECT k, sum(v) AS s FROM t_shuffle_merge_unordered GROUP BY k)
 SETTINGS log_processors_profiles = 1, log_comment = '05233_shuffle_merge';
 
+-- The log queries below are not the subject of the test; they run without the distributed plan, which
+-- would read the system tables on the workers while they still merge their parts.
+SET make_distributed_plan = 0;
+
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 
 SELECT '-- the reading tasks send the states on from more than one stream each';

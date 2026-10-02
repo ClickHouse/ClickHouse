@@ -18,12 +18,14 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, max_rows_to_group_b
 SET distributed_plan_default_reader_bucket_count = 2, distributed_plan_default_shuffle_join_bucket_count = 2;
 SET log_processors_profiles = 1;
 
+-- The shuffle carries the input rows, which compress well: aggregating before the shuffle would leave
+-- one small state per key to send.
 SELECT count() FROM (SELECT k, count() FROM t_exchange_codec GROUP BY k)
-  SETTINGS network_compression_method = 'NONE', log_comment = '05218_codec_none';
+  SETTINGS network_compression_method = 'NONE', log_comment = '05218_codec_none', distributed_plan_force_shuffle_aggregation = 1;
 SELECT count() FROM (SELECT k, count() FROM t_exchange_codec GROUP BY k)
-  SETTINGS network_compression_method = 'LZ4', log_comment = '05218_codec_lz4';
+  SETTINGS network_compression_method = 'LZ4', log_comment = '05218_codec_lz4', distributed_plan_force_shuffle_aggregation = 1;
 SELECT count() FROM (SELECT k, count() FROM t_exchange_codec GROUP BY k)
-  SETTINGS network_compression_method = 'ZSTD', network_zstd_compression_level = 1, log_comment = '05218_codec_zstd';
+  SETTINGS network_compression_method = 'ZSTD', network_zstd_compression_level = 1, log_comment = '05218_codec_zstd', distributed_plan_force_shuffle_aggregation = 1;
 
 -- The window runs on the shuffle buckets with several threads and sends its sorted result to the
 -- initiator through a sorted gather: the sending task merges its streams and serializes after the merge.
