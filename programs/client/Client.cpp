@@ -494,20 +494,34 @@ try
 
         runNonInteractive();
 
-        // If exception code isn't zero, we should return non-zero return
-        // code anyway.
-        const auto * exception = server_exception ? server_exception.get() : client_exception.get();
-
-        if (exception)
+        /// `--ignore-error` has already reported every failed statement and elected to carry on,
+        /// so the run is not a failure. Reporting one here would mean reporting whichever error
+        /// the final statement happened to hit, which says nothing about the rest of the batch;
+        /// `clickhouse-local --ignore-error` returns success in the same situation.
+        ///
+        /// Only a user asking for `--ignore-error` gets that, though, and `ignore_error` alone
+        /// does not say who asked: the fuzzing modes turn it on themselves, in `processOptions`,
+        /// to tolerate unparseable input. They keep the error code. BuzzHouse stops the run on an
+        /// error, and the AST fuzzer reports an early stop - losing the server, say - only
+        /// through this exit code, so granting it success would end a truncated fuzzer run with
+        /// `Fuzzer exited with success`.
+        if (buzz_house || query_fuzzer_runs || create_query_fuzzer_runs || !ignore_error)
         {
-            return static_cast<UInt8>(exception->code()) ? exception->code() : -1;
-        }
+            // If exception code isn't zero, we should return non-zero return
+            // code anyway.
+            const auto * exception = server_exception ? server_exception.get() : client_exception.get();
 
-        if (have_error)
-        {
-            // Shouldn't be set without an exception, but check it just in
-            // case so that at least we don't lose an error.
-            return -1;
+            if (exception)
+            {
+                return static_cast<UInt8>(exception->code()) ? exception->code() : -1;
+            }
+
+            if (have_error)
+            {
+                // Shouldn't be set without an exception, but check it just in
+                // case so that at least we don't lose an error.
+                return -1;
+            }
         }
 
         if (delayed_interactive)
@@ -538,20 +552,17 @@ void Client::login()
     std::string host = hosts_and_ports.empty()
         ? getClientConfiguration().getString("host", "localhost")
         : hosts_and_ports.front().host;
-    std::string auth_url = getClientConfiguration().getString("oauth-url", "");
-    std::string client_id = getClientConfiguration().getString("oauth-client-id", "");
-    std::string audience = getClientConfiguration().getString("oauth-audience", "");
+    JWTProviderOptions options;
+    options.auth_url = getClientConfiguration().getString("oauth-url", "");
+    options.client_id = getClientConfiguration().getString("oauth-client-id", "");
+    options.client_secret = getClientConfiguration().getString("oauth-client-secret", "");
+    options.audience = getClientConfiguration().getString("oauth-audience", "");
+    options.scope = getClientConfiguration().getString("oauth-scope", "");
+    options.device_authorization_endpoint = getClientConfiguration().getString("oauth-device-uri", "");
+    options.token_endpoint = getClientConfiguration().getString("oauth-token-uri", "");
+    options.client_auth_method = getClientConfiguration().getString("oauth-client-auth", "");
 
-    if ((auth_url.empty() || client_id.empty()) && !isCloudEndpoint(host))
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Could not retrieve authentication endpoints for host '{}'. Please specify --oauth-url and --oauth-client-id if you are "
-            "not using ClickHouse Cloud.",
-            host);
-    }
-
-    jwt_provider = createJwtProvider(auth_url, client_id, audience, host, output_stream, error_stream);
+    jwt_provider = createJwtProvider(std::move(options), host, output_stream, error_stream);
     if (jwt_provider)
     {
         std::string jwt = jwt_provider->getJWT();
@@ -1172,10 +1183,15 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("jwt", po::value<std::string>(), "Use JWT for authentication")
         ("one-time-password", po::value<std::string>(), "Time-based one-time password (TOTP) for two-factor authentication")
 #if USE_JWT_CPP && USE_SSL
-        ("login", po::bool_switch(), "Use OAuth 2.0 to login")
-        ("oauth-url", po::value<std::string>(), "The base URL for the OAuth 2.0 authorization server")
+        ("login", po::bool_switch(), "Use OAuth 2.0 device authorization grant to login")
+        ("oauth-url", po::value<std::string>(), "OAuth / OIDC issuer base URL (used for endpoint discovery)")
         ("oauth-client-id", po::value<std::string>(), "The client ID for the OAuth 2.0 application")
-        ("oauth-audience", po::value<std::string>(), "The audience for the OAuth 2.0 token")
+        ("oauth-client-secret", po::value<std::string>(), "Optional client secret for confidential OAuth clients")
+        ("oauth-client-auth", po::value<std::string>(), "Confidential client auth method: basic (default) or post")
+        ("oauth-audience", po::value<std::string>(), "Optional audience parameter for the device authorization request (Auth0-style)")
+        ("oauth-scope", po::value<std::string>(), "OAuth scope for the device authorization request")
+        ("oauth-device-uri", po::value<std::string>(), "Explicit device authorization endpoint (skips discovery when set with --oauth-token-uri)")
+        ("oauth-token-uri", po::value<std::string>(), "Explicit token endpoint (skips discovery when set with --oauth-device-uri)")
 #endif
         ("max_client_network_bandwidth",
             po::value<int>(),
@@ -1359,8 +1375,18 @@ void Client::processOptions(
         config().setString("oauth-url", options["oauth-url"].as<std::string>());
     if (options.contains("oauth-client-id"))
         config().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
+    if (options.contains("oauth-client-secret"))
+        config().setString("oauth-client-secret", options["oauth-client-secret"].as<std::string>());
+    if (options.contains("oauth-client-auth"))
+        config().setString("oauth-client-auth", options["oauth-client-auth"].as<std::string>());
     if (options.contains("oauth-audience"))
         config().setString("oauth-audience", options["oauth-audience"].as<std::string>());
+    if (options.contains("oauth-scope"))
+        config().setString("oauth-scope", options["oauth-scope"].as<std::string>());
+    if (options.contains("oauth-device-uri"))
+        config().setString("oauth-device-uri", options["oauth-device-uri"].as<std::string>());
+    if (options.contains("oauth-token-uri"))
+        config().setString("oauth-token-uri", options["oauth-token-uri"].as<std::string>());
 #endif
     if (options.contains("accept-invalid-certificate"))
     {
@@ -1446,12 +1472,19 @@ void Client::processConfig()
     }
     else
     {
-        ignore_error = config().getBool("ignore-error", false);
-
         query_id = config().getString("query_id", "");
         if (!query_id.empty())
             client_context->setCurrentQueryId(query_id);
     }
+
+    /// A delayed-interactive run executes the given queries through `runNonInteractive` before it
+    /// enters the prompt, so that prelude is a batch and follows the batch contract of
+    /// `--ignore-error`, the same as in `clickhouse-local` and in the embedded client. Taken from
+    /// the branch above, the option would be dropped for a delayed-interactive run on a terminal:
+    /// the prelude would stop at its first failing statement and the exit code of that statement
+    /// would end the run before the prompt.
+    if (!is_interactive || delayed_interactive)
+        ignore_error = config().getBool("ignore-error", false);
 
     setupEchoAndHighlightSettings();
 
