@@ -23,14 +23,6 @@ public:
         bool interactive_history_legacy_keymap = false;
         /// Show as-you-type autocompletion hints (ghost text). Requires color (highlighting).
         bool enable_hints = true;
-        /// Use the asynchronously loaded suggestion dictionary for as-you-type hints. Client
-        /// slash commands are static and remain available when this is disabled.
-        bool enable_suggestion_hints = true;
-        /// Offer the `/`-commands of the client (`/help`, `/clear`, ...) at the beginning of the
-        /// input, as hints and as Tab completions. Off by default: `keeper-client` and
-        /// `clickhouse-disks` reuse this reader and have commands of their own, so a leading `/`
-        /// means something else there (the beginning of a path).
-        bool enable_slash_commands = false;
         Patterns extenders;
         Patterns delimiters;
         std::span<char> word_break_characters;
@@ -60,6 +52,18 @@ private:
     int executeEditor(const std::string & path);
     void openEditor(bool format_query);
 
+    /// Run a history-navigation action with the hint suppression armed (see
+    /// `suppress_hints_once`): the entry it recalls must not pop hints by itself.
+    replxx::Replxx::ACTION_RESULT historyNavigate(replxx::Replxx::ACTION action, char32_t code);
+
+    /// Run a history-search action with the hint suppression armed (see
+    /// `suppress_hints_once`): a selected entry must not pop hints by itself.
+    replxx::Replxx::ACTION_RESULT historySearch(replxx::Replxx::ACTION action, char32_t code);
+
+    /// After a line was displayed programmatically, pin its text so that any hint regeneration
+    /// for it shows nothing (see `suppress_hints_for_text`).
+    void suppressHintsForDisplayedLine();
+
     /// Whether the text cursor is at the very end of the input (where as-you-type hints render).
     bool isCursorAtEndOfInput();
     /// Whether the as-you-type hint "popup" is currently navigable here: hints are shown and the
@@ -80,11 +84,6 @@ private:
 
     const char * word_break_characters;
 
-    /// Whether the `/`-commands of the client are offered as hints and completions (see Options).
-    const bool enable_slash_commands;
-    /// Whether ordinary as-you-type hints may query the asynchronously loaded suggestion dictionary.
-    const bool enable_suggestion_hints;
-
     // used to call flock() to synchronize multiple clients using same history file
     int history_file_fd = -1;
     bool bracketed_paste_enabled = false;
@@ -101,6 +100,20 @@ private:
     bool hints_visible = false;
     int hint_count = 0;
     int hint_selection = -1;
+
+    /// Suppression of the as-you-type hints for a line that is displayed programmatically -
+    /// recalled from history, found by a history search, pasted, brought back from the editor.
+    /// Such a display must not pop hints by itself: with hints visible, the next Up/Down press
+    /// would navigate the hints instead of the history. An edit shows the hints again.
+    /// `suppress_hints_once` is armed before the action that displays the line (the action
+    /// repaints, and regenerates the hints, inside itself) and consumed by the next run of the
+    /// hint callback. `suppress_hints_for_text` then pins the displayed text after the action,
+    /// because the same display can regenerate the hints again later - replxx replays a
+    /// throttled refresh after the key handler returns (its "rapid refresh" of e.g. a held-down
+    /// Up key) - so any later callback run for exactly this text shows no hints either; the
+    /// first run for an edited text clears the pin.
+    bool suppress_hints_once = false;
+    std::string suppress_hints_for_text;
 
     /// Snapshot of the completion words computed when the hints were last displayed, plus the
     /// context (prefix and its length) they were computed for. The completion callback reuses it

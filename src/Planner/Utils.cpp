@@ -593,20 +593,11 @@ NameSet checkAccessRights(
           */
         auto access = query_context->getAccess();
         const auto * alias = storage->as<StorageAlias>();
-        NameSet chain_granted;
-        if (alias)
-        {
-            Names all_columns;
-            all_columns.reserve(storage_snapshot->metadata->getColumns().size());
-            for (const auto & column : storage_snapshot->metadata->getColumns())
-                all_columns.push_back(column.name);
-            chain_granted = alias->filterColumnsGrantedThroughChain(query_context, AccessType::SELECT, all_columns);
-        }
         for (const auto & column : storage_snapshot->metadata->getColumns())
         {
             /// An `Alias` also requires access to the selected column of its target table.
             if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-                && (!alias || chain_granted.contains(column.name)))
+                && (!alias || alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name)))
                 accessible_columns.insert(column.name);
         }
 

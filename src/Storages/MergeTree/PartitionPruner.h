@@ -18,8 +18,7 @@ public:
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
         bool strict = false,
-        bool skip_analysis = false,
-        bool require_ready_sets = false);
+        bool skip_analysis = false);
 
     bool canBePruned(const IMergeTreeDataPart & part) const;
 

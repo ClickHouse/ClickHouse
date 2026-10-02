@@ -77,7 +77,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_url_wildcard_from_index_pages;
+    extern const SettingsBool allow_experimental_url_wildcard_from_index_pages;
     extern const SettingsBool enable_url_encoding;
     extern const SettingsBool engine_url_skip_empty_files;
     extern const SettingsUInt64 glob_expansion_max_elements;
@@ -134,13 +134,13 @@ namespace
 {
     void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
     {
-        if (context->getSettingsRef()[Setting::allow_url_wildcard_from_index_pages])
+        if (context->getSettingsRef()[Setting::allow_experimental_url_wildcard_from_index_pages])
             return;
 
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Wildcard expansion for `ENGINE = URL` from HTTP index pages is experimental. "
-            "Set `allow_url_wildcard_from_index_pages = 1` to enable it");
+            "Set `allow_experimental_url_wildcard_from_index_pages = 1` to enable it");
     }
 }
 
@@ -297,20 +297,13 @@ namespace
 class StorageURLSource::DisclosedGlobIterator::Impl
 {
 public:
-    Impl(const String & uri_, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns_, const NamesAndTypesList & hive_columns_, const ContextPtr & context_)
+    Impl(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
     {
-        if (split_uris)
-        {
-            uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
-        }
-        else
-        {
-            uris.emplace_back(uri_);
-        }
+        uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
 
         std::optional<ActionsDAG> filter_dag;
         if (!uris.empty())
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns_, context_, hive_columns_);
+            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context, hive_columns);
 
         if (filter_dag)
         {
@@ -319,42 +312,19 @@ public:
             for (const auto & uri : uris)
                 paths.push_back(Poco::URI(uri).getPath());
 
-            if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_))
-            {
-                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-                VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns_, hive_columns_, context_);
-            }
-            else
-            {
-                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-                this->virtual_columns = virtual_columns_;
-                this->hive_columns = hive_columns_;
-                this->context = context_;
-            }
+            VirtualColumnUtils::buildSetsForDAG(*filter_dag, context);
+            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns, hive_columns, context);
         }
     }
 
     String next()
     {
-        while (true)
-        {
-            size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
-            if (current_index >= uris.size())
-                return {};
+        size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+        if (current_index >= uris.size())
+            return {};
 
-            auto uri = uris[current_index];
-            if (deferred_filter_actions)
-            {
-                std::vector<String> filtered_uris({uri});
-                const std::vector<String> paths({Poco::URI(uri).getPath()});
-                VirtualColumnUtils::filterByPathOrFile(
-                    filtered_uris, paths, deferred_filter_actions, virtual_columns, hive_columns, context);
-                if (filtered_uris.empty())
-                    continue;
-            }
-
-            return uri;
-        }
+        return uris[current_index];
     }
 
     size_t size()
@@ -365,14 +335,10 @@ public:
 private:
     Strings uris;
     std::atomic_size_t index = 0;
-    ExpressionActionsPtr deferred_filter_actions;
-    NamesAndTypesList virtual_columns;
-    NamesAndTypesList hive_columns;
-    ContextPtr context;
 };
 
-StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
-    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, split_uris, max_addresses, predicate, virtual_columns, hive_columns, context)) {}
+StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
+    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, max_addresses, predicate, virtual_columns, hive_columns, context)) {}
 
 String StorageURLSource::DisclosedGlobIterator::next()
 {
@@ -518,7 +484,6 @@ StorageURLSource::StorageURLSource(
         });
 
         pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
-        pipeline->disableProfileEventUpdate();
         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
         ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
@@ -1201,17 +1166,6 @@ bool IStorageURLBase::parallelizeOutputAfterReading(ContextPtr context) const
     return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context);
 }
 
-size_t IStorageURLBase::getMaxReadStreams(size_t num_streams, ContextPtr context)
-{
-    if (distributed_processing)
-        return num_streams;
-
-    if (!urlWithGlobs(uri))
-        return 1;
-
-    return std::min(num_streams, static_cast<size_t>(context->getSettingsRef()[Setting::glob_expansion_max_elements]));
-}
-
 class ReadFromURL : public SourceStepWithFilter
 {
 public:
@@ -1382,12 +1336,10 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
                 return getFailoverOptions(task->path, max_addresses);
             });
     }
-    else
+    else if (is_url_with_globs)
     {
-        /// Iterate through disclosed URLs and make a source for each file. Even a URL
-        /// without globs must go through this iterator: it applies a deferred `_path`
-        /// / `_file` filter before the source opens the URL.
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, is_url_with_globs, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
+        /// Iterate through disclosed globs and make a source for each file
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
 
         /// check if we filtered out all the paths
         if (glob_iterator->size() == 0)
@@ -1406,9 +1358,20 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
 
         num_streams = std::min(num_streams, glob_iterator->size());
     }
+    else
+    {
+        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([max_addresses, done = false, &uri = storage->uri]() mutable
+        {
+            if (done)
+                return StorageURLSource::FailoverOptions{};
+            done = true;
+            return getFailoverOptions(uri, max_addresses);
+        });
+        num_streams = 1;
+    }
 }
 
-void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
+void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     createIterator(nullptr);
     const auto & settings = context->getSettingsRef();
@@ -1456,10 +1419,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     auto pipe = Pipe::unitePipes(std::move(pipes));
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = settings[Setting::parallelize_output_from_storages];
-    /// `max_num_streams` is a read-parallelism request, not a thread budget.
-    const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
-    if (parallelize_output && storage->parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < resize_to)
-        pipe.resize(resize_to);
+    if (parallelize_output && storage->parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < max_num_streams)
+        pipe.resize(max_num_streams);
 
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
@@ -1672,7 +1633,7 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
     {
         Settings settings = args.getContext()->getSettingsCopy();
 
-        // Applying the changes validates the values, not the names.
+        // Apply changes from SETTINGS clause, with validation.
         settings.applyChanges(args.storage_def->settings->changes);
 
         format_settings = getFormatSettings(args.getContext(), settings);
@@ -1921,9 +1882,8 @@ String StorageURL::resolveURLBase(const String & url, const String & base, const
     }
 
     auto scheme_end = base.find("://");
-    /// Not echoed back: the value can carry a credential, and password masking anchors on the `://` it lacks.
     if (scheme_end == String::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `{}` setting must contain a scheme (e.g. https://)", base_setting_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `{}` setting must contain a scheme (e.g. https://), got: {}", base_setting_name, base);
 
     /// Find the boundary of the path component in the base URL (before '?' or '#').
     auto authority_start = scheme_end + 3; /// skip "://"
@@ -2598,8 +2558,6 @@ void registerStorageURL(StorageFactory & factory)
         "URL",
         [](const StorageFactory::Arguments & args) -> StoragePtr
         {
-            checkStorageSettingNames(args);
-
             /// The `URL` engine is a unified wrapper: dispatch by scheme to File/S3/Azure/HDFS.
             if (auto dispatched = tryDispatchURLEngineByScheme(args))
                 return dispatched;
@@ -2752,7 +2710,7 @@ You can limit the maximum number of HTTP GET redirect hops using the [max_http_g
 
 ## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
 
-When [allow_url_wildcard_from_index_pages](/reference/settings/session-settings/allow#allow_url_wildcard_from_index_pages) is enabled, the `URL` table engine can expand wildcards by fetching HTTP index pages and extracting links from them.
+When [allow_experimental_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages) is enabled, the `URL` table engine can expand wildcards by fetching HTTP index pages and extracting links from them.
 This is the same mechanism as the [`url`](/reference/functions/table-functions/url#wildcards-with-http-index-pages) table function.
 
 Expansion is limited by [max_http_index_page_size](/reference/settings/server-settings/settings/max#max_http_index_page_size) for each fetched index page and by [url_wildcard_max_directories_to_read](/reference/settings/session-settings/url#url_wildcard_max_directories_to_read) for recursive directory traversal.
