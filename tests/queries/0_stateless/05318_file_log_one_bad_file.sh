@@ -55,11 +55,12 @@ mv "${bad}" "${logs_dir}/bad.jsonl"
 wait_for_rows 5
 ${CLICKHOUSE_CLIENT} -q "SELECT file, a FROM dst WHERE file = 'bad.jsonl' ORDER BY a"
 
-# Direct reads of a table without views: a file whose symlink target is gone is skipped and logged once, a new target
-# is read from its start and not again after the table is reloaded, and a record that does not parse fails the query.
+# Direct reads of a single-file table, which has no directory watcher: a file whose symlink target is gone is skipped
+# and logged once, a new target is read from its start and not again after the table is reloaded, and a record that
+# does not parse fails the query.
 printf '{"a":200}\n' > "${sel_target}"
 ln -s "${sel_target}" "${sel_dir}/link.jsonl"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_sel (a UInt64) ENGINE = FileLog('${sel_dir}/', 'JSONEachRow')"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_sel (a UInt64) ENGINE = FileLog('${sel_dir}/link.jsonl', 'JSONEachRow')"
 # A second link keeps the inode of the old target in use, so the new target gets another one.
 ln "${sel_target}" "${sel_target}.old"
 rm "${sel_target}"
@@ -70,9 +71,7 @@ ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_s
 ${CLICKHOUSE_CLIENT} -q "DETACH TABLE file_log_sel"
 ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log_sel"
 ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel"
-printf 'not json\n' > "${sel_dir}/bad.jsonl"
-${CLICKHOUSE_CLIENT} -q "DETACH TABLE file_log_sel"
-${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log_sel"
+printf 'not json\n' >> "${sel_target}"
 ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel" 2>&1 \
     | grep -o -m1 'CANNOT_PARSE_INPUT_ASSERTION_FAILED'
 
@@ -82,7 +81,8 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
 ${CLICKHOUSE_CLIENT} -q "
     SELECT countIf(message LIKE 'Cannot open file %broken.jsonl%') > 0,
            sumIf(toUInt64OrZero(extract(message, 'Skipped ([0-9]+) records')), message LIKE 'Skipped % of file bad.jsonl%'),
-           countIf(message LIKE 'Skipped % of file bad.jsonl%') BETWEEN 1 AND 49
+           countIf(message LIKE 'Skipped % of file bad.jsonl%') BETWEEN 1 AND 49,
+           maxIf(toUInt64OrZero(extract(message, 'Skipped ([0-9]+) records')), message LIKE 'Skipped % of file bad.jsonl%') <= 10
     FROM system.text_log
     WHERE event_date >= yesterday() AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log)')"
 ${CLICKHOUSE_CLIENT} -q "
