@@ -4,15 +4,20 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/DDLTask.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
+#include <Storages/StorageSet.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -42,9 +47,11 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Identifier.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
@@ -105,6 +112,52 @@ namespace ErrorCodes
     extern const int UNEXPECTED_EXPRESSION;
     extern const int ILLEGAL_STATISTICS;
     extern const int INCORRECT_QUERY;
+    extern const int UNKNOWN_TABLE;
+}
+
+void checkNoRowPolicyForSetOperands(
+    const ASTPtr & mutation_ast,
+    const String & default_database,
+    const ContextPtr & context,
+    bool throw_if_unresolved)
+{
+    ASTPtr ast = mutation_ast->clone();
+    AddDefaultDatabaseVisitor visitor(context, default_database);
+    visitor.visit(ast);
+
+    const auto check = [&](const ASTPtr & node, const auto & self) -> void
+    {
+        if (const auto * function = node->as<ASTFunction>();
+            function && functionIsInOrGlobalInOperator(function->name) && function->arguments
+            && function->arguments->children.size() == 2)
+        {
+            const auto & right_operand = function->arguments->children[1];
+            if (const auto * table_identifier = right_operand->as<ASTTableIdentifier>())
+            {
+                auto resolved = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+                    Identifier(table_identifier->name_parts), context);
+                if (!resolved.resolved_identifier && throw_if_unresolved)
+                    throw Exception(
+                        ErrorCodes::UNKNOWN_TABLE,
+                        "Table {} on the right side of IN does not exist on the initiator. The other hosts do not run the query as "
+                        "the initiating user. So the initiator must check whether the table is a Set table with a row policy. Run the "
+                        "query on a host that has this table. Alternatively, let every host check the table as the initiating user. "
+                        "For that, enable the server setting distributed_ddl_use_initial_user_and_roles on every host, and set "
+                        "distributed_ddl_entry_format_version to at least {}",
+                        table_identifier->formatForErrorMessage(),
+                        DDLLogEntry::INITIATOR_USER_VERSION);
+
+                auto * table_node = resolved.resolved_identifier ? resolved.resolved_identifier->as<TableNode>() : nullptr;
+                if (auto * storage_set = table_node ? dynamic_cast<StorageSet *>(table_node->getStorage().get()) : nullptr)
+                    storage_set->checkNoRowPolicy(context);
+            }
+        }
+
+        for (const auto & child : node->children)
+            self(child, self);
+    };
+
+    check(ast, check);
 }
 
 /// Stored SQL text always carries explicit modes, so the `*_default_mode` fallbacks are not reached in
@@ -1390,6 +1443,42 @@ void MutationsInterpreter::prepare(bool dry_run)
                     dependencies.emplace(elem.first, ColumnDependency::TTL_TARGET);
                     new_updated_columns.insert(elem.first);
                 }
+
+                /// A column TTL resets its column to the default, which makes every `MATERIALIZED`
+                /// column derived from it stale. `TTLTransform` recomputes those, but only the ones
+                /// that are in the block, so they have to be read and written here - and this command
+                /// is the one that repairs a part no later merge is going to touch.
+                NameSet recomputed_columns;
+                NameSet columns_read_to_recompute;
+                for (const auto & column : columns_desc)
+                {
+                    if (!available_columns_set.contains(column.name))
+                        continue;
+
+                    const auto & columns_to_read
+                        = materialized_dependencies.findColumnsToRecalculate(column.name, new_updated_columns);
+                    if (columns_to_read.empty())
+                        continue;
+
+                    recomputed_columns.insert(column.name);
+                    columns_read_to_recompute.insert(columns_to_read.begin(), columns_to_read.end());
+                }
+
+                for (const auto & name : recomputed_columns)
+                    dependencies.emplace(name, ColumnDependency::TTL_TARGET);
+
+                /// The expression of a recomputed column also reads columns no TTL touches - `y` of
+                /// `m MATERIALIZED x + y`. Without them in the block `TTLTransform` cannot evaluate the
+                /// expression and skips the column, so the command would rewrite it with the stale value.
+                for (const auto & name : columns_read_to_recompute)
+                    if (!recomputed_columns.contains(name) && !new_updated_columns.contains(name))
+                        dependencies.emplace(name, ColumnDependency::TTL_EXPRESSION);
+
+                /// The recompute changes these columns as surely as the TTL changes its own target, so
+                /// the closure below has to be keyed on them too: a skip index, a projection or a
+                /// statistic reading a recomputed column is rebuilt, and the columns it reads next to
+                /// that one enter the block instead of being filled with a type default.
+                new_updated_columns.insert(recomputed_columns.begin(), recomputed_columns.end());
 
                 auto all_columns_vec = all_columns.getNames();
                 auto all_columns_set = NameSet(all_columns_vec.begin(), all_columns_vec.end());
