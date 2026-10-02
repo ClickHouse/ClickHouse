@@ -31,11 +31,6 @@ const FinalCell * FinalCell::find(Coord, Coord) const
     return this;
 }
 
-size_t FinalCell::getBytesAllocated() const
-{
-    return sizeof(*this) + polygon_ids.capacity() * sizeof(size_t);
-}
-
 inline void shift(Point & point, Coord val)
 {
     point.x(point.x() + val);
@@ -70,11 +65,6 @@ const FinalCellWithSlabs * FinalCellWithSlabs::find(Coord, Coord) const
     return this;
 }
 
-size_t FinalCellWithSlabs::getBytesAllocated() const
-{
-    return sizeof(*this) + index.getBytesAllocated() + corresponding_ids.capacity() * sizeof(size_t);
-}
-
 SlabsPolygonIndex::SlabsPolygonIndex(
     const VectorWithMemoryTracking<Polygon> & polygons)
     : log(getLogger("SlabsPolygonIndex")),
@@ -83,25 +73,9 @@ SlabsPolygonIndex::SlabsPolygonIndex(
     indexBuild(polygons);
 }
 
-size_t SlabsPolygonIndex::getBytesAllocated() const
-{
-    size_t total = sorted_x.capacity() * sizeof(Coord)
-                 + all_edges.capacity() * sizeof(Edge)
-                 + edges_index_tree.capacity() * sizeof(VectorWithMemoryTracking<EdgeLine>);
-    for (const auto & node : edges_index_tree)
-        total += node.capacity() * sizeof(EdgeLine);
-    return total;
-}
-
 VectorWithMemoryTracking<Coord> SlabsPolygonIndex::uniqueX(const VectorWithMemoryTracking<Polygon> & polygons)
 {
-    size_t total_points = 0;
-    for (const auto & poly : polygons)
-        total_points += bg::num_points(poly);
-
     VectorWithMemoryTracking<Coord> all_x;
-    all_x.reserve(total_points);
-
     for (const auto & poly : polygons)
     {
         for (const auto & point : poly.outer())
@@ -150,6 +124,7 @@ void SlabsPolygonIndex::indexBuild(const VectorWithMemoryTracking<Polygon> & pol
     {
         n = sorted_x.size() - 1;
     }
+    edges_index_tree.resize(2 * n);
 
     /** Map of interesting edge ids to the index of left x, the index of right x */
     VectorWithMemoryTracking<size_t> edge_left(m, n);
@@ -176,8 +151,6 @@ void SlabsPolygonIndex::indexBuild(const VectorWithMemoryTracking<Polygon> & pol
         }
     }
 
-    edges_index_tree.resize(2 * n);
-
     for (size_t i = 0; i != all_edges.size(); ++i)
     {
         size_t l = edge_left[i];
@@ -185,7 +158,7 @@ void SlabsPolygonIndex::indexBuild(const VectorWithMemoryTracking<Polygon> & pol
         if (l == n || sorted_x[l] != all_edges[i].l.x() || sorted_x[r] != all_edges[i].r.x())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Error occurred while building polygon index. Edge {} is [{}, {}] but found [{}, {}]. l = {}, r = {}",
+                "Error occurred while building polygon index. Edge {}  is [{}, {}] but found [{}, {}]. l = {}, r = {}",
                 i, all_edges[i].l.x(), all_edges[i].r.x(), sorted_x[l], sorted_x[r], l, r);
         }
 

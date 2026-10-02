@@ -1,5 +1,5 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/PullingOutputFormat.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -51,7 +51,6 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
     {
         executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
         executor->setReadProgressCallback(pipeline.getReadProgressCallback());
-        executor->setStepProfiler(pipeline.getStepProfiler());
     }
 
     if (!executor->checkTimeLimitSoft())

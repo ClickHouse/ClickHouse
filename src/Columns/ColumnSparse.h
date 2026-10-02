@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
 class Collator;
@@ -61,10 +62,6 @@ public:
     MutableColumnPtr cloneResized(size_t new_size) const override;
     size_t size() const override { return _size; }
     bool isDefaultAt(size_t n) const override;
-
-    /// All values are default iff the offsets array is empty (no non-default
-    /// values have been stored).
-    bool hasOnlyTypeDefaults() const override;
     bool isNullAt(size_t n) const override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
@@ -84,6 +81,7 @@ public:
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else
@@ -143,7 +141,7 @@ public:
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
+    WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
@@ -172,10 +170,10 @@ public:
 
     bool hasDynamicStructure() const override { return values->hasDynamicStructure(); }
     void takeExactDynamicStructureFrom(const IColumn & source) override;
-    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    void chooseDynamicStructureForMerge(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { values->fixDynamicStructure(); }
     bool hasStatistics() const override { return values->hasStatistics(); }
-    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
+    void takeOrCalculateStatisticsFrom(const Columns & source_columns) override;
 
     size_t getNumberOfTrailingDefaults() const
     {
@@ -217,15 +215,6 @@ public:
         size_t ALWAYS_INLINE getCurrentOffset() const { return current_offset; }
         size_t ALWAYS_INLINE increaseCurrentRow() { return ++current_row; }
         size_t ALWAYS_INLINE increaseCurrentOffset() { return ++current_offset; }
-
-        /// Moves the iterator forward to the given row, which must not be behind the current one.
-        /// Amortized constant time when the visited rows are increasing.
-        void ALWAYS_INLINE advanceToRow(size_t row)
-        {
-            while (current_offset < offsets_size && offsets[current_offset] < row)
-                ++current_offset;
-            current_row = row;
-        }
 
         bool operator==(const Iterator & other) const
         {
@@ -276,10 +265,6 @@ private:
 };
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column);
-
-/// Returns true if `recursiveRemoveSparse` would change `column`, i.e. there is a sparse column
-/// either at the top level or nested inside a Tuple or Replicated column. Does not allocate.
-bool recursiveHasSparse(const ColumnPtr & column);
 
 /// Remove all special representations (for now Sparse and Replicated).
 ColumnPtr removeSpecialRepresentations(const ColumnPtr & column);

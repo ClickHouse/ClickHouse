@@ -11,7 +11,6 @@
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Coordination/CoordinationSettings.h>
 
 namespace DB
 {
@@ -19,11 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace CoordinationSetting
-{
-    extern const CoordinationSettingsUInt64 max_request_size;
 }
 
 namespace
@@ -65,28 +59,22 @@ std::optional<int32_t> getVersionFromRequest(const HTTPServerRequest & request)
     }
 }
 
-/// Returns `std::nullopt` after answering 413 if the body is larger than `max_request_size`.
-std::optional<std::string> getRawBytesFromRequest(
-    HTTPServerRequest & request, HTTPServerResponse & response, const KeeperContextPtr & keeper_context)
+std::string getRawBytesFromRequest(HTTPServerRequest & request, const size_t max_request_size)
 {
     std::string request_data;
+    auto stream = request.getStream();
 
-    size_t max_request_size = keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_size];
     if (max_request_size > 0)
     {
-        LimitReadBuffer limited_stream(*request.getStream(), LimitReadBuffer::Settings{.read_no_more = max_request_size});
+        LimitReadBuffer limited_stream(*stream, LimitReadBuffer::Settings{
+            .read_no_more = max_request_size,
+            .expect_eof = false,
+            .excetion_hint = "request body is too large"});
         readStringUntilEOF(request_data, limited_stream);
-
-        if (!request.getStream()->eof())
-        {
-            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_REQUEST_ENTITY_TOO_LARGE, "Request body is too large.");
-            *response.send() << "Request body is larger than max_request_size (" << max_request_size << " bytes).\n";
-            return std::nullopt;
-        }
     }
     else
     {
-        readStringUntilEOF(request_data, *request.getStream());
+        readStringUntilEOF(request_data, *stream);
     }
 
     return request_data;
@@ -120,10 +108,10 @@ bool setErrorResponseForZKCode(const Coordination::Error error, HTTPServerRespon
 
 KeeperHTTPStorageHandler::KeeperHTTPStorageHandler(
     std::shared_ptr<KeeperHTTPClient> keeper_client_,
-    KeeperContextPtr keeper_context_)
+    size_t max_request_size_)
     : log(getLogger("KeeperHTTPStorageHandler"))
     , keeper_client(std::move(keeper_client_))
-    , keeper_context(std::move(keeper_context_))
+    , max_request_size(max_request_size_)
 {
 }
 
@@ -230,11 +218,7 @@ void KeeperHTTPStorageHandler::performZooKeeperSetRequest(
         return;
     }
 
-    const auto data = getRawBytesFromRequest(request, response, keeper_context);
-    if (!data)
-        return;
-
-    const auto error = keeper_client->get()->trySet(storage_path, *data, maybe_request_version.value());
+    const auto error = keeper_client->get()->trySet(storage_path, getRawBytesFromRequest(request, max_request_size), maybe_request_version.value());
 
     if (setErrorResponseForZKCode(error, response))
         return;
@@ -247,11 +231,7 @@ void KeeperHTTPStorageHandler::performZooKeeperSetRequest(
 void KeeperHTTPStorageHandler::performZooKeeperCreateRequest(
     const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const
 {
-    const auto data = getRawBytesFromRequest(request, response, keeper_context);
-    if (!data)
-        return;
-
-    const auto error = keeper_client->get()->tryCreate(storage_path, *data, zkutil::CreateMode::Persistent);
+    const auto error = keeper_client->get()->tryCreate(storage_path, getRawBytesFromRequest(request, max_request_size), zkutil::CreateMode::Persistent);
 
     if (setErrorResponseForZKCode(error, response))
         return;
