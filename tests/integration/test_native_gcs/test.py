@@ -56,6 +56,7 @@ def started_cluster():
             with_gcs=True,
             env_variables={
                 "NATIVE_GCS_DYNAMIC_DISK_TYPE": "gcs",
+                "NATIVE_GCS_DYNAMIC_DISK_HEADER": "X-ClickHouse-Native-GCS-Env-Header: 1",
                 "GOOGLE_APPLICATION_CREDENTIALS": ADC_CREDENTIALS_PATH,
             },
         )
@@ -243,6 +244,41 @@ def test_dynamic_gcs_disk_rejects_header_from_include_even_with_credential_opt_i
         },
     )
     assert "ACCESS_DENIED" in error and "header" in error, error
+
+
+def test_dynamic_gcs_disk_with_header_from_env_persists_credential_opt_in(
+    started_cluster,
+):
+    """A `from_env` header resolves on the server, so the disk needs the credential opt-in even next to
+    `no_sign_request`. A disk created with the opt-in must record it in its stored definition, otherwise
+    it cannot be loaded after a restart under the default restricted profile."""
+    node = started_cluster.instances["node"]
+    node.query("DROP TABLE IF EXISTS gcs_env_header SYNC")
+    node.query(
+        "CREATE TABLE gcs_env_header (x UInt64) ENGINE = MergeTree ORDER BY tuple() "
+        "SETTINGS disk = disk("
+        "  name = 'gcs_env_header_disk',"
+        "  type = object_storage,"
+        "  object_storage_type = gcs,"
+        "  metadata_type = local,"
+        f"  endpoint = '{gcs_url('env-header/')}',"
+        "  no_sign_request = true,"
+        "  header = 'from_env NATIVE_GCS_DYNAMIC_DISK_HEADER'"
+        ")",
+        settings={
+            "dynamic_disk_allow_from_env": 1,
+            "use_native_gcs": 1,
+            "s3_allow_server_credentials_in_user_queries": 1,
+        },
+    )
+    assert "_server_credentials_allowed" in node.query(
+        "SHOW CREATE TABLE gcs_env_header"
+    )
+    node.query("INSERT INTO gcs_env_header SELECT number FROM numbers(3)")
+
+    node.restart_clickhouse()
+    assert node.query("SELECT count() FROM gcs_env_header").strip() == "3"
+    node.query("DROP TABLE gcs_env_header SYNC")
 
 
 def test_dynamic_gcs_disk_rejects_service_account_key_shadowed_by_include(

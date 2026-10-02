@@ -374,6 +374,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         info->for_system_database = for_system_database;
         info->ast_gcs_credentials = std::move(ast_gcs_credentials);
         info->ast_gcs_headers = std::move(ast_gcs_headers);
+        info->ast_has_indirect_gcs_header = has_indirect_gcs_header;
         /// A fresh create that the pre-resolution check reads as relying on server credentials, while the
         /// session has the opt-in, is a *candidate* for the persisted marker -- so the disk is not
         /// re-restricted on reload. It is only a candidate because the answer here is deliberately
@@ -586,6 +587,11 @@ bool resolvedGCSBackendIsRestricted(
     auto key = [&](const String & k) { return prefix + k; };
     if (config.getString(key("type"), "") != "gcs" && config.getString(key("object_storage_type"), "") != "gcs")
         return false;
+
+    /// A `from_env`/`from_zk` header on the root resolves on the server and can carry its auth material even next
+    /// to an anonymous form, exactly as the pre-resolution check (`has_indirect_gcs_header`) treats it.
+    if (is_root && info.ast_has_indirect_gcs_header)
+        return true;
 
     /// Both anonymous forms of the shared argument grammar send no credentials at all, so they are safe wherever
     /// they were configured -- an `include` cannot use them to borrow the server identity.

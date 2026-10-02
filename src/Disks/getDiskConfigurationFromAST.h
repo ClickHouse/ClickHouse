@@ -69,6 +69,10 @@ struct DynamicS3DiskCredentialInfo
     /// Literal native GCS authentication headers supplied by the SQL AST. The post-`include` validation
     /// compares these with the resolved configuration so an unrelated `include` does not reject them.
     std::unordered_map<String, String> ast_gcs_headers;
+    /// The SQL AST supplied a `header` or `access_header` through `from_env`/`from_zk`. The placeholder resolves
+    /// on the server, so the pre-resolution check reads such a native GCS disk as relying on server-managed auth;
+    /// `resolvedDiskConfigReliesOnServerCredentials` must agree, or the disk is not marked and fails to reload.
+    bool ast_has_indirect_gcs_header = false;
 };
 
 /// The same as above function, but return XML::Document for easier modification of result configuration.
