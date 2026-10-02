@@ -1,0 +1,18 @@
+-- scalar subquery
+status: applicable
+verdict: chosen
+reason: 1 mark would be read instead of 3 from the base table
+-- IN subquery
+status: applicable
+verdict: chosen (forced)
+reason: `force_optimize_projection = 1` overrides the cost; the projection reads 2 marks instead of 1 from the base table
+-- forced inside the subquery only, the outer read is decided by cost
+status: applicable
+verdict: not chosen
+reason: 2 marks would be read instead of 1 from the base table
+-- forced for the session
+status: applicable
+verdict: chosen (forced)
+reason: `force_optimize_projection = 1` overrides the cost; the projection reads 2 marks instead of 1 from the base table
+-- a hypothetical skip index
+status: applicable
