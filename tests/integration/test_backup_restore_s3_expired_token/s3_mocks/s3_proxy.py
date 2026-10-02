@@ -65,8 +65,12 @@ class Handler(BaseHTTPRequestHandler):
     def handle_control(self):
         global armed
         if self.path == "/control/events":
+            with state_lock:
+                events_snapshot = list(events)
             self.reply(
-                200, json.dumps(events).encode(), {"Content-Type": "application/json"}
+                200,
+                json.dumps(events_snapshot).encode(),
+                {"Content-Type": "application/json"},
             )
             return
         if self.path.startswith("/control/arm?"):

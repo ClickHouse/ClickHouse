@@ -769,8 +769,13 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
 
     std::optional<Stopwatch> expired_token_retry_watch;
     size_t expired_token_retries = 0;
-    for (size_t attempt = 0; attempt - expired_token_retries <= max_redirects; ++attempt)
+    for (size_t attempt = 0; ; ++attempt)
     {
+        chassert(attempt >= expired_token_retries);
+        const size_t effective_redirect_attempt = attempt - expired_token_retries;
+        if (effective_redirect_attempt > max_redirects)
+            break;
+
         auto result = request_fn(request);
         if (result.IsSuccess())
             return result;
