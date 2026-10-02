@@ -2977,7 +2977,7 @@ bool tableFunctionAlwaysAnalyzes(
             {
                 argument = evaluateConstantExpressionAsLiteral(argument->clone(), context);
             }
-            catch (...)
+            catch (const Exception &)
             {
                 return false;
             }
