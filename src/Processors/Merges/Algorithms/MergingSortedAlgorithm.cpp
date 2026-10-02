@@ -203,9 +203,9 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
     merged_data.initialize(*header, inputs);
 
     /// Enable the row-by-row fast path in `MergedData` when no input column is `ColumnReplicated`.
-    /// The sort columns were just materialized, and under no limit so were all the others, but a
-    /// chunk kept lazy under a limit can still have replicated non-sort columns (for example from a
-    /// JOIN with lazy replication). If none are, the per-row wrapping check in `insertRow` /
+    /// The sort columns were just materialized, and so were all the others unless a small limit kept
+    /// them lazy, in which case a chunk can still have replicated non-sort columns (for example from
+    /// a JOIN with lazy replication). If none are, the per-row wrapping check in `insertRow` /
     /// `insertRows` is pure overhead. This is only ever raised back to `true` in `consume` (before
     /// those rows can reach `insertRow`).
     merged_data.setMayHaveReplicatedColumns(anyInputColumnReplicated(inputs));
@@ -355,7 +355,11 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
         input.skip_last_row = true;
     }
 
-    materializeReplicatedColumns(input.chunk);
+    if (limit == 0 || limit >= MIN_LIMIT_TO_MATERIALIZE_REPLICATED_COLUMNS)
+        materializeReplicatedColumns(input.chunk);
+    else
+        removeReplicatedFromSortingColumns(header, input, description);
+
     removeConstAndSparse(input);
 
     /// A late-arriving chunk may bring non-sort `ColumnReplicated` columns even if the initial
