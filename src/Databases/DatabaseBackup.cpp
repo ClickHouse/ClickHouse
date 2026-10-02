@@ -14,7 +14,6 @@
 #include <IO/ReadBufferFromFileBase.h>
 
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -29,10 +28,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
-
-#include <Access/ContextAccess.h>
 
 #include <Backups/BackupFactory.h>
 
@@ -61,8 +57,6 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsSetOperationMode except_default_mode;
-    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
 }
 
@@ -237,25 +231,7 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     backup_open_params.context = getContext();
     backup_open_params.backup_info = config.backup_info;
 
-    try
-    {
-        backup = BackupFactory::instance().createBackup(backup_open_params);
-    }
-    catch (...)
-    {
-        if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
-            throw;
-
-        /// It's server startup: do not prevent the server from starting if the backup is
-        /// unavailable (e.g. the backup files were removed or the underlying storage is
-        /// inaccessible). The database is loaded without any tables; restart the server once
-        /// the backup becomes available again to access its tables.
-        tryLogCurrentException(
-            log,
-            fmt::format("Cannot open backup for database {}, it will be loaded without tables", backQuoteIfNeed(getDatabaseName())));
-        backup = nullptr;
-        return;
-    }
+    backup = BackupFactory::instance().createBackup(backup_open_params);
 
     auto storage_policy_name = buildStoragePolicyName(getDatabaseName(), config);
 
@@ -275,17 +251,10 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     });
 }
 
-void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
+void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool)
 {
     if (!backup)
-    {
-        /// The backup could not be opened on server startup (see beforeLoadingMetadata).
-        /// Load the database without any tables instead of failing the whole server.
-        if (is_startup)
-            return;
-
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not initialized");
-    }
 
     size_t prev_tables_count = metadata.parsed_tables.size();
     size_t prev_total_dictionaries = metadata.total_dictionaries;
@@ -377,14 +346,8 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
 
             updateCreateQueryWithDatabaseBackupStoragePolicy(create_query, current_database_name, config);
 
-            {
-                SelectIntersectExceptQueryVisitor::Data data{local_context->getSettingsRef()[Setting::intersect_default_mode], local_context->getSettingsRef()[Setting::except_default_mode]};
-                SelectIntersectExceptQueryVisitor{data}.visit(ast);
-            }
-            {
-                NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
-                NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
-            }
+            NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
+            NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
 
             QualifiedTableName qualified_name{current_database_name, create_query->getTable()};
 
@@ -506,16 +469,7 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool 
 
     DatabaseBackup::Configuration result;
 
-    /// `checkAndGetLiteralArgument` formats the argument it rejects, and a locator written in this
-    /// position would format its credentials in plaintext.
-    try
-    {
-        result.database_name = checkAndGetLiteralArgument<String>(engine_args[0], "database_name");
-    }
-    catch (const Exception &)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'database_name' must be a string literal");
-    }
+    result.database_name = checkAndGetLiteralArgument<String>(engine_args[0], "database_name");
 
     /** A locator held in a string literal (`Backup('db', 'File(\'backup.zip\')')`) is the form that
       * metadata rewritten by an older server carries, so it has to keep loading - a server that cannot
@@ -534,9 +488,9 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool 
         }
     }
 
-    /// A locator held in a string literal is exactly the text that can carry credentials, and a rejection
-    /// message reaches the error log and the `exception` column of `query_log`, so name the accepted form
-    /// here rather than the text given.
+    /// `BackupInfo::fromAST` puts the offending argument into its message, and that message reaches the
+    /// error log and the `exception` column of `query_log`. A locator held in a string literal is exactly
+    /// the text that can carry credentials, so refuse it here without echoing it.
     if (!engine_args[1]->as<ASTFunction>())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Expected function as the backup destination of a `Backup` database. It must be spelled as the "
@@ -550,26 +504,6 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool 
 
 }
 
-void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context)
-{
-    /** A locator that is not a function is refused right here rather than left to creation time.
-      *
-      * This preflight is the last point that still runs as the real user, and the creation it would
-      * otherwise rely on does not always run: `RESTORE DATABASE` issues `CREATE DATABASE IF NOT EXISTS`,
-      * which returns from `InterpreterCreateQuery::createDatabase` before `DatabaseFactory::get` when the
-      * target database already exists. With `allow_different_database_def = 1` the definition mismatch is
-      * waived as well, so a manifest an older server left holding a quoted locator would pass through the
-      * whole restore with its embedded source never authorized, while the function form of the same
-      * manifest is checked.
-      *
-      * Only `parseArguments` may formulate the refusal: the offending text can carry credentials and must
-      * not be echoed.
-      */
-    auto config = parseArguments(engine_args, query_context, /*allow_locator_in_string_literal=*/ false);
-    BackupFactory::instance().checkSourceAccess(config.backup_info, query_context, IBackup::OpenMode::READ);
-}
-
-void registerDatabaseBackup(DatabaseFactory & factory);
 void registerDatabaseBackup(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -581,129 +515,29 @@ void registerDatabaseBackup(DatabaseFactory & factory)
         if (engine->arguments)
             engine_args = engine->arguments->children;
 
-        /// Authorize only a newly introduced definition: one read back from this server's metadata was
-        /// already validated, and a context with no user cannot be checked per user.
-        ///
-        /// Metadata is read back on three paths: the short `ATTACH DATABASE db`, a load under `force_restore_data`,
-        /// and the replay of the stored full `ATTACH DATABASE db ENGINE = Backup(...)` statement at server start.
-        /// The last one runs in plain `ATTACH` mode, so neither of the first two conditions covers it - and it is
-        /// exactly the path that has to load metadata an older server rewrote.
-        ///
-        /// The loader flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH` run user
-        /// statements as internal ones, and a user's `ATTACH DATABASE ... ENGINE = Backup(...)` must neither
-        /// skip the source authorization nor get its locator accepted in the form the secret masker cannot redact.
-        const bool has_real_user = args.context->getAccess()->getUserID().has_value();
+        /** Whether the locator may be held in a string literal. Metadata an older server rewrote carries that
+          * form and has to keep loading, but a statement a user writes must spell the locator as the function it
+          * is, because that is the form `FunctionSecretArgumentsFinder` can redact.
+          *
+          * Metadata is read back on three paths: the short `ATTACH DATABASE db`, a load under `force_restore_data`,
+          * and the replay of the stored full `ATTACH DATABASE db ENGINE = Backup(...)` statement at server start.
+          * The last one runs in plain `ATTACH` mode, so neither of the first two conditions covers it - and it is
+          * exactly the path that has to load metadata an older server rewrote.
+          *
+          * The loader flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH` run user
+          * statements as internal ones, and a user's `ATTACH DATABASE ... ENGINE = Backup(...)` must not get its
+          * locator accepted in the form the secret masker cannot redact.
+          */
         const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
         const bool from_existing_metadata
             = isLoadingFromExistingMetadata(args.mode) || args.create_query.attach_short_syntax || is_internal_metadata_replay;
 
         auto config = parseArguments(engine_args, args.context, /*allow_locator_in_string_literal=*/ from_existing_metadata);
-        if (has_real_user && !from_existing_metadata)
-            BackupFactory::instance().checkSourceAccess(config.backup_info, args.context, IBackup::OpenMode::READ);
 
         return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };
 
-    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true, .is_external = true}, Documentation{
-        .description = R"DOCS_MD(
-Database backup allows to instantly attach table/database from [backups](/concepts/features/backup-restore/overview) in read-only mode.
-
-Database backup works with both incremental and non-incremental backups.
-
-## Creating a database {#creating-a-database}
-
-```sql
-CREATE DATABASE backup_database
-ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))
-```
-
-The backup destination can be any valid backup [destination](/concepts/features/backup-restore/local-disk#configure-backup-destinations-for-disk), such as `Disk`, `S3`, or `File`. It is passed as a function, for example `Disk('disk_name', 'backup_name')`.
-
-**Engine Parameters**
-
-- `database_name_inside_backup` — Name of the database inside the backup.
-- `backup_destination` — Backup destination.
-
-## Usage example {#usage-example}
-
-Let's make an example with a `Disk` backup destination. Let's first setup backups disk in `storage.xml`:
-
-```xml
-<storage_configuration>
-    <disks>
-        <backups>
-            <type>local</type>
-            <path>/home/ubuntu/ClickHouseWorkDir/backups/</path>
-        </backups>
-    </disks>
-</storage_configuration>
-<backups>
-    <allowed_disk>backups</allowed_disk>
-    <allowed_path>/home/ubuntu/ClickHouseWorkDir/backups/</allowed_path>
-</backups>
-```
-
-Example of usage. Let's create test database, tables, insert some data and then create a backup:
-
-```sql
-CREATE DATABASE test_database;
-
-CREATE TABLE test_database.test_table_1 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
-INSERT INTO test_database.test_table_1 VALUES (0, 'test_database.test_table_1');
-
-CREATE TABLE test_database.test_table_2 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
-INSERT INTO test_database.test_table_2 VALUES (0, 'test_database.test_table_2');
-
-CREATE TABLE test_database.test_table_3 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
-INSERT INTO test_database.test_table_3 VALUES (0, 'test_database.test_table_3');
-
-BACKUP DATABASE test_database TO Disk('backups', 'test_database_backup');
-```
-
-So now we have `test_database_backup` backup, let's create database Backup:
-
-```sql
-CREATE DATABASE test_database_backup ENGINE = Backup('test_database', Disk('backups', 'test_database_backup'));
-```
-
-Now we can query any table from database:
-
-```sql
-SELECT id, value FROM test_database_backup.test_table_1;
-
-┌─id─┬─value──────────────────────┐
-│  0 │ test_database.test_table_1 │
-└────┴────────────────────────────┘
-
-SELECT id, value FROM test_database_backup.test_table_2;
-
-┌─id─┬─value──────────────────────┐
-│  0 │ test_database.test_table_2 │
-└────┴────────────────────────────┘
-
-SELECT id, value FROM test_database_backup.test_table_3;
-
-┌─id─┬─value──────────────────────┐
-│  0 │ test_database.test_table_3 │
-└────┴────────────────────────────┘
-```
-
-It is also possible to work with this database Backup as with any ordinary database. For example query tables in it:
-
-```sql
-SELECT database, name FROM system.tables WHERE database = 'test_database_backup';
-```
-
-```text
-┌─database─────────────┬─name─────────┐
-│ test_database_backup │ test_table_1 │
-│ test_database_backup │ test_table_2 │
-│ test_database_backup │ test_table_3 │
-└──────────────────────┴──────────────┘
-```
-)DOCS_MD",
-        .syntax = "ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))",
-        .related = {}});
+    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true});
 }
 
 }
