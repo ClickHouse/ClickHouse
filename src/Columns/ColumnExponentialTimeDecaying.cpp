@@ -70,18 +70,6 @@ using ComparatorDescendingUnstable = ComparatorDescendingUnstableImpl<Comparator
 using ComparatorDescendingStable = ComparatorDescendingStableImpl<ComparatorBase>;
 using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
 
-UInt64 getOrderingKey(
-    const ColumnExponentialTimeDecaying & column, size_t row)
-{
-    const auto & tuple = column.getStorageTuple();
-    const Float64 value
-        = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row];
-    const Float64 time
-        = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row];
-    return getExponentialTimeDecayingOrderingKey(
-        value, time, column.getDecayLength());
-}
-
 constexpr UInt8 LOGICAL_KEY_NEGATIVE = 0;
 constexpr UInt8 LOGICAL_KEY_ZERO = 1;
 constexpr UInt8 LOGICAL_KEY_POSITIVE = 2;
@@ -198,9 +186,9 @@ UInt32 logicalKeyWeakHash(
     const ColumnExponentialTimeDecaying & column, size_t row)
 {
     const auto key = getLogicalKey(column, row);
-    UInt32 hash = intHashCRC32(
-        static_cast<UInt64>(key.domain), WEAK_HASH32_INITIAL_VALUE);
-    return intHashCRC32(key.sortable_unit_timestamp, hash);
+    UInt32 hash = static_cast<UInt32>(intHashCRC32(
+        static_cast<UInt64>(key.domain), WEAK_HASH32_INITIAL_VALUE));
+    return static_cast<UInt32>(intHashCRC32(key.sortable_unit_timestamp, hash));
 }
 
 }
