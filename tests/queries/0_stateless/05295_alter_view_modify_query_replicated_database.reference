@@ -1,0 +1,4 @@
+top level ACCESS_DENIED
+subquery  ACCESS_DENIED
+own table accepted
+rows, leaked 1	0

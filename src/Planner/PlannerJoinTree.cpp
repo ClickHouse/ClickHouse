@@ -385,19 +385,72 @@ bool astContainsSubquery(const ASTPtr & ast)
     return false;
 }
 
+/** Collect, for every table expression the tree reads from, the names of the columns it references.
+  * A subquery is not planned in `only_analyze` mode, so its tables have no `TableExpressionData` to read the
+  * selected columns from; the resolved query tree is the only place those names still exist.
+  */
+std::unordered_map<const IQueryTreeNode *, NameSet> collectReferencedColumnsPerTableExpression(const QueryTreeNodePtr & tree)
+{
+    std::unordered_map<const IQueryTreeNode *, NameSet> result;
+
+    QueryTreeNodes nodes_to_process;
+    nodes_to_process.push_back(tree);
+    while (!nodes_to_process.empty())
+    {
+        auto node_to_process = std::move(nodes_to_process.back());
+        nodes_to_process.pop_back();
+
+        if (const auto * column_node = node_to_process->as<ColumnNode>())
+        {
+            /// `getColumnSourceOrNull` keeps the sourceless `__grouping_set` column from throwing here.
+            auto column_source = column_node->getColumnSourceOrNull();
+            if (column_source && (column_source->as<TableNode>() || column_source->as<TableFunctionNode>()))
+                result[column_source.get()].insert(column_node->getColumnName());
+
+            /// A grant on an `ALIAS` column is enough to read it, as at the top level, so its expression is not walked.
+            if (column_node->hasExpression() && column_source && column_source->as<TableNode>())
+                continue;
+        }
+
+        for (const auto & child : node_to_process->getChildren())
+            if (child)
+                nodes_to_process.push_back(child);
+    }
+
+    return result;
+}
+
 /// Check access rights for all tables referenced in a subquery
 void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const ContextPtr & query_context)
 {
-    auto table_nodes = extractAllTableReferences(subquery_node);
-    for (const auto & table_node_ptr : table_nodes)
-    {
-        const auto & table_node = table_node_ptr->as<TableNode &>();
-        if (typeid_cast<const StorageDummy *>(table_node.getStorage().get()))
-            continue;
+    auto referenced_columns = collectReferencedColumnsPerTableExpression(subquery_node);
 
-        const auto & storage_id = table_node.getStorageID();
-        if (storage_id.hasDatabase())
-            query_context->checkAccess(AccessType::SELECT, storage_id);
+    /** Check the columns the subquery names, so a column grant authorizes the same read at any nesting
+      * depth, matching the column-aware check the join tree applies to a top-level table.
+      * An empty list means no column of this table is read (`SELECT count()`), which `checkAccessRights`
+      * resolves with the same "at least one readable column" rule the join tree uses.
+      */
+    auto check = [&](const IQueryTreeNode * node, const StoragePtr & storage, const StorageID & storage_id, const StorageSnapshotPtr & snapshot)
+    {
+        if (typeid_cast<const StorageDummy *>(storage.get()) || !storage_id.hasDatabase())
+            return;
+
+        Names column_names;
+        if (auto it = referenced_columns.find(node); it != referenced_columns.end())
+            column_names.assign(it->second.begin(), it->second.end());
+
+        checkAccessRights(storage, storage_id, snapshot, column_names, query_context);
+    };
+
+    auto table_expressions = extractTableExpressions(
+        std::static_pointer_cast<ITableExpressionNode>(subquery_node), /*add_array_join=*/ false, /*recursive=*/ true);
+    for (const auto & table_expression : table_expressions)
+    {
+        if (const auto * table_node = table_expression->as<TableNode>())
+            check(table_node, table_node->getStorage(), table_node->getStorageID(), table_node->getStorageSnapshot());
+        /// A parameterized view is checked like the view it wraps, as at the top level: no `ITableFunction::execute` runs for it.
+        else if (const auto * function_node = table_expression->as<TableFunctionNode>(); function_node && function_node->isParameterizedView())
+            check(function_node, function_node->getStorage(), function_node->getStorageID(), function_node->getStorageSnapshot());
     }
 }
 

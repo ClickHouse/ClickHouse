@@ -28,6 +28,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
@@ -492,6 +493,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             visitor.substituteDatabaseInTableFunctions(*alter.command_list);
         }
 
+        /// The hosts run the entry without the user, unless `distributed_ddl_use_initial_user_and_roles` is on,
+        /// so the new body is authorized here.
+        if (modify_query)
+            checkAccessForModifyQuery(table, table_id);
+
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
         params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
@@ -528,6 +534,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
+        /// Every replica, this one included, applies the entry without the user.
+        if (modify_query)
+            checkAccessForModifyQuery(table, table_id);
+
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = is_mutation}, std::move(guard));
@@ -679,6 +689,33 @@ InterpreterAlterQuery::RowExistsColumnKind InterpreterAlterQuery::getRowExistsCo
     return metadata_snapshot->isVirtualColumn(RowExistsColumn::name)
         ? RowExistsColumnKind::LightweightDeleteMarker
         : RowExistsColumnKind::Regular;
+}
+
+void InterpreterAlterQuery::checkAccessForModifyQuery(const StoragePtr & table, const StorageID & table_id) const
+{
+    const auto & alter = query_ptr->as<ASTAlterQuery &>();
+    if (!table)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} does not exist",
+            backQuoteIfNeed(alter.getDatabase()), backQuoteIfNeed(alter.getTable()));
+
+    /// The view's database is current, as in `StorageMaterializedView::alter` and on the replicas.
+    auto context = Context::createCopy(getContext());
+    context->setCurrentDatabase(table_id.getDatabaseName());
+
+    const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+    auto metadata = *metadata_snapshot;
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command_ast = child->as<ASTAlterCommand &>();
+        if (command_ast.type != ASTAlterCommand::MODIFY_QUERY)
+            continue;
+
+        /// The body is prepared as `executeToTable` prepares it for the local path.
+        auto command = AlterCommand::parse(&command_ast).value();
+        ApplyWithSubqueryVisitor::visit(command.select->as<ASTSelectWithUnionQuery &>());
+        AddDefaultDatabaseVisitor(context, table_id.getDatabaseName()).visit(command.select);
+        command.apply(metadata, context);
+    }
 }
 
 AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr & storage) const
