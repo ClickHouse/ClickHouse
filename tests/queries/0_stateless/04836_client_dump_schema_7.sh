@@ -205,6 +205,7 @@ SET allow_fuzz_query_functions = 1, allow_deprecated_error_prone_window_function
 CREATE MATERIALIZED VIEW ${DB}.mv_fuzz ENGINE = Memory AS SELECT fuzzQuery(s) AS q FROM ${DB}.mt;
 CREATE MATERIALIZED VIEW ${DB}.mv_cast ENGINE = Memory AS SELECT CAST(x, 'LowCardinality(Int64)') AS l FROM ${DB}.mt;
 CREATE MATERIALIZED VIEW ${DB}.mv_nullable_tuple ENGINE = Memory AS SELECT isNull(CAST(NULL, 'Nullable(Tuple(a UInt8))')) AS t FROM ${DB}.mt;
+CREATE MATERIALIZED VIEW ${DB}.mv_correlated ENGINE = Memory AS SELECT x FROM ${DB}.mt WHERE EXISTS (SELECT 1 FROM ${DB}.mt AS i WHERE i.x = mt.x);
 CREATE MATERIALIZED VIEW ${DB}.mv_neighbor ENGINE = Memory AS SELECT neighbor(x, 1) AS n FROM ${DB}.mt;
 CREATE MATERIALIZED VIEW ${DB}.mv_multi ENGINE = Memory AS SELECT multiMatchAny(s, ['a']) AS m FROM ${DB}.mt;
 "
@@ -213,6 +214,7 @@ echo "neighbor materialized view, error-prone-window gate emitted: $(grep -c '^S
 echo "multiMatchAny materialized view, hyperscan gate emitted: $(grep -c '^SET allow_hyperscan = 1;' "$DUMP_FILE")"
 echo "CAST materialized view, low-cardinality gate emitted: $(grep -c '^SET allow_suspicious_low_cardinality_types = 1;' "$DUMP_FILE")"
 echo "Nullable(Tuple) CAST materialized view, nullable-tuple gate emitted: $(grep -c '^SET enable_nullable_tuple_type = 1;' "$DUMP_FILE")"
+echo "correlated subquery materialized view, correlated-subquery gate emitted: $(grep -cE '^SET (allow_experimental_correlated_subqueries|allow_correlated_subqueries) = 1;' "$DUMP_FILE")"
 replay_local 'function materialized views' '%'
 # A plain view keeps its columns, so replay never analyzes its SELECT.
 make_dump "

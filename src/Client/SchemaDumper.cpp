@@ -2353,9 +2353,7 @@ struct ReplayGateNeeds
     bool analyzer_order_by = false; /// an ORDER BY or window ORDER BY in analyzed text
     bool analyzer_subquery = false; /// a subquery in analyzed text, which may be correlated
     bool ordinary_database = false;
-    bool replicated_database = false;
     bool materialized_postgresql_database = false;
-    bool materialized_mysql_database = false;
     bool materialized_postgresql_table = false;
     bool time_series_table = false;
     bool kafka_keeper_offsets = false;
@@ -2691,7 +2689,44 @@ bool ttlMayNeedSuspiciousGate(const IAST & expression, const std::set<String> & 
     return suspicious || !reads_column;
 }
 
-ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_queries, const ContextPtr & context)
+/// Runs a SELECT through the source server's analyzer under setting changes, and says whether it analyzes.
+using AnalyzesOnSource = std::function<bool(const String & select_query, const SettingsChanges & changes)>;
+
+bool tableFunctionHasStaticStructure(const ASTFunction & function, const ContextPtr & context);
+
+/// Whether a SELECT analyzes the same on the source server as at replay: every table function in it is a local generator,
+/// reads a literal structure, or names its database.
+bool analyzesOnlyLocally(const IAST & select, const ContextPtr & context)
+{
+    static const std::set<std::string_view> generators = {"numbers", "numbers_mt", "zeros", "zeros_mt", "values", "generateRandom",
+        "generateSeries", "generate_series", "primes", "null"};
+    bool local = true;
+    forEachNode(select, [&](const IAST & node)
+    {
+        const auto * table_expression = node.as<ASTTableExpression>();
+        const auto * function = table_expression && table_expression->table_function
+            ? table_expression->table_function->as<ASTFunction>() : nullptr;
+        if (!function)
+            return;
+        const auto is = [&](std::string_view name) { return equalsCaseInsensitive(function->name, name); };
+        if (std::ranges::any_of(generators, is) || tableFunctionHasStaticStructure(*function, context))
+            return;
+        /// `merge` and `loop` read local tables; a database-less one would resolve in the dump session's database.
+        const auto & arguments = function->arguments ? function->arguments->children : ASTs{};
+        if (is("merge") && arguments.size() == 2)
+            if (const auto * database = arguments[0]->as<ASTLiteral>();
+                database && database->value.getType() == Field::Types::String && !database->value.safeGet<String>().empty())
+                return;
+        if (is("loop") && arguments.size() == 1)
+            if (const auto * table = arguments[0]->as<ASTIdentifier>(); table && table->compound())
+                return;
+        local = false;
+    });
+    return local;
+}
+
+ReplayGateNeeds collectReplayGateNeeds(
+    const std::vector<String> & create_queries, const ContextPtr & context, const AnalyzesOnSource & analyzes_on_source)
 {
     ReplayGateNeeds needs;
     std::vector<String> codec_gates_to_check = {"allow_suspicious_codecs"};
@@ -2714,8 +2749,8 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
             /// Cannot rule any gate out for a statement that does not parse, so keep them all.
             return {.explicit_uuid = true, .replicated_engine_arguments = true, .materialized_view = true,
                     .parse_failed = true, .analyzer_group_by = true, .analyzer_order_by = true,
-                    .analyzer_subquery = true, .ordinary_database = true, .replicated_database = true,
-                    .materialized_postgresql_database = true, .materialized_mysql_database = true,
+                    .analyzer_subquery = true, .ordinary_database = true,
+                    .materialized_postgresql_database = true,
                     .materialized_postgresql_table = true, .time_series_table = true,
                     .kafka_keeper_offsets = true, .nullable_tuple_type = true, .unique_key = true,
                     .data_lake_catalog_database = true, .ytsaurus_table = true, .paimon_table = true,
@@ -2753,34 +2788,71 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
 
         /// The analyzer-side gates fire only where stored query text is re-analysed at replay: a
         /// view's AS SELECT, or a projection (`ProjectionsDescription` runs `runOnlyResolve` on it).
-        const auto scan_analyzed = [&needs](const IAST & query)
+        struct AnalyzerCarriers
+        {
+            bool group_by = false;
+            bool order_by = false;
+            bool subquery = false;
+        };
+        const auto scan_analyzed = [](const IAST & query)
         {
             /// Each is read for its own clause: GROUP BY or PARTITION BY keys, ORDER BY keys, a correlated subquery.
-            forEachNode(query, [&needs](const IAST & node)
+            AnalyzerCarriers carriers;
+            forEachNode(query, [&carriers](const IAST & node)
             {
                 if (const auto * select = node.as<ASTSelectQuery>())
                 {
-                    needs.analyzer_group_by |= select->groupBy() || select->group_by_all;
-                    needs.analyzer_order_by |= select->orderBy() != nullptr;
+                    carriers.group_by |= select->groupBy() || select->group_by_all;
+                    carriers.order_by |= select->orderBy() != nullptr;
                 }
                 else if (const auto * projection = node.as<ASTProjectionSelectQuery>())
                 {
-                    needs.analyzer_group_by |= projection->groupBy() != nullptr;
-                    needs.analyzer_order_by |= projection->orderBy() != nullptr;
+                    carriers.group_by |= projection->groupBy() != nullptr;
+                    carriers.order_by |= projection->orderBy() != nullptr;
                 }
                 else if (const auto * window = node.as<ASTWindowDefinition>())
                 {
-                    needs.analyzer_group_by |= window->partition_by != nullptr;
-                    needs.analyzer_order_by |= window->order_by != nullptr;
+                    carriers.group_by |= window->partition_by != nullptr;
+                    carriers.order_by |= window->order_by != nullptr;
                 }
                 else if (node.as<ASTSubquery>())
-                    needs.analyzer_subquery = true;
+                    carriers.subquery = true;
             });
+            return carriers;
+        };
+        const auto add_carriers = [&needs](const AnalyzerCarriers & carriers)
+        {
+            needs.analyzer_group_by |= carriers.group_by;
+            needs.analyzer_order_by |= carriers.order_by;
+            needs.analyzer_subquery |= carriers.subquery;
         };
         if (create->select && !plain_view)
-            scan_analyzed(*create->select);
+        {
+            const AnalyzerCarriers carriers = scan_analyzed(*create->select);
+            /// The source server analyzes a materialized view's SELECT the way replay does, so it says which gate the
+            /// clauses really read. A SELECT that may analyze differently there (current database, remote data) is not asked.
+            const bool ask_source = create->is_materialized_view && analyzes_on_source
+                && (carriers.group_by || carriers.order_by || carriers.subquery) && analyzesOnlyLocally(*create->select, context);
+            const String select_query = ask_source ? create->select->formatWithSecretsOneLine() : "";
+            const SettingsChanges all_on = {{"allow_suspicious_types_in_group_by", Field(true)},
+                {"allow_suspicious_types_in_order_by", Field(true)}, {"allow_experimental_correlated_subqueries", Field(true)}};
+            if (ask_source && analyzes_on_source(select_query, all_on))
+            {
+                const auto fails_without = [&](const String & gate)
+                {
+                    SettingsChanges changes = all_on;
+                    changes.setSetting(gate, Field(false));
+                    return !analyzes_on_source(select_query, changes);
+                };
+                needs.analyzer_group_by |= carriers.group_by && fails_without("allow_suspicious_types_in_group_by");
+                needs.analyzer_order_by |= carriers.order_by && fails_without("allow_suspicious_types_in_order_by");
+                needs.analyzer_subquery |= carriers.subquery && fails_without("allow_experimental_correlated_subqueries");
+            }
+            else
+                add_carriers(carriers);
+        }
         if (create->columns_list && create->columns_list->projections)
-            scan_analyzed(*create->columns_list->projections);
+            add_carriers(scan_analyzed(*create->columns_list->projections));
 
         /// `registerStorageMergeTree` re-enters its check only for an engine that kept its arguments.
         if (create->getTable().empty())
@@ -2792,12 +2864,8 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
                 /// CREATE DATABASE: gate on the database engine name.
                 if (equalsCaseInsensitive(engine.name, "Ordinary"))
                     needs.ordinary_database = true;
-                else if (equalsCaseInsensitive(engine.name, "Replicated"))
-                    needs.replicated_database = true;
                 else if (equalsCaseInsensitive(engine.name, "MaterializedPostgreSQL"))
                     needs.materialized_postgresql_database = true;
-                else if (equalsCaseInsensitive(engine.name, "MaterializedMySQL"))
-                    needs.materialized_mysql_database = true;
                 else if (equalsCaseInsensitive(engine.name, "DataLakeCatalog"))
                 {
                     if (auto gates = dataLakeCatalogGates(*create->storage))
@@ -2989,7 +3057,8 @@ String replaySettingsPrelude(
     const std::set<String> & settings_known_to_server,
     const std::vector<String> & create_queries,
     bool materialized_view_may_need_bad_select,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const AnalyzesOnSource & analyzes_on_source)
 {
     /// Nothing to replay means no gate can fire. Reachable whenever every database is predefined
     /// or excluded, which leaves the dump empty.
@@ -3000,9 +3069,7 @@ String replaySettingsPrelude(
     static const std::vector<std::pair<String, String>> dump_specific =
     {
         {"allow_deprecated_database_ordinary", "1"},
-        {"allow_experimental_database_replicated", "1"},
         {"allow_experimental_database_materialized_postgresql", "1"},
-        {"allow_experimental_database_materialized_mysql", "1"},
         {"allow_experimental_materialized_postgresql_table", "1"},
         {"allow_experimental_time_series_table", "1"},
         {"allow_experimental_kafka_offsets_storage_in_keeper", "1"},
@@ -3015,7 +3082,7 @@ String replaySettingsPrelude(
         {"database_replicated_allow_explicit_uuid", "3"},
     };
     /// Emit only dump-specific gates known by the source server and required by these statements.
-    const ReplayGateNeeds needs = collectReplayGateNeeds(create_queries, context);
+    const ReplayGateNeeds needs = collectReplayGateNeeds(create_queries, context, analyzes_on_source);
     auto is_needed = [&needs, materialized_view_may_need_bad_select](const String & name)
     {
         if (name == "database_replicated_allow_explicit_uuid")
@@ -3026,12 +3093,8 @@ String replaySettingsPrelude(
             return needs.materialized_view && (needs.parse_failed || materialized_view_may_need_bad_select);
         if (name == "allow_deprecated_database_ordinary")
             return needs.ordinary_database;
-        if (name == "allow_experimental_database_replicated")
-            return needs.replicated_database;
         if (name == "allow_experimental_database_materialized_postgresql")
             return needs.materialized_postgresql_database;
-        if (name == "allow_experimental_database_materialized_mysql")
-            return needs.materialized_mysql_database;
         if (name == "allow_experimental_materialized_postgresql_table")
             return needs.materialized_postgresql_table;
         if (name == "allow_experimental_time_series_table")
@@ -3130,6 +3193,7 @@ String replaySettingsPrelude(
     for (const auto & [name, value] : dump_specific)
         dump_specific_names.insert(name);
     /// The name the source server knows the gate by: a renamed gate such as `allow_delta_kernel_rs` keeps its old name.
+    /// Only non-obsolete names are known, so an obsolete gate is never emitted, even when a statement does not parse.
     auto server_spelling = [&settings_known_to_server](const String & name) -> std::optional<String>
     {
         if (settings_known_to_server.contains(name))
@@ -3184,8 +3248,12 @@ bool tableFunctionHasStaticStructure(const ASTFunction & function, const Context
 {
     static const std::set<std::string_view> names
         = {"url", "file", "s3", "gcs", "oss", "cosn", "azureBlobStorage", "hdfs", "input", "executable", "hive", "filesystem"};
-    if (!names.contains(function.name) || !function.arguments)
+    /// A stored definition keeps the spelling it was written with, such as `URL(...)`.
+    const bool known = std::ranges::any_of(names, [&](std::string_view name) { return equalsCaseInsensitive(function.name, name); });
+    if (!known || !function.arguments)
         return false;
+    const bool is_url = equalsCaseInsensitive(function.name, "url");
+    const bool is_file = equalsCaseInsensitive(function.name, "file");
     const auto & arguments = function.arguments->children;
     for (const auto & argument : arguments)
     {
@@ -3197,14 +3265,14 @@ bool tableFunctionHasStaticStructure(const ASTFunction & function, const Context
         if (is_auto_literal || (identifier && equalsCaseInsensitive(identifier->name(), "auto")))
             return false;
     }
-    if (function.name == "url" || function.name == "file")
+    if (is_url || is_file)
     {
         const auto * location = arguments.empty() ? nullptr : arguments.front()->as<ASTLiteral>();
         if (!location || location->value.getType() != Field::Types::String)
             return false;
         const String & path = location->value.safeGet<String>();
-        if (function.name == "url" ? !(startsWithCaseInsensitive(path, "http://") || startsWithCaseInsensitive(path, "https://"))
-                                   : path.starts_with('/') || path.contains(".."))
+        if (is_url ? !(startsWithCaseInsensitive(path, "http://") || startsWithCaseInsensitive(path, "https://"))
+                   : path.starts_with('/') || path.contains(".."))
             return false;
     }
     try
@@ -3591,6 +3659,24 @@ void dumpDatabaseSchema(
         connection, timeouts, client_info, "SELECT name FROM system.settings WHERE NOT is_obsolete", context->getSettingsRef());
     std::set<String> settings_known_to_server(server_setting_names.begin(), server_setting_names.end());
 
+    /// `EXPLAIN QUERY TREE` runs the analyzer only, so it reads nothing and creates nothing on the source. The settings go
+    /// in the query text, because `LocalConnection` drops the settings argument.
+    const AnalyzesOnSource analyzes_on_source = [&](const String & select_query, const SettingsChanges & changes)
+    {
+        String query = "EXPLAIN QUERY TREE " + select_query + " SETTINGS ";
+        for (size_t i = 0; i < changes.size(); ++i)
+            query += (i ? ", " : "") + changes[i].name + (changes[i].value.safeGet<bool>() ? " = 1" : " = 0");
+        try
+        {
+            fetchStringColumn(connection, timeouts, client_info, query, context->getSettingsRef());
+            return true;
+        }
+        catch (const Exception &)
+        {
+            return false;
+        }
+    };
+
     std::vector<TableInfo> tables;
     std::vector<size_t> order;
     if (!target_databases.empty())
@@ -3630,7 +3716,8 @@ void dumpDatabaseSchema(
             settings_known_to_server,
             dumped_creates,
             std::any_of(tables.begin(), tables.end(), [](const TableInfo & table) { return table.emit && table.needs_bad_select_gate; }),
-            context);
+            context,
+            analyzes_on_source);
 
         for (const auto & db : target_databases)
             out << create_database_query_by_db.at(db) << ";\n\n";
@@ -3707,7 +3794,8 @@ void dumpDatabaseSchema(
                 tables.begin(),
                 tables.end(),
                 [&](const TableInfo & table) { return table.database == db && table.emit && table.needs_bad_select_gate; }),
-            context);
+            context,
+            analyzes_on_source);
         file << create_database_query_by_db.at(db) << ";\n\nUSE " << backQuoteIfNeed(db) << ";\n\n";
         for (size_t i : order)
             if (tables[i].emit && tables[i].database == db)

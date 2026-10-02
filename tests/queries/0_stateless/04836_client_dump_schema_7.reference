@@ -1,7 +1,7 @@
 --- a healthy materialized view does not get the bad-select gate ---
 healthy views, bad-select gate emitted: 0
 healthy views, GROUP BY and ORDER BY gates emitted: 0
-healthy views, correlated-subquery gate emitted: 1
+healthy views, correlated-subquery gate emitted: 0
 OK: healthy views replayed
 healthy views, replayed objects: 10
 --- a materialized view accepted under a relaxed check gets the gate exactly once ---
@@ -49,8 +49,9 @@ neighbor materialized view, error-prone-window gate emitted: 1
 multiMatchAny materialized view, hyperscan gate emitted: 1
 CAST materialized view, low-cardinality gate emitted: 1
 Nullable(Tuple) CAST materialized view, nullable-tuple gate emitted: 1
+correlated subquery materialized view, correlated-subquery gate emitted: 1
 OK: function materialized views replayed
-function materialized views, replayed objects: 6
+function materialized views, replayed objects: 7
 plain views, function gates emitted: 0
 plain views, analyzer gates emitted: 0
 OK: plain views replayed

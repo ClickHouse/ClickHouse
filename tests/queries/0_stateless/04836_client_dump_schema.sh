@@ -686,6 +686,7 @@ $CLICKHOUSE_CLIENT --database_replicated_allow_replicated_engine_arguments=3 -q 
 $CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 --dump-schema="${REPLICATED_ARGS_DB}" > "$REPL_DUMP_FILE" 2>"$ERR_FILE"
 echo "replicated engine arguments gate at 3 when the dump keeps the arguments: $(grep -c '^SET database_replicated_allow_replicated_engine_arguments = 3;$' "$REPL_DUMP_FILE")"
 echo "explicit uuid gate at 3 when dumped with uuids: $(grep -c '^SET database_replicated_allow_explicit_uuid = 3;$' "$REPL_DUMP_FILE")"
+echo "Replicated database dump, obsolete database gate emitted: $(grep -c '^SET allow_experimental_database_replicated' "$REPL_DUMP_FILE")"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${REPLICATED_ARGS_DB} SYNC" > /dev/null
 rm -f "$REPL_DUMP_FILE"
 

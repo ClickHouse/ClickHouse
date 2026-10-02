@@ -148,3 +148,4 @@ Atomic engine arguments next to a Replicated database, engine-arguments gate emi
 replicated engine arguments gate at 3 when only a materialized view keeps them: 1
 replicated engine arguments gate at 3 when the dump keeps the arguments: 1
 explicit uuid gate at 3 when dumped with uuids: 1
+Replicated database dump, obsolete database gate emitted: 0
