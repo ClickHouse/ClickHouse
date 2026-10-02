@@ -241,6 +241,7 @@
             "zh/concepts/features/interfaces/sql-console",
             "zh/concepts/features/interfaces/web-ui-color-coding",
             "zh/concepts/features/interfaces/web-ui-pinned-columns",
+            "zh/concepts/features/interfaces/web-ui-notebook",
             "zh/concepts/features/interfaces/web-ui-result-shaping",
             "zh/concepts/features/interfaces/web-terminal",
             {

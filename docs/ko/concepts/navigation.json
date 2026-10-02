@@ -241,10 +241,11 @@
             "ko/concepts/features/interfaces/sql-console",
             "ko/concepts/features/interfaces/web-ui-color-coding",
             "ko/concepts/features/interfaces/web-ui-pinned-columns",
+            "ko/concepts/features/interfaces/web-ui-notebook",
             "ko/concepts/features/interfaces/web-ui-result-shaping",
             "ko/concepts/features/interfaces/web-terminal",
             {
-              "group": "타사 클라이언트",
+              "group": "서드파티 클라이언트",
               "pages": [
                 "ko/concepts/features/interfaces/third-party/index"
               ]

@@ -4,47 +4,47 @@
   "entries": [
     {
       "fileId": "b7b4169fa5b2e02aa17d40553a73c5d9520086753c501eeb926c63b162bb6d9e",
-      "versionId": "0159cfbe2412a4134abfc3f618b242443b59fcae1b8eb175ddece07d29641579",
+      "versionId": "c807d94da2ee4f8e793fcb38246cc1620a6229874ae3eb80f6075390c12aede6",
       "translations": {
-        "zh": {
-          "updatedAt": "2026-10-02T22:43:51.196Z",
-          "fileName": "docs.json",
-          "postProcessHash": "03542c8ba93745ddf44be110926137b0c76a583de15fe46bb71aaa79f2754439"
-        },
-        "fr": {
-          "updatedAt": "2026-10-02T22:43:51.620Z",
-          "fileName": "docs.json",
-          "postProcessHash": "03542c8ba93745ddf44be110926137b0c76a583de15fe46bb71aaa79f2754439"
-        },
         "ar": {
-          "updatedAt": "2026-10-02T22:43:51.402Z",
+          "updatedAt": "2026-10-02T23:45:30.865Z",
           "fileName": "docs.json",
-          "postProcessHash": "03542c8ba93745ddf44be110926137b0c76a583de15fe46bb71aaa79f2754439"
+          "postProcessHash": "24ec8ace047a89e834a0c8c619f5215f8ec75373ac7458c0401934362bf3e27d"
+        },
+        "zh": {
+          "updatedAt": "2026-10-02T23:45:31.068Z",
+          "fileName": "docs.json",
+          "postProcessHash": "24ec8ace047a89e834a0c8c619f5215f8ec75373ac7458c0401934362bf3e27d"
         },
         "es": {
-          "updatedAt": "2026-10-02T22:43:50.142Z",
+          "updatedAt": "2026-10-02T23:45:31.264Z",
           "fileName": "docs.json",
-          "postProcessHash": "03542c8ba93745ddf44be110926137b0c76a583de15fe46bb71aaa79f2754439"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-10-02T22:43:50.764Z",
-          "fileName": "docs.json",
-          "postProcessHash": "03542c8ba93745ddf44be110926137b0c76a583de15fe46bb71aaa79f2754439"
-        },
-        "ko": {
-          "updatedAt": "2026-10-02T22:43:50.554Z",
-          "fileName": "docs.json",
-          "postProcessHash": "03542c8ba93745ddf44be110926137b0c76a583de15fe46bb71aaa79f2754439"
-        },
-        "ru": {
-          "updatedAt": "2026-10-02T22:43:50.989Z",
-          "fileName": "docs.json",
-          "postProcessHash": "03542c8ba93745ddf44be110926137b0c76a583de15fe46bb71aaa79f2754439"
+          "postProcessHash": "24ec8ace047a89e834a0c8c619f5215f8ec75373ac7458c0401934362bf3e27d"
         },
         "ja": {
-          "updatedAt": "2026-10-02T22:43:50.346Z",
+          "updatedAt": "2026-10-02T23:45:31.454Z",
           "fileName": "docs.json",
-          "postProcessHash": "03542c8ba93745ddf44be110926137b0c76a583de15fe46bb71aaa79f2754439"
+          "postProcessHash": "24ec8ace047a89e834a0c8c619f5215f8ec75373ac7458c0401934362bf3e27d"
+        },
+        "ru": {
+          "updatedAt": "2026-10-02T23:45:31.647Z",
+          "fileName": "docs.json",
+          "postProcessHash": "24ec8ace047a89e834a0c8c619f5215f8ec75373ac7458c0401934362bf3e27d"
+        },
+        "fr": {
+          "updatedAt": "2026-10-02T23:45:31.831Z",
+          "fileName": "docs.json",
+          "postProcessHash": "24ec8ace047a89e834a0c8c619f5215f8ec75373ac7458c0401934362bf3e27d"
+        },
+        "ko": {
+          "updatedAt": "2026-10-02T23:45:32.047Z",
+          "fileName": "docs.json",
+          "postProcessHash": "24ec8ace047a89e834a0c8c619f5215f8ec75373ac7458c0401934362bf3e27d"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-02T23:45:32.251Z",
+          "fileName": "docs.json",
+          "postProcessHash": "24ec8ace047a89e834a0c8c619f5215f8ec75373ac7458c0401934362bf3e27d"
         }
       },
       "fileName": "docs.json"
@@ -107027,147 +107027,144 @@
     },
     {
       "fileId": "808b27981796ff573f7ce56499c6ba64d29936e2235e2311fe8c00ea812eb354",
-      "versionId": "c5e86fd56ca41539b96c7a0ba7164d8f6e99d5c5ab184505a35fa42304ce1729",
+      "versionId": "a8af2b2e1f6cfde760215da89b69ed3209d67b6980f71cb4159a9bb62d61ca08",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.389Z",
-          "fileName": "es/concepts/features/interfaces/web-sql.mdx",
-          "postProcessHash": "40a149d59ea199f24ea98e3e7f56938f7b4cb0c28526180e2ed2e45eaa39d6ff"
+        "fr": {
+          "updatedAt": "2026-10-02T23:45:32.253Z",
+          "fileName": "fr/concepts/features/interfaces/web-sql.mdx",
+          "postProcessHash": "280352893408bf07711b8ffef48be17f0a8b1792f5b13d692f1888820fbd1584"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:06.389Z",
+          "updatedAt": "2026-10-02T23:45:32.253Z",
           "fileName": "ja/concepts/features/interfaces/web-sql.mdx",
-          "postProcessHash": "2e4de8e3ed5dbd7c5da177e14fc564c8a5e4f3be64134b6340be799cd127e9fc"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.389Z",
-          "fileName": "ko/concepts/features/interfaces/web-sql.mdx",
-          "postProcessHash": "db29cd8903a746261bbaa69a18e50518a3f8be6f6fcdda2b0a1328dc76784a4c"
+          "postProcessHash": "2f562c95c1f15593d6d6921e5b080b844da8b7d8fc9a9ccc4ce051cb50ff63d3"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.389Z",
+          "updatedAt": "2026-10-02T23:45:32.254Z",
           "fileName": "pt-BR/concepts/features/interfaces/web-sql.mdx",
-          "postProcessHash": "ec477972f3d5d3179c556405132f47a82d53c3d5949e6db2c963dc6121d0ad33"
+          "postProcessHash": "70b1e2ffe875ff8f6d9cf962e93e75c9d95f3d457b54c94fc1e28bb61fc684c8"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:06.389Z",
+          "updatedAt": "2026-10-02T23:45:32.255Z",
           "fileName": "ru/concepts/features/interfaces/web-sql.mdx",
-          "postProcessHash": "10d844c6ab325d2cf829b0d4b8925e202855b9fb4dc138a8a1a3622b30d06ef7"
+          "postProcessHash": "3f914e08d19ad090082414db8a97b826bc153d559cecf512e45f03ba2cc255fc"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:06.389Z",
+          "updatedAt": "2026-10-02T23:45:32.256Z",
           "fileName": "zh/concepts/features/interfaces/web-sql.mdx",
-          "postProcessHash": "c23351a42331f8932d1523c73b263be88b4a212a5467fb595561adbeac99256b"
+          "postProcessHash": "9fe794046cb0780b0e005aaf78815eec02ca676f14acb6432c15388a9ba18bfc"
+        },
+        "ko": {
+          "updatedAt": "2026-10-02T23:45:32.257Z",
+          "fileName": "ko/concepts/features/interfaces/web-sql.mdx",
+          "postProcessHash": "d2f4e90e4874e0cf09ac4debc444b05bdd7f82f20d7a828e7fb18e04dcefb555"
+        },
+        "es": {
+          "updatedAt": "2026-10-02T23:45:32.258Z",
+          "fileName": "es/concepts/features/interfaces/web-sql.mdx",
+          "postProcessHash": "20acdb41b96360385895c94c0dda908638227d50558897222d4c3bd46e953fa4"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:06.389Z",
+          "updatedAt": "2026-10-02T23:45:32.259Z",
           "fileName": "ar/concepts/features/interfaces/web-sql.mdx",
-          "postProcessHash": "2854fc0c851e4cb0d35e1b72a0e551ec8727cc41880b3e501acfb67c3a73a552"
-        },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:06.389Z",
-          "fileName": "fr/concepts/features/interfaces/web-sql.mdx",
-          "postProcessHash": "e29caa34bdbfb5d32f56bfee56960b650f35e554778e58f17deb8726bc34a038"
+          "postProcessHash": "5f399c5a79b219ff6a8c27b10a89ca503486cd7033b199aed0ce709d1e980bc8"
         }
       },
-      "fileName": "concepts/features/interfaces/web-sql.mdx",
-      "staged": false
+      "fileName": "concepts/features/interfaces/web-sql.mdx"
     },
     {
       "fileId": "4246bab26bec4384bf00e3f2b5c0f0397a4b68f0bed4e5d18bf79096d8f07c57",
-      "versionId": "8baba4bc081447b01958857681e086b4cc2bd8bf21710a9bdbbaef8beb65f8c6",
+      "versionId": "f03bc2eb1f9687bef4c75541b3d00a6881af0cd7eb986a65f5fb192452b1bdbe",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.390Z",
-          "fileName": "es/concepts/features/interfaces/web-ui-color-coding.mdx",
-          "postProcessHash": "e62238e9aab64e4c25c031c628383118fefecf7d4c17f4ac48730fcf9b944651"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.390Z",
-          "fileName": "ja/concepts/features/interfaces/web-ui-color-coding.mdx",
-          "postProcessHash": "dd5b94618a0382cd4ef57825af669641cfbba84ee771eb197032bded4ecd387c"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.390Z",
-          "fileName": "ko/concepts/features/interfaces/web-ui-color-coding.mdx",
-          "postProcessHash": "676ebc1bfd9f779e753f7dabf0d4fc53e0051fbdcb708281451b36508716d28a"
-        },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.391Z",
+          "updatedAt": "2026-10-02T23:45:31.648Z",
           "fileName": "pt-BR/concepts/features/interfaces/web-ui-color-coding.mdx",
-          "postProcessHash": "71f8946081ab3ff011b3c5bad11d7699ab1319eded41fc574cb2cc23294dc3f0"
+          "postProcessHash": "49736cb5b5b61d9fd1e2399e368f181446e8d1a535f77854b7d9745ff68f6e53"
         },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.391Z",
-          "fileName": "ru/concepts/features/interfaces/web-ui-color-coding.mdx",
-          "postProcessHash": "2db0692386d3a5700465e4f17ea7e2ae1cbcde4c34c0bb23af8b17d87b91db08"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.391Z",
-          "fileName": "zh/concepts/features/interfaces/web-ui-color-coding.mdx",
-          "postProcessHash": "35694c758d706f164b4fe5c94062d509136fc7ce6933d8c6c500aea1efa6cd53"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.391Z",
-          "fileName": "ar/concepts/features/interfaces/web-ui-color-coding.mdx",
-          "postProcessHash": "9853bc10c0019cb39784662602044cfe63e9a4a27240015f4ad3755fa829612f"
+        "es": {
+          "updatedAt": "2026-10-02T23:45:32.252Z",
+          "fileName": "es/concepts/features/interfaces/web-ui-color-coding.mdx",
+          "postProcessHash": "9f980a0989d9bfcd17e1091d17fc5fbe4e44c466409b85cc0c9dced4aaf41f2f"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.391Z",
+          "updatedAt": "2026-10-02T23:45:32.254Z",
           "fileName": "fr/concepts/features/interfaces/web-ui-color-coding.mdx",
-          "postProcessHash": "9fb57f4465f9f7739d5085697572016a0220e708bcd8fb36bfd6553fb722a553"
+          "postProcessHash": "127c9fe230fbf4da48d2f69ff2a762ee9a7f7d6f9015408982be026659271203"
+        },
+        "ru": {
+          "updatedAt": "2026-10-02T23:45:32.256Z",
+          "fileName": "ru/concepts/features/interfaces/web-ui-color-coding.mdx",
+          "postProcessHash": "91480cdb3bf5f53c62b446a8ae411cf4aad71c3f9f966fb636abec010d7e623c"
+        },
+        "ja": {
+          "updatedAt": "2026-10-02T23:45:32.256Z",
+          "fileName": "ja/concepts/features/interfaces/web-ui-color-coding.mdx",
+          "postProcessHash": "2ea1790f74e9ccd07ff4b465f10c7050a8dc7d436f08131624e495fa057e2c38"
+        },
+        "ar": {
+          "updatedAt": "2026-10-02T23:45:32.257Z",
+          "fileName": "ar/concepts/features/interfaces/web-ui-color-coding.mdx",
+          "postProcessHash": "e2916d9ad56d38c9a7b74e41ab091ddbcbe1b18978fc5829906bad1ebb327460"
+        },
+        "zh": {
+          "updatedAt": "2026-10-02T23:45:32.258Z",
+          "fileName": "zh/concepts/features/interfaces/web-ui-color-coding.mdx",
+          "postProcessHash": "d06ce843c206d4137d03169bc35c4a3008ab353d58575303ad39ff7f0da5baec"
+        },
+        "ko": {
+          "updatedAt": "2026-10-02T23:45:32.262Z",
+          "fileName": "ko/concepts/features/interfaces/web-ui-color-coding.mdx",
+          "postProcessHash": "30a183f003287f9b15b2bd783ed6258d3ab6b83c5da7366374972fac89b7af2e"
         }
       },
-      "fileName": "concepts/features/interfaces/web-ui-color-coding.mdx",
-      "staged": false
+      "fileName": "concepts/features/interfaces/web-ui-color-coding.mdx"
     },
     {
       "fileId": "6617c427c17d323bb95e365f3b2924f01de79a909aac31948e6ba977e9cd9ff4",
-      "versionId": "579690a142b46fe8848fa1ef008240ddd74fa20a39f29a4eeac7ab30d77cd9be",
+      "versionId": "11f73b8a2444ab8412cab2f63a3342b1252083d1be15ed0a9a2d84f41eae8703",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.391Z",
-          "fileName": "es/concepts/features/interfaces/web-ui-pinned-columns.mdx",
-          "postProcessHash": "2118c877b27c88cc824bb6c78cbcb6f22b0d66e54efaaf7d8924b1486b6e964f"
+        "ru": {
+          "updatedAt": "2026-10-02T23:45:32.255Z",
+          "fileName": "ru/concepts/features/interfaces/web-ui-pinned-columns.mdx",
+          "postProcessHash": "ecb84ba58ee19ff541f2f7454dcb97c31b37ca9611c9d37555637ed98b2a5e50"
         },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.391Z",
-          "fileName": "ja/concepts/features/interfaces/web-ui-pinned-columns.mdx",
-          "postProcessHash": "8c0d88e3d9a799a450a9b78d1717927c1452693084498c98a6013319450ed564"
+        "es": {
+          "updatedAt": "2026-10-02T23:45:32.257Z",
+          "fileName": "es/concepts/features/interfaces/web-ui-pinned-columns.mdx",
+          "postProcessHash": "7c802e63996b04f0802109da7763d017f4558dbffe7f379d79a101c955cb0272"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:06.391Z",
+          "updatedAt": "2026-10-02T23:45:32.258Z",
           "fileName": "ko/concepts/features/interfaces/web-ui-pinned-columns.mdx",
-          "postProcessHash": "72a3e5c59571065f01fb0330a932547f40bb8a5b3acc1e40c9a8b3478e87cc5c"
+          "postProcessHash": "0880d6de594c385b122fe8ef2e624301b62d7dd7c7c9ea75d0b97fe5265094d8"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.392Z",
+          "updatedAt": "2026-10-02T23:45:32.259Z",
           "fileName": "pt-BR/concepts/features/interfaces/web-ui-pinned-columns.mdx",
-          "postProcessHash": "7cfa47c0e6e17646fc6f3417e4f19d7230b4f02ee61020ee81ed3d1a23b4daec"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.392Z",
-          "fileName": "ru/concepts/features/interfaces/web-ui-pinned-columns.mdx",
-          "postProcessHash": "cc783c18eba78ae0d51fd687a139ed1c058717c0f8be3398577319098c035f4a"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.392Z",
-          "fileName": "zh/concepts/features/interfaces/web-ui-pinned-columns.mdx",
-          "postProcessHash": "fef165bf9a8057c546210a48153df8e1212be0988181d48e3cdc78251554d6ec"
+          "postProcessHash": "99ffba15186df8912eec09fb4c98ffae62b3236d0f3c9eb540e7dca5725468fd"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:06.392Z",
+          "updatedAt": "2026-10-02T23:45:32.260Z",
           "fileName": "ar/concepts/features/interfaces/web-ui-pinned-columns.mdx",
-          "postProcessHash": "e65f61351fb09c18e2ddaa26fed2367ba9cee6884bd8ae058c3b32de3a35ba6f"
+          "postProcessHash": "cde2827379e72203f210ad094f702c1246da873c847ac24adbbbff261f21aec6"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.392Z",
+          "updatedAt": "2026-10-02T23:45:32.261Z",
           "fileName": "fr/concepts/features/interfaces/web-ui-pinned-columns.mdx",
-          "postProcessHash": "0aecee5a7c0f5512fc5e97d33bf2229332611979d2085bbf6c2582f889b932b9"
+          "postProcessHash": "ce0759bc29f243d7f706d4eeaa68d2429370e8035c2acbd421b0b4d4245a7c0c"
+        },
+        "zh": {
+          "updatedAt": "2026-10-02T23:45:32.262Z",
+          "fileName": "zh/concepts/features/interfaces/web-ui-pinned-columns.mdx",
+          "postProcessHash": "ff02b47e5a77053751e145b8a57256441286d6566419f1871aa4ca133fb0353f"
+        },
+        "ja": {
+          "updatedAt": "2026-10-02T23:45:32.263Z",
+          "fileName": "ja/concepts/features/interfaces/web-ui-pinned-columns.mdx",
+          "postProcessHash": "abd57b1bad815c44636ec059930b949663c5904e46c67b92f7cc76d7377b022d"
         }
       },
-      "fileName": "concepts/features/interfaces/web-ui-pinned-columns.mdx",
-      "staged": false
+      "fileName": "concepts/features/interfaces/web-ui-pinned-columns.mdx"
     },
     {
       "fileId": "ee40f598f5ced6e7aadb626fc5286134b0a8d46d0ecbbe161acc236dd47fdb6b",
@@ -135451,47 +135448,47 @@
     },
     {
       "fileId": "f5a40f316d7f32dc8a6cd45e6e28af0db21a41c01886130ff4b457763d95042e",
-      "versionId": "4fe9add9fa693beaa0afb986b09528658b3dc243b5fe58b291df943ee6ef9c74",
+      "versionId": "c336f15eb815cbd8eeb9303b5da458cdb43283f35b078181df81e573806085fa",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-26T08:10:26.839Z",
-          "fileName": "es/concepts/features/interfaces/web-ui-result-shaping.mdx",
-          "postProcessHash": "7d39da3df2bc4d930c21cf6215557c8148b41d6e7c0bc7c3bb1df1af91564aae"
-        },
-        "ja": {
-          "updatedAt": "2026-08-26T08:10:26.840Z",
-          "fileName": "ja/concepts/features/interfaces/web-ui-result-shaping.mdx",
-          "postProcessHash": "c06416e5a10ca0980ca7a10da64083a828e1356a30b8ad03b4e1d848ee7dd4be"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T08:10:26.841Z",
-          "fileName": "ko/concepts/features/interfaces/web-ui-result-shaping.mdx",
-          "postProcessHash": "a06ee99f54964859e5122486f136996844be9a534bb788697307648efc377eb6"
+        "fr": {
+          "updatedAt": "2026-10-02T23:45:32.259Z",
+          "fileName": "fr/concepts/features/interfaces/web-ui-result-shaping.mdx",
+          "postProcessHash": "90a662666df207a3f4609a9cfaf53a69be0dd45595280ad38bc7a74f87204526"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:26.842Z",
+          "updatedAt": "2026-10-02T23:45:32.260Z",
           "fileName": "pt-BR/concepts/features/interfaces/web-ui-result-shaping.mdx",
-          "postProcessHash": "0bddf22fbcabc85b921bd4401001bbf45036d7537f156ef73fd8fe4aa9a3b22a"
-        },
-        "ru": {
-          "updatedAt": "2026-08-26T08:10:26.843Z",
-          "fileName": "ru/concepts/features/interfaces/web-ui-result-shaping.mdx",
-          "postProcessHash": "1ab3220eac7e4862c55c65b781b2589a6ba3eca8a57ec79a6fb9947d53dfe2eb"
+          "postProcessHash": "eb576e87ad0ac6c3e6c62a6dc64a3927d8b17067664842760fc668b2ea9772df"
         },
         "zh": {
-          "updatedAt": "2026-08-26T08:10:26.843Z",
+          "updatedAt": "2026-10-02T23:45:32.261Z",
           "fileName": "zh/concepts/features/interfaces/web-ui-result-shaping.mdx",
-          "postProcessHash": "5cb7ceec4ea72b2c15fdc52f5fc6c08079e294ce05b24111cacdf7c6da037f81"
+          "postProcessHash": "b5d0dcbcca8c025eda174f8c717273f7bd8cbed6bb2e3d7c99d04f8cdf64ba25"
+        },
+        "ru": {
+          "updatedAt": "2026-10-02T23:45:32.262Z",
+          "fileName": "ru/concepts/features/interfaces/web-ui-result-shaping.mdx",
+          "postProcessHash": "3a4785c557ec7572bced784a2891d8c999cfe4f64e038ec0078a5f33f49a7180"
+        },
+        "ja": {
+          "updatedAt": "2026-10-02T23:45:32.263Z",
+          "fileName": "ja/concepts/features/interfaces/web-ui-result-shaping.mdx",
+          "postProcessHash": "33b98022f0e6e670ba9e16da55f8f86cefeb2d03d17c8119e13442f21707c8b9"
+        },
+        "es": {
+          "updatedAt": "2026-10-02T23:45:32.263Z",
+          "fileName": "es/concepts/features/interfaces/web-ui-result-shaping.mdx",
+          "postProcessHash": "9db7f62b5ea47dbc689ed995d66ec0bb4df5ddc2c2a85cf272cfd933dd5b1ccc"
         },
         "ar": {
-          "updatedAt": "2026-08-26T08:10:26.844Z",
+          "updatedAt": "2026-10-02T23:45:32.264Z",
           "fileName": "ar/concepts/features/interfaces/web-ui-result-shaping.mdx",
-          "postProcessHash": "7a3ca850ecb4c18790c1a59074dab97493be9e90b0774e27b199eab60c3f168d"
+          "postProcessHash": "84c4d137aee05cbc149c4d45d7635b768f202131b7a0762c323c090eae912404"
         },
-        "fr": {
-          "updatedAt": "2026-08-26T08:10:26.845Z",
-          "fileName": "fr/concepts/features/interfaces/web-ui-result-shaping.mdx",
-          "postProcessHash": "7e79fee3344f3b2cf732f9bbf45ae6d9a7a20eb18a214ee90f64dcd929ae134a"
+        "ko": {
+          "updatedAt": "2026-10-02T23:45:32.264Z",
+          "fileName": "ko/concepts/features/interfaces/web-ui-result-shaping.mdx",
+          "postProcessHash": "2eb8dc14b99de0bceb6104447094cd7fe436ccfe85db55564cb78200bf3cb108"
         }
       },
       "fileName": "concepts/features/interfaces/web-ui-result-shaping.mdx"
@@ -140430,6 +140427,53 @@
         }
       },
       "fileName": "reference/settings/session-settings/logsql.mdx"
+    },
+    {
+      "fileId": "c2fe9fcdb0d1b3df703807202e97437ef3b7c36503e6a35ae1bc8494b1a40a0f",
+      "versionId": "ef9950ab93343a98ae45ba184b2d86f261ed9d7d39bac068f6a17f05d323421f",
+      "translations": {
+        "pt-BR": {
+          "updatedAt": "2026-10-02T23:45:32.264Z",
+          "fileName": "pt-BR/concepts/features/interfaces/web-ui-notebook.mdx",
+          "postProcessHash": "90df264eb2028b932fb1e3dd4373a732f5aeb6762c3ec97403f90437e24d0ba2"
+        },
+        "ko": {
+          "updatedAt": "2026-10-02T23:45:32.265Z",
+          "fileName": "ko/concepts/features/interfaces/web-ui-notebook.mdx",
+          "postProcessHash": "185738b181839bf6b0a1d9fe7e9dea19f47fca72c3c9414700cbe30fb4a4c4de"
+        },
+        "fr": {
+          "updatedAt": "2026-10-02T23:45:32.265Z",
+          "fileName": "fr/concepts/features/interfaces/web-ui-notebook.mdx",
+          "postProcessHash": "94772ccb8b50ad1fedaf57382126bd9853bec3dbae1c8b33152204e17cc109df"
+        },
+        "ru": {
+          "updatedAt": "2026-10-02T23:45:32.265Z",
+          "fileName": "ru/concepts/features/interfaces/web-ui-notebook.mdx",
+          "postProcessHash": "2cb155b57f7a01449296faff997aa811b5464f6647ad77ce384d93aaee1515b9"
+        },
+        "ja": {
+          "updatedAt": "2026-10-02T23:45:32.266Z",
+          "fileName": "ja/concepts/features/interfaces/web-ui-notebook.mdx",
+          "postProcessHash": "21b324e27ed88e1083a37c059539cacda75fb6ee62931d9fd5f9c1dfc31f0f9f"
+        },
+        "es": {
+          "updatedAt": "2026-10-02T23:45:32.266Z",
+          "fileName": "es/concepts/features/interfaces/web-ui-notebook.mdx",
+          "postProcessHash": "03eb47bdfac691dac3178f234ffd61eb6cd0011298fb657b2aff5a8d37f8af23"
+        },
+        "zh": {
+          "updatedAt": "2026-10-02T23:45:32.266Z",
+          "fileName": "zh/concepts/features/interfaces/web-ui-notebook.mdx",
+          "postProcessHash": "6f03a8d1ba25609f25840d73963bf1ee29a529814bb908e095ce0610d5e5ee1d"
+        },
+        "ar": {
+          "updatedAt": "2026-10-02T23:45:32.267Z",
+          "fileName": "ar/concepts/features/interfaces/web-ui-notebook.mdx",
+          "postProcessHash": "073f540ce2d6064f55a00111f5e0b9067481c8b37c2382262f564250e3b2d6f3"
+        }
+      },
+      "fileName": "concepts/features/interfaces/web-ui-notebook.mdx"
     }
   ]
 }
