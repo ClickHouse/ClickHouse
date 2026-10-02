@@ -1,0 +1,53 @@
+<test>
+    <!-- The shapes these serialized-key changes were first measured on, kept as they were so that a
+         later run stays comparable with the earlier ones: several string keys, 20M rows, 1.3M groups
+         except for the second query, which has 13k. Three of them - 144 and 216 bytes per row without
+         an aggregate function, and 56 bytes - are where the region shows most.
+
+         `group_by_long_serialized_keys_width` walks the row width from 40 to 1024 bytes,
+         `..._mapped` does the same with an aggregate function, and `..._one_thread` with one thread. -->
+
+    <query>
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 64, '0') AS k1, leftPad(toString(number % 13), 64, '0') AS k2 FROM numbers_mt(20000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 1000), 100, '0') AS k1, leftPad(toString(number % 13), 100, '0') AS k2 FROM numbers_mt(20000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 100, '0') AS k1, leftPad(toString(number % 13), 100, '0') AS k2 FROM numbers_mt(20000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT k1, k2, count()
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 300, '0') AS k1, leftPad(toString(number % 13), 300, '0') AS k2 FROM numbers_mt(5000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT k1, k2, count()
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 20, '0') AS k1, leftPad(toString(number % 13), 20, '0') AS k2 FROM numbers_mt(20000000))
+        GROUP BY k1, k2
+        FORMAT Null
+        SETTINGS max_block_size = 1000000
+    </query>
+
+    <query>
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 20, '0') AS k1, leftPad(toString(number % 13), 20, '0') AS k2 FROM numbers_mt(20000000))
+        GROUP BY k1, k2
+        FORMAT Null
+        SETTINGS max_block_size = 1000000
+    </query>
+</test>
