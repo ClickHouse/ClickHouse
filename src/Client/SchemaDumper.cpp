@@ -2952,23 +2952,58 @@ bool fileLikeHasStaticStructure(const ASTFunction & function)
         && !equalsCaseInsensitive(structure->value.safeGet<String>(), "auto");
 }
 
-/// Always analyzes on replay, with columns known from the dump: `numbers`/`zeros` with counts, `generateRandom`/`values`
-/// with literal arguments, a `merge` matching another emitted table, which replay creates before `owner`, and `url`/`file`
-/// with a static structure.
+/// Always analyzes on replay: `numbers`/`zeros` with counts, `generateRandom`/`values` with constant arguments, `url`/`file`
+/// with a static structure, and a `merge` matching another emitted table, which replay creates before `owner`.
 bool tableFunctionAlwaysAnalyzes(
-    const IAST & node, const TableInfo & owner, const std::map<std::pair<String, String>, const TableInfo *> & emitted_tables)
+    const IAST & node, const TableInfo & owner, const std::map<std::pair<String, String>, const TableInfo *> & emitted_tables,
+    const ContextPtr & context)
 {
     const auto * function = node.as<ASTFunction>();
     if (!function || !function->arguments)
         return false;
-    const auto & arguments = function->arguments->children;
+    ASTs arguments = function->arguments->children;
+    /// These fold their arguments as constant expressions, so `numbers(1 + 1)` is checked as `numbers(2)`.
+    if (equalsCaseInsensitive(function->name, "numbers") || equalsCaseInsensitive(function->name, "numbers_mt")
+        || equalsCaseInsensitive(function->name, "zeros") || equalsCaseInsensitive(function->name, "zeros_mt")
+        || equalsCaseInsensitive(function->name, "values") || equalsCaseInsensitive(function->name, "generateRandom"))
+    {
+        for (auto & argument : arguments)
+        {
+            if (argument->as<ASTLiteral>())
+                continue;
+            if (dependsOnUnstoredContext(*argument, context))
+                return false;
+            try
+            {
+                argument = evaluateConstantExpressionAsLiteral(argument->clone(), context);
+            }
+            catch (...)
+            {
+                return false;
+            }
+        }
+    }
     const auto is_count = [](const ASTPtr & argument)
     {
         const auto * literal = argument->as<ASTLiteral>();
         return literal && literal->value.getType() == Field::Types::UInt64;
     };
     if (equalsCaseInsensitive(function->name, "numbers") || equalsCaseInsensitive(function->name, "numbers_mt"))
-        return (arguments.size() == 1 || arguments.size() == 2) && std::ranges::all_of(arguments, is_count);
+    {
+        /// `numbers` converts any non-negative number to `UInt64`; its optional third argument is a step, which must not be zero.
+        const auto non_negative = [](const ASTPtr & argument) -> std::optional<UInt64>
+        {
+            const auto * literal = argument->as<ASTLiteral>();
+            if (literal && literal->value.getType() == Field::Types::UInt64)
+                return literal->value.safeGet<UInt64>();
+            if (literal && literal->value.getType() == Field::Types::Int64 && literal->value.safeGet<Int64>() >= 0)
+                return static_cast<UInt64>(literal->value.safeGet<Int64>());
+            return std::nullopt;
+        };
+        return arguments.size() <= 3
+            && std::ranges::all_of(arguments, [&](const ASTPtr & argument) { return non_negative(argument).has_value(); })
+            && (arguments.size() < 3 || *non_negative(arguments[2]) != 0);
+    }
     if (equalsCaseInsensitive(function->name, "zeros") || equalsCaseInsensitive(function->name, "zeros_mt"))
         return arguments.size() == 1 && is_count(arguments[0]);
     const bool literal_arguments = !arguments.empty()
@@ -3008,13 +3043,14 @@ bool tableFunctionAlwaysAnalyzes(
 }
 
 bool containsTableFunction(
-    const IAST & node, const TableInfo & owner, const std::map<std::pair<String, String>, const TableInfo *> & emitted_tables)
+    const IAST & node, const TableInfo & owner, const std::map<std::pair<String, String>, const TableInfo *> & emitted_tables,
+    const ContextPtr & context)
 {
     if (const auto * table_expression = node.as<ASTTableExpression>(); table_expression && table_expression->table_function
-        && !tableFunctionAlwaysAnalyzes(*table_expression->table_function, owner, emitted_tables))
+        && !tableFunctionAlwaysAnalyzes(*table_expression->table_function, owner, emitted_tables, context))
         return true;
     return std::any_of(node.children.begin(), node.children.end(),
-        [&](const auto & child) { return containsTableFunction(*child, owner, emitted_tables); });
+        [&](const auto & child) { return containsTableFunction(*child, owner, emitted_tables, context); });
 }
 
 /// True when the leftmost SELECT may output a column whose name is not in `target_columns`: the
@@ -3067,7 +3103,7 @@ bool selectMayOutputUnknownColumn(const IAST & select, const std::set<String> & 
 /// the gate is only ever over-emitted. The stored `CREATE` always carries a column list, so the column
 /// check runs at replay for every view. SQL UDFs the SELECT calls are not tracked.
 bool materializedViewMayNeedBadSelectGate(
-    const TableInfo & table, const std::map<std::pair<String, String>, const TableInfo *> & emitted_tables)
+    const TableInfo & table, const std::map<std::pair<String, String>, const TableInfo *> & emitted_tables, const ContextPtr & context)
 {
     const ASTPtr ast = tryParseCreate(table.create_query);
     if (!ast)
@@ -3100,13 +3136,13 @@ bool materializedViewMayNeedBadSelectGate(
     for (const auto & dependency : table.dependencies)
         if (!DatabaseCatalog::isPredefinedDatabase(dependency.first) && !emitted_tables.contains(dependency))
             return true;
-    if (containsTableFunction(*create->select, table, emitted_tables))
+    if (containsTableFunction(*create->select, table, emitted_tables, context))
         return true;
 
     return selectMayOutputUnknownColumn(*create->select, target_columns);
 }
 
-void markMaterializedViewsNeedingBadSelectGate(std::vector<TableInfo> & tables)
+void markMaterializedViewsNeedingBadSelectGate(std::vector<TableInfo> & tables, const ContextPtr & context)
 {
     std::map<std::pair<String, String>, const TableInfo *> emitted_tables;
     for (const auto & table : tables)
@@ -3114,7 +3150,7 @@ void markMaterializedViewsNeedingBadSelectGate(std::vector<TableInfo> & tables)
             emitted_tables.emplace(std::pair(table.database, table.name), &table);
     for (auto & table : tables)
         if (table.emit)
-            table.needs_bad_select_gate = materializedViewMayNeedBadSelectGate(table, emitted_tables);
+            table.needs_bad_select_gate = materializedViewMayNeedBadSelectGate(table, emitted_tables, context);
 }
 
 }
@@ -3270,7 +3306,7 @@ void dumpDatabaseSchema(
         reportDependenciesOutsideDumpSet(tables, database_named_collections, target_databases, err);
         reportMaskedSecrets(tables, create_database_query_by_db, err);
         order = orderTablesByDependencies(tables);
-        markMaterializedViewsNeedingBadSelectGate(tables);
+        markMaterializedViewsNeedingBadSelectGate(tables, context);
     }
 
     if (output_dir.empty())

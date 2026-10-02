@@ -54,6 +54,7 @@ CREATE MATERIALIZED VIEW ${DB}.mv_numbers (x Int64) ENGINE = Memory AS SELECT x 
 CREATE MATERIALIZED VIEW ${DB}.mv_merge (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM merge('${DB}', '^src\$'));
 CREATE MATERIALIZED VIEW ${DB}.mv_values (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM values('x Int64', 1, 2));
 CREATE MATERIALIZED VIEW ${DB}.mv_url (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM url('http://127.0.0.1:1/data.csv', CSV, 'x Int64'));
+CREATE MATERIALIZED VIEW ${DB}.mv_folded (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT number FROM numbers(1 + 1)) AND x IN (SELECT x FROM values('x Int64', 1 + 1));
 "
 echo "healthy views, bad-select gate emitted: $(grep -c "$BADSEL_RE" "$DUMP_FILE")"
 replay_local 'healthy views' 'mv%'
@@ -130,6 +131,7 @@ CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_numbers (x Int64) ENGINE = Memory A
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_merge (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT x FROM merge('${CONSTRAINT_DB}', '^src\$'));
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_values (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT x FROM values('x Int64', 1, 2));
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_url (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT x FROM url('http://127.0.0.1:1/data.csv', CSV, 'x Int64'));
+CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_folded (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT number FROM numbers(1 + 1)) AND x IN (SELECT x FROM values('x Int64', 1 + 1));
 "
 $CLICKHOUSE_LOCAL --path "$LOCAL_PATH" --dump-schema="$CONSTRAINT_DB" > "$DUMP_FILE" 2>"$ERR_FILE"
 rm -rf "$LOCAL_PATH"

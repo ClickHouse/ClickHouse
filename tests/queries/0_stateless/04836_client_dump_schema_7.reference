@@ -1,7 +1,7 @@
 --- a healthy materialized view does not get the bad-select gate ---
 healthy views, bad-select gate emitted: 0
 OK: healthy views replayed
-healthy views, replayed objects: 7
+healthy views, replayed objects: 8
 --- a materialized view accepted under a relaxed check gets the gate exactly once ---
 extra output column, bad-select gate emitted: 1
 OK: extra output column replayed
@@ -24,7 +24,7 @@ OK: mixed views replayed
 mixed views, replayed objects: 2
 --- a healthy materialized view dump replays under a bad-select constraint ---
 OK: constrained replay succeeded
-constrained replay views present: 6
+constrained replay views present: 7
 --- TimeSeries and Kafka Keeper gates follow their carriers exactly once ---
 TimeSeries tables, time-series gate emitted: 1
 TimeSeries tables and plain Kafka, keeper gate emitted: 0
