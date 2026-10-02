@@ -581,12 +581,14 @@ For case-insensitive search or/and in UTF8 format use functions [`ngramDistanceC
     FunctionDocumentation documentation_ngram_distance = {description_ngram_distance, syntax_ngram_distance, arguments_ngram_distance, {}, returned_value_ngram_distance, examples_ngram_distance, introduced_in_ngram_distance, category_ngram_distance};
 
     FunctionDocumentation::Description description_ngram_search = R"(
-Measures the proportion of 4-grams from `needle` that also occur in `haystack`. A 4-gram is a sequence of four bytes.
-The function returns `1` when every 4-gram from `needle` occurs in `haystack`, `0` when none occur, and a value between `0` and `1` otherwise. The matching 4-grams do not need to form a contiguous substring in `haystack`.
+Estimates similarity by comparing multisets of 16-bit hashes of 4-grams from `needle` and `haystack`. A 4-gram is a sequence of four bytes.
+The function returns the proportion of `needle` hash-bucket entries that are matched by `haystack`: `1` when every entry matches, `0` when none do, and a value between `0` and `1` otherwise. Hash collisions can count different 4-grams as matches. The matching 4-grams do not need to appear together as a contiguous substring in `haystack`.
 
-For example, `Clicx` has the 4-grams `Clic` and `licx`. Only `Clic` occurs in `ClickHouse`, so `ngramSearch('ClickHouse', 'Clicx')` returns `0.5`.
+For example, `Clicx` has the 4-grams `Clic` and `licx`. The hash bucket for `Clic` is present in `ClickHouse`, but the one for `licx` is not, so `ngramSearch('ClickHouse', 'Clicx')` returns `0.5`.
 
 If `needle` is shorter than four bytes, it has no 4-grams and the function returns `1`, regardless of `haystack`. Use a different function for shorter needles.
+
+For input strings longer than 32,768 bytes, this function does not calculate the score: depending on whether its arguments are constant or column values, it either returns `0` or throws an exception.
 
 For case-insensitive search or UTF-8 strings, use [`ngramSearchCaseInsensitive`](#ngramSearchCaseInsensitive), [`ngramSearchUTF8`](#ngramSearchUTF8), or [`ngramSearchCaseInsensitiveUTF8`](#ngramSearchCaseInsensitiveUTF8). The UTF-8 variants use 3-grams of Unicode code points rather than 4-byte grams.
     )";
@@ -595,7 +597,7 @@ For case-insensitive search or UTF-8 strings, use [`ngramSearchCaseInsensitive`]
         {"haystack", "String for comparison.", {"String"}},
         {"needle", "String for comparison.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_ngram_search = {"Returns the proportion of `needle` 4-grams that occur in `haystack`, from `0` to `1`.", {"Float32"}};
+    FunctionDocumentation::ReturnedValue returned_value_ngram_search = {"Returns the estimated proportion of `needle` 4-gram hash-bucket entries matched by `haystack`, from `0` to `1`.", {"Float32"}};
     FunctionDocumentation::Examples examples_ngram_search = {
     {
         "Match some 4-grams",
@@ -693,16 +695,17 @@ The smaller the returned value, the more similar the strings are.
 
     FunctionDocumentation::Description description_ngram_search_case_insensitive = R"(
 Provides a case-insensitive variant of [`ngramSearch`](#ngramSearch).
-It measures the proportion of 4-grams from `needle` that occur in `haystack`, ignoring case. See [`ngramSearch`](#ngramSearch) for details of how the score is calculated.
+It estimates the proportion of `needle` 4-gram hash-bucket entries matched by `haystack`, ignoring case. See [`ngramSearch`](#ngramSearch) for details of how the score is calculated.
 
 If `needle` is shorter than four bytes, it has no 4-grams and the function returns `1`, regardless of `haystack`.
+For input strings longer than 32,768 bytes, it has the same shortcut and exception behavior as `ngramSearch`.
     )";
     FunctionDocumentation::Syntax syntax_ngram_search_case_insensitive = "ngramSearchCaseInsensitive(haystack, needle)";
     FunctionDocumentation::Arguments arguments_ngram_search_case_insensitive = {
         {"haystack", "String for comparison.", {"String"}},
         {"needle", "String for comparison.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_ngram_search_case_insensitive = {"Returns the proportion of `needle` 4-grams that occur in `haystack`, from `0` to `1`.", {"Float32"}};
+    FunctionDocumentation::ReturnedValue returned_value_ngram_search_case_insensitive = {"Returns the estimated proportion of `needle` 4-gram hash-bucket entries matched by `haystack`, from `0` to `1`.", {"Float32"}};
     FunctionDocumentation::Examples examples_ngram_search_case_insensitive = {
     {
         "Case-insensitive search using 4-grams",
@@ -721,16 +724,17 @@ If `needle` is shorter than four bytes, it has no 4-grams and the function retur
     FunctionDocumentation::Description description_ngram_search_utf8 = R"(
 Provides a UTF-8 variant of `ngramSearch`.
 Assumes `haystack` and `needle` are UTF-8 strings. Unlike `ngramSearch`, which uses 4-byte grams, this function uses 3-grams of Unicode code points.
-It measures the proportion of 3-grams from `needle` that occur in `haystack`. See [`ngramSearch`](#ngramSearch) for details of how the score is calculated.
+It estimates the proportion of `needle` 3-gram hash-bucket entries matched by `haystack`. See [`ngramSearch`](#ngramSearch) for details of how the score is calculated.
 
 If `needle` is shorter than three Unicode code points, it has no 3-grams and the function returns `1`, regardless of `haystack`.
+For input strings longer than 32,768 bytes, it has the same shortcut and exception behavior as `ngramSearch`.
     )";
     FunctionDocumentation::Syntax syntax_ngram_search_utf8 = "ngramSearchUTF8(haystack, needle)";
     FunctionDocumentation::Arguments arguments_ngram_search_utf8 = {
         {"haystack", "UTF-8 string for comparison.", {"String"}},
         {"needle", "UTF-8 string for comparison.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_ngram_search_utf8 = {"Returns the proportion of `needle` 3-grams that occur in `haystack`, from `0` to `1`.", {"Float32"}};
+    FunctionDocumentation::ReturnedValue returned_value_ngram_search_utf8 = {"Returns the estimated proportion of `needle` 3-gram hash-bucket entries matched by `haystack`, from `0` to `1`.", {"Float32"}};
     FunctionDocumentation::Examples examples_ngram_search_utf8 = {
     {
         "UTF-8 search using 3-grams",
@@ -749,16 +753,17 @@ If `needle` is shorter than three Unicode code points, it has no 3-grams and the
     FunctionDocumentation::Description description_ngram_search_case_insensitive_utf8 = R"(
 Provides a case-insensitive UTF-8 variant of [`ngramSearch`](#ngramSearch).
 Assumes `haystack` and `needle` are UTF-8 strings and ignores case. It uses 3-grams of Unicode code points.
-It measures the proportion of 3-grams from `needle` that occur in `haystack`. See [`ngramSearch`](#ngramSearch) for details of how the score is calculated.
+It estimates the proportion of `needle` 3-gram hash-bucket entries matched by `haystack`. See [`ngramSearch`](#ngramSearch) for details of how the score is calculated.
 
 If `needle` is shorter than three Unicode code points, it has no 3-grams and the function returns `1`, regardless of `haystack`.
+For input strings longer than 32,768 bytes, it has the same shortcut and exception behavior as `ngramSearch`.
     )";
     FunctionDocumentation::Syntax syntax_ngram_search_case_insensitive_utf8 = "ngramSearchCaseInsensitiveUTF8(haystack, needle)";
     FunctionDocumentation::Arguments arguments_ngram_search_case_insensitive_utf8 = {
         {"haystack", "UTF-8 string for comparison.", {"String"}},
         {"needle", "UTF-8 string for comparison.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_ngram_search_case_insensitive_utf8 = {"Returns the proportion of `needle` 3-grams that occur in `haystack`, from `0` to `1`.", {"Float32"}};
+    FunctionDocumentation::ReturnedValue returned_value_ngram_search_case_insensitive_utf8 = {"Returns the estimated proportion of `needle` 3-gram hash-bucket entries matched by `haystack`, from `0` to `1`.", {"Float32"}};
     FunctionDocumentation::Examples examples_ngram_search_case_insensitive_utf8 = {
     {
         "Case-insensitive UTF-8 search using 3-grams",
