@@ -1,0 +1,62 @@
+--- fixture: data files and rows per Iceberg table, snapshots of ice_empty
+ice_big	1	100000
+ice_small	1	10
+0
+--- T1 twin: text order b, m, s
+Join: b[hint~100000] ⋈ (m[1000] ⋈ s[hint~10])
+ResultRows: ~~10
+Join: m[1000] ⋈ s[hint~10]
+ResultRows: ~~10
+--- T1 twin: text order s, m, b
+Join: b[hint~100000] ⋈ (m[1000] ⋈ s[hint~10])
+ResultRows: ~~10
+Join: m[1000] ⋈ s[hint~10]
+ResultRows: ~~10
+--- T1 gate on: text order b, m, s
+Join: b[100000] ⋈ (m[1000] ⋈ s[10])
+ResultRows: 10
+Join: m[1000] ⋈ s[10]
+ResultRows: 10
+--- T1 gate on: text order s, m, b
+Join: b[100000] ⋈ (m[1000] ⋈ s[10])
+ResultRows: 10
+Join: m[1000] ⋈ s[10]
+ResultRows: 10
+--- T1 gate off: text order b, m, s
+Join: b ⋈ m[1000] ⋈ s
+ResultRows: unknown
+Join: b ⋈ m[1000]
+ResultRows: unknown
+--- T1 gate off: text order s, m, b
+Join: s ⋈ m[1000] ⋈ b
+ResultRows: unknown
+Join: s ⋈ m[1000]
+ResultRows: unknown
+--- T2 twin: reads in order, the second one is the build side
+ReadFromMergeTree (twin_big)
+ReadFromMergeTree (mt)
+--- T2 gate on
+ReadFromObjectStorage
+ReadFromMergeTree (mt)
+--- T2 gate off
+ReadFromMergeTree (mt)
+ReadFromObjectStorage
+--- T8 twin: cardinality 0
+Join: m[1000] ⋈ t[hint~0]
+ResultRows: ~~1
+--- T8 gate on: a table with no snapshot
+Join: m[1000] ⋈ t[0]
+ResultRows: 1
+--- T8 gate off
+Join: m[1000] ⋈ t
+ResultRows: unknown
+--- T10a gate on: table function
+Join: b[100000] ⋈ (m[1000] ⋈ s[10])
+ResultRows: 10
+Join: m[1000] ⋈ s[10]
+ResultRows: 10
+--- T10a gate off
+Join: b ⋈ m[1000] ⋈ s
+ResultRows: unknown
+Join: b ⋈ m[1000]
+ResultRows: unknown

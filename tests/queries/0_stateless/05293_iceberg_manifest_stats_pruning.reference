@@ -1,0 +1,74 @@
+--- fixture: files and rows per Iceberg table and content
+d	DATA	1	100	[100]
+d	POSITION_DELETE	1	20	[20]
+d2	DATA	2	200	[100,100]
+d2	POSITION_DELETE	1	10	[10]
+p	DATA	5	40	[5,5,10,10,10]
+p_policy	DATA	5	40	[5,5,10,10,10]
+unp	DATA	1	10000	[10000]
+--- T3 twin: WHERE p.r = 'us'
+Join: m[1000] ⋈ p[no_stats~15]
+ResultRows: ~~15
+--- T3 gate on: WHERE p.r = 'us'
+Join: m[1000] ⋈ p[no_stats~15]
+ResultRows: ~~15
+--- T3 gate off: WHERE p.r = 'us'
+Join: m[1000] ⋈ p
+ResultRows: unknown
+--- T3 twin: WHERE p.k >= 100
+Join: m[1000] ⋈ p[no_stats~10]
+ResultRows: ~~10
+--- T3 gate on: WHERE p.k >= 100
+Join: m[1000] ⋈ p[no_stats~10]
+ResultRows: ~~10
+--- T3 gate off: WHERE p.k >= 100
+Join: m[1000] ⋈ p
+ResultRows: unknown
+--- T3 twin: WHERE p.k >= 1000000
+Join: m[1000] ⋈ p[0]
+ResultRows: 1
+--- T3 gate on: WHERE p.k >= 1000000
+Join: m[1000] ⋈ p[0]
+ResultRows: 1
+--- T3 gate off: WHERE p.k >= 1000000
+Join: m[1000] ⋈ p
+ResultRows: unknown
+--- T3 twin: unpartitioned, WHERE t.x = 5 drops no file
+Join: m[1000] ⋈ t[no_stats~?]
+ResultRows: unknown
+--- T3 gate on: unpartitioned, WHERE t.x = 5 drops no file
+Join: m[1000] ⋈ t[no_stats~?]
+ResultRows: unknown
+--- T3 gate off: unpartitioned, WHERE t.x = 5 drops no file
+Join: m[1000] ⋈ t
+ResultRows: unknown
+--- T3c gate on: row policy k >= 100, no WHERE
+Join: m[1000] ⋈ p[no_stats~10]
+ResultRows: ~~10
+--- T3c gate off: row policy k >= 100, no WHERE
+Join: m[1000] ⋈ p
+ResultRows: unknown
+--- T3d gate on: use_iceberg_partition_pruning = 0, WHERE p.r = 'us'
+Join: m[1000] ⋈ p[no_stats~?]
+ResultRows: unknown
+--- T3d gate off: use_iceberg_partition_pruning = 0, WHERE p.r = 'us'
+Join: m[1000] ⋈ p
+ResultRows: unknown
+--- T4 twin: 100 rows, 20 deleted
+Join: m[1000] ⋈ b[no_stats~100]
+ResultRows: ~~100
+--- T4 gate on: 100 rows, 20 deleted by a position delete file
+Join: m[1000] ⋈ b[no_stats~100]
+ResultRows: ~~100
+--- T4 gate off
+Join: m[1000] ⋈ b
+ResultRows: unknown
+--- T4b twin: WHERE b.k >= 100
+Join: m[1000] ⋈ b[no_stats~100]
+ResultRows: ~~100
+--- T4b gate on: WHERE b.k >= 100
+Join: m[1000] ⋈ b[no_stats~100]
+ResultRows: ~~100
+--- T4b gate off: WHERE b.k >= 100
+Join: m[1000] ⋈ b
+ResultRows: unknown

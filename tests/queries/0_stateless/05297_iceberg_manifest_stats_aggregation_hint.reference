@@ -1,0 +1,32 @@
+--- fixture: data files and rows per Iceberg table
+ice_big	1	100000
+ice_small	1	10
+--- T10b twin: aggregation over a MergeTree table with a cardinality-only hint
+Join: ice_agg[hint~100000] ⋈ m[no_stats~1000]
+ResultRows: ~~1000
+--- T10b gate on: labels
+Join: ice_agg[no_stats~100000] ⋈ m[no_stats~1000]
+ResultRows: ~~1000
+--- T10b gate on: debug log
+relations in the column statistics hint: m
+data lake hint lines naming ice_agg: 1
+--- T10b gate off: labels
+Join: m[no_stats~1000] ⋈ ice_agg[no_stats~?]
+ResultRows: unknown
+--- T10b gate off: debug log
+relations in the column statistics hint: m, ice_agg
+data lake hint lines naming ice_agg: 0
+--- T10c gate on: make_distributed_plan with the fallback
+fell back to local execution: yes
+Join: b[100000] ⋈ (m[1000] ⋈ s[10])
+ResultRows: 10
+Join: m[1000] ⋈ s[10]
+ResultRows: 10
+1000
+--- T10c gate off
+fell back to local execution: yes
+Join: b ⋈ m[1000] ⋈ s
+ResultRows: unknown
+Join: b ⋈ m[1000]
+ResultRows: unknown
+1000
