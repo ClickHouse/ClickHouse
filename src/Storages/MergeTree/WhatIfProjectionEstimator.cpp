@@ -730,7 +730,7 @@ WhatIfCandidateResult evaluateProjection(
     }
     else
     {
-        /// no data is read, but the optimizer still decides if the query gives the projection something to serve
+        /// the estimate reads no data, but the optimizer still decides if the query gives the projection something to serve
         auto scenario = std::make_shared<HypotheticalProjections>(projection->clone());
         weigh(scenario);
         if (scenario->outcome.nothing_to_serve && relaxing_setting.empty())

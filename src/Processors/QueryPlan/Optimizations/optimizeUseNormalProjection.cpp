@@ -298,7 +298,7 @@ struct NormalProjectionCandidate : public ProjectionCandidate
 {
 };
 
-/// records the result of the hypothetical projection, the flags are set while the candidates are weighed
+/// records the result of the hypothetical projection, and the loop over the candidates sets the flags
 static void recordHypotheticalOutcome(
     HypotheticalProjections & hypothetical,
     const UseProjectionsResult & result,
