@@ -1,14 +1,21 @@
 #include <Processors/Transforms/Window/SlidingBlocks.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+
+#include <base/arithmeticOverflow.h>
+
 namespace DB
 {
 
 SlidingBlock & SlidingBlocks::add(Chunk chunk, Columns materialized_columns, SlidingIndex index)
 {
+    int64_t rows_count = chunk.getNumRows();
+    Columns input_columns = chunk.detachColumns();
+
     return blocks.emplace_back(SlidingBlock{
-        .input_columns = chunk.getColumns(),
+        .input_columns = std::move(input_columns),
         .materialized_columns = std::move(materialized_columns),
-        .rows_count = static_cast<int64_t>(chunk.getNumRows()),
+        .rows_count = rows_count,
         .block_number = next_block_number++,
         .index = std::move(index),
         .result_columns = {},
@@ -18,19 +25,19 @@ SlidingBlock & SlidingBlocks::add(Chunk chunk, Columns materialized_columns, Sli
 void SlidingBlocks::pop()
 {
     blocks.pop_front();
+    ++first_block_number;
 }
 
 const SlidingBlock & SlidingBlocks::blockAt(int64_t block_number) const
 {
-    chassert(!blocks.empty());
-    chassert(block_number >= blocks.front().block_number);
-    chassert(block_number - blocks.front().block_number < static_cast<int64_t>(blocks.size()));
-    return blocks[block_number - blocks.front().block_number];
+    chassert(block_number >= first_block_number);
+    chassert(block_number < next_block_number);
+    return blocks[block_number - first_block_number];
 }
 
 RowNumber SlidingBlocks::begin() const
 {
-    return {blocks.empty() ? next_block_number : blocks.front().block_number, 0};
+    return {first_block_number, 0};
 }
 
 RowNumber SlidingBlocks::end() const
@@ -57,7 +64,9 @@ RowNumber SlidingBlocks::prev(RowNumber row) const
 std::optional<RowNumber> SlidingBlocks::move(RowNumber row, int64_t offset) const
 {
     /// The target row counted from the start of the row's block
-    int64_t target = row.row + offset;
+    int64_t target = 0;
+    if (common::addOverflow(row.row, offset, target))
+        return std::nullopt;
 
     while (target < 0 && row.block > begin().block)
     {

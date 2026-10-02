@@ -10,7 +10,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include <Common/config_version.h>
 #include "config.h"
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
@@ -87,7 +86,6 @@
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/WasmModuleManager.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Core/SettingsQuirks.h>
@@ -3530,6 +3528,12 @@ StoragePtr Context::getViewSource() const
     return view_source;
 }
 
+
+void Context::clearViewSource()
+{
+    view_source.reset();
+}
+
 bool Context::displaySecretsInShowAndSelect() const
 {
     return shared->server_settings[ServerSetting::display_secrets_in_show_and_select];
@@ -4109,16 +4113,10 @@ void Context::makeQueryContext()
     /// server-initiated queries such as background flushes of `Buffer` tables, streaming consumers
     /// (`Kafka`, `NATS`, `RabbitMQ`, `FileLog`, `ObjectStorageQueue`), `MaterializedPostgreSQL`
     /// replication, dictionary reloads, or asynchronous insert flushes - inherits the empty (zero)
-    /// client version of the global context. This server is the real initiator of such queries, so
-    /// fill the version with this server's version. Otherwise remote shards of any distributed
-    /// sub-query would treat the initiator as an ancient server and apply legacy compatibility
-    /// downgrades, and `RemoteQueryExecutor` rejects a zero version outright.
+    /// client version of the global context.
     /// Contexts created for real client queries overwrite the client info afterwards
     /// (see `Session::makeQueryContextImpl`), so this does not mask a client-reported version.
-    if (client_info.client_version_major == 0
-        && client_info.client_version_minor == 0
-        && client_info.client_version_patch == 0)
-        setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
+    setInitiatorVersionIfUnset();
 }
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
@@ -6997,7 +6995,7 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
             res = shared->cluster_discovery->getCluster(cluster_name);
     }
 
-    if (res == nullptr && !cluster_name.empty())
+    if (res == nullptr)
         res = tryGetReplicatedDatabaseCluster(cluster_name);
 
     return res;
@@ -8323,10 +8321,12 @@ void Context::setClientInterface(ClientInfo::Interface interface)
 
 void Context::setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version)
 {
-    client_info.client_version_major = client_version_major;
-    client_info.client_version_minor = client_version_minor;
-    client_info.client_version_patch = client_version_patch;
-    client_info.client_tcp_protocol_version = client_tcp_protocol_version;
+    client_info.setClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
+}
+
+void Context::setInitiatorVersionIfUnset()
+{
+    client_info.setInitiatorVersionIfUnset();
 }
 
 void Context::setScriptQueryAndLineNumber(uint32_t query_number, uint32_t line_number)
