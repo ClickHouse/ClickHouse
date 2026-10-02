@@ -409,7 +409,8 @@ public:
         return true;
     }
 
-    void apply(QueryPlan & query_plan, QueryPlan::Nodes & nodes, QueryPlan::Node & root, QueryPlan::Node & sorting_node,
+    /// `sorting_node` is the full sorting right below `root`, the `LIMIT`, or null without ORDER BY.
+    void apply(QueryPlan & query_plan, QueryPlan::Nodes & nodes, QueryPlan::Node & root, QueryPlan::Node * sorting_node,
         const std::vector<size_t> & sort_key_positions)
     {
         /// The values carried up are added to the outputs of the steps that would drop them, and the headers
@@ -464,9 +465,12 @@ public:
             main_plan.addStep(std::move(step));
         }
 
-        auto sorting_step = std::move(sorting_node.step);
-        sorting_step->updateInputHeader(main_plan.getCurrentHeader());
-        main_plan.addStep(std::move(sorting_step));
+        if (sorting_node)
+        {
+            auto sorting_step = std::move(sorting_node->step);
+            sorting_step->updateInputHeader(main_plan.getCurrentHeader());
+            main_plan.addStep(std::move(sorting_step));
+        }
 
         /// `LimitStep::updateOutputHeader` mirrors its input header, so capture the header the replacement has
         /// to produce before the limit gets the new one.
@@ -1113,15 +1117,22 @@ bool optimizeLazyMaterialization3(
     if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
         return false;
 
-    /// Without ORDER BY, the `LIMIT` stops reading early, and whether a second read saves anything depends
-    /// on how many rows the filters and joins drop on the way. Not handled yet. This runs before reading in
-    /// order is applied, so the sorting is a full one.
-    auto * sorting_node = root.children.front();
-    auto * sorting_step = typeid_cast<SortingStep *>(sorting_node->step.get());
-    if (!sorting_step || sorting_step->getType() != SortingStep::Type::Full)
-        return false;
+    /// With ORDER BY, the sort keys are needed below the `LIMIT`. This runs before reading in order is applied,
+    /// so a sorting is a full one. Without ORDER BY, the `LIMIT` stops the reads early, but only after whole
+    /// blocks in every stream, and a hash join reads its build side completely, so the reads still go through
+    /// far more rows than the `LIMIT` keeps, and deferring their columns pays off the same way.
+    QueryPlan::Node * sorting_node = nullptr;
+    SortingStep * sorting_step = nullptr;
+    if (auto * sorting = typeid_cast<SortingStep *>(root.children.front()->step.get()))
+    {
+        if (sorting->getType() != SortingStep::Type::Full)
+            return false;
 
-    auto * chain_top = sorting_node->children.front();
+        sorting_node = root.children.front();
+        sorting_step = sorting;
+    }
+
+    auto * chain_top = sorting_node ? sorting_node->children.front() : root.children.front();
     const auto merged = buildMergedPlanDAG(*chain_top);
 
     std::vector<bool> lazy_sources(merged.sources.size(), false);
@@ -1138,7 +1149,7 @@ bool optimizeLazyMaterialization3(
     /// The sort keys are needed below the LIMIT whatever else is deferred.
     const auto & outputs = merged.getOutputs();
     std::vector<size_t> sort_key_positions;
-    for (const auto & description : sorting_step->getSortDescription())
+    for (const auto & description : sorting_step ? sorting_step->getSortDescription() : SortDescription{})
     {
         const auto it = std::ranges::find_if(outputs, [&](const auto * output) { return output->result_name == description.column_name; });
         if (it == outputs.end())
@@ -1184,7 +1195,7 @@ bool optimizeLazyMaterialization3(
     if (!rebuild.prepare(chain_top, sort_key_positions))
         return false;
 
-    rebuild.apply(query_plan, nodes, root, *sorting_node, sort_key_positions);
+    rebuild.apply(query_plan, nodes, root, sorting_node, sort_key_positions);
     return true;
 }
 
