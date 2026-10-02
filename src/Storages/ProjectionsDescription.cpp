@@ -428,6 +428,77 @@ void ProjectionDescription::validateDeclaredColumnCodecs(
     }
 }
 
+static std::shared_ptr<MergeTreeSettings> getProjectionSettingsFromAST(
+    const ASTProjectionDeclaration & declaration,
+    const ProjectionIndexPtr & index,
+    const ContextPtr & query_context,
+    LoadingStrictnessLevel mode)
+{
+    auto settings = index ? index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
+    if (declaration.with_settings)
+        settings->applyChanges(declaration.with_settings->changes, query_context, isLoadingFromExistingMetadata(mode));
+    return settings;
+}
+
+static void validateProjectionSettings(
+    const ProjectionIndexPtr & index,
+    const MergeTreeSettings & settings,
+    const ContextPtr & query_context,
+    LoadingStrictnessLevel mode,
+    bool attach_short_syntax)
+{
+    if (isFreshTableDefinition(mode, attach_short_syntax))
+    {
+        static const std::unordered_set<std::string_view> ALLOWED_PROJECTION_SETTINGS = {
+            "index_granularity",
+            "index_granularity_bytes",
+            "add_minmax_index_for_numeric_columns",
+            "add_minmax_index_for_string_columns",
+            "add_minmax_index_for_temporal_columns",
+            "add_minmax_index_for_block_number_column",
+            "add_minmax_index_for_block_offset_column",
+            "min_compress_block_size",
+            "max_compress_block_size",
+            "min_bytes_for_wide_part",
+            "min_level_for_wide_part",
+            "min_rows_for_wide_part",
+            "ratio_of_defaults_for_sparse_serialization",
+            "write_marks_for_substreams_in_compact_parts",
+            "serialization_info_version",
+            "nullable_serialization_version",
+            "string_serialization_version",
+            "replace_long_file_name_to_hash",
+            "map_serialization_version",
+            "map_serialization_version_for_zero_level_parts",
+            "propagate_types_serialization_versions_to_nested_types",
+        };
+
+        for (const auto & change : settings.changes())
+            if (!ALLOWED_PROJECTION_SETTINGS.contains(change.name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is not allowed for projections", change.name);
+
+        auto default_settings = index ? index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
+        query_context->checkMergeTreeSettingsConstraints(*default_settings, settings.changesFrom(*default_settings));
+
+        query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
+        settings.sanityCheck(
+            query_context->getMergeMutateExecutor()->getMaxTasksCount(),
+            query_context->wasBackgroundPoolAutoLowered());
+    }
+
+    if (settings[MergeTreeSetting::index_granularity_bytes] == 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "projection index_granularity_bytes cannot be 0, which leads to fixed granularity");
+}
+
+void ProjectionDescription::validateSettingsForUnavailable(
+    const ASTProjectionDeclaration & declaration, const ContextPtr & query_context)
+{
+    const auto index = declaration.index ? ProjectionIndexFactory::instance().get(declaration) : nullptr;
+    const auto settings = getProjectionSettingsFromAST(declaration, index, query_context, LoadingStrictnessLevel::CREATE);
+    validateProjectionSettings(index, *settings, query_context, LoadingStrictnessLevel::CREATE, /*attach_short_syntax=*/false);
+}
+
 ProjectionDescription ProjectionDescription::getProjectionFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
@@ -463,9 +534,7 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     /// the projection index, with user-supplied WITH SETTINGS overrides applied on top). This must
     /// happen before fillProjectionDescription[ByQuery] because the latter reconstructs settings
     /// from result.settings_changes to drive implicit-minmax skip-index creation.
-    auto merge_tree_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
-    if (projection_definition->with_settings)
-        merge_tree_settings->applyChanges(projection_definition->with_settings->changes, query_context, isLoadingFromExistingMetadata(mode));
+    auto merge_tree_settings = getProjectionSettingsFromAST(*projection_definition, result.index, query_context, mode);
     result.settings_changes = merge_tree_settings->changes();
 
     /// Track whether the effective settings include index_granularity or index_granularity_bytes overrides
@@ -525,7 +594,6 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         }
     }
 
-    /// `WITH SETTINGS` is part of the table definition, so it is checked whenever that is
     if (isFreshTableDefinition(mode, attach_short_syntax))
     {
         /// `arrayJoin` is the one function that changes the number of rows, while a projection part is
@@ -538,54 +606,11 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         if (expressionContainsArrayJoin(projection_definition->query))
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Projection '{}' cannot contain arrayJoin, because it changes the number of rows", result.name);
-
-        static const std::unordered_set<std::string_view> ALLOWED_PROJECTION_SETTINGS = {
-            "index_granularity",
-            "index_granularity_bytes",
-            "add_minmax_index_for_numeric_columns",
-            "add_minmax_index_for_string_columns",
-            "add_minmax_index_for_temporal_columns",
-            "add_minmax_index_for_block_number_column",
-            "add_minmax_index_for_block_offset_column",
-            "min_compress_block_size",
-            "max_compress_block_size",
-            "min_bytes_for_wide_part",
-            "min_level_for_wide_part",
-            "min_rows_for_wide_part",
-            "ratio_of_defaults_for_sparse_serialization",
-            "write_marks_for_substreams_in_compact_parts",
-            "serialization_info_version",
-            "nullable_serialization_version",
-            "string_serialization_version",
-            "replace_long_file_name_to_hash",
-            "map_serialization_version",
-            "map_serialization_version_for_zero_level_parts",
-            "propagate_types_serialization_versions_to_nested_types",
-        };
-
-        for (const auto & change : result.settings_changes)
-        {
-            if (!ALLOWED_PROJECTION_SETTINGS.contains(change.name))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is not allowed for projections", change.name);
-        }
-
-        /// What `WITH SETTINGS` changes from the defaults this projection would otherwise have.
-        auto default_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
-        query_context->checkMergeTreeSettingsConstraints(*default_settings, merge_tree_settings->changesFrom(*default_settings));
-
-        query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
-        merge_tree_settings->sanityCheck(
-            query_context->getMergeMutateExecutor()->getMaxTasksCount(),
-            query_context->wasBackgroundPoolAutoLowered());
     }
 
-    /// Ensure index_granularity_bytes is non-zero to prevent the projection from falling back
-    /// to fixed granularity. Enforced unconditionally (both CREATE and ATTACH paths).
-    if ((*merge_tree_settings)[MergeTreeSetting::index_granularity_bytes] == 0)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "projection index_granularity_bytes cannot be 0, which leads to fixed granularity");
-    }
+    /// `WITH SETTINGS` is part of the table definition, so apply the same checks when
+    /// analyzing a declaration or updating settings on an unavailable one.
+    validateProjectionSettings(result.index, *merge_tree_settings, query_context, mode, attach_short_syntax);
 
     return result;
 }

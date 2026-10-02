@@ -204,29 +204,44 @@ void validateProjectionMetadataAdmission(
 void validateProjectionMetadataAdmission(
     const ASTAlterQuery & alter, const StoragePtr & table, const std::shared_ptr<IDatabase> & database, const ContextPtr & context)
 {
-    if (isInitialProjectionMetadataQuery(context) && table)
+    if (isInitialProjectionMetadataQuery(context))
     {
-        const auto metadata = table->getInMemoryMetadataPtr(context, false);
-        std::unordered_set<String> unavailable_names;
-        for (const auto & name : metadata->projections.getUnavailableNames())
-            unavailable_names.insert(name);
-        for (const auto & child : alter.command_list->children)
+        /// `MODIFY PROJECTION` needs an existing definition to prove that only settings change.
+        /// Without a local table, an ON CLUSTER initiator cannot perform that check before
+        /// publishing the DDL; some workers could apply it while others reject it.
+        if (!table && !alter.cluster.empty())
+            for (const auto & child : alter.command_list->children)
+                if (child->as<const ASTAlterCommand &>().type == ASTAlterCommand::MODIFY_PROJECTION)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Table {}.{} does not exist on this host. ALTER TABLE ... ON CLUSTER ... MODIFY PROJECTION "
+                        "must be initiated from a host that has the table",
+                        backQuoteIfNeed(alter.getDatabase()), backQuoteIfNeed(alter.getTable()));
+
+        if (table)
         {
-            const auto & command = child->as<const ASTAlterCommand &>();
-            if (command.type == ASTAlterCommand::DROP_PROJECTION && command.projection
-                && !command.partition && !command.clear_projection)
+            const auto metadata = table->getInMemoryMetadataPtr(context, false);
+            std::unordered_set<String> unavailable_names;
+            for (const auto & name : metadata->projections.getUnavailableNames())
+                unavailable_names.insert(name);
+            for (const auto & child : alter.command_list->children)
             {
-                unavailable_names.erase(command.projection->as<const ASTIdentifier &>().name());
-                continue;
+                const auto & command = child->as<const ASTAlterCommand &>();
+                if (command.type == ASTAlterCommand::DROP_PROJECTION && command.projection
+                    && !command.partition && !command.clear_projection)
+                {
+                    unavailable_names.erase(command.projection->as<const ASTIdentifier &>().name());
+                    continue;
+                }
+                if (command.type != ASTAlterCommand::MODIFY_PROJECTION || !command.projection_decl)
+                    continue;
+                const auto & declaration = command.projection_decl->as<const ASTProjectionDeclaration &>();
+                if (unavailable_names.contains(declaration.name))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot modify unavailable projection {}: restore its analysis or drop it before changing its settings",
+                        backQuote(declaration.name));
             }
-            if (command.type != ASTAlterCommand::MODIFY_PROJECTION || !command.projection_decl)
-                continue;
-            const auto & declaration = command.projection_decl->as<const ASTProjectionDeclaration &>();
-            if (unavailable_names.contains(declaration.name))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot modify unavailable projection {}: restore its analysis or drop it before changing its settings",
-                    backQuote(declaration.name));
         }
     }
 

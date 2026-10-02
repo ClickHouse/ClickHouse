@@ -107,6 +107,9 @@ struct ProjectionDescription
         /// Of the `ATTACH` carrying this projection; leave the default when the definition is not attached
         bool attach_short_syntax = true);
 
+    /// Validate the settings of a settings-only ALTER when a stored projection body cannot be analyzed.
+    static void validateSettingsForUnavailable(const ASTProjectionDeclaration & declaration, const ContextPtr & query_context);
+
     /// Validate both the codec policy for this provenance and the lossless projection invariant.
     /// The type may be absent while admitting an unavailable definition from a backup.
     static ASTPtr validateDeclaredColumnCodec(

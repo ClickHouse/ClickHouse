@@ -1,0 +1,9 @@
+<clickhouse>
+    <remote_servers>
+        <projection_cluster>
+            <shard><replica><host>initiator</host><port>9000</port></replica></shard>
+            <shard><replica><host>unavailable</host><port>9000</port></replica></shard>
+            <shard><replica><host>available</host><port>9000</port></replica></shard>
+        </projection_cluster>
+    </remote_servers>
+</clickhouse>

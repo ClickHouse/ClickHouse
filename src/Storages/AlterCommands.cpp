@@ -2071,11 +2071,32 @@ void AlterCommand::apply(
         if (!metadata.projections.has(projection_name))
         {
             const bool is_unavailable = metadata.projections.isUnavailable(projection_name);
-            /// The initiator validated this settings-only change. A secondary may have retained
-            /// the old declaration as unavailable, so update that AST without analyzing it here.
-            if (is_unavailable && isSecondaryProjectionMetadataReplay(context))
+            const bool is_secondary_replay = isSecondaryProjectionMetadataReplay(context);
+            /// A secondary replica replays a change already admitted by the initiator. A
+            /// distributed DDL worker can also retain an unavailable declaration, but must
+            /// check the body and settings itself before changing that declaration.
+            const bool is_distributed_worker = context->isDDLOrOnClusterInternal()
+                && !context->getClientInfo().is_replicated_database_internal && !is_secondary_replay;
+            if (is_unavailable && (is_secondary_replay || is_distributed_worker))
             {
                 const auto & declaration = projection_decl->as<const ASTProjectionDeclaration &>();
+                if (is_distributed_worker)
+                {
+                    const auto & definitions = metadata.projections.getUnavailableDefinitions();
+                    const auto it = std::ranges::find_if(definitions, [&](const ASTPtr & definition)
+                    {
+                        return definition->as<const ASTProjectionDeclaration &>().name == projection_name;
+                    });
+                    chassert(it != definitions.end());
+                    if (!hasSameUnavailableProjectionBody((*it)->as<const ASTProjectionDeclaration &>(), declaration))
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot modify projection {}: only the WITH SETTINGS clause may be changed, "
+                            "but the projection query differs from the existing one. "
+                            "Use DROP PROJECTION and ADD PROJECTION to change the query",
+                            projection_name);
+                    ProjectionDescription::validateSettingsForUnavailable(declaration, context);
+                }
                 metadata.projections.replaceUnavailableSettings(projection_name, declaration.with_settings);
                 return;
             }
