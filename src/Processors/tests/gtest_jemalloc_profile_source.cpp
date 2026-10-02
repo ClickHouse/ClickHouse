@@ -102,7 +102,8 @@ std::string runCollapsedProfile(const std::string & input_filename, bool collaps
         DEFAULT_BLOCK_SIZE,
         JemallocProfileFormat::Collapsed,
         false, /* symbolize_with_inline */
-        collapsed_use_count);
+        collapsed_use_count,
+        /* remove_file= */ false);
 
     std::string output;
     WriteBufferFromString out(output);

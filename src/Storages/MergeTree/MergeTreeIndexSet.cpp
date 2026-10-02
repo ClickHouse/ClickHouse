@@ -30,6 +30,19 @@ namespace ErrorCodes
 /// 0b11 -- can be true and false at the same time
 static const Field UNKNOWN_FIELD(3u);
 
+/// ColumnVariant::getExtremes, which ColumnDynamic delegates to, sets both bounds to Null without
+/// reading the rows, and a Null bound in Range means "unbounded", never "the value NULL".
+static bool hasMeaningfulFieldExtremes(const IDataType & type)
+{
+    bool result = !isDynamic(type) && !isVariant(type);
+    type.forEachChild([&](const IDataType & child)
+    {
+        if (isDynamic(child) || isVariant(child))
+            result = false;
+    });
+    return result;
+}
+
 
 MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     const String & index_name_,
@@ -128,6 +141,12 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
         serializations[i]->deserializeBinaryBulkWithMultipleStreams(*mutable_col, rows_to_read, settings, state, nullptr);
         elem.column = std::move(mutable_col);
+
+        if (!hasMeaningfulFieldExtremes(*elem.type))
+        {
+            set_hyperrectangle.push_back(Range::createWholeUniverse());
+            continue;
+        }
 
         /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
         /// columns are untouched. LC(Nullable(T)) then keeps the NULL sentinel via getExtremesNullLast
@@ -287,6 +306,13 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
         {
             auto filtered_column = block.getByName(index_columns[i]).column->filter(filter, block.rows());
             columns[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
+
+            if (!hasMeaningfulFieldExtremes(*index_sample_block.getByPosition(i).type))
+            {
+                if (set_hyperrectangle.size() <= i)
+                    set_hyperrectangle.push_back(Range::createWholeUniverse());
+                continue;
+            }
 
             /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
             /// columns are untouched. LC(Nullable(T)) then keeps the NULL sentinel via getExtremesNullLast
@@ -662,8 +688,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
         return &node;
     }
 
-    RPNBuilderTreeContext tree_context(context);
-    RPNBuilderTreeNode tree_node(node_to_check, tree_context);
+    RPNBuilderTreeNode tree_node(node_to_check, context);
 
     auto column_name = tree_node.getColumnName();
     if (auto key_column_it = key_columns.find(column_name); key_column_it != key_columns.end())
@@ -818,8 +843,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
         node_to_check = node_to_check->children[0];
 
-    RPNBuilderTreeContext tree_context(context);
-    RPNBuilderTreeNode tree_node(node_to_check, tree_context);
+    RPNBuilderTreeNode tree_node(node_to_check, context);
 
     if (WhichDataType(node.result_type).isSet())
     {
