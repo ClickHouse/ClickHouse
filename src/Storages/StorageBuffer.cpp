@@ -41,7 +41,6 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageValues.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnsDescription.h>
@@ -294,6 +293,12 @@ bool StorageBuffer::isRemote() const
     return destination && destination->isRemote();
 }
 
+bool StorageBuffer::readRequiresAnalyzedQuery() const
+{
+    auto destination = getDestinationTable();
+    return destination && destination->readRequiresAnalyzedQuery();
+}
+
 void StorageBuffer::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -373,9 +378,6 @@ void StorageBuffer::read(
 
         if (dst_has_same_structure)
         {
-            if (query_info.order_optimizer)
-                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination_metadata_snapshot, local_context);
-
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
             destination->read(
                 query_plan, column_names, destination_snapshot, query_info,
