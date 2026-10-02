@@ -728,6 +728,13 @@ size_t ExternalDistinctTransform::estimateRunWriteMemory(size_t rows, size_t all
     return flag_columns_memory + output_memory + write_buffers_memory;
 }
 
+size_t ExternalDistinctTransform::maxRowsInIntermediateMergeBlock() const
+{
+    /// Intermediate merges write their files under the runs' byte target, sized for the widest observed
+    /// average row.
+    return MergeSorter::calculateMaxMergedBlockSize(max_block_size_rows, preferred_block_bytes, 1, max_average_row_bytes);
+}
+
 size_t ExternalDistinctTransform::selectTailSpillPrefix(const CollectingInput & collecting) const
 {
     const auto & chunks = collecting.sorted_chunks;
@@ -856,20 +863,26 @@ Pipe ExternalDistinctTransform::createMergePipe(Chunks tail)
     const auto description = spill_layout->getRunSortDescription();
     const auto num_key_columns = spill_layout->getKeySortDescription().size();
     const auto block_size = max_block_size_rows;
-    auto suppression_merge = [header = spill_layout->getSuppressionRunHeader(), description, block_size]
+
+    /// Intermediate files use the runs' byte target, so their readers fit the budget of
+    /// `selectTailSpillPrefix`.
+    const auto intermediate_block_size = maxRowsInIntermediateMergeBlock();
+    auto suppression_merge = [header = spill_layout->getSuppressionRunHeader(), description, intermediate_block_size]
         (const SharedHeaders & headers) -> ProcessorPtr
     {
         return std::make_shared<MergingSortedTransform>(
-            header, headers.size(), description, block_size, /*max_block_size_bytes=*/ 0,
+            header, headers.size(), description, intermediate_block_size, /*max_block_size_bytes=*/ 0,
             /*max_dynamic_subcolumns=*/ std::nullopt, SortingQueueStrategy::Batch);
     };
-    auto ordinary_merge = [ordinary_header, description, num_key_columns, block_size](const SharedHeaders & headers) -> ProcessorPtr
+    auto ordinary_merge = [ordinary_header, description, num_key_columns, intermediate_block_size]
+        (const SharedHeaders & headers) -> ProcessorPtr
     {
 
         /// Ordinary intermediate chunks must be unique on the comparison keys. Retain fingerprints,
         /// the emitted flag, and arrival numbers when present so later passes can compare their rows.
         /// Keys already emitted before spilling are suppressed when both groups enter the final merge.
-        return std::make_shared<DistinctSortedTransform>(headers, ordinary_header, description, num_key_columns, block_size);
+        return std::make_shared<DistinctSortedTransform>(
+            headers, ordinary_header, description, num_key_columns, intermediate_block_size);
     };
     auto final_merge = [merged_header, description, num_key_columns, block_size](const SharedHeaders & headers) -> ProcessorPtr
     {

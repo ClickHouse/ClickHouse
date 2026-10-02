@@ -212,6 +212,7 @@ private:
     void readRun(RunWriteProgress & progress);
     void prepareTail(PreparingTail & tail);
     size_t estimateRunWriteMemory(size_t rows, size_t allocated_bytes) const;
+    size_t maxRowsInIntermediateMergeBlock() const;
     size_t selectTailSpillPrefix(const CollectingInput & collecting) const;
     void consumeMerged(Merging & merging);
 
