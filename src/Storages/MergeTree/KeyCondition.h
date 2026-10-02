@@ -55,18 +55,6 @@ struct DeterministicKeyTransformDag
     String input_name;
 };
 
-struct KeyConditionRangeScratch
-{
-    KeyConditionRangeScratch(
-        const std::vector<size_t> & sparse_key_indices,
-        const DataTypes & sparse_data_types,
-        const std::vector<UInt8> & equal_boundaries_mask,
-        const Hyperrectangle * key_bounds);
-
-    Hyperrectangle sparse_key_ranges;
-    std::vector<int> key_col_to_sparse_pos;
-};
-
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,
@@ -192,15 +180,19 @@ public:
     /// present in the in-memory index but bounded by the part's partition minmax). Such columns are constant
     /// coordinates: their range is `(*key_bounds)[key_index]` for the whole call, they do not participate in
     /// the hyperrectangle enumeration, and their entries in `sparse_left_keys`/`sparse_right_keys` are ignored.
-    BoolMask checkInRange(
-        const std::vector<size_t> & sparse_key_indices,
-        const FieldRef * sparse_left_keys,
-        const FieldRef * sparse_right_keys,
-        const DataTypes & sparse_data_types,
-        const std::vector<UInt8> & equal_boundaries_mask,
-        BoolMask initial_mask,
-        const Hyperrectangle * key_bounds = nullptr) const;
+    struct SparseRangeCheckScratch
+    {
+        SparseRangeCheckScratch(
+            const std::vector<size_t> & sparse_key_indices,
+            const DataTypes & sparse_data_types,
+            size_t enumerated_key_prefix_size,
+            const Hyperrectangle * key_bounds);
 
+        Hyperrectangle sparse_key_ranges;
+        std::vector<int> key_col_to_sparse_pos;
+    };
+
+    /// `scratch` is reusable while the sparse key layout, enumerated prefix size, and key bounds stay unchanged.
     BoolMask checkInRange(
         const std::vector<size_t> & sparse_key_indices,
         const FieldRef * sparse_left_keys,
@@ -209,7 +201,7 @@ public:
         const std::vector<UInt8> & equal_boundaries_mask,
         BoolMask initial_mask,
         const Hyperrectangle * key_bounds,
-        KeyConditionRangeScratch & scratch) const;
+        SparseRangeCheckScratch & scratch) const;
 
     const KeyOrder & getKeyOrder() const { return key_order; }
 

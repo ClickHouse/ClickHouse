@@ -2332,9 +2332,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         }
     }
 
-    std::optional<KeyConditionRangeScratch> sparse_key_range_scratch;
-    if (use_sparse_pk_representation)
-        sparse_key_range_scratch.emplace(used_key_indices, sparse_key_types, equal_boundaries_mask, &index_bounds);
+    std::optional<KeyCondition::SparseRangeCheckScratch> sparse_range_check_scratch;
+    if (key_condition_useful && use_sparse_pk_representation && sparse_keys_size != 0)
+        sparse_range_check_scratch.emplace(used_key_indices, sparse_key_types, equal_boundaries_mask.size(), &index_bounds);
 
     /// For _part_offset and _part virtual columns
     DataTypes part_offset_types
@@ -2354,6 +2354,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 /// Nothing can be inferred from empty ranges
                 if (sparse_keys_size == 0)
                     return BoolMask(true, true);
+
+                chassert(sparse_range_check_scratch.has_value());
 
                 if (range.end == marks_count)
                 {
@@ -2408,7 +2410,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     equal_boundaries_mask,
                     initial_mask,
                     &index_bounds,
-                    *sparse_key_range_scratch);
+                    *sparse_range_check_scratch);
             }
 
             if (range.end == marks_count)

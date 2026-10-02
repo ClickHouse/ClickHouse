@@ -5890,14 +5890,13 @@ BoolMask KeyCondition::checkInRange(
     });
 }
 
-KeyConditionRangeScratch::KeyConditionRangeScratch(
+KeyCondition::SparseRangeCheckScratch::SparseRangeCheckScratch(
     const std::vector<size_t> & sparse_key_indices,
     const DataTypes & sparse_data_types,
-    const std::vector<UInt8> & equal_boundaries_mask,
+    size_t enumerated_key_prefix_size,
     const Hyperrectangle * key_bounds)
 {
     const size_t sparse_keys_size = sparse_key_indices.size();
-    const size_t enumerated_key_prefix_size = equal_boundaries_mask.size();
 
 #ifndef NDEBUG
     chassert(sparse_keys_size <= sparse_data_types.size());
@@ -5926,7 +5925,7 @@ KeyConditionRangeScratch::KeyConditionRangeScratch(
     }
 
     /// Mapping: full key index -> position in sparse hyperrectangle, or -1 if not tracked.
-    key_col_to_sparse_pos.assign(mapping_size, -1);
+    key_col_to_sparse_pos.resize(mapping_size, -1);
     for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
     {
         const size_t key_index = sparse_key_indices[sparse_pos];
@@ -5937,28 +5936,6 @@ KeyConditionRangeScratch::KeyConditionRangeScratch(
     }
 }
 
-/// Optimized overload for sparse key columns
-BoolMask KeyCondition::checkInRange(
-    const std::vector<size_t> & sparse_key_indices,
-    const FieldRef * sparse_left_keys,
-    const FieldRef * sparse_right_keys,
-    const DataTypes & sparse_data_types,
-    const std::vector<UInt8> & equal_boundaries_mask,
-    BoolMask initial_mask,
-    const Hyperrectangle * key_bounds) const
-{
-    KeyConditionRangeScratch scratch(sparse_key_indices, sparse_data_types, equal_boundaries_mask, key_bounds);
-    return checkInRange(
-        sparse_key_indices,
-        sparse_left_keys,
-        sparse_right_keys,
-        sparse_data_types,
-        equal_boundaries_mask,
-        initial_mask,
-        key_bounds,
-        scratch);
-}
-
 BoolMask KeyCondition::checkInRange(
     const std::vector<size_t> & sparse_key_indices,
     const FieldRef * sparse_left_keys,
@@ -5967,27 +5944,31 @@ BoolMask KeyCondition::checkInRange(
     const std::vector<UInt8> & equal_boundaries_mask,
     BoolMask initial_mask,
     const Hyperrectangle * key_bounds,
-    KeyConditionRangeScratch & scratch) const
+    SparseRangeCheckScratch & scratch) const
 {
     chassert(scratch.sparse_key_ranges.size() == sparse_key_indices.size());
+    chassert(scratch.key_col_to_sparse_pos.size() >= equal_boundaries_mask.size());
+
+    const auto & key_col_to_sparse_pos = scratch.key_col_to_sparse_pos;
+    auto & sparse_key_ranges = scratch.sparse_key_ranges;
 
     return forAnySparseHyperrectangle(
         sparse_key_indices,
-        scratch.key_col_to_sparse_pos,
+        key_col_to_sparse_pos,
         sparse_left_keys,
         sparse_right_keys,
         equal_boundaries_mask,
         /*full_key_size*/ num_key_columns,
         /*left_bounded*/ true,
         /*right_bounded*/ true,
-        scratch.sparse_key_ranges,
+        sparse_key_ranges,
         sparse_data_types,
         key_order,
         /*prefix_size*/ 0,
         initial_mask,
         key_bounds,
         [&](const Hyperrectangle & key_ranges_hyperrectangle)
-        { return checkInHyperrectangle(scratch.key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types); });
+        { return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types); });
 }
 
 /// Check if a type conversion function preserves the Field value when it's monotonic on the given range.
