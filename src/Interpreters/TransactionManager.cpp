@@ -631,7 +631,7 @@ CSN TransactionManager::finalizeCommittedTransaction(MergeTreeTransaction * txn,
     return allocated_csn;
 }
 
-void TransactionManager::rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept
+void TransactionManager::rollbackTransaction(const MergeTreeTransactionPtr & txn, bool already_claimed) noexcept
 {
     auto component_guard = Coordination::setCurrentComponent("TransactionManager::rollbackTransaction");
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
@@ -641,7 +641,7 @@ void TransactionManager::rollbackTransaction(const MergeTreeTransactionPtr & txn
               : std::current_exception() ? fmt::format(" due to uncaught exception (code: {})", getCurrentExceptionCode())
                                          : " due to uncaught exception");
 
-    const auto rollback_result = txn->rollback();
+    const auto rollback_result = txn->rollback(already_claimed);
     if (rollback_result == MergeTreeTransaction::RollbackResult::NotNeeded)
     {
         /// Transaction was cancelled or committed concurrently

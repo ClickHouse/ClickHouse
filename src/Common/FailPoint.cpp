@@ -382,6 +382,9 @@ static struct InitFiu
     PAUSEABLE(transaction_after_commit_pause) \
     PAUSEABLE(transaction_rollback_pause_after_mark) \
     REGULAR(transaction_slow_resolve_removal_csn) \
+    PAUSEABLE(transaction_commit_pause_before_mutation_csn) \
+    PAUSEABLE(transaction_commit_pause_before_csn_cas) \
+    PAUSEABLE(kill_mutation_pause_after_transaction_resolve) \
     PAUSEABLE_ONCE(smt_merge_commit_pause_after_state_swap) \
     PAUSEABLE_ONCE(smt_metadata_update_pause_before_apply) \
     PAUSEABLE(mt_pause_before_register_mutation) \

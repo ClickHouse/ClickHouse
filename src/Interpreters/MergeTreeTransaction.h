@@ -190,7 +190,10 @@ private:
     /// Restores the parts this transaction removed. A part keeps its removal lock unless the
     /// `removal_tid` stamp was cleared: stamped but unlocked looks free to the next remover,
     /// which then overwrites the stamp. Restart clears a kept stamp via `loadAndUpdateMetadata`.
-    RollbackResult rollback() noexcept;
+    /// `already_claimed` skips the `UnknownCSN -> RolledBackCSN` CAS: the caller won it through `claimRollback`.
+    RollbackResult rollback(bool already_claimed = false) noexcept;
+    /// Claims the right to roll back, without performing it: CAS `UnknownCSN -> RolledBackCSN`.
+    bool claimRollback() noexcept;
     void afterFinalize();
 
     void checkIsNotCancelled() const;
