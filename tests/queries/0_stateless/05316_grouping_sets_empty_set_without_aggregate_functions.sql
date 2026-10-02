@@ -9,7 +9,10 @@ SELECT 'issue', a, b, grouping(a, b) FROM (SELECT 1 a, 1 b UNION ALL SELECT 1 a,
 
 SELECT 'only empty set', 1 FROM numbers(3) GROUP BY GROUPING SETS (());
 SELECT 'only empty set, use_nulls', 1 FROM numbers(3) GROUP BY GROUPING SETS (()) SETTINGS group_by_use_nulls = 1;
+SELECT 'aggregate, only empty set', count() FROM numbers(3) GROUP BY GROUPING SETS (());
+SELECT 'aggregate, only empty set, flattened', count() FROM (EXPLAIN QUERY TREE SELECT count() FROM numbers(3) GROUP BY GROUPING SETS (())) WHERE explain ILIKE '%grouping_sets%';
 SELECT 'three empty sets', 1 FROM (SELECT 1 a UNION ALL SELECT 2 a) GROUP BY GROUPING SETS ((), (), ());
+SELECT 'only empty set, totals', 1 FROM numbers(3) GROUP BY GROUPING SETS (()) WITH TOTALS;
 
 -- The unused inner count() is removed by the analyzer.
 SELECT 'pruned aggregate', count() FROM (SELECT number, count() FROM numbers(3) GROUP BY GROUPING SETS ((number), ()));
@@ -18,6 +21,8 @@ SELECT 'pruned aggregate, one empty set', count() FROM (SELECT 1 AS x, count() F
 
 SELECT 'empty input', number FROM numbers(0) GROUP BY GROUPING SETS ((number), ()) SETTINGS group_by_use_nulls = 1;
 SELECT 'empty input, only empty set', 1 FROM numbers(0) GROUP BY GROUPING SETS (());
+SELECT 'empty input, suppressed', count() FROM (SELECT 1 FROM numbers(0) GROUP BY GROUPING SETS (()) SETTINGS empty_result_for_aggregation_by_empty_set = 1);
+SELECT 'empty input, suppressed, keys', count() FROM (SELECT number FROM numbers(0) GROUP BY GROUPING SETS ((number), ()) SETTINGS empty_result_for_aggregation_by_empty_set = 1);
 
 SELECT 'several streams', count(), countIf(isNull(number)) FROM (SELECT number FROM numbers_mt(1000) GROUP BY GROUPING SETS ((number), ())) SETTINGS group_by_use_nulls = 1, max_threads = 4, max_block_size = 100;
 
