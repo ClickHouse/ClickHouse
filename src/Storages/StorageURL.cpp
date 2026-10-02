@@ -2968,7 +2968,13 @@ SecretArgumentsSpec urlSecretArguments(size_t url_offset)
                 const auto equals_func = finder.function->arguments->at(i)->getFunction();
                 if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments()
                     || equals_func->arguments->size() != 2)
+                {
+                    /// After the collection name every argument must be an override or `headers(...)`; a positional
+                    /// one is invalid but logged before validation rejects it, and can be a url with a password.
+                    if (!equals_func || equals_func->name() != "headers")
+                        finder.markSecretArgument(i);
                     continue;
+                }
 
                 String key;
                 if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
