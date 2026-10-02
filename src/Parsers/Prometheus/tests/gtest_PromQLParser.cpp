@@ -133,6 +133,48 @@ TEST(PromQLParser, DuplicateMetricName)
 }
 
 
+TEST(PromQLParser, SelectorRequiresNonEmptyMatcher)
+{
+    for (const auto * const query : {
+             R"({__name__=~".*"})",
+             R"({job=~".*"})",
+             R"({job!="demo"})",
+             R"({job=""})",
+             R"({job!~".+"})",
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_message, "vector selector must contain at least one non-empty matcher") << query;
+    }
+
+    for (const auto * const query : {
+             R"({job!=""})",
+             R"({job!~".*"})",
+             R"({__name__=~".+"})",
+             R"({__name__=~".+", job=~".*"})",
+             R"(up{job=~".*"})",
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_TRUE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query << ": " << error_message;
+    }
+
+    /// Regex syntax is validated even when another matcher already makes the selector non-empty.
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(query_tree.tryParse(R"({__name__=~".+", job=~"(.*"})", 3, &error_message, &error_pos));
+        EXPECT_NE(error_message.find("invalid regular expression in label matcher"), String::npos);
+    }
+}
+
+
 TEST(PromQLParser, CaseInsensitiveAggregationOperators)
 {
     EXPECT_EQ(parse("SuM(up)"), R"(
@@ -1095,7 +1137,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 
     /// Functions.
     EXPECT_EQ(parse("avg_over_time(demo_memory_usage_bytes[20m])"), R"(
-avg_over_time(demo_memory_usage_bytes[1200])
+avg_over_time(demo_memory_usage_bytes[20m])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(avg_over_time):
@@ -1106,7 +1148,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("present_over_time(demo_memory_usage_bytes[20m])"), R"(
-present_over_time(demo_memory_usage_bytes[1200])
+present_over_time(demo_memory_usage_bytes[20m])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(present_over_time):
@@ -1117,7 +1159,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("absent_over_time(demo_memory_usage_bytes[20m])"), R"(
-absent_over_time(demo_memory_usage_bytes[1200])
+absent_over_time(demo_memory_usage_bytes[20m])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(absent_over_time):
@@ -1128,7 +1170,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("quantile_over_time(0.5, demo_memory_usage_bytes[20m])"), R"(
-quantile_over_time(0.5, demo_memory_usage_bytes[1200])
+quantile_over_time(0.5, demo_memory_usage_bytes[20m])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(quantile_over_time):
@@ -1178,7 +1220,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("rate(demo_cpu_usage_seconds_total[20m])"), R"(
-rate(demo_cpu_usage_seconds_total[1200])
+rate(demo_cpu_usage_seconds_total[20m])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(rate):
@@ -1189,7 +1231,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("deriv(demo_disk_usage_bytes[20m])"), R"(
-deriv(demo_disk_usage_bytes[1200])
+deriv(demo_disk_usage_bytes[20m])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(deriv):
@@ -1200,7 +1242,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("predict_linear(demo_disk_usage_bytes[20m], 600)"), R"(
-predict_linear(demo_disk_usage_bytes[1200], 600)
+predict_linear(demo_disk_usage_bytes[20m], 600)
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(predict_linear):
@@ -1258,7 +1300,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("irate(demo_cpu_usage_seconds_total[20m])"), R"(
-irate(demo_cpu_usage_seconds_total[1200])
+irate(demo_cpu_usage_seconds_total[20m])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(irate):
@@ -1301,7 +1343,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("resets(demo_cpu_usage_seconds_total[20m])"), R"(
-resets(demo_cpu_usage_seconds_total[1200])
+resets(demo_cpu_usage_seconds_total[20m])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(resets):
@@ -1312,7 +1354,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("changes(demo_batch_last_success_timestamp_seconds[20m])"), R"(
-changes(demo_batch_last_success_timestamp_seconds[1200])
+changes(demo_batch_last_success_timestamp_seconds[20m])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(changes):
@@ -1339,7 +1381,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("histogram_quantile(0.5, rate(demo_api_request_duration_seconds_bucket[1m]))"), R"(
-histogram_quantile(0.5, rate(demo_api_request_duration_seconds_bucket[60]))
+histogram_quantile(0.5, rate(demo_api_request_duration_seconds_bucket[1m]))
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(histogram_quantile):
@@ -1396,7 +1438,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 
     /// Subqueries.
     EXPECT_EQ(parse("max_over_time((time() - max(demo_batch_last_success_timestamp_seconds) < 1000)[5m:10s] offset 5m)"), R"(
-max_over_time((time() - max(demo_batch_last_success_timestamp_seconds) < 1000)[300:10] offset 300)
+max_over_time((time() - max(demo_batch_last_success_timestamp_seconds) < 1000)[5m:10s] offset 5m)
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(max_over_time):
@@ -1415,7 +1457,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("avg_over_time(rate(demo_cpu_usage_seconds_total[1m])[2m:10s])"), R"(
-avg_over_time(rate(demo_cpu_usage_seconds_total[60])[120:10])
+avg_over_time(rate(demo_cpu_usage_seconds_total[1m])[2m:10s])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(avg_over_time):
@@ -1527,7 +1569,7 @@ TEST(PromQLParser, TimeSeriesNumberFormatsRemainDecimal)
 TEST(PromQLParser, OctalRangesAndOffsets)
 {
     EXPECT_EQ(parse("up[0755]"), R"(
-up[493]
+up[8m13s]
 
 PrometheusQueryTree(RANGE_VECTOR):
     RangeSelector:
@@ -1537,7 +1579,7 @@ PrometheusQueryTree(RANGE_VECTOR):
 )");
 
     EXPECT_EQ(parse("up[0755:010]"), R"(
-up[493:8]
+up[8m13s:8s]
 
 PrometheusQueryTree(RANGE_VECTOR):
     Subquery:
@@ -1548,7 +1590,7 @@ PrometheusQueryTree(RANGE_VECTOR):
 )");
 
     EXPECT_EQ(parse("up offset 0755"), R"(
-up offset 493
+up offset 8m13s
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Offset:
@@ -1558,7 +1600,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("up offset -0755"), R"(
-up offset -493
+up offset -8m13s
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Offset:
@@ -1600,7 +1642,7 @@ PrometheusQueryTree(SCALAR):
 )");
 
     EXPECT_EQ(parse("3h20m10s5ms"), R"(
-12010.005
+3h20m10s5ms
 
 PrometheusQueryTree(SCALAR):
     Scalar(12010.005)
@@ -1672,7 +1714,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
     EXPECT_EQ(parse(R"(
         http_requests_total{job="prometheus"}[5m]
     )"), R"(
-http_requests_total{job="prometheus"}[300]
+http_requests_total{job="prometheus"}[5m]
 
 PrometheusQueryTree(RANGE_VECTOR):
     RangeSelector:
@@ -1683,7 +1725,7 @@ PrometheusQueryTree(RANGE_VECTOR):
 )");
 
     EXPECT_EQ(parse("http_requests_total offset 5m @ 1609746000"), R"(
-http_requests_total @ 1609746000 offset 300
+http_requests_total @ 1609746000 offset 5m
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Offset:
@@ -1704,7 +1746,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("http_requests_total @ end() offset 5m"), R"(
-http_requests_total @ end() offset 300
+http_requests_total @ end() offset 5m
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Offset:
@@ -1715,7 +1757,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("http_requests_total offset 5m @ start()"), R"(
-http_requests_total @ start() offset 300
+http_requests_total @ start() offset 5m
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Offset:
@@ -1740,7 +1782,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )PROMQL");
 
     EXPECT_EQ(parse("http_requests_total[5m:1m] @ start()"), R"(
-http_requests_total[300:60] @ start()
+http_requests_total[5m:1m] @ start()
 
 PrometheusQueryTree(RANGE_VECTOR):
     Offset:
@@ -1753,7 +1795,7 @@ PrometheusQueryTree(RANGE_VECTOR):
 )");
 
     EXPECT_EQ(parse("http_requests_total[5m:1m] offset -10s"), R"(
-http_requests_total[300:60] offset -10
+http_requests_total[5m:1m] offset -10s
 
 PrometheusQueryTree(RANGE_VECTOR):
     Offset:
@@ -1766,7 +1808,7 @@ PrometheusQueryTree(RANGE_VECTOR):
 )");
 
     EXPECT_EQ(parse("(2 ^ vector(3))[5m:1m]"), R"(
-(2 ^ vector(3))[300:60]
+(2 ^ vector(3))[5m:1m]
 
 PrometheusQueryTree(RANGE_VECTOR):
     Subquery:
@@ -1780,7 +1822,7 @@ PrometheusQueryTree(RANGE_VECTOR):
 
     /// Subquery has higher precedence than power '^'
     EXPECT_EQ(parse("2 ^ vector(3)[5m:1m]"), R"(
-2 ^ vector(3)[300:60]
+2 ^ vector(3)[5m:1m]
 
 PrometheusQueryTree(INSTANT_VECTOR):
     BinaryOperator(^)
@@ -1940,6 +1982,33 @@ world`)"), "hello\nworld");
     EXPECT_EQ(parseStringLiteral(R"("hello\nworld")"), "hello\nworld");
     EXPECT_EQ(parseStringLiteral(R"('hello\nworld')"), "hello\nworld");
     EXPECT_EQ(parseStringLiteral("\"hello\rworld\""), "hello\rworld");
+}
+
+TEST(PromQLParser, RejectOverlappingOnAndGroupLabels)
+{
+    auto expect_rejected = [](std::string_view query, std::string_view expected_error_message)
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos));
+        EXPECT_EQ(error_message, expected_error_message);
+        EXPECT_EQ(error_pos, 6);
+    };
+
+    expect_rejected("foo + on(job) group_left(job) bar", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected("foo + on(job) group_right(job) bar", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected("foo + on(job,job,job) group_left(job,job,job) bar", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected("foo + on(job,instance) group_left(instance,job) bar", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected("foo + on(job,instance) group_left(zone,instance) bar", R"(label "instance" must not occur in ON and GROUP clause at once)");
+    expect_rejected(R"(foo + on("job") group_left(job) bar)", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected(R"(foo + on(job) group_left("job") bar)", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected(R"(foo + on("a\"b") group_left("a\"b") bar)", R"(label "a\"b" must not occur in ON and GROUP clause at once)");
+    expect_rejected(R"(foo + on("\v") group_left("\v") bar)", R"(label "\v" must not occur in ON and GROUP clause at once)");
+
+    EXPECT_NO_THROW(PrometheusQueryTree{"foo + on(job) group_left(instance) bar"});
+    EXPECT_NO_THROW(PrometheusQueryTree{"foo + on(a,a,a) group_left(b,b,b) bar"});
+    EXPECT_NO_THROW(PrometheusQueryTree{"foo + ignoring(job) group_left(job) bar"});
 }
 
 

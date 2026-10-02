@@ -1,3 +1,5 @@
+#include <unordered_set>
+
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/Exception.h>
@@ -145,6 +147,13 @@ namespace
         std::unique_ptr<antlr4::Token> nextToken() override
         {
             auto next_token = PromQLLexer::nextToken();
+            if (next_token->getType() == METRIC_NAME)
+            {
+                const auto token_text = next_token->getText();
+                if (token_text == "min_of" || token_text == "max_of")
+                    static_cast<antlr4::WritableToken *>(next_token.get())->setType(FUNCTION);
+            }
+
             if (!error_listener.hasError() && next_token->getType() == STRING && next_token->getLine() != getLine())
             {
                 const String token_text = next_token->getText();
@@ -232,6 +241,11 @@ namespace
             return convertCodePointPositionToByteOffset(promql_query, ctx->getSymbol()->getStartIndex());
         }
 
+        size_t getStartPos(const antlr4::ParserRuleContext * ctx) const
+        {
+            return getStartPos(ctx->getStart());
+        }
+
         size_t getStartPos(const antlr4::Token * token) const
         {
             return convertCodePointPositionToByteOffset(promql_query, token->getStartIndex());
@@ -249,11 +263,16 @@ namespace
             return true;
         }
 
-        bool parseScalar(const antlr4::tree::TerminalNode * ctx, ScalarType & result)
+        bool parseScalar(
+            const antlr4::tree::TerminalNode * ctx,
+            ScalarType & result,
+            bool * is_duration = nullptr,
+            std::optional<Int64> * duration_ms = nullptr)
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseScalar(getText(ctx), result, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseScalar(
+                    getText(ctx), result, &error_message, &error_pos, is_duration, duration_ms))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -341,13 +360,19 @@ namespace
         Node * makeScalar(antlr4::tree::TerminalNode * ctx)
         {
             ScalarType scalar = 0;
-            if (!parseScalar(ctx, scalar))
+            bool is_duration = false;
+            std::optional<Int64> duration_ms;
+            if (!parseScalar(ctx, scalar, &is_duration, &duration_ms))
             {
                 chassert(error_listener.hasError());
                 return nullptr;
             }
             auto new_node = std::make_unique<Scalar>();
             new_node->scalar = scalar;
+            new_node->is_duration = is_duration;
+            new_node->duration_ms = duration_ms;
+            if (is_duration)
+                new_node->duration_str = getText(ctx);
             return addNode(std::move(new_node));
         }
 
@@ -428,6 +453,19 @@ namespace
                 return false;
             }
 
+            if (matcher_type == MatcherType::RE || matcher_type == MatcherType::NRE)
+            {
+                re2::RE2::Options options;
+                options.set_log_errors(false);
+                re2::RE2 regexp(res_matcher.label_value, options);
+                if (!regexp.ok())
+                {
+                    error_listener.setError(
+                        "invalid regular expression in label matcher: " + regexp.error(), getStartPos(ctx));
+                    return false;
+                }
+            }
+
             return true;
         }
 
@@ -461,34 +499,26 @@ namespace
             return matcher;
         }
 
-        bool matcherMatchesEmptyString(const Matcher & matcher, size_t error_pos, bool & result)
+        bool matcherMatchesEmptyString(const Matcher & matcher) const
         {
             switch (matcher.matcher_type)
             {
                 case MatcherType::EQ:
-                    result = matcher.label_value.empty();
-                    return true;
+                    return matcher.label_value.empty();
                 case MatcherType::NE:
-                    result = !matcher.label_value.empty();
-                    return true;
+                    return !matcher.label_value.empty();
                 case MatcherType::RE:
                 case MatcherType::NRE:
                 {
                     re2::RE2::Options options;
                     options.set_log_errors(false);
                     re2::RE2 regexp(matcher.label_value, options);
-                    if (!regexp.ok())
-                    {
-                        error_listener.setError(
-                            "invalid regular expression in label matcher: " + regexp.error(), error_pos);
-                        return false;
-                    }
+                    chassert(regexp.ok());
 
-                    bool regexp_matches_empty_string = re2::RE2::FullMatch("", regexp);
-                    result = (matcher.matcher_type == MatcherType::RE)
+                    const bool regexp_matches_empty_string = re2::RE2::FullMatch("", regexp);
+                    return matcher.matcher_type == MatcherType::RE
                         ? regexp_matches_empty_string
                         : !regexp_matches_empty_string;
-                    return true;
                 }
             }
 
@@ -497,24 +527,11 @@ namespace
 
         bool validateSelectorHasNonEmptyMatcher(const MatcherList & matchers, size_t error_pos)
         {
-            /// Follow Prometheus parser semantics: a selector like `{job=~".*"}` does not just mean
-            /// "all series with a `job` label", it also matches series where the `job` label is absent.
-            /// That makes typos and broad dashboard variables silently select every metric. Require
-            /// one matcher that cannot match an empty label value instead. To intentionally query all
-            /// metrics, use `{__name__=~".+"}`; if an empty-matching label matcher is needed, keep it
-            /// and add `{__name__=~".+"}` as another matcher.
-            bool has_non_empty_matcher = false;
             for (const auto & matcher : matchers)
             {
-                bool matches_empty_string = false;
-                if (!matcherMatchesEmptyString(matcher, error_pos, matches_empty_string))
-                    return false;
-                if (!matches_empty_string)
-                    has_non_empty_matcher = true;
+                if (!matcherMatchesEmptyString(matcher))
+                    return true;
             }
-
-            if (has_non_empty_matcher)
-                return true;
 
             error_listener.setError("vector selector must contain at least one non-empty matcher", error_pos);
             return false;
@@ -556,7 +573,7 @@ namespace
                 }
             }
 
-            if (!validateSelectorHasNonEmptyMatcher(matchers, getStartPos(ctx->getStart())))
+            if (!validateSelectorHasNonEmptyMatcher(matchers, getStartPos(ctx)))
                 return nullptr;
 
             new_node->matchers = std::move(matchers);
@@ -722,6 +739,27 @@ namespace
                     if (auto * extra_labels_ctx = group_right_ctx->labelNameList())
                         new_node->extra_labels = getLabelNameList(extra_labels_ctx);
                 }
+
+                if (!error_listener.hasError() && new_node->on && !new_node->extra_labels.empty())
+                {
+                    std::unordered_set<std::string_view> extra_labels;
+                    extra_labels.reserve(new_node->extra_labels.size());
+                    for (const auto & extra_label : new_node->extra_labels)
+                        extra_labels.emplace(extra_label);
+
+                    for (const auto & label : new_node->labels)
+                    {
+                        if (extra_labels.contains(label))
+                        {
+                            const size_t error_pos = convertCodePointPositionToByteOffset(
+                                promql_query, grouping->getStart()->getStartIndex());
+                            error_listener.setError(
+                                "label " + PrometheusQueryParsingUtil::quoteStringLiteral(label) + " must not occur in ON and GROUP clause at once",
+                                error_pos);
+                            break;
+                        }
+                    }
+                }
             }
             new_node->bool_modifier = bool_modifier;
 
@@ -839,7 +877,8 @@ namespace
         /// Returns the result type of a function.
         ResultType getFunctionResultType(std::string_view function_name)
         {
-            if (function_name == "scalar" || function_name == "time" || function_name == "pi")
+            if (function_name == "scalar" || function_name == "time" || function_name == "pi"
+                || function_name == "min_of" || function_name == "max_of")
                 return ResultType::SCALAR;
             else
                 return ResultType::INSTANT_VECTOR;
