@@ -33,6 +33,12 @@ struct RemoteFSReadSettings
     /// Enable async prefetching for remote reads.
     bool prefetch = false;
 
+    /// Hint that the consumer reads the object at arbitrary offsets rather than streaming it
+    /// sequentially from the start (for example, it reads a trailing index before the body). Read
+    /// paths may use this to skip speculative from-start read-ahead that such a consumer would not
+    /// consume.
+    bool random_access = false;
+
     /// TODO: `max_backoff_ms` / `max_retries` are dead — assigned from public
     /// Settings `remote_fs_read_max_backoff_ms` / `remote_fs_read_backoff_max_tries`
     /// but no internal read path actually consumes them. Either wire them into
@@ -170,6 +176,7 @@ struct ReadSettings
         size_t block_size = DEFAULT_READER_EXECUTOR_BLOCK_SIZE;
         size_t min_bytes_for_seek = DEFAULT_READER_EXECUTOR_MIN_BYTES_FOR_SEEK;
         size_t max_tail_for_drain = DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN;
+        size_t plan_look_ahead = DEFAULT_READER_EXECUTOR_PLAN_LOOK_AHEAD;
     };
     ReaderExecutorSettings reader_executor;
 

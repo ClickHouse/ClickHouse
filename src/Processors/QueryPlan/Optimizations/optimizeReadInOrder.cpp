@@ -1427,6 +1427,10 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
         if (reading->isParallelReadingFromReplicas() && find_reading_ctx.passed_order_preserving_join)
             return {};
 
+        /// A follower forced to aggregate in order cannot use an aggregate projection and would read the base table.
+        if (reading->isParallelReadingFromReplicas() && aggregating.getParams().only_merge)
+            return {};
+
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
             fixed_columns,

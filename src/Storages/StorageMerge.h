@@ -48,7 +48,9 @@ public:
     std::string getName() const override { return "Merge"; }
 
     bool isRemote() const override;
+    bool readRequiresAnalyzedQuery() const override { return true; }
     bool readsFromOtherTables() const override { return true; }
+    bool supportsTruncate() const override { return false; }
 
     /// The check is delayed to the read method. It checks the support of the tables used.
     bool supportsSampling() const override { return true; }
@@ -206,7 +208,7 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
-    QueryPlanRawPtrs getChildPlans() override;
+    QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
 
     /// Returns child plans aligned 1:1 with `getSelectedTables()`. Entries for uninitialized
     /// plans are returned as `nullptr` so that callers can pair tables with their plans.
@@ -336,6 +338,7 @@ private:
         const SelectQueryInfo & outer_query_info,
         SelectQueryInfo & modified_query_info,
         const StorageSnapshotPtr & snapshot,
+        const ColumnsDescription & merge_columns,
         const Aliases & aliases,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextPtr context,
