@@ -9,6 +9,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -1020,8 +1021,21 @@ private:
             ActionsDAG::NodeRawConstPtrs children;
             auto function_builder = FunctionFactory::instance().get("and", context);
 
+            /// A hint is 0 only where the predicate is 0 or NULL. Map it to NULL, so the conjunction keeps the predicate's NULL.
+            const ActionsDAG::Node * zero = nullptr;
+            if (!has_exact_search && canContainNull(*function_node.result_type))
+            {
+                auto zero_type = std::make_shared<DataTypeUInt8>();
+                zero = &actions_dag.addColumn(zero_type->createColumnConst(0, 0), zero_type, "0");
+            }
+
             for (const auto & condition : selected_conditions)
-                children.push_back(add_condition_to_input(condition));
+            {
+                const auto * hint = add_condition_to_input(condition);
+                if (zero)
+                    hint = &actions_dag.addFunction(FunctionFactory::instance().get("nullIf", context), {hint, zero}, "");
+                children.push_back(hint);
+            }
 
             if (!has_exact_search)
                 children.push_back(&function_node);
