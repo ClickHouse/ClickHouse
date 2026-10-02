@@ -201,16 +201,6 @@ private:
         ClusterAuthInfo(const ClusterAuthInfo &) = default;
         ClusterAuthInfo(ClusterAuthInfo &&) = default;
 
-        void copyCredsFrom(const ClusterAuthInfo & other)
-        {
-            if (this == &other)
-                return;
-
-            cluster_username = other.cluster_username;
-            cluster_password = other.cluster_password;
-            cluster_secret = other.cluster_secret;
-        }
-
         void moveCredsFrom(ClusterAuthInfo && other)
         {
             if (this == &other)

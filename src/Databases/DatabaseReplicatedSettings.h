@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
 
+#include <limits>
 
 namespace Poco
 {
@@ -51,6 +52,10 @@ struct DatabaseReplicatedSettings
     bool has(std::string_view name) const;
 
     static bool hasBuiltin(std::string_view name);
+
+    static UInt32 parseLogsToKeepFromKeeper(const String & logs_to_keep_str, UInt64 * keeper_logs_to_keep = nullptr);
+
+    static constexpr UInt64 MAX_LOGS_TO_KEEP = std::numeric_limits<UInt32>::max();
 
 private:
     std::unique_ptr<DatabaseReplicatedSettingsImpl> impl;

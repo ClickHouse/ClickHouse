@@ -19,9 +19,6 @@
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTRenameQuery.h>
 
-#include <algorithm>
-#include <limits>
-
 namespace fs = std::filesystem;
 
 namespace DB
@@ -208,11 +205,10 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     /// substitute metadata from the recreated database during recovery.
     Coordination::Stat max_log_ptr_stat;
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr", &max_log_ptr_stat));
-    static constexpr UInt64 MAX_LOGS_TO_KEEP = std::numeric_limits<UInt32>::max();
-    /// `logs_to_keep` used to be 64-bit, so Keeper may contain values > `UInt32::max`. Clamp them to `UInt32::max`.
-    UInt64 keeper_logs_to_keep = parse<UInt64>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
-    UInt32 logs_to_keep = static_cast<UInt32>(std::min(MAX_LOGS_TO_KEEP, keeper_logs_to_keep));
-    if (keeper_logs_to_keep > MAX_LOGS_TO_KEEP)
+    UInt64 keeper_logs_to_keep = 0;
+    const UInt32 logs_to_keep = DatabaseReplicatedSettings::parseLogsToKeepFromKeeper(zookeeper->get(database->zookeeper_path + "/logs_to_keep"),
+        &keeper_logs_to_keep);
+    if (keeper_logs_to_keep != logs_to_keep)
     {
         LOG_WARNING(
             log,
@@ -221,7 +217,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
             "The node is left unchanged",
             database->zookeeper_path + "/logs_to_keep",
             keeper_logs_to_keep,
-            MAX_LOGS_TO_KEEP);
+            DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP);
     }
 
     UInt64 digest = 0;
@@ -314,7 +310,9 @@ void DatabaseReplicatedDDLWorker::scheduleTasks(bool reinitialized)
     DDLWorker::scheduleTasks(reinitialized);
     if (need_update_cached_cluster)
     {
-        database->updateCluster(!database->replica_group_name.empty() /* also_update_all_groups */, true /* force_overwrite */);
+        database->updateCluster(false /* all_groups */, true /* force_overwrite */);
+        if (!database->replica_group_name.empty())
+            database->updateCluster(true /* all_groups */, true /* force_overwrite */);
         need_update_cached_cluster = false;
     }
 }
@@ -828,7 +826,7 @@ bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name,
 
     UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
     const UInt32 max_log_ptr = parse<UInt32>(get_result[0].data);
-    const UInt32 logs_to_keep = parse<UInt32>(get_result[1].data);
+    const UInt32 logs_to_keep = DatabaseReplicatedSettings::parseLogsToKeepFromKeeper(get_result[1].data);
     return isBeyondRetention(entry_number, max_log_ptr, logs_to_keep);
 }
 

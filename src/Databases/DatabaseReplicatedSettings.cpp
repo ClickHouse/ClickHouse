@@ -3,12 +3,13 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Databases/DatabaseReplicatedSettings.h>
+#include <IO/ReadHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 
-#include <limits>
+#include <algorithm>
 
 namespace DB
 {
@@ -53,8 +54,6 @@ DATABASE_REPLICATED_SETTINGS_SUPPORTED_TYPES(DatabaseReplicatedSettings, IMPLEME
 
 namespace
 {
-constexpr UInt64 MAX_LOGS_TO_KEEP = std::numeric_limits<UInt32>::max();
-
 /// `logs_to_keep` is `NonZeroUInt32` because the quantity it is compared against is 32-bit by domain:
 /// `max_log_ptr` is derived from the Keeper node value, so it's inherently 32-bit. Any value greater
 /// than `UInt32::max` is effectively "Keep all the log entries".
@@ -74,7 +73,7 @@ void checkOrClampLogsToKeepValue(Field & logs_to_keep, bool clamp_on_overflow)
     /// older server accepted is still accepted here and only the range check is new.
     SettingFieldNonZeroUInt64 wide_value;
     wide_value = logs_to_keep;
-    if (wide_value.value <= MAX_LOGS_TO_KEEP)
+    if (wide_value.value <= DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP)
         return;
 
     if (!clamp_on_overflow)
@@ -82,7 +81,7 @@ void checkOrClampLogsToKeepValue(Field & logs_to_keep, bool clamp_on_overflow)
             ErrorCodes::BAD_ARGUMENTS,
             "Setting `logs_to_keep` of a Replicated database must not exceed {}, got {}. "
             "The DDL log counter is 32-bit, so a larger value cannot take effect",
-            MAX_LOGS_TO_KEEP,
+            DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP,
             wide_value.value);
 
     LOG_WARNING(
@@ -91,10 +90,10 @@ void checkOrClampLogsToKeepValue(Field & logs_to_keep, bool clamp_on_overflow)
         "instead. The DDL log counter is 32-bit, so the value never took effect as written. The setting origin is "
         "left unchanged",
         wide_value.value,
-        MAX_LOGS_TO_KEEP,
-        MAX_LOGS_TO_KEEP);
+        DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP,
+        DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP);
 
-    logs_to_keep = MAX_LOGS_TO_KEEP;
+    logs_to_keep = DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP;
 }
 
 }
@@ -179,4 +178,17 @@ bool DatabaseReplicatedSettings::hasBuiltin(std::string_view name)
 {
     return DatabaseReplicatedSettingsImpl::hasBuiltin(name);
 }
+
+UInt32 DatabaseReplicatedSettings::parseLogsToKeepFromKeeper(const String & logs_to_keep_str, UInt64 * keeper_logs_to_keep)
+{
+    /// `logs_to_keep` used to be 64-bit, so Keeper may contain values > `UInt32::max`. Clamp them to `UInt32::max`.
+    const UInt64 logs_to_keep = parse<UInt64>(logs_to_keep_str);
+    if (keeper_logs_to_keep != nullptr)
+    {
+        *keeper_logs_to_keep = logs_to_keep;
+    }
+
+    return static_cast<UInt32>(std::min(MAX_LOGS_TO_KEEP, logs_to_keep));
+}
+
 }

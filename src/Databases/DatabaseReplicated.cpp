@@ -298,7 +298,7 @@ void DatabaseReplicated::getStatus(ReplicatedStatus & response, const bool with_
         if (get_result[2].error == Coordination::Error::ZNONODE)
             throw zkutil::KeeperException(get_result[2].error);
 
-        response.logs_to_keep = logs_to_keep_str.empty() ? 0 : parse<UInt32>(logs_to_keep_str);
+        response.logs_to_keep = logs_to_keep_str.empty() ? 0 : DatabaseReplicatedSettings::parseLogsToKeepFromKeeper(logs_to_keep_str);
 
         paths.clear();
 
@@ -866,6 +866,10 @@ Coordination::Requests DatabaseReplicated::buildDatabaseNodesInZooKeeper()
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/max_log_ptr", "1", zkutil::CreateMode::Persistent));
     const auto db_settings_version = db_settings.get();
     auto logs_to_keep = (*db_settings_version)[DatabaseReplicatedSetting::logs_to_keep];
+    /// The `logs_to_keep` values may be different in different replicas' metadata files: new replicas `CREATE ... SETTINGS` values are
+    /// ignored and `ALTER DATABASE ... MODIFY SETTING` changes are not propagated to other replicas.
+    /// So the value in Keeper is set by the first created replica.
+    /// The nodes are created only if there're no existing ones, so we can't overwrite the existing value.
     ops.emplace_back(
         zkutil::makeCreateRequest(zookeeper_path + "/logs_to_keep", std::to_string(logs_to_keep), zkutil::CreateMode::Persistent));
 
@@ -1167,8 +1171,6 @@ void DatabaseReplicated::restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zooke
     auto add_ops = [&ops](Coordination::Requests && others)
     { ops.insert(ops.end(), std::make_move_iterator(others.begin()), std::make_move_iterator(others.end())); };
 
-    /// The `logs_to_keep` value is picked up from the database metadata, which may not be consistent with the actual value in the Keeper,
-    /// e.g. if `logs_to_keep` was updated via `ALTER DATABASE ... MODIFY SETTING`.
     add_ops(buildDatabaseNodesInZooKeeper());
 
     /// Hold metadata_mutex so that the digest and keeper path nodes are consistent:
@@ -2871,17 +2873,13 @@ void DatabaseReplicated::applySettingsChanges(const SettingsChanges & changes, C
         }
     }
 
-    UInt64 new_logs_to_keep = 0;
+    UInt32 new_logs_to_keep = 0;
     if (logs_to_keep_changed)
     {
         if (is_readonly)
             throw Exception(ErrorCodes::NO_ZOOKEEPER, "Database is in readonly mode, because it cannot connect to ZooKeeper");
 
         new_logs_to_keep = new_settings[DatabaseReplicatedSetting::logs_to_keep];
-        if (new_logs_to_keep > std::numeric_limits<UInt32>::max())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Setting `logs_to_keep` cannot exceed {}: DDL log entry numbers are 32-bit, "
-                "so a larger value cannot have the intended meaning", std::numeric_limits<UInt32>::max());
 
         auto zookeeper = getZooKeeper();
         zookeeper->set(zookeeper_path + "/logs_to_keep", std::to_string(new_logs_to_keep));
