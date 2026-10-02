@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# with no filter, any ORDER BY lets the optimizer take a projection that reads fewer marks, served or not;
-# the twin tables with the projection materialized show which read the optimizer really picks
+# without a filter, any ORDER BY lets the optimizer use a projection with fewer marks, also if the projection order does not serve it
+# the twin tables have the projection materialized and show the read that the optimizer selects
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,7 +21,7 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_real_same SELECT number, number % 100, number FROM numbers(300);
 "
 
-# prints the estimate's status and verdict, then which read the optimizer picks on the twin table
+# prints the status and the verdict of the estimate, then the read that the optimizer selects on the twin table
 check()
 {
     local projection_settings="$1" real_table="$2" query="$3"
@@ -34,13 +34,13 @@ check()
       | awk '{$1=$1; print}'
 }
 
-echo "--- no filter, an ORDER BY the projection order does not serve, fewer marks ---"
+echo "--- no filter, an ORDER BY that the projection order does not serve, fewer marks ---"
 check "WITH SETTINGS (index_granularity = 1000)" t_real_coarse "SELECT a, b, v FROM TABLE ORDER BY v SETTINGS ${PIN}"
-echo "--- the same with reading in order disabled ---"
+echo "--- the same query with optimize_read_in_order = 0 ---"
 check "WITH SETTINGS (index_granularity = 1000)" t_real_coarse "SELECT a, b, v FROM TABLE ORDER BY v SETTINGS ${PIN}, optimize_read_in_order = 0"
 echo "--- the same marks ---"
 check "" t_real_same "SELECT a, b, v FROM TABLE ORDER BY v SETTINGS ${PIN}"
-echo "--- fewer marks win on cost, so prefer_optimize_projection does not force anything ---"
+echo "--- with fewer marks the projection wins on cost, so prefer_optimize_projection does not force it ---"
 check "WITH SETTINGS (index_granularity = 1000)" t_real_coarse "SELECT a, b, v FROM TABLE ORDER BY v SETTINGS ${PIN}, prefer_optimize_projection = 1"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_est; DROP TABLE t_real_coarse; DROP TABLE t_real_same"

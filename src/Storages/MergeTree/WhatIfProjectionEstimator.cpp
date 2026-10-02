@@ -738,7 +738,7 @@ bool tryEstimateProjection(
                 = "The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)";
             return false;
         }
-        /// a time limit in `break` mode or a cancel ends the read without an error
+        /// a time limit in `break` mode or a cancelled query stops the read without an error
         if (part_data.rows != part->index_granularity->getRowsCountInRanges(ranges))
         {
             result.empirical_unsupported_reason = "The projection scan was cut short by a time limit in `break` mode or a cancel";
@@ -1074,12 +1074,12 @@ WhatIfCandidateResult evaluateProjection(
             key_condition.reset();
     }
 
-    /// lifts the gate below; read from the read's own context, as the optimizer does
+    /// read the setting from the context of the read, as the optimizer does
     const auto & read_settings = read_step->getContext()->getSettingsRef();
     const std::string_view relaxing_setting = !read_settings[Setting::prefer_optimize_projection] ? ""
         : force_requested ? "force_optimize_projection" : "prefer_optimize_projection";
 
-    /// same gate as the optimizer: a filter, or an `ORDER BY` with reading in order on, served or not
+    /// as the optimizer does: without a filter, any `ORDER BY` passes if `optimize_read_in_order` is on
     const bool nothing_to_serve
         = !filter_dag && (sort_help == SortOrderHelp::NoOrderBy || sort_help == SortOrderHelp::ReadInOrderDisabled);
     if (nothing_to_serve && relaxing_setting.empty())

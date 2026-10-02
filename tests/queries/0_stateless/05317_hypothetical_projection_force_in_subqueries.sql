@@ -1,5 +1,5 @@
--- force_optimize_projection = 1 must not fail EXPLAIN WHATIF in the plans built for subqueries, which can't see
--- hypothetical projections, and the verdict still names the setting
+-- a subquery plan cannot see hypothetical projections, so force_optimize_projection = 1 must not make EXPLAIN WHATIF fail
+-- the verdict still names the setting
 DROP TABLE IF EXISTS t_whatif_force_nested;
 CREATE TABLE t_whatif_force_nested (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
     SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi';
@@ -21,7 +21,7 @@ FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_whatif_force_nested
       WHERE a = 42 AND b IN (SELECT b FROM t_whatif_force_nested WHERE b >= 40) SETTINGS force_optimize_projection = 1)
 WHERE match(line, '^(status|verdict|reason):');
 
-SELECT '-- forced inside the subquery only, the outer read is decided by cost';
+SELECT '-- force_optimize_projection in the subquery only, the cost decides the outer read';
 SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
 FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_whatif_force_nested
       WHERE a = 42 AND b IN (SELECT b FROM t_whatif_force_nested WHERE b >= 40 SETTINGS force_optimize_projection = 1))
