@@ -224,8 +224,12 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
         {
             auto grouping_set_list_node = query_node_typed.getGroupBy().getNodes().front();
             auto & grouping_set_list_node_typed = grouping_set_list_node->as<ListNode &>();
-            query_node_typed.getGroupBy().getNodes() = std::move(grouping_set_list_node_typed.getNodes());
-            query_node_typed.setIsGroupByWithGroupingSets(false);
+            /// Flattening `GROUPING SETS (())` would leave no GROUP BY, so the query would not aggregate at all.
+            if (!grouping_set_list_node_typed.getNodes().empty())
+            {
+                query_node_typed.getGroupBy().getNodes() = std::move(grouping_set_list_node_typed.getNodes());
+                query_node_typed.setIsGroupByWithGroupingSets(false);
+            }
         }
 
         if (query_node_typed.isGroupByWithGroupingSets())
