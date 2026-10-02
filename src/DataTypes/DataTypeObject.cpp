@@ -46,6 +46,16 @@
 namespace DB
 {
 
+bool containsObjectType(const IDataType & type)
+{
+    if (isObject(type))
+        return true;
+
+    bool contains_object = false;
+    type.forEachChild([&](const IDataType & child) { contains_object |= isObject(child); });
+    return contains_object;
+}
+
 namespace Setting
 {
     extern const SettingsBool allow_simdjson;
