@@ -651,27 +651,38 @@ echo "replicated engine arguments gate at 3: $(grep -c '^SET database_replicated
 echo "explicit uuid gate at 3: $(grep -c '^SET database_replicated_allow_explicit_uuid = 3;$' "$PRELUDE_DUMP_FILE")"
 rm -f "$PRELUDE_DUMP_FILE"
 
-# Explicit UUIDs need gate value 3; value 2 would replace the UUID during replay.
+# Explicit UUIDs and retained replicated-engine arguments are read only in a Replicated database.
 UUID_GATED_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_uuid_gated.sql"
 $CLICKHOUSE_LOCAL --path "$SRC_PATH" --show_table_uuid_in_table_create_query_if_not_nil=1 --dump-schema="${DB}" > "$UUID_GATED_DUMP_FILE" 2>"$ERR_FILE"
-echo "explicit uuid gate at 3 when dumped with uuids: $(grep -c '^SET database_replicated_allow_explicit_uuid = 3;$' "$UUID_GATED_DUMP_FILE")"
+echo "explicit uuid gate at 3 when an Atomic database is dumped with uuids: $(grep -c '^SET database_replicated_allow_explicit_uuid = 3;$' "$UUID_GATED_DUMP_FILE")"
 rm -f "$UUID_GATED_DUMP_FILE"
 
-# Retained replicated-engine arguments need quiet gate value 3 and a ZooKeeper-backed fixture.
-$CLICKHOUSE_CLIENT -q "CREATE TABLE ${DB}.zzz_repl_engine_args (x UInt64) ENGINE = ReplicatedMergeTree('/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dump_schema/zzz_repl_engine_args', 'r') ORDER BY x"
+ATOMIC_ARGS_DB="${DB}_atomic_args"
+REPLICATED_ARGS_DB="${DB}_replicated_args"
 REPL_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_repl.sql"
-$CLICKHOUSE_CLIENT --dump-schema="${DB}" > "$REPL_DUMP_FILE" 2>"$ERR_FILE"
-echo "replicated engine arguments gate at 3 when the dump keeps the arguments: $(grep -c '^SET database_replicated_allow_replicated_engine_arguments = 3;$' "$REPL_DUMP_FILE")"
-$CLICKHOUSE_CLIENT -q "DROP TABLE ${DB}.zzz_repl_engine_args"
-
-# A materialized view keeps its engine in `targets`, so it must carry the same gate on its own.
 $CLICKHOUSE_CLIENT -mq "
-CREATE TABLE ${DB}.zzz_repl_mv_src (x UInt64) ENGINE = MergeTree ORDER BY x;
-CREATE MATERIALIZED VIEW ${DB}.zzz_repl_mv ENGINE = ReplicatedMergeTree('/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dump_schema/zzz_repl_mv', 'r') ORDER BY x AS SELECT x FROM ${DB}.zzz_repl_mv_src;
+CREATE DATABASE ${ATOMIC_ARGS_DB} ENGINE = Atomic;
+CREATE TABLE ${ATOMIC_ARGS_DB}.t (x UInt64) ENGINE = ReplicatedMergeTree('/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dump_schema/atomic_args_t', 'r') ORDER BY x;
+CREATE MATERIALIZED VIEW ${ATOMIC_ARGS_DB}.mv ENGINE = ReplicatedMergeTree('/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dump_schema/atomic_args_mv', 'r') ORDER BY x AS SELECT x FROM ${ATOMIC_ARGS_DB}.t;
 "
-$CLICKHOUSE_CLIENT --dump-schema="${DB}" > "$REPL_DUMP_FILE" 2>"$ERR_FILE"
+$CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 --dump-schema="${ATOMIC_ARGS_DB}" > "$REPL_DUMP_FILE" 2>"$ERR_FILE"
+echo "Atomic database with uuids and engine arguments, Replicated-database gates emitted: $(grep -cE '^SET database_replicated_allow_(explicit_uuid|replicated_engine_arguments) = 3;$' "$REPL_DUMP_FILE")"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE ${ATOMIC_ARGS_DB} SYNC"
+
+# Retained replicated-engine arguments need quiet gate value 3; a materialized view keeps its engine in `targets`.
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE ${REPLICATED_ARGS_DB} ENGINE = Replicated('/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dump_schema/replicated_args', 's1', 'r1')" > /dev/null
+$CLICKHOUSE_CLIENT --database_replicated_allow_replicated_engine_arguments=1 -mq "
+CREATE TABLE ${REPLICATED_ARGS_DB}.src (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE MATERIALIZED VIEW ${REPLICATED_ARGS_DB}.mv ENGINE = ReplicatedMergeTree('/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dump_schema/replicated_args_mv/{shard}', '{replica}') ORDER BY x AS SELECT x FROM ${REPLICATED_ARGS_DB}.src;
+" > /dev/null
+$CLICKHOUSE_CLIENT --dump-schema="${REPLICATED_ARGS_DB}" > "$REPL_DUMP_FILE" 2>"$ERR_FILE"
 echo "replicated engine arguments gate at 3 when only a materialized view keeps them: $(grep -c '^SET database_replicated_allow_replicated_engine_arguments = 3;$' "$REPL_DUMP_FILE")"
-$CLICKHOUSE_CLIENT -mq "DROP TABLE ${DB}.zzz_repl_mv; DROP TABLE ${DB}.zzz_repl_mv_src;"
+# Explicit UUIDs need gate value 3; value 2 would replace the UUID during replay.
+$CLICKHOUSE_CLIENT --database_replicated_allow_replicated_engine_arguments=1 -q "CREATE TABLE ${REPLICATED_ARGS_DB}.t (x UInt64) ENGINE = ReplicatedMergeTree('/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dump_schema/replicated_args_t/{shard}', '{replica}') ORDER BY x" > /dev/null
+$CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 --dump-schema="${REPLICATED_ARGS_DB}" > "$REPL_DUMP_FILE" 2>"$ERR_FILE"
+echo "replicated engine arguments gate at 3 when the dump keeps the arguments: $(grep -c '^SET database_replicated_allow_replicated_engine_arguments = 3;$' "$REPL_DUMP_FILE")"
+echo "explicit uuid gate at 3 when dumped with uuids: $(grep -c '^SET database_replicated_allow_explicit_uuid = 3;$' "$REPL_DUMP_FILE")"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE ${REPLICATED_ARGS_DB} SYNC" > /dev/null
 rm -f "$REPL_DUMP_FILE"
 
 rm -rf "$SRC_PATH" "$DST_PATH" "$DUMP_FILE" "${DUMP_FILE}.all" "${DUMP_FILE}.list" "${DUMP_FILE}.exclude" "$DUMP_DIR" "$ERR_FILE"

@@ -1681,15 +1681,17 @@ std::vector<TableInfo> resolveTables(
     }
 
     /// Remote proxy rows are graph-only, but a local proxy must still follow its effective source.
+    /// So must a table with `ENGINE = Remote(...)`: `CREATE` already reads a local shard's table-function target.
     for (auto & row : rows)
     {
         const auto & database_engine = database_info.at(row.database).engine;
         const bool cluster_database = database_engine == "Cluster";
-        if (database_engine != "Remote" && database_engine != "RemoteSecure" && !cluster_database)
+        const bool proxy_database = database_engine == "Remote" || database_engine == "RemoteSecure" || cluster_database;
+        if (!proxy_database && (row.engine != "Distributed" || row.create_query.empty()))
             continue;
 
         /// A `Cluster` proxy is always resolved through its database's `Cluster(...)` arguments.
-        const bool use_database_create = row.create_query.empty() || cluster_database;
+        const bool use_database_create = proxy_database && (row.create_query.empty() || cluster_database);
         const String & create_query = use_database_create ? database_queries.at(row.database) : row.create_query;
         ASTPtr create_ast;
         try
@@ -1699,6 +1701,9 @@ std::vector<TableInfo> resolveTables(
         }
         catch (const Exception & e)
         {
+            /// An ordinary `Distributed` row that does not parse keeps no edge, as before this scan covered it.
+            if (!proxy_database)
+                continue;
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Cannot parse the stored CREATE for external proxy {}.{} to resolve its local source for --dump-schema: {}",
@@ -1740,7 +1745,7 @@ std::vector<TableInfo> resolveTables(
         }
         if (!engine || (engine->name != "Remote" && engine->name != "RemoteSecure" && engine->name != "cluster"))
         {
-            if (use_database_create)
+            if (use_database_create || !proxy_database)
                 continue;
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
@@ -2320,6 +2325,7 @@ struct ReplayGateNeeds
     bool analyzable_query_text = false;
     bool ordinary_database = false;
     bool replicated_database = false;
+    bool existing_database = false; /// `CREATE DATABASE IF NOT EXISTS` (`default`) keeps the engine the target already has
     bool materialized_postgresql_database = false;
     bool materialized_mysql_database = false;
     bool materialized_postgresql_table = false;
@@ -2515,11 +2521,17 @@ String nameTokens(const IAST & ast, const IAST * skip, bool with_types)
         else if (const auto * data_type = node.as<ASTDataType>(); data_type && with_types)
         {
             names += data_type->name + ' ';
-            /// `AggregateFunction(sum, UInt64)` names its function with a bare identifier.
             if (const auto arguments = data_type->getArguments())
+            {
+                /// `AggregateFunction(sum, UInt64)` names its function with a bare identifier.
                 for (const auto & argument : arguments->children)
                     if (const auto * identifier = argument->as<ASTIdentifier>())
                         names += identifier->name() + ' ';
+                /// `enable_nullable_tuple_type` gates a `Nullable(Tuple(...))` wherever a type is validated.
+                const auto * nested = arguments->children.empty() ? nullptr : arguments->children.front()->as<ASTDataType>();
+                if (equalsCaseInsensitive(data_type->name, "Nullable") && nested && equalsCaseInsensitive(nested->name, "Tuple"))
+                    names += "nullable_tuple ";
+            }
         }
     }, skip);
     std::ranges::transform(names, names.begin(), [](unsigned char c) { return std::tolower(c); });
@@ -2547,6 +2559,7 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
             /// Cannot rule any gate out for a statement that does not parse, so keep them all.
             return {.explicit_uuid = true, .replicated_engine_arguments = true, .materialized_view = true,
                     .parse_failed = true, .analyzable_query_text = true, .ordinary_database = true, .replicated_database = true,
+                    .existing_database = true,
                     .materialized_postgresql_database = true, .materialized_mysql_database = true,
                     .materialized_postgresql_table = true, .time_series_table = true,
                     .kafka_keeper_offsets = true, .nullable_tuple_type = true, .unique_key = true,
@@ -2584,6 +2597,8 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
         /// `registerStorageMergeTree` re-enters its check only for an engine that kept its arguments.
         if (create->getTable().empty())
         {
+            if (create->if_not_exists)
+                needs.existing_database = true;
             if (create->storage && create->storage->engine)
             {
                 const auto & engine = *create->storage->engine;
@@ -2671,6 +2686,7 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
         needs.fixed_string_type |= hasToken(names, "fixedstring") || hasToken(names, "binary");
         needs.variant_type |= hasToken(names, "variant");
         needs.time_type |= hasToken(names, "time") || hasToken(names, "time64");
+        needs.nullable_tuple_type |= hasToken(names, "nullable_tuple");
 
         if (hasToken(names, "codec"))
         {
@@ -2777,10 +2793,12 @@ String replaySettingsPrelude(
     const ReplayGateNeeds needs = collectReplayGateNeeds(create_queries);
     auto is_needed = [&needs, materialized_view_may_need_bad_select](const String & name)
     {
+        /// Both are read only in a `Replicated` database: one the dump creates, or one it keeps with IF NOT EXISTS.
+        const bool replicated_database = needs.replicated_database || needs.existing_database;
         if (name == "database_replicated_allow_explicit_uuid")
-            return needs.explicit_uuid;
+            return needs.explicit_uuid && replicated_database;
         if (name == "database_replicated_allow_replicated_engine_arguments")
-            return needs.replicated_engine_arguments;
+            return needs.replicated_engine_arguments && replicated_database;
         if (name == "allow_materialized_view_with_bad_select")
             return needs.materialized_view && (needs.parse_failed || materialized_view_may_need_bad_select);
         if (name == "allow_deprecated_database_ordinary")
@@ -2882,8 +2900,19 @@ String replaySettingsPrelude(
     std::set<String> dump_specific_names;
     for (const auto & [name, value] : dump_specific)
         dump_specific_names.insert(name);
+    /// The name the source server knows the gate by: a renamed gate such as `allow_delta_kernel_rs` keeps its old name.
+    auto server_spelling = [&settings_known_to_server](const String & name) -> std::optional<String>
+    {
+        if (settings_known_to_server.contains(name))
+            return name;
+        const std::string_view canonical = Settings::resolveName(name);
+        for (const auto & known : settings_known_to_server)
+            if (Settings::resolveName(known) == canonical)
+                return known;
+        return std::nullopt;
+    };
     for (const auto & name : allExperimentalSettingNames())
-        if (settings_known_to_server.contains(name) && !dead_settings.contains(name)
+        if (!dead_settings.contains(name)
             && !dump_specific_names.contains(name) && residual_needed(name)
             && !iceberg_write_settings.contains(name)
             && (!analyzer_settings.contains(name) || needs.analyzable_query_text)
@@ -2893,11 +2922,12 @@ String replaySettingsPrelude(
             && (name != "allow_experimental_paimon_storage_engine" || needs.paimon_table)
             && (name != "allow_experimental_nullable_tuple_type" || needs.nullable_tuple_type)
             && (!delta_lake_settings.contains(name) || needs.delta_lake_table))
-            res += "SET " + name + " = 1;\n";
+            if (const auto spelling = server_spelling(name))
+                res += "SET " + *spelling + " = 1;\n";
     /// Emit dump-specific gates only when the dumped AST proves they are needed.
     for (const auto & [name, value] : dump_specific)
-        if (settings_known_to_server.contains(name) && is_needed(name))
-            res += "SET " + name + " = " + value + ";\n";
+        if (const auto spelling = server_spelling(name); spelling && is_needed(name))
+            res += "SET " + *spelling + " = " + value + ";\n";
     res += "\n";
     return res;
 }
@@ -2953,7 +2983,7 @@ bool fileLikeHasStaticStructure(const ASTFunction & function)
 }
 
 /// Always analyzes on replay: `numbers`/`zeros` with counts, `generateRandom`/`values` with constant arguments, `url`/`file`
-/// with a static structure, and a `merge` matching another emitted table, which replay creates before `owner`.
+/// with a static structure, and a `merge` or `loop` reading another emitted table, which replay creates before `owner`.
 bool tableFunctionAlwaysAnalyzes(
     const IAST & node, const TableInfo & owner, const std::map<std::pair<String, String>, const TableInfo *> & emitted_tables,
     const ContextPtr & context)
@@ -2969,7 +2999,8 @@ bool tableFunctionAlwaysAnalyzes(
     {
         for (auto & argument : arguments)
         {
-            if (argument->as<ASTLiteral>())
+            /// A trailing `SETTINGS` argument (`generateRandom`) is not folded.
+            if (argument->as<ASTLiteral>() || argument->as<ASTSetQuery>())
                 continue;
             if (dependsOnUnstoredContext(*argument, context))
                 return false;
@@ -3005,13 +3036,35 @@ bool tableFunctionAlwaysAnalyzes(
             && (arguments.size() < 3 || *non_negative(arguments[2]) != 0);
     }
     if (equalsCaseInsensitive(function->name, "zeros") || equalsCaseInsensitive(function->name, "zeros_mt"))
-        return arguments.size() == 1 && is_count(arguments[0]);
+        return arguments.size() <= 1 && std::ranges::all_of(arguments, is_count);
+    if (equalsCaseInsensitive(function->name, "generateRandom") && !arguments.empty() && arguments.back()->as<ASTSetQuery>())
+        arguments.pop_back();
     const bool literal_arguments = !arguments.empty()
         && std::ranges::all_of(arguments, [](const ASTPtr & argument) { return argument->as<ASTLiteral>() != nullptr; });
     if (equalsCaseInsensitive(function->name, "values"))
         return literal_arguments;
     if (equalsCaseInsensitive(function->name, "generateRandom"))
         return literal_arguments && arguments[0]->as<ASTLiteral>()->value.getType() == Field::Types::String;
+    /// `loop` analyzes over an emitted table, which replay creates before `owner`, or over a table function that does.
+    if (equalsCaseInsensitive(function->name, "loop") && arguments.size() == 1 && arguments[0]->as<ASTFunction>())
+        return tableFunctionAlwaysAnalyzes(*arguments[0], owner, emitted_tables, context);
+    if (equalsCaseInsensitive(function->name, "loop") && (arguments.size() == 1 || arguments.size() == 2))
+    {
+        std::optional<std::pair<String, String>> table;
+        if (arguments.size() == 1)
+            table = tryGetQualifiedNameFromFunctionArgument(*function, 0);
+        else if (const auto * database = arguments[0]->as<ASTIdentifier>(), * name = arguments[1]->as<ASTIdentifier>(); database && name)
+            table = std::pair(database->name(), name->name());
+        else if (const auto * database_literal = arguments[0]->as<ASTLiteral>(), * name_literal = arguments[1]->as<ASTLiteral>();
+                 database_literal && name_literal && database_literal->value.getType() == Field::Types::String
+                 && name_literal->value.getType() == Field::Types::String)
+            table = std::pair(database_literal->value.safeGet<String>(), name_literal->value.safeGet<String>());
+        if (!table)
+            return false;
+        if (table->first.empty())
+            table->first = owner.database;
+        return *table != std::pair(owner.database, owner.name) && emitted_tables.contains(*table);
+    }
     if (equalsCaseInsensitive(function->name, "merge") && arguments.size() == 2)
     {
         bool database_is_regexp = false;

@@ -55,6 +55,7 @@ CREATE MATERIALIZED VIEW ${DB}.mv_merge (x Int64) ENGINE = Memory AS SELECT x FR
 CREATE MATERIALIZED VIEW ${DB}.mv_values (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM values('x Int64', 1, 2));
 CREATE MATERIALIZED VIEW ${DB}.mv_url (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM url('http://127.0.0.1:1/data.csv', CSV, 'x Int64'));
 CREATE MATERIALIZED VIEW ${DB}.mv_folded (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT number FROM numbers(1 + 1)) AND x IN (SELECT x FROM values('x Int64', 1 + 1));
+CREATE MATERIALIZED VIEW ${DB}.mv_more (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT toInt64(zero) FROM zeros() LIMIT 1) AND x IN (SELECT x FROM loop(${DB}.src) LIMIT 1) AND x IN (SELECT x FROM generateRandom('x Int64', 1, 10, 2, SETTINGS null_ratio = 0.5) LIMIT 1);
 "
 echo "healthy views, bad-select gate emitted: $(grep -c "$BADSEL_RE" "$DUMP_FILE")"
 replay_local 'healthy views' 'mv%'
@@ -132,6 +133,7 @@ CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_merge (x Int64) ENGINE = Memory AS 
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_values (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT x FROM values('x Int64', 1, 2));
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_url (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT x FROM url('http://127.0.0.1:1/data.csv', CSV, 'x Int64'));
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_folded (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT number FROM numbers(1 + 1)) AND x IN (SELECT x FROM values('x Int64', 1 + 1));
+CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_more (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT toInt64(zero) FROM zeros() LIMIT 1) AND x IN (SELECT x FROM loop(${CONSTRAINT_DB}.src) LIMIT 1) AND x IN (SELECT x FROM generateRandom('x Int64', 1, 10, 2, SETTINGS null_ratio = 0.5) LIMIT 1);
 "
 $CLICKHOUSE_LOCAL --path "$LOCAL_PATH" --dump-schema="$CONSTRAINT_DB" > "$DUMP_FILE" 2>"$ERR_FILE"
 rm -rf "$LOCAL_PATH"
@@ -192,9 +194,10 @@ replay_local 'plain mixed schema' '%'
 echo '--- the shared gates follow their carriers ---'
 make_dump "
 CREATE TABLE ${DB}.mt (x Int64, s String) ENGINE = MergeTree ORDER BY x;
-SET allow_fuzz_query_functions = 1, allow_deprecated_error_prone_window_functions = 1, allow_suspicious_low_cardinality_types = 1;
+SET allow_fuzz_query_functions = 1, allow_deprecated_error_prone_window_functions = 1, allow_suspicious_low_cardinality_types = 1, enable_nullable_tuple_type = 1;
 CREATE MATERIALIZED VIEW ${DB}.mv_fuzz ENGINE = Memory AS SELECT fuzzQuery(s) AS q FROM ${DB}.mt;
 CREATE MATERIALIZED VIEW ${DB}.mv_cast ENGINE = Memory AS SELECT CAST(x, 'LowCardinality(Int64)') AS l FROM ${DB}.mt;
+CREATE MATERIALIZED VIEW ${DB}.mv_nullable_tuple ENGINE = Memory AS SELECT isNull(CAST(NULL, 'Nullable(Tuple(a UInt8))')) AS t FROM ${DB}.mt;
 CREATE MATERIALIZED VIEW ${DB}.mv_neighbor ENGINE = Memory AS SELECT neighbor(x, 1) AS n FROM ${DB}.mt;
 CREATE MATERIALIZED VIEW ${DB}.mv_multi ENGINE = Memory AS SELECT multiMatchAny(s, ['a']) AS m FROM ${DB}.mt;
 "
@@ -202,6 +205,7 @@ echo "fuzzQuery materialized view, fuzz-functions gate emitted: $(grep -c '^SET 
 echo "neighbor materialized view, error-prone-window gate emitted: $(grep -c '^SET allow_deprecated_error_prone_window_functions = 1;' "$DUMP_FILE")"
 echo "multiMatchAny materialized view, hyperscan gate emitted: $(grep -c '^SET allow_hyperscan = 1;' "$DUMP_FILE")"
 echo "CAST materialized view, low-cardinality gate emitted: $(grep -c '^SET allow_suspicious_low_cardinality_types = 1;' "$DUMP_FILE")"
+echo "Nullable(Tuple) CAST materialized view, nullable-tuple gate emitted: $(grep -c '^SET enable_nullable_tuple_type = 1;' "$DUMP_FILE")"
 replay_local 'function materialized views' '%'
 # A plain view keeps its columns, so replay never analyzes its SELECT.
 make_dump "

@@ -493,14 +493,15 @@ CREATE MATERIALIZED VIEW ${DB}.aad_remote_mv (id UInt64) ENGINE = Memory AS
 CREATE VIEW ${DB}.aae_remote_reader_case AS SELECT * FROM remote('LOCALHOST', '${DB}', 'zzz_remote_src');
 CREATE VIEW ${DB}.aaf_remote_reader_case_port AS SELECT * FROM remote('LocalHost:${CLICKHOUSE_PORT_TCP}', ${DB}.zzz_remote_src);
 CREATE VIEW ${DB}.aag_remote_secure_reader AS SELECT * FROM remoteSecure('127.0.0.1:${CLICKHOUSE_PORT_TCP_SECURE}', '${DB}', 'zzz_remote_src');
+CREATE TABLE ${DB}.aah_remote_engine (id UInt64) ENGINE = Remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', merge('${DB}', '^zzz_remote_src\$'));
 "
 LOCAL_REMOTE_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_local_remote_dump.sql"
 if $CLICKHOUSE_CLIENT --dump-schema="${DB}" > "$LOCAL_REMOTE_DUMP_FILE" 2>"$ERR_FILE"; then
     SRC_LINE=$(grep -n "CREATE TABLE ${DB}\.zzz_remote_src" "$LOCAL_REMOTE_DUMP_FILE" | head -1 | cut -d: -f1)
     # The mixed-case readers are local too because hostnames are case-insensitive, so their source must come first.
     for reader in aaa_remote_reader aab_remote_reader_port aac_remote_reader_merge aad_remote_mv \
-                  aae_remote_reader_case aaf_remote_reader_case_port aag_remote_secure_reader; do
-        READER_LINE=$(grep -n "CREATE \(MATERIALIZED \)\?VIEW ${DB}\.${reader} " "$LOCAL_REMOTE_DUMP_FILE" | head -1 | cut -d: -f1)
+                  aae_remote_reader_case aaf_remote_reader_case_port aag_remote_secure_reader aah_remote_engine; do
+        READER_LINE=$(grep -n "CREATE \(MATERIALIZED VIEW\|VIEW\|TABLE\) ${DB}\.${reader} " "$LOCAL_REMOTE_DUMP_FILE" | head -1 | cut -d: -f1)
         if [ -n "$SRC_LINE" ] && [ -n "$READER_LINE" ] && [ "$SRC_LINE" -lt "$READER_LINE" ]; then
             echo "OK: local remote() source dumped before ${reader}"
         else
@@ -518,6 +519,7 @@ DROP TABLE ${DB}.aad_remote_mv;
 DROP TABLE ${DB}.aae_remote_reader_case;
 DROP TABLE ${DB}.aaf_remote_reader_case_port;
 DROP TABLE ${DB}.aag_remote_secure_reader;
+DROP TABLE ${DB}.aah_remote_engine;
 DROP TABLE ${DB}.zzz_remote_src;
 "
 rm -f "$LOCAL_REMOTE_DUMP_FILE"

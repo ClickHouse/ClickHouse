@@ -1,7 +1,7 @@
 --- a healthy materialized view does not get the bad-select gate ---
 healthy views, bad-select gate emitted: 0
 OK: healthy views replayed
-healthy views, replayed objects: 8
+healthy views, replayed objects: 9
 --- a materialized view accepted under a relaxed check gets the gate exactly once ---
 extra output column, bad-select gate emitted: 1
 OK: extra output column replayed
@@ -24,7 +24,7 @@ OK: mixed views replayed
 mixed views, replayed objects: 2
 --- a healthy materialized view dump replays under a bad-select constraint ---
 OK: constrained replay succeeded
-constrained replay views present: 7
+constrained replay views present: 8
 --- TimeSeries and Kafka Keeper gates follow their carriers exactly once ---
 TimeSeries tables, time-series gate emitted: 1
 TimeSeries tables and plain Kafka, keeper gate emitted: 0
@@ -45,8 +45,9 @@ fuzzQuery materialized view, fuzz-functions gate emitted: 1
 neighbor materialized view, error-prone-window gate emitted: 1
 multiMatchAny materialized view, hyperscan gate emitted: 1
 CAST materialized view, low-cardinality gate emitted: 1
+Nullable(Tuple) CAST materialized view, nullable-tuple gate emitted: 1
 OK: function materialized views replayed
-function materialized views, replayed objects: 5
+function materialized views, replayed objects: 6
 plain views, function gates emitted: 0
 plain views, analyzer gates emitted: 0
 OK: plain views replayed
