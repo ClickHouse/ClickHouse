@@ -33,6 +33,12 @@ BlockIO InterpreterUndropQuery::execute()
     getContext()->checkAccess(AccessType::UNDROP_TABLE);
 
     auto & undrop = query_ptr->as<ASTUndropQuery &>();
+
+    /// A hierarchical name (`UNDROP TABLE a.b.c`, or `c` inside `USE a.b`) is bound to the database and the table it denotes
+    /// before the query is dispatched `ON CLUSTER` and executed (see `DatabaseCatalog`).
+    if (undrop.table)
+        resolveHierarchicalName(undrop);
+
     if (!undrop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         DDLQueryOnClusterParams params;
@@ -43,6 +49,45 @@ BlockIO InterpreterUndropQuery::execute()
     if (undrop.table)
         return executeToTable(undrop);
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to undrop, both names are empty");
+}
+
+void InterpreterUndropQuery::resolveHierarchicalName(ASTUndropQuery & query) const
+{
+    auto & catalog = DatabaseCatalog::instance();
+    StorageID as_written(query.database ? query.getDatabase() : "", query.getTable());
+    String current_database = getContext()->getCurrentDatabase();
+
+    /// The table does not exist, so the name denotes the first candidate that has a dropped table to restore (with the
+    /// given UUID, if any). Without such a candidate, it is the placement (the first candidate whose database exists), for
+    /// the error message; a database that does not exist here keeps the name as written: `ON CLUSTER`, it may exist on the
+    /// other hosts only.
+    std::optional<StorageID> resolved;
+    if (as_written.database_name.contains('.') || as_written.table_name.contains('.') || current_database.contains('.'))
+    {
+        auto dropped_tables = catalog.getTablesMarkedDropped();
+        for (const auto & candidate : DatabaseCatalog::getHierarchicalNameCandidates(as_written, current_database))
+        {
+            bool has_dropped_table = std::any_of(dropped_tables.begin(), dropped_tables.end(), [&](const auto & dropped_table)
+            {
+                return dropped_table.table_id.database_name == candidate.database_name
+                    && dropped_table.table_id.table_name == candidate.table_name
+                    && (query.uuid == UUIDHelpers::Nil || dropped_table.table_id.uuid == query.uuid);
+            });
+            if (has_dropped_table)
+            {
+                resolved = candidate;
+                break;
+            }
+        }
+    }
+    if (!resolved)
+        resolved = catalog.getHierarchicalNamePlacement(as_written, current_database, getContext());
+
+    if (resolved->database_name != (query.database ? query.getDatabase() : current_database) || resolved->table_name != as_written.table_name)
+    {
+        query.setDatabase(resolved->database_name);
+        query.setTable(resolved->table_name);
+    }
 }
 
 BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
