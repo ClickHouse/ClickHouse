@@ -13,6 +13,10 @@ server_path=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.disks WHERE name 
 disk_name="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 # Do not use `disks/${disk_name}/` here: that is where the `local` metadata of the disk goes.
 disk_root="${server_path%/}/disks/${disk_name}_blobs"
+# The `path` of the disk is not in the canonical form, so the keys of the blobs, which are built from it, are not
+# either, while the root that the removal of empty directories stops at is canonicalized. A relative `path` has
+# the same effect, but it is resolved against the working directory of the server, which the test cannot rely on.
+disk_path="${server_path%/}/disks/../disks/${disk_name}_blobs/"
 
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE test (a Int32) ENGINE = MergeTree ORDER BY a
@@ -21,14 +25,12 @@ ${CLICKHOUSE_CLIENT} -q "
         type = 'object_storage',
         object_storage_type = 'local',
         metadata_type = 'local',
-        path = 'disks/${disk_name}_blobs/');
+        path = '${disk_path}');
 
     INSERT INTO test VALUES (1);
     SELECT * FROM test;
 "
 
-# A relative `path` is resolved against the working directory of the server, and the test relies on it being
-# the data directory, as it is in the test configuration. Check that premise while the table still holds blobs.
 if [ -d "${disk_root}" ]; then
     echo "the root of the object storage was created"
 else

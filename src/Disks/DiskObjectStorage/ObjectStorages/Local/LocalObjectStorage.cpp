@@ -685,8 +685,9 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
             error_message);
 
     /// Both paths have to be brought into the same form before they are compared: `resolved_path` is
-    /// relative when the `path` of the disk is relative, and then `dir` never compares equal to the
-    /// canonicalized `root`, so the loop below would remove the root directory of the object storage itself.
+    /// relative or otherwise not canonical when the `path` of the disk is (e.g. contains `..`), and then `dir`
+    /// never compares equal to the canonicalized `root`, so the loop below would remove the root directory
+    /// of the object storage itself.
     fs::path root = fs::weakly_canonical(settings.key_prefix);
     fs::path dir = fs::weakly_canonical(fs::path(resolved_path).parent_path());
     while (dir.has_parent_path() && dir.has_relative_path() && dir != root && pathStartsWith(dir, root))
