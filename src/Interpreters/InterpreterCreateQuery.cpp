@@ -429,7 +429,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
     DatabasePtr database = DatabaseFactory::instance().get(
-        create, metadata_path / "", getContext(), mode, internal, is_metadata_replay);
+        create, metadata_path / "", getContext(), mode, internal, is_metadata_replay, is_restore_from_backup);
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -1238,13 +1238,17 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         create.set(create.columns_list, make_intrusive<ASTColumns>());
 
     /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside it
-    /// checks a row against another row's value, or reads past the end of a shorter column. Screened for
+    /// checks a row against another row's value, or reads past the end of a shorter column. And a second
+    /// declaration of a name is reachable only once the first one has been dropped. Screened for
     /// every definition the user supplies now - an explicit column list, a full-definition `ATTACH`, and
     /// the `AS src` / `CLONE AS src` copy of the constraints of another table, which may have been stored
-    /// by a version without this check. A replay of stored metadata is not screened, so such a table
+    /// by a version without these checks. A replay of stored metadata is not screened, so such a table
     /// still attaches.
     if (isFreshTableDefinition(mode, create.attach_short_syntax))
+    {
         properties.constraints.checkExpressionsPreserveRowCount();
+        properties.constraints.checkNamesAreUnique();
+    }
 
     ASTPtr new_columns = formatColumns(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
@@ -1290,7 +1294,7 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
-void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database)
+void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties)
 {
     /// This is not strict validation, just catches common errors that would make the view not work.
     /// It's possible to circumvent these checks by ALTERing the view or target table after creation;
@@ -1323,18 +1327,6 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
     {
         all_output_columns = properties.columns.getInsertable();
         check_columns = true;
-    }
-
-    if (create.refresh_strategy && !create.refresh_strategy->isAppend())
-    {
-        if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Refreshable materialized views (except with APPEND) only support Atomic and Replicated database engines, but database {} has engine {}", create.getDatabase(), database->getEngineName());
-
-        std::string message;
-        if (!supportsAtomicRename(&message))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
     }
 
     SharedHeader input_block;
@@ -1833,6 +1825,16 @@ bool isReplicated(const ASTStorage & storage)
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
 }
 
+/// The drop privilege matching the kind of an existing table.
+AccessType getDropAccessType(const IStorage & table)
+{
+    if (table.isView())
+        return AccessType::DROP_VIEW;
+    if (table.isDictionary())
+        return AccessType::DROP_DICTIONARY;
+    return AccessType::DROP_TABLE;
+}
+
 }
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
@@ -2125,13 +2127,30 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
+    /// A `RESTORE` that drops the view's UUID supplies a definition too: restore overwrites
+    /// `create.uuid` but not `create.has_uuid`, so `has_uuid` still reports the backup's own metadata
+    /// and separates a view that had a UUID (about to lose it here) from one that never had one.
+    const bool is_uuid_losing_restore = is_restore_from_backup && create.has_uuid;
+    if (create.refresh_strategy && !create.refresh_strategy->isAppend()
+        && (isFreshTableDefinition(mode, create.attach_short_syntax) || is_uuid_losing_restore))
+    {
+        if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Refreshable materialized views (except with APPEND) only support Atomic and Replicated database engines, but database {} has engine {}", create.getDatabase(), database->getEngineName());
+
+        std::string message;
+        if (!supportsAtomicRename(&message))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
+    }
+
     /// Check type compatible for materialized dest table and select columns
     if (create.select && create.is_materialized_view && mode <= LoadingStrictnessLevel::CREATE)
     {
         // An MV with a flattened nested column in an inner table can never be filled
         if (create.is_materialized_view_with_inner_table())
             getContext()->setSetting("flatten_nested", false);
-        validateMaterializedViewColumnsAndEngine(create, properties, database);
+        validateMaterializedViewColumnsAndEngine(create, properties);
     }
 
     bool is_storage_replicated = false;
@@ -3086,12 +3105,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                 {
                     /// The replaced table is dropped after the swap, under an internal temporary name that
                     /// grants cannot cover, so check the drop privilege for its kind here, on its real name.
-                    AccessType drop_access = AccessType::DROP_TABLE;
-                    if (to_drop->isView())
-                        drop_access = AccessType::DROP_VIEW;
-                    else if (to_drop->isDictionary())
-                        drop_access = AccessType::DROP_DICTIONARY;
-                    current_context->checkAccess(drop_access, to_drop_id);
+                    current_context->checkAccess(getDropAccessType(*to_drop), to_drop_id);
                     to_drop->checkTableSizeBelowDropLimit(current_context);
                 }
             });
@@ -3272,7 +3286,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
             /// own check on the temporary name. A `CREATE TABLE ... CLONE AS` that populates the final table
             /// directly requires exactly these grants, so the contract is the same either way.
             getContext()->checkAccess(InterpreterAlterQuery::getRequiredAccessForCommand(
-                *command, create.getDatabase(), published_table_name, /*row_exists_is_lightweight_marker=*/false));
+                *command, create.getDatabase(), published_table_name, InterpreterAlterQuery::RowExistsColumnKind::Regular));
             interpreter_alter.setSkipAccessCheck(true);
         }
         return interpreter_alter.execute();
@@ -3798,6 +3812,16 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
         }
     }
 
+    /// Replicated and ON CLUSTER replays run with full access, so the drop privilege for the replaced
+    /// table's kind must be required here, on its real name, while the query still runs as the user.
+    if ((create.replace_table || create.create_or_replace || create.replace_view) && !create.isTemporary())
+    {
+        String database_name = getContext()->resolveDatabase(create.getDatabase());
+        if (auto database = DatabaseCatalog::instance().tryGetDatabase(database_name))
+            if (auto table = database->tryGetTable(create.getTable(), getContext()))
+                required_access.emplace_back(getDropAccessType(*table), database_name, create.getTable());
+    }
+
     if (create.targets)
     {
         for (const auto & target : create.targets->targets)
@@ -3941,6 +3965,19 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     }
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
+
+    /// `table_readonly` is not supported for `ReplicatedMergeTree` and the conversion keeps the
+    /// settings of the table it converts, so it would produce a table in that unsupported state.
+    /// The startup `convert_to_replicated` flag only logs and leaves such a table alone, because
+    /// throwing there would take the whole database load down; here the conversion is a query of
+    /// its own, so it is refused outright, before any of the side effects below.
+    if (to_replicated && DatabaseOrdinary::isTableReadonlyAsReplicated(create, getContext()))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot attach table {} as replicated: it would have `table_readonly = 1` (from its definition or the server's "
+            "`merge_tree` / `replicated_merge_tree` defaults), which is not supported for "
+            "ReplicatedMergeTree. Turn it off with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` first.",
+            backQuoteIfNeed(create.getTable()));
 
     /// Must precede every side effect below: neither the transaction metadata removal nor the
     /// metadata rewrite can be rolled back. The other direction takes no Keeper path at all.
