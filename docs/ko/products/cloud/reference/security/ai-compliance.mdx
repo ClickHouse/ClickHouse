@@ -31,15 +31,15 @@ ClickHouse는 고객이 구성 또는 문제 해결 지원을 위해 채팅 에�
 조직에서 제품 개선을 위해 ClickHouse와 데이터를 공유하는 관리자 수준 설정을 켜면, ClickHouse는 AI 기능 사용을 통해 생성되거나 수집된 데이터(입력, 출력, 로그, 메타데이터를 포함하되 ClickHouse Cloud에 대한 쿼리의 직접 결과는 제외)를 모델 평가(정확도, 성능, 안전성/컴플라이언스 테스트), 서비스 신뢰성 및 안전성 개선, 사용자 경험 향상, 분석 수행 등의 목적으로 사용할 수 있습니다. 이 데이터는 모델을 학습, 재학습 또는 미세 조정하는 데 사용되지 않습니다.
 
 <div id="clickhouse-assistant">
-  ## ClickHouse Assistant
+  ## Assistant
 </div>
 
-[ClickHouse Assistant](/ko/products/cloud/features/ai-ml/agents/assistant/using-ai-chat)를 활성화하는 설정은 `service:manage-generative-ai` 권한이 있는 사용자가 검토하고 변경할 수 있습니다. 이 설정은 서비스 설정 페이지에서 확인할 수 있습니다. 이 기능은 서로 다른 두 가지 기능을 제공합니다.
+[Assistant](/ko/products/cloud/features/ai-ml/agents/assistant/using-ai-chat)를 활성화하는 설정은 `service:manage-generative-ai` 권한이 있는 사용자가 검토하고 변경할 수 있습니다. 이 설정은 서비스 설정 페이지에서 확인할 수 있습니다. 이 기능은 서로 다른 두 가지 기능을 제공합니다.
 
 | 기능                   | 설명                                | 사용되는 데이터                               | 사용자 검증                            |
 | :------------------- | :-------------------------------- | :------------------------------------- | :-------------------------------- |
 | SQL AI               | 쿼리를 작성, 분석하고 개선 사항을 추천합니다         | 서비스 메타데이터, 쿼리 텍스트, 프롬프트 입력             | 쿼리 실행 전에 사용자가 검토할 수 있도록 출력이 제공됩니다 |
-| ClickHouse Assistant | 사용자가 자연어로 질문하고 답변을 받을 수 있도록 지원합니다 | 서비스 메타데이터와 콘텐츠, ClickHouse 문서, 프롬프트 입력 | 출력이 검토용으로 제공되며, 사용 전에 검증해야 합니다    |
+| Assistant | 사용자가 자연어로 질문하고 답변을 받을 수 있도록 지원합니다 | 서비스 메타데이터와 콘텐츠, ClickHouse 문서, 프롬프트 입력 | 출력이 검토용으로 제공되며, 사용 전에 검증해야 합니다    |
 
 <div id="model-comtext-protocol">
   ## 모델 컨텍스트 프로토콜

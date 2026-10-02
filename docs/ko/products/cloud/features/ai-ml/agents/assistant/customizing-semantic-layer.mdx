@@ -1,14 +1,14 @@
 ---
 slug: /use-cases/AI_ML/AIChat/semantic-layer
-sidebarTitle: '시맨틱 레이어로 ClickHouse Assistant chat 맞춤 설정'
-title: '시맨틱 레이어로 ClickHouse Assistant 대화 최적화'
-description: 'AGENTS.md를 사용해 ClickHouse Assistant chat 에이전트에 맞춤형 비즈니스 로직과 데이터별 지침을 제공하는 가이드'
+sidebarTitle: '시맨틱 레이어로 Assistant chat 맞춤 설정'
+title: '시맨틱 레이어로 Assistant 대화 최적화'
+description: 'AGENTS.md를 사용해 Assistant chat 에이전트에 맞춤형 비즈니스 로직과 데이터별 지침을 제공하는 가이드'
 keywords: ['AI', 'ClickHouse Cloud', 'Agent', 'AGENTS.md', 'Semantic Layer', 'Custom Instructions', 'System Prompt']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-ClickHouse Assistant chat 에이전트는 에이전트의 시스템 프롬프트에 시맨틱 레이어로 작동하는 특별한 저장된 쿼리인 **AGENTS.md**를 통해, 조직별 비즈니스 로직, 데이터 구조, 도메인 지식을 이해하도록 맞춤 설정할 수 있습니다.
+Assistant chat 에이전트는 에이전트의 시스템 프롬프트에 시맨틱 레이어로 작동하는 특별한 저장된 쿼리인 **AGENTS.md**를 통해, 조직별 비즈니스 로직, 데이터 구조, 도메인 지식을 이해하도록 맞춤 설정할 수 있습니다.
 
 AGENTS.md 파일을 만들면 각 대화의 시작 부분에 삽입되는 사용자 지정 지침을 제공할 수 있으며, 이를 통해 조직 고유의 요구 사항, 계산 방식, 규약에 따라 SQL 쿼리 생성과 데이터 분석을 안내할 수 있습니다.
 
@@ -18,9 +18,9 @@ AGENTS.md 파일을 만들면 각 대화의 시작 부분에 삽입되는 사용
 
 Cloud Console에서 &quot;AGENTS.md&quot;(대소문자 구분)라는 이름의 쿼리를 저장하면 다음과 같이 동작합니다:
 
-1. 메시지를 보내면 ClickHouse Assistant chat 에이전트가 이 파일을 자동으로 불러옵니다
+1. 메시지를 보내면 Assistant chat 에이전트가 이 파일을 자동으로 불러옵니다
 2. 콘텐츠는 구조화된 content 태그 안에 배치되어 에이전트의 시스템 프롬프트에 삽입됩니다
-3. 이 지침은 해당 서비스의 모든 ClickHouse Assistant chat 대화에 적용됩니다
+3. 이 지침은 해당 서비스의 모든 Assistant chat 대화에 적용됩니다
 
 <div id="creating-agents-md">
   ## AGENTS.md 만들기

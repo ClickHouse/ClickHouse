@@ -1,14 +1,14 @@
 ---
 slug: /use-cases/AI_ML/AIChat/semantic-layer
-sidebarTitle: 'Personalizar el chat de ClickHouse Assistant con una capa semántica'
-title: 'Optimizar las conversaciones de ClickHouse Assistant con una capa semántica'
-description: 'Guía para usar AGENTS.md para proporcionar al agente de chat de ClickHouse Assistant lógica de negocio personalizada e instrucciones específicas de los datos'
+sidebarTitle: 'Personalizar el chat de Assistant con una capa semántica'
+title: 'Optimizar las conversaciones de Assistant con una capa semántica'
+description: 'Guía para usar AGENTS.md para proporcionar al agente de chat de Assistant lógica de negocio personalizada e instrucciones específicas de los datos'
 keywords: ['AI', 'ClickHouse Cloud', 'Agente', 'AGENTS.md', 'Capa semántica', 'Instrucciones personalizadas', 'Prompt del sistema']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-El agente de chat de ClickHouse Assistant se puede personalizar para que comprenda la lógica de negocio, las estructuras de datos y el conocimiento del dominio específicos de su organización mediante **AGENTS.md**, una consulta guardada especial que actúa como una capa semántica sobre el prompt del sistema del agente.
+El agente de chat de Assistant se puede personalizar para que comprenda la lógica de negocio, las estructuras de datos y el conocimiento del dominio específicos de su organización mediante **AGENTS.md**, una consulta guardada especial que actúa como una capa semántica sobre el prompt del sistema del agente.
 
 Al crear un archivo AGENTS.md, puede proporcionar instrucciones personalizadas que se insertan al inicio de cada conversación para orientar la generación de consultas SQL y el análisis de datos según los requisitos, cálculos y convenciones específicos de su organización.
 
@@ -18,9 +18,9 @@ Al crear un archivo AGENTS.md, puede proporcionar instrucciones personalizadas q
 
 Cuando guarda una consulta llamada &quot;AGENTS.md&quot; (sensible a mayúsculas y minúsculas) en la Cloud Console:
 
-1. El agente de chat de ClickHouse Assistant carga automáticamente este archivo cuando se envía un mensaje
+1. El agente de chat de Assistant carga automáticamente este archivo cuando se envía un mensaje
 2. El contenido se coloca dentro de una etiqueta de contenido estructurado y se inyecta en el prompt del sistema del agente
-3. Las instrucciones se aplican a todas las conversaciones de chat de ClickHouse Assistant de ese servicio
+3. Las instrucciones se aplican a todas las conversaciones de chat de Assistant de ese servicio
 
 <div id="creating-agents-md">
   ## Crear AGENTS.md

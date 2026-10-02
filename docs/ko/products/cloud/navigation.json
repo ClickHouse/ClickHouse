@@ -277,7 +277,7 @@
             "ko/products/cloud/features/ai-ml/agents/marketplace",
             "ko/products/cloud/features/ai-ml/agents/sharing-and-access",
             {
-              "group": "ClickHouse Assistant",
+              "group": "Assistant",
               "pages": [
                 "ko/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
                 "ko/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer"

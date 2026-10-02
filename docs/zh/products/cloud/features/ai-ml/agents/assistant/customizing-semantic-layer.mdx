@@ -1,14 +1,14 @@
 ---
 slug: /use-cases/AI_ML/AIChat/semantic-layer
-sidebarTitle: '使用语义层自定义 ClickHouse Assistant 聊天'
-title: '使用语义层优化 ClickHouse Assistant 对话'
-description: '介绍如何使用 AGENTS.md 为 ClickHouse Assistant 聊天 agent 提供自定义业务逻辑和数据专属指令'
+sidebarTitle: '使用语义层自定义 Assistant 聊天'
+title: '使用语义层优化 Assistant 对话'
+description: '介绍如何使用 AGENTS.md 为 Assistant 聊天 agent 提供自定义业务逻辑和数据专属指令'
 keywords: ['AI', 'ClickHouse Cloud', 'Agent', 'AGENTS.md', '语义层', '自定义指令', '系统提示']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-ClickHouse Assistant 聊天 agent 可通过 **AGENTS.md** 进行自定义，从而理解你的特定业务逻辑、数据结构和领域知识。**AGENTS.md** 是一种特殊的已保存查询，可作为叠加在 agent 系统提示之上的语义层。
+Assistant 聊天 agent 可通过 **AGENTS.md** 进行自定义，从而理解你的特定业务逻辑、数据结构和领域知识。**AGENTS.md** 是一种特殊的已保存查询，可作为叠加在 agent 系统提示之上的语义层。
 
 通过创建 AGENTS.md 文件，你可以提供自定义指令。这些指令会在每次对话开始时注入，用于根据你的组织特有的需求、计算方式和约定来指导 SQL 查询生成和数据分析。
 
@@ -18,9 +18,9 @@ ClickHouse Assistant 聊天 agent 可通过 **AGENTS.md** 进行自定义，从�
 
 当你在 Cloud Console 中保存一个名为 &quot;AGENTS.md&quot; (区分大小写) 的查询后：
 
-1. 发送消息时，ClickHouse Assistant 聊天 agent 会自动加载此文件
+1. 发送消息时，Assistant 聊天 agent 会自动加载此文件
 2. 文件内容会被放入结构化内容标签中，并注入 agent 的系统提示
-3. 这些指令会应用于该服务中的所有 ClickHouse Assistant 聊天对话
+3. 这些指令会应用于该服务中的所有 Assistant 聊天对话
 
 <div id="creating-agents-md">
   ## 创建 AGENTS.md

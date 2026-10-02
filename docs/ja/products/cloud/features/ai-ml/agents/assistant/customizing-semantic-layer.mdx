@@ -1,14 +1,14 @@
 ---
 slug: /use-cases/AI_ML/AIChat/semantic-layer
-sidebarTitle: 'セマンティックレイヤーで ClickHouse Assistant chat をカスタマイズする'
-title: 'セマンティックレイヤーで ClickHouse Assistant の会話を最適化する'
-description: 'AGENTS.md を使って、カスタムのビジネスロジックやデータ固有の指示を ClickHouse Assistant chat エージェント に提供するためのガイド'
+sidebarTitle: 'セマンティックレイヤーで Assistant chat をカスタマイズする'
+title: 'セマンティックレイヤーで Assistant の会話を最適化する'
+description: 'AGENTS.md を使って、カスタムのビジネスロジックやデータ固有の指示を Assistant chat エージェント に提供するためのガイド'
 keywords: ['AI', 'ClickHouse Cloud', 'Agent', 'AGENTS.md', 'Semantic Layer', 'Custom Instructions', 'System Prompt']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-ClickHouse Assistant chat エージェント は、エージェントのシステムプロンプトに対するセマンティックレイヤーとして機能する特別な保存クエリ **AGENTS.md** を通じて、固有のビジネスロジック、データ構造、ドメイン知識を理解できるようにカスタマイズできます。
+Assistant chat エージェント は、エージェントのシステムプロンプトに対するセマンティックレイヤーとして機能する特別な保存クエリ **AGENTS.md** を通じて、固有のビジネスロジック、データ構造、ドメイン知識を理解できるようにカスタマイズできます。
 
 AGENTS.md ファイルを作成すると、各会話の冒頭に挿入されるカスタム指示を追加でき、組織固有の要件、計算、慣例に基づいた SQL クエリの生成やデータ分析を促せます。
 
@@ -18,9 +18,9 @@ AGENTS.md ファイルを作成すると、各会話の冒頭に挿入される�
 
 Cloud Console で &quot;AGENTS.md&quot; (大文字と小文字を区別) という名前のクエリを保存すると:
 
-1. メッセージ送信時に、ClickHouse Assistant chat エージェントがこのファイルを自動的に読み込みます
+1. メッセージ送信時に、Assistant chat エージェントがこのファイルを自動的に読み込みます
 2. 内容は構造化されたコンテンツタグ内に配置され、エージェントのシステムプロンプトに挿入されます
-3. これらの指示は、そのサービス内のすべての ClickHouse Assistant chat の会話に適用されます
+3. これらの指示は、そのサービス内のすべての Assistant chat の会話に適用されます
 
 <div id="creating-agents-md">
   ## AGENTS.md の作成
