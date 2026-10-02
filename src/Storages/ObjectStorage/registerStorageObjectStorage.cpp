@@ -2523,7 +2523,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
                 configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
-        SecretArgumentsSpec{},
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
