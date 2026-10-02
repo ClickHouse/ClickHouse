@@ -40,6 +40,23 @@ for _ in {1..300}; do
 done
 grep . <<< "${res}" | sort -n
 
+# A file truncated while it is being read is an error, not an incomplete last line.
+seq 1 100 | sed 's/.*/{"a":&}/' > "${logs_dir}/trunc.jsonl"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_trunc (a UInt64) ENGINE = FileLog('${logs_dir}/trunc.jsonl', 'JSONEachRow') SETTINGS max_block_size = 1, poll_max_batch_size = 1"
+query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_trunc"
+${CLICKHOUSE_CLIENT} --query_id "${query_id}" --stream_like_engine_allow_direct_select=1 \
+    -q "SELECT sum(sleepEachRow(0.1)) FROM file_log_trunc SETTINGS max_threads = 1" > "${logs_dir}/trunc.out" 2>&1 &
+pid=$!
+# Truncate only after the read has started: one row per block, 0.1 s per row.
+for _ in {1..600}; do
+    [ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = '${query_id}' AND read_rows > 0")" = 1 ] && break
+    sleep 0.1
+done
+: > "${logs_dir}/trunc.jsonl"
+wait "${pid}"
+grep -o -m1 CANNOT_READ_ALL_DATA "${logs_dir}/trunc.out"
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_file"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_dir"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_trunc"
 rm -rf "${logs_dir:?}"

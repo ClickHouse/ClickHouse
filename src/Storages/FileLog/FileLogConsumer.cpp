@@ -122,7 +122,8 @@ void FileLogConsumer::readNewRecords(FileLogConsumer::Records & new_records, siz
             std::getline(reader, record.data);
 
             /// A last line without '\n' may still be being written: leave it for a later read.
-            if (reader.eof())
+            /// EOF before `last_open_end` means the file was truncated, which is an error.
+            if (reader.eof() && static_cast<UInt64>(offset) + record.data.size() >= file_meta.last_open_end)
             {
                 reader.clear();
                 reader.seekg(offset);
