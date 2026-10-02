@@ -109,7 +109,7 @@ public:
     bool tryStopQuery() { return query_interrupt_handler.tryStop(); }
     void stopQuery() { query_interrupt_handler.stop(); }
 
-    ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
+    ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements, const char * raw_query_begin = nullptr);
     /// Returns true if query succeeded
     bool processTextAsSingleQuery(const String & full_query);
 
@@ -546,7 +546,7 @@ protected:
     bool echo_query_id = false; /// Print query_id before execution (defaults to on in interactive mode, off in batch mode).
     String echo_query_separator; /// Optional separator printed before the formatted echoed query (empty = disabled).
     bool highlight_queries = true; /// Highlight the command prompt and the echoed queries.
-    bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
+    bool ignore_error = false; /// In case of errors, report the error, continue to the next query and do not fail the run. Only applicable for non-interactive mode.
     bool inline_insert_data = false; /// Send INSERT data as is in the query text instead of converting to native blocks.
 
     std::optional<Suggest> suggest;
