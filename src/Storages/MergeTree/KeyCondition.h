@@ -241,15 +241,6 @@ public:
       */
     using MonotonicFunctionsChain = std::vector<FunctionBasePtr>;
 
-    /** Computes value of constant expression and its data type.
-      * Returns false, if expression isn't constant.
-      */
-    static bool getConstant(
-        const ASTPtr & expr,
-        Block & block_with_constants,
-        Field & out_value,
-        DataTypePtr & out_type);
-
     /** Calculate expressions, that depend only on constants.
       * For index to work when something like "WHERE Date = toDate(now())" is written.
       */
@@ -721,6 +712,8 @@ private:
     /// Holds the result of (setting.date_time_overflow_behavior == DateTimeOverflowBehavior::Ignore)
     /// Used to check toDateTime monotonicity.
     bool date_time_overflow_behavior_ignore;
+    /// Consulted only while extracting atoms, so the private copying constructor leaves it unset.
+    bool validate_enum_literals_in_operators = true;
 
     /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
     KeyOrder key_order;
