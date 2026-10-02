@@ -8,7 +8,6 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 
-#include <algorithm>
 #include <mutex>
 
 #include <fmt/ranges.h>
@@ -159,44 +158,36 @@ void adjustSettingsForMakeDistributedPlan(Settings & settings)
         return;
 
     Strings adjusted;
-    /// The value comes from this override, not from anything assigning the setting: the constraint
-    /// check judges it as a value the session was given rather than one it asked for. `reported` is
-    /// for the one setting whose alias is the name users write.
-    auto adjust = [&](std::string_view name, std::string_view reported = {})
-    {
-        settings.markChangedByPostProcessor(name);
-        adjusted.emplace_back(fmt::format("{} = 0", reported.empty() ? name : reported));
-    };
 
     if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0)
     {
         settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
-        adjust("allow_experimental_parallel_reading_from_replicas", "enable_parallel_replicas");
+        adjusted.emplace_back("enable_parallel_replicas = 0");
     }
     if (settings[Setting::automatic_parallel_replicas_mode] != 0)
     {
         settings[Setting::automatic_parallel_replicas_mode] = 0;
-        adjust("automatic_parallel_replicas_mode");
+        adjusted.emplace_back("automatic_parallel_replicas_mode = 0");
     }
     if (settings[Setting::correlated_subqueries_use_in_memory_buffer])
     {
         settings[Setting::correlated_subqueries_use_in_memory_buffer] = false;
-        adjust("correlated_subqueries_use_in_memory_buffer");
+        adjusted.emplace_back("correlated_subqueries_use_in_memory_buffer = 0");
     }
     if (settings[Setting::use_skip_indexes_on_data_read])
     {
         settings[Setting::use_skip_indexes_on_data_read] = false;
-        adjust("use_skip_indexes_on_data_read");
+        adjusted.emplace_back("use_skip_indexes_on_data_read = 0");
     }
     if (settings[Setting::compile_expressions])
     {
         settings[Setting::compile_expressions] = false;
-        adjust("compile_expressions");
+        adjusted.emplace_back("compile_expressions = 0");
     }
     if (settings[Setting::query_plan_direct_read_from_text_index])
     {
         settings[Setting::query_plan_direct_read_from_text_index] = false;
-        adjust("query_plan_direct_read_from_text_index");
+        adjusted.emplace_back("query_plan_direct_read_from_text_index = 0");
     }
     /// The concurrency control currently can cause starvation for cases when multiple tasks from one
     /// query are executed on the same node and periodically wait on reads and writes to exchange sockets
@@ -204,7 +195,7 @@ void adjustSettingsForMakeDistributedPlan(Settings & settings)
     if (settings[Setting::use_concurrency_control])
     {
         settings[Setting::use_concurrency_control] = false;
-        adjust("use_concurrency_control");
+        adjusted.emplace_back("use_concurrency_control = 0");
     }
 
     if (!adjusted.empty())
@@ -212,19 +203,6 @@ void adjustSettingsForMakeDistributedPlan(Settings & settings)
             getLogger("adjustSettingsForMakeDistributedPlan"),
             "Adjusted settings not supported by distributed query plans (make_distributed_plan is enabled): {}",
             fmt::join(adjusted, ", "));
-}
-
-bool postProcessorsCanDeriveValues(const Settings & settings, const SettingsChanges & changes)
-{
-    /// With nothing to apply there is nothing left for the override to write: it runs whenever settings
-    /// changes are applied, so the values it overrides already hold what it leaves them at.
-    if (changes.empty())
-        return false;
-    if (settings[Setting::make_distributed_plan])
-        return true;
-    /// Resolve aliases: writing an alias of `make_distributed_plan` enables the override as well.
-    return std::ranges::any_of(
-        changes, [](const SettingChange & change) { return Settings::resolveName(change.name) == "make_distributed_plan"; });
 }
 
 void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)

@@ -47,6 +47,15 @@ public:
 
     IMergingAlgorithm::MergedStats getMergedStats() const { return {.bytes = total_allocated_bytes, .rows = total_merged_rows, .blocks = total_chunks}; }
 
+    /// Hint for the row-by-row insertion fast path. When the merge cannot receive any
+    /// `ColumnReplicated` input (no source column is replicated, e.g. a plain sort with no JOIN),
+    /// `insertRow` / `insertRows` skip the per-row `isReplicated()` wrapping check. Defaults to
+    /// `true`, so every algorithm keeps the wrapping behavior unless it explicitly opts out. An
+    /// algorithm that lowers this to `false` MUST raise it back to `true` before any replicated
+    /// column can reach `insertRow` (e.g. from a late-arriving chunk in `consume`).
+    void setMayHaveReplicatedColumns(bool value) { may_have_replicated_columns = value; }
+    bool mayHaveReplicatedColumns() const { return may_have_replicated_columns; }
+
     virtual ~MergedData() = default;
 
 protected:
@@ -64,6 +73,9 @@ protected:
     const std::optional<size_t> max_dynamic_subcolumns;
 
     bool need_flush = false;
+
+    /// See `setMayHaveReplicatedColumns`. Conservative default keeps the wrapping check.
+    bool may_have_replicated_columns = true;
 };
 
 }

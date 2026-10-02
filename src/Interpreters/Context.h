@@ -20,6 +20,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/DistributedPlanLocalObject.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
@@ -30,6 +31,7 @@
 
 #include "config.h"
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -74,6 +76,7 @@ class ContextAccess;
 class ContextAccessWrapper;
 class Field;
 struct User;
+struct IAccessEntity;
 using UserPtr = std::shared_ptr<const User>;
 struct SettingsProfilesInfo;
 struct EnabledRolesInfo;
@@ -158,6 +161,7 @@ class BackupLog;
 class BlobStorageLog;
 class DeadLetterQueue;
 class HypotheticalObjectStore;
+class SessionQueryIdsHistory;
 class IAsynchronousReader;
 class IOUringReader;
 struct MergeTreeSettings;
@@ -203,6 +207,8 @@ class AsyncLoader;
 class LongConnectionLimit;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
+struct QueryExecutionCounters;
+using QueryExecutionCountersPtr = std::shared_ptr<QueryExecutionCounters>;
 struct ICgroupsReader;
 class WasmModuleManager;
 
@@ -314,6 +320,14 @@ class SystemAllocatedMemoryHolder;
 using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHolder>;
 
 class QueryMetadataCache;
+class CursorTreeNode;
+using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
+
+struct StreamingCursor
+{
+    std::mutex mutex;
+    CursorTreeNodePtr tree;
+};
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
 
@@ -426,6 +440,8 @@ protected:
     String http_combined_filter;
 
     TemporaryTablesMapping external_tables_mapping;
+    /// History of query ids for `system.session_query_ids`, lives on the session context.
+    mutable std::shared_ptr<SessionQueryIdsHistory> session_query_ids_history;
     mutable std::shared_ptr<HypotheticalObjectStore> hypothetical_object_store;
     /// Query scalars
     Scalars scalars;
@@ -581,9 +597,13 @@ public:
 protected:
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
+    /// Created by `makeQueryContext` and shared by every context copied from the query context.
+    DistributedPlanLocalObjectPtr distributed_plan_local_object;
     QueryPrivilegesInfoPtr query_privileges_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
     mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
+    /// Query metrics about the execution of a query.
+    mutable QueryExecutionCountersPtr query_execution_counters;
 
     /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -743,6 +763,10 @@ protected:
     MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
 
     std::shared_ptr<BackupsInMemoryHolder> backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
+
+    /// Final `STREAM [BOUNDED]` cursor holder (tree + its mutex), shared across `Context::createCopy` so
+    /// parallel reading streams serialize their merges into the one tree.
+    std::shared_ptr<StreamingCursor> streaming_cursor;
 
     /// Use copy constructor or createGlobal() instead
     ContextData();
@@ -1043,6 +1067,7 @@ public:
     void setClientName(const String & client_name);
     void setClientInterface(ClientInfo::Interface interface);
     void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
+    void setInitiatorVersionIfUnset();
     void setClientConnectionId(uint32_t connection_id);
     void setScriptQueryAndLineNumber(uint32_t query_number, uint32_t line_number);
     void setHTTPClientInfo(const Poco::Net::HTTPRequest & request);
@@ -1088,6 +1113,9 @@ public:
     void addOrUpdateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
+
+    /// Per-session history of query ids for `system.session_query_ids`.
+    SessionQueryIdsHistory & getSessionQueryIdsHistory() const;
 
     HypotheticalObjectStore & getHypotheticalObjectStore() const;
 
@@ -1153,6 +1181,11 @@ public:
     QueryFactoriesInfo getQueryFactoriesInfo() const;
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
 
+    /// Records that the query resolved an object of this server by name (see `DistributedPlanLocalObject`). Written by
+    /// the resolvers, read by the `make_distributed_plan` fallback decision. No-op outside a query.
+    void addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind kind, const String & name) const;
+    std::shared_ptr<const DistributedPlanLocalObject> getDistributedPlanLocalObject() const;
+
     /// RAII scope that suppresses calls to addQueryFactoriesInfo() on the current thread.
     /// Use it in introspection paths (e.g. reading system.functions) where instantiating
     /// every function — and the helper functions they construct internally — must not
@@ -1195,6 +1228,7 @@ public:
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
+    void clearViewSource();
 
     String getCurrentDatabase() const;
     String getCurrentQueryId() const { return client_info.current_query_id; }
@@ -1261,23 +1295,25 @@ public:
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
-    /// Applies `changes` and then resets `names_to_reset`, the way a `SET` statement does, and checks the
-    /// values `compatibility` derives for the settings neither of them names - which no other check sees,
-    /// because nobody asked for them. The resets are checked against the state `changes` leave behind, so
-    /// the caller must not check them itself. On a violation nothing the call did is left in place.
-    /// Only for callers that fail a forbidden change: one that clamps instead must not use this.
-    void applySettingsChangesAndResets(const SettingsChanges & changes, const std::vector<String> & names_to_reset, SettingSource source);
-
     /// Checks the constraints.
     void checkSettingsConstraints(const AlterSettingsProfileElements & profile_elements, SettingSource source);
+    /// A write which overwrites users, roles or settings profiles must not remove a setting the current user
+    /// is constrained on: `ALTER` gives each new definition by `update`, `CREATE ... OR REPLACE` by `new_entities`.
+    using AccessEntityUpdate
+        = std::function<std::shared_ptr<const IAccessEntity>(const std::shared_ptr<const IAccessEntity> &, const UUID &)>;
+    void checkSettingsConstraintsForOverwrite(const std::vector<UUID> & ids, const AccessEntityUpdate & update) const;
+    void checkSettingsConstraintsForOverwrite(
+        const std::vector<std::shared_ptr<const IAccessEntity>> & new_entities, const String & storage_name) const;
     void checkSettingsConstraints(const SettingChange & change, SettingSource source);
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
+    void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source);
+    /// For the resets of a statement that also changes `profile`: `changes_applied_first` decides their constraints.
+    void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
-    /// Reset settings to the default that is in effect for them, which under an active `compatibility`
-    /// is the value that version implies rather than the declared default.
+    /// Reset settings to default value
     void resetSettingsToDefaultValue(const std::vector<String> & names);
 
     /// Returns the current constraints (can return null).
@@ -1318,10 +1354,25 @@ public:
 #endif
 
     BackupsWorker & getBackupsWorker() const;
+
+    /// Makes further BACKUP and RESTORE queries fail instead of starting a new operation.
+    void stopAcceptingNewBackupsAndRestores() const;
+
     void waitAllBackupsAndRestores() const;
-    void cancelAllBackupsAndRestores() const;
+
+    /// Returns false if `deadline` was reached while some operation was still running.
+    bool cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline = {}) const;
+
+    /// Returns true if some backup or restore has not reached a final status yet. Never waits.
+    bool hasUnfinishedBackupsAndRestores() const;
+
     std::shared_ptr<BackupsInMemoryHolder> getBackupsInMemory();
     std::shared_ptr<const BackupsInMemoryHolder> getBackupsInMemory() const;
+
+    /// The outer query sets an empty holder before a `STREAM [BOUNDED]` read; the reading sources merge into
+    /// it (under its mutex), and the outer query reads it back.
+    void setStreamingCursor(std::shared_ptr<StreamingCursor> cursor);
+    std::shared_ptr<StreamingCursor> getStreamingCursor() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(
@@ -1741,6 +1792,7 @@ public:
 
     std::map<String, std::shared_ptr<Cluster>> getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
+    std::shared_ptr<Cluster> getCluster(const std::string & cluster_name, bool treat_local_port_as_remote) const;
     std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
     void setClustersConfig(const ConfigurationPtr & config, bool enable_discovery = false, const String & config_name = "remote_servers");
     size_t getClustersVersion() const;
@@ -1758,6 +1810,7 @@ public:
 
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
+    bool hasSystemLogs() const;
 
     /// Call after initialization before using trace collector.
     void createTraceCollector();
@@ -1835,12 +1888,6 @@ public:
     /// Only for system.server_settings, actual value is stored in ConfigReloader
     void setConfigReloaderInterval(size_t value_ms);
     size_t getConfigReloaderInterval() const;
-
-    /// Server-wide override for the analyzer in mutations.
-    /// `std::nullopt` means there is no override (the session setting `allow_experimental_analyzer` is used).
-    /// Set from the main config reload callback.
-    void setMutationsUseAnalyzerOverride(std::optional<bool> value);
-    std::optional<bool> getMutationsUseAnalyzerOverride() const;
 
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
@@ -2033,6 +2080,8 @@ public:
 
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
 
+    QueryExecutionCountersPtr getQueryExecutionCounters() const;
+
     ThreadPool & getThreadPoolWriter() const;
 
     /** Get settings for reading from filesystem. */
@@ -2090,6 +2139,7 @@ private:
     void setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
+    void restrictSettingsChangedByCompatibilityWithLock(const std::lock_guard<ContextSharedMutex> & lock);
 
     void setCurrentRolesWithLock(const std::vector<UUID> & new_current_roles, const std::lock_guard<ContextSharedMutex> & lock);
 
@@ -2108,6 +2158,12 @@ private:
     void applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setUserIDWithLock(const UUID & user_id_, const std::lock_guard<ContextSharedMutex> & lock);
+
+    /// Whether the given / current user is defined in the server config (`users.xml`) rather than via SQL.
+    /// Config-defined identities are the admin's root configuration and are trusted to manage settings/profiles.
+    bool isUserDefinedInConfig(const UUID & user_id_) const;
+    bool isCurrentUserDefinedInConfigWithLock() const;
+    void checkRemovedSettings(const std::shared_ptr<const IAccessEntity> & old_entity, const std::shared_ptr<const IAccessEntity> & new_entity) const;
 
     void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> & lock);
 
@@ -2129,25 +2185,6 @@ private:
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
 
     void checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
-
-    /// Checks the constrained settings the request did not assign: a value `compatibility` derived, one it
-    /// stopped deriving, one a post-processor moved, and one a profile the request selects constrains
-    /// without moving. Only the state after the change tells what they are, so the caller has to apply the
-    /// change before calling this, and to pass the constraints that were in force before it.
-    void checkSettingsMovedWithoutBeingAssignedWithLock(
-        const Settings & settings_before,
-        const std::shared_ptr<const SettingsConstraintsAndProfileIDs> & profiles_before,
-        SettingSource source) const;
-
-    /// Performs the resets on `target`, which is either the live settings or a copy the caller checks
-    /// before committing to them. One routine for both, so the value checked is the value applied.
-    void resetToDefaultValueWithLock(
-        Settings & target, const std::vector<String> & names, const std::lock_guard<ContextSharedMutex> & lock) const;
-
-    void resetSettingsToDefaultValueWithLock(const std::vector<String> & names, const std::lock_guard<ContextSharedMutex> & lock);
-
-    void checkSettingsConstraintsForSettingsResetWithLock(
-        const std::vector<String> & names, SettingSource source, const std::lock_guard<ContextSharedMutex> & lock) const;
 
     ExternalDictionariesLoader & getExternalDictionariesLoaderWithLock(const std::lock_guard<std::mutex> & lock);
 
@@ -2182,11 +2219,14 @@ public:
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
 
-    ThrottlerPtr getRemoteReadThrottler() const;
-    ThrottlerPtr getRemoteWriteThrottler() const;
+    /// `bandwidth` is the matching `max_*_bandwidth` setting, read by the caller under the settings
+    /// lock and passed in once that lock is released, never while it is held: these getters take
+    /// `mutex` exclusively themselves. Without it the setting is read here under a shared lock.
+    ThrottlerPtr getRemoteReadThrottler(std::optional<UInt64> bandwidth = {}) const;
+    ThrottlerPtr getRemoteWriteThrottler(std::optional<UInt64> bandwidth = {}) const;
 
-    ThrottlerPtr getLocalReadThrottler() const;
-    ThrottlerPtr getLocalWriteThrottler() const;
+    ThrottlerPtr getLocalReadThrottler(std::optional<UInt64> bandwidth = {}) const;
+    ThrottlerPtr getLocalWriteThrottler(std::optional<UInt64> bandwidth = {}) const;
 
     ThrottlerPtr getBackupsThrottler() const;
 
@@ -2199,6 +2239,7 @@ public:
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLongConnectionLimitConfig(size_t max_remote_read_connections) const;
+    void reloadDistributedCacheThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
 
     /// Kitchen sink
     using ContextData::KitchenSink;

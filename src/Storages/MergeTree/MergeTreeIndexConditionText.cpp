@@ -2,8 +2,10 @@
 
 #include "config.h"
 
+#include <algorithm>
 #include <set>
 #include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
@@ -33,7 +35,9 @@
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
@@ -133,6 +137,37 @@ void TextSearchQuery::initializeHash()
     hash = hash_state.get128();
 }
 
+/// The type under `Nullable`, `LowCardinality` and one level of `Array`.
+static DataTypePtr removeArrayNullableLowCardinality(const DataTypePtr & type)
+{
+    auto inner_type = removeNullable(removeLowCardinality(type));
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(inner_type.get()))
+        inner_type = removeNullable(removeLowCardinality(array_type->getNestedType()));
+    return inner_type;
+}
+
+/// The token stream an `Array` column stores differs from the one the row-level function sees, per element.
+static bool isIndexedColumnArray(const Block & header)
+{
+    if (header.columns() != 1)
+        return false;
+
+    return isArray(removeNullableOrLowCardinalityNullable(header.getByPosition(0).type));
+}
+
+static std::optional<size_t> tryGetIndexedFixedStringSize(const Block & header)
+{
+    /// A text index is always defined on a single expression.
+    if (header.columns() != 1)
+        return std::nullopt;
+
+    auto element_type = removeArrayNullableLowCardinality(header.getByPosition(0).type);
+    if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(element_type.get()))
+        return fixed_string_type->getN();
+
+    return std::nullopt;
+}
+
 MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
@@ -141,10 +176,14 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
-    bool has_positions_)
+    bool has_positions_,
+    NameSet columns_shadowing_map_subcolumns_)
     : WithContext(context_)
     , header(index_sample_block)
+    , indexed_column_is_array(isIndexedColumnArray(header))
+    , indexed_fixed_string_size(tryGetIndexedFixedStringSize(header))
     , normalized_index_column_name(normalized_index_column_name_)
+    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
     , preprocessor(preprocessor_)
@@ -159,31 +198,35 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
         return;
     }
 
+    /// Plain LRU: the caches live for one query and readers sweep the segments in task order.
+    /// Not using SLRU, because it would only pin stale entries.
+    static constexpr auto cache_policy = "LRU";
+    /// Local caches: ~10% of the query memory budget, capped at 200 MiB.
+    static constexpr size_t local_cache_size_cap = 200ULL * 1024 * 1024;
+
     const auto & settings = context_->getSettingsRef();
-    static constexpr auto cache_policy = "SLRU";
-    /// Local caches: ~10% of the query memory budget, capped at 100 MiB; max_memory_usage == 0 (unlimited) uses the cap, not a 0-size cache.
-    static constexpr size_t local_cache_size_cap = 100ULL * 1024 * 1024;
     const size_t query_memory_limit = settings[Setting::max_memory_usage];
-    const size_t local_cache_max_size
-        = query_memory_limit == 0 ? local_cache_size_cap : std::min<size_t>(query_memory_limit / 10, local_cache_size_cap);
+    const size_t local_cache_max_size = query_memory_limit == 0
+        ? local_cache_size_cap
+        : std::min<size_t>(query_memory_limit / 10, local_cache_size_cap);
 
     /// If usage of global text index caches is disabled, create local
     /// one to share them between threads that read the same data parts.
     if (settings[Setting::use_text_index_tokens_cache])
         tokens_cache = context_->getTextIndexTokensCache();
     else
-        tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, local_cache_max_size, 0, 1.0);
+        tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, local_cache_max_size, 0, /*size_ratio=*/ 0.0);
 
     use_global_header_cache = settings[Setting::use_text_index_header_cache];
     if (use_global_header_cache)
         header_cache = context_->getTextIndexHeaderCache();
     else
-        header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, local_cache_max_size, 0, 1.0);
+        header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, local_cache_max_size, 0, /*size_ratio=*/ 0.0);
 
     if (settings[Setting::use_text_index_postings_cache])
         postings_cache = context_->getTextIndexPostingsCache();
     else
-        postings_cache = std::make_shared<TextIndexPostingsCache>(cache_policy, local_cache_max_size, 0, 1.0);
+        postings_cache = std::make_shared<TextIndexPostingsCache>(cache_policy, local_cache_max_size, 0, /*size_ratio=*/ 0.0);
 
     rpn = std::move(RPNBuilder<RPNElement>(
         predicate,
@@ -294,6 +337,14 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 {
     const bool is_array_tokenizer = (tokenizer->getType() == ITokenizer::Type::Array);
 
+    /// One token per pair: `m['key'] = 'value'` is one posting list, `mapContainsKeyValue` the union of
+    /// the first-occurrence and repeated-occurrence lists. Nothing else is supported yet.
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+    {
+        const bool is_exact = function_name == "equals" || function_name == "mapContainsKeyValue";
+        return is_exact ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
+    }
+
     if (function_name == "hasToken"
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens")
@@ -302,7 +353,7 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     }
 
     if (function_name == "hasPhrase")
-        return has_positions ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+        return has_positions && !indexed_column_is_array ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
 
     /// Exact mode requires array tokenizer with neither pre- nor postprocessor.
     const bool can_be_exact_read_mode = is_array_tokenizer && !has_preprocessor && !has_postprocessor;
@@ -341,8 +392,7 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const ActionsDAG::Node & node) const
 {
     RPNElement rpn_element;
-    RPNBuilderTreeContext rpn_tree_context(getContext());
-    RPNBuilderTreeNode rpn_node(&node, rpn_tree_context);
+    RPNBuilderTreeNode rpn_node(&node, getContext());
 
     if (!traverseAtomNode(rpn_node, rpn_element))
         return nullptr;
@@ -359,12 +409,12 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
         return true;
 
     const auto function_name = node.function_base->getName();
-    /// The third argument of `like` and `ilike` is an ESCAPE character, not a tokenizer.
-    if (function_name == "like" || function_name == "ilike")
+    /// The third argument is an ESCAPE character for `like`/`ilike` and the searched value for
+    /// `mapContainsKeyValue`, not a tokenizer.
+    if (function_name == "like" || function_name == "ilike" || function_name == "mapContainsKeyValue")
         return true;
 
-    RPNBuilderTreeContext rpn_tree_context(getContext());
-    RPNBuilderTreeNode rpn_node(&node, rpn_tree_context);
+    RPNBuilderTreeNode rpn_node(&node, getContext());
     const auto function_node = rpn_node.toFunctionNode();
 
     return tokenizerArgumentMatchesIndex(function_name, function_node.getArgumentAt(2));
@@ -628,8 +678,7 @@ std::string MergeTreeIndexConditionText::getDescription() const
         {
             if (i > 0)
                 description += ", ";
-
-            description += fmt::format("\"{}\"", all_search_tokens[i]);
+            description += tokenizer->formatTokenForLogs(all_search_tokens[i]);
         }
     }
 
@@ -722,6 +771,10 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
         if (function_arguments_size == 3)
         {
+            /// Both needles are arguments of the call, so the (column, constant) shape below cannot express it.
+            if (function_name == "mapContainsKeyValue")
+                return traverseMapContainsKeyValueNode(function, out);
+
             /// The index path tokenizes needles with the index tokenizer, so it can answer the
             /// predicate only when the tokenizer argument denotes that same tokenizer.
             if (!tokenizerArgumentMatchesIndex(function_name, function.getArgumentAt(2)))
@@ -735,7 +788,8 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
-        if ((function_name == "in" || function_name == "globalIn")
+        if ((function_name == "in" || function_name == "globalIn"
+             || function_name == "nullIn" || function_name == "globalNullIn")
             && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
         {
             out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
@@ -764,11 +818,15 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
 VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(const Field & field) const
 {
+    return stringToTokens(std::string_view(field.safeGet<String>()));
+}
+
+VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(std::string_view raw) const
+{
     VectorWithMemoryTracking<String> tokens;
-    const String & raw = field.safeGet<String>();
     if (has_preprocessor)
     {
-        const String processed = preprocessor->processConstant(raw);
+        const String processed = preprocessor->processConstant(String(raw));
         tokenizer->stringToTokens(processed.data(), processed.size(), tokens);
     }
     else
@@ -907,6 +965,13 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
 
     const size_t min_pattern_length = getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length];
 
+    /// The scan matches tokens bytewise, ASCII case-insensitively, while ILIKE folds per code point and also
+    /// equates U+212A with 'k'. The token keeps the raw bytes, so the scan cannot see such an occurrence and
+    /// would prune a granule holding a matching row. Checked for the whole pattern, before any shape-specific
+    /// branch below, because every shape is matched the same way.
+    if (case_insensitive && std::any_of(value.begin(), value.end(), UTF8::isASCIIReachableByCaseFolding))
+        return {};
+
     auto compile_pattern = [&](const String & pattern)
     {
         std::vector<OptimizedRegularExpression> patterns;
@@ -1017,73 +1082,200 @@ static void validateRegexpPatterns(const Array & patterns, const Settings & sett
 #endif
 }
 
-/// `String = FixedString(N)` ignores the constant's trailing zero padding, so the search terms must be taken from the value without it.
-static Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type)
+/// How a function treats the trailing zero bytes of a `FixedString` needle.
+enum class FixedStringPaddingSemantics
 {
-    auto inner_type = removeNullable(removeLowCardinality(type));
+    NeedleAsTyped,   /// `has`, `mapContainsKey`, `mapContainsValue`
+    NeedleStripped,  /// `hasAny`, `hasAll`: the needle is cast to `String`
+    BothStripped,    /// `equals`, `IN`: the value loses its trailing zero bytes as well
+};
 
-    if (isFixedString(inner_type) && field.getType() == Field::Types::String)
-    {
-        String value = field.safeGet<String>();
-        value.resize(value.find_last_not_of('\0') + 1);
-        return Field(std::move(value));
-    }
+/// What stays constant while one needle is normalized.
+struct FixedStringNeedleContext
+{
+    FixedStringPaddingSemantics semantics;
+    std::optional<size_t> indexed_fixed_string_size;
+    bool padding_never_in_terms;
+};
 
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(inner_type.get());
-        array_type && field.getType() == Field::Types::Array)
-    {
-        Array stripped;
-        const auto & elements = field.safeGet<Array>();
-        stripped.reserve(elements.size());
-        for (const auto & element : elements)
-            stripped.push_back(stripFixedStringPaddingForTerms(element, array_type->getNestedType()));
-        return Field(std::move(stripped));
-    }
-
-    return field;
+static std::optional<FixedStringPaddingSemantics> fixedStringPaddingSemantics(const String & function_name)
+{
+    if (function_name == "equals")
+        return FixedStringPaddingSemantics::BothStripped;
+    if (function_name == "hasAny" || function_name == "hasAll")
+        return FixedStringPaddingSemantics::NeedleStripped;
+    if (function_name == "has" || function_name == "mapContainsKey" || function_name == "mapContainsValue")
+        return FixedStringPaddingSemantics::NeedleAsTyped;
+    return std::nullopt;
 }
 
-/// These functions compare a `FixedString` constant through the `String` supertype, which drops the trailing zero padding.
-static bool functionIgnoresFixedStringPadding(const String & function_name)
+static std::string_view withoutTrailingZeros(std::string_view value)
 {
-    return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
+    return value.substr(0, value.find_last_not_of('\0') + 1);
 }
 
-/// A `FixedString` indexed column stores the padding, and so do its terms. Stripping the constant is
-/// only sound there when the tokenizer keeps the terms of the unpadded value, otherwise the search
-/// would look for a term the index never stored and prune a granule holding matching rows.
-static bool canStripFixedStringPadding(ITokenizer::Type tokenizer_type, const Block & header)
+/// Strips or re-pads the needle's trailing zero bytes in place to the form the index stores; false when no single form covers every match.
+static bool tryNormalizeNeedlePadding(String & needle, bool needle_is_fixed_string, const FixedStringNeedleContext & context)
 {
-    static const std::unordered_set<ITokenizer::Type> zero_padding_tolerated_tokenizers = {
-        ITokenizer::Type::SplitByNonAlpha,
-        ITokenizer::Type::Ngrams,
-        ITokenizer::Type::SparseGrams,
-        ITokenizer::Type::AsciiCJK
-    };
+    const bool both_stripped = context.semantics == FixedStringPaddingSemantics::BothStripped;
+    const size_t stripped_size = withoutTrailingZeros(needle).size();
 
-    if (zero_padding_tolerated_tokenizers.contains(tokenizer_type))
+    if (context.indexed_fixed_string_size)
+    {
+        /// The column stores its values padded to N and compares them without the padding.
+        if (both_stripped || needle_is_fixed_string)
+            needle.resize(stripped_size);
+        /// A `String` needle keeps its zero bytes for these functions and then matches nothing.
+        else if (needle.ends_with('\0'))
+            return false;
+
+        if (needle.size() > *context.indexed_fixed_string_size)
+            return false;
+
+        needle.resize(*context.indexed_fixed_string_size, '\0');
+        return true;
+    }
+
+    if (!needle_is_fixed_string || context.semantics == FixedStringPaddingSemantics::NeedleAsTyped)
         return true;
 
-    /// A text index is always defined on a single expression.
-    if (header.columns() != 1)
+    /// A value with any number of trailing zero bytes matches, so one lookup covers them only if none can end up in a term.
+    if (both_stripped && stripped_size != needle.size() && !context.padding_never_in_terms)
         return false;
 
-    auto indexed_type = removeNullable(removeLowCardinality(header.getByPosition(0).type));
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(indexed_type.get()))
-        indexed_type = removeNullable(removeLowCardinality(array_type->getNestedType()));
+    needle.resize(stripped_size);
+    return true;
+}
 
-    return !isFixedString(indexed_type);
+/// Same, elementwise for arrays.
+static bool tryNormalizeNeedlePadding(Field & value, const DataTypePtr & value_type, const FixedStringNeedleContext & context)
+{
+    auto inner_type = removeNullable(removeLowCardinality(value_type));
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(inner_type.get());
+        array_type && value.getType() == Field::Types::Array)
+    {
+        for (auto & element : value.safeGet<Array>())
+        {
+            if (!tryNormalizeNeedlePadding(element, array_type->getNestedType(), context))
+                return false;
+        }
+        return true;
+    }
+
+    if (value.getType() != Field::Types::String)
+        return true;
+
+    return tryNormalizeNeedlePadding(value.safeGet<String>(), isFixedString(inner_type), context);
+}
+
+namespace
+{
+
+/// Whether converting a value of type `from` to type `to` never changes it and never throws.
+/// `LowCardinality` may be added or dropped and `Nullable` may be added, at any depth of `Array`.
+/// `Nullable` cannot be dropped, because it may throw on NULL.
+bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to)
+{
+    auto from_type = removeLowCardinality(from);
+    auto to_type = removeLowCardinality(to);
+
+    if (to_type->isNullable())
+    {
+        from_type = removeNullable(from_type);
+        to_type = removeNullable(to_type);
+    }
+    else if (from_type->isNullable())
+    {
+        return false;
+    }
+
+    if (from_type->equals(*to_type))
+        return true;
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from_type.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to_type.get());
+    return from_array && to_array && isLosslessConversion(from_array->getNestedType(), to_array->getNestedType());
+}
+
+/// Whether the node is `CAST`, `_CAST`, `toNullable` or `toLowCardinality` with a lossless conversion (see above).
+bool isLosslessConversionFunction(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return false;
+
+    const auto function_name = node.function_base->getName();
+    const size_t arguments_size = node.children.size();
+
+    const bool is_cast = (function_name == "CAST" || function_name == "_CAST") && arguments_size == 2;
+    const bool is_wrapper = (function_name == "toNullable" || function_name == "toLowCardinality") && arguments_size == 1;
+
+    if (!is_cast && !is_wrapper)
+        return false;
+
+    return isLosslessConversion(node.children.front()->result_type, node.result_type);
+}
+
+/// Strips lossless conversions from the node (see above).
+RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node)
+{
+    if (!node.isFunction())
+        return node;
+
+    /// Only the DAG form carries the types; the AST form is left as is.
+    const auto function = node.toFunctionNode();
+    const auto * function_dag_node = function.getDAGNode();
+
+    if (!function_dag_node || !isLosslessConversionFunction(*function_dag_node))
+        return node;
+
+    return unwrapLosslessConversion(function.getArgumentAt(0));
+}
+
+}
+
+const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node)
+{
+    const auto * node_without_alias = node;
+    while (node_without_alias->type == ActionsDAG::ActionType::ALIAS)
+        node_without_alias = node_without_alias->children.front();
+
+    if (!isLosslessConversionFunction(*node_without_alias))
+        return node;
+
+    return unwrapLosslessConversion(node_without_alias->children.front());
+}
+
+/// The value an absent map key reads: `''`, or all NUL when the value type is `FixedString`.
+/// `mapValues` stores neither.
+static bool isMapValueDefault(std::string_view value, const Block & header)
+{
+    /// A text index is always defined on a single expression.
+    chassert(header.columns() == 1);
+    auto value_type = removeNullable(removeLowCardinality(header.getByPosition(0).type));
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(value_type.get()))
+        value_type = removeNullable(removeLowCardinality(array_type->getNestedType()));
+
+    return value.empty() || (isFixedString(value_type) && value.find_first_not_of('\0') == std::string_view::npos);
 }
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
-    const RPNBuilderTreeNode & index_column_node,
+    const RPNBuilderTreeNode & argument_node,
     DataTypePtr value_type,
     Field value_field,
     RPNElement & out) const
 {
     const String function_name = function_node.getFunctionName();
     auto direct_read_mode = getDirectReadMode(function_name);
+
+    /// The index knows the expression under the conversion, e.g. `m.key_<key>` in `equals(_CAST(m.key_<key>, 'String'), 'value')`.
+    const auto index_column_node = unwrapLosslessConversion(argument_node);
+
+    /// The builders below tokenize a string needle or expect an index on `mapKeys` / `mapValues` / a JSON
+    /// path. Partition hard, so none of them can emit a token in the pair format.
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+        return traverseMapElementKeyValueNode(function_name, index_column_node, direct_read_mode, value_type, value_field, out);
 
     auto index_column_name = index_column_node.getColumnName();
     bool has_index_column = hasIndexForColumn(index_column_name);
@@ -1119,12 +1311,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     /// Try to parse map subcolumn reference like `map.key_<serialized_key>` for `mapValues` index.
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
     {
-        if (auto parsed = tryParseMapSubcolumnName(index_column_name))
+        if (auto parsed = tryParseMapSubcolumnName(index_column_name, columns_shadowing_map_subcolumns))
         {
             auto & [map_column_name, _] = *parsed;
             if (header.has(fmt::format("mapValues({})", map_column_name))
                 && value_field.getType() == Field::Types::String
-                && !value_field.safeGet<String>().empty())
+                && !isMapValueDefault(value_field.safeGet<String>(), header))
             {
                 has_index_column = true;
                 direct_read_mode = getHintOrNoneMode();
@@ -1136,20 +1328,22 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
         return false;
 
-    auto stripped_value_type = removeLowCardinality(value_type);
-    if (!value_field.isNull())
-        stripped_value_type = removeNullable(stripped_value_type);
-    /// Only a String needle is unwrapped. A FixedString one is tokenized together with its NUL
-    /// padding, which string equality ignores, so the index would discard matching granules.
-    if (WhichDataType(stripped_value_type).isString())
-        value_type = stripped_value_type;
-
     auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
-    if (functionIgnoresFixedStringPadding(function_name) && canStripFixedStringPadding(tokenizer->getType(), header))
-        value_field = stripFixedStringPaddingForTerms(value_field, value_type);
+    /// A `FixedString` on either side drops trailing zero bytes in the comparison.
+    if (auto semantics = fixedStringPaddingSemantics(function_name);
+        semantics && (indexed_fixed_string_size || isFixedString(removeArrayNullableLowCardinality(value_type))))
+    {
+        const FixedStringNeedleContext context{
+            .semantics = *semantics,
+            .indexed_fixed_string_size = indexed_fixed_string_size,
+            .padding_never_in_terms = !has_preprocessor && ITokenizer::splitsAtZeroByte(tokenizer->getType()),
+        };
+        if (!tryNormalizeNeedlePadding(value_field, value_type, context))
+            return false;
+    }
 
     const auto & settings = getContext()->getSettingsRef();
 
@@ -1332,50 +1526,30 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        // hasToken and hasTokenOrNull are legacy functions which assume splitByNonAlpha as
-        /// tokenizer. The text index can answer it only correctly if this is the index tokenizer.
-        /// In all other cases, bypass the index.
+        /// `hasToken` splits by non-alphanumeric characters, so only an index with the same tokenizer can answer it.
         if (tokenizer->getType() != ITokenizer::Type::SplitByNonAlpha)
             return false;
 
-        /// Unlike hasToken, hasTokenOrNull is never rewritten to direct-read, so the pre/postprocessor
-        /// is also not applied to its needle. Using the index here (where stringToTokens does apply them,
-        /// e.g. mapping a dropped token to the empty sentinel that prunes every granule) would disagree
-        /// with the scan result. Bail out so the index is not used for hasTokenOrNull when a
-        /// pre/postprocessor is configured; the plain index path is unaffected.
+        /// `hasTokenOrNull` is never rewritten to a direct read, so its needle never goes through the
+        /// pre/postprocessor, while `stringToTokens` applies them. The index would disagree with the scan.
         if (function_name == "hasTokenOrNull" && (has_preprocessor || has_postprocessor))
             return false;
 
-        /// A needle containing a token separator is invalid for `hasToken` and the brute-force scan raises
-        /// BAD_ARGUMENTS for this. hasToken uses Exact direct read, so the index would tokenize the needle and
-        /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception.
-        /// Therefore bypass the index and do a brute-force scan. hasTokenOrNull is not affected: it returns NULL
-        ///
-        /// A separator is any ASCII non-alphanumeric character.
-        if (function_name == "hasToken"
-            && std::ranges::any_of(value_field.safeGet<String>(), [](unsigned char c) { return isASCII(c) && !isAlphaNumericASCII(c); }))
+        /// The scan raises BAD_ARGUMENTS for a needle with a separator, and the exact direct read of `hasToken`
+        /// would replace the predicate and hide it. `hasTokenOrNull` returns NULL for such a needle instead.
+        if (function_name == "hasToken" && std::ranges::any_of(value_field.safeGet<String>(), isTokenSeparator))
             return false;
 
         auto tokens = stringToTokens(value_field);
         if (tokens.empty())
         {
+            /// A needle without a word character is invalid: leave it to the scan, which raises or returns NULL.
+            /// Otherwise the pre/postprocessor dropped the needle (e.g. a stop word), so it is not in the index:
+            /// push the empty sentinel to prune every granule.
             const String & string_needle = value_field.safeGet<String>();
-            if (!string_needle.empty())
-            {
-                /// hasToken uses splitByNonAlpha as its tokenizer, so:
-                ///  - A needle without any word character (alphanumeric or non-ASCII) is invalid.
-                ///  - Bypass the index in that case so the row-level evaluation throws BAD_ARGUMENTS (or returns NULL for hasTokenOrNull)
-                ///  -- Consistent with the no-index behaviour.
-                /// If the needle does contain word characters (e.g. "abc" with ngrams(4)):
-                ///  - It is valid but too short for the index's tokenizer:
-                ///  -- Fall through to push "" so all granules are pruned and the query returns 0 rows.
-                /// If the postprocessor filters the needle (e.g. stop-word):
-                ///  -- The needle is not in the index; push "" sentinel so the condition evaluates to false.
-                if (std::ranges::none_of(string_needle, [](unsigned char c) { return !isASCII(c) || isAlphaNumericASCII(c); }))
-                    return false;
-            }
-            /// - If the needle does contain word characters (e.g. "abc" with ngrams(4)), it is valid but too short for the index's tokenizer:
-            ///   Fall through but push "" so all granules are pruned and the query returns 0 rows.
+            if (!string_needle.empty() && std::ranges::all_of(string_needle, isTokenSeparator))
+                return false;
+
             tokens.push_back("");
         }
 
@@ -1385,11 +1559,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasPhrase")
     {
-        /// Only splitByNonAlpha, splitByString, splitByRegexp, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
+        /// Only splitByNonAlpha, splitByString, splitByRegexp, array, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
         static const std::unordered_set<std::string_view> supported_tokenizers = {
             SplitByNonAlphaTokenizer::getExternalName(),
             SplitByStringTokenizer::getExternalName(),
             SplitByRegexpTokenizer::getExternalName(),
+            ArrayTokenizer::getExternalName(),
             AsciiCJKTokenizer::getExternalName(),
 #if USE_ICU
             IcuTokenizer::getExternalName(),
@@ -1399,23 +1574,55 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
             return false;
 
-        /// The postprocessor in `optimizeDirectReadFromTextIndex` rejoins the normalized tokens with a
-        /// space and re-tokenizes them, and validates each token with the `splitByNonAlpha` separator rule.
-        /// Both assumptions are wrong for `splitByRegexp`: its separator need not be whitespace (so the rejoin
-        /// would collapse tokens, causing false negatives) and its tokens may contain characters such as `#` or
-        /// `+` (which the validation would reject). Rather than bypassing the index - which would silently fall
-        /// back to the default `splitByNonAlpha` and produce false positives - reject this combination
-        /// explicitly. `splitByRegexp` + `hasPhrase` without a postprocessor is fully supported. This also
-        /// covers `match_tokens` mode, where adjacency is even less reliable.
-        if (tokenizer->getType() == ITokenizer::Type::SplitByRegexp && has_postprocessor)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Function 'hasPhrase' is not supported on a text index that uses the 'splitByRegexp' tokenizer and a postprocessor");
+        /// The two sides number an element's tokens differently, so the row-level function decides alone.
+        const bool use_positions = has_positions && !indexed_column_is_array;
+
+        /// An Array phrase carries the tokens verbatim: neither the tokenizer nor the preprocessor applies.
+        if (value_field.getType() == Field::Types::Array)
+        {
+            VectorWithMemoryTracking<String> phrase_tokens;
+            for (const Field & element : value_field.safeGet<Array>())
+            {
+                if (element.getType() != Field::Types::String)
+                    return false;
+
+                const auto & element_value = element.safeGet<String>();
+                if (!element_value.empty())
+                    phrase_tokens.push_back(element_value);
+            }
+
+            if (has_postprocessor)
+                phrase_tokens = postprocessor->processTokens(std::move(phrase_tokens));
+
+            std::set<String> dedup(phrase_tokens.begin(), phrase_tokens.end());
+            VectorWithMemoryTracking<String> unique_tokens(dedup.begin(), dedup.end());
+
+            if (use_positions)
+            {
+                auto query = std::make_shared<TextSearchQuery>(
+                    function_name,
+                    TextSearchMode::Phrase,
+                    direct_read_mode,
+                    std::move(unique_tokens),
+                    std::vector<OptimizedRegularExpression>{},
+                    std::move(phrase_tokens));
+
+                out.function = RPNElement::FUNCTION_HAS_PHRASE;
+                out.text_search_queries.emplace_back(std::move(query));
+                return true;
+            }
+
+            out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
+            out.text_search_queries.emplace_back(
+                std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(unique_tokens)));
+
+            return true;
+        }
 
         const String value = preprocessor->processConstant(value_field.safeGet<String>());
 
         /// When positions are available, use phrase search with positional intersection.
-        if (has_positions)
+        if (use_positions)
         {
             /// phrase_tokens keeps order and duplicates for positional search; unique_tokens is the
             /// sorted distinct set used for granule-level filtering (all tokens must exist).
@@ -1544,7 +1751,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "ilike" && like_optimization_supported_tokenizers.contains(tokenizer->getType())
         && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
     {
-        if (has_preprocessor && !preprocessor->isLowerOrUpper())
+        if (has_preprocessor && !preprocessor->isASCIILowerOrUpper())
             return false;
         if (has_postprocessor)
             return false;
@@ -1749,9 +1956,13 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     /// It can be an arbitrary function that returns 0 for the default value of the map value type.
     /// It is true because `arrayElement` (and the equivalent subcolumn access) returns default value if key doesn't exist in the map,
     /// therefore we can use index to skip granules and use direct read as a hint for the original condition.
+    /// The result may be `Nullable` or `LowCardinality`, e.g. for a `Nullable` key: NULL reads as false below, as in WHERE.
 
     const auto * dag_node = function_node.getDAGNode();
-    if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic() || !WhichDataType(dag_node->result_type).isUInt8())
+    if (!dag_node
+        || !dag_node->function_base
+        || !dag_node->isDeterministic()
+        || !WhichDataType(removeLowCardinalityAndNullable(dag_node->result_type)).isUInt8())
         return false;
 
     auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
@@ -1791,17 +2002,14 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
                 if (map_argument->type != ActionsDAG::ActionType::INPUT || map_argument->result_name != required_column.name)
                     return false;
 
-                if (const_key_argument->type != ActionsDAG::ActionType::COLUMN)
+                /// A NULL key is declined: `arrayElement` returns NULL for it, not the default value.
+                Field key_field;
+                DataTypePtr key_type;
+                if (!RPNBuilderTreeNode(const_key_argument, function_node.getContext()).tryGetConstant(key_field, key_type)
+                    || key_field.getType() != Field::Types::String)
                     return false;
 
-                auto unwrapped_result_type = removeLowCardinality(const_key_argument->result_type);
-                const bool key_is_null = const_key_argument->column->isNullAt(0);
-                if (!key_is_null)
-                    unwrapped_result_type = removeNullable(unwrapped_result_type);
-                if (key_is_null || !isStringOrFixedString(unwrapped_result_type))
-                    return false;
-
-                key_const_value = std::string{const_key_argument->column->getDataAt(0)};
+                key_const_value = key_field.safeGet<String>();
             }
             else
             {
@@ -1813,7 +2021,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     else
     {
         /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
-        auto parsed = tryParseMapSubcolumnName(required_column.name);
+        auto parsed = tryParseMapSubcolumnName(required_column.name, columns_shadowing_map_subcolumns);
         if (!parsed)
             return false;
 
@@ -1840,9 +2048,121 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (result_column->getBool(0))
         return false;
 
-    auto tokens = stringToTokens(*key_const_value);
+    auto tokens = stringToTokens(std::string_view(*key_const_value));
     out.function = RPNElement::FUNCTION_EQUALS;
     out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>("mapContainsKey", TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
+    return true;
+}
+
+std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const
+{
+    /// `m['key']` before the subcolumn rewrite.
+    if (node.isFunction())
+    {
+        const auto function = node.toFunctionNode();
+        if (function.getArgumentsSize() != 2 || function.getFunctionName() != "arrayElement")
+            return std::nullopt;
+
+        if (!hasIndexForColumn(function.getArgumentAt(0).getColumnName()))
+            return std::nullopt;
+
+        Field key_field;
+        DataTypePtr key_type;
+        /// FixedString excluded, see traverseMapElementKeyValueNode.
+        if (!function.getArgumentAt(1).tryGetConstant(key_field, key_type) || !WhichDataType(key_type).isString())
+            return std::nullopt;
+
+        return key_field.safeGet<String>();
+    }
+
+    /// `m['key']` after the subcolumn rewrite (`optimize_functions_to_subcolumns`).
+    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), columns_shadowing_map_subcolumns);
+    if (!parsed)
+        return std::nullopt;
+
+    auto & [map_column_name, serialized_key] = *parsed;
+    if (!hasIndexForColumn(map_column_name))
+        return std::nullopt;
+
+    /// `serializeText` is the identity for the String keys this index requires, so this is the raw key.
+    /// Same assumption as traverseMapElementKeyNode.
+    return serialized_key;
+}
+
+bool MergeTreeIndexConditionText::traverseMapElementKeyValueNode(
+    const String & function_name,
+    const RPNBuilderTreeNode & index_column_node,
+    TextIndexDirectReadMode direct_read_mode,
+    const DataTypePtr & value_type,
+    const Field & value_field,
+    RPNElement & out) const
+{
+    if (function_name != "equals")
+        return false;
+
+    /// A FixedString Field carries its zero padding, which the index does not store: the token would
+    /// never be found and exact direct read would drop rows. Scan instead.
+    if (!WhichDataType(value_type).isString())
+        return false;
+
+    auto key = tryGetMapElementKeyForIndexColumn(index_column_node);
+    if (!key)
+        return false;
+
+    /// `m['key'] = ''` also holds for rows without the key, which have no token. Keep the predicate,
+    /// as `equals` does for an empty needle.
+    const String & value = value_field.safeGet<String>();
+    if (value.empty())
+        return false;
+
+    /// `m['key']` is the key's first occurrence: is_duplicate = 0.
+    VectorWithMemoryTracking<String> tokens;
+    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, value, /*is_duplicate=*/ false));
+
+    out.function = RPNElement::FUNCTION_EQUALS;
+    out.text_search_queries.emplace_back(
+        std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+    return true;
+}
+
+bool MergeTreeIndexConditionText::traverseMapContainsKeyValueNode(
+    const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
+{
+    if (tokenizer->getType() != ITokenizer::Type::KeyValuePairs)
+        return false;
+
+    if (!hasIndexForColumn(function_node.getArgumentAt(0).getColumnName()))
+        return false;
+
+    /// FixedString excluded: its padding is compared away by the function but not stored in the token,
+    /// so exact direct read would drop matching rows. Same as traverseMapElementKeyValueNode.
+    auto get_string_constant = [](const RPNBuilderTreeNode & node) -> std::optional<String>
+    {
+        Field field;
+        DataTypePtr type;
+        if (!node.tryGetConstant(field, type) || !WhichDataType(type).isString())
+            return std::nullopt;
+        return field.safeGet<String>();
+    };
+
+    auto key = get_string_constant(function_node.getArgumentAt(1));
+    if (!key)
+        return false;
+
+    auto value = get_string_constant(function_node.getArgumentAt(2));
+    if (!value)
+        return false;
+
+    /// The pair is either the key's first occurrence or a repetition. Every entry has a token, so even
+    /// an empty value is searchable here, unlike in `equals`.
+    VectorWithMemoryTracking<String> tokens;
+    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, *value, /*is_duplicate=*/ false));
+    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, *value, /*is_duplicate=*/ true));
+
+    const auto function_name = function_node.getFunctionName();
+    out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
+    out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+        function_name, TextSearchMode::Any, getDirectReadMode(function_name), std::move(tokens)));
     return true;
 }
 
@@ -1861,7 +2181,7 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
     }
 
     /// Handle `map.key_<serialized_key>` subcolumn form.
-    auto parsed = tryParseMapSubcolumnName(node.getColumnName());
+    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), columns_shadowing_map_subcolumns);
     if (!parsed)
         return false;
     auto & [map_column_name, serialized_key] = *parsed;
@@ -1874,7 +2194,7 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTr
     /// for functions like `func(arrayElement(m, 'const_key'), ...)`.
     /// If index can be used, than we can analyze the index as for scalar string column
     /// because `arrayElement(m, 'const_key')` projects Array(String) to String.
-    if (const_value.getType() != Field::Types::String || const_value.safeGet<String>().empty())
+    if (const_value.getType() != Field::Types::String || isMapValueDefault(const_value.safeGet<String>(), header))
         return false;
 
     return hasIndexForMapElementValue(index_column_node);
@@ -1888,8 +2208,10 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     /// Similar to traverseMapElementKeyNode but for JSON subcolumns.
 
     const auto * dag_node = function_node.getDAGNode();
-    if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic()
-        || !WhichDataType(removeNullable(dag_node->result_type)).isUInt8())
+    if (!dag_node
+        || !dag_node->function_base
+        || !dag_node->isDeterministic()
+        || !WhichDataType(removeLowCardinalityAndNullable(dag_node->result_type)).isUInt8())
         return false;
 
     auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
@@ -1937,10 +2259,18 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 {
     std::optional<size_t> set_key_position;
 
-    auto has_index = [&](const RPNBuilderTreeNode & node)
+    /// `m['key']` answered by a `mapValues(m)` index: an absent key reads the value type's default.
+    bool has_index_for_map_element_value = false;
+
+    auto has_index = [&](const RPNBuilderTreeNode & argument)
     {
+        const auto node = unwrapLosslessConversion(argument);
+        if (hasIndexForMapElementValue(node))
+        {
+            has_index_for_map_element_value = true;
+            return true;
+        }
         return hasIndexForColumn(node.getColumnName())
-            || hasIndexForMapElementValue(node)
             || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
     };
 
@@ -1976,7 +2306,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     if (!future_set)
         return false;
 
-    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
+    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getContext());
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
@@ -1989,25 +2319,52 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         return false;
 
     const auto & set_column = *columns[*set_key_position];
-    if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
+
+    /// With setting `transform_null_in = 1`, the IN set can be nullable.
+    const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(&set_column);
+    const auto & set_column_values = set_column_nullable ? set_column_nullable->getNestedColumn() : set_column;
+
+    if (!WhichDataType(set_column_values.getDataType()).isStringOrFixedString())
         return false;
 
     size_t total_row_count = prepared_set->getTotalRowCount();
-    const bool is_fixed_string_element = WhichDataType(set_column.getDataType()).isFixedString();
-    const bool strip_fixed_string_padding = canStripFixedStringPadding(tokenizer->getType(), header);
+    const bool set_is_fixed_string = WhichDataType(set_column_values.getDataType()).isFixedString();
+    /// `IN` casts the value to the set's type, so a `FixedString` on either side drops trailing zero bytes like `equals`.
+    const bool has_fixed_string = set_is_fixed_string || indexed_fixed_string_size.has_value();
+    const FixedStringNeedleContext context{
+        .semantics = FixedStringPaddingSemantics::BothStripped,
+        .indexed_fixed_string_size = indexed_fixed_string_size,
+        .padding_never_in_terms = !has_preprocessor && ITokenizer::splitsAtZeroByte(tokenizer->getType()),
+    };
+    String normalized;
 
     for (size_t row = 0; row < total_row_count; ++row)
     {
+        /// The atom is an OR over the elements, and the index skips NULL rows when building a
+        /// granule, so a NULL element is a disjunct it cannot bind. Decline the atom.
+        if (set_column.isNullAt(row))
+        {
+            out.text_search_queries.clear();
+            return false;
+        }
+
         std::string_view element = set_column.getDataAt(row);
 
-        /// `FixedString` element carries its padding, which the comparison ignores but the tokenizer would not.
-        if (is_fixed_string_element && strip_fixed_string_padding)
-            element = element.substr(0, element.find_last_not_of('\0') + 1);
+        if (has_fixed_string)
+        {
+            normalized.assign(element);
+            if (!tryNormalizeNeedlePadding(normalized, set_is_fixed_string, context))
+            {
+                out.text_search_queries.clear();
+                return false;
+            }
+            element = normalized;
+        }
 
         /// Reject the index usage when there is an empty string in the set.
         /// The condition with such a predicate will be always true on granule.
         /// See MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty.
-        if (element.empty())
+        if (element.empty() || (has_index_for_map_element_value && isMapValueDefault(element, header)))
         {
             out.text_search_queries.clear();
             return false;
@@ -2016,7 +2373,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// Apply preprocessor + tokenizer + postprocessor so set elements use the same
         /// tokens that were stored in the index. Skipping the postprocessor here would
         /// produce false negatives for postprocessors like lower(), stem(), etc.
-        VectorWithMemoryTracking<String> tokens = stringToTokens(Field(String(element)));
+        VectorWithMemoryTracking<String> tokens = stringToTokens(element);
 
         /// An element that tokenizes to nothing cannot be proven present by the index.
         /// Bail out to keep the original predicate.

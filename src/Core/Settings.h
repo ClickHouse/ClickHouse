@@ -50,6 +50,7 @@ class WriteBuffer;
 #define COMMON_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, AggregateFunctionInputFormat) \
     M(CLASS_NAME, ArrowCompression) \
+    M(CLASS_NAME, ArrowUnsupportedTypes) \
     M(CLASS_NAME, ArrowFlightDescriptorType) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, BoolAuto) \
@@ -66,6 +67,7 @@ class WriteBuffer;
     M(CLASS_NAME, DistributedDDLOutputMode) \
     M(CLASS_NAME, DistributedProductMode) \
     M(CLASS_NAME, Double) \
+    M(CLASS_NAME, DoubleAuto) \
     M(CLASS_NAME, EscapingRule) \
     M(CLASS_NAME, ExplainQueryPlanDefault) \
     M(CLASS_NAME, Float) \
@@ -114,6 +116,7 @@ class WriteBuffer;
     M(CLASS_NAME, StreamingHandleErrorMode) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, TextIndexPostingListApplyMode) \
+    M(CLASS_NAME, TextIndexPostingsIntersectionAlgorithm) \
     M(CLASS_NAME, Timezone) \
     M(CLASS_NAME, TotalsMode) \
     M(CLASS_NAME, TransactionsWaitCSNMode) \
@@ -125,6 +128,7 @@ class WriteBuffer;
     M(CLASS_NAME, ObjectStorageGranularityLevel) \
     M(CLASS_NAME, DecorrelationJoinKind) \
     M(CLASS_NAME, JoinOrderAlgorithm) \
+    M(CLASS_NAME, JoinOrderConflictDetector) \
     M(CLASS_NAME, DeduplicateInsertSelectMode) \
     M(CLASS_NAME, DeduplicateInsertMode) \
     M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy) \
@@ -162,29 +166,18 @@ struct Settings
     /// built-in setting. Used to transport query parameters (whose names may match a setting name).
     void setCustom(std::string_view name, const Field & value);
     void setDefaultValue(std::string_view name);
-    /// Re-derive every unassigned setting from the current `compatibility` value. A setting that is
-    /// not assigned holds what the active `compatibility` implies for it, so clearing one has to
-    /// re-run the derivation; reading `compatibility` here is what makes clearing `compatibility`
-    /// itself revert every setting it derived.
-    void reapplyCompatibility();
 
     /// Whether any setting currently holds a value that was set by the `compatibility` setting.
     bool hasSettingsChangedByCompatibility() const;
-
-    /// Whether `name` holds a value something assigned to it, rather than one `compatibility` or a
-    /// post-processor derived, or the default it holds when nothing has been assigned. False for a
-    /// name this class does not own.
-    bool isExplicitlyAssigned(std::string_view name) const;
-
-    /// Record that `name` holds a value a post-processor derived from the other settings. A
-    /// post-processor writes through the same field an assignment writes, so this mark is what keeps
-    /// the two apart. Assigning the setting clears it.
-    void markChangedByPostProcessor(std::string_view name);
 
     /// Reset settings whose value was set only by the `compatibility` setting back to their defaults (and forget
     /// they were compatibility-derived). Used before transmitting settings so the receiver re-derives them from
     /// `compatibility` itself instead of being forced to the sender's derived values.
     void resetSettingsChangedByCompatibility();
+
+    /// Reset to its default every setting whose value was set only by the `compatibility` setting when
+    /// `is_allowed` refuses that value, so that `compatibility` leaves such a setting as it is.
+    void resetSettingsChangedByCompatibility(const std::function<bool(std::string_view name, const Field & value)> & is_allowed);
 
     /// Keep the values that the `compatibility` setting derived but clear their `changed` flags (and forget
     /// they were compatibility-derived). The resulting object still selects e.g. the client-side network codec

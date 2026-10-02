@@ -1119,10 +1119,10 @@ bool PageDecoderInfo::canReadDirectlyIntoColumn(parq::Encoding::type encoding, s
     return false;
 }
 
-void PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, const IDataType & decoded_type, const IDataType & final_output_type, Field & out) const
+bool PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, const IDataType & decoded_type, const IDataType & final_output_type, Field & out) const
 {
     if (!allow_stats)
-        return;
+        return true;
 
     std::optional<Field> field;
     if (fixed_size_converter)
@@ -1134,7 +1134,10 @@ void PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, const
 
     /// The converter couldn't produce a usable bound (e.g. NaN); leave `out` unchanged.
     if (!field.has_value())
-        return;
+        return true;
+
+    if (field->isNull())
+        return false;
 
     if (cast_stats_to_output_type)
     {
@@ -1146,10 +1149,11 @@ void PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, const
         /// Conversion failed, e.g. the value overflows the output type. Leaving the bound at
         /// infinity is always safe.
         if (field->isNull())
-            return;
+            return true;
     }
 
     out = std::move(*field);
+    return true;
 }
 
 std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
@@ -1676,6 +1680,22 @@ std::optional<Field> IntConverter::convertField(std::span<const char> data, bool
     if (input_signed && input_size < 8 && (val >> (input_size * 8 - 1)) != 0)
         val |= 0 - (1ul << (input_size * 8));
 
+    /// A day outside the requested date type's window is saturated or rejected by the read: the former bounds
+    /// nothing, the latter makes the chunk unreadable. Before the sign check, as a negative day is outside `Date` too.
+    if (date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore)
+    {
+        const auto [min_day, max_day] = dateTargetDayRange();
+        const bool out_of_window = field_signed
+            ? Int64(val) > Int64(max_day) || Int64(val) < Int64(min_day)
+            : val > UInt64(max_day);
+        if (out_of_window)
+        {
+            if (date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+                return Field();
+            return std::nullopt;
+        }
+    }
+
     /// Check for overflow in signed <-> unsigned conversion.
     if (input_signed && !field_signed && Int64(val) < 0)
         return std::nullopt;
@@ -1701,6 +1721,12 @@ std::optional<Field> IntConverter::convertField(std::span<const char> data, bool
             return std::nullopt;
         return Field(val);
     }
+    else if (field_datetime)
+    {
+        if (val > UInt64(UINT32_MAX))
+            return std::nullopt;
+        return Field(val);
+    }
     else if (field_decimal_scale.has_value())
     {
         switch (output_size.value_or(input_size))
@@ -1711,16 +1737,7 @@ std::optional<Field> IntConverter::convertField(std::span<const char> data, bool
         }
     }
     else if (field_signed)
-    {
-        if (date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore)
-        {
-            const auto [min_day, max_day] = dateTargetDayRange();
-            if (Int64(val) > Int64(max_day) || Int64(val) < Int64(min_day))
-                return std::nullopt;
-        }
-
         return Field(Int64(val));
-    }
     else
         return Field(val);
 }
@@ -1797,14 +1814,6 @@ void UUIDConverter::convertColumn(std::span<const char> data, size_t num_values,
     {
         col_data[old_size + i] = decodeParquetUUID(data.data() + i * 16);
     }
-}
-
-std::optional<Field> UUIDConverter::convertField(std::span<const char> data, bool /*is_max*/) const
-{
-    if (data.size() != input_size)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of UUID in statistics: {} != {}", data.size(), input_size);
-
-    return Field(decodeParquetUUID(data.data()));
 }
 
 std::optional<Field> FixedStringConverter::convertField(std::span<const char> data, bool /*is_max*/) const

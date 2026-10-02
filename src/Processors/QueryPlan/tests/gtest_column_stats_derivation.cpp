@@ -10,8 +10,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
 
 using namespace DB;
 using namespace DB::QueryPlanOptimizations;

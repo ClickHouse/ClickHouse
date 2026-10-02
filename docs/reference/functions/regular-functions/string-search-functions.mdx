@@ -38,14 +38,12 @@ Introduced in: v21.1.0
 
 Returns number of matches of a regular expression in a string.
 
-<Info>
-**Version dependent behavior**
-
+<Note title="Version dependent behavior">
 The behavior of this function depends on the ClickHouse version:
 
 - in versions < v25.6, the function stops counting at the first empty match even if a pattern accepts.
 - in versions >= 25.6, the function continues execution when an empty match occurs. The legacy behavior can be restored using setting `count_matches_stop_at_empty_match = true`;
-</Info>
+</Note>
 
     
 
@@ -921,10 +919,13 @@ Column `input` should have a [text index](/reference/engines/table-engines/merge
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
 </Note>
 
-Prior to searching, the function tokenizes both the `input` and the `phrase` arguments using the tokenizer specified for the text index.
+Prior to searching, the function tokenizes the `input` and, when it is a `String`, the `phrase` using the tokenizer specified for the text index.
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
-The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, or `icu`.
-Note that `splitByRegexp` is not supported for `hasPhrase` when the text index also defines a postprocessor.
+The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `array`, `ngrams`, `asciiCJK`, or `icu`.
+
+If `input` is an [Array(String)](/reference/data-types/array), its elements are tokenized like any other input and their tokens form a single sequence per row, so a phrase may span two elements. With the `array` tokenizer each element is one token, which is how a column of already tokenized values is searched.
+If `phrase` is an [Array(String)](/reference/data-types/array), its elements are the tokens to search for, in order and
+including duplicates. Empty phrase elements are ignored, because no tokenizer produces an empty token.
 
 <Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.
@@ -947,8 +948,8 @@ hasPhrase(input, phrase[, tokenizer])
 
 **Arguments**
 
-- `input` — The input column. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring)
-- `phrase` — Phrase to search for. [`const String`](/reference/data-types/string)
+- `input` — The input column. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`Nullable(String)`](/reference/data-types/nullable) or [`Nullable(FixedString)`](/reference/data-types/nullable) or [`Array(String)`](/reference/data-types/array) or [`Array(FixedString)`](/reference/data-types/array) or [`Array(Nullable(String))`](/reference/data-types/array) or [`Array(Nullable(FixedString))`](/reference/data-types/array)
+- `phrase` — Phrase to search for. [`const String`](/reference/data-types/string) or [`const Array(String)`](/reference/data-types/array)
 - `tokenizer` — The tokenizer to use. Optional, defaults to `splitByNonAlpha`. [`const String`](/reference/data-types/string)
 
 **Returned value**
@@ -979,6 +980,30 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 ┌─hasPhrase('the quick brown fox jumps', 'quick fox')─┐
 │                                                   0 │
 └─────────────────────────────────────────────────────┘
+```
+
+**Token sequence given as arrays**
+
+```sql title=Query
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])
+```
+
+```response title=Response
+┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])─┐
+│                                                               1 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Phrase spanning two elements**
+
+```sql title=Query
+SELECT hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])
+```
+
+```response title=Response
+┌─hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])─┐
+│                                                         1 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequence {#hasSubsequence}
@@ -1396,8 +1421,6 @@ ClickHouse requires backslashes in strings [to be quoted as well](/reference/syn
 For `LIKE` expressions of the form `%needle%`, the function is as fast as the `position` function.
 All other LIKE expressions are internally converted to a regular expression and executed with a performance similar to function `match`.
 
-## ESCAPE clause
-
 The optional `ESCAPE` clause specifies a custom escape character (must be a single ASCII character).
 When provided, the custom escape character replaces the default backslash for escaping `%` and `_` metacharacters.
 The escape character can escape three things: `%` (literal percent), `_` (literal underscore), and itself (literal escape character).
@@ -1477,14 +1500,12 @@ Introduced in: v18.16.0
 
 Like [`position`](#position) but with arguments `haystack` and `locate` switched.
 
-<Info>
-**Version dependent behavior**
-
+<Note title="Version dependent behavior">
 The behavior of this function depends on the ClickHouse version:
 - in versions < v24.3, `locate` was an alias of function `position` and accepted arguments `(haystack, needle[, start_pos])`.
 - in versions >= 24.3, `locate` is an individual function (for better compatibility with MySQL) and accepts arguments `(needle, haystack[, start_pos])`.
 The previous behavior can be restored using setting `function_locate_has_mysql_compatible_argument_order = false`.
-</Info>
+</Note>
     
 
 **Syntax**

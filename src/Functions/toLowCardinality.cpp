@@ -28,7 +28,7 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool isNullPropagating(const DataTypePtr & /*result_type*/) const override { return true; }
+    bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
