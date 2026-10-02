@@ -737,7 +737,8 @@ void MemoryTracker::detachChild()
     if (std::abs(residual) > drift_warn_threshold)
     {
         const auto * description = description_ptr.load(std::memory_order_relaxed);
-        LOG_WARNING(
+        /// Debug, not warning: some sites still drift and must be fixed before raising it.
+        LOG_DEBUG(
             getLogger("MemoryTracker"),
             "{} has no queries left but is {} {}: memory was charged to it or freed against it outside of any query",
             description ? description : "A user",

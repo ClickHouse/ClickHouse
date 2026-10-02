@@ -242,7 +242,8 @@ ThreadGroup::~ThreadGroup()
 #ifdef DEBUG_OR_SANITIZER_BUILD
     if (Int64 drift = memory_tracker.unexpectedDrift())
     {
-        LOG_WARNING(
+        /// Debug, not warning: some sites still drift (e.g. pooled connections) and must be fixed before raising it.
+        LOG_DEBUG(
             getLogger("ThreadGroup"),
             "{} ended {} {} (`{}`): it allocated memory that outlives it, which should be accounted where it belongs, "
             "or memory it never allocated was freed against it. Mark it with `setDriftExpected` if it is intended.",
