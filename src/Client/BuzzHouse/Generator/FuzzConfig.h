@@ -301,6 +301,7 @@ public:
     std::vector<DiskInfo> disks;
     DB::Strings clusters;
     DB::Strings caches;
+    DB::Strings function_implementations;
     DB::Strings failpoints;
     DB::Strings remote_servers;
     DB::Strings remote_secure_servers;
@@ -365,7 +366,6 @@ public:
     bool enable_sync_settings = false;
     bool enable_backups = true;
     bool enable_renames = true;
-    bool enable_failpoints = true;
     bool allow_nasty_identifiers = false;
 
     uint64_t seed = 0;

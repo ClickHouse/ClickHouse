@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: make_distributed_plan requires the analyzer.
+
 -- PARTITION BY window shapes under make_distributed_plan: pin the full distributed EXPLAIN of each
 -- case, then run the same query distributed and local. The two result lines per case must show the
 -- same value in the reference. Before partitioned sorts became serializable, every one of these
@@ -5,10 +8,8 @@
 
 DROP TABLE IF EXISTS t_window_shapes;
 
--- `index_granularity_bytes` is pinned to its default because the runner randomizes it, and a small
--- value would split the 256-row granules whose count the plan snapshots print.
 CREATE TABLE t_window_shapes (a UInt32, b UInt32, v UInt32)
-ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 256, index_granularity_bytes = 10485760;
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 256;
 
 -- The plan snapshots below include part and granule counts, so the parts must not merge mid-test.
 SYSTEM STOP MERGES t_window_shapes;
@@ -77,7 +78,7 @@ SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a ORDER B
 -- patterns to cover exactly those values.
 DROP TABLE IF EXISTS t_window_shapes_float;
 CREATE TABLE t_window_shapes_float (k Float64, v UInt32)
-ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 256, index_granularity_bytes = 10485760;
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 256;
 SYSTEM STOP MERGES t_window_shapes_float;
 INSERT INTO t_window_shapes_float SELECT
     multiIf(number % 4 = 0, -0.0,

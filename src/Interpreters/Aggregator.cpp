@@ -36,7 +36,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
-#include <Common/HashTable/Prefetching.h>
 #include <Common/JSONBuilder.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerSwitcher.h>
@@ -66,7 +65,6 @@ namespace ProfileEvents
     extern const Event AggregationTopKKeysEvicted;
     extern const Event AggregationTopKKeysPruned;
     extern const Event AggregationTopKHeapsFrozen;
-    extern const Event AggregationSharedKeptKeysSpillReseeds;
     extern const Event OverflowThrow;
     extern const Event OverflowBreak;
     extern const Event OverflowAny;
@@ -303,6 +301,7 @@ size_t getMinBytesForPrefetch()
     /// is cache resident and prefetching is pure overhead.
     return getL2CacheSize();
 }
+
 
 }
 
@@ -724,8 +723,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
         .current_metric = CurrentMetrics::TemporaryFilesForAggregation,
         .bytes_compressed = ProfileEvents::ExternalAggregationCompressedBytes,
         .bytes_uncompressed = ProfileEvents::ExternalAggregationUncompressedBytes,
-        .num_files = ProfileEvents::ExternalAggregationWritePart,
-        .spilled_to_disk_operator = "aggregation"}) : nullptr)
+        .num_files = ProfileEvents::ExternalAggregationWritePart}) : nullptr)
     , min_bytes_for_prefetch(getMinBytesForPrefetch())
     , thread_pool(std::make_unique<ThreadPool>(
           CurrentMetrics::AggregatorThreads,
@@ -858,26 +856,6 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     #undef M
         default:
             ;
-    }
-
-    /// See the comment on the member: the kept-keys cutoff must stay inert for the fixed hash
-    /// map methods, whose tables are bounded by the key space anyway.
-    if (params.shared_kept_keys_for_overflow_any)
-    {
-        switch (method_chosen)
-        {
-            case AggregatedDataVariants::Type::key8:
-            case AggregatedDataVariants::Type::key16:
-            case AggregatedDataVariants::Type::keys16:
-            case AggregatedDataVariants::Type::nullable_key8:
-            case AggregatedDataVariants::Type::nullable_key16:
-            case AggregatedDataVariants::Type::low_cardinality_key8:
-            case AggregatedDataVariants::Type::low_cardinality_key16:
-                shared_kept_keys_cutoff_inert = true;
-                break;
-            default:
-                break;
-        }
     }
 
     HashMethodContext::Settings cache_settings;
@@ -1199,11 +1177,8 @@ void Aggregator::executeImpl(
             /// below calls `getKeyHolder` a second time for every row, so a method that materializes
             /// its key there (e.g. serializing all key columns) would pay its dominant per-row cost
             /// twice - far more than the cache miss the prefetch hides. See `has_cheap_key_holder`.
-            /// See `minBytesForPrefetch` for why a method whose cells carry no mapped value gets a
-            /// smaller threshold.
-            const size_t min_bytes = minBytesForPrefetch<typename Method::Data, State::has_mapped>(min_bytes_for_prefetch);
             const bool prefetch = State::has_cheap_key_holder && params.enable_prefetch
-                && (method.data.getBufferSizeInBytes() > min_bytes);
+                && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
 #if USE_EMBEDDED_COMPILER
             if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
@@ -1784,8 +1759,6 @@ void NO_INLINE Aggregator::executeImplBatch(
     state.resetCache();
 
     [[maybe_unused]] std::vector<DestroyedState> destroyed_states;
-    /// Assign at the branch tails so `no_more_keys` is not live across either loop.
-    bool all_places_are_non_null = false;
 
     /// For all rows.
     if (!no_more_keys)
@@ -1902,8 +1875,6 @@ void NO_INLINE Aggregator::executeImplBatch(
                 }
             }
         }
-
-        all_places_are_non_null = !top_k;
     }
     else
     {
@@ -1918,8 +1889,6 @@ void NO_INLINE Aggregator::executeImplBatch(
                 aggregate_data = overflow_row;
             places[i] = aggregate_data;
         }
-
-        all_places_are_non_null = false;
     }
 
     if constexpr (top_k)
@@ -1942,7 +1911,6 @@ void NO_INLINE Aggregator::executeImplBatch(
             key_start,
             has_only_one_value,
             all_keys_are_const,
-            all_places_are_non_null,
             use_jit);
 }
 
@@ -1955,7 +1923,6 @@ void Aggregator::executeAggregateInstructions(
     size_t key_start,
     bool has_only_one_value_since_last_reset,
     bool all_keys_are_const,
-    bool all_places_are_non_null,
     bool use_compiled_functions [[maybe_unused]]) const
 {
 #if USE_EMBEDDED_COMPILER
@@ -2008,7 +1975,7 @@ void Aggregator::executeAggregateInstructions(
         }
         else
         {
-            addBatch(row_begin, row_end, inst, places, aggregates_pool, all_places_are_non_null);
+            addBatch(row_begin, row_end, inst, places, aggregates_pool);
         }
     }
 
@@ -2072,8 +2039,7 @@ void Aggregator::addBatch(
     size_t row_begin, size_t row_end,
     const AggregateFunctionInstruction * inst,
     AggregateDataPtr * places,
-    Arena * arena,
-    bool all_places_are_non_null)
+    Arena * arena)
 {
     if (inst->offsets)
         inst->batch_that->addBatchArray(
@@ -2084,12 +2050,6 @@ void Aggregator::addBatch(
             arena);
     else if (inst->has_sparse_arguments)
         inst->batch_that->addBatchSparse(
-            row_begin, row_end, places,
-            inst->state_offset,
-            inst->batch_arguments,
-            arena);
-    else if (all_places_are_non_null)
-        inst->batch_that->addBatchWithNonNullPlaces(
             row_begin, row_end, places,
             inst->state_offset,
             inst->batch_arguments,
@@ -2571,19 +2531,14 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     /** Flush data to disk if too much RAM is consumed.
       * Data can only be flushed to disk if a two-level aggregation structure is used.
-      * With the kept-keys cutoff armed, the spill either abandons the cutoff (before the freeze)
-      * or re-seeds the kept keys into the emptied table (after it); see
-      * `spillAllowedUnderKeptKeysCutoff` and `reseedKeptKeysAfterSpill`.
       */
     if (params.max_bytes_before_external_group_by
         && result.isTwoLevel()
         && spill_decision_memory > static_cast<Int64>(params.max_bytes_before_external_group_by)
-        && worth_convert_to_two_level
-        && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
+        && worth_convert_to_two_level)
     {
         size_t size = spill_decision_memory + params.min_free_disk_space;
         writeToTemporaryFile(result, size);
-        reseedKeptKeysAfterSpill(result);
     }
 
     return true;
@@ -3045,65 +3000,9 @@ void Aggregator::writeToTemporaryFileImpl(
 }
 
 
-bool Aggregator::spillAllowedUnderKeptKeysCutoff(bool no_more_keys, const AggregatedDataVariants & result) const
-{
-    if (!params.shared_kept_keys_control)
-        return true;
-
-    /// A rebuild or a re-seed of the kept keys is in flight: those merges re-insert data the
-    /// table already held, so flushing it in the middle of them would drop the rest of the
-    /// rebuild (`AggregatedDataVariants::kept_keys_rebuild_in_progress`). The cutoff must not be
-    /// abandoned here either — the kept keys are already frozen.
-    if (result.kept_keys_rebuild_in_progress)
-        return false;
-
-    /// This stream has already stopped admitting keys. Its table may be flushed only once it has
-    /// been rebuilt to the frozen kept keys: then it holds nothing but kept keys, and it is
-    /// re-seeded with them right after the flush, so the remaining rows of those keys keep being
-    /// aggregated (`reseedKeptKeysAfterSpill`). Before the rebuild the table still holds arbitrary
-    /// keys, whose merged values would be undercounted, so the spill is skipped — the very next
-    /// chunk applies the cutoff and unblocks it.
-    if (no_more_keys)
-        return result.restricted_to_kept_keys && result.kept_keys_seed != nullptr;
-
-    /// Before any freeze, the spill wins by permanently abandoning the cutoff: no rows have been
-    /// dropped anywhere yet, `checkLimits` stops capping, and the aggregation completes exactly,
-    /// spilling as it would without the optimization.
-    return params.shared_kept_keys_control->tryAbandon();
-}
-
-void Aggregator::reseedKeptKeysAfterSpill(AggregatedDataVariants & result) const
-{
-    if (!result.restricted_to_kept_keys || !result.kept_keys_seed)
-        return;
-
-    /// The flush emptied the table while the stream keeps rejecting new keys, so re-insert the
-    /// kept keys with empty aggregate states. Merging an empty state into another is a no-op, so
-    /// the flushed partial states and the ones accumulated from here on add up exactly.
-    /// A copy: `mergeOnBlock` below takes `result` by reference.
-    const ConstBlockPtr seed = result.kept_keys_seed;
-    chassert(seed);
-
-    bool reseed_no_more_keys = false;
-    std::atomic<bool> is_cancelled = false;
-    result.kept_keys_rebuild_in_progress = true;
-    SCOPE_EXIT({ result.kept_keys_rebuild_in_progress = false; });
-    mergeOnBlock(seed->getColumns(), seed->rows(), /*is_overflows=*/false, result, reseed_no_more_keys, is_cancelled);
-    /// The seed has exactly `max_rows_to_group_by` keys, which does not exceed the limit.
-    chassert(!reseed_no_more_keys);
-
-    ProfileEvents::increment(ProfileEvents::AggregationSharedKeptKeysSpillReseeds);
-}
-
 bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
 {
-    /// A cutoff abandoned in favor of external aggregation stops capping the tables entirely:
-    /// the derived `max_rows_to_group_by` exists only to serve the cutoff (see
-    /// `Params::SharedKeptKeysControl`).
-    const bool cutoff_abandoned = params.shared_kept_keys_control && params.shared_kept_keys_control->isAbandoned();
-
-    if (!no_more_keys && params.max_rows_to_group_by && !shared_kept_keys_cutoff_inert && !cutoff_abandoned
-        && result_size > params.max_rows_to_group_by)
+    if (!no_more_keys && params.max_rows_to_group_by && result_size > params.max_rows_to_group_by)
     {
         switch (params.group_by_overflow_mode)
         {
@@ -4631,8 +4530,7 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
     /// `has_cheap_key_holder` does not apply here.
     const bool prefetch = params.enable_prefetch
-        && (getDataVariant<Method>(*res).data.getBufferSizeInBytes()
-            > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
+        && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
     /// We merge all aggregation results to the first, need to ensure non_empty_data size is greater than 1.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
@@ -4720,33 +4618,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
     /// `has_cheap_key_holder` does not apply here.
     const bool prefetch = params.enable_prefetch
-        && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes()
-            > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
-
-    auto & dst = getDataVariant<Method>(*res).data.impls[bucket];
-    /// `StringHashTable::reserve` splits the hint evenly over its four size-class sub-maps,
-    /// while a real key set concentrates in one of them, so it is not reserved.
-    constexpr bool can_reserve = requires { dst.reserve(size_t{}); } && !requires { dst.emptyStringSlot(); };
-    size_t input_keys = 0;
-    if constexpr (can_reserve)
-    {
-        for (const auto & variants : data)
-            input_keys += getDataVariant<Method>(*variants).data.impls[bucket].size();
-
-        /// A bucket that is about to be abandoned must not add a buffer to the unwinding query.
-        if (is_cancelled.load(std::memory_order_seq_cst))
-            return;
-
-        /// The counters are published input-first with the result released and read here
-        /// result-first with an acquire, so every observed result contribution comes with its
-        /// input contribution; extra input contributions only lower the ratio.
-        const auto seen_result_keys = static_cast<double>(res->merged_buckets_result_keys.load(std::memory_order_acquire));
-        const UInt64 seen_input_keys = res->merged_buckets_input_keys.load(std::memory_order_relaxed);
-        if (seen_input_keys)
-            dst.reserve(std::min(
-                input_keys,
-                static_cast<size_t>(seen_result_keys / static_cast<double>(seen_input_keys) * static_cast<double>(input_keys))));
-    }
+        && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > min_bytes_for_prefetch);
 
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
@@ -4771,12 +4643,6 @@ void NO_INLINE Aggregator::mergeBucketImpl(
                 prefetch,
                 is_cancelled);
         }
-    }
-
-    if constexpr (can_reserve)
-    {
-        res->merged_buckets_input_keys.fetch_add(input_keys, std::memory_order_relaxed);
-        res->merged_buckets_result_keys.fetch_add(dst.size(), std::memory_order_release);
     }
 }
 
@@ -5255,19 +5121,14 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
 
     /** Flush data to disk if too much RAM is consumed.
       * Data can only be flushed to disk if a two-level aggregation structure is used.
-      * With the kept-keys cutoff armed, the spill either abandons the cutoff (before the freeze)
-      * or re-seeds the kept keys into the emptied table (after it); see
-      * `spillAllowedUnderKeptKeysCutoff` and `reseedKeptKeysAfterSpill`.
       */
     if (params.max_bytes_before_external_group_by
         && result.isTwoLevel()
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
-        && worth_convert_to_two_level
-        && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
+        && worth_convert_to_two_level)
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
         writeToTemporaryFile(result, size);
-        reseedKeptKeysAfterSpill(result);
     }
 
     return true;

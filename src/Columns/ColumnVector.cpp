@@ -64,6 +64,12 @@ void ColumnVector<T>::deserializeAndInsertFromArena(ReadBuffer & in, const IColu
 }
 
 template <typename T>
+void ColumnVector<T>::skipSerializedInArena(ReadBuffer & in) const
+{
+    in.ignore(sizeof(T));
+}
+
+template <typename T>
 void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
     hash.update(data[n]);
@@ -491,6 +497,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
     {
         /// For floating point, findExtremeMinIndex/MaxIndex skip NaN (NaN is always last).
         /// This matches the standard nan_direction_hint convention: ASC with hint >= 0, DESC with hint <= 0.
+        /// stability::Stable: We might return any value, not the first.
         const bool nan_direction_ok = !is_floating_point<T>
             || (direction == IColumn::PermutationSortDirection::Ascending && nan_direction_hint >= 0)
             || (direction == IColumn::PermutationSortDirection::Descending && nan_direction_hint <= 0);
@@ -583,9 +590,8 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
             if (range_size >= 256 && range_size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
-                /// `trySort` can reorder equal values even when it returns false.
-                /// Stable radix sorting must preserve the incoming order within equal ranges.
-                if (!sort_is_stable && trySort(begin, end, pred))
+                bool try_sort = trySort(begin, end, pred);
+                if (try_sort)
                     return;
 
                 PaddedPODArray<ValueWithIndex<T>> pairs(range_size);
@@ -759,10 +765,13 @@ void ColumnVector<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_
     memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
 }
 
-/// Clears the lowest set bit. Clang turns this into `blsr` where the target has BMI.
 static inline UInt64 blsr(UInt64 mask)
 {
-    return mask & (mask - 1);
+#ifdef __BMI__
+    return _blsr_u64(mask);
+#else
+    return mask & (mask-1);
+#endif
 }
 
 /// If mask is a number of this kind: [0]*[1]* function returns the length of the cluster of 1s.
@@ -1441,13 +1450,6 @@ std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
     size_t start = data.size();
     data.resize(start + count);
     return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
-}
-
-template <typename T>
-bool ColumnVector<T>::hasOnlyTypeDefaults() const
-{
-    /// A conservative bit check intentionally keeps -0.0 columns physical.
-    return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
 }
 
 template <typename T>
