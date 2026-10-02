@@ -16,22 +16,26 @@ DDL-created named collections can be enabled on select ClickHouse Cloud services
 **Syntax**
 
 ```sql
-CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
+CREATE [OR REPLACE] NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
 key_name1 = 'some value' [[NOT] OVERRIDABLE],
 key_name2 = 'some value' [[NOT] OVERRIDABLE],
 key_name3 = 'some value' [[NOT] OVERRIDABLE],
 ...
 ```
 
+`OR REPLACE` and `IF NOT EXISTS` cannot be used together. `CREATE OR REPLACE` of an existing collection
+replaces it entirely: keys and overridability flags absent from the new definition are removed.
+
 **Example**
 
 ```sql
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
+CREATE OR REPLACE NAMED COLLECTION foobar AS a = '2', c = '3';
 ```
 
 **Related statements**
 
-- [CREATE NAMED COLLECTION](/reference/statements/alter/named-collection)
+- [ALTER NAMED COLLECTION](/reference/statements/alter/named-collection)
 - [DROP NAMED COLLECTION](/reference/statements/drop#drop-function)
 
 **See Also**
