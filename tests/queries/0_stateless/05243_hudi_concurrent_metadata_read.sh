@@ -83,6 +83,6 @@ ${CLICKHOUSE_CLIENT} -q "
     SYSTEM FLUSH LOGS query_log;
     SELECT replaceOne(query_id, '${QUERY_ID_PREFIX}_', '') AS query, ProfileEvents['S3ListObjects'] > 0 AS listed
     FROM system.query_log
-    WHERE event_date >= yesterday() AND type = 'QueryFinish' AND startsWith(query_id, '${QUERY_ID_PREFIX}_')
+    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND startsWith(query_id, '${QUERY_ID_PREFIX}_')
     ORDER BY query
 "
