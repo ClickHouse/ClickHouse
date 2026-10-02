@@ -1,0 +1,43 @@
+-- APPLY lambda
+0
+0
+1
+0
+0
+1
+-- APPLY function
+Nullable(String)
+Nullable(String)
+Nullable(String)
+-- chained APPLY
+Tuple(Nullable(String))
+Tuple(Nullable(String))
+Tuple(Nullable(String))
+-- APPLY with a window function
+('a','Nullable(String)')
+('a','Nullable(String)')
+('a','Nullable(String)')
+-- REPLACE of a non-key column
+a	Nullable(String)
+a	Nullable(String)
+b	Nullable(String)
+b	Nullable(String)
+\N	Nullable(String)
+-- nested matcher
+0
+0
+1
+-- positional ORDER BY refers to the expressions resolved after GROUP BY
+1
+0
+0
+-- REPLACE rewrites HAVING once
+b!
+-- matchers inside aggregate and grouping functions keep the original key type
+1
+1
+1
+3
+0
+0
+1

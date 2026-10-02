@@ -2819,7 +2819,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
             if (const auto * func = subtree_node->as<FunctionNode>())
             {
-                if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->getFunctionName()))
+                /// The arguments of `grouping` are compared with the GROUP BY keys in their original form as well.
+                if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->getFunctionName())
+                    || func->getFunctionName() == "grouping")
                     return true;
             }
 
@@ -3248,6 +3250,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 {
                     if (!node) return;
 
+                    /// The other clauses of a query with the projection matchers expanded for the second time
+                    /// were already rewritten by the first expansion, see `resolveQuery`.
+                    if (query_node == query_with_replaced_clauses && node != query_node->getProjectionNode())
+                        return;
+
                     std::function<void(QueryTreeNodePtr &)> replace_recursive = [&](QueryTreeNodePtr & current) -> void
                     {
                         if (!current) return;
@@ -3395,12 +3402,21 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
   *
   * Only the arguments of ordinary functions and the window definitions are visited:
   * matchers of lambdas and of subqueries belong to a different scope.
+  *
+  * Returns true if a matcher was expanded.
   */
-void QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node)
-        return;
+        return false;
+
+    bool expanded = false;
+
+    /// As in `resolveFunction`: the matchers in the arguments of an aggregate or `grouping` function
+    /// must see the GROUP BY keys in their original form.
+    scope.pushExpressionNode(node);
+    SCOPE_EXIT({ scope.popExpressionNode(); });
 
     /** `count` and `countState` (possibly with combinators) drop an unqualified matcher argument instead of
       * expanding it, see `resolveFunction`. Such an argument is left untouched here, otherwise `count(*)`
@@ -3421,11 +3437,12 @@ void QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
             resolveExpressionNode(argument_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
             const auto & matched_nodes = argument_node->as<ListNode &>().getNodes();
             expanded_argument_nodes.insert(expanded_argument_nodes.end(), matched_nodes.begin(), matched_nodes.end());
+            expanded = true;
             continue;
         }
 
         if (!matcher_node)
-            expandMatchersInsideProjectionExpression(argument_node, scope);
+            expanded |= expandMatchersInsideProjectionExpression(argument_node, scope);
 
         expanded_argument_nodes.push_back(argument_node);
     }
@@ -3433,7 +3450,7 @@ void QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
     argument_nodes = std::move(expanded_argument_nodes);
 
     if (!function_node->hasWindow())
-        return;
+        return expanded;
 
     auto & window_node = function_node->getWindowNode();
 
@@ -3457,12 +3474,13 @@ void QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
             && windows_in_resolve_process.emplace(parent_window_it->second.get()).second)
         {
             auto parent_window_node = parent_window_it->second;
-            expandMatchersInsideWindowDefinition(parent_window_node, scope);
+            expanded |= expandMatchersInsideWindowDefinition(parent_window_node, scope);
             windows_in_resolve_process.erase(parent_window_node.get());
         }
     }
 
-    expandMatchersInsideWindowDefinition(window_node, scope);
+    expanded |= expandMatchersInsideWindowDefinition(window_node, scope);
+    return expanded;
 }
 
 /** Expand the matchers of a window definition written in place, in place.
@@ -3471,12 +3489,16 @@ void QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
   * the projection expression carrying it, so their matchers have to be expanded together with it.
   * The definition of a named window from the `WINDOW` clause is expanded in the same way, see
   * `expandMatchersInsideProjectionExpression`.
+  *
+  * Returns true if a matcher was expanded.
   */
-void QueryAnalyzer::expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+bool QueryAnalyzer::expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
 {
     auto * window_node = node->as<WindowNode>();
     if (!window_node)
-        return;
+        return false;
+
+    bool expanded = false;
 
     if (window_node->hasPartitionBy())
     {
@@ -3491,10 +3513,11 @@ void QueryAnalyzer::expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node
                 resolveExpressionNode(partition_by_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
                 const auto & matched_nodes = partition_by_node->as<ListNode &>().getNodes();
                 expanded_partition_by_nodes.insert(expanded_partition_by_nodes.end(), matched_nodes.begin(), matched_nodes.end());
+                expanded = true;
                 continue;
             }
 
-            expandMatchersInsideProjectionExpression(partition_by_node, scope);
+            expanded |= expandMatchersInsideProjectionExpression(partition_by_node, scope);
             expanded_partition_by_nodes.push_back(partition_by_node);
         }
 
@@ -3507,7 +3530,7 @@ void QueryAnalyzer::expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node
 
         if (sort_expression->getNodeType() != QueryTreeNodeType::MATCHER)
         {
-            expandMatchersInsideProjectionExpression(sort_expression, scope);
+            expanded |= expandMatchersInsideProjectionExpression(sort_expression, scope);
             continue;
         }
 
@@ -3521,7 +3544,41 @@ void QueryAnalyzer::expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node
                 sort_expression->formatASTForErrorMessage());
 
         sort_expression = matched_nodes.front();
+        expanded = true;
     }
+
+    return expanded;
+}
+
+/** Expand the matchers of the projection of the query, at the root of the projection items and nested inside them,
+  * without resolving the rest of the projection. Used with `group_by_use_nulls`, see `resolveQuery`.
+  *
+  * Returns true if a matcher was expanded.
+  */
+bool QueryAnalyzer::expandProjectionMatchers(QueryNode & query_node, IdentifierResolveScope & scope)
+{
+    auto & projection_nodes = query_node.getProjection().getNodes();
+    QueryTreeNodes expanded_projection_nodes;
+    bool expanded = false;
+
+    for (const auto & projection_node : projection_nodes)
+    {
+        auto node_to_resolve = projection_node;
+        if (node_to_resolve->getNodeType() != QueryTreeNodeType::MATCHER)
+        {
+            expanded |= expandMatchersInsideProjectionExpression(node_to_resolve, scope);
+            expanded_projection_nodes.push_back(std::move(node_to_resolve));
+            continue;
+        }
+
+        resolveExpressionNode(node_to_resolve, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, false /*ignore_alias*/, true /*allow_niladic_functions*/, true /*is_top_level_projection*/);
+        const auto & matched_nodes = node_to_resolve->as<ListNode &>().getNodes();
+        expanded_projection_nodes.insert(expanded_projection_nodes.end(), matched_nodes.begin(), matched_nodes.end());
+        expanded = true;
+    }
+
+    projection_nodes = std::move(expanded_projection_nodes);
+    return expanded;
 }
 
 /** Resolve window function window node.
@@ -7338,6 +7395,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     NamesAndTypes projection_columns;
 
+    /// With `group_by_use_nulls`, the projection before its matchers were expanded, see below.
+    QueryTreeNodePtr projection_with_unexpanded_matchers;
+
     /// `expandGroupByAll` clears the flag, and under `group_by_use_nulls` it runs before the grouping keys
     /// are resolved, so the ALL-ness has to be remembered here to still be known at either validation site.
     const bool query_is_group_by_all = query_node_typed.isGroupByAll();
@@ -7357,28 +7417,15 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
           * right away, as without the setting: `SELECT * REPLACE (expr AS c)` rewrites `c` in the other
           * clauses while they are still unresolved identifiers, and positional arguments refer to the
           * expanded columns. The same holds for the matchers nested inside a projection expression,
-          * as in `SELECT untuple((* REPLACE (-c AS c),))`. The expanded expressions are resolved again
-          * after GROUP BY.
+          * as in `SELECT untuple((* REPLACE (-c AS c),))`.
+          *
+          * The `APPLY` and `REPLACE` transformers resolve the expressions they produce, before the GROUP BY keys
+          * are known: `* APPLY isNull` would be folded into `0`. So the unexpanded projection is kept, and after
+          * GROUP BY its matchers are expanded for the second time, see below.
           */
-        auto & projection_nodes = query_node_typed.getProjection().getNodes();
-        QueryTreeNodes expanded_projection_nodes;
-
-        for (const auto & projection_node : projection_nodes)
-        {
-            auto node_to_resolve = projection_node;
-            if (node_to_resolve->getNodeType() != QueryTreeNodeType::MATCHER)
-            {
-                expandMatchersInsideProjectionExpression(node_to_resolve, scope);
-                expanded_projection_nodes.push_back(std::move(node_to_resolve));
-                continue;
-            }
-
-            resolveExpressionNode(node_to_resolve, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, false /*ignore_alias*/, true /*allow_niladic_functions*/, true /*is_top_level_projection*/);
-            const auto & matched_nodes = node_to_resolve->as<ListNode &>().getNodes();
-            expanded_projection_nodes.insert(expanded_projection_nodes.end(), matched_nodes.begin(), matched_nodes.end());
-        }
-
-        projection_nodes = std::move(expanded_projection_nodes);
+        auto unexpanded_projection = query_node_typed.getProjectionNode()->clone();
+        if (expandProjectionMatchers(query_node_typed, scope))
+            projection_with_unexpanded_matchers = std::move(unexpanded_projection);
 
         if (query_node_typed.isGroupByAll())
         {
@@ -7446,6 +7493,20 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             scope,
             /* validate_key_types */ !query_is_group_by_all
                 || scope.context->getSettingsRef()[Setting::validate_group_by_all_key_types]);
+
+    /** Now that the GROUP BY keys are registered, expand the matchers of the projection for the second time,
+      * so that the expressions produced by their transformers see the Nullable keys. The positional arguments
+      * of the following clauses refer to the result. The other clauses were already rewritten by the `REPLACE`
+      * transformers in the first expansion and must not be rewritten again.
+      */
+    if (projection_with_unexpanded_matchers)
+    {
+        query_node_typed.getProjectionNode() = std::move(projection_with_unexpanded_matchers);
+        const auto * previous_query_with_replaced_clauses = query_with_replaced_clauses;
+        query_with_replaced_clauses = query_node.get();
+        SCOPE_EXIT({ query_with_replaced_clauses = previous_query_with_replaced_clauses; });
+        expandProjectionMatchers(query_node_typed, scope);
+    }
 
     if (query_node_typed.hasHaving())
         resolveExpressionNode(query_node_typed.getHaving(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
