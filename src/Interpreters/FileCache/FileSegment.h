@@ -363,6 +363,7 @@ private:
     mutable std::mutex efficiency_mutex;
     UInt64 efficiency_window_id TSA_GUARDED_BY(efficiency_mutex) = FileCacheEfficiency::NEVER_READ;
     UInt64 active_granules[2] TSA_GUARDED_BY(efficiency_mutex) = {};
+    static_assert(sizeof(active_granules) * 8 == EFFICIENCY_GRANULES);
     UInt64 efficiency_granule_size TSA_GUARDED_BY(efficiency_mutex) = 1;
     UInt64 efficiency_window_range_size TSA_GUARDED_BY(efficiency_mutex) = 0;
     bool removed_from_efficiency TSA_GUARDED_BY(efficiency_mutex) = false;
