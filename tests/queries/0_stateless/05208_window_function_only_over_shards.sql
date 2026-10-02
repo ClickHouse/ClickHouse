@@ -18,6 +18,12 @@ SELECT 'rank', count(), max(r) FROM (SELECT rank() OVER () AS r FROM remote('127
 SELECT 'cluster', c FROM (SELECT count() OVER () AS c FROM cluster('test_cluster_two_shards', system.one));
 SELECT 'filter above the window', count() FROM (SELECT count() OVER () AS c FROM remote('127.0.0.{1,2}', numbers(4))) WHERE c = 8;
 
+-- A filter consumes the only column the shards read, so their result has no columns even though they
+-- read one: the window step on the initiator still needs the rows that pass the filter on every shard.
+SELECT 'filter on the shards', count(), max(c) FROM (SELECT count() OVER () AS c FROM remote('127.0.0.{1,2}', numbers(3)) WHERE number > 0);
+SELECT 'filter on the shards, every shard is remote', count(), max(c) FROM (SELECT count() OVER () AS c FROM remote('127.0.0.{1,2}', numbers(3)) WHERE number > 0) SETTINGS prefer_localhost_replica = 0;
+SELECT 'filter on the shards, row_number', count(), sum(r) FROM (SELECT row_number() OVER () AS r FROM remote('127.0.0.{1,2}', numbers(4)) WHERE number % 2 = 0) SETTINGS prefer_localhost_replica = 0;
+
 -- The row count has to survive every shape of the receiving side.
 SELECT 'without block marshalling', c FROM (SELECT count() OVER () AS c FROM remote('127.0.0.{1,2}', system.one)) SETTINGS prefer_localhost_replica = 0, enable_parallel_blocks_marshalling = 0;
 SELECT 'without compression', c FROM (SELECT count() OVER () AS c FROM remote('127.0.0.{1,2}', system.one)) SETTINGS prefer_localhost_replica = 0, network_compression_method = 'NONE';

@@ -13,6 +13,9 @@ rank	2	1
 cluster	2
 cluster	2
 filter above the window	8
+filter on the shards	4	4
+filter on the shards, every shard is remote	4	4
+filter on the shards, row_number	4	10
 without block marshalling	2
 without block marshalling	2
 without compression	2
