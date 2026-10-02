@@ -249,9 +249,9 @@ SELECT count() FROM tab_partial WHERE hasToken(text, 'missing');
 SELECT count() FROM tab_partial WHERE hasToken(text, 'missing') SETTINGS query_plan_optimize_count_from_text_index = 0;
 
 SYSTEM FLUSH LOGS query_log;
-SELECT '-- the optimization reads fewer bytes: the indexed part is answered without reading columns';
-SELECT (SELECT sum(read_bytes) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'trivial_count_partial_on')
-     < (SELECT sum(read_bytes) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'trivial_count_partial_off');
+SELECT '-- the optimization reads fewer rows: only the unindexed part';
+SELECT (SELECT sum(read_rows) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'trivial_count_partial_on')
+     < (SELECT sum(read_rows) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'trivial_count_partial_off');
 
 SELECT '-- fully materialized after ALTER: back to the plain count source';
 SYSTEM START MERGES tab_partial;

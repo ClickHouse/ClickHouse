@@ -359,7 +359,7 @@ public:
         std::shared_ptr<const ReadFromTextIndexCount::ResolvedQuery> resolved_,
         MergeTreeReaderSettings reader_settings_,
         QueryStatusPtr query_status_)
-        : ISource(std::move(header), /*enable_auto_progress=*/ false)
+        : ISource(std::move(header))
         , state(std::move(state_))
         , resolved(std::move(resolved_))
         , reader_settings(std::move(reader_settings_))
@@ -386,11 +386,8 @@ protected:
                 query_status->checkTimeLimit();
         };
 
-        const auto & part = state->parts[part_idx];
-        UInt64 count = computeCountForPart(part, *resolved, reader_settings, check_cancelled);
+        UInt64 count = computeCountForPart(state->parts[part_idx], *resolved, reader_settings, check_cancelled);
 
-        /// The whole part is answered, so report its rows as processed instead of the one-row output chunk.
-        progress(part.data_part->rows_count, 0);
         auto agg_count = std::make_shared<AggregateFunctionCount>(DataTypes{});
         return Chunk(Columns{createSingleCountStateColumn(agg_count, count)}, 1);
     }
@@ -432,20 +429,10 @@ void ReadFromTextIndexCount::initializePipeline(QueryPipelineBuilder & pipeline,
 
     size_t streams = std::max<size_t>(1, std::min(num_streams, state->parts.size()));
 
-    size_t total_rows = 0;
-    for (const auto & part : state->parts)
-        total_rows += part.data_part->rows_count;
-
     Pipes pipes;
     for (size_t i = 0; i < streams; ++i)
-    {
-        auto source = std::make_shared<TextIndexCountSource>(getOutputHeader(), state, resolved, reader_settings, settings.process_list_element);
-
-        if (i == 0)
-            source->addTotalRowsApprox(total_rows);
-
-        pipes.emplace_back(std::move(source));
-    }
+        pipes.emplace_back(std::make_shared<TextIndexCountSource>(
+            getOutputHeader(), state, resolved, reader_settings, settings.process_list_element));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 

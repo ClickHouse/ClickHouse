@@ -105,7 +105,7 @@ AggregatingProjection
 500
 0
 0
--- the optimization reads fewer bytes: the indexed part is answered without reading columns
+-- the optimization reads fewer rows: only the unindexed part
 1
 -- fully materialized after ALTER: back to the plain count source
 0
