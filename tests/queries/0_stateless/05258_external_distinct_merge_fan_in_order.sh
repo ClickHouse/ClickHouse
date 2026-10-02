@@ -26,18 +26,22 @@ check('distinct_order', '''
     (SELECT DISTINCT number % 10000 AS k FROM numbers(32768) ORDER BY k + 1 DESC)
     ''', '10000\t1')
 
-# A full key chunk exceeds the run's size floor, while the last chunk compacts to 16 keys.
-# The tail stays in memory both at the file limit and when an intermediate merge is required.
-for num_files, tail_merge in ((2, 'at_cap'), (3, 'after_intermediate')):
+# A full key chunk exceeds the run's size floor, while the last chunk compacts to 16 keys. At this
+# threshold the file readers alone exceed the budget, so no prefix of the tail fits and the whole tail is
+# spilled as one more file. It then counts toward the file limit like any run, so intermediate merges are
+# required already when the runs are at the limit.
+for num_files, runs_vs_cap in ((2, 'at_cap'), (3, 'over_cap')):
     unique_rows = num_files * 16384
-    groups, log = check(f'distinct_tail_{tail_merge}', f'''
+    groups, log = check(f'distinct_tail_spilled_{runs_vs_cap}', f'''
         SELECT count(), uniqExact(k) FROM
         (SELECT DISTINCT if(number < {unique_rows}, number, {unique_rows} + number % 16) AS k
          FROM numbers({unique_rows + 16384}))
         ''', f'{unique_rows + 16}\t{unique_rows + 16}',
-        fan_in=2, intermediate=num_files > 2,
+        fan_in=2,
         extra=('--max_block_size=16384', '--max_bytes_before_external_distinct=65536'))
-    assert f'temporary runs: {num_files}, in-memory chunks: 1,' in log, log
-    assert groups == ([] if num_files == 2 else [2]), groups
-    assert 'Starting final external merge with 2 files and 1 in-memory inputs' in log, log
+    assert 'Spilling a DISTINCT tail prefix before merging (chunks: 1, ' in log, log
+    assert 'remaining chunks: 0, ' in log, log
+    assert f'temporary runs: {num_files + 1}, in-memory chunks: 0,' in log, log
+    assert groups == [2] * (num_files - 1), groups
+    assert 'Starting final external merge with 2 files and 0 in-memory inputs' in log, log
 PY
