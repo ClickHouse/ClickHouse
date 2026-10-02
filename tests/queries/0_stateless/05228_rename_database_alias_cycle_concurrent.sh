@@ -24,6 +24,9 @@ function cleanup()
     ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT ${FAILPOINT}" 2>/dev/null ||:
     ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB}_from" 2>/dev/null ||:
     ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB}_to" 2>/dev/null ||:
+    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB}_keep" 2>/dev/null ||:
+    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB}_db1" 2>/dev/null ||:
+    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB}_db2" 2>/dev/null ||:
 }
 trap cleanup EXIT
 cleanup
@@ -65,4 +68,36 @@ ${CLICKHOUSE_CLIENT} -nm -q "
     SELECT count() FROM v;
     DROP VIEW v;
     DROP DATABASE ${DB}_to;
+"
+
+# DDL in another database is not excluded by the locks of the rename, so it can add a dependency
+# edge after the preflight check: `db1.t -> keep.u` passes the check, then `keep.u -> db2.t` is
+# created while the rename is paused, and re-keying `db1.t` as `db2.t` would close the cycle
+# `db2.t -> keep.u -> db2.t`. The check is repeated together with the catalog rewrite, so the rename
+# is refused and leaves the database intact.
+${CLICKHOUSE_CLIENT} -nm -q "
+    CREATE DATABASE ${DB}_db1;
+    CREATE DATABASE ${DB}_keep;
+    CREATE TABLE ${DB}_db1.t ENGINE = Alias('${DB}_keep', 'u');
+"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT ${FAILPOINT}"
+
+${CLICKHOUSE_CLIENT} -q "RENAME DATABASE ${DB}_db1 TO ${DB}_db2" 2>&1 | grep -o -m1 'INFINITE_LOOP' &
+RENAME_PID=$!
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT ${FAILPOINT} PAUSE"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${DB}_keep.u ENGINE = Alias('${DB}_db2', 't')"
+${CLICKHOUSE_CLIENT} -q "SYSTEM NOTIFY FAILPOINT ${FAILPOINT}"
+wait ${RENAME_PID}
+
+${CLICKHOUSE_CLIENT} -nm -q "
+    SELECT replaceOne(database, currentDatabase(), ''), name FROM system.tables WHERE database IN ('${DB}_db1', '${DB}_db2') ORDER BY ALL;
+    CREATE TABLE t_base (x UInt8) ENGINE = Memory;
+    CREATE VIEW v AS SELECT x FROM t_base;
+    SELECT count() FROM v;
+    DROP VIEW v;
+    DROP TABLE t_base;
+    DROP DATABASE ${DB}_db1;
+    DROP DATABASE ${DB}_keep;
 "

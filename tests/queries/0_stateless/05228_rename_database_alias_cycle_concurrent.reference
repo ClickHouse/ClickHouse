@@ -1,3 +1,6 @@
 CREATE TABLE rejected during RENAME DATABASE
 harmless
 0
+INFINITE_LOOP
+_db1	t
+0

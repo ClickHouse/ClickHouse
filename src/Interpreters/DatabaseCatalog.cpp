@@ -841,6 +841,12 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database)
 {
     std::lock_guard lock{databases_mutex};
+
+    /// Re-check under the same lock as the rewrite: a concurrent `CREATE TABLE` in another database may
+    /// have added an edge to a table under the new name since the preflight check of the caller.
+    /// Nothing is modified yet, so the exception leaves the catalog intact.
+    checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_name, new_name, tables_in_database);
+
     chassert(!databases.contains(new_name));
     auto it = databases.find(old_name);
     chassert(it != databases.end());
@@ -2221,11 +2227,19 @@ void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const St
 /// The check applies the rename to a copy of the graph and refuses the rename if it becomes cyclic, the
 /// same way `RENAME TABLE` and `EXCHANGE TABLES` do for a single table. The caller passes the exact set
 /// of tables it is about to re-key and holds the locks that keep that set stable until `updateDatabaseName`.
+/// This is a preflight check that lets the rename fail before anything is modified; `updateDatabaseName`
+/// repeats it in the same critical section as the rewrite, because DDL in other databases can add edges
+/// to the dependency graph in between.
 void DatabaseCatalog::checkDatabaseCanBeRenamedWithNoCyclicDependencies(
     const String & old_database_name, const String & new_database_name, const Strings & tables_in_database)
 {
     std::lock_guard lock{databases_mutex};
+    checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_database_name, new_database_name, tables_in_database);
+}
 
+void DatabaseCatalog::checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(
+    const String & old_database_name, const String & new_database_name, const Strings & tables_in_database) const
+{
     auto check = [&](const TablesDependencyGraph & dependencies)
     {
         TablesDependencyGraph after_rename = dependencies;

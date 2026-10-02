@@ -783,7 +783,8 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     DatabaseCatalog::instance().checkDatabaseCanBeRenamedWithNoCyclicDependencies(database_name, new_name, table_names);
 
     /// Lets a test hold the rename between the dependency check and the catalog rewrite, to prove
-    /// that a concurrent `CREATE TABLE` cannot slip a new table into the database at this point.
+    /// that a concurrent `CREATE TABLE` cannot slip a new table into the database at this point, and
+    /// that a concurrent `CREATE TABLE` in another database cannot close a cycle that this check missed.
     FailPointInjection::pauseFailPoint(FailPoints::rename_database_after_dependency_check);
 
 
@@ -806,7 +807,19 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     String old_path_to_table_symlinks;
 
     {
-        DatabaseCatalog::instance().updateDatabaseName(database_name, new_name, table_names);
+        /// `updateDatabaseName` repeats the cycle check under the same lock as the rewrite, because DDL in
+        /// other databases is not excluded by our locks and may have added a dependency edge since the
+        /// check above. If it refuses the rename, the catalog is untouched; put the metadata file back.
+        try
+        {
+            DatabaseCatalog::instance().updateDatabaseName(database_name, new_name, table_names);
+        }
+        catch (...)
+        {
+            default_db_disk->moveFile(new_metadata_file_path, old_metadata_file_path);
+            tryCreateMetadataSymlink();
+            throw;
+        }
         database_name = new_name;
 
         onDatabaseRenamed();
