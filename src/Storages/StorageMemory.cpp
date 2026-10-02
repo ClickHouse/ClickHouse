@@ -221,7 +221,7 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
 size_t StorageMemory::getMaxReadStreams(size_t num_streams, ContextPtr)
 {
     /// `ReadFromMemoryStorageStep::makePipe` clamps the stream count by the number of blocks
-    /// and produces a single source for an empty table or a delayed global-subquery read.
+    /// and produces a single source for an empty table or a delayed read of a `GLOBAL` subquery table.
     return std::min(num_streams, std::max(1uz, data.get()->blocks.size()));
 }
 
