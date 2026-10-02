@@ -349,6 +349,8 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument of {} must be an array of floats", name);
 
+        /// `make_distributed_plan` relies on "second argument is a `String`" meaning the dictionary form
+        /// (`findDictionaryFunction` in `makeDistributed.cpp`); keep that check in step with any change here.
         if (!isCentroidsArray(arguments[1]) && !isString(arguments[1]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Second argument of {} must be a constant array of float arrays (the centroids) "

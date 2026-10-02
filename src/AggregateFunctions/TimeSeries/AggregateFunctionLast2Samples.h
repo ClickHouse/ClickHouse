@@ -37,8 +37,8 @@ class AggregateFunctionLast2Samples final :
 public:
     using Base = IAggregateFunctionHelper<AggregateFunctionLast2Samples<TimestampType, ValueType>>;
 
-    using ColVecType = ColumnVectorOrDecimal<TimestampType>;
-    using ColVecResultType = ColumnVectorOrDecimal<ValueType>;
+    using TimestampColumnType = ColumnVectorOrDecimal<TimestampType>;
+    using ValueColumnType = ColumnVectorOrDecimal<ValueType>;
 
     String getName() const override
     {
@@ -232,8 +232,8 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-        const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
+        const auto & timestamp_column = typeid_cast<const TimestampColumnType &>(*columns[0]);
+        const auto & value_column = typeid_cast<const ValueColumnType &>(*columns[1]);
         add(place, timestamp_column.getData()[row_num], value_column.getData()[row_num]);
     }
 
@@ -265,8 +265,8 @@ public:
         Arena *,
         ssize_t if_argument_pos) const override
     {
-        const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-        const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
+        const auto & timestamp_column = typeid_cast<const TimestampColumnType &>(*columns[0]);
+        const auto & value_column = typeid_cast<const ValueColumnType &>(*columns[1]);
         if (if_argument_pos >= 0)
         {
             const auto & flags = typeid_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
@@ -288,8 +288,8 @@ public:
         ssize_t if_argument_pos)
         const override
     {
-        const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-        const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
+        const auto & timestamp_column = typeid_cast<const TimestampColumnType &>(*columns[0]);
+        const auto & value_column = typeid_cast<const ValueColumnType &>(*columns[1]);
         if (if_argument_pos >= 0)
         {
             /// Merge the 2 sets of flags (null and if) into a single one. This allows us to use parallelizable sums when available
@@ -353,8 +353,8 @@ public:
                 "Expected tuple size 2, got {}",
                 tuple.tupleSize());
 
-        ColVecType & timestamps_to = typeid_cast<ColVecType &>(tuple.getColumn(0));
-        ColVecResultType & values_to = typeid_cast<ColVecResultType &>(tuple.getColumn(1));
+        TimestampColumnType & timestamps_to = typeid_cast<TimestampColumnType &>(tuple.getColumn(0));
+        ValueColumnType & values_to = typeid_cast<ValueColumnType &>(tuple.getColumn(1));
 
         const Data & data = this->data(place);
 

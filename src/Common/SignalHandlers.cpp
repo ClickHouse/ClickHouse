@@ -424,6 +424,9 @@ void SignalListener::run()
     if (daemon)
     {
         build_id = [this]{ return daemon->build_id; };
+        /// A daemon has built the symbol index during initialization, so this is a plain string
+        /// that neither builds anything nor waits for anything.
+        build_id_if_already_known = build_id;
     }
     else
     {
@@ -432,8 +435,19 @@ void SignalListener::run()
         /// This operation is heavy (0.5 sec under TSan) - we don't do it in constructor to not slow-down clickhouse-client,
         /// Do it lazily to not slow-down the termination of clickhouse-client.
         build_id = []{ return SymbolIndex::instance().getBuildIDHex(); };
+        /// Everything printed before the bare stack trace has to come out even when the symbol index
+        /// is unusable, so the short fault info must not be the thing that builds it: `SymbolIndex::instance`
+        /// blocks on the function-local static's guard while another thread is inside the constructor,
+        /// and a thread that faulted in there will never release that guard. The real build id is still
+        /// printed in the full fault info, which comes after the bare dump.
+        build_id_if_already_known = []
+        {
+            const SymbolIndex * symbol_index = SymbolIndex::instanceIfInitialized();
+            return symbol_index ? symbol_index->getBuildIDHex() : String("<not yet known>");
+        };
 #else
         build_id = [] { return String("<unknown>"); };
+        build_id_if_already_known = build_id;
 #endif
     }
 
@@ -578,9 +592,22 @@ void SignalListener::onTerminate(std::string_view message, UInt32 thread_num) co
 
 /// Prints an instruction address in the same representation as the symbolized lines below it, so that
 /// the two are comparable and the printed value survives ASLR of a position-independent executable.
+///
+/// This is the raw fallback that has to come out even when symbolization later fails, so it must not
+/// depend on the symbol index being buildable: if it has not been built yet (a fault at startup, or in
+/// the thread that was building it), the runtime address is printed as is, which `addr2line` can still
+/// use together with the load address from the core dump or the memory map. A daemon builds the index
+/// during initialization for its build id, so a server always gets the ASLR-independent form here.
 static void writeResolvedAddress(const void * addr, WriteBuffer & out)
 {
-    const auto resolved = StackTrace::resolveAddress(addr);
+    const auto maybe_resolved = StackTrace::tryResolveAddress(addr);
+    if (!maybe_resolved)
+    {
+        writePointerHex(addr, out);
+        return;
+    }
+
+    const auto & resolved = *maybe_resolved;
     writePointerHex(resolved.address, out);
 
     switch (resolved.kind)
@@ -618,7 +645,7 @@ try
 
     LOG_FATAL(log, "########## Short fault info ############");
     LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {} ({})",
-              VERSION_STRING, VERSION_OFFICIAL, build_id(), GIT_HASH, Poco::Environment::osArchitecture(),
+              VERSION_STRING, VERSION_OFFICIAL, build_id_if_already_known(), GIT_HASH, Poco::Environment::osArchitecture(),
               thread_num, sig,
               info.si_pid == getpid() ? "internal" : fmt::format("signal sent by pid {} from user {}", info.si_pid, info.si_uid));
 

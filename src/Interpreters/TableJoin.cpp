@@ -58,7 +58,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_join_right_table_sorting;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 cross_join_min_bytes_to_compress;
     extern const SettingsUInt64 cross_join_min_rows_to_compress;
     extern const SettingsUInt64 default_max_bytes_in_join;
@@ -239,7 +238,6 @@ TableJoin::TableJoin(
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
-    , enable_analyzer(settings[Setting::allow_experimental_analyzer])
     , analyze_mode(analyze_mode_)
 {
 }
@@ -275,7 +273,6 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
-    , enable_analyzer(true)
     , analyze_mode(settings.join_analyze_mode)
 {
 }
@@ -1283,8 +1280,6 @@ size_t TableJoin::getMaxMemoryUsage() const
 
 void TableJoin::swapSides()
 {
-    assertEnableAnalyzer();
-
     std::swap(key_asts_left, key_asts_right);
     std::swap(left_type_map, right_type_map);
     for (auto & clause : clauses)
@@ -1299,12 +1294,6 @@ void TableJoin::swapSides()
 
     JoinKind updated_kind = reverseJoinKind(kind());
     setKind(updated_kind);
-}
-
-void TableJoin::assertEnableAnalyzer() const
-{
-    if (!enable_analyzer)
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "TableJoin: analyzer is disabled");
 }
 
 TemporaryDataOnDiskScopePtr TableJoin::getTempDataOnDisk()

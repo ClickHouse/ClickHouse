@@ -3274,6 +3274,105 @@ SELECT icebergBucket(5, 1.0 :: Float32)
 4
 ```
 
+## icebergDay {#icebergDay}
+
+Introduced in: v26.9.0
+
+Implements the Iceberg `day` partition transform: the number of days from 1970-01-01, computed in UTC.
+See https://iceberg.apache.org/spec/#partition-transforms.
+
+**Syntax**
+
+```sql
+icebergDay(value)
+```
+
+**Arguments**
+
+- `value` — The value to transform. [`Date`](/reference/data-types/date) or [`Date32`](/reference/data-types/date32) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
+
+**Returned value**
+
+Days from 1970-01-01, negative for values before 1970 [`Int32`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Example**
+
+```sql title=Query
+SELECT icebergDay(toDate32('1969-12-31'))
+```
+
+```response title=Response
+-1
+```
+
+## icebergHour {#icebergHour}
+
+Introduced in: v26.9.0
+
+Implements the Iceberg `hour` partition transform: the number of hours from 1970-01-01 00:00:00, computed in UTC.
+See https://iceberg.apache.org/spec/#partition-transforms.
+
+**Syntax**
+
+```sql
+icebergHour(value)
+```
+
+**Arguments**
+
+- `value` — The value to transform. [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
+
+**Returned value**
+
+Hours from 1970-01-01 00:00:00, negative for values before 1970 [`Int32`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Example**
+
+```sql title=Query
+SELECT icebergHour(toDateTime64('1970-01-01 01:30:00', 6, 'UTC'))
+```
+
+```response title=Response
+1
+```
+
+## icebergMonth {#icebergMonth}
+
+Introduced in: v26.9.0
+
+Implements the Iceberg `month` partition transform: the number of months from 1970-01-01, computed in UTC.
+See https://iceberg.apache.org/spec/#partition-transforms.
+
+**Syntax**
+
+```sql
+icebergMonth(value)
+```
+
+**Arguments**
+
+- `value` — The value to transform. [`Date`](/reference/data-types/date) or [`Date32`](/reference/data-types/date32) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
+
+**Returned value**
+
+Months from 1970-01-01, negative for values before 1970 [`Int32`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Example**
+
+```sql title=Query
+SELECT icebergMonth(toDate32('1969-01-01'))
+```
+
+```response title=Response
+-12
+```
+
 ## icebergTruncate {#icebergTruncate}
 
 Introduced in: v25.3.0
@@ -3304,6 +3403,39 @@ SELECT icebergTruncate(3, 'iceberg')
 
 ```response title=Response
 ice
+```
+
+## icebergYear {#icebergYear}
+
+Introduced in: v26.9.0
+
+Implements the Iceberg `year` partition transform: the number of years from 1970, computed in UTC.
+See https://iceberg.apache.org/spec/#partition-transforms.
+
+**Syntax**
+
+```sql
+icebergYear(value)
+```
+
+**Arguments**
+
+- `value` — The value to transform. [`Date`](/reference/data-types/date) or [`Date32`](/reference/data-types/date32) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
+
+**Returned value**
+
+Years from 1970, negative for values before 1970 [`Int32`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Example**
+
+```sql title=Query
+SELECT icebergYear(toDate32('1969-05-05'))
+```
+
+```response title=Response
+-1
 ```
 
 ## identity {#identity}

@@ -25,7 +25,6 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledRowPolicies.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -99,6 +98,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
@@ -607,10 +607,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
-    /// Only the analyzer can resolve recursive CTEs, and reaching this interpreter means the old analyzer.
+    /// Only the analyzer can resolve recursive CTEs.
     if (getSelectQuery().recursive_with)
-        throw Exception(
-            ErrorCodes::UNSUPPORTED_METHOD, "WITH RECURSIVE is not supported with the old analyzer. Please use `enable_analyzer=1`");
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "WITH RECURSIVE is not supported by this interpreter");
 
     initSettings();
 
@@ -802,15 +801,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        row_policy_filter = context->getRowPolicyFilter(table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-        if (const auto * alias = storage->as<StorageAlias>())
-        {
-            const auto target_storage_id = alias->getTargetTable()->getStorageID();
-            auto target_row_policy_filter = context->getRowPolicyFilter(
-                target_storage_id.getDatabaseName(), target_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-            row_policy_filter = combineRowPolicyFilters(std::move(row_policy_filter), std::move(target_row_policy_filter));
-        }
+        row_policy_filter = getRowPolicyFilterForStorage(*storage, context);
 
         if (row_policy_filter && context->hasQueryContext())
         {
@@ -1022,15 +1013,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             for (const auto & it : query_analyzer->getExternalTables())
                 if (!context->tryResolveStorageID({"", it.first}, Context::ResolveExternal))
                     context->addExternalTable(it.first, std::move(*it.second));
-        }
-
-        if (!options.only_analyze || options.modify_inplace)
-        {
-            if (syntax_analyzer_result->rewrite_subqueries)
-            {
-                /// remake interpreter_subquery when PredicateOptimizer rewrites subqueries and main table is subquery
-                interpreter_subquery = joined_tables.makeLeftTableSubquery(options.subquery());
-            }
         }
 
         if (interpreter_subquery)
@@ -2067,7 +2049,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         /// in `JoinStepLogical.cpp`). Besides being semantically correct (this sort is done locally
                         /// before a merge join), it is what lets `optimizeParallelFullSortingMergeJoin` recognize the
                         /// step and rewrite it into hash-scattered shards; otherwise `parallel_full_sorting_merge`
-                        /// would silently degrade to a single merge join with `enable_analyzer = 0`.
+                        /// would silently degrade to a single merge join here.
                         auto sorting_step = std::make_unique<SortingStep>(
                             plan.getCurrentHeader(),
                             std::move(order_descr),
