@@ -3815,6 +3815,11 @@ public:
           * `±inf * 0` with the constant `0`, and `c / ±inf` need an infinite input, which only a `Float`
           * domain contains. So `UInt64 / inf` and `UInt64 * 0.` keep their (constant) monotonicity, and
           * the key stays readable in order.
+          *
+          * With concrete endpoints (`KeyCondition` passes the bounds of a range of marks), the range itself
+          * tells whether it reaches those inputs: a closed range with finite endpoints holds no `±inf`, and
+          * one on either side of zero holds no zero. Such a range keeps its monotonicity, so `x / inf` over
+          * the `Float64` range `[1, 10]` still prunes.
           */
         if ((name_view == "divide" || name_view == "multiply") && return_type
             && isFloat(*removeNullable(recursiveRemoveLowCardinality(return_type))))
@@ -3826,15 +3831,26 @@ public:
             {
                 const Field constant = left_is_const ? (*left.column)[0] : (*right.column)[0];
                 const bool constant_is_number = isNumber(removeNullable(recursiveRemoveLowCardinality(left_is_const ? left.type : right.type)));
-                const bool varying_can_be_inf = isFloat(removeNullable(recursiveRemoveLowCardinality(left_is_const ? right.type : left.type)));
+                bool varying_can_be_inf = isFloat(removeNullable(recursiveRemoveLowCardinality(left_is_const ? right.type : left.type)));
+                bool varying_can_be_zero = true;
+
+                if (!left_point.isNull() && !right_point.isNull())
+                {
+                    const bool ordered = accurateLessOrEqual(left_point, right_point);
+                    const Field & range_min = ordered ? left_point : right_point;
+                    const Field & range_max = ordered ? right_point : left_point;
+
+                    varying_can_be_inf = varying_can_be_inf && (range_min.isInf() || range_max.isInf());
+                    varying_can_be_zero = accurateLessOrEqual(range_min, Field(0)) && accurateLessOrEqual(Field(0), range_max);
+                }
 
                 bool yields_nan = false;
                 if (constant.isNaN())
                     yields_nan = true;
                 else if (constant.isInf())
-                    yields_nan = name_view == "multiply" || varying_can_be_inf; /// `±inf * 0`, `±inf / ±inf`
+                    yields_nan = name_view == "multiply" ? varying_can_be_zero : varying_can_be_inf; /// `±inf * 0`, `±inf / ±inf`
                 else if (constant_is_number && accurateEquals(constant, Field(0)))
-                    yields_nan = name_view == "divide" || varying_can_be_inf; /// `0 / 0`, `±inf * 0`
+                    yields_nan = name_view == "divide" ? varying_can_be_zero : varying_can_be_inf; /// `0 / 0`, `±inf * 0`
 
                 if (yields_nan)
                     return {false, true, false, false};
