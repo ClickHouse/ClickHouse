@@ -287,9 +287,12 @@ void LazyMaterializingTransform::prepareMainChunk()
     columns.erase(columns.begin() + pos);
     result_chunk = Chunk(std::move(columns), total_rows);
 
+    /// The index is read as plain numbers below, so strip the representation wrappers: a join hands its columns
+    /// over as `ColumnReplicated`, and without ORDER BY no sorting materializes them on the way here.
+    index_col = index_col->convertToFullIfWrapped();
+
     /// A NULL index is a row a join matched nothing for. Only the other rows are looked up, and the
     /// defaults go in at these positions once the lazy columns are read.
-    index_col = index_col->convertToFullColumnIfConst();
     if (const auto * nullable_index = typeid_cast<const ColumnNullable *>(index_col.get()))
     {
         const auto & null_map = nullable_index->getNullMapData();
