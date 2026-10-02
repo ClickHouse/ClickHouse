@@ -267,10 +267,10 @@ private:
 
     void onRemovedFromCache(const FileSegmentGuard::Lock &);
 
-    size_t getActiveBytes() const;
+    size_t getActiveBytesUnlocked() const TSA_REQUIRES(efficiency_mutex);
     /// `low` holds granules 0-63, `high` 64-127.
-    size_t granulesToBytes(UInt64 low, UInt64 high) const;
-    std::optional<UInt64> getWindowsSinceTouch() const;
+    size_t granulesToBytesUnlocked(UInt64 low, UInt64 high) const TSA_REQUIRES(efficiency_mutex);
+    std::optional<UInt64> getWindowsSinceTouchUnlocked() const TSA_REQUIRES(efficiency_mutex);
 
     /// In release builds returns a single shared logger; in debug builds a per-segment one.
     const LoggerPtr & getLog() const;
@@ -355,13 +355,15 @@ private:
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
 
-    /// Reuse coverage for `FileCacheEfficiency`. The window id and the granule size change only under
-    /// `segment_guard`, together with clearing the bits; bits are set without a lock.
+    /// Reuse coverage for `FileCacheEfficiency`. A leaf lock: only the mutex of `FileCacheEfficiency`
+    /// is taken under it.
     static constexpr size_t EFFICIENCY_GRANULES = 128;
-    std::atomic<UInt64> efficiency_window_id = FileCacheEfficiency::NEVER_READ;
-    std::atomic<UInt64> active_granules[2] = {};
-    std::atomic<UInt64> efficiency_granule_size = 1;
-    std::atomic<UInt64> efficiency_window_range_size = 0;
+    mutable std::mutex efficiency_mutex;
+    UInt64 efficiency_window_id TSA_GUARDED_BY(efficiency_mutex) = FileCacheEfficiency::NEVER_READ;
+    UInt64 active_granules[2] TSA_GUARDED_BY(efficiency_mutex) = {};
+    UInt64 efficiency_granule_size TSA_GUARDED_BY(efficiency_mutex) = 1;
+    UInt64 efficiency_window_range_size TSA_GUARDED_BY(efficiency_mutex) = 0;
+    bool removed_from_efficiency TSA_GUARDED_BY(efficiency_mutex) = false;
 
     /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;
