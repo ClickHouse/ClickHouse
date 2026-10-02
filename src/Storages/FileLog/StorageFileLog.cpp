@@ -343,8 +343,11 @@ void StorageFileLog::loadFiles()
         file_infos.context_by_name.emplace(file, FileContext{.inode = inode});
     }
 
-    /// A file renamed to a non-matching name while it was read (log rotation) keeps being read, under one of its names.
+    /// A file renamed to a non-matching name while it was read (log rotation) keeps being read, under one of its names:
+    /// the name it was read under, if that name still has it.
     std::ranges::sort(rotated_files);
+    std::ranges::stable_partition(
+        rotated_files, [this](const auto & rotated) { return file_infos.meta_by_inode.at(rotated.second).file_name == rotated.first; });
     for (auto & rotated : rotated_files)
     {
         const UInt64 inode = rotated.second;
