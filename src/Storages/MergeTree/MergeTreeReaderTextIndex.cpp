@@ -812,17 +812,8 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, size_t column_id
                 return;
             }
 
-            /// Convert postings to a sorted array and build a cursor from it.
-            auto key = TextIndexPostingsCache::hash(granule->getIndexIdForCaches(), columns_to_read[column_idx].name, static_cast<UInt8>(TextIndexPostingsCacheKind::Flat));
-
-            auto cell = condition_text->postingsCache()->getOrSet(key, [&]
-            {
-                auto flat = std::make_shared<PaddedPODArray<UInt32>>(query_builder.postings->cardinality());
-                query_builder.postings->toUint32Array(flat->data());
-                return std::make_shared<TextIndexPostingsCacheCell>(std::move(flat));
-            });
-
-            prebuilt_cursor = std::make_shared<PostingListCursor>(std::get<FlatPostingsPtr>(cell->value));
+            /// Build a cursor over the sorted array of postings, shared by all readers of the granule.
+            prebuilt_cursor = std::make_shared<PostingListCursor>(query_builder.getFlatPostings());
             cursors.push_back(prebuilt_cursor);
         }
     }
