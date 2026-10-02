@@ -214,8 +214,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     const bool read_via_interpreter = storage->readRequiresAnalyzedQuery();
 
     ASTPtr query;
-    /// A read whose plan carries no filter for the policy gets it only by being planned again here -
-    /// with the read-column widening and the FINAL / PREWHERE ordering that policy implies.
+    /// A policy that no step of the shipped plan applies is applied by planning the read again here.
     bool needs_row_policy = false;
     /// A read that needs an analyzed query is planned again below with its own options, which apply the policy.
     if (reading_from_table && !read_via_interpreter && getEffectiveRowPolicyFilter(*storage, context))
@@ -284,16 +283,12 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         auto interpreter_context = context;
         if (needs_row_policy)
         {
-            /// `column_names` is the shipped plan's read list, widened past the columns the query
-            /// selects by the policy the node resolves below. Only the selected columns are the user's
-            /// own, and those were authorized where the plan was built.
+            /// `column_names` is the shipped read list widened by the policy's columns. Only the selected
+            /// columns are the user's own, and those were authorized where the plan was built.
             options.ignore_table_access_check = true;
-            /// This table's entry already arrived as an explicit filter step of the shipped plan, so
-            /// resolving it again here would filter twice. A read the policy's own filter reaches had
-            /// nothing shipped for it, and the option does not descend into subqueries, so it resolves.
+            /// This table's entry arrived as a filter step of the shipped plan, so resolving it here would filter twice.
             options.skip_additional_table_filters = true;
-            /// The limit was already applied to the columns the query selects where this read was
-            /// planned, and `column_names` is wider than that selection.
+            /// The limit was applied to the selected columns where the read was planned; `column_names` is wider.
             options.ignore_max_columns_to_read = true;
 
             auto row_policy_context = Context::createCopy(context);
