@@ -8,8 +8,6 @@ namespace DB
 FileCacheEfficiency::FileCacheEfficiency(UInt64 window_sec_, std::function<size_t()> get_used_size_)
     : window_sec(window_sec_)
     , get_used_size(std::move(get_used_size_))
-    , clock([] { return std::chrono::steady_clock::now(); })
-    , start(clock())
 {
 }
 
@@ -17,8 +15,8 @@ UInt64 FileCacheEfficiency::windowNow() const
 {
     if (!window_sec)
         return 0;
-    const Int64 elapsed = std::chrono::duration_cast<std::chrono::seconds>(clock() - start).count();
-    return static_cast<UInt64>(std::max<Int64>(elapsed, 0)) / window_sec;
+    const Int64 elapsed_ms = static_cast<Int64>(watch.elapsedMilliseconds()) + time_shift_for_testing_ms.load();
+    return static_cast<UInt64>(std::max<Int64>(elapsed_ms, 0)) / (window_sec * 1000);
 }
 
 UInt64 FileCacheEfficiency::currentWindow()
@@ -78,17 +76,6 @@ FileCacheEfficiency::Snapshot FileCacheEfficiency::getSnapshot()
     std::lock_guard lock(mutex);
     rotateIfNeeded(now_window);
     return snapshot;
-}
-
-void FileCacheEfficiency::setClockForTesting(Clock clock_)
-{
-    std::lock_guard lock(mutex);
-    clock = std::move(clock_);
-    start = clock();
-    live_window = 0;
-    live_held_bytes = 0;
-    live_active_bytes = 0;
-    snapshot = {};
 }
 
 }

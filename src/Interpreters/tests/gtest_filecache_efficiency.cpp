@@ -7,18 +7,16 @@ using namespace DB;
 namespace
 {
 
-/// `FileCacheEfficiency` with a manual clock and a manual used size.
-struct EfficiencyWithClock
+/// `FileCacheEfficiency` with a manual used size.
+struct TestEfficiency
 {
-    explicit EfficiencyWithClock(UInt64 window_sec)
+    explicit TestEfficiency(UInt64 window_sec)
         : efficiency(window_sec, [this] { return used_size; })
     {
-        efficiency.setClockForTesting([this] { return now; });
     }
 
-    void advance(UInt64 seconds) { now += std::chrono::seconds(seconds); }
+    void advance(UInt64 seconds) { efficiency.shiftTimeForTesting(std::chrono::seconds(seconds)); }
 
-    std::chrono::steady_clock::time_point now{};
     size_t used_size = 0;
     FileCacheEfficiency efficiency;
 };
@@ -34,7 +32,7 @@ void expectSnapshot(const FileCacheEfficiency::Snapshot & snapshot, UInt64 activ
 
 TEST(FileCacheEfficiency, SnapshotOfLastFullWindow)
 {
-    EfficiencyWithClock t(10);
+    TestEfficiency t(10);
     t.used_size = 300;
 
     const UInt64 window = t.efficiency.currentWindow();
@@ -51,7 +49,7 @@ TEST(FileCacheEfficiency, SnapshotOfLastFullWindow)
 
 TEST(FileCacheEfficiency, StaleWindowUpdatesAreIgnored)
 {
-    EfficiencyWithClock t(10);
+    TestEfficiency t(10);
     t.used_size = 100;
 
     t.advance(10);
@@ -65,7 +63,7 @@ TEST(FileCacheEfficiency, StaleWindowUpdatesAreIgnored)
 
 TEST(FileCacheEfficiency, WindowsWithoutRotation)
 {
-    EfficiencyWithClock t(10);
+    TestEfficiency t(10);
     t.used_size = 100;
     t.efficiency.addHeldBytes(t.efficiency.currentWindow(), 100);
 
@@ -76,7 +74,7 @@ TEST(FileCacheEfficiency, WindowsWithoutRotation)
 
 TEST(FileCacheEfficiency, NegativeAndInconsistentValuesAreClamped)
 {
-    EfficiencyWithClock t(10);
+    TestEfficiency t(10);
     t.used_size = 50;
     const UInt64 window = t.efficiency.currentWindow();
     t.efficiency.addHeldBytes(window, 10);
@@ -91,7 +89,7 @@ TEST(FileCacheEfficiency, NegativeAndInconsistentValuesAreClamped)
 
 TEST(FileCacheEfficiency, Disabled)
 {
-    EfficiencyWithClock t(0);
+    TestEfficiency t(0);
     t.used_size = 100;
     EXPECT_FALSE(t.efficiency.isEnabled());
     t.efficiency.addHeldBytes(t.efficiency.currentWindow(), 100);
