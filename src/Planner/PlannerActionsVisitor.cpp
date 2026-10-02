@@ -1236,24 +1236,17 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 /// gates on the setting).
 void markFoldedSecretConstants(const FunctionNode & function_node, const ActionsDAG::NodeRawConstPtrs & children)
 {
-    auto secret_arguments = FunctionSecretArgumentsFinderTreeNode(function_node).getResult();
+    const auto secret_arguments = FunctionSecretArgumentsFinderTreeNode(function_node).getResult();
     if (!secret_arguments.hasSecrets())
         return;
 
-    auto mark = [&](size_t index)
+    for (size_t i = 0; i < children.size(); ++i)
     {
         /// Any node carrying a constant column is a folded secret value, whether it is a plain COLUMN
         /// node or a FUNCTION node folded to a constant (e.g. `concat(k1, k2)`); flag either.
-        if (index < children.size() && children[index]->column && !children[index]->is_masked_secret)
-            const_cast<ActionsDAG::Node *>(children[index])->is_masked_secret = true;
-    };
-
-    for (size_t i = secret_arguments.start; i < secret_arguments.start + secret_arguments.count; ++i)
-        mark(i);
-    for (const auto & [index, _] : secret_arguments.masked_arguments)
-        mark(index);
-    for (const auto & [index, _] : secret_arguments.replaced_arguments)
-        mark(index);
+        if (secret_arguments.isSecretArgument(i) && children[i]->column && !children[i]->is_masked_secret)
+            const_cast<ActionsDAG::Node *>(children[i])->is_masked_secret = true;
+    }
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitFunction(const QueryTreeNodePtr & node)

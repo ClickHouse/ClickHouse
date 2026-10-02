@@ -326,26 +326,6 @@ namespace QueryPlanFormat
         }
     }
 
-    /// Argument positions the secret-argument finder hides for this function. Nested secret maps
-    /// (`headers(...)`) belong to table functions, which never become DAG nodes.
-    static std::vector<bool> getSecretArgumentSlots(const ActionsDAG::Node & function)
-    {
-        std::vector<bool> slots(function.children.size(), false);
-        auto secret_arguments = FunctionSecretArgumentsFinderActionsDAG(function).getResult();
-        if (!secret_arguments.hasSecrets())
-            return slots;
-
-        for (size_t i = secret_arguments.start; i < secret_arguments.start + secret_arguments.count && i < slots.size(); ++i)
-            slots[i] = true;
-        for (const auto & [index, _] : secret_arguments.masked_arguments)
-            if (index < slots.size())
-                slots[index] = true;
-        for (const auto & [index, _] : secret_arguments.replaced_arguments)
-            if (index < slots.size())
-                slots[index] = true;
-        return slots;
-    }
-
     static String formatNodePretty(
         const ActionsDAG::Node * node,
         const std::unordered_map<String, PrettyColumnName> & pretty_names,
@@ -489,14 +469,14 @@ namespace QueryPlanFormat
 
                 /// A secret argument is hidden whole, as `SHOW CREATE` does. Rendering its structure would
                 /// have to catch every place a value can surface (constants, `IN` sets, ...), so fail closed.
-                const auto secret_slots = secrets == SecretRendering::HideSecrets
-                    ? getSecretArgumentSlots(*node)
-                    : std::vector<bool>(node->children.size(), false);
+                std::optional<FunctionSecretArgumentsFinder::Result> secret_arguments;
+                if (secrets == SecretRendering::HideSecrets)
+                    secret_arguments = FunctionSecretArgumentsFinderActionsDAG(*node).getResult();
                 std::vector<String> args;
                 args.reserve(node->children.size());
                 for (size_t i = 0; i < node->children.size(); ++i)
                 {
-                    if (secret_slots[i])
+                    if (secret_arguments && secret_arguments->isSecretArgument(i))
                         args.push_back("[HIDDEN]");
                     else
                         args.push_back(formatNodePretty(node->children[i], pretty_names, runtime_filter_names, subquery_set_names, secrets, 0));
