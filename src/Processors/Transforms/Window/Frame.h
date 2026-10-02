@@ -19,7 +19,7 @@ struct FrameBounds
 class Frame
 {
 public:
-    Frame(const WindowTransformParams & params_, const WindowFrame & definition_);
+    explicit Frame(const WindowTransformParams & params_);
 
     void enterPartition(const SlidingBlocks & blocks, const RowPoint & current, const PartitionBounds & partition);
     void advance(const SlidingBlocks & blocks, const RowPoint & current, const PartitionBounds & partition);
@@ -28,7 +28,6 @@ public:
 
 private:
     const WindowTransformParams & params;
-    const WindowFrame definition;
     FrameBounds frame_bounds;
 };
 
