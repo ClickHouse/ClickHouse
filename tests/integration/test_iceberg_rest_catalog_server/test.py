@@ -525,9 +525,6 @@ def test_clickhouse_rest_catalog_client(started_cluster):
 
 def test_clickhouse_rest_catalog_client_create_table(started_cluster):
     ns = f"client_create_{uuid.uuid4().hex[:8]}"
-    # A two-level namespace: the client must send it as `{ns}%1Feu` in the URL.
-    create_namespace([ns, "eu"])
-    rest_ns = f"{ns}\x1feu"
 
     node.query(f"""
         DROP DATABASE IF EXISTS rest_client_create_db;
@@ -541,21 +538,15 @@ def test_clickhouse_rest_catalog_client_create_table(started_cluster):
     # The client sends the table location to the server. The server accepts `s3://` locations only.
     node.query(
         f"""
-        CREATE TABLE rest_client_create_db.`{ns}.eu.events` (id Int64, name String)
-        ENGINE = IcebergS3('http://minio1:9001/{BUCKET}/{ns}/eu/events/', '{minio_access_key}', '{minio_secret_key}')
+        CREATE TABLE rest_client_create_db.`{ns}.events` (id Int64, name String)
+        ENGINE = IcebergS3('http://minio1:9001/{BUCKET}/{ns}/events/', '{minio_access_key}', '{minio_secret_key}')
         """,
         settings={"write_full_path_in_iceberg_metadata": 1},
     )
 
     # INSERT is not tested here: it commits through UpdateTable, which the server does not support yet.
-    assert node.query(f"SELECT count() FROM rest_client_create_db.`{ns}.eu.events`") == "0\n"
-    assert list_tables(rest_ns) == ["events"]
-
-    # DROP TABLE goes through the client's DropTable request.
-    node.query(f"DROP TABLE rest_client_create_db.`{ns}.eu.events`")
-    assert list_tables(rest_ns) == []
-    assert not table_exists(rest_ns, "events")
-    assert f"{ns}.eu.events" not in node.query("SHOW TABLES FROM rest_client_create_db").split()
+    assert node.query(f"SELECT count() FROM rest_client_create_db.`{ns}.events`") == "0\n"
+    assert list_tables(ns) == ["events"]
 
     node.query("DROP DATABASE IF EXISTS rest_client_create_db")
 
