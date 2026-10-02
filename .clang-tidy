@@ -21,6 +21,8 @@ Checks: [
 
   '-boost-use-ranges',
 
+  '-bugprone-assignment-in-if-condition', # old name, still used by the clang-tidy in CI
+  '-bugprone-assignment-in-selection-statement', # new name of `bugprone-assignment-in-if-condition`
   '-bugprone-branch-clone',
   '-bugprone-derived-method-shadowing-base-method',
   '-bugprone-easily-swappable-parameters',
