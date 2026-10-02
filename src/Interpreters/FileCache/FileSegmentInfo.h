@@ -79,8 +79,12 @@ namespace DB
         bool is_unbound;
         IFileCachePriority::QueueEntryType queue_entry_type;
         FileCacheOriginInfo origin;
+        /// The live efficiency window: the three add up to `downloaded_size`.
         uint64_t active_bytes = 0;
-        /// 0 = live window, 1 = last full window; `nullopt` = never served.
-        std::optional<uint64_t> windows_since_hit;
+        uint64_t passive_bytes = 0;
+        uint64_t idle_bytes = 0;
+        /// The latest earlier window with a cache hit; `nullopt` if there is none.
+        std::optional<uint64_t> last_hit_windows_ago;
+        uint64_t last_hit_active_bytes = 0;
     };
 }

@@ -4294,13 +4294,14 @@ TEST_F(FileCacheTest, EfficiencyWindow)
     auto holder_b = cache.getOrSet(key, 128, 128, 1024, {}, 0, user);
     auto b = get(holder_b, 0);
     download(b);
-    EXPECT_FALSE(FileSegment::getInfo(b).windows_since_hit.has_value());
+    EXPECT_FALSE(FileSegment::getInfo(b).last_hit_windows_ago.has_value());
 
     /// Window 0: A is read in full; B is not read and stays idle.
     a->markRead(0, 128);
-    EXPECT_EQ(FileSegment::getInfo(a).windows_since_hit, 0);
+    EXPECT_EQ(FileSegment::getInfo(a).active_bytes, 128);
     expect(next_window(), /*active=*/128, /*passive=*/0);
-    EXPECT_EQ(FileSegment::getInfo(a).windows_since_hit, 1);
+    EXPECT_EQ(FileSegment::getInfo(a).idle_bytes, 128);
+    EXPECT_EQ(FileSegment::getInfo(a).last_hit_windows_ago, 1);
 
     /// Window 1: a narrow read of A.
     a->markRead(10, 16);
@@ -4410,7 +4411,8 @@ TEST_F(FileCacheTest, EfficiencyDisabled)
     download(segment);
     segment->markRead(0, 128);
 
-    EXPECT_FALSE(FileSegment::getInfo(segment).windows_since_hit.has_value());
+    EXPECT_FALSE(FileSegment::getInfo(segment).last_hit_windows_ago.has_value());
+    EXPECT_EQ(FileSegment::getInfo(segment).idle_bytes, 128);
     EXPECT_EQ(FileSegment::getInfo(segment).active_bytes, 0);
     const auto snapshot = cache.getEfficiency().getSnapshot();
     EXPECT_EQ(snapshot.active_bytes + snapshot.passive_bytes + snapshot.idle_bytes, 0);
@@ -4483,7 +4485,7 @@ TEST_F(FileCacheTest, EfficiencyStaleWindowDoesNotMoveBack)
 
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(5));
     segment->markRead(32, 16);
-    EXPECT_EQ(FileSegment::getInfo(segment).windows_since_hit, 0);
+    EXPECT_EQ(FileSegment::getInfo(segment).active_bytes, 32);
 
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
     const auto snapshot = cache.getEfficiency().getSnapshot();
@@ -4529,4 +4531,40 @@ TEST_F(FileCacheTest, EfficiencyEvictedNoHitBytes)
             EXPECT_EQ(no_hit_bytes() - before, 128);   /// A is evicted.
     }
     EXPECT_EQ(no_hit_bytes() - before, 128);   /// B was served, so it adds nothing.
+}
+
+TEST_F(FileCacheTest, EfficiencySegmentWindows)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_segment_windows_test"));
+    auto cache = DB::FileCache("efficiency_segment_windows", efficiencyCacheSettings(10));
+    cache.initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("efficiency_segment_windows_key");
+    auto holder = cache.getOrSet(key, 0, 128, 128, {}, 0, user);
+    auto segment = get(holder, 0);
+    download(segment);
+    auto expect = [&](UInt64 active, UInt64 passive, UInt64 idle, std::optional<UInt64> last_hit_windows_ago, UInt64 last_hit_active)
+    {
+        const auto info = FileSegment::getInfo(segment);
+        EXPECT_EQ(info.active_bytes, active);
+        EXPECT_EQ(info.passive_bytes, passive);
+        EXPECT_EQ(info.idle_bytes, idle);
+        EXPECT_EQ(info.last_hit_windows_ago, last_hit_windows_ago);
+        EXPECT_EQ(info.last_hit_active_bytes, last_hit_active);
+    };
+
+    /// Window 0: read in full.
+    segment->markRead(0, 128);
+    expect(128, 0, 0, std::nullopt, 0);
+
+    /// Window 1: a narrow read; the earlier hit window is window 0.
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
+    segment->markRead(0, 16);
+    expect(16, 112, 0, 1, 128);
+
+    /// Window 2: no read; the latest hit window is window 1.
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
+    expect(0, 0, 128, 1, 16);
 }

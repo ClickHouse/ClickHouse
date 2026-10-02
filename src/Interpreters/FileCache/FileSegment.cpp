@@ -1397,12 +1397,29 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
 {
     auto lock = file_segment->lock();
     auto key_metadata = file_segment->tryGetKeyMetadata();
-    size_t active_bytes = 0;
-    std::optional<UInt64> windows_since_hit;
+    const size_t downloaded = file_segment->downloaded_size;
+    UInt64 active_bytes = 0;
+    UInt64 passive_bytes = 0;
+    UInt64 idle_bytes = downloaded;
+    std::optional<UInt64> last_hit_windows_ago;
+    UInt64 last_hit_active_bytes = 0;
+    if (file_segment->cache)
     {
+        const UInt64 live_window = file_segment->cache->getEfficiency().windowNow();
         std::lock_guard efficiency_lock(file_segment->efficiency_mutex);
-        active_bytes = file_segment->getActiveBytesUnlocked();
-        windows_since_hit = file_segment->getWindowsSinceHitUnlocked();
+        const bool hit_in_live_window = file_segment->efficiency_window_id == live_window;
+        if (hit_in_live_window)
+        {
+            active_bytes = std::min(file_segment->getActiveBytesUnlocked(), downloaded);
+            passive_bytes = downloaded - active_bytes;
+            idle_bytes = 0;
+        }
+        const UInt64 last_hit_window = hit_in_live_window ? file_segment->previous_hit_window_id : file_segment->efficiency_window_id;
+        if (last_hit_window != FileCacheEfficiency::NEVER_READ && last_hit_window <= live_window)
+        {
+            last_hit_windows_ago = live_window - last_hit_window;
+            last_hit_active_bytes = hit_in_live_window ? file_segment->previous_active_bytes : file_segment->getActiveBytesUnlocked();
+        }
     }
     return Info{
         .key = file_segment->key(),
@@ -1421,7 +1438,10 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
         .queue_entry_type = file_segment->queue_iterator ? file_segment->queue_iterator->getType() : QueueEntryType::None,
         .origin = *key_metadata->origin,
         .active_bytes = active_bytes,
-        .windows_since_hit = windows_since_hit,
+        .passive_bytes = passive_bytes,
+        .idle_bytes = idle_bytes,
+        .last_hit_windows_ago = last_hit_windows_ago,
+        .last_hit_active_bytes = last_hit_active_bytes,
     };
 }
 
@@ -1524,6 +1544,11 @@ void FileSegment::markRead(size_t offset, size_t size)
 
     if (efficiency_window_id != window)
     {
+        if (efficiency_window_id != FileCacheEfficiency::NEVER_READ)
+        {
+            previous_hit_window_id = efficiency_window_id;
+            previous_active_bytes = getActiveBytesUnlocked();
+        }
         const size_t range_size = range().size();
         efficiency_granule_size = std::max<size_t>(1, (range_size + EFFICIENCY_GRANULES - 1) / EFFICIENCY_GRANULES);
         efficiency_window_range_size = range_size;
@@ -1609,14 +1634,6 @@ bool FileSegment::wasServedFromCache() const
 size_t FileSegment::getActiveBytesUnlocked() const
 {
     return granulesToBytesUnlocked(active_granules[0], active_granules[1]);
-}
-
-std::optional<UInt64> FileSegment::getWindowsSinceHitUnlocked() const
-{
-    if (!cache || efficiency_window_id == FileCacheEfficiency::NEVER_READ)
-        return std::nullopt;
-    const UInt64 now = cache->getEfficiency().windowNow();
-    return now >= efficiency_window_id ? now - efficiency_window_id : 0;
 }
 
 FileSegment::~FileSegment()

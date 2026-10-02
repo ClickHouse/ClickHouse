@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Per-segment reuse coverage of the filesystem cache: `active_bytes` and `windows_since_hit`
+# Per-segment reuse coverage of the filesystem cache: `active_bytes`, `passive_bytes`, `idle_bytes`
 # in `system.filesystem_cache`. Only bytes served from the cache count; filling the cache does not. A private cache keeps other cache users out of the result. Its
 # efficiency window (`efficiency_window_sec`, default 600 s) counts from cache creation, so the
 # whole test runs inside window 0.
@@ -62,7 +62,7 @@ $CLICKHOUSE_CLIENT --query "
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '$cache_name'"
 $CLICKHOUSE_CLIENT "${read_settings[@]}" --query "SELECT sum(key), sum(value) FROM t_efficiency FORMAT Null"
 $CLICKHOUSE_CLIENT --query "
-    SELECT count() > 0, countIf(windows_since_hit IS NULL) = count(), sum(active_bytes) = 0
+    SELECT count() > 0, sum(idle_bytes) = sum(downloaded_size), sum(active_bytes) = 0
     FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
 # 2. SLRU: the first fill is probationary.
@@ -73,8 +73,9 @@ $CLICKHOUSE_CLIENT --query "SELECT DISTINCT queue_entry_type FROM system.filesys
 # segments get no read.
 $CLICKHOUSE_CLIENT "${read_settings[@]}" --query "SELECT sum(key), sum(value) FROM t_efficiency FORMAT Null"
 $CLICKHOUSE_CLIENT --query "
-    SELECT countIf(windows_since_hit = 0) > 0,
-        sumIf(active_bytes, windows_since_hit = 0) >= 0.99 * sumIf(downloaded_size, windows_since_hit = 0)
+    SELECT sum(active_bytes) > 0,
+        sum(active_bytes) >= 0.99 * (sum(active_bytes) + sum(passive_bytes)),
+        sum(active_bytes + passive_bytes + idle_bytes) = sum(downloaded_size)
     FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 $CLICKHOUSE_CLIENT --query "
     SELECT sumIf(downloaded_size, queue_entry_type = 'SLRU_Protected') > 0.9 * sum(downloaded_size)
@@ -89,8 +90,8 @@ for _ in 1 2; do
         FORMAT Null"
 done
 $CLICKHOUSE_CLIENT --query "
-    SELECT countIf(windows_since_hit = 0) > 0,
-        sumIf(active_bytes, windows_since_hit = 0) < 0.5 * sumIf(downloaded_size, windows_since_hit = 0)
+    SELECT sum(active_bytes) > 0,
+        sum(active_bytes) < 0.5 * (sum(active_bytes) + sum(passive_bytes))
     FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
 # 5. Write-through puts data into the cache without a read.
@@ -98,7 +99,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '$cache_name'"
 $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations 1 \
     --query "INSERT INTO t_efficiency_write SELECT number, cityHash64(number) FROM numbers(500000)"
 $CLICKHOUSE_CLIENT --query "
-    SELECT countIf(windows_since_hit IS NULL) > 0, sum(active_bytes) * 100 < sum(downloaded_size)
+    SELECT sum(idle_bytes) > 0, sum(active_bytes) * 100 < sum(downloaded_size)
     FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
 $CLICKHOUSE_CLIENT --query "

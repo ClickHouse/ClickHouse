@@ -273,7 +273,6 @@ private:
     size_t getActiveBytesUnlocked() const TSA_REQUIRES(efficiency_mutex);
     /// `low` holds granules 0-63, `high` 64-127.
     size_t granulesToBytesUnlocked(UInt64 low, UInt64 high) const TSA_REQUIRES(efficiency_mutex);
-    std::optional<UInt64> getWindowsSinceHitUnlocked() const TSA_REQUIRES(efficiency_mutex);
 
     /// In release builds returns a single shared logger; in debug builds a per-segment one.
     const LoggerPtr & getLog() const;
@@ -367,6 +366,9 @@ private:
     UInt64 efficiency_granule_size TSA_GUARDED_BY(efficiency_mutex) = 1;
     UInt64 efficiency_window_range_size TSA_GUARDED_BY(efficiency_mutex) = 0;
     bool removed_from_efficiency TSA_GUARDED_BY(efficiency_mutex) = false;
+    /// The window before `efficiency_window_id` with a cache hit, and its active bytes.
+    UInt64 previous_hit_window_id TSA_GUARDED_BY(efficiency_mutex) = FileCacheEfficiency::NEVER_READ;
+    UInt64 previous_active_bytes TSA_GUARDED_BY(efficiency_mutex) = 0;
 
     /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;
