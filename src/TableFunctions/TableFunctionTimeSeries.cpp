@@ -277,9 +277,10 @@ timeSeriesHistogramSelector('time_series_table', 'instant_query', min_time, max_
 
 ## Returned value {#returned-value}
 
-The function returns the columns `id`, `timestamp`, and the 11 histogram payload columns
+The function returns the columns `id`, `timestamp`, and the 15 histogram payload columns
 (`flags`, `schema`, `zero_threshold`, `count`, `sum`, `zero_count`, `positive_spans`, `positive_values`,
-`negative_spans`, `negative_values`, `custom_values`).
+`negative_spans`, `negative_values`, `custom_values`, `count_int`, `zero_count_int`, `positive_values_int`,
+`negative_values_int`).
 
 There is no specific order for returned data.
 
