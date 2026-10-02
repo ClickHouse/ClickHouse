@@ -17,9 +17,10 @@ from helpers.cluster import ClickHouseCluster
 #
 # The legitimate authenticated path is covered by `test_distributed_inter_server_secret`.
 #
-# A `TablesStatusRequest` is deserialized before the peer is authenticated on every one of those
-# paths, so how much of one an interserver peer can make the server deserialize is bounded; that
-# bound, and its absence for an ordinary authenticated client, is covered at the end of the file.
+# An interserver `TablesStatusRequest` whose body *is* read before the peer is authenticated - the
+# signed one, whose hash covers the body, and an unsigned one that is answered rather than refused -
+# is bounded in how much it can make the server deserialize. That bound, and its absence for an
+# ordinary authenticated client, is covered at the end of the file.
 
 cluster = ClickHouseCluster(__file__)
 node_a = cluster.add_instance("node_a", main_configs=["configs/secret_a.xml"])

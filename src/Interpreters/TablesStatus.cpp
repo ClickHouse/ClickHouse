@@ -84,10 +84,15 @@ std::string TablesStatusRequest::getAuthDigest() const
     return data;
 }
 
-void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision, const TablesStatusRequestLimits & limits)
+void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision, TablesStatusRequestSource source)
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "method TablesStatusRequest::read is called for unsupported client revision");
+
+    /// An authenticated client keeps the generic limits it had before these bounds existed.
+    static constexpr TablesStatusRequestLimits client_limits{DEFAULT_MAX_STRING_SIZE, DEFAULT_MAX_STRING_SIZE};
+    const TablesStatusRequestLimits & limits
+        = source == TablesStatusRequestSource::InterserverPeer ? INTERSERVER_TABLES_STATUS_REQUEST_LIMITS : client_limits;
 
     size_t size = 0;
     readVarUInt(size, in);

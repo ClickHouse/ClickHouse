@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <unordered_set>
 #include <unordered_map>
 
@@ -67,14 +68,24 @@ static constexpr TablesStatusRequestLimits INTERSERVER_TABLES_STATUS_REQUEST_LIM
     .max_name_size = 4096,
 };
 
+/// Who sent the request, which is what its bounds follow from. A source rather than the limits
+/// themselves, so that a call site cannot hand an interserver connection the generous profile by
+/// mistake - the mapping lives in one place, `TablesStatusRequest::read`.
+enum class TablesStatusRequestSource : uint8_t
+{
+    /// An authenticated client: the generic string and array limits, as before these bounds existed.
+    Client,
+    /// An interserver peer, whose request is deserialized before it has proven knowledge of the
+    /// cluster secret. Bounded by `INTERSERVER_TABLES_STATUS_REQUEST_LIMITS`.
+    InterserverPeer,
+};
+
 struct TablesStatusRequest
 {
     std::unordered_set<QualifiedTableName> tables;
 
     void write(WriteBuffer & out, UInt64 server_protocol_revision) const;
-    /// See `INTERSERVER_TABLES_STATUS_REQUEST_LIMITS` for what an interserver peer is allowed;
-    /// an ordinary authenticated client keeps the generic string and array limits.
-    void read(ReadBuffer & in, UInt64 client_protocol_revision, const TablesStatusRequestLimits & limits);
+    void read(ReadBuffer & in, UInt64 client_protocol_revision, TablesStatusRequestSource source);
 
     /// Deterministic, order-independent digest of `tables` for the interserver auth hash.
     std::string getAuthDigest() const;
