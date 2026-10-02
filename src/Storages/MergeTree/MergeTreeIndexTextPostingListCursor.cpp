@@ -1135,7 +1135,8 @@ void finalizeCounters(UInt8 * out, size_t num_rows, UInt8 target)
 /// Brute-force intersection via bitmap counting. The cursors are sorted by ascending cardinality.
 /// First cursor sets bits (linearOr), remaining cursors increment counters (linearAnd),
 /// then a final pass converts count == n into 1, everything else into 0.
-/// `out` must be passed with all-zero bytes. Returns false if no byte of `out` is set.
+/// `out` must be passed with all-zero bytes. Returns false only if no byte of `out` is set.
+/// May return true when no row survives the final pass.
 bool intersectBruteForce(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t num_rows)
 {
     const PostingsApplyWindow first = cursors[0]->linearOr(out, row_offset, num_rows);
