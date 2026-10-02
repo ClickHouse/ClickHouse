@@ -732,6 +732,47 @@ The following config shows how we can move from the previous 2-disk setup to a c
 On startup, all the log files will be moved from `log_local` and `log_s3_plain` to the `log_local2` disk.
 Also, all the snapshot files will be moved from `snapshot_local` and `snapshot_s3_plain` to the `snapshot_local2` disk.
 
+### Storing the changelog on object storage {#storing-the-changelog-on-object-storage}
+
+<Warning>
+This is an experimental feature. Do not use it in production.
+</Warning>
+
+Keeper can write its changelog directly to an object storage disk, so it does not need a local disk for logs.
+Set `keeper_server.coordination_settings.s3_experimental_changelog` to `true` and `keeper_server.coordination_settings.s3_log_disk` to the name of the disk defined in `<storage_configuration>`:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_changelog>
+                <type>s3_plain</type>
+                <endpoint>http://minio:9000/keeper/changelog/</endpoint>
+                <access_key_id>key</access_key_id>
+                <secret_access_key>secret</secret_access_key>
+            </s3_changelog>
+        </disks>
+    </storage_configuration>
+
+    <keeper_server>
+        <snapshot_storage_disk>snapshot_local</snapshot_storage_disk>
+        <coordination_settings>
+            <s3_experimental_changelog>true</s3_experimental_changelog>
+            <s3_log_disk>s3_changelog</s3_log_disk>
+        </coordination_settings>
+    </keeper_server>
+</clickhouse>
+```
+
+Every flush of the changelog uploads a new object, and a background thread merges adjacent objects into larger ones.
+The segment that is still being written is uploaded with the `s3_in_progress_` prefix and is renamed to its final `changelog_*` name on flush; leftover `s3_in_progress_` objects are removed on startup.
+Snapshots are not affected and are still stored on `snapshot_storage_disk`.
+
+Current limitations:
+- `compress_logs` is not supported together with `s3_experimental_changelog`.
+- On startup only `s3_log_disk` and the disks listed in `keeper_server.old_log_storage_disk` are read. If `log_storage_disk` or `latest_log_storage_disk` still contains changelog files, Keeper refuses to start: declare that disk as `old_log_storage_disk` or move the files away. Migration of local changelogs to object storage is not implemented.
+- Changelog segments that are compressed (for example, carried over from an `old_log_storage_disk`) cannot be overwritten by Raft; such an overwrite fails with an exception.
+
 ## Configuring logs cache {#configuring-logs-cache}
 
 To minimize the amount of data read from disk, Keeper caches log entries in memory.
