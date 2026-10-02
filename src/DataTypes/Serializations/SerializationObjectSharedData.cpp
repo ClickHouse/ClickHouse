@@ -27,19 +27,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// A per-granule count (the number of paths, or the number of substreams of a path) is read from a
-/// possibly-untrusted stream (e.g. a corrupted on-disk `Object` part) and used only as a sizing hint
-/// before the corresponding items are read one by one. It must not be handed to a container's
-/// `reserve` directly, for the same reasons as the outer path lists (see `reserveOrThrowTooManyPaths`
-/// in `SerializationObject.cpp`):
-///   * A count the container cannot hold (`> max_size()`, close to `SIZE_MAX`) would escape as an
-///     uncaught non-`DB::Exception` (`std::length_error`), so reject it as corruption up front.
-///   * A large-but-representable count (e.g. `100000000`) is far below `max_size()` for a
-///     `std::vector<String>`, yet handing it to `reserve` would allocate gigabytes before a single
-///     byte of payload is read and fail as `std::bad_alloc` / OOM.
-/// So cap the hint at `DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS`: the caller's read loop appends each
-/// item as it is decoded (growing the container on demand for a legitimately large count), while a
-/// corrupted over-count trips a normal read error at end of stream instead of a huge allocation.
+/// The count is untrusted, so use it only as a capped hint; the caller appends items as it reads them.
 template <typename Container>
 void reserveOrThrowTooMany(Container & container, size_t count, const char * what)
 {
@@ -1134,7 +1122,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         /// In Compact part we always read one whole granule, so we don't need to worry about reading data from multiple granules.
         if (settings.data_part_type == MergeTreeDataPartType::Compact)
         {
-            std::vector<String> paths;
+            VectorWithMemoryTracking<String> paths;
 
             /// Collect all paths stored in this granule in all buckets.
             for (size_t bucket = 0; bucket != buckets; ++bucket)
@@ -1292,7 +1280,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         else
         {
             /// Collect list of paths from all buckets for each granule.
-            std::vector<std::vector<String>> granules_paths;
+            std::vector<VectorWithMemoryTracking<String>> granules_paths;
             /// Collect the number of rows to read for each granule.
             std::vector<size_t> granules_limits;
 
