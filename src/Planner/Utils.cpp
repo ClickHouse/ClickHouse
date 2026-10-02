@@ -161,13 +161,8 @@ DataTypes flattenTypeTree(const DataTypePtr & type)
     return result;
 }
 
-/// DataTypeUInt64 carries a per-instance canUnsignedBeSigned flag which lets getLeastSupertype
-/// replace UInt64 by Int64, but IDataType::equals() does not compare it, so a flagged and an
-/// unflagged UInt64 are indistinguishable to every equals()-based check. Report whether converting
-/// a union branch to the common header would only ever DROP the flag: that direction is the one
-/// that makes the branch match the target the planner already computed. The reverse direction
-/// (adding a flag) is skipped on purpose, and so is a container that would do both at once, because
-/// a CAST converts a whole column and cannot flip one leaf without flipping the other.
+/// IDataType::equals() ignores the canUnsignedBeSigned flag of DataTypeUInt64. A CAST converts a whole
+/// column, so it cannot drop the flag on one nested type and add it on another.
 bool convertingToCommonHeaderOnlyStripsSupertypeFlags(const DataTypePtr & branch_type, const DataTypePtr & target_type)
 {
     /// Anything equals() can see is already converted by makeConvertingActions.
@@ -206,11 +201,7 @@ void addConvertingToCommonHeaderActionsIfNeeded(
         auto & query_node_plan = query_plans[i];
         const auto & plan_header = *query_node_plan->getCurrentHeader();
 
-        /// A branch may differ from the common header only in a supertype-inference flag that
-        /// IDataType::equals() ignores, in which case blocksHaveEqualStructure reports equality and
-        /// makeConvertingActions omits the CAST. The branch then publishes its own type identity as
-        /// the union output type, and an enclosing union folds a different supertype than the
-        /// analyzer already declared for the same node.
+        /// blocksHaveEqualStructure() and makeConvertingActions() do not see the canUnsignedBeSigned flag.
         bool needs_conversion = !blocksHaveEqualStructure(plan_header, union_common_header);
         std::vector<size_t> positions_to_force_cast;
         if (plan_header.columns() == union_common_header.columns())
@@ -238,8 +229,6 @@ void addConvertingToCommonHeaderActionsIfNeeded(
             false /*add_cast_columns*/,
             nullptr /*new_names*/);
 
-        /// Force the CAST makeConvertingActions did not emit, so the branch publishes the common
-        /// header type instance instead of its own.
         auto & outputs = actions_dag.getOutputs();
         for (size_t position : positions_to_force_cast)
         {
