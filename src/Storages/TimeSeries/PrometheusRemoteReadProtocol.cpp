@@ -75,10 +75,27 @@ namespace
         /// such as job=~".*" that match an empty label value. TimeSeries rows always have
         /// a non-empty metric name, so preserve that invariant when the matchers are later
         /// serialized to PromQL and reparsed by timeSeriesSelector.
-        res_matchers.emplace_back(PrometheusQueryTree::Matcher{
-            .label_name = "__name__",
-            .label_value = "",
-            .matcher_type = PrometheusQueryTree::MatcherType::NE});
+        /// The synthetic matcher is added only when no matcher is already obviously non-empty:
+        /// an extra `__name__` matcher would prevent hoisting an exact metric name, which disables
+        /// the whole-metric fast path in `StorageTimeSeriesSelector`.
+        bool has_non_empty_matcher = false;
+        for (const auto & matcher : res_matchers)
+        {
+            if ((matcher.matcher_type == PrometheusQueryTree::MatcherType::EQ && !matcher.label_value.empty())
+                || (matcher.matcher_type == PrometheusQueryTree::MatcherType::NE && matcher.label_value.empty()))
+            {
+                has_non_empty_matcher = true;
+                break;
+            }
+        }
+
+        if (!has_non_empty_matcher)
+        {
+            res_matchers.emplace_back(PrometheusQueryTree::Matcher{
+                .label_name = "__name__",
+                .label_value = "",
+                .matcher_type = PrometheusQueryTree::MatcherType::NE});
+        }
 
         return PrometheusQueryTree{std::move(instant_selector)};
     }
