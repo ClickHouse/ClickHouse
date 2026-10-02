@@ -4,4 +4,6 @@ summing mapKeys	1000	1000
 coalescing a + b	1000	1000
 aggregating v % 7	1000	1000
 graphite toUInt64(Value) % 7	1000	1000
+graphite toStartOfHour(Time)	1000	1000
 summing rows summed to zero	0
+replacing	1000	1000	60

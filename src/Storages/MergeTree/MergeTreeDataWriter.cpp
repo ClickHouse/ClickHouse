@@ -849,27 +849,15 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         *data_settings);
 
     /// The engine merge below would aggregate skip index inputs like data columns,
-    /// so they are computed from the merged rows. Row-preserving merges keep each input with its row.
-    const bool merge_keeps_whole_rows = data.merging_params.mode == MergeTreeData::MergingParams::Replacing
-        || data.merging_params.mode == MergeTreeData::MergingParams::Collapsing
-        || data.merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
-    const bool compute_indices_after_merge = optimize_on_insert && !merge_keeps_whole_rows && !indices.empty();
-    const Names inserted_columns = compute_indices_after_merge ? block.getNames() : Names{};
-
-    auto compute_sorting_key_and_skip_indices = [&](const MergeTreeIndices & indices_to_compute)
-    {
-        auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices_to_compute);
-        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
-        expr->execute(block);
-    };
+    /// so they are computed from the merged rows.
+    const bool compute_indices_after_merge = optimize_on_insert && !indices.empty();
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
     {
-        if (compute_indices_after_merge)
-            compute_sorting_key_and_skip_indices({});
-        else
-            compute_sorting_key_and_skip_indices(indices);
+        auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, compute_indices_after_merge ? MergeTreeIndices{} : indices);
+        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
+        expr->execute(block);
     }
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
@@ -920,11 +908,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     if (compute_indices_after_merge)
     {
-        Block merged_block;
-        for (const auto & name : inserted_columns)
-            merged_block.insert(std::move(block.getByName(name)));
-        block = std::move(merged_block);
-        compute_sorting_key_and_skip_indices(indices);
+        auto expr = data.getSkipIndicesExpression(metadata_snapshot, indices);
+        /// As in a background merge, an index on a sorting key expression is also evaluated on the merged rows.
+        for (const auto * output : expr->getActionsDAG().getOutputs())
+            if (output->type != ActionsDAG::ActionType::INPUT && block.has(output->result_name))
+                block.erase(output->result_name);
+        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
+        expr->execute(block);
     }
 
     ColumnsStatistics statistics;

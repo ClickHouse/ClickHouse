@@ -6,7 +6,9 @@ DROP TABLE IF EXISTS t_summing_map_keys;
 DROP TABLE IF EXISTS t_coalescing;
 DROP TABLE IF EXISTS t_aggregating;
 DROP TABLE IF EXISTS t_graphite;
+DROP TABLE IF EXISTS t_graphite_hour;
 DROP TABLE IF EXISTS t_summing_zero;
+DROP TABLE IF EXISTS t_replacing;
 
 CREATE TABLE t_summing_length (id UInt64, name String, v UInt64, INDEX il length(name) TYPE minmax GRANULARITY 1)
 ENGINE = SummingMergeTree ORDER BY id SETTINGS index_granularity = 100;
@@ -68,6 +70,17 @@ SELECT 'graphite toUInt64(Value) % 7',
     (SELECT count() FROM t_graphite WHERE toUInt64(Value) % 7 = 1 SETTINGS use_skip_indexes = 1, use_query_condition_cache = 0),
     (SELECT count() FROM t_graphite WHERE toUInt64(Value) % 7 = 1 SETTINGS use_skip_indexes = 0, use_query_condition_cache = 0);
 
+-- Rolled up into a 6000 s window three days ago, so the stored Time is in an earlier hour than the inserted one.
+-- The index expression is also a sorting key expression.
+CREATE TABLE t_graphite_hour (Path String, Time DateTime('UTC'), Value Float64, Version UInt32, INDEX ih toStartOfHour(Time) TYPE minmax GRANULARITY 1)
+ENGINE = GraphiteMergeTree('graphite_rollup') ORDER BY (Path, toStartOfHour(Time)) SETTINGS index_granularity = 100;
+INSERT INTO t_graphite_hour SELECT concat('sum_', toString(number)), toDateTime(intDiv(toUInt32(now()) - 3 * 86400, 6000) * 6000 + 5940, 'UTC'), 1, 1
+FROM numbers(1000)
+SETTINGS optimize_on_insert = 1, max_insert_threads = 1, max_block_size = 65536;
+SELECT 'graphite toStartOfHour(Time)',
+    (SELECT count() FROM t_graphite_hour WHERE toStartOfHour(Time) = (SELECT any(toStartOfHour(Time)) FROM t_graphite_hour) SETTINGS use_skip_indexes = 1, use_query_condition_cache = 0),
+    (SELECT count() FROM t_graphite_hour WHERE toStartOfHour(Time) = (SELECT any(toStartOfHour(Time)) FROM t_graphite_hour) SETTINGS use_skip_indexes = 0, use_query_condition_cache = 0);
+
 -- Rows whose summed columns total zero are removed; a skip index input must not keep them.
 CREATE TABLE t_summing_zero (id UInt64, name String, v Int64, INDEX il length(name) TYPE minmax GRANULARITY 1)
 ENGINE = SummingMergeTree ORDER BY id SETTINGS index_granularity = 100;
@@ -75,10 +88,22 @@ INSERT INTO t_summing_zero SELECT number % 1000, 'abcde', if(number < 1000, 1, -
 SETTINGS optimize_on_insert = 1, max_insert_threads = 1, max_block_size = 65536;
 SELECT 'summing rows summed to zero', count() FROM t_summing_zero;
 
+-- A row-preserving engine, and an index whose expression is also a sorting key expression.
+CREATE TABLE t_replacing (id UInt64, ts DateTime('UTC'), name String, INDEX ik toStartOfHour(ts) TYPE minmax GRANULARITY 1, INDEX il length(name) TYPE minmax GRANULARITY 1)
+ENGINE = ReplacingMergeTree ORDER BY (toStartOfHour(ts), id) SETTINGS index_granularity = 100;
+INSERT INTO t_replacing SELECT number % 1000, toDateTime('2024-01-01 00:00:00', 'UTC') + (number % 1000) * 60, 'abcde' FROM numbers(3000)
+SETTINGS optimize_on_insert = 1, max_insert_threads = 1, max_block_size = 65536;
+SELECT 'replacing',
+    (SELECT count() FROM t_replacing WHERE length(name) = 5 SETTINGS use_skip_indexes = 1, use_query_condition_cache = 0),
+    (SELECT count() FROM t_replacing WHERE length(name) = 5 SETTINGS use_skip_indexes = 0, use_query_condition_cache = 0),
+    (SELECT count() FROM t_replacing WHERE toStartOfHour(ts) = toDateTime('2024-01-01 05:00:00', 'UTC') SETTINGS use_skip_indexes = 1, use_query_condition_cache = 0);
+
 DROP TABLE t_summing_length;
 DROP TABLE t_summing_modulo;
 DROP TABLE t_summing_map_keys;
 DROP TABLE t_coalescing;
 DROP TABLE t_aggregating;
 DROP TABLE t_graphite;
+DROP TABLE t_graphite_hour;
 DROP TABLE t_summing_zero;
+DROP TABLE t_replacing;
