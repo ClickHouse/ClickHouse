@@ -23,4 +23,5 @@ ALP(STD)
 -- another path that takes a codec as a string
 1
 -- `Multiple` is still not nameable directly, in any spelling
+-- `Quantized` only works in a column definition, so it is rejected in a codec given as a string
 -- an unknown codec is still unknown

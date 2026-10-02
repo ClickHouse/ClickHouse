@@ -90,6 +90,11 @@ SELECT '-- `Multiple` is still not nameable directly, in any spelling';
 CREATE TABLE t_codec_case_bad (x UInt64 CODEC(multiple)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError UNKNOWN_CODEC }
 CREATE TABLE t_codec_case_bad (x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS default_compression_codec = 'multiple'; -- { serverError UNKNOWN_CODEC }
 
+SELECT '-- `Quantized` only works in a column definition, so it is rejected in a codec given as a string';
+
+CREATE TABLE t_codec_case_bad (v Array(Float32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS default_compression_codec = 'Quantized(''int8'', 64)'; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_codec_case_bad (v Array(Float32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS default_compression_codec = 'LZ4, quantized(''int8'', 64)'; -- { serverError BAD_ARGUMENTS }
+
 SELECT '-- an unknown codec is still unknown';
 
 CREATE TABLE t_codec_case_bad (x UInt64 CODEC(NoSuchCodec)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError UNKNOWN_CODEC }
