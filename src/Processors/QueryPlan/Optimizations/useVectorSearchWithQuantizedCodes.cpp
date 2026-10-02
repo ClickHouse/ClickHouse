@@ -228,19 +228,27 @@ bool optimizeVectorSearchWithQuantizedCodes(
     if (search_column.empty() || reference_vector.empty())
         return false;
 
-    /// The search column must carry a `Quantize(...)` codec; its parameters describe the codes subcolumn. Resolve it to
-    /// the exact storage column: try the full input name first, so a genuine dotted storage column (e.g. a `Nested`
-    /// component `n.vec`) is matched as-is rather than conflated with a different top-level column. Only if that fails do
-    /// we strip a single leading qualifier (the analyzer qualifies table columns as `table.column`) and retry. Truncating
-    /// unconditionally would turn `n.vec` into `vec` and rank the shortlist by the wrong column.
-    auto params = findQuantizeCodecParams(*read_step, search_column);
-    if (!params && search_column.contains('.'))
+    /// The search column must carry a `Quantize(...)` codec; its parameters describe the codes subcolumn. Resolve the
+    /// name to the exact storage column first. It is either already a storage column - including a genuinely dotted one,
+    /// such as a `Nested` component `n.vec` or even `n.values.id` - or it carries the table qualifier which the analyzer
+    /// prepends (`__table1.vec`). Peel the leading component only when it is a proven qualifier, i.e. when the full name
+    /// is not a column of this table while the remainder is. Peeling based on the codec lookup alone would turn
+    /// `n.values.id` into `values.id` and, if that column happens to carry the codec, rank the shortlist by a different
+    /// vector column instead of leaving the query exact. Same rule as in `useVectorSearch.cpp`.
+    const auto & storage_columns = read_step->getStorageMetadata()->getColumns();
+    auto is_storage_column = [&storage_columns](const String & column_name)
+    {
+        return storage_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+    };
+
+    if (!is_storage_column(search_column) && search_column.contains('.'))
     {
         const String unqualified = search_column.substr(search_column.find('.') + 1);
-        params = findQuantizeCodecParams(*read_step, unqualified);
-        if (params)
+        if (is_storage_column(unqualified))
             search_column = unqualified;
     }
+
+    auto params = findQuantizeCodecParams(*read_step, search_column);
     if (!params)
         return false;
 
@@ -266,7 +274,6 @@ bool optimizeVectorSearchWithQuantizedCodes(
     /// column by name below would bind that physical column instead of the companion subcolumn and rank the shortlist on
     /// unrelated bytes (silently, when the widths happen to match). Leave the query exact in that case: the same
     /// fall-back-to-exact this rewrite already takes wherever it cannot apply cleanly.
-    const auto & storage_columns = read_step->getStorageMetadata()->getColumns();
     if (storage_columns.has(codes_column) || (is_pq && storage_columns.has(codebook_column)))
         return false;
 

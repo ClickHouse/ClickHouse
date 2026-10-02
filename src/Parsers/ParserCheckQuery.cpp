@@ -6,8 +6,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserPartition.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -93,14 +91,11 @@ bool ParserCheckQuery::parseCheckDatabase(Pos & pos, ASTPtr & node, Expected & e
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserCheckQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementCheck(StatementFactory & factory)
-{
-    factory.registerStatement("CHECK TABLE",
+    documentation["CHECK TABLE"] =
     {
         .description = R"DOCS_MD(
 The `CHECK TABLE` query in ClickHouse is used to perform a validation check on a specific table or its partitions. It ensures the integrity of the data by verifying the checksums and other internal data structures.
@@ -268,9 +263,9 @@ If the table is corrupted, you can copy the non-corrupted data to another table.
 CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT format] [SETTINGS check_query_single_value_result = (0|1) [, other_settings]]
 )",
         .related = {"CHECK DATABASE", "SYSTEM", "OPTIMIZE"},
-    });
+    };
 
-    factory.registerStatement("CHECK DATABASE",
+    documentation["CHECK DATABASE"] =
     {
         .description = R"DOCS_MD(
 The `CHECK DATABASE` query verifies the health of a database.
@@ -322,7 +317,9 @@ If the catalog cannot be reached, the query throws an exception instead. The exa
 CHECK DATABASE database_name
 )",
         .related = {"CHECK TABLE", "CREATE DATABASE"},
-    });
+    };
+
+    return documentation;
 }
 
 }
