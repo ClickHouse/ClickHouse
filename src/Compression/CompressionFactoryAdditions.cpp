@@ -45,19 +45,26 @@ extern const SettingsBool allow_suspicious_codecs;
 }
 
 
-namespace
-{
-
-/// `Quantized` is declarative: it only takes effect through the serialization that a column-level `CODEC`
-/// attaches to the column. A codec given as a string (a table-level or network setting) has no column, so
-/// accepting it there would silently do nothing.
-void checkCodecIsNotColumnLevelOnly(const String & family_name)
+void CompressionCodecFactory::checkCodecIsNotColumnLevelOnly(const String & family_name)
 {
     if (equalsCaseInsensitive(family_name, "Quantized"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Codec {} can only be specified in the column definition", family_name);
 }
 
+void CompressionCodecFactory::checkCodecChainIsNotColumnLevelOnly(const ASTPtr & ast)
+{
+    const auto * func = ast->as<ASTFunction>();
+    if (!func || !func->arguments)
+        return;
+
+    for (const auto & inner_codec_ast : func->arguments->children)
+    {
+        if (const auto * identifier = inner_codec_ast->as<ASTIdentifier>())
+            checkCodecIsNotColumnLevelOnly(identifier->name());
+        else if (const auto * inner_func = inner_codec_ast->as<ASTFunction>())
+            checkCodecIsNotColumnLevelOnly(inner_func->name);
+    }
 }
 
 void CompressionCodecFactory::validateCodec(
@@ -86,17 +93,7 @@ void CompressionCodecFactory::validateCodecString(
 {
     ParserCodec codec_parser;
     auto ast = parseQuery(codec_parser, "(" + compression_codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-    if (const auto * func = ast->as<ASTFunction>(); func && func->arguments)
-    {
-        for (const auto & inner_codec_ast : func->arguments->children)
-        {
-            if (const auto * identifier = inner_codec_ast->as<ASTIdentifier>())
-                checkCodecIsNotColumnLevelOnly(identifier->name());
-            else if (const auto * inner_func = inner_codec_ast->as<ASTFunction>())
-                checkCodecIsNotColumnLevelOnly(inner_func->name);
-        }
-    }
+    checkCodecChainIsNotColumnLevelOnly(ast);
 
     validateCodecAndGetPreprocessedASTImpl(ast, {}, validation_settings.settings, /*sanity_check=*/ false);
 }

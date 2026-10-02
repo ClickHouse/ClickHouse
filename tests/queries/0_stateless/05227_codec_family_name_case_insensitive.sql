@@ -94,6 +94,7 @@ SELECT '-- `Quantized` only works in a column definition, so it is rejected in a
 
 CREATE TABLE t_codec_case_bad (v Array(Float32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS default_compression_codec = 'Quantized(''int8'', 64)'; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_codec_case_bad (v Array(Float32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS default_compression_codec = 'LZ4, quantized(''int8'', 64)'; -- { serverError BAD_ARGUMENTS }
+SELECT number FROM numbers(100000) ORDER BY number DESC SETTINGS max_bytes_before_external_sort = 1, max_bytes_ratio_before_external_sort = 0, temporary_files_codec = 'Quantized(''int8'', 64)' FORMAT Null; -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- an unknown codec is still unknown';
 

@@ -162,6 +162,15 @@ protected:
     CompressionCodecPtr getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const;
 
 private:
+    /// `Quantized` is declarative: it only takes effect through the serialization that a column-level `CODEC`
+    /// attaches to the column. A codec given as a string (a table-level, network or temporary files setting, a
+    /// server config) has no column, so accepting it there would silently do nothing. Throws if `family_name`
+    /// names such a codec.
+    static void checkCodecIsNotColumnLevelOnly(const String & family_name);
+
+    /// The same check for every codec of a chain parsed from a string, e.g. "Delta, Quantized('int8', 64)".
+    static void checkCodecChainIsNotColumnLevelOnly(const ASTPtr & ast);
+
     ASTPtr validateCodecAndGetPreprocessedASTImpl(
         const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const;
 

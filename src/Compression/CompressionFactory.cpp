@@ -52,6 +52,8 @@ bool CompressionCodecFactory::isDefaultCodec(const ASTPtr & codec)
 
 CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std::optional<int> level) const
 {
+    checkCodecIsNotColumnLevelOnly(family_name);
+
     if (level)
     {
         auto level_literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
@@ -66,6 +68,7 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & compression_code
 {
     ParserCodec codec_parser;
     auto ast = parseQuery(codec_parser, "(" + compression_codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    checkCodecChainIsNotColumnLevelOnly(ast);
     return CompressionCodecFactory::instance().get(ast, nullptr);
 }
 
