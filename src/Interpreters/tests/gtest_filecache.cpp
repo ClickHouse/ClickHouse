@@ -4621,3 +4621,49 @@ TEST_F(FileCacheTest, EfficiencyCacheWriterCountsOnlyAnotherFill)
     EXPECT_EQ(b.read(ByteRange{0, 3 * G}).totalBytes(), 3 * G);
     EXPECT_EQ(active(), 3 * G);
 }
+
+TEST_F(FileCacheTest, EfficiencyShrinkWithinWindow)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_shrink_test"));
+    /// Alignment 1 makes the shrink exact.
+    auto settings = efficiencyCacheSettings(10);
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::reserve_granularity] = 0;
+    auto cache = DB::FileCache("efficiency_shrink", settings);
+    cache.initialize();
+    const auto & user = FileCache::getCommonOrigin();
+
+    /// A hit before the shrink starts the window while the segment is still `S` bytes.
+    auto key = FileCacheKey::fromPath("efficiency_shrink_key");
+    const FileSegment * before_shrink = nullptr;
+    {
+        auto holder = cache.getOrSet(key, 0, S, /*file_size=*/4 * S, {}, 0, user);
+        auto segment = get(holder, 0);
+        before_shrink = segment.get();
+        ASSERT_EQ(segment->range().size(), S);
+        ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+        std::string failure_reason;
+        ASSERT_TRUE(segment->reserve(2 * G + 100, 1000, failure_reason));
+        auto key_str = key.toString();
+        fs::create_directories(fs::path(cache_base_path) / key_str.substr(0, 3) / key_str);
+        std::string data(2 * G + 100, '0');
+        segment->write(data.data(), data.size(), segment->getCurrentWriteOffset());
+        segment->markRead(0, G);
+    }
+
+    /// The last holder shrank the same segment to its downloaded size. A hit on the new tail in the
+    /// same window counts only the bytes up to the new end.
+    auto holder = cache.getOrSet(key, 0, 2 * G + 100, /*file_size=*/4 * S, {}, 0, user);
+    auto segment = get(holder, 0);
+    ASSERT_EQ(segment.get(), before_shrink);
+    ASSERT_EQ(segment->range().size(), 2 * G + 100);
+    segment->markRead(2 * G, 100);
+    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.active_bytes, G + 100);
+
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
+    const auto snapshot = cache.getEfficiency().getSnapshot();
+    EXPECT_EQ(snapshot.active_bytes, G + 100);
+    EXPECT_EQ(snapshot.passive_bytes, G);
+}
+

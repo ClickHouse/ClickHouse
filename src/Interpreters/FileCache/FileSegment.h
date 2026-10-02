@@ -282,8 +282,6 @@ private:
     /// Sets granules `[first, last]`; returns the bytes of the ones that were not set before.
     size_t setGranulesUnlocked(size_t first, size_t last) TSA_REQUIRES(efficiency_mutex);
     size_t getActiveBytesUnlocked() const TSA_REQUIRES(efficiency_mutex);
-    /// Bytes of the last granule past the segment end.
-    size_t lastGranuleTailUnlocked() const TSA_REQUIRES(efficiency_mutex);
 
     /// In release builds returns a single shared logger; in debug builds a per-segment one.
     const LoggerPtr & getLog() const;
@@ -382,7 +380,6 @@ private:
         /// The window before `window_id` with a cache hit, and its active bytes.
         FileCacheEfficiency::Window previous_hit_window_id = FileCacheEfficiency::NEVER_READ;
         UInt64 previous_active_bytes = 0;
-        UInt64 window_range_size = 0;
     };
     std::unique_ptr<EfficiencyState> efficiency_state TSA_GUARDED_BY(efficiency_mutex);
 
