@@ -8300,8 +8300,12 @@ function canSendRawAuthHeader(value) {
 function getAuthHeaders(user, password) {
     const send_raw = canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
     const headers = { 'Authorization': send_raw ? 'never' : 'ClickHouse-Play' };
-    if (user)
-        headers['X-ClickHouse-User'] = send_raw ? user : encodeURIComponent(user);
+    /// Older servers reject X-ClickHouse-Key without X-ClickHouse-User. Their implicit HTTP
+    /// user was always `default`, so make it explicit on the raw compatibility path instead of
+    /// putting the password back into the URL.
+    const header_user = !user && password && send_raw ? 'default' : user;
+    if (header_user)
+        headers['X-ClickHouse-User'] = send_raw ? header_user : encodeURIComponent(header_user);
     if (password)
         headers['X-ClickHouse-Key'] = send_raw ? password : encodeURIComponent(password);
     return headers;
