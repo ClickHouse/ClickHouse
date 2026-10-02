@@ -28,6 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_PREWHERE;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int LOGICAL_ERROR;
@@ -89,7 +90,17 @@ void validateFilters(const QueryTreeNodePtr & query_node)
         validateFilter(query_node_typed.getWhere(), "WHERE", query_node);
 
     if (query_node_typed.hasHaving())
+    {
         validateFilter(query_node_typed.getHaving(), "HAVING", query_node);
+
+        /// the totals are computed together with this filter, which cannot multiply rows
+        if (query_node_typed.isGroupByWithTotals())
+            assertNoFunctionNodes(query_node_typed.getHaving(),
+                "arrayJoin",
+                ErrorCodes::ILLEGAL_COLUMN,
+                "ARRAY JOIN",
+                "in HAVING with TOTALS");
+    }
 
     if (query_node_typed.hasQualify())
         validateFilter(query_node_typed.getQualify(), "QUALIFY", query_node);
