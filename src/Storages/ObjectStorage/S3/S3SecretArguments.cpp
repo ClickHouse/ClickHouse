@@ -44,10 +44,8 @@ constexpr std::string_view s3_secret_keys[]
 /// overrides; it passes `positionals_allowed_after_named` to collect them in order.
 std::vector<size_t> classifyS3Arguments(FunctionSecretArgumentsFinder & finder, size_t start = 0, bool positionals_allowed_after_named = false)
 {
-    /// `headers(..)` and `extra_credentials(..)` carry secret auth material at any position; the parsers
-    /// strip them before positional slots are assigned.
-    finder.maskNestedSecretMap("headers");
-    finder.maskNestedSecretMap("extra_credentials", {std::begin(extra_credentials_visible_keys), std::end(extra_credentials_visible_keys)});
+    /// The parsers strip the nested maps before positional slots are assigned.
+    maskHeadersAndExtraCredentials(finder);
 
     const auto & function = finder.function;
     std::vector<size_t> positional;
@@ -313,6 +311,12 @@ void findS3BackupSecretArguments(FunctionSecretArgumentsFinder & finder)
     maskS3PositionalsFrom(finder, positional, positional.size() == 3 ? 2 : 1);
 }
 
+}
+
+void maskHeadersAndExtraCredentials(FunctionSecretArgumentsFinder & finder)
+{
+    finder.maskNestedSecretMap("headers");
+    finder.maskNestedSecretMap("extra_credentials", {std::begin(extra_credentials_visible_keys), std::end(extra_credentials_visible_keys)});
 }
 
 bool isNonSecretExtraCredentialsKey(std::string_view key)

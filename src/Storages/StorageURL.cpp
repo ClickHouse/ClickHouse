@@ -1,4 +1,5 @@
 #include <Storages/StorageURL.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageFile.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -2950,8 +2951,9 @@ SecretArgumentsSpec urlSecretArguments(size_t url_offset)
     {
         /// `headers(...)` can appear at any position in every url form (function, cluster function, engine,
         /// and the named-collection variant); mask its values regardless of the url offset or a leading
-        /// collection/cluster argument.
-        finder.maskNestedSecretMap("headers");
+        /// collection/cluster argument. `extra_credentials(...)` is not read here, but it is formatted for
+        /// logging before validation rejects it.
+        maskHeadersAndExtraCredentials(finder);
 
         if (finder.isNamedCollectionName(url_offset))
         {
