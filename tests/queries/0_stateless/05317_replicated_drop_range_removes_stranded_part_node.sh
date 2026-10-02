@@ -8,6 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # A drop range whose working set is already empty must still remove the part nodes it covers.
+# The node is in the range of the second drop only (all_0_1_*), not of the first one (all_0_0_*).
 
 ZK_PATH="/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/05317_rmt"
 
@@ -25,15 +26,15 @@ for _ in {1..60}; do
 done
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'rmt' AND _state != ''"
 
-$CLICKHOUSE_CLIENT -q "INSERT INTO system.zookeeper (path, name, value) VALUES ('$ZK_PATH/replicas/1/parts', 'all_0_0_0', '')"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$ZK_PATH/replicas/1/parts' AND name = 'all_0_0_0'"
+$CLICKHOUSE_CLIENT -q "INSERT INTO system.zookeeper (path, name, value) VALUES ('$ZK_PATH/replicas/1/parts', 'all_1_1_0', '')"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$ZK_PATH/replicas/1/parts' AND name = 'all_1_1_0'"
 
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rmt"
 
 for _ in {1..60}; do
-    [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$ZK_PATH/replicas/1/parts' AND name = 'all_0_0_0'")" = "0" ] && break
+    [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$ZK_PATH/replicas/1/parts' AND name = 'all_1_1_0'")" = "0" ] && break
     sleep 1
 done
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$ZK_PATH/replicas/1/parts' AND name = 'all_0_0_0'"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$ZK_PATH/replicas/1/parts' AND name = 'all_1_1_0'"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE rmt SYNC"
