@@ -117,6 +117,14 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}", alter_command->formatForErrorMessage());
 
     mutation_command->resolved_partition_ids = command.resolved_partition_ids;
+
+    /// The rewritten command stands for the same mutation, so it carries its version - as
+    /// `createCommandWithUpdatedColumns` does for its own rewrite. Without it the on-fly stage built
+    /// from this command has no version bound, `getMaxPatchVersionForStep` returns none, and the
+    /// patch-visibility window of the stage is unbounded above: a patch part created *after* this
+    /// `DELETE` would be applied before its predicate is evaluated.
+    mutation_command->mutation_version = command.mutation_version;
+
     return *mutation_command;
 }
 
