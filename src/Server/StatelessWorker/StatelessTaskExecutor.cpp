@@ -148,12 +148,12 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
             tryLogCurrentException(getLogger("StatelessTaskExecutor"),
                 fmt::format("Task {} failed", task_description.task.task_id));
             auto failure = currentTaskFailure();
-            /// Lets the failures this one causes in the connected tasks reach the initiator first.
-            fiu_do_on(FailPoints::distributed_plan_delay_root_cause_report,
+            /// Lets the failures this one causes in the connected tasks reach the initiator first. The
+            /// failpoint fires once, so a consequence must not be the failure that spends it.
+            if (!DistributedQueryCancellation::isConsequence(failure.code))
             {
-                if (!DistributedQueryCancellation::isConsequence(failure.code))
-                    sleepForMilliseconds(1000);
-            });
+                fiu_do_on(FailPoints::distributed_plan_delay_root_cause_report, { sleepForMilliseconds(1000); });
+            }
             task_promise->set_value(std::move(failure));
         }
     };
