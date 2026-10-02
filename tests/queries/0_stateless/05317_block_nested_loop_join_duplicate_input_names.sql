@@ -4,6 +4,7 @@
 SET allow_block_nested_loop_join = 1;
 SET join_algorithm = 'direct,parallel_hash,hash';
 SET query_plan_join_swap_table = 'false';
+SET join_use_nulls = 0;
 
 SELECT count() FROM (EXPLAIN SELECT * FROM (SELECT 1 AS k) AS t1 FULL JOIN (SELECT k, 1 AS k) AS t2 ON t2.k > t1.k) WHERE explain LIKE '%BlockNestedLoopJoin%';
 
