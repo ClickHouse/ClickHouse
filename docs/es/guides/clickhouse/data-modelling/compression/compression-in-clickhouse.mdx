@@ -71,8 +71,8 @@ GROUP BY name
 <Accordion title="Una nota sobre las partes `compact` frente a `wide`">
   Si ves valores de `compressed_size` o `uncompressed_size` iguales a `0`, puede deberse a que el tipo de las
   partes es `compact` y no `wide` (consulta la descripción de `part_type` en [`system.parts`](/es/reference/system-tables/parts)).
-  El formato de la parte está controlado por la configuración [`min_bytes_for_wide_part`](/es/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part)
-  y [`min_rows_for_wide_part`](/es/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part), lo que significa que, si los datos insertados
+  El formato de la parte está controlado por la configuración [`min_bytes_for_wide_part`](/es/reference/settings/merge-tree-settings#min_bytes_for_wide_part)
+  y [`min_rows_for_wide_part`](/es/reference/settings/merge-tree-settings#min_rows_for_wide_part), lo que significa que, si los datos insertados
   dan como resultado una parte que no supera los valores de la configuración mencionada, la parte será `compact` en lugar
   de `wide` y no verás los valores de `compressed_size` o `uncompressed_size`.
 
@@ -236,7 +236,7 @@ ClickHouse admite una gran variedad de códecs y algoritmos de compresión. A co
 | **`Gorilla` and `T64` for unknown patterns?** | Si los datos tienen un patrón desconocido, puede merecer la pena probar `Gorilla` y `T64`.                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | **`Gorilla` for gauge data**                  | `Gorilla` puede ser eficaz con datos de punto flotante, en concreto cuando representan lecturas de tipo `Gauge`, es decir, picos aleatorios.                                                                                                                                                                                                                                                                                                                                                                |
 
-Consulte [aquí](/es/reference/statements/create/table/codec) para ver más opciones.
+Consulte [aquí](/es/reference/statements/create/table#column_compression_codec) para ver más opciones.
 
 A continuación especificamos el códec `Delta` para `Id`, `ViewCount` y `AnswerCount`, partiendo de la hipótesis de que estarán linealmente correlacionados con la clave de ordenación y, por tanto, deberían beneficiarse de la codificación `Delta`.
 

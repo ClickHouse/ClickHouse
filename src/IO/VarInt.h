@@ -13,9 +13,6 @@ namespace DB
 [[noreturn]] void throwReadAfterEOF();
 
 
-/// The most bytes writeVarUInt emits for a UInt64: nine continuation bytes plus a final one.
-constexpr size_t VAR_UINT_MAX_SIZE = 10;
-
 inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
 {
     while (x > 0x7F)
@@ -154,16 +151,6 @@ inline const char * ALWAYS_INLINE readVarUInt(UInt64 & x, const char * istr, siz
 inline Int64 decodeZigZag(UInt64 n)
 {
     return static_cast<Int64>((n >> 1) ^ -(n & 1));
-}
-
-inline UInt32 encodeZigZag32(Int32 value)
-{
-    return (static_cast<UInt32>(value) << 1) ^ static_cast<UInt32>(value >> 31);
-}
-
-inline Int32 decodeZigZag32(UInt32 n)
-{
-    return static_cast<Int32>((n >> 1) ^ -(n & 1));
 }
 
 template <typename InBuf>

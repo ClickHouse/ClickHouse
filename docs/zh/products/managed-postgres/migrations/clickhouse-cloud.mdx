@@ -1,0 +1,218 @@
+---
+slug: /cloud/managed-postgres/migrations/clickhouse-cloud
+sidebarTitle: 'ClickHouse Cloud'
+title: 使用 ClickHouse Cloud 迁移到 Managed Postgres
+description: '了解如何使用 ClickHouse Cloud 内置的数据源导入向导，将您的 PostgreSQL 数据库迁移到 ClickHouse Managed Postgres。'
+keywords: ['postgres', 'postgresql', '逻辑复制', '迁移', '数据传输', 'Managed Postgres', '数据源', '导入']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge />
+
+ClickHouse Cloud 内置了导入向导，可将您的外部 PostgreSQL 数据库迁移到 Managed Postgres 服务。该向导通过五个引导步骤完成源连接、schema 导出和导入、复制设置以及表选择。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 可使用具有复制权限的用户访问源 PostgreSQL 数据库。
+* 准备一个 ClickHouse Managed Postgres 服务作为迁移目标。如果你还没有，请参阅[快速入门](/zh/products/managed-postgres/quickstart)。
+* 在本地计算机上安装 `pg_dump` 和 `psql`。两者都包含在标准 PostgreSQL 客户端工具中。
+
+<div id="considerations">
+  ## 迁移前的注意事项
+</div>
+
+* **DDL 传播**：持续复制 (CDC) 会捕获 DML 操作以及 `ADD COLUMN`。其他 DDL 变更 (如 `DROP COLUMN` 和 `ALTER COLUMN`) 不会自动传播，必须在目标端手动执行。
+
+<div id="step-1-connect">
+  ## 步骤 1：连接到源数据库
+</div>
+
+打开 [ClickHouse Cloud 控制台](https://clickhouse.cloud)，然后选择您的 Managed Postgres 服务。
+
+<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Cloud 服务列表中的 Managed Postgres 服务卡片" size="lg" border />
+
+在左侧边栏中，点击 **数据源**。
+
+<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Managed Postgres 服务侧边栏中的数据源条目" size="lg" border />
+
+点击 **Start import**。
+
+<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="带有 Start import 按钮的数据源页面" size="lg" border />
+
+填写源 PostgreSQL 数据库的连接信息：主机、端口、用户名、密码和数据库名称。如果源数据库需要，请启用 **TLS**。
+
+如果需要与源数据库建立私有连接，您可以选择 **SSH 隧道** 并提供所需的 SSH 信息。这样，迁移便可安全连接到无法通过公网访问的数据库。
+
+选择一种摄取方式：
+
+* **初始加载 + CDC** — 复制现有数据，然后让目标端持续与后续变更保持同步。
+* **初始加载 only** — 一次性复制，不进行持续复制。
+* **CDC only** — 跳过初始复制，仅复制从此刻起产生的新变更。
+
+<Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="步骤 1：包含摄取方式选项的源数据库连接表单" size="lg" border />
+
+点击 **Next**。
+
+<div id="step-2-export-schema">
+  ## 第 2 步：导出您的数据库 schema
+</div>
+
+向导会显示一条已预先填入源数据库连接信息的 `pg_dump` 命令。请在终端中运行它：
+
+<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="第 2 步：用于导出 schema 的 pg_dump 命令" size="lg" border />
+
+```shell
+pg_dump \
+  -h <source_host> \
+  -U <source_user> \
+  -d <source_database> \
+  --schema-only \
+  -f pg.sql
+```
+
+这会在当前目录下创建 `pg.sql`。
+
+<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="运行 pg_dump 后的终端输出" size="lg" border />
+
+点击**下一步**。
+
+<div id="step-3-import-schema">
+  ## 第 3 步：将 schema 导入您的 Managed Postgres 服务
+</div>
+
+从下拉列表中选择目标数据库，或点击 **创建新数据库** 来新建一个数据库。
+
+向导会显示一条 `psql` 命令，用于将 schema 转储导入您的 Managed Postgres 服务。请在终端中运行该命令：
+
+<Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="第 3 步：用于导入 schema 的 psql 命令" size="lg" border />
+
+```shell
+psql \
+  -h <target_host> \
+  -p 5432 \
+  -U <target_user> \
+  -d <target_database> \
+  -f pg.sql
+```
+
+<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="运行 psql schema 导入后的终端输出" size="lg" border />
+
+点击 **下一步**。
+
+<div id="step-4-ingestion-settings">
+  ## 第 4 步：配置摄取设置
+</div>
+
+指定用于逻辑复制的 publication。如果将此项留空，系统会自动创建一个 publication。
+
+展开 **高级复制设置** 以调整吞吐量：
+
+| 设置         | 默认值     | 说明                      |
+| ---------- | ------- | ----------------------- |
+| 同步间隔 (秒)   | 10      | 轮询 replication slot 的频率 |
+| 初始加载的并行线程数 | 4       | 批量复制阶段使用的线程数            |
+| Pull 批次大小  | 100,000 | 每个复制批次拉取的行数             |
+| 每个分区的快照行数  | 100000  | 大表快照的分区大小               |
+| 并行快照的表数量   | 1       | 可并发创建快照的表数量             |
+
+<Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="第 4 步：包含 publication 和高级复制选项的摄取设置表单" size="lg" border />
+
+点击 **Next**。
+
+<div id="step-5-select-tables">
+  ## 第 5 步：选择表
+</div>
+
+选择要复制的表。表会按 schema 分组显示。您可以选择单个表，也可以展开某个 schema 以选择其中的所有表。
+
+<Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="第 5 步：按 schema 分组的表选择器，带有“创建迁移”按钮" size="lg" border />
+
+点击 **创建迁移**。
+
+<div id="monitor">
+  ## 监控迁移
+</div>
+
+创建迁移后，你会在**数据源**中看到该迁移，状态为 **运行中**。
+
+<Image img="/images/managed-postgres/pgpg/migrationlist.webp" alt="显示正在运行迁移的数据源列表" size="lg" border />
+
+点击该迁移即可打开详情视图。**表**选项卡会显示每个表的初始加载进度，包括已处理的行数、分区数以及每个分区的平均耗时。**指标**选项卡会在 CDC 开始后显示复制延迟和吞吐量。
+
+<Image img="/images/managed-postgres/pgpg/initialload.webp" alt="显示各表初始加载统计信息的迁移详情视图" size="lg" border />
+
+<div id="post-migration">
+  ## 迁移后的任务
+</div>
+
+完成初始加载后，如果使用了 CDC，且复制延迟接近于零：
+
+**验证行数。** 在切换流量之前，对源端和目标端的关键表进行抽样核对：
+
+```sql
+SELECT COUNT(*) FROM public.orders;
+```
+
+**停止向源库写入。** 暂停应用写入。要在切换期间强制设为只读模式：
+
+```sql
+ALTER DATABASE <source_db> SET default_transaction_read_only = on;
+```
+
+**确认复制已追平。** 比较源端和目标端的最新一行：
+
+```sql
+-- 在源端和目标端均执行
+SELECT MAX(id), MAX(updated_at) FROM public.orders;
+```
+
+**重置序列。** 使序列与各表中的当前最大值保持一致：
+
+```sql
+DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN
+        SELECT
+            n.nspname AS schema_name,
+            c.relname AS table_name,
+            a.attname AS column_name,
+            pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS seq_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_attribute a ON a.attrelid = c.oid
+        WHERE c.relkind = 'r'
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+    LOOP
+        IF r.seq_name IS NOT NULL THEN
+            EXECUTE format(
+                'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I.%I), 0) + 1, false)',
+                r.seq_name, r.column_name, r.schema_name, r.table_name
+            );
+        END IF;
+    END LOOP;
+END $$;
+```
+
+**切换应用流量。** 将读取和写入流量切换到你的 Managed Postgres 服务，并监控错误、约束冲突以及复制运行状况。
+
+**清理。**  完成切换并确认新服务运行正常后，从**数据源**中删除该迁移。如果你使用了 CDC，请从源端删除 replication slot 以释放资源：
+
+```sql
+SELECT pg_drop_replication_slot('<slot_name>');
+```
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* [Managed Postgres 快速入门](/zh/products/managed-postgres/quickstart)
+* [Managed Postgres 连接信息](/zh/products/managed-postgres/connection)
+* [ClickPipes Postgres FAQ](/zh/integrations/clickpipes/postgres/faq)

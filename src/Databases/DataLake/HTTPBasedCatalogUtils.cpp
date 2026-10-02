@@ -4,11 +4,6 @@
 #include <IO/ReadHelpers.h>
 #include <Core/Types.h>
 #include <Common/FailPoint.h>
-#include <Common/HTTPHeaderFilter.h>
-#include <Common/RemoteHostFilter.h>
-#include <IO/ConnectionTimeouts.h>
-#include <Poco/StreamCopier.h>
-#include <Poco/Net/HTTPRequest.h>
 
 namespace DB::ErrorCodes
 {
@@ -24,35 +19,18 @@ namespace DB::FailPoints
 namespace DataLake
 {
 
-void validateBearerToken(const DB::ContextPtr & context, const std::string & bearer_token)
-{
-    /// `createWithBearerToken` turns a non-empty token into an `Authorization: Bearer <token>`
-    /// header. Validate that synthetic header the same way a user-supplied `auth_header` is
-    /// validated, so a token cannot inject additional headers (an embedded newline) or send an
-    /// `Authorization` header that `http_forbid_headers` forbids. An empty token sends no header.
-    if (bearer_token.empty())
-        return;
-
-    DB::HTTPHeaderEntries auth_header{{"Authorization", "Bearer " + bearer_token}};
-    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(auth_header);
-}
-
 DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
     const std::string & endpoint,
     DB::ContextPtr context,
-    const std::string & bearer_token,
+    const Poco::Net::HTTPBasicCredentials & credentials,
     const Poco::URI::QueryParameters & params,
     const DB::HTTPHeaderEntries & headers,
     const std::string & method,
     std::function<void(std::ostream &)> out_stream_callaback)
 {
-    validateBearerToken(context, bearer_token);
-
     Poco::URI url(endpoint);
     if (!params.empty())
         url.setQueryParameters(params);
-
-    /// Catalogs authenticate with a bearer token; there are no HTTP Basic credentials
 
     return DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
@@ -64,13 +42,13 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         .withSkipNotFound(false)
         .withMethod(method)
         .withOutCallback(out_stream_callaback)
-        .createWithBearerToken(bearer_token);
+        .create(credentials);
 }
 
 std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
     const std::string & endpoint,
     DB::ContextPtr context,
-    const std::string & bearer_token,
+    const Poco::Net::HTTPBasicCredentials & credentials,
     const Poco::URI::QueryParameters & params,
     const DB::HTTPHeaderEntries & headers,
     const std::string & method,
@@ -81,7 +59,7 @@ std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
         throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database");
     });
 
-    auto buf = createReadBuffer(endpoint, context, bearer_token, params, headers, method, out_stream_callaback);
+    auto buf = createReadBuffer(endpoint, context, credentials, params, headers, method, out_stream_callaback);
     if (buf->eof())
         return {};
 
@@ -105,54 +83,5 @@ std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
     }
 }
 
-AccessToken requestOAuthToken(const DB::ContextPtr & context, const Poco::URI & url, const std::string & body)
-{
-    context->getRemoteHostFilter().checkHostAndPort(url.getHost(), std::to_string(url.getPort()));
-    auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
-    auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
-
-    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, url.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
-    request.setContentType("application/x-www-form-urlencoded");
-    request.setContentLength(body.size());
-    request.set("Accept", "application/json");
-
-    session->sendRequest(request) << body;
-
-    Poco::Net::HTTPResponse response;
-    std::istream & rs = session->receiveResponse(response);
-
-    std::string json_str;
-    Poco::StreamCopier::copyToString(rs, json_str);
-
-    /// The body of a failed response is an OAuth error object, safe to show.
-    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
-        throw DB::Exception(
-            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-            "OAuth token request failed with status {} ({}): {}",
-            static_cast<int>(response.getStatus()), response.getReason(), json_str);
-
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var res_json = parser.parse(json_str);
-    const Poco::JSON::Object::Ptr & object = res_json.extract<Poco::JSON::Object::Ptr>();
-
-    if (!object->has("access_token"))
-        throw DB::Exception(
-            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-            "OAuth token response has no `access_token` field: {}",
-            json_str);
-
-    AccessToken token;
-    token.token = object->getValue<String>("access_token");
-
-    if (object->has("expires_in"))
-    {
-        Int64 expires_in = object->getValue<Int64>("expires_in");
-        /// Use 90% of the token lifetime as the validity window so that short-lived tokens
-        /// (e.g. expires_in=300) still get a sensible buffer instead of going non-positive.
-        token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in * 9 / 10);
-    }
-
-    return token;
-}
 
 }

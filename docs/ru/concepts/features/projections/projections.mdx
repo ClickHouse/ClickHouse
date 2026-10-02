@@ -44,11 +44,11 @@ ClickHouse предлагает различные механизмы ускор
 * **Правильное использование первичных индексов**
 * **Предварительное вычисление агрегатов**
 
-В некотором смысле проекции похожи на [materialized view](/ru/concepts/features/materialized-views/index)
+В некотором смысле проекции похожи на [Materialized Views](/ru/concepts/features/materialized-views/index)
 , которые также позволяют использовать несколько порядков строк и предварительно вычислять агрегации
 во время вставки.
 Проекции обновляются автоматически и
-поддерживаются в синхронизации с исходной таблицей, в отличие от materialized view, которые
+поддерживаются в синхронизации с исходной таблицей, в отличие от Materialized Views, которые
 обновляются явно. Когда запрос обращается к исходной таблице,
 ClickHouse автоматически анализирует первичные ключи и выбирает таблицу, которая может
 дать тот же корректный результат, но при этом требует прочитать минимальный объём данных,
@@ -293,7 +293,7 @@ ALTER TABLE uk.uk_price_paid_with_projections
 SETTINGS mutations_sync = 1
 ```
 
-Настройка [`mutations_sync`](/ru/reference/settings/session-settings/mutations#mutations_sync)
+Настройка [`mutations_sync`](/ru/reference/settings/session-settings#mutations_sync)
 используется для принудительного синхронного выполнения.
 
 Мы создаём и заполняем проекцию `prj_gby_county` — дополнительную (скрытую) таблицу,
@@ -466,7 +466,7 @@ ALTER TABLE uk.uk_price_paid_with_projections_v2
 SETTINGS mutations_sync = 1
 ```
 
-Следующие запросы показывают различия в производительности при использовании проекций и без них. Чтобы отключить использование проекций, мы используем настройку [`optimize_use_projections`](/ru/reference/settings/session-settings/optimize-use#optimize_use_projections), которая включена по умолчанию.
+Следующие запросы показывают различия в производительности при использовании проекций и без них. Чтобы отключить использование проекций, мы используем настройку [`optimize_use_projections`](/ru/reference/settings/session-settings#optimize_use_projections), которая включена по умолчанию.
 
 <div id="average-price-projections">
   #### Запрос 1. Средняя цена по годам
@@ -706,5 +706,5 @@ SELECT * FROM page_views WHERE region = 'us_west' AND user_id = 107;
 </div>
 
 * [Практическое введение в первичные индексы в ClickHouse](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
-* [materialized view](/ru/concepts/features/materialized-views/index)
+* [Materialized Views](/ru/concepts/features/materialized-views/index)
 * [ALTER PROJECTION](/ru/reference/statements/alter/projection)
