@@ -315,37 +315,6 @@ size_t blockEnd(const PartFromSample & part, size_t row, size_t rows_limit, size
     return row + 1 + static_cast<size_t>(std::ranges::partition_point(longer_ends, fits) - longer_ends.begin());
 }
 
-/// as `MergeTreeDataPartWriterWide::fillIndexGranularity`
-void fillIndexGranularityForWidePart(
-    MergeTreeIndexGranularity & index_granularity, size_t index_offset, size_t index_granularity_for_block, size_t rows_in_block)
-{
-    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
-        index_granularity.appendMark(index_granularity_for_block);
-}
-
-/// as `MergeTreeDataPartWriterCompact::fillIndexGranularity`
-void fillIndexGranularityForCompactPart(
-    MergeTreeIndexGranularity & index_granularity, size_t index_offset, size_t index_granularity_for_block, size_t rows_in_block)
-{
-    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
-    {
-        const size_t rows_left_in_block = rows_in_block - current_row;
-        /// close the tail of a block that fills a granule or continues an open mark
-        if (rows_left_in_block < index_granularity_for_block && (rows_in_block >= index_granularity_for_block || index_offset != 0))
-        {
-            /// a tail of half a granule or more is its own granule, a shorter one joins the previous
-            if (rows_left_in_block * 2 >= index_granularity_for_block)
-                index_granularity.appendMark(rows_left_in_block);
-            else
-                index_granularity.addRowsToLastMark(rows_left_in_block);
-        }
-        else
-        {
-            index_granularity.appendMark(index_granularity_for_block);
-        }
-    }
-}
-
 /// replays the writer over the blocks, one granule size per block
 std::vector<size_t> simulateWriterMarks(
     const PartFromSample & part,

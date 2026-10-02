@@ -92,6 +92,13 @@ size_t computeIndexGranularity(
     bool blocks_are_granules,
     bool can_use_adaptive_index_granularity);
 
+/// the marks a writer appends for a block, the first `index_offset` rows go into the mark left open
+/// a wide part keeps its last mark open, a compact part closes it
+void fillIndexGranularityForWidePart(
+    MergeTreeIndexGranularity & index_granularity, size_t index_offset, size_t index_granularity_for_block, size_t rows_in_block);
+void fillIndexGranularityForCompactPart(
+    MergeTreeIndexGranularity & index_granularity, size_t index_offset, size_t index_granularity_for_block, size_t rows_in_block);
+
 /// Uncompressed size of the block as it will be written into a data part, used to choose the index
 /// granularity against index_granularity_bytes. Equal to Block::bytes() except for AggregateFunction
 /// state columns, whose true size Block::bytes() cannot report (their states live in shared arenas
