@@ -25,7 +25,7 @@ Contains information about all filesystem cache settings
 - `slru_size_ratio` ([Float64](/reference/data-types/float)) — SLRU cache policy size ratio of protected to probationary elements
 - `background_download_threads` ([UInt64](/reference/data-types/int-uint)) — Number of background download threads. Value 0 disables background download
 - `background_download_queue_size_limit` ([UInt64](/reference/data-types/int-uint)) — Maximum number of file segments in the background download queue. Value 0 means no limit. Background download is disabled when background_download_threads is 0
-- `background_download_max_file_segment_size` ([UInt64](/reference/data-types/int-uint)) — Size threshold for background download, rounded up to boundary_alignment. A segment smaller than this rounded value is downloaded in the background
+- `background_download_max_file_segment_size` ([UInt64](/reference/data-types/int-uint)) — Alignment-rounded prefetch threshold for an already-started segment, not a cap on total segment size. Below this size, background download fills up to the value rounded up to boundary_alignment. Once downloaded_size reaches it, background download continues up to downloaded_size rounded up to boundary_alignment
 - `load_metadata_threads` ([UInt64](/reference/data-types/int-uint)) — Maximum number of threads used to load cache metadata at server startup
 - `load_metadata_asynchronously` ([UInt8](/reference/data-types/int-uint)) — Enables asynchronous loading of metadata on server startup
 - `keep_free_space_size_ratio` ([Float64](/reference/data-types/float)) — A ratio of free space which cache would try to uphold in the background
