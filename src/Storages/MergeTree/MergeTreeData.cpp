@@ -5461,8 +5461,9 @@ Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & col
     auto planner_context = std::make_shared<PlannerContext>(analysis_context, global_planner_context, SelectQueryOptions{});
     collectSetsAndSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
 
+    /// ALIAS columns are inlined above, so the physical columns their expressions read are the dependencies.
     if (const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_node))
-        return table_expression_data->getSelectedColumnsNames();
+        return table_expression_data->getColumnNames();
     return {};
 }
 
@@ -14649,15 +14650,8 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
 {
     /// A pinned snapshot is captured in advance for atomic `CREATE MATERIALIZED VIEW ... POPULATE`,
     /// so the population reads exactly the data that existed when the view was subscribed to new inserts.
-    /// The pin is stored on the query context, so consult it as well: the population's read runs under
-    /// contexts derived from the query context rather than the exact context the pin was set on.
     if (auto pinned = query_context->getPinnedStorageSnapshot(getStorageID().uuid))
         return pinned;
-    if (query_context->hasQueryContext())
-    {
-        if (auto pinned = query_context->getQueryContext()->getPinnedStorageSnapshot(getStorageID().uuid))
-            return pinned;
-    }
 
     /// Inject artificial delay when taking storage snapshot.
     /// Useful for simulating concurrent mutations during snapshot acquisition.

@@ -6,7 +6,6 @@
 #include <Core/Block.h>
 #include <Core/Defines.h>
 #include <Core/Names.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Databases/DatabaseFactory.h>
@@ -26,7 +25,6 @@
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Common/NetException.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/config_version.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
 #include <Common/parseRemoteDescription.h>
@@ -84,6 +82,10 @@ DatabaseRemote::DatabaseRemote(
     , secure(secure_)
     , db_uuid(uuid)
 {
+    if (remote_database.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Engine `{}` requires a non-empty remote database name", database_engine_define_->engine->name);
+
     persistent = !context_->getClientInfo().is_shared_catalog_internal;
     if (persistent)
     {
@@ -253,10 +255,8 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
     }
 
     /// The server lists the tables on its own under the global context (e.g. at shutdown), which has
-    /// no client version, and `RemoteQueryExecutor` refuses to send a query without one.
-    const auto & client_info = query_context->getClientInfo();
-    if (client_info.client_version_major == 0 && client_info.client_version_minor == 0 && client_info.client_version_patch == 0)
-        query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
+    /// no client version.
+    query_context->setInitiatorVersionIfUnset();
 
     /// Ask the replicas of the cluster for the list of names, taking the answer of the first one that
     /// responds (`PoolMode::GET_ONE`), and report the failed attempts when none of them does.
