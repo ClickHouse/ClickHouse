@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-constexpr UInt64 MIN_LIMIT_TO_MATERIALIZE_REPLICATED_COLUMNS = 100'000;
+constexpr UInt64 MIN_LIMIT_TO_MATERIALIZE_REPLICATED_COLUMNS = 10'000;
 
 static bool anyChunkColumnReplicated(const Chunk & chunk)
 {
