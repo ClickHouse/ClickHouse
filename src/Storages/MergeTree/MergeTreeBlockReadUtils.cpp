@@ -535,66 +535,80 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     collectRequiredSourceColumns(mutation_steps);
     collectRequiredSourceColumns(prewhere_actions.steps);
 
-    /// Modern size subcolumns can occur in several step inputs and the main read list.
-    /// Cache their classification per task, since they never enter legacy_string_companions.
-    /// Check the cache before rebuilding parent names or scanning step dependencies.
-    std::unordered_set<String> string_sizes_with_separate_stream;
-    auto isLegacyStringSize = [&](const String & name, const String & parent_name)
-    {
-        /// Nullable preserves the String size subcolumn, wrapping its UInt64 type.
-        /// Only unwrap for classification; keep the original columns and null maps when reading.
-        auto column_in_storage = storage_snapshot->tryGetColumn(options, name);
-        if (!column_in_storage || !column_in_storage->isSubcolumn()
-            || removeNullable(column_in_storage->type)->getTypeId() != TypeIndex::UInt64)
-            return false;
-
-        auto parent_column = storage_snapshot->tryGetColumn(options, parent_name);
-        if (!parent_column || removeNullable(parent_column->type)->getTypeId() != TypeIndex::String)
-            return false;
-
-        auto name_in_part = column_in_storage->getNameInStorage();
-        if (!data_part_info_for_reader.isProjectionPart())
-        {
-            if (auto alter_conversions = data_part_info_for_reader.getAlterConversions();
-                alter_conversions && alter_conversions->isColumnRenamed(name_in_part))
-                name_in_part = alter_conversions->getColumnOldName(name_in_part);
-        }
-
-        auto full_name_in_part = Nested::concatenateName(name_in_part, column_in_storage->getSubcolumnName());
-        auto column_in_part = data_part_info_for_reader.getColumnsDescription().tryGetColumnOrSubcolumn(
-            GetColumnsOptions::AllPhysical, full_name_in_part);
-
-        if (column_in_part)
-        {
-            auto serialization = data_part_info_for_reader.getSerialization(*column_in_part);
-            bool has_separate_size_stream = false;
-            serialization->enumerateStreams([&](const ISerialization::SubstreamPath & path)
-            {
-                for (const auto & substream : path)
-                    has_separate_size_stream |= substream.type == ISerialization::Substream::StringSizes;
-            });
-
-            if (has_separate_size_stream)
-            {
-                string_sizes_with_separate_stream.insert(name);
-                return false;
-            }
-        }
-
-        return true;
-    };
-
     std::unordered_map<String, String> legacy_string_companions;
-    auto collectLegacyStringCompanions = [&](const Names & names)
-    {
-        for (const auto & name : names)
-        {
-            constexpr size_t string_size_suffix_length = 5;
-            if (name.size() <= string_size_suffix_length
-                || !name.ends_with(".size") || legacy_string_companions.contains(name)
-                || (!string_sizes_with_separate_stream.empty() && string_sizes_with_separate_stream.contains(name)))
-                continue;
 
+    /// An on-fly `UPDATE` can overwrite the parent `String` while an injected size
+    /// survives as a stale passthrough column. Keep those mutation read plans unchanged.
+    /// A pure `_row_exists` filter only removes rows and is safe for companion pairing.
+    if (std::all_of(mutation_steps.begin(), mutation_steps.end(), [](const auto & step)
+    {
+        return step->type == PrewhereExprStep::Filter
+            && !step->actions && step->filter_column_name == RowExistsColumn::name;
+    }))
+    {
+        constexpr size_t string_size_suffix_length = 5;
+
+        /// A size subcolumn can be referenced by several PREWHERE steps and by the main
+        /// read list. Analyze each unique name once so repeated uses do not rescan step
+        /// dependencies or part serialization metadata.
+        NameSet string_size_candidates;
+        auto collectStringSizeCandidates = [&](const Names & names)
+        {
+            for (const auto & name : names)
+            {
+                if (name.size() > string_size_suffix_length && name.ends_with(".size"))
+                    string_size_candidates.insert(name);
+            }
+        };
+
+        for (const auto & names : required_source_columns_by_step)
+            collectStringSizeCandidates(names);
+        collectStringSizeCandidates(column_to_read_after_prewhere);
+
+        auto isLegacyStringSize = [&](const String & name, const String & parent_name)
+        {
+            /// Nullable preserves the String size subcolumn, wrapping its UInt64 type.
+            /// Only unwrap for classification; keep the original columns and null maps when reading.
+            auto column_in_storage = storage_snapshot->tryGetColumn(options, name);
+            if (!column_in_storage || !column_in_storage->isSubcolumn()
+                || removeNullable(column_in_storage->type)->getTypeId() != TypeIndex::UInt64)
+                return false;
+
+            auto parent_column = storage_snapshot->tryGetColumn(options, parent_name);
+            if (!parent_column || removeNullable(parent_column->type)->getTypeId() != TypeIndex::String)
+                return false;
+
+            auto name_in_part = column_in_storage->getNameInStorage();
+            if (!data_part_info_for_reader.isProjectionPart())
+            {
+                if (auto alter_conversions = data_part_info_for_reader.getAlterConversions();
+                    alter_conversions && alter_conversions->isColumnRenamed(name_in_part))
+                    name_in_part = alter_conversions->getColumnOldName(name_in_part);
+            }
+
+            auto full_name_in_part = Nested::concatenateName(name_in_part, column_in_storage->getSubcolumnName());
+            auto column_in_part = data_part_info_for_reader.getColumnsDescription().tryGetColumnOrSubcolumn(
+                GetColumnsOptions::AllPhysical, full_name_in_part);
+
+            if (column_in_part)
+            {
+                auto serialization = data_part_info_for_reader.getSerialization(*column_in_part);
+                bool has_separate_size_stream = false;
+                serialization->enumerateStreams([&](const ISerialization::SubstreamPath & path)
+                {
+                    for (const auto & substream : path)
+                        has_separate_size_stream |= substream.type == ISerialization::Substream::StringSizes;
+                });
+
+                if (has_separate_size_stream)
+                    return false;
+            }
+
+            return true;
+        };
+
+        for (const auto & name : string_size_candidates)
+        {
             const auto parent_name = name.substr(0, name.size() - string_size_suffix_length);
             auto needs_parent = [&](const Names & columns)
             {
@@ -615,7 +629,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             };
 
             /// If the first parent read already includes its size, only an earlier size read
-            /// needs a companion. Reuse the first parent position instead of searching for it again.
+            /// needs a companion.
             if (needs_size(*first_parent_step)
                 && std::none_of(required_source_columns_by_step.begin(), first_parent_step, needs_size))
                 continue;
@@ -627,20 +641,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
                 legacy_string_companions.emplace(parent_name, name);
             }
         }
-    };
-
-    /// An on-fly `UPDATE` can overwrite the parent `String` while an injected size
-    /// survives as a stale passthrough column. Keep those mutation read plans unchanged.
-    /// A pure `_row_exists` filter only removes rows and is safe for companion pairing.
-    if (std::all_of(mutation_steps.begin(), mutation_steps.end(), [](const auto & step)
-    {
-        return step->type == PrewhereExprStep::Filter
-            && !step->actions && step->filter_column_name == RowExistsColumn::name;
-    }))
-    {
-        for (const auto & names : required_source_columns_by_step)
-            collectLegacyStringCompanions(names);
-        collectLegacyStringCompanions(column_to_read_after_prewhere);
     }
 
     /// A legacy String needed by a filtering step shares a stream with its virtual size.
