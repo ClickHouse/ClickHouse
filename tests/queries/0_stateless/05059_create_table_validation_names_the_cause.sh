@@ -37,6 +37,10 @@ run "ALTER TABLE at MODIFY COLUMN s DEFAULT nosuch"
 # Changing the type of a column that has a default re-checks the existing default expression.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS at2; CREATE TABLE at2 (a UInt32, b UInt32 DEFAULT a * 2) ORDER BY a"
 run "ALTER TABLE at2 MODIFY COLUMN b Date"
+# A type-only change that the existing default cannot be converted to is reported in terms of that default,
+# not of the synthetic alias it is given during validation.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS at3; CREATE TABLE at3 (a UInt32, b String DEFAULT 'abc') ORDER BY a"
+run "ALTER TABLE at3 MODIFY COLUMN b UInt32"
 
 echo
 echo '=== a key that cannot be used names the element that cannot be used'
@@ -52,4 +56,4 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT a, b, c IS NULL FROM ok;
 "
 
-${CLICKHOUSE_CLIENT} -q "DROP TABLE at; DROP TABLE at2; DROP TABLE ok"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE at; DROP TABLE at2; DROP TABLE at3; DROP TABLE ok"
