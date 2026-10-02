@@ -158,7 +158,6 @@ void addDefaultRequiredExpressionsRecursively(
     }
 }
 
-
 ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList & required_columns, const ColumnsDescription & columns, bool null_as_default, ContextPtr context)
 {
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
@@ -338,7 +337,7 @@ QueryTreeNodePtr resolveMissingDefaults(
     ContextPtr context,
     bool null_as_default)
 {
-    ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
+    ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default, context);
     if (!expr_list)
         return nullptr;
     return resolveExpressionList(header, expr_list, context).expression;
