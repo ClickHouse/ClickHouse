@@ -6,15 +6,27 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', '日志', '集成', '应用监控']
 ---
 
-import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+本指南支持：
 
-<ClickStackIntegrates signals={['traces']} />
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✖️ 日志</td>
+      <td className="pe-2">✖️ ️️指标</td>
+      <td className="pe-2">✅ 链路追踪</td>
+    </tr>
+  </tbody>
+</table>
 
 *如需将日志发送到 ClickStack，请通过 [OpenTelemetry collector](/zh/clickstack/ingesting-data/collector) 发送。*
 
-## 快速开始 {#getting-started}
+<div id="getting-started">
+  ## 快速开始
+</div>
 
-### 安装 OpenTelemetry 软件包 {#install-otel-packages}
+<div id="install-otel-packages">
+  ### 安装 OpenTelemetry 软件包
+</div>
 
 使用以下命令安装 OpenTelemetry 软件包。
 
@@ -22,7 +34,9 @@ import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrat
 bundle add opentelemetry-sdk opentelemetry-instrumentation-all opentelemetry-exporter-otlp
 ```
 
-### 配置 OpenTelemetry + 日志记录器格式化器 {#configure-otel-logger-formatter}
+<div id="configure-otel-logger-formatter">
+  ### 配置 OpenTelemetry + 日志记录器格式化器
+</div>
 
 接下来，你需要初始化 OpenTelemetry 链路追踪插桩，
 并为 Rails logger 配置日志消息格式化器，以便日志能够
@@ -63,24 +77,26 @@ Rails.application.configure do
 end
 ```
 
-### 配置环境变量 {#configure-environment-variables}
+<div id="configure-environment-variables">
+  ### 配置环境变量
+</div>
 
 接下来，你需要在 shell 中配置以下环境变量，以便通过 OpenTelemetry Collector 将遥测数据发送到 ClickStack：
 
 <Tabs>
   <Tab title="托管 ClickStack">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
     ```
   </Tab>
 
   <Tab title="ClickStack 开源版">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
     OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
     ```
   </Tab>

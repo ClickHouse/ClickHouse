@@ -30,7 +30,6 @@
 #include <base/defines.h>
 #include <base/MemorySanitizer.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
@@ -48,7 +47,6 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int NO_ZOOKEEPER;
-extern const int NOT_IMPLEMENTED;
 extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
 
@@ -58,11 +56,6 @@ extern const SettingsBool use_paimon_partition_pruning;
 extern const SettingsBool use_paimon_metadata_files_cache;
 extern const SettingsInt64 paimon_target_snapshot_id;
 extern const SettingsUInt64 max_consume_snapshots;
-}
-
-namespace FailPoints
-{
-extern const char paimon_incremental_read_pause_after_watermark_commit[];
 }
 
 namespace DataLakeStorageSetting
@@ -574,17 +567,6 @@ ObjectIterator PaimonMetadata::iterate(
     if (!schema)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Schema with id {} not found", state->schema_id);
 
-    /// The read path below returns the raw union of the snapshot's data files: row versions
-    /// superseded by later upserts are not eliminated. Refuse rather than return wrong results.
-    auto primary_keys = persistent_components.schema_processor->getPrimaryKeys(state->schema_id);
-    if (!primary_keys.empty())
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Reading Paimon primary-key table (primary keys: {}) is not supported: "
-            "merge-on-read is not implemented, so the result would contain row versions "
-            "superseded by later writes.",
-            fmt::join(primary_keys, ", "));
-
     /// 3. Build partition pruner if needed
     std::optional<PartitionPruner> partition_pruner;
     if (filter_dag && query_context->getSettingsRef()[Setting::use_paimon_partition_pruning])
@@ -647,15 +629,7 @@ ObjectIterator PaimonMetadata::iterate(
         data_files = collectIncrementalDataFiles(state, partition_pruner, max_consume_snapshots, last_consumed_snapshot_id);
 
         if (last_consumed_snapshot_id)
-        {
             stream_state->setCommittedSnapshot(*last_consumed_snapshot_id);
-            /// Test-only pause inside the at-most-once window: the watermark is
-            /// committed, the collected batch has not been delivered yet. A crash
-            /// here loses the batch; the failpoint lets tests pin that semantics
-            /// deterministically.
-            FailPointInjection::pauseFailPoint(
-                FailPoints::paimon_incremental_read_pause_after_watermark_commit);
-        }
     }
     else
     {
@@ -695,8 +669,8 @@ void PaimonMetadata::scheduleBackgroundRefresh()
     if (refresh_interval_sec == 0)
         return;
 
-    auto schedule_pool = getContext()->getSchedulePool();
-    refresh_task = schedule_pool->createTask(
+    auto & schedule_pool = getContext()->getSchedulePool();
+    refresh_task = schedule_pool.createTask(
         StorageID::createEmpty(), "PaimonMetadataRefresh/" + persistent_components.table_path,
         [this]()
         {

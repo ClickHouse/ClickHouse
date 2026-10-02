@@ -1,13 +1,13 @@
 ---
 slug: /cloud/managed-postgres/migrations/pg_dump-pg_restore
 sidebarTitle: 'pg_dump と pg_restore'
-title: 'pg_dump と pg_restore を使用した ClickHouse Managed Postgres への移行'
+title: 'pg_dump と pg_restore を使用した Managed Postgres への移行'
 description: 'pg_dump と pg_restore を使用して PostgreSQL データを ClickHouse Managed Postgres に移行する方法を説明します'
 keywords: ['postgres', 'postgresql', 'pg_dump', 'pg_restore', '移行', 'データ転送', 'Managed Postgres']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 このガイドでは、`pg_dump` および `pg_restore` ユーティリティを使用して PostgreSQL データベースを ClickHouse Managed Postgres に移行する方法を、順を追って説明します。
@@ -71,10 +71,10 @@ pg_dump \
 ダンプファイルの準備ができたので、`pg_restore` を使用して ClickHouse Managed Postgres インスタンスに復元できます。
 
 <div id="migration-pgdump-pg-restore-create-pg">
-  ### ClickHouse Managed Postgres インスタンスを作成する
+  ### Managed Postgres インスタンスを作成する
 </div>
 
-まず、ClickHouse Managed Postgres インスタンスを用意しておいてください。できれば、ソースと同じリージョンに配置することをおすすめします。[こちら](/ja/products/managed-postgres/quickstart#create-postgres-database)のクイックガイドを参照してください。このガイドでは、次の構成を立ち上げます。
+まず、Managed Postgres インスタンスを用意しておいてください。できれば、ソースと同じリージョンに配置することをおすすめします。[こちら](/ja/products/managed-postgres/quickstart#create-postgres-database)のクイックガイドを参照してください。このガイドでは、次の構成を立ち上げます。
 
 <Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="ClickHouse Managed Postgres インスタンスを作成" size="md" border />
 
@@ -82,7 +82,7 @@ pg_dump \
   ### ダンプを復元する
 </div>
 
-それではローカルマシンに戻って、`pg_restore` コマンドを使用し、ダンプを ClickHouse Managed Postgres インスタンスに復元します。
+それではローカルマシンに戻って、`pg_restore` コマンドを使用し、ダンプを Managed Postgres インスタンスに復元します。
 
 ```shell
 pg_restore \
@@ -91,7 +91,7 @@ pg_restore \
   rds-dump
 ```
 
-ClickHouse Managed Postgres インスタンスの接続文字列は、ClickHouse Cloud コンソールから取得できます。非常にわかりやすく説明した[こちら](/ja/products/managed-postgres/connection)もご覧ください。
+Managed Postgres インスタンスの接続文字列は、ClickHouse Cloud コンソールから取得できます。非常にわかりやすく説明した[こちら](/ja/products/managed-postgres/connection)もご覧ください。
 
 ここでも、いくつか確認しておきたいフラグがあります。
 
@@ -106,10 +106,10 @@ ClickHouse Managed Postgres インスタンスの接続文字列は、ClickHouse
   ## 移行を確認する
 </div>
 
-復元プロセスが完了したら、ClickHouse Managed Postgres インスタンスに接続し、すべてのデータとオブジェクトが正常に移行されたことを確認できます。接続してクエリを実行するには、任意の PostgreSQL クライアントを使用できます。
-移行後の ClickHouse Managed Postgres のセットアップは次のようになります。
+復元プロセスが完了したら、Managed Postgres インスタンスに接続し、すべてのデータとオブジェクトが正常に移行されたことを確認できます。接続してクエリを実行するには、任意の PostgreSQL クライアントを使用できます。
+移行後の Managed Postgres のセットアップは次のようになります。
 
-<Image img="/images/managed-postgres/pg_dump_restore/target-setup.webp" alt="移行先の ClickHouse Managed Postgres データベースのセットアップ" size="xl" border />
+<Image img="/images/managed-postgres/pg_dump_restore/target-setup.webp" alt="移行先の Managed Postgres データベースのセットアップ" size="xl" border />
 
 すべてのテーブル、索引、ビュー、シーケンスがそのまま維持されており、データ件数も一致していることがわかります。
 
@@ -128,6 +128,6 @@ ClickHouse Managed Postgres インスタンスの接続文字列は、ClickHouse
   ## 次のステップ
 </div>
 
-おめでとうございます。`pg_dump` と `pg_restore` を使用して、PostgreSQL データベースを ClickHouse Managed Postgres へ正常に移行できました。これで、ClickHouse Managed Postgres の機能や ClickHouse とのインテグレーションを確認する準備は完了です。さっそく使い始めるには、以下の 10 分間のクイックスタートガイドをご覧ください。
+おめでとうございます。`pg_dump` と `pg_restore` を使用して、PostgreSQL データベースを ClickHouse Managed Postgres へ正常に移行できました。これで、Managed Postgres の機能や ClickHouse とのインテグレーションを活用する準備は万全です。まずは、以下の 10 分で始められるクイックスタートをご覧ください。
 
-* [ClickHouse Managed Postgres クイックスタートガイド](/ja/products/managed-postgres/quickstart)
+* [Managed Postgres クイックスタートガイド](/ja/products/managed-postgres/quickstart)
