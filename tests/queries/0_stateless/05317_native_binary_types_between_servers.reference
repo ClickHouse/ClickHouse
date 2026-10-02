@@ -1,0 +1,10 @@
+remote
+42	UInt64
+str	String
+parallel replicas
+42	UInt64
+str	String
+remote insert
+7
+file read on a shard
+5

@@ -312,6 +312,19 @@ Block convertColumnsToBLOBs(
     }
     return res;
 }
+
+/// An initiator's server-side `Connection` reads and writes `Native` blocks with default format
+/// settings, so the wire of a secondary query keeps type names whatever its forwarded settings say.
+FormatSettings getWireFormatSettings(const ContextPtr & query_context)
+{
+    auto format_settings = getFormatSettings(query_context);
+    if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        format_settings.native.encode_types_in_binary_format = false;
+        format_settings.native.decode_types_in_binary_format = false;
+    }
+    return format_settings;
+}
 }
 
 namespace DB
@@ -924,7 +937,7 @@ void TCPHandler::runImpl()
                             block,
                             getCompressionCodec(query_settings, query_state->compression),
                             client_tcp_protocol_version,
-                            getFormatSettings(query_state->query_context),
+                            getWireFormatSettings(query_state->query_context),
                             !query_settings[Setting::low_cardinality_allow_in_native_format]);
                     });
 
@@ -2800,7 +2813,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
                     block,
                     getCompressionCodec(query_settings, current_state->compression),
                     client_tcp_protocol_version,
-                    getFormatSettings(current_state->query_context),
+                    getWireFormatSettings(current_state->query_context),
                     !query_settings[Setting::low_cardinality_allow_in_native_format]);
             });
     }
@@ -3050,7 +3063,7 @@ void TCPHandler::initBlockInput(QueryState & state)
             *state.maybe_compressed_in,
             header,
             client_tcp_protocol_version,
-            getFormatSettings(state.query_context));
+            getWireFormatSettings(state.query_context));
     }
 }
 
@@ -3091,7 +3104,7 @@ void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             std::make_shared<const Block>(block.cloneEmpty()),
-            getFormatSettings(state.query_context),
+            getWireFormatSettings(state.query_context),
             !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
@@ -3115,7 +3128,7 @@ void TCPHandler::initLogsBlockOutput(
             *logs_buf,
             client_tcp_protocol_version,
             std::make_shared<const Block>(block.cloneEmpty()),
-            getFormatSettings(state.query_context),
+            getWireFormatSettings(state.query_context),
             !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
@@ -3134,7 +3147,7 @@ void TCPHandler::initProfileEventsBlockOutput(QueryState & state, const Block & 
 
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.profile_events_block_out = std::make_unique<NativeWriter>(
-            *profile_events_buf, client_tcp_protocol_version, std::make_shared<const Block>(block.cloneEmpty()), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *profile_events_buf, client_tcp_protocol_version, std::make_shared<const Block>(block.cloneEmpty()), getWireFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
