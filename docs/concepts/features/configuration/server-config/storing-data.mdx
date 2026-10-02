@@ -684,15 +684,17 @@ Example of configuration for versions earlier than 22.8:
 </clickhouse>
 ```
 
-File Cache **disk configuration settings**:
+File Cache **disk configuration settings** (common settings):
 
-These settings should be defined in the disk configuration section.
+These settings should be defined in the disk configuration section. This table lists commonly used cache-disk knobs, not every key accepted from config. The full set and descriptions are in `src/Interpreters/FileCache/FileCacheSettings.cpp`.
 
 | Parameter                             | Type    | Default    | Description                                                                                                                                                                                  |
 |---------------------------------------|---------|------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `path`                                | String  | -          | **Required**. Path to the directory where cache will be stored.                                                                                                                              |
 | `max_size`                            | Size    | -          | **Required**. Maximum cache size in bytes or readable format (e.g., `10Gi`). Files are evicted using the policy from `cache_policy` (SLRU by default) when the limit is reached. Supports `ki`, `Mi`, `Gi` formats (since v22.10). |
 | `cache_policy`                        | Enum    | `SLRU`     | Cache eviction policy. Possible values: `LRU`, `SLRU` (default), `SLRU_OVERCOMMIT`, `LRU_OVERCOMMIT`.                                                                                                                              |
+| `slru_size_ratio`                     | Double  | `0.6`      | For `SLRU` / `SLRU_OVERCOMMIT`, ratio of protected cache to probationary cache.                                                                                                                                                    |
+| `reserve_granularity`                 | Size    | `4Mi`      | When reserving space for a file-segment download, reserve at least this many bytes ahead (capped at the file-segment size). `0` reserves exactly the requested size.                                                               |
 | `cache_on_write_operations`           | Boolean | `false`    | Enables write-through cache for `INSERT` queries and background merges. Can be overridden per query with `enable_filesystem_cache_on_write_operations`.                                      |
 | `enable_filesystem_query_cache_limit` | Boolean | `false`    | Enables per-query cache size limits based on `filesystem_cache_max_download_size`.                                                                                                                         |
 | `cache_hits_threshold`                | Integer | `0`        | Deprecated; has no effect.                                                                                                                          |
@@ -702,7 +704,10 @@ These settings should be defined in the disk configuration section.
 | `boundary_alignment`                  | Size    | `4Mi`      | Alignment of file segment boundaries in the cache.                                                                                                                                           |
 | `max_elements`                        | Integer | `10000000` | Maximum number of cache files.                                                                                                                                                               |
 | `load_metadata_threads`               | Integer | `16`       | Number of threads for loading cache metadata at startup.                                                                                                                                     |
-| `background_download_threads`         | UInt64  | `5`        | Number of threads for background download of file segments.                                                                                                                                  |
+| `background_download_threads`         | UInt64  | `5`        | Number of threads for background download of file segments. `0` disables background download.                                                                                                |
+| `background_download_queue_size_limit` | UInt64 | `5000`    | Size of the background download queue. `0` disables background download.                                                                                                                    |
+| `background_download_max_file_segment_size` | Size | `4Mi` | Maximum file-segment size that may be downloaded in the background.                                                                                                                         |
+| `load_metadata_asynchronously`        | Boolean | `false`    | Load cache metadata asynchronously on server startup.                                                                                                                                        |
 | `use_split_cache`                     | Boolean | `false`    | Use separation of files to system/data.                                                                                                                                     |
 | `split_cache_ratio`                   | Double | `0.1`    | Ratio of system segment to total size of cache for split_cache.                                                                                                                                     |
 
