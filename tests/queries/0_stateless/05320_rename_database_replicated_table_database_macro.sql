@@ -42,7 +42,8 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_bound (x UInt64)
     ENGINE = ReplicatedMergeTree('{default_path_test}05320_lazy', 'r1') ORDER BY x;
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
-SELECT engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'lazy_bound';
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'lazy_bound';
 SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_bound;
 RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier}; -- { serverError NOT_IMPLEMENTED }
 EXISTS TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_bound;
