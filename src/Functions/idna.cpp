@@ -143,9 +143,9 @@ REGISTER_FUNCTION(Idna)
 Returns the ASCII representation (ToASCII algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
 The input string must be UTF-encoded and translatable to an ASCII string, otherwise an exception is thrown.
 
-<Note>
+:::note
 No percent decoding or trimming of tabs, spaces or control characters is performed.
-</Note>
+:::
 )";
     FunctionDocumentation::Syntax syntax_encode = "idnaEncode(s)";
     FunctionDocumentation::Arguments arguments_encode = {
@@ -157,9 +157,9 @@ No percent decoding or trimming of tabs, spaces or control characters is perform
         "Usage example",
         "SELECT idnaEncode('straße.münchen.de')",
         R"(
-┌─idnaEncode('straße.münchen.de')─┐
-│ xn--strae-oqa.xn--mnchen-3ya.de │
-└─────────────────────────────────┘
+┌─idnaEncode('straße.münchen.de')─────┐
+│ xn--strae-oqa.xn--mnchen-3ya.de     │
+└─────────────────────────────────────┘
         )"
     }
     };
@@ -181,9 +181,9 @@ In case of an error it returns an empty string instead of throwing an exception.
         "Usage example",
         "SELECT tryIdnaEncode('straße.münchen.de')",
         R"(
-┌─tryIdnaEncode('straße.münchen.de')─┐
-│ xn--strae-oqa.xn--mnchen-3ya.de    │
-└────────────────────────────────────┘
+┌─tryIdnaEncode('straße.münchen.de')──┐
+│ xn--strae-oqa.xn--mnchen-3ya.de     │
+└─────────────────────────────────────┘
         )"
     }
     };

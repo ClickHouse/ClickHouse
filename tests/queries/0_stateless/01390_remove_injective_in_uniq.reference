@@ -1,16 +1,152 @@
-SELECT\n    uniq(x),\n    uniqExact(x),\n    uniqHLL12(x),\n    uniqCombined(x),\n    uniqCombined64(x)\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
-SELECT\n    uniq(plus(x, y)),\n    uniqExact(plus(x, y)),\n    uniqHLL12(plus(x, y)),\n    uniqCombined(plus(x, y)),\n    uniqCombined64(plus(x, y))\nFROM\n(\n    SELECT\n        modulo(number, 2) AS x,\n        modulo(number, 3) AS y\n    FROM numbers(10)\n)
-SELECT\n    uniq(negate(x)),\n    uniqExact(negate(x)),\n    uniqHLL12(negate(x)),\n    uniqCombined(negate(x)),\n    uniqCombined64(negate(x))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
-SELECT\n    uniq(bitNot(x)),\n    uniqExact(bitNot(x)),\n    uniqHLL12(bitNot(x)),\n    uniqCombined(bitNot(x)),\n    uniqCombined64(bitNot(x))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
-SELECT\n    uniq(bitNot(negate(x))),\n    uniqExact(bitNot(negate(x))),\n    uniqHLL12(bitNot(negate(x))),\n    uniqCombined(bitNot(negate(x))),\n    uniqCombined64(bitNot(negate(x)))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
-SELECT\n    uniq(negate(bitNot(negate(x)))),\n    uniqExact(negate(bitNot(negate(x)))),\n    uniqHLL12(negate(bitNot(negate(x)))),\n    uniqCombined(negate(bitNot(negate(x)))),\n    uniqCombined64(negate(bitNot(negate(x))))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
-SELECT countDistinct(negate(bitNot(negate(x))))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
-SELECT uniq(concatAssumeInjective(\'x\', \'y\'))\nFROM numbers(10)
-SELECT\n    uniq(x),\n    uniqExact(x),\n    uniqHLL12(x),\n    uniqCombined(x),\n    uniqCombined64(x)\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
-SELECT\n    uniq(plus(x, y)),\n    uniqExact(plus(x, y)),\n    uniqHLL12(plus(x, y)),\n    uniqCombined(plus(x, y)),\n    uniqCombined64(plus(x, y))\nFROM\n(\n    SELECT\n        modulo(number, 2) AS x,\n        modulo(number, 3) AS y\n    FROM numbers(10)\n)
-SELECT\n    uniq(negate(x)),\n    uniqExact(negate(x)),\n    uniqHLL12(negate(x)),\n    uniqCombined(negate(x)),\n    uniqCombined64(negate(x))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
-SELECT\n    uniq(bitNot(x)),\n    uniqExact(bitNot(x)),\n    uniqHLL12(bitNot(x)),\n    uniqCombined(bitNot(x)),\n    uniqCombined64(bitNot(x))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
-SELECT\n    uniq(bitNot(negate(x))),\n    uniqExact(bitNot(negate(x))),\n    uniqHLL12(bitNot(negate(x))),\n    uniqCombined(bitNot(negate(x))),\n    uniqCombined64(bitNot(negate(x)))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
-SELECT\n    uniq(negate(bitNot(negate(x)))),\n    uniqExact(negate(bitNot(negate(x)))),\n    uniqHLL12(negate(bitNot(negate(x)))),\n    uniqCombined(negate(bitNot(negate(x)))),\n    uniqCombined64(negate(bitNot(negate(x))))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
-SELECT countDistinct(negate(bitNot(negate(x))))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
-SELECT uniq(concatAssumeInjective(\'x\', \'y\'))\nFROM numbers(10)
+SELECT
+    uniq(x),
+    uniqExact(x),
+    uniqHLL12(x),
+    uniqCombined(x),
+    uniqCombined64(x)
+FROM
+(
+    SELECT number % 2 AS x
+    FROM numbers(10)
+)
+SELECT
+    uniq(x + y),
+    uniqExact(x + y),
+    uniqHLL12(x + y),
+    uniqCombined(x + y),
+    uniqCombined64(x + y)
+FROM
+(
+    SELECT
+        number % 2 AS x,
+        number % 3 AS y
+    FROM numbers(10)
+)
+SELECT
+    uniq(-x),
+    uniqExact(-x),
+    uniqHLL12(-x),
+    uniqCombined(-x),
+    uniqCombined64(-x)
+FROM
+(
+    SELECT number % 2 AS x
+    FROM numbers(10)
+)
+SELECT
+    uniq(bitNot(x)),
+    uniqExact(bitNot(x)),
+    uniqHLL12(bitNot(x)),
+    uniqCombined(bitNot(x)),
+    uniqCombined64(bitNot(x))
+FROM
+(
+    SELECT number % 2 AS x
+    FROM numbers(10)
+)
+SELECT
+    uniq(bitNot(-x)),
+    uniqExact(bitNot(-x)),
+    uniqHLL12(bitNot(-x)),
+    uniqCombined(bitNot(-x)),
+    uniqCombined64(bitNot(-x))
+FROM
+(
+    SELECT number % 2 AS x
+    FROM numbers(10)
+)
+SELECT
+    uniq(-bitNot(-x)),
+    uniqExact(-bitNot(-x)),
+    uniqHLL12(-bitNot(-x)),
+    uniqCombined(-bitNot(-x)),
+    uniqCombined64(-bitNot(-x))
+FROM
+(
+    SELECT number % 2 AS x
+    FROM numbers(10)
+)
+SELECT countDistinct(-bitNot(-x))
+FROM
+(
+    SELECT number % 2 AS x
+    FROM numbers(10)
+)
+SELECT uniq(concatAssumeInjective(\'x\', \'y\'))
+FROM numbers(10)
+SELECT
+    uniq(x),
+    uniqExact(x),
+    uniqHLL12(x),
+    uniqCombined(x),
+    uniqCombined64(x)
+FROM
+(
+    SELECT number % 2 AS x
+    FROM numbers(10)
+)
+SELECT
+    uniq(x + y),
+    uniqExact(x + y),
+    uniqHLL12(x + y),
+    uniqCombined(x + y),
+    uniqCombined64(x + y)
+FROM
+(
+    SELECT
+        number % 2 AS x,
+        number % 3 AS y
+    FROM numbers(10)
+)
+SELECT
+    uniq(-x),
+    uniqExact(-x),
+    uniqHLL12(-x),
+    uniqCombined(-x),
+    uniqCombined64(-x)
+FROM
+(
+    SELECT number % 2 AS x
+    FROM numbers(10)
+)
+SELECT
+    uniq(bitNot(x)),
+    uniqExact(bitNot(x)),
+    uniqHLL12(bitNot(x)),
+    uniqCombined(bitNot(x)),
+    uniqCombined64(bitNot(x))
+FROM
+(
+    SELECT number % 2 AS x
+    FROM numbers(10)
+)
+SELECT
+    uniq(bitNot(-x)),
+    uniqExact(bitNot(-x)),
+    uniqHLL12(bitNot(-x)),
+    uniqCombined(bitNot(-x)),
+    uniqCombined64(bitNot(-x))
+FROM
+(
+    SELECT number % 2 AS x
+    FROM numbers(10)
+)
+SELECT
+    uniq(-bitNot(-x)),
+    uniqExact(-bitNot(-x)),
+    uniqHLL12(-bitNot(-x)),
+    uniqCombined(-bitNot(-x)),
+    uniqCombined64(-bitNot(-x))
+FROM
+(
+    SELECT number % 2 AS x
+    FROM numbers(10)
+)
+SELECT countDistinct(-bitNot(-x))
+FROM
+(
+    SELECT number % 2 AS x
+    FROM numbers(10)
+)
+SELECT uniq(concatAssumeInjective(\'x\', \'y\'))
+FROM numbers(10)

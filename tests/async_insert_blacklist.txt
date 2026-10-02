@@ -22,7 +22,6 @@
     Transactions
     Async inserts inside transactions are not supported. (NOT_IMPLEMENTED)
 01133_begin_commit_race
-02345_implicit_transaction
 01169_old_alter_partition_isolation_stress
 01170_alter_partition_isolation
 01171_mv_select_insert_isolation_long
@@ -33,8 +32,6 @@
 02421_truncate_isolation_with_mutations
 03167_transactions_are_really_disabled
 01167_isolation_hermitage
-04057_transaction_version_metadata_lifecycle
-04060_transaction_snapshot_visibility
 
     Async inserts with 'implicit_transaction' are not supported. (NOT_IMPLEMENTED)
 01168_mutations_isolation
