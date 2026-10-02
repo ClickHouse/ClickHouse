@@ -1014,7 +1014,7 @@ void MemoryWorker::updateResidentMemoryThread()
 #endif
 
             /// Re-baseline the global memory tracker from the amount of live allocations (jemalloc's `stats.allocated`,
-            /// sanitizer allocator bytes in sanitizer builds, otherwise `resident`) when:
+            /// or sanitizer allocator bytes in sanitizer builds) when:
             ///  - it's a first run of MemoryWorker (MemoryTracker could've missed some allocation before its initialization)
             ///  - MemoryTracker stores a negative value (memory allocated before its initialization was freed later)
             /// These are one-shot corrections: the tracker keeps accumulating allocations and frees on top of the
@@ -1024,6 +1024,9 @@ void MemoryWorker::updateResidentMemoryThread()
             /// would pin the tracker at that peak and every allocation would fail with `MEMORY_LIMIT_EXCEEDED`
             /// until the hard limit rises above it (https://github.com/ClickHouse/ClickHouse/issues/117681).
             /// `correct_tracker` is different: it re-applies `memory_usage.allocated` on every tick, so it cannot get stuck.
+            /// Builds without jemalloc and without a sanitizer (e.g. `ENABLE_JEMALLOC=0`, LoongArch) have no counter
+            /// of live allocations, `memory_usage.allocated` is `resident` there. On the first run, at startup, nothing
+            /// has been freed yet, so `resident` is still used; a negative tracker is reset to zero instead.
             ///
             /// When the tracker is not corrected on this tick, refresh `MemoryTrackingUncorrected`
             /// anyway, so that the metric stays a snapshot of the plain counter that is at most
@@ -1032,8 +1035,10 @@ void MemoryWorker::updateResidentMemoryThread()
             {
 #if USE_JEMALLOC
                 MemoryTracker::updateAllocated(getJemallocAllocated(), /*log_change=*/true);
-#else
+#elif defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
                 MemoryTracker::updateAllocated(memory_usage.allocated, /*log_change=*/true);
+#else
+                MemoryTracker::updateAllocated(first_run ? memory_usage.allocated : 0, /*log_change=*/true);
 #endif
             }
             else if (correct_tracker)
