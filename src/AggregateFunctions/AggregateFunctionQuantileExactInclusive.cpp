@@ -53,9 +53,9 @@ void registerAggregateFunctionsQuantileExactInclusive(AggregateFunctionFactory &
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
     FunctionDocumentation::Description description = R"(
-Similar to [`quantileExact`](/reference/functions/aggregate-functions/quantileExact), this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
+Similar to [`quantileExact`](/sql-reference/aggregate-functions/reference/quantileexact), this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
-This function is equivalent to [`quantileExact`](/reference/functions/aggregate-functions/quantileExact) but uses the inclusive method for calculating quantiles, as described in the [R-7 method](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample).
+This function is equivalent to [`quantileExact`](/sql-reference/aggregate-functions/reference/quantileexact) but uses the inclusive method for calculating quantiles, as described in the [R-7 method](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample).
 
 When using this function, the quantile is calculated such that the interpolation formula for a given quantile p takes the form: `x[floor((n-1)*p)] + ((n-1)*p - floor((n-1)*p)) * (x[floor((n-1)*p)+1] - x[floor((n-1)*p)])`, where x is the sorted array.
 
@@ -63,7 +63,7 @@ To get the exact value, all the passed values are combined into an array, which 
 The sorting algorithm's complexity is `O(N·log(N))`, where `N = std::distance(first, last)` comparisons.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
-In this case, use the [quantiles](/reference/functions/aggregate-functions/quantiles) function.
+In this case, use the [quantiles](/sql-reference/aggregate-functions/reference/quantiles) function.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 quantileExactInclusive(level)(expr)
@@ -94,7 +94,7 @@ SELECT quantileExactInclusive(0.1)(number), quantileExactInclusive(0.9)(number) 
         )",
         R"(
 ┌─quantileExactInclusive(0.1)(number)─┬─quantileExactInclusive(0.9)(number)─┐
-│                  0.8999999999999999 │                                 8.1 │
+│                                 0.9 │                                 8.1 │
 └─────────────────────────────────────┴─────────────────────────────────────┘
         )"
     }
@@ -108,7 +108,7 @@ SELECT quantileExactInclusive(0.1)(number), quantileExactInclusive(0.9)(number) 
     FunctionDocumentation::Description description_quantiles = R"(
 Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously using the inclusive method.
 
-This function is equivalent to [`quantileExactInclusive`](/reference/functions/aggregate-functions/quantileExactInclusive) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantileExactInclusive`](/sql-reference/aggregate-functions/reference/quantileExactInclusive) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
 
 This function uses the inclusive method for calculating quantiles, as described in the [R-7 method](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample).
 This is equivalent to [PERCENTILE.INC](https://support.microsoft.com/en-us/office/percentile-inc-function-680f9539-45eb-410b-9a5e-c1355e5fe2ed) Excel function.

@@ -171,11 +171,6 @@ inline void skipStringBinary(ReadBuffer & buf)
     buf.ignore(size);
 }
 
-/// The same as `readStringBinary`, but the string grows as the bytes arrive instead of being resized
-/// to the declared size first, so that a size declared by the peer cannot become an allocation on
-/// its own when the payload never follows.
-void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE);
-
 /// For historical reasons we store IPv6 as a String
 inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
 {
@@ -502,7 +497,7 @@ ReturnType readJSONArrayInto(Vector & s, ReadBuffer & buf);
 
 /// Similar to readJSONObjectPossiblyInvalid but avoids copying the data if JSON object fits into current read buffer
 /// If copying is unavoidable, it copies data into provided object_buffer and returns string_view to it.
-std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer, size_t max_size = 0);
+std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer);
 
 template <typename Vector>
 void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
@@ -517,7 +512,6 @@ struct NullOutput
     void append(const char *) {}
     void append(const char *, const char *) {}
     void push_back(char) {} /// NOLINT
-    size_t size() const { return 0; }
 };
 
 template <typename ReturnType>
@@ -697,7 +691,17 @@ inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, cons
 
     if (!saturate_on_overflow)
     {
-        /// Every four-digit year fits into Date32, so only a calendar-invalid date can fail here
+        /// Date32 covers [1900, 2299] here: a plausible date with a year outside it is a range error, while anything
+        /// else that fails (month 13, or garbage like 99999999) is a calendar-invalid date, as on master
+        const bool plausible = local_date.month() >= 1 && local_date.month() <= 12 && local_date.day() >= 1 && local_date.day() <= 31;
+        if (plausible && (local_date.year() < DATE_LUT_MIN_YEAR || local_date.year() > DATE_LUT_MAX_YEAR))
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Year {} is out of bounds of type Date32", local_date.year());
+            else
+                return false;
+        }
+
         auto ret = tryToMakeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
         if (!ret)
         {
@@ -1010,7 +1014,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
             return ReturnType(true);
         }
-        /// Why not `readIntTextUnsafe`? Because that reader cannot check for overflow.
+        /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
         if constexpr (throw_exception)
             readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
         else if (!readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf))
@@ -1481,22 +1485,6 @@ inline bool tryReadTime64Text(Time64 & time64, UInt32 scale, ReadBuffer & buf, c
     return readTimeTextImpl<bool>(time64, scale, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
 }
 
-/// Reading a `DateTime`/`DateTime64` column from an unquoted number in the `JSON`, `Values` and similar text
-/// formats (see `SerializationDateTime`/`SerializationDateTime64`). The number is a Unix timestamp (seconds
-/// since the epoch, with optional sub-second precision for `DateTime64`), consistent with `CAST`,
-/// `toDateTime64` and the `Values` format. Parsing stops at the first character that is not part of the
-/// number (e.g. the `,` or `}` following the value in JSON). The `AsRawValue` variants implement the legacy
-/// behavior, where the number is the raw underlying value.
-void readDateTimeAsNumber(time_t & x, ReadBuffer & buf, bool saturate_on_overflow = true);
-bool tryReadDateTimeAsNumber(time_t & x, ReadBuffer & buf, bool saturate_on_overflow = true);
-void readDateTimeAsRawValue(time_t & x, ReadBuffer & buf, bool saturate_on_overflow = true);
-bool tryReadDateTimeAsRawValue(time_t & x, ReadBuffer & buf, bool saturate_on_overflow = true);
-
-void readDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf);
-bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf);
-void readDateTime64AsRawValue(DateTime64 & x, ReadBuffer & buf);
-bool tryReadDateTime64AsRawValue(DateTime64 & x, ReadBuffer & buf);
-
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 {
     char s[10];
@@ -1932,8 +1920,7 @@ void readBinary(V & x, ReadBuffer & buf)
     readVarUInt(size, buf);
 
     if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                        "Too large array size {} (maximum: {})", size, DEFAULT_MAX_STRING_SIZE);
+        throw Poco::Exception("Too large vector size.");
 
     x.resize(size);
     for (size_t i = 0; i < size; ++i)

@@ -98,8 +98,6 @@ public:
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override { return DB::DatabaseDataLakeCatalogType::PAIMON_REST; }
 
-    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::PAIMON; }
-
 private:
     using StopCondition = std::function<bool(const String &)>;
     using ExecuteFunc = std::function<void(const String &)>;
@@ -111,13 +109,10 @@ private:
     String warehouse_root_path;
     std::optional<StorageType> storage_type;
     const LoggerPtr log;
+    Poco::Net::HTTPBasicCredentials credentials{};
 
     // void listDatabases();
-    /// Adds provider-specific auth material for the request. For the `dlf` provider this appends the
-    /// signed headers to `current_headers` and returns an empty string; for the `bearer` provider it
-    /// returns the bearer token (to pass to `create`) without adding a header. Returns an empty
-    /// string when no token is configured.
-    String createAuthHeaders(
+    void createAuthHeaders(
         DB::HTTPHeaderEntries & current_headers,
         const String & resource_path,
         const std::unordered_map<String, String> & query_params,

@@ -3,12 +3,12 @@
 #include <concepts>
 #include <vector>
 #include <Core/Joins.h>
-#include <Interpreters/JoinExpressionActions.h>
-#include <Interpreters/JoinOperator.h>
-#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
-#include <base/types.h>
 #include <Common/EquivalenceClasses.h>
 #include <Common/logger_useful.h>
+#include <base/types.h>
+#include <Interpreters/JoinOperator.h>
+#include <Interpreters/JoinExpressionActions.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 namespace DB
 {
@@ -37,7 +37,6 @@ struct DPJoinEntry
     DPJoinEntryPtr right;
 
     double cost = 0.0;
-    double selectivity = 0.0;
     std::optional<UInt64> estimated_rows = {};
     std::unordered_map<String, ColumnStats> column_stats = {};
 
@@ -55,7 +54,6 @@ struct DPJoinEntry
     DPJoinEntry(DPJoinEntryPtr lhs,
                 DPJoinEntryPtr rhs,
                 double cost_,
-                double selectivity_,
                 std::optional<UInt64> cardinality_,
                 JoinOperator join_operator_,
                 JoinMethod join_method_ = JoinMethod::Hash);
@@ -65,24 +63,12 @@ struct DPJoinEntry
     String dump() const;
 };
 
-/// One binary join operator captured verbatim from the original (pre-flattening) join tree.
-/// Used only by the optional conflict detector for DPsub (CD-A or CD-C; see conflictDetector.h).
-///   - `left` / `right`: the relation sets of the operator's two input subtrees;
-///   - `nel`: the relations referenced by the operator's ON clause;
-///   - `kind`: the operator's join kind.
-/// Relation ids are in the final (global) QueryGraph numbering.
-struct ConflictJoinOp
+struct RelationStats
 {
-    BitSet left;
-    BitSet right;
-    BitSet nel;
-    /// Relations on whose attributes the ON predicate rejects nulls; a subset of `nel`. Enables the
-    /// null-rejection-dependent reorderability entries. See `ConflictOpMask::nr_rels`.
-    BitSet nr_rels;
-    JoinKind kind = JoinKind::Inner;
-    /// Strictness distinguishes plain joins (All) from semi/anti joins, which the detectors model as
-    /// distinct operator types with their own reorderability (assoc / l-asscom / r-asscom) rules.
-    JoinStrictness strictness = JoinStrictness::All;
+    std::optional<UInt64> estimated_rows = {};
+    std::unordered_map<String, ColumnStats> column_stats = {};
+
+    String table_name;
 };
 
 struct QueryGraph
@@ -90,16 +76,6 @@ struct QueryGraph
     std::vector<RelationStats> relation_stats;
 
     std::vector<JoinActionRef> edges;
-
-    /// Operators of the original join tree, in tree (not enumeration) order. Populated during
-    /// `buildQueryGraph` and consumed by the conflict detector (CD-A/CD-C) when it is enabled; empty
-    /// otherwise. See `ConflictJoinOp`.
-    std::vector<ConflictJoinOp> conflict_ops;
-
-    /// When not `NONE`, DPsub builds its reordering constraints from the selected conflict detector
-    /// (see conflictDetector.h) over `conflict_ops` instead of the per-relation `join_kinds`
-    /// restrictions. Set from settings in `optimizeJoinOrder`; affects only the DPsub algorithm.
-    JoinOrderConflictDetector conflict_detector = JoinOrderConflictDetector::NONE;
 
     /// Restriction for a null-supplying relation of an outer join.
     /// Maps (relation id) -> (set of relations referenced by the outer join's ON clause, join kind).
@@ -133,5 +109,15 @@ struct QueryGraph
 struct QueryPlanOptimizationSettings;
 
 DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings);
+
+namespace QueryPlanOptimizations
+{
+
+/// Propagate per-column statistics through `actions`, rekeying the map in place by output name.
+/// An output inherits an input's stats when it is that input, an alias of it, or a deterministic
+/// single-argument function of it (which cannot increase the distinct count).
+void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
+
+}
 
 }

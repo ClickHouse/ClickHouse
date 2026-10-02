@@ -30,19 +30,6 @@ namespace ErrorCodes
 /// 0b11 -- can be true and false at the same time
 static const Field UNKNOWN_FIELD(3u);
 
-/// ColumnVariant::getExtremes, which ColumnDynamic delegates to, sets both bounds to Null without
-/// reading the rows, and a Null bound in Range means "unbounded", never "the value NULL".
-static bool hasMeaningfulFieldExtremes(const IDataType & type)
-{
-    bool result = !isDynamic(type) && !isVariant(type);
-    type.forEachChild([&](const IDataType & child)
-    {
-        if (isDynamic(child) || isVariant(child))
-            result = false;
-    });
-    return result;
-}
-
 
 MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     const String & index_name_,
@@ -134,19 +121,12 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     for (size_t i = 0; i < num_columns; ++i)
     {
         auto & elem = block.getByPosition(i);
-        auto mutable_col = elem.column->cloneEmpty();
+        elem.column = elem.column->cloneEmpty();
 
         ISerialization::DeserializeBinaryBulkStatePtr state;
 
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-        serializations[i]->deserializeBinaryBulkWithMultipleStreams(*mutable_col, rows_to_read, settings, state, nullptr);
-        elem.column = std::move(mutable_col);
-
-        if (!hasMeaningfulFieldExtremes(*elem.type))
-        {
-            set_hyperrectangle.push_back(Range::createWholeUniverse());
-            continue;
-        }
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(elem.column, 0, rows_to_read, settings, state, nullptr);
 
         /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
         /// columns are untouched. LC(Nullable(T)) then keeps the NULL sentinel via getExtremesNullLast
@@ -207,23 +187,25 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
     /// Due to using of position-dependent encoding, we have to read into a temporary block and then move to the accumulating block.
     for (size_t i = 0; i < num_columns; ++i)
     {
-        /// A reference into the scratch block (not a copy), so it stays uniquely owned and `mutate` is a no-op.
+        /// A reference into the scratch block (not a copy), so it stays uniquely owned: `mutate` below is a no-op
+        /// and the `popBack` reset is written back, leaving the scratch column empty for the next granule.
         auto & column = block_for_reading.getByPosition(i).column;
-        auto mutable_col = IColumn::mutate(std::move(column));
         ISerialization::DeserializeBinaryBulkStatePtr state;
 
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-        serializations[i]->deserializeBinaryBulkWithMultipleStreams(*mutable_col, rows_to_read, settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(column, 0, rows_to_read, settings, state, nullptr);
 
         {
             auto mutable_column = IColumn::mutate(std::move(block.getByPosition(i).column));
-            mutable_column->insertRangeFrom(*mutable_col, 0, rows_to_read);
+            mutable_column->insertRangeFrom(*column, 0, rows_to_read);
             block.getByPosition(i).column = std::move(mutable_column);
         }
 
-        /// Reset the scratch column to empty for the next granule.
-        mutable_col->popBack(rows_to_read);
-        column = std::move(mutable_col);
+        {
+            auto mutable_column = IColumn::mutate(std::move(column));
+            mutable_column->popBack(rows_to_read);
+            column = std::move(mutable_column);
+        }
     }
 
     /// The last column is designating the granule
@@ -307,13 +289,6 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
             auto filtered_column = block.getByName(index_columns[i]).column->filter(filter, block.rows());
             columns[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
 
-            if (!hasMeaningfulFieldExtremes(*index_sample_block.getByPosition(i).type))
-            {
-                if (set_hyperrectangle.size() <= i)
-                    set_hyperrectangle.push_back(Range::createWholeUniverse());
-                continue;
-            }
-
             /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
             /// columns are untouched. LC(Nullable(T)) then keeps the NULL sentinel via getExtremesNullLast
             /// (otherwise IS NULL can wrongly prune); getExtremes on LC materializes internally anyway.
@@ -349,7 +324,7 @@ bool MergeTreeIndexAggregatorSet::buildFilter(
     size_t limit,
     ClearableSetVariants & variants) const
 {
-    /// Like DistinctSortedStreamTransform.
+    /// Like DistinctSortedTransform.
     typename Method::State state(column_ptrs, key_sizes, nullptr);
 
     bool has_new_data = false;
@@ -409,10 +384,6 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     , index_data_types(index_description.data_types)
     , condition(buildCondition(index_description, filter_dag, context))
 {
-    /// `set_hyperrectangle` comes from `getExtremes`/`getExtremesNullLast`, which skip NaN, and
-    /// `mayBeTrueOnGranule` uses it as a pre-check before the exact per-value evaluation.
-    condition.relaxAtomsOverNaNHidingColumns(index_data_types);
-
     for (const auto & column : index_description.sample_block)
         key_columns.emplace(column.name, column.type);
 
@@ -621,32 +592,14 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             /// "It's a bug!" exception from `__bitWrapperFunc` at execution time. Fall back to
             /// `UNKNOWN_FIELD` so that the index does not prune granules and the query goes
             /// through the regular filter path.
-            /// A type with no boolean reading takes the same way out. A wide integer is an integer,
-            /// so `__bitWrapperFunc` would read `indexHint(toUInt256(v))` as `v != 0` and prune the
-            /// granules holding `v = 0`, while `WHERE toUInt256(v)` is rejected, so no row-level
-            /// filter corresponds to what was skipped.
             const auto & atom_result_type = atom_node_ptr->result_type;
             const bool is_integer_atom = WhichDataType(atom_result_type).isLowCardinality()
                 ? WhichDataType(removeLowCardinality(atom_result_type)).isInteger()
                 : WhichDataType(removeNullable(atom_result_type)).isInteger();
-            if (is_integer_atom && atom_result_type->canBeUsedInBooleanContext())
+            if (is_integer_atom)
             {
                 auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
                 result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});
-
-                /// A NULL atom value yields a NULL from `__bitWrapperFunc` rather than a BoolMask.
-                /// That NULL propagates through `__bitBoolMaskAnd`/`Or` and wrongly prunes a granule
-                /// the atom does not exclude. Map a NULL mask to `UNKNOWN_FIELD` (can be true or false).
-                if (isNullableOrLowCardinalityNullable(result_node->result_type))
-                {
-                    auto unknown_name = calculateConstantActionNodeName(UNKNOWN_FIELD);
-                    auto unknown_type = std::make_shared<DataTypeUInt8>();
-                    ColumnConstPtr unknown_column = unknown_type->createColumnConst(1, UNKNOWN_FIELD);
-                    const auto & unknown_node = result_dag.addColumn(std::move(unknown_column), std::move(unknown_type), std::move(unknown_name));
-
-                    auto if_null_function = FunctionFactory::instance().get("ifNull", context);
-                    result_node = &result_dag.addFunction(if_null_function, {result_node, &unknown_node}, {});
-                }
             }
             else
             {
@@ -828,16 +781,6 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
     return nullptr;
 }
 
-/// The truth value of a constant used as a condition. A type with no boolean reading (`String`, a
-/// wide integer) only reaches a condition position inside `indexHint`, which never evaluates its
-/// arguments, so it states nothing: `getBool` would throw on a `String` and read 256 as false.
-static std::optional<bool> tryGetConstantCondition(const ActionsDAG::Node & node)
-{
-    if (!node.column || !node.result_type->canBeUsedInBooleanContext())
-        return {};
-    return node.column->getBool(0);
-}
-
 bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic) const
 {
     const auto * node_to_check = &node;
@@ -855,7 +798,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     }
     if (node.column)
     {
-        return !atomic && tryGetConstantCondition(node).value_or(true);
+        return !atomic && node.column->getBool(0);
     }
     if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
@@ -873,10 +816,12 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
             bool all_useless = true;
             for (const auto & arg : arguments)
             {
-                /// A constant false child of an OR is its identity element and does not affect
-                /// filtering, but the constant check above reports it as not useless, which would
-                /// make the whole OR look non-useless even with no indexed column in it.
-                if (function_name == "or" && tryGetConstantCondition(*arg) == false)
+                /// For OR, skip constant false children — they are identity elements
+                /// of OR and don't affect filtering. Without this, the constant
+                /// check above returns false (not useless) for `getBool(0) == 0`,
+                /// which would incorrectly make the entire OR appear non-useless
+                /// even when no indexed columns are referenced.
+                if (function_name == "or" && arg->column && !arg->column->getBool(0))
                     continue;
 
                 bool u = checkDAGUseless(*arg, context, sets_to_prepare, atomic);

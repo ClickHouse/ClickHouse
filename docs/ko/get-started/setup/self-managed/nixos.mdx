@@ -13,11 +13,15 @@ import Recommendations from '/snippets/ko/recommendations.mdx';
 > ClickHouse는 Nixpkgs 리포지토리에서 제공되며, **Linux** 및 **macOS**에서 Nix를 사용해 설치할 수 있습니다.
 
 <Steps>
-  <Step title="권장 사항 검토" id="review-recommendations">
+  <Step>
+    ## 권장 사항 검토
+
     <Recommendations />
   </Step>
 
-  <Step title="Nix를 사용해 ClickHouse 설치" id="install-clickhouse-using-nix">
+  <Step>
+    ## Nix를 사용해 ClickHouse 설치
+
     Nix를 사용하면 시스템에 영구적으로 추가하지 않고도 ClickHouse를 설치할 수 있습니다.
 
     ```bash
@@ -35,7 +39,9 @@ import Recommendations from '/snippets/ko/recommendations.mdx';
     * 두 패키지 모두 Linux와 macOS에서 작동합니다.
   </Step>
 
-  <Step title="영구 설치" id="permanent-installation">
+  <Step>
+    ## 영구 설치
+
     시스템에 ClickHouse를 영구적으로 설치하려면 다음과 같이 하십시오.
 
     **NixOS 사용자**는 `configuration.nix`에 다음을 추가하십시오.
@@ -63,7 +69,9 @@ import Recommendations from '/snippets/ko/recommendations.mdx';
     ```
   </Step>
 
-  <Step title="ClickHouse 서버 시작" id="start-clickhouse-server">
+  <Step>
+    ## ClickHouse 서버 시작
+
     설치 후 ClickHouse 서버를 시작할 수 있습니다.
 
     ```bash
@@ -75,7 +83,9 @@ import Recommendations from '/snippets/ko/recommendations.mdx';
     NixOS에서 production 용도로 사용하는 경우에는 ClickHouse를 시스템 서비스로 구성하는 것이 좋습니다. 사용 가능한 구성 옵션은 [NixOS manual](https://search.nixos.org/options?query=clickhouse)을 참조하십시오.
   </Step>
 
-  <Step title="ClickHouse client 시작" id="start-clickhouse-client">
+  <Step>
+    ## ClickHouse client 시작
+
     ClickHouse 서버에 연결하려면 새 터미널을 열고 다음을 실행하십시오.
 
     ```bash

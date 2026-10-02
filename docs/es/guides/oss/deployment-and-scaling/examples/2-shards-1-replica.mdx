@@ -38,7 +38,9 @@ La arquitectura del clúster que configurarás se muestra a continuación:
 * Tienes Docker instalado en tu equipo
 
 <Steps>
-  <Step title="Configurar la estructura de directorios y el entorno de prueba" id="set-up">
+  <Step>
+    ## Configurar la estructura de directorios y el entorno de prueba
+
     <ExampleFiles />
 
     En este tutorial, utilizará [Docker compose](https://docs.docker.com/compose/) para
@@ -51,12 +53,12 @@ La arquitectura del clúster que configurarás se muestra a continuación:
     mkdir cluster_2S_1R
     cd cluster_2S_1R
 
-    # Create clickhouse-keeper directories
+    # Crear directorios de clickhouse-keeper
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # Create clickhouse-server directories
+    # Crear directorios de clickhouse-server
     for i in {01..02}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -162,7 +164,9 @@ La arquitectura del clúster que configurarás se muestra a continuación:
     <ConfigExplanation />
   </Step>
 
-  <Step title="Configurar nodos de ClickHouse" id="configure-clickhouse-servers">
+  <Step>
+    ## Configurar nodos de ClickHouse
+
     ### Configuración del servidor
 
     Ahora modifique cada archivo de configuración vacío `config.xml` ubicado en
@@ -388,7 +392,7 @@ La arquitectura del clúster que configurarás se muestra a continuación:
     | `fs/volumes/clickhouse-01/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-01/etc/clickhouse-server/users.d/users.xml) |
     | `fs/volumes/clickhouse-02/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-02/etc/clickhouse-server/users.d/users.xml) |
 
-    En este ejemplo, el usuario `default` se configura sin contraseña por motivos de simplicidad.
+    En este ejemplo, el usuario predeterminado se configura sin contraseña por motivos de simplicidad.
     En la práctica, esto no es recomendable.
 
     <Note>
@@ -396,7 +400,9 @@ La arquitectura del clúster que configurarás se muestra a continuación:
     </Note>
   </Step>
 
-  <Step title="Configurar ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
+  <Step>
+    ## Configurar ClickHouse Keeper
+
     ### Configuración de ClickHouse Keeper
 
     <KeeperConfig />
@@ -412,7 +418,9 @@ La arquitectura del clúster que configurarás se muestra a continuación:
     <CloudTip />
   </Step>
 
-  <Step title="Prueba la configuración" id="test-the-setup">
+  <Step>
+    ## Prueba la configuración
+
     Asegúrate de que Docker se esté ejecutando en tu máquina.
     Inicia el clúster con el comando `docker-compose up` desde la raíz del directorio `cluster_2S_1R`:
 
@@ -437,7 +445,7 @@ La arquitectura del clúster que configurarás se muestra a continuación:
     siguiente consulta. A continuación, se muestra el comando para conectarse al primer nodo:
 
     ```bash
-    # Connect to any node
+    # Conectarse a cualquier nodo
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -491,7 +499,9 @@ La arquitectura del clúster que configurarás se muestra a continuación:
     En el siguiente paso, crearás una tabla en el clúster.
   </Step>
 
-  <Step title="Crear una base de datos" id="creating-a-database">
+  <Step>
+    ## Crear una base de datos
+
     Ahora que ha verificado que el clúster está correctamente configurado y en ejecución,
     volverá a crear la misma tabla que se utiliza en el tutorial del conjunto de datos de
     ejemplo [UK property prices](/es/get-started/sample-datasets/uk-price-paid).
@@ -549,7 +559,9 @@ La arquitectura del clúster que configurarás se muestra a continuación:
     ```
   </Step>
 
-  <Step title="Crear una tabla en el clúster" id="creating-a-table">
+  <Step>
+    ## Crear una tabla en el clúster
+
     Ahora que ya se ha creado la base de datos, cree una tabla.
     Ejecute la siguiente consulta desde cualquiera de los clientes del host:
 
@@ -628,13 +640,13 @@ La arquitectura del clúster que configurarás se muestra a continuación:
     Ahora, desde `clickhouse-01` o `clickhouse-02`, ejecute la siguiente consulta:
 
     ```sql
-    -- from clickhouse-01
+    -- desde clickhouse-01
     SELECT * FROM test.test_table;
     --   ┌─id─┬─name───────────────┐
     -- 1.│  1 │ Clicky McClickface │
     --   └────┴────────────────────┘
 
-    --from clickhouse-02
+    --desde clickhouse-02
     SELECT * FROM test.test_table;
     --   ┌─id─┬─name───────────────┐
     -- 1.│  1 │ Alexey Milovidov   │
@@ -652,7 +664,9 @@ La arquitectura del clúster que configurarás se muestra a continuación:
     el motor de tabla [`Distributed`](/es/reference/engines/table-engines/special/distributed). Veamos cómo funciona.
   </Step>
 
-  <Step title="Crear una tabla distribuida" id="create-distributed-table">
+  <Step>
+    ## Crear una tabla distribuida
+
     Cree una tabla distribuida con la consulta siguiente:
 
     ```sql
@@ -688,7 +702,9 @@ La arquitectura del clúster que configurarás se muestra a continuación:
     ```
   </Step>
 
-  <Step title="Insertar datos en una tabla distribuida" id="inserting-data-into-distributed-table">
+  <Step>
+    ## Insertar datos en una tabla distribuida
+
     Ahora conéctese a cualquiera de los hosts e inserte los datos:
 
     ```sql
@@ -739,8 +755,8 @@ La arquitectura del clúster que configurarás se muestra a continuación:
     ```
 
     ```response title="Response"
-       ┌──count()─┐
-    1. │ 30212555 │ -- 30.21 million
+    ┌──count()─┐
+    1. │ 30212555 │ -- 30.21 millones
        └──────────┘
     ```
 
@@ -749,18 +765,18 @@ La arquitectura del clúster que configurarás se muestra a continuación:
     de destino se determinó con `rand()`, por lo que los resultados pueden variar):
 
     ```sql
-    -- from clickhouse-01
+    -- desde clickhouse-01
     SELECT count(*)
     FROM uk.uk_price_paid_local
     --    ┌──count()─┐
-    -- 1. │ 15107353 │ -- 15.11 million
+    -- 1. │ 15107353 │ -- 15.11 millones
     --    └──────────┘
 
-    --from clickhouse-02
+    --desde clickhouse-02
     SELECT count(*)
     FROM uk.uk_price_paid_local
     --    ┌──count()─┐
-    -- 1. │ 15105202 │ -- 15.11 million
+    -- 1. │ 15105202 │ -- 15.11 millones
     --    └──────────┘
     ```
 

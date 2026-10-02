@@ -31,7 +31,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 而数据 `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` 则由数据格式解析器 (即快速流式解析器) 解析。
 
 <Accordion title="启用完整解析器">
-  你也可以通过 [`input_format_values_interpret_expressions`](/zh/reference/settings/formats/input-format#input_format_values_interpret_expressions) 设置，
+  你也可以通过 [`input_format_values_interpret_expressions`](/zh/reference/settings/formats#input_format_values_interpret_expressions) 设置，
   为数据启用完整解析器。
 
   当上述设置为 `1` 时，
@@ -40,7 +40,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 </Accordion>
 
 数据可以采用任意格式。
-收到查询时，server 只会将请求中不超过 [max&#95;query&#95;size](/zh/reference/settings/session-settings/max#max_query_size) 字节的内容放入 RAM 中进行计算
+收到查询时，server 只会将请求中不超过 [max&#95;query&#95;size](/zh/reference/settings/session-settings#max_query_size) 字节的内容放入 RAM 中进行计算
 (默认为 1 MB) ，其余部分则以流式方式解析。
 这样可以避免大型 `INSERT` 查询带来的问题，而这也是向 ClickHouse 插入数据的推荐方式。
 
@@ -525,7 +525,7 @@ SELECT
     sum(b) AS b
 FROM t;
 
-Received exception from server (version 18.14.17):
+从服务器收到异常（版本 18.14.17）：
 Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
 ```
 
@@ -536,7 +536,7 @@ ClickHouse 将表达式 `argMax(a, b)` 中的字面量 `b` 替换成了表达式
 这种替换导致了异常。
 
 <Note>
-  你可以将 [prefer&#95;column&#95;name&#95;to&#95;alias](/zh/reference/settings/session-settings/prefer#prefer_column_name_to_alias) 设置为 `1`，以更改这一默认行为。
+  你可以将 [prefer&#95;column&#95;name&#95;to&#95;alias](/zh/reference/settings/session-settings#prefer_column_name_to_alias) 设置为 `1`，以更改这一默认行为。
 </Note>
 
 <div id="asterisk">

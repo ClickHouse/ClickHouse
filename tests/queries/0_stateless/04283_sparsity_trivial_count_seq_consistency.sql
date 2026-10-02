@@ -1,4 +1,5 @@
--- Tags: zookeeper, no-parallel-replicas, no-shared-merge-tree
+-- Tags: zookeeper, no-parallel-replicas, no-shared-merge-tree, no-old-analyzer
+-- no-old-analyzer: Not supported
 
 -- `ReplicatedMergeTree::totalRows` honors `select_sequential_consistency` by
 -- restricting active parts to those below the ZK max-added-block boundary. The
