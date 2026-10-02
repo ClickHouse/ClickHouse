@@ -205,8 +205,8 @@ ${CLICKHOUSE_CLIENT} \
     --async_socket_for_remote=1 \
     --async_query_sending_for_remote=1 \
     --query_id "$kill_query_id" \
-    --function_sleep_max_microseconds_per_block=10000000 \
-    --query "select * from remote('127.0.0.2', view(select sleep(3) from system.one)) format Null" \
+    --function_sleep_max_microseconds_per_block=30000000 \
+    --query "select * from remote('127.0.0.2', view(select sleep(30) from system.one)) format Null" \
     >/dev/null 2>&1 &
 
 # Wait until the remote leg is in flight before killing: the non-initial `SELECT` appears in
@@ -224,14 +224,15 @@ for _retry in {1..100}; do
 done
 ${CLICKHOUSE_CLIENT} -q "kill query where query_id = '$kill_query_id' sync format Null"
 wait
+# `sleep` never polls the socket the initiator's cancel arrives on, and the KILL above matched only
+# the initiator's own process-list entry, so the remote leg keeps sleeping: end it explicitly.
+${CLICKHOUSE_CLIENT} -q "kill query where initial_query_id = '$kill_query_id' and query_id != initial_query_id sync format Null"
 
-# The `DESC TABLE` that `remote` sends to infer the structure has its own span; the killed
-# fragment's is the second.
 poll_spans "
     with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
-    select countIf(operation_name = 'RemoteQueryExecutor::execute')
+    select countIf(operation_name = 'RemoteQueryExecutor::execute' and attribute['clickhouse.cancelled'] = '1')
     from system.opentelemetry_span_log
-    where finish_date >= yesterday() and trace_id = t" "2" \
+    where finish_date >= yesterday() and trace_id = t" "1" \
 || exit 1
 echo "task span emitted on cancellation: OK"
 
