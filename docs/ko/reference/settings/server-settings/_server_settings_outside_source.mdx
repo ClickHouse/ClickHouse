@@ -852,9 +852,9 @@ ClickHouse는 구성을 업데이트하기 위해 모든 레플리카를 동시�
 </logger>
 ```
 
-**수준별 재정의**
+**레벨별 재정의**
 
-개별 로그 이름의 로그 수준은 별도로 재정의할 수 있습니다. 예를 들어, 로거 &quot;Backup&quot;과 &quot;RBAC&quot;의 모든 메시지가 출력되지 않도록 설정할 수 있습니다.
+개별 로그 이름의 로그 레벨은 별도로 재정의할 수 있습니다. 예를 들어, 로거 &quot;Backup&quot;과 &quot;RBAC&quot;의 모든 메시지가 출력되지 않도록 설정할 수 있습니다.
 
 ```xml
 <logger>
@@ -879,6 +879,7 @@ ClickHouse는 구성을 업데이트하기 위해 모든 레플리카를 동시�
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -889,12 +890,13 @@ ClickHouse는 구성을 업데이트하기 위해 모든 레플리카를 동시�
 
 `<syslog>`의 키:
 
-| Key        | Description                                                                                                                                                                                                       |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `address`  | `host\[:port\]` 포맷의 syslog 주소입니다. 생략하면 로컬 데몬을 사용합니다.                                                                                                                                                              |
-| `hostname` | 로그를 전송하는 호스트의 호스트명입니다(선택 사항).                                                                                                                                                                                     |
-| `facility` | syslog [facility 키워드](https://en.wikipedia.org/wiki/Syslog#Facility)입니다. `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` 등과 같이 `LOG_` 접두사를 붙인 대문자로 지정해야 합니다. 기본값은 `address`를 지정한 경우 `LOG_USER`이고, 그렇지 않으면 `LOG_DAEMON`입니다. |
-| `format`   | 로그 메시지 포맷입니다. 가능한 값은 `bsd` 및 `syslog`입니다.                                                                                                                                                                         |
+| Key           | Description                                                                                                                                                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`     | `host\[:port\]` 포맷의 syslog 주소입니다. 생략하면 로컬 데몬을 사용합니다.                                                                                                                                                                            |
+| `hostname`    | 로그를 전송하는 호스트의 호스트명입니다(선택 사항).                                                                                                                                                                                                   |
+| `facility`    | syslog [facility 키워드](https://en.wikipedia.org/wiki/Syslog#Facility)입니다. `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` 등과 같이 &quot;LOG&#95;&quot; 접두사를 붙인 대문자로 지정해야 합니다. 기본값은 `address`를 지정한 경우 `LOG_USER`이고, 그렇지 않으면 `LOG_DAEMON`입니다. |
+| `format`      | 로그 메시지 포맷입니다. 가능한 값은 `bsd` 및 `syslog`입니다.                                                                                                                                                                                       |
+| `programname` | syslog 메시지에 사용되는 프로그램 이름입니다. 로컬 syslog에서는 ident로, `format=syslog`인 원격 syslog에서는 `APP-NAME`으로 사용됩니다. `format=bsd`에서는 적용되지 않습니다. 공백 없이 출력 가능한 ASCII 문자 1~48자로 지정해야 합니다. 기본값은 로컬 syslog의 경우 명령 이름이며, 원격 syslog의 경우 설정되지 않습니다.      |
 
 **로그 포맷**
 
@@ -925,7 +927,7 @@ JSON 로깅 지원을 활성화하려면 다음 코드 조각을 사용하십시
 <logger>
     <formatting>
         <type>json</type>
-        <!-- 채널별(log, errorlog, console, syslog)로 설정하거나, 모든 채널에 전역으로 적용할 수 있습니다(전역 적용 시에는 생략하십시오). -->
+        <!-- Can be configured on a per-channel basis (log, errorlog, console, syslog), or globally for all channels (then just omit it). -->
         <!-- <channel></channel> -->
         <names>
             <date_time>date_time</date_time>

@@ -879,6 +879,7 @@ ClickHouse は、設定を更新するためにすべてのレプリカを同時
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -889,12 +890,13 @@ ClickHouse は、設定を更新するためにすべてのレプリカを同時
 
 `<syslog>` で使用できるキー:
 
-| Key        | Description                                                                                                                                                                                                                              |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `address`  | `host\[:port\]` 形式の syslog のアドレスです。省略した場合はローカルデーモンが使用されます。                                                                                                                                                                               |
-| `hostname` | ログの送信元ホスト名です (省略可) 。                                                                                                                                                                                                                     |
-| `facility` | syslog の [facility キーワード](https://en.wikipedia.org/wiki/Syslog#Facility) です。&quot;LOG&#95;&quot; プレフィックス付きの大文字で指定する必要があります。例: `LOG_USER`、`LOG_DAEMON`、`LOG_LOCAL3` など。デフォルト値は、`address` が指定されている場合は `LOG_USER`、それ以外の場合は `LOG_DAEMON` です。 |
-| `format`   | ログメッセージのフォーマットです。設定可能な値: `bsd` と `syslog.`                                                                                                                                                                                               |
+| Key           | Description                                                                                                                                                                                                                              |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`     | `host\[:port\]` 形式の syslog のアドレスです。省略した場合はローカルデーモンが使用されます。                                                                                                                                                                               |
+| `hostname`    | ログの送信元ホスト名です (省略可) 。                                                                                                                                                                                                                     |
+| `facility`    | syslog の [facility キーワード](https://en.wikipedia.org/wiki/Syslog#Facility) です。&quot;LOG&#95;&quot; プレフィックス付きの大文字で指定する必要があります。例: `LOG_USER`、`LOG_DAEMON`、`LOG_LOCAL3` など。デフォルト値は、`address` が指定されている場合は `LOG_USER`、それ以外の場合は `LOG_DAEMON` です。 |
+| `format`      | ログメッセージのフォーマットです。設定可能な値: `bsd` と `syslog.`                                                                                                                                                                                               |
+| `programname` | syslog メッセージで使用するプログラム名です。ローカル syslog では ident、`format=syslog` のリモート syslog では `APP-NAME` として使用されます。`format=bsd` の場合は効果がありません。空白を含まない、1〜48 文字の印字可能な ASCII 文字で指定します。デフォルト値は、ローカル syslog の場合はコマンド名で、リモート syslog の場合は未設定です。                 |
 
 **ログフォーマット**
 
@@ -925,7 +927,7 @@ JSON 形式のログ出力を有効にするには、次のスニペットを使
 <logger>
     <formatting>
         <type>json</type>
-        <!-- チャネルごと（log、errorlog、console、syslog）に設定することも、すべてのチャネルに対してグローバルに設定することもできます（グローバルに設定する場合はこのタグを省略してください）。 -->
+        <!-- Can be configured on a per-channel basis (log, errorlog, console, syslog), or globally for all channels (then just omit it). -->
         <!-- <channel></channel> -->
         <names>
             <date_time>date_time</date_time>

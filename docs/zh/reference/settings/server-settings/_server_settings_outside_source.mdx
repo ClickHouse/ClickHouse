@@ -879,6 +879,7 @@ ClickHouse 支持动态轮换服务器间凭据，无需为更新配置而同时
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -889,12 +890,13 @@ ClickHouse 支持动态轮换服务器间凭据，无需为更新配置而同时
 
 `<syslog>` 的键：
 
-| 键          | 说明                                                                                                                                                                                                         |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `address`  | syslog 的地址，格式为 `host\[:port\]`。如果省略，则使用本地守护进程。                                                                                                                                                             |
-| `hostname` | 发送日志的主机名 (可选) 。                                                                                                                                                                                            |
-| `facility` | syslog 的 [facility 关键字](https://en.wikipedia.org/wiki/Syslog#Facility)。必须使用带有 &quot;LOG&#95;&quot; 前缀的大写形式指定，例如 `LOG_USER`、`LOG_DAEMON`、`LOG_LOCAL3` 等。默认值：如果指定了 `address`，则为 `LOG_USER`；否则为 `LOG_DAEMON`。 |
-| `format`   | 日志消息格式。可能的值：`bsd` 和 `syslog.`                                                                                                                                                                              |
+| 键             | 说明                                                                                                                                                                                                         |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`     | syslog 的地址，格式为 `host\[:port\]`。如果省略，则使用本地守护进程。                                                                                                                                                             |
+| `hostname`    | 发送日志的主机名 (可选) 。                                                                                                                                                                                            |
+| `facility`    | syslog 的 [facility 关键字](https://en.wikipedia.org/wiki/Syslog#Facility)。必须使用带有 &quot;LOG&#95;&quot; 前缀的大写形式指定，例如 `LOG_USER`、`LOG_DAEMON`、`LOG_LOCAL3` 等。默认值：如果指定了 `address`，则为 `LOG_USER`；否则为 `LOG_DAEMON`。 |
+| `format`      | 日志消息格式。可能的值：`bsd` 和 `syslog.`                                                                                                                                                                              |
+| `programname` | syslog 消息中使用的程序名称：对于本地 syslog，即其 ident；对于 `format=syslog` 的远程 syslog，即 `APP-NAME`。当 `format=bsd` 时不生效。取值为 1 到 48 个不含空格的可打印 ASCII 字符。默认值：本地 syslog 为命令名称，远程 syslog 不设置。                                     |
 
 **日志格式**
 
@@ -925,7 +927,7 @@ ClickHouse 支持动态轮换服务器间凭据，无需为更新配置而同时
 <logger>
     <formatting>
         <type>json</type>
-        <!-- 可以按通道（log、errorlog、console、syslog）单独配置，也可以全局应用于所有通道（省略此标签即可）。-->
+        <!-- Can be configured on a per-channel basis (log, errorlog, console, syslog), or globally for all channels (then just omit it). -->
         <!-- <channel></channel> -->
         <names>
             <date_time>date_time</date_time>
