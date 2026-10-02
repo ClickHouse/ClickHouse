@@ -504,6 +504,11 @@ void StorageBuffer::read(
                             merged_outputs[position] = it->second;
                     }
 
+                    /// The replaced conversions are no longer reachable, but `ExpressionActions` executes every
+                    /// node of the DAG. Drop them, so a column that only passes through is not cast to the
+                    /// `Buffer` type at all: that costs time and can throw for a value the type cannot hold.
+                    merged.removeUnusedActions(/* allow_remove_inputs = */ false);
+
                     return merged;
                 };
 
