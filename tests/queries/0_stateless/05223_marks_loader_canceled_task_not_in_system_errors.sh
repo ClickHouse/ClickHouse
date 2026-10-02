@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # no-parallel: the `marks_loader_hold_task_until_canceled` fail point is global and would hold the
 #   marks-loading tasks of every concurrent query.
 

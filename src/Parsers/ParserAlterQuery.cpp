@@ -13,8 +13,6 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Common/typeid_cast.h>
 
 
@@ -1287,14 +1285,11 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserAlterQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementAlter(StatementFactory & factory)
-{
-    factory.registerStatement("ALTER",
+    documentation["ALTER"] =
     {
         .description = R"DOCS_MD(
 Most `ALTER TABLE` queries modify table settings or data:
@@ -1437,9 +1432,9 @@ ALTER USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
         .related = {
             "ALTER TABLE ... COLUMN", "ALTER TABLE ... PARTITION", "ALTER TABLE ... DELETE", "ALTER TABLE ... UPDATE",
             "CREATE", "SYSTEM"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... COLUMN",
+    documentation["ALTER TABLE ... COLUMN"] =
     {
         .description = R"DOCS_MD(
 A set of queries that allow changing the table structure.
@@ -1844,9 +1839,9 @@ MATERIALIZE COLUMN name [IN PARTITION partition_id]
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "CODEC", "ALTER TABLE ... MODIFY TTL"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... PARTITION",
+    documentation["ALTER TABLE ... PARTITION"] =
     {
         .description = R"DOCS_MD(
 The following operations with [partitions](/reference/engines/table-engines/mergetree-family/custom-partitioning-key) are available:
@@ -2248,9 +2243,9 @@ ALTER TABLE table_name [ON CLUSTER cluster] MODIFY PARTITION|PART partition_expr
 )",
         .parent = "ALTER",
         .related = {"ALTER", "SYSTEM", "OPTIMIZE", "TRUNCATE"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... DELETE",
+    documentation["ALTER TABLE ... DELETE"] =
     {
         .description = R"DOCS_MD(
 ```sql
@@ -2288,9 +2283,9 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr1
 )",
         .parent = "ALTER",
         .related = {"ALTER", "DELETE", "TRUNCATE", "ALTER TABLE ... UPDATE"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... UPDATE",
+    documentation["ALTER TABLE ... UPDATE"] =
     {
         .description = R"DOCS_MD(
 ```sql
@@ -2367,9 +2362,9 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 )",
         .parent = "ALTER",
         .related = {"ALTER", "UPDATE", "ALTER TABLE ... DELETE", "ALTER TABLE ... APPLY PATCHES"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY ORDER BY",
+    documentation["ALTER TABLE ... MODIFY ORDER BY"] =
     {
         .description = R"DOCS_MD(
 ```sql
@@ -2391,9 +2386,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... MODIFY SAMPLE BY"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY SAMPLE BY",
+    documentation["ALTER TABLE ... MODIFY SAMPLE BY"] =
     {
         .description = R"DOCS_MD(
 The following operations are available:
@@ -2426,9 +2421,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
 )",
         .parent = "ALTER",
         .related = {"ALTER", "SAMPLE", "ALTER TABLE ... MODIFY ORDER BY"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY TTL",
+    documentation["ALTER TABLE ... MODIFY TTL"] =
     {
         .description = R"DOCS_MD(
 <Note>
@@ -2520,9 +2515,9 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] REMOVE TTL
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... COLUMN", "OPTIMIZE"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY SETTING",
+    documentation["ALTER TABLE ... MODIFY SETTING"] =
     {
         .description = R"DOCS_MD(
 There is a set of queries to change table settings. You can modify settings or reset them to default values. A single query can change several settings at once.
@@ -2585,9 +2580,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] RESET SETTING setting_name [, ...]
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "SET"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... CONSTRAINT",
+    documentation["ALTER TABLE ... CONSTRAINT"] =
     {
         .description = R"DOCS_MD(
 Constraints could be added, modified or deleted using following syntax:
@@ -2619,9 +2614,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constrain
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... INDEX",
+    documentation["ALTER TABLE ... INDEX"] =
     {
         .description = R"DOCS_MD(
 The following operations are available:
@@ -2666,9 +2661,9 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [I
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "HYPOTHETICAL INDEX", "ALTER TABLE ... PROJECTION"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... PROJECTION",
+    documentation["ALTER TABLE ... PROJECTION"] =
     {
         .description = R"DOCS_MD(
 This page discusses what projections are, how you can use them and various options for manipulating projections.
@@ -3127,9 +3122,9 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... INDEX"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... STATISTICS",
+    documentation["ALTER TABLE ... STATISTICS"] =
     {
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -3173,9 +3168,9 @@ ALTER TABLE [db].table MATERIALIZE STATISTICS [IF EXISTS] (column list)
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "EXPLAIN"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY COMMENT",
+    documentation["ALTER TABLE ... MODIFY COMMENT"] =
     {
         .description = R"DOCS_MD(
 Adds, modifies, or removes a table comment, regardless of whether it was set
@@ -3261,9 +3256,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 )",
         .parent = "ALTER",
         .related = {"ALTER", "ALTER DATABASE ... MODIFY COMMENT", "CREATE TABLE", "SHOW"},
-    });
+    };
 
-    factory.registerStatement("ALTER DATABASE ... MODIFY COMMENT",
+    documentation["ALTER DATABASE ... MODIFY COMMENT"] =
     {
         .description = R"DOCS_MD(
 Adds, modifies, or removes a database comment, regardless of whether it was set
@@ -3336,9 +3331,9 @@ ALTER DATABASE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 )",
         .parent = "ALTER",
         .related = {"ALTER", "ALTER TABLE ... MODIFY COMMENT", "CREATE DATABASE", "SHOW"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY QUERY",
+    documentation["ALTER TABLE ... MODIFY QUERY"] =
     {
         .description = R"DOCS_MD(
 You can modify `SELECT` query that was specified when a [materialized view](/reference/statements/create/view#materialized-view) was created with the `ALTER TABLE ... MODIFY QUERY` statement without interrupting ingestion process.
@@ -3569,9 +3564,9 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY QUERY SELECT ...
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE VIEW"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... APPLY DELETED MASK",
+    documentation["ALTER TABLE ... APPLY DELETED MASK"] =
     {
         .description = R"DOCS_MD(
 ```sql
@@ -3594,9 +3589,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION part
 )",
         .parent = "ALTER",
         .related = {"ALTER", "DELETE", "ALTER TABLE ... DELETE"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... APPLY PATCHES",
+    documentation["ALTER TABLE ... APPLY PATCHES"] =
     {
         .description = R"DOCS_MD(
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
@@ -3663,7 +3658,9 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partitio
 )",
         .parent = "ALTER",
         .related = {"ALTER", "UPDATE", "ALTER TABLE ... UPDATE"},
-    });
+    };
+
+    return documentation;
 }
 
 }
