@@ -654,7 +654,7 @@ void QueryPlan::explainPlan(
     PrettyNamesPerPlan local_pretty_names;
     if (options.pretty && !precomputed_pretty_names)
     {
-        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this);
+        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, options.show_secrets);
         precomputed_pretty_names = &local_pretty_names;
     }
 
