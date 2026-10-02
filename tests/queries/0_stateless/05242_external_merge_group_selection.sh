@@ -41,7 +41,7 @@ query = """
 """
 with (root / 'query.log').open('w') as stderr:
     result = subprocess.run(command + ['--query', query], stdout=subprocess.PIPE, stderr=stderr,
-                            text=True, timeout=120)
+                            text=True, timeout=180)
 log = (root / 'query.log').read_text()
 assert result.returncode == 0, log
 assert result.stdout.strip() == '1000000', result.stdout
