@@ -58,6 +58,12 @@ size_t estimateRunReadMemory(size_t max_block_bytes, size_t buffer_size)
     return 4 * max_block_bytes + 2 * buffer_size + DBMS_DEFAULT_BUFFER_SIZE;
 }
 
+size_t estimateRunWriteBuffersMemory(size_t buffer_size)
+{
+    /// A temporary-file writer holds file, compression-input, and compression-output buffers.
+    return 3 * buffer_size;
+}
+
 }
 
 ExternalDistinctTransform::ExternalDistinctTransform(
@@ -330,7 +336,7 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
     /// Writing a temporary file can hold uncompressed input, compressed output, and a file buffer
     /// at the same time. The estimate allows three configured buffer sizes; oversized values and codec
     /// overhead can exceed it.
-    const size_t write_buffers_bytes = 3 * tmp_data->getSettings().buffer_size;
+    const size_t write_buffers_bytes = estimateRunWriteBuffersMemory(tmp_data->getSettings().buffer_size);
 
     /// A filtered output copy can remain pending while suppression keys are extracted. The original
     /// input can still be shared upstream, so this output copy needs an additional `input_bytes`.
@@ -718,7 +724,7 @@ size_t ExternalDistinctTransform::estimateRunWriteMemory(size_t rows, size_t all
     const size_t output_memory = 4 * max_average_row_bytes * block_rows;
 
     /// The temporary writer also needs file, compression-input, and compression-output buffers.
-    const size_t write_buffers_memory = 3 * tmp_data->getSettings().buffer_size;
+    const size_t write_buffers_memory = estimateRunWriteBuffersMemory(tmp_data->getSettings().buffer_size);
     return flag_columns_memory + output_memory + write_buffers_memory;
 }
 
