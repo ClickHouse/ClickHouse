@@ -755,6 +755,10 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     for (const auto & detached_table : snapshot_detached_tables)
         checkTableNameLengthUnlocked(new_name, detached_table.first, getContext());
 
+    /// Do this before anything is moved: if a table refuses, the database must stay as it was.
+    for (const auto & table : tables)
+        table.second->checkTableCanBeRenamedByDatabaseRename(new_name);
+
     bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
     if (check_ref_deps || check_loading_deps)

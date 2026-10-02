@@ -47,21 +47,24 @@ ${CLIENT} -q "DROP TABLE t_full_def"
 # A table whose stored path still carries {database} keeps loading after the database is renamed to a
 # path-unsafe name: re-reading a definition from metadata must not re-judge it. A configured macro
 # supplies the {database}, so unlike the short ATTACH above the substitution does survive into metadata.
+# A loaded table whose path re-expands {database} refuses RENAME DATABASE (05320 covers that), so the
+# database is renamed while the table is detached.
 LEGACY_DB="${CLICKHOUSE_DATABASE}_legacy"
 ${CLIENT} -q "DROP DATABASE IF EXISTS \`${LEGACY_DB}/d\` SYNC"
 ${CLIENT} -q "DROP DATABASE IF EXISTS \`${LEGACY_DB}\` SYNC"
 ${CLIENT} -q "CREATE DATABASE \`${LEGACY_DB}\`"
 ${CLIENT} -q "CREATE TABLE \`${LEGACY_DB}\`.t (c0 Int) ENGINE = ReplicatedMergeTree('{default_path_test}04831legacy', 'r4') ORDER BY c0"
+${CLIENT} -q "DETACH TABLE \`${LEGACY_DB}\`.t"
 ${CLIENT} -q "RENAME DATABASE \`${LEGACY_DB}\` TO \`${LEGACY_DB}/d\`"
-${CLIENT} -q "DETACH TABLE \`${LEGACY_DB}/d\`.t"
 ${CLIENT} -q "ATTACH TABLE \`${LEGACY_DB}/d\`.t" 2>&1 | grep -q -F 'BAD_ARGUMENTS' && echo REJECTED || echo ATTACHED
 ${CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${LEGACY_DB}/d' AND name = 't'"
 # Re-resolve the path under the original name before dropping: the stored path re-expands {database},
 # so the table now points at a different znode tree than the one the CREATE made, and dropping it
 # under the new name would leave the original tree behind. This is pre-existing behaviour of a stored
 # {database}, unrelated to the checks, and it is why the table is created in its own database.
+# The table is bound to the new name now, so again it is detached for the rename.
+${CLIENT} -q "DETACH TABLE \`${LEGACY_DB}/d\`.t"
 ${CLIENT} -q "RENAME DATABASE \`${LEGACY_DB}/d\` TO \`${LEGACY_DB}\`"
-${CLIENT} -q "DETACH TABLE \`${LEGACY_DB}\`.t"
 ${CLIENT} -q "ATTACH TABLE \`${LEGACY_DB}\`.t"
 ${CLIENT} -q "DROP DATABASE \`${LEGACY_DB}\` SYNC"
 
@@ -75,10 +78,14 @@ ${CLIENT} -q "CREATE TABLE \`${RESTART_DB}\`.t (c0 Int) ENGINE = ReplicatedMerge
 # A direct {database} is unfolded before the definition is stored, leaving nothing to re-substitute,
 # so assert the retention this row depends on instead of assuming it.
 ${CLIENT} -q "SELECT create_table_query LIKE '%{default_path_test}%' FROM system.tables WHERE database = '${RESTART_DB}' AND name = 't'"
+# RESTART REPLICA needs an attached table, and the loaded table refuses RENAME DATABASE (05320), so the
+# database is renamed while the table is detached and the table is attached back under the new name.
+${CLIENT} -q "DETACH TABLE \`${RESTART_DB}\`.t"
 ${CLIENT} -q "RENAME DATABASE \`${RESTART_DB}\` TO \`${RESTART_DB}/d\`"
+${CLIENT} -q "ATTACH TABLE \`${RESTART_DB}/d\`.t"
 ${CLIENT} -q "SYSTEM RESTART REPLICA \`${RESTART_DB}/d\`.t" 2>&1 | grep -q -F 'BAD_ARGUMENTS' && echo REJECTED || echo RESTARTED
 ${CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${RESTART_DB}/d' AND name = 't'"
+${CLIENT} -q "DETACH TABLE \`${RESTART_DB}/d\`.t"
 ${CLIENT} -q "RENAME DATABASE \`${RESTART_DB}/d\` TO \`${RESTART_DB}\`"
-${CLIENT} -q "DETACH TABLE \`${RESTART_DB}\`.t"
 ${CLIENT} -q "ATTACH TABLE \`${RESTART_DB}\`.t"
 ${CLIENT} -q "DROP DATABASE \`${RESTART_DB}\` SYNC"
