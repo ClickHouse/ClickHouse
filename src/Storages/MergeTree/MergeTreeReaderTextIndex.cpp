@@ -217,6 +217,7 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
 void MergeTreeReaderTextIndex::updateReadRequestMap(MarkRangesPtr request_map)
 {
     IMergeTreeReader::updateReadRequestMap(request_map);
+    /// Only the fallback reader reads the part's data. The index streams count index granules or tokens, not data marks.
     if (fallback_reader)
         fallback_reader->updateReadRequestMap(std::move(request_map));
 }
