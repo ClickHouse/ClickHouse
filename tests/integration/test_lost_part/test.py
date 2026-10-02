@@ -627,7 +627,6 @@ def test_missing_covered_part_on_start(start_cluster):
         node2.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
-
 def stranded_part_node_query(table):
     return (
         f"SELECT count() FROM system.zookeeper WHERE path = '/clickhouse/tables/{table}/replicas/1/parts' "
@@ -687,3 +686,39 @@ def test_drop_range_removes_stranded_part_node(start_cluster, table, drop_query)
     finally:
         node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         node2.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+@pytest.mark.parametrize(
+    "table, replace_node_name",
+    [
+        # node1 initiates the replace, so its log entry finds the new part already attached.
+        ("rmt_stranded_replace_initiator", "node1"),
+        # node1 executes the log entry of node2 and fetches the new part.
+        ("rmt_stranded_replace_fetch", "node2"),
+    ],
+)
+def test_replace_range_removes_stranded_part_node(
+    start_cluster, table, replace_node_name
+):
+    replace_node = node1 if replace_node_name == "node1" else node2
+    src = f"{table}_src"
+    node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node2.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    replace_node.query(f"DROP TABLE IF EXISTS {src} SYNC")
+
+    try:
+        build_stranded_part_node(table)
+
+        replace_node.query(f"CREATE TABLE {src} (n int) ENGINE=MergeTree ORDER BY n")
+        replace_node.query(f"INSERT INTO {src} VALUES (4)")
+        replace_node.query(
+            f"ALTER TABLE {table} REPLACE PARTITION tuple() FROM {src}",
+            settings={"alter_sync": 2},
+        )
+
+        assert node1.query(f"SELECT n FROM {table}") == "4\n"
+        assert_eq_with_retry(node1, stranded_part_node_query(table), "0\n")
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node2.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        replace_node.query(f"DROP TABLE IF EXISTS {src} SYNC")
