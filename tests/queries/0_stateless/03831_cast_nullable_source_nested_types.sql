@@ -6,7 +6,7 @@
 -- elements (M != N), causing a size mismatch assertion.
 -- https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=96894&sha=20e3ac9e9d7a4790a81b166af49e932202510e1e&name_0=PR&name_1=BuzzHouse%20%28amd_debug%29
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 -- Nullable(Tuple(Array(String))) -> Nullable(Tuple(Array(Enum8)))
 -- The Nullable at the Tuple level sets nullable_source which must not propagate into Array elements.

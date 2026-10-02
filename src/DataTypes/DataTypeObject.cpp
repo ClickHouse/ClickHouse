@@ -45,6 +45,17 @@
 
 namespace DB
 {
+
+bool containsObjectType(const IDataType & type)
+{
+    if (isObject(type))
+        return true;
+
+    bool contains_object = false;
+    type.forEachChild([&](const IDataType & child) { contains_object |= isObject(child); });
+    return contains_object;
+}
+
 namespace Setting
 {
     extern const SettingsBool allow_simdjson;
@@ -532,6 +543,8 @@ ColumnPtr extractSubObjectColumn(const ColumnObject & object_column, const Strin
 /// Prefers the literal value if present; falls back to the sub-object cast to Dynamic; otherwise NULL.
 /// When skip_null_typed_paths is true, typed paths with NULL values are not considered present,
 /// so a sub-object whose only typed descendants are all NULL is treated as empty.
+/// When literal_type is set (typed path), the typed literal is cast to Dynamic before the merge
+/// so the result type is always Dynamic, including the empty-sub-object early return.
 ColumnPtr extractCombinedColumn(
     const ColumnObject & object_column,
     const String & path,
@@ -539,9 +552,13 @@ ColumnPtr extractCombinedColumn(
     const DataTypePtr & sub_object_type,
     const DataTypePtr & dynamic_result_type,
     size_t max_dynamic_types,
-    bool skip_null_typed_paths = false)
+    bool skip_null_typed_paths = false,
+    DataTypePtr literal_type = {})
 {
     auto literal_column = extractLiteralColumn(object_column, path, max_dynamic_types);
+    if (literal_type)
+        literal_column = castColumn({literal_column, literal_type, ""}, dynamic_result_type);
+
     auto sub_object_column = extractSubObjectColumn(object_column, prefix, sub_object_type);
 
     /// If sub-object contains only empty objects, just use literal.
@@ -942,15 +959,20 @@ ColumnPtr DataTypeObject::extractCombinedSubcolumn(const String & path, const Co
             typed_sub_paths[p.substr(prefix.size())] = type;
     }
 
+    /// Skip rules are only relevant while parsing input. This synthetic type represents descendants
+    /// that are already stored, and the original rules refer to paths relative to the root object.
     auto sub_object_type = std::make_shared<DataTypeObject>(
-        schema_format, typed_sub_paths, paths_to_skip, path_regexps_to_skip,
-        max_dynamic_paths, max_dynamic_types);
+        schema_format, typed_sub_paths, std::unordered_set<String>{}, std::vector<String>{}, max_dynamic_paths, max_dynamic_types);
     auto dynamic_result_type = getDynamicType();
+
+    DataTypePtr literal_type;
+    if (auto it = typed_paths.find(path); it != typed_paths.end())
+        literal_type = it->second;
 
     return extractCombinedColumn(
         object_column, path, prefix, sub_object_type,
         dynamic_result_type, max_dynamic_types,
-        skip_null_typed_paths);
+        skip_null_typed_paths, literal_type);
 }
 
 UnorderedMapWithMemoryTracking<String, SerializationPtr> DataTypeObject::getTypedPathSerializations() const
@@ -2048,10 +2070,10 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
-## Lazy Type Hints (Beta) {#lazy-type-hints}
+## Lazy Type Hints {#lazy-type-hints}
 
 <Note>
-This feature is in beta and requires the setting `enable_json_lazy_type_hints` to be enabled.
+This feature requires the setting `enable_json_lazy_type_hints` to be enabled.
 </Note>
 
 When you add or modify type hints on a JSON column using `ALTER TABLE ... MODIFY COLUMN`, ClickHouse normally rewrites all data parts to materialize the new type hints. For tables with large amounts of historical data (hundreds of terabytes), this can be extremely expensive.

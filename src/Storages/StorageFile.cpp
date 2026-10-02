@@ -127,6 +127,7 @@ namespace Setting
     extern const SettingsSnappyMode snappy_mode;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
     extern const SettingsBool use_cache_for_count_from_files;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsBool use_hive_partitioning;
@@ -1374,7 +1375,14 @@ bool StorageFile::parallelizeOutputAfterReading(ContextPtr context) const
 
 size_t StorageFile::getMaxReadStreams(size_t num_streams, ContextPtr)
 {
-    const size_t files_to_read = archive_info ? archive_info->paths_to_archives.size() : paths.size();
+    size_t files_to_read = 0;
+    if (archive_info)
+        files_to_read = archive_info->paths_to_archives.size();
+    else
+    {
+        std::lock_guard lock{paths_mutex};
+        files_to_read = paths.size();
+    }
     return std::min(num_streams, std::max(1uz, files_to_read));
 }
 
@@ -1522,6 +1530,30 @@ static std::chrono::seconds getLockTimeout(const ContextPtr & context)
     return saturatedSeconds(lock_timeout);
 }
 
+/// `RWLockImpl::getLock` reads a zero timeout as "wait forever", while a zero `lock_acquire_timeout` has
+/// always meant "do not wait at all" here; it turns a negative duration into an already-expired deadline.
+static constexpr auto no_wait_timeout = std::chrono::milliseconds(-1);
+
+static std::chrono::milliseconds getLockTimeoutMs(const ContextPtr & context)
+{
+    auto timeout = std::chrono::duration_cast<std::chrono::milliseconds>(getLockTimeout(context));
+    return timeout == std::chrono::milliseconds::zero() ? no_wait_timeout : timeout;
+}
+
+RWLockImpl::LockHolder StorageFile::tryLockRwlock(RWLockImpl::Type type, const ContextPtr & context) const
+{
+    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    return rwlock->getLock(type, query_id, getLockTimeoutMs(context), /*throw_in_fast_path=*/ false);
+}
+
+RWLockImpl::LockHolder StorageFile::lockRwlock(RWLockImpl::Type type, const ContextPtr & context) const
+{
+    auto holder = tryLockRwlock(type, context);
+    if (!holder)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+    return holder;
+}
+
 using StorageFilePtr = std::shared_ptr<StorageFile>;
 
 StorageFileSource::FilesIterator::FilesIterator(
@@ -1652,9 +1684,7 @@ StorageFileSource::StorageFileSource(
 {
     if (!storage->use_table_fd)
     {
-        shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(getContext()));
-        if (!shared_lock)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        read_lock = storage->lockRwlock(RWLockImpl::Read, getContext());
         storage->readers_counter.fetch_add(1, std::memory_order_release);
     }
 }
@@ -1664,12 +1694,13 @@ void StorageFileSource::beforeDestroy()
     if (storage->file_renamer.isEmpty())
         return;
 
+    /// A Write acquisition takes the lock's fast path, which refuses outright while the same query holds a Read lock.
+    read_lock.reset();
     int32_t cnt = storage->readers_counter.fetch_sub(1, std::memory_order_acq_rel);
 
     if (std::uncaught_exceptions() == 0 && cnt == 1 && !storage->was_renamed)
     {
-        shared_lock.unlock();
-        auto exclusive_lock = std::unique_lock{storage->rwlock, getLockTimeout(getContext())};
+        auto exclusive_lock = storage->tryLockRwlock(RWLockImpl::Write, getContext());
 
         if (!exclusive_lock)
             return;
@@ -1693,7 +1724,10 @@ void StorageFileSource::beforeDestroy()
                     throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exists", file_path.string());
 
                 fs::rename(fs::path(file_path_ref), file_path);
-                file_path_ref = file_path.string();
+                {
+                    std::lock_guard paths_lock{storage->paths_mutex};
+                    file_path_ref = file_path.string();
+                }
                 storage->was_renamed = true;
             }
             catch (const std::exception & e)
@@ -1708,7 +1742,14 @@ void StorageFileSource::beforeDestroy()
 
 StorageFileSource::~StorageFileSource()
 {
-    beforeDestroy();
+    try
+    {
+        beforeDestroy();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 
@@ -1983,10 +2024,15 @@ Chunk StorageFileSource::generate()
             /// bypassed entirely while the token has not settled and cannot prove a rewrite. Only
             /// formats that expose bucket splitting (Parquet) ever populate the cache, so other
             /// formats miss.
+            /// A TopN read consults the cache only while `use_query_condition_cache_for_top_k` is on:
+            /// the setting is documented to make TopK reads neither consult nor populate the query
+            /// condition cache, and the write side is already off for them unconditionally (see below).
             FileBucketInfoPtr buckets_to_read;
             QueryConditionCachePtr query_condition_cache;
             if (object_with_metadata.has_value() && current_file_version_settled
-                && format_filter_info && format_filter_info->condition_hash)
+                && format_filter_info && format_filter_info->condition_hash
+                && (!format_filter_info->top_k_filter
+                    || getContext()->getSettingsRef()[Setting::use_query_condition_cache_for_top_k]))
                 query_condition_cache = getContext()->getQueryConditionCache();
 
             if (query_condition_cache)
@@ -2215,8 +2261,17 @@ Chunk StorageFileSource::generate()
         /// happens while this file was being read would otherwise let a version token, still valid
         /// at open time, get written together with row groups derived from bytes it no longer
         /// describes.
+        /// TopN dynamic filtering makes the matched buckets threshold-dependent rather than a
+        /// predicate-only verdict: a row group can end up empty (hence "unmatched") only because the
+        /// running `__topKFilter` threshold - established from the rows of *all* files this query
+        /// reads - had already excluded its rows. The cache key encodes just the predicate and the
+        /// single file's version, so such an entry would poison a later plain read, a read with a
+        /// different `LIMIT` or sort direction, or a read of only one file of the glob. Never write
+        /// cache entries for TopK reads. Reading the cache stays enabled while
+        /// `use_query_condition_cache_for_top_k` is on: entries are only ever written by
+        /// threshold-oblivious reads, so applying them to a TopK read is sound.
         if (input_format && current_file_cache_version.has_value() && current_file_version_settled
-            && format_filter_info && format_filter_info->condition_hash
+            && format_filter_info && format_filter_info->condition_hash && !format_filter_info->top_k_filter
             && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
         {
             try
@@ -2308,6 +2363,33 @@ std::optional<size_t> StorageFileSource::tryGetNumRowsFromCache(const String & p
     return schema_cache.tryGetNumRows(key, get_last_mod_time);
 }
 
+bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const
+{
+    if (!boost::iequals(storage->format_name, "Parquet"))
+        return false;
+
+    /// The output header of this step is broader than what the format reads: `prepareReadingFromFormat`
+    /// appends Hive partition columns (taken from the file path) and virtual columns (`_path`,
+    /// `_file`, ...) after the format has produced its chunk, while the Parquet reader is built on
+    /// `format_header` and only sees the physical file columns. Arming the filter for a sort key
+    /// the reader cannot see would give no pruning but still pay its side effects (offset-index
+    /// prefetches for every column, no query condition cache writes), so gate on `format_header`.
+    const auto * format_column = info.format_header.findByName(sort_column.name);
+    if (!format_column || !format_column->type->equals(*sort_column.type))
+        return false;
+
+    /// Being in `format_header` is still not the same as "what the reader read is what the query
+    /// sorts by": `format_header` lists the query-schema columns, and a column carrying a
+    /// `DEFAULT` / `MATERIALIZED` / `ALIAS` expression is recomputed *above* the format by
+    /// `AddingDefaultsTransform` for every value the reader reported as missing - a column absent
+    /// from this particular file (the reader fills type defaults), or a `NULL` read into a
+    /// non-`Nullable` column. The threshold the sorting transforms publish then comes from the
+    /// recomputed values while the reader compares its own placeholders against it, which can drop
+    /// rows that belong to the top-K. A column with no default expression is never rewritten above
+    /// the reader, so for it the two values always agree.
+    return !info.columns_description.hasDefault(sort_column.name);
+}
+
 void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
@@ -2327,7 +2409,7 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromFile::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
+    info = updateFormatPrewhereInfo(info, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
 }
@@ -2365,7 +2447,7 @@ bool ReadFromFile::canUseLazyMaterialization() const
     /// The lazy pass reopens every path and uses the physical row positions from the main pass.
     /// Pipes and pseudo-files are single-pass streams, so their `stat` tokens cannot establish
     /// that the second read sees the same data.
-    for (const auto & path : storage->paths)
+    for (const auto & path : paths_snapshot)
     {
         struct stat file_stat{};
         if (0 != stat(path.c_str(), &file_stat))
@@ -2377,7 +2459,7 @@ bool ReadFromFile::canUseLazyMaterialization() const
 
     /// The lazy pass rereads the surviving rows by their physical positions, which needs random
     /// access to the raw file; a compression wrapper reads only sequentially.
-    for (const auto & path : storage->paths)
+    for (const auto & path : paths_snapshot)
         if (chooseCompressionMethod(path, storage->compression_method) != CompressionMethod::None)
             return false;
 
@@ -2386,12 +2468,10 @@ bool ReadFromFile::canUseLazyMaterialization() const
 
 std::unique_ptr<LazilyReadFromFile> ReadFromFile::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names)
 {
-    /// A bare row policy (no PREWHERE) is not propagated into `info` — `updateFormatPrewhereInfo`
-    /// would prune its input columns from the format header and break `DEFAULT` expressions that
-    /// the source computes from them — but the source still evaluates it in the main pass via
+    /// A row policy is not part of `info`, but the source evaluates it in the main pass via
     /// `FormatFilterInfo`, so its input columns must not be deferred to the lazy branch.
     NameSet names_to_keep = required_names;
-    if (!info.row_level_filter && query_info.row_level_filter)
+    if (query_info.row_level_filter)
         for (const auto & column : query_info.row_level_filter->actions.getRequiredColumns())
             names_to_keep.insert(column.name);
 
@@ -2441,7 +2521,10 @@ void StorageFile::read(
             context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
 
     if (use_table_fd)
+    {
+        std::lock_guard lock{paths_mutex};
         paths = {""};   /// when use fd, paths are empty
+    }
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
@@ -2454,9 +2537,9 @@ void StorageFile::read(
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
     if (query_info.prewhere_info)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
         && context->getSettingsRef()[Setting::optimize_count_from_files]
         && !query_info.row_level_filter
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
@@ -2481,7 +2564,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         return;
 
     files_iterator = std::make_shared<StorageFileSource::FilesIterator>(
-        storage->paths,
+        paths_snapshot,
         storage->archive_info,
         predicate,
         storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
@@ -2501,7 +2584,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (storage->archive_info)
         files_to_read = storage->archive_info->paths_to_archives.size();
     else
-        files_to_read = storage->paths.size();
+        files_to_read = paths_snapshot.size();
 
     if (max_num_streams > files_to_read)
         num_streams = files_to_read;
@@ -2519,6 +2602,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    format_filter_info->top_k_filter = top_k_filter;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -2582,9 +2666,7 @@ public:
         , max_block_size(max_block_size_)
         , files(std::move(files_))
     {
-        shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(getContext()));
-        if (!shared_lock)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        read_lock = storage->lockRwlock(RWLockImpl::Read, getContext());
         parser_shared_resources = std::make_shared<FormatParserSharedResources>(getContext()->getSettingsRef(), /*num_streams_=*/ 1);
     }
 
@@ -2746,7 +2828,7 @@ private:
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
 
-    std::shared_lock<std::shared_timed_mutex> shared_lock;
+    RWLockImpl::LockHolder read_lock;
 };
 
 std::shared_ptr<ISource> StorageFile::createLazyRowsSource(
@@ -2794,7 +2876,7 @@ public:
     StorageFileSink(
         const StorageMetadataPtr & metadata_snapshot_,
         const String & table_name_for_log_,
-        std::unique_lock<std::shared_timed_mutex> && lock_,
+        RWLockImpl::LockHolder && lock_,
         int table_fd_,
         bool use_table_fd_,
         std::string base_path_,
@@ -2933,7 +3015,7 @@ private:
     std::optional<FormatSettings> format_settings;
 
     int flags;
-    std::unique_lock<std::shared_timed_mutex> lock;
+    RWLockImpl::LockHolder lock;
 };
 
 class PartitionedStorageFileSink : public PartitionedSink
@@ -2943,7 +3025,7 @@ public:
         std::shared_ptr<IPartitionStrategy> partition_strategy_,
         const StorageMetadataPtr & metadata_snapshot_,
         const String & table_name_for_log_,
-        std::unique_lock<std::shared_timed_mutex> && lock_,
+        RWLockImpl::LockHolder && lock_,
         String base_path_,
         String path_,
         const CompressionMethod compression_method_,
@@ -3001,7 +3083,7 @@ private:
 
     ContextPtr context;
     int flags;
-    std::unique_lock<std::shared_timed_mutex> lock;
+    RWLockImpl::LockHolder lock;
 };
 
 
@@ -3045,7 +3127,7 @@ SinkToStoragePtr StorageFile::write(
             partition_strategy,
             metadata_snapshot,
             getStorageID().getNameForLogs(),
-            std::unique_lock{rwlock, getLockTimeout(context)},
+            lockRwlock(RWLockImpl::Write, context),
             base_path,
             path_for_partitioned_write,
             chooseCompressionMethod(path_for_partitioned_write, compression_method),
@@ -3055,7 +3137,10 @@ SinkToStoragePtr StorageFile::write(
             flags);
     }
 
+    auto lock = lockRwlock(RWLockImpl::Write, context);
+
     String path;
+    std::optional<String> path_to_publish;
     if (!paths.empty())
     {
         if (is_path_with_globs)
@@ -3082,8 +3167,8 @@ SinkToStoragePtr StorageFile::write(
                     ++index;
                 }
                 while (fs::exists(new_path));
-                paths.push_back(new_path);
                 path = new_path;
+                path_to_publish = std::move(new_path);
             }
             else
                 throw Exception(
@@ -3096,10 +3181,10 @@ SinkToStoragePtr StorageFile::write(
         }
     }
 
-    return std::make_shared<StorageFileSink>(
+    auto sink = std::make_shared<StorageFileSink>(
         metadata_snapshot,
         getStorageID().getNameForLogs(),
-        std::unique_lock{rwlock, getLockTimeout(context)},
+        std::move(lock),
         table_fd,
         use_table_fd,
         base_path,
@@ -3109,6 +3194,15 @@ SinkToStoragePtr StorageFile::write(
         format_name,
         context,
         flags);
+
+    /// A reader that cannot stat a path throws, so `paths` may only name the file once it exists.
+    if (path_to_publish)
+    {
+        std::lock_guard paths_lock{paths_mutex};
+        paths.push_back(std::move(*path_to_publish));
+    }
+
+    return sink;
 }
 
 bool StorageFile::storesDataOnDisk() const
@@ -3116,11 +3210,18 @@ bool StorageFile::storesDataOnDisk() const
     return is_db_table;
 }
 
+Strings StorageFile::getPathsSnapshot() const
+{
+    std::lock_guard lock{paths_mutex};
+    return paths;
+}
+
 Strings StorageFile::getDataPaths() const
 {
-    if (paths.empty())
+    auto snapshot = getPathsSnapshot();
+    if (snapshot.empty())
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Table '{}' is in readonly mode", getStorageID().getNameForLogs());
-    return paths;
+    return snapshot;
 }
 
 void StorageFile::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
