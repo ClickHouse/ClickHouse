@@ -170,10 +170,17 @@ The `rows_before_limit_at_least` object is emitted when the query contains `LIMI
 ## Example usage {#example-usage}
 
 ```json
+{"meta":[{"name":"num","type":"UInt8"},{"name":"str","type":"String"},{"name":"arr","type":"Array(UInt8)"}]}
 {"row":{"num":42,"str":"hello","arr":[0,1]}}
 {"row":{"num":43,"str":"hello","arr":[0,1,2]}}
 {"row":{"num":44,"str":"hello","arr":[0,1,2,3]}}
 {"progress":{"read_rows":"3","read_bytes":"24","written_rows":"0","written_bytes":"0","total_rows_to_read":"3"}}
+```
+
+A `progress` object may still be emitted before `meta`. On the HTTP path with `http_write_exception_in_output_format=1`, a failed query ends with a separate top-level object (not nested under `row`):
+
+```json
+{"exception":"Code: 62. DB::Exception: Syntax error: failed at position 1 (SELECT) (line 1, col 1): ..."}
 ```
 
 ## Format settings {#format-settings}
