@@ -1,0 +1,27 @@
+1	1	a	lc1	['x1']	\N
+2	1	b	lc2	[]	2.5
+3	1	c	lc3	['x3']	3.5
+4	2	d	lc4	['x4','y4']	4.5
+996	0	0
+1
+1	1	c
+2	-1	d
+2	1	e
+3	1	j
+0
+2	1	1	c
+2	2	1	d
+10	1	1	x
+11	1	-1	y
+500	0
+3	c
+10	45
+05317_cancel	0	1
+05317_collapse	0	1
+05317_key_only	0	0
+05317_no_key	0	1
+05317_replace	0	1
+05317_runs	0	1
+05317_unique	1	0
+05317_versioned	0	1
+05317_versioned_unique	1	0
