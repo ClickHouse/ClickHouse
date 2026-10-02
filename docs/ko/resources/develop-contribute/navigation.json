@@ -21,7 +21,7 @@
       ]
     },
     {
-      "group": "native protocol",
+      "group": "네이티브 프로토콜",
       "pages": [
         "ko/resources/develop-contribute/native-protocol/basics",
         "ko/resources/develop-contribute/native-protocol/client",
