@@ -28,7 +28,7 @@ namespace DB
 /// Native ClickHouse writer for the `Arrow` (file) and `ArrowStream` (stream) IPC formats.
 ///
 /// Encodes ClickHouse columns directly into Arrow IPC record-batch buffers and builds the FlatBuffers
-/// metadata without the Apache Arrow C++ library. Selected via `output_format_arrow_use_native_writer`.
+/// metadata without the Apache Arrow C++ library.
 /// `LowCardinality` is written as its full column, or — when `output_format_arrow_low_cardinality_as_dictionary`
 /// is on — as an Arrow dictionary-encoded column (a single dictionary per id, extended across batches via deltas).
 class ArrowIPCBlockOutputFormat final : public IOutputFormat
@@ -42,6 +42,9 @@ private:
     void consume(Chunk) override;
     void finalizeImpl() override;
     void resetFormatterImpl() override;
+
+    /// Encodes one chunk as exactly one record batch, preceded by the dictionary batches it references.
+    void writeChunk(Chunk chunk);
 
     void writeSchemaIfNeeded();
     /// Writes one encapsulated message for an encoded batch (a record batch, or a dictionary batch
@@ -94,6 +97,11 @@ private:
     };
     ArrowIPC::DictPlans column_dict_plans;
     VectorWithMemoryTracking<DictionaryColumnState> dictionary_states;
+
+    /// Rows of consecutive chunks that are individually smaller than the configured record batch target,
+    /// to be written as one record batch. The first chunk becomes the accumulator itself, so a staged batch
+    /// can hold one source block's allocations until it is written.
+    Chunk staged;
 };
 
 }

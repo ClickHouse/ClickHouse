@@ -1,0 +1,6 @@
+ALTER TABLE x\n    (MOVE PART \'p\' TO SHARD \'/path\')
+ALTER TABLE db.`my tbl` (MOVE PART \'all_1_1_0\' TO SHARD \'/clickhouse/shard2\')
+ALTER TABLE x\n    (MOVE PART \'p\' TO SHARD \'/path\')
+ALTER TABLE x\n    (MOVE PART \'p\' TO DISK \'d1\')
+ALTER TABLE x\n    (MOVE PARTITION 1 TO VOLUME \'v1\')
+ALTER TABLE x\n    (MOVE PARTITION 1 TO TABLE y)

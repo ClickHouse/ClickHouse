@@ -21,9 +21,9 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 | `ON CLUSTER cluster` | 지정된 클러스터 전체에서 명령을 실행합니다.                                                  |
 | `SYNC`               | 복제된 테이블을 사용할 때 `TRUNCATE`를 레플리카 전체에 동기식으로 적용합니다. 생략하면 기본적으로 비동기식으로 수행됩니다. |
 
-[alter&#95;sync](/ko/reference/settings/session-settings#alter_sync) 설정을 사용하여 레플리카에서 작업이 실행될 때까지 대기하도록 설정할 수 있습니다.
+[alter&#95;sync](/ko/reference/settings/session-settings/alter#alter_sync) 설정을 사용하여 레플리카에서 작업이 실행될 때까지 대기하도록 설정할 수 있습니다.
 
-[replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ko/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout) 설정을 사용하여 비활성 레플리카가 `TRUNCATE` 쿼리를 실행할 때까지 얼마나 오래 기다릴지(초 단위) 지정할 수 있습니다.
+[replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ko/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 설정을 사용하여 비활성 레플리카가 `TRUNCATE` 쿼리를 실행할 때까지 얼마나 오래 기다릴지(초 단위) 지정할 수 있습니다.
 
 <Info>
   `alter_sync`가 `2`로 설정되어 있고 일부 레플리카가 `replication_wait_for_inactive_replica_timeout` 설정에 지정된 시간보다 오래 비활성 상태로 남아 있으면 `UNFINISHED` 예외가 발생합니다.

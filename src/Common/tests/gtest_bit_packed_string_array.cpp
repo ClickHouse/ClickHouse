@@ -94,7 +94,7 @@ TEST(BitPackedStringArray, BlockBoundaries)
 
 TEST(BitPackedStringArray, RandomStrings)
 {
-    std::mt19937_64 rng(42); // NOLINT(cert-msc32-c,cert-msc51-cpp): deterministic seed for reproducible test
+    std::mt19937_64 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic seed for reproducible test
     std::vector<std::string> strings;
 
     for (size_t i = 0; i < 10000; ++i)

@@ -83,24 +83,29 @@ group 8: no row is lost
 group 9: type merge
 c1	Nullable(Float64)					
 c1	Nullable(Float64)					
-group 10: exponent forms stay String in TSV
+group 10: valid exponent forms infer Float64 in TSV, as in CSV
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+group 10: and they read back as numbers
+0
+5000000000
+group 10: malformed exponent forms stay String, now via inference itself
 c1	Nullable(String)					
 c1	Nullable(String)					
 c1	Nullable(String)					
-c1	Nullable(String)					
-c1	Nullable(String)					
-c1	Nullable(String)					
-c1	Nullable(String)					
-group 10: the malformed exponent is readable only because it stays String
+group 10: so they still read back verbatim
 0.5e+
 0e+
 0.5e-
 0.5e+	String
 0e+	String
-group 10: the CSV divergence that deliberately remains
+group 10: CSV agrees with TSV, and the malformed form is readable in both
 c1	Nullable(Float64)					
 c1	Nullable(Float64)					
-c1	Nullable(Float64)					
+c1	Nullable(String)					
+0.5e+
 group 11: try_infer_integers = 1 (the default)
 c1	Nullable(Float64)					
 c1	Nullable(String)					

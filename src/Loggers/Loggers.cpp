@@ -181,7 +181,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         error_log_file = new Poco::FileChannel;
         error_log_file->setProperty(Poco::FileChannel::PROP_PATH, fs::weakly_canonical(errorlog_path));
-        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
+        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.rotation", config.getRawString("logger.size", "100M")));
         error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         error_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
         error_log_file->setProperty(Poco::FileChannel::PROP_STREAMCOMPRESS, config.getRawString("logger.stream_compress", "false"));
@@ -449,14 +449,22 @@ DB::AsyncLogQueueSizes Loggers::getAsynchronousMetricsFromAsyncLogs()
 
 void Loggers::stopAsyncLoggingThreads()
 {
+    /// Fail closed: the caller quiesces the process around `remapExecutable`, so a thread that could not
+    /// be joined must abort the remap rather than be left running while the text segment is rewritten.
     if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
-        async->close();
+        async->closeAndJoinThreads();
 }
 
 void Loggers::startAsyncLoggingThreads()
 {
     if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
         async->open();
+}
+
+void Loggers::closeAsyncLogging()
+{
+    if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
+        async->close();
 }
 
 void Loggers::stopLogging()

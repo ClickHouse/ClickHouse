@@ -20,4 +20,6 @@ endif()
 if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
     target_compile_options (_lz4 PRIVATE -fno-sanitize=undefined)
 endif ()
-target_include_directories(_lz4 PUBLIC "${LIBRARY_DIR}/lib")
+# SYSTEM so that the bundled legacy xxhash.h does not shadow contrib/xxHash for consumers
+# that use both (plain -I directories are searched before every -isystem directory).
+target_include_directories(_lz4 SYSTEM PUBLIC "${LIBRARY_DIR}/lib")

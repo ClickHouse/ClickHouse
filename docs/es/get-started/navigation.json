@@ -6,7 +6,50 @@
       "group": "Primeros pasos",
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
-        "es/get-started/quickstarts/home",
+        "es/get-started/index",
+        {
+          "expandable": true,
+          "expanded": false,
+          "group": "Guías de inicio rápido",
+          "pages": [
+            "es/get-started/quickstarts/home",
+            {
+              "expanded": false,
+              "group": "Todos los casos de uso",
+              "pages": [
+                "es/get-started/setup/cloud",
+                "es/get-started/quickstarts/obtain-your-cloud-connection-details",
+                "es/get-started/quickstarts/insert-data-using-clickhouse-client",
+                "es/get-started/quickstarts/creating-tables",
+                "es/get-started/quickstarts/writing-queries",
+                "es/get-started/quickstarts/create-your-first-mergetree-table"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Análisis en tiempo real",
+              "pages": [
+                "es/get-started/quickstarts/create-your-first-materialized-view",
+                "es/get-started/quickstarts/create-your-first-projection"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Almacenamiento de datos",
+              "pages": [
+                "es/get-started/quickstarts/connect-your-iceberg-catalog",
+                "es/get-started/quickstarts/mutations"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Observabilidad",
+              "pages": [
+                "es/get-started/quickstarts/working-with-the-map-type"
+              ]
+            }
+          ]
+        },
         {
           "expandable": true,
           "expanded": true,
@@ -21,27 +64,29 @@
           "expanded": true,
           "group": "Casos de uso",
           "pages": [
+            "es/get-started/use-cases/overview",
+            "es/get-started/use-cases/choosing-a-service",
             "es/get-started/use-cases/real-time-analytics",
             "es/get-started/use-cases/observability",
             "es/get-started/use-cases/data-warehousing",
             "es/get-started/use-cases/agentic-analytics"
-          ],
-          "root": "es/get-started/use-cases/overview"
+          ]
         },
         "es/get-started/about/deployment-modes"
-      ],
-      "root": "es/get-started/index"
+      ]
     },
     {
       "expanded": true,
       "group": "Configuración",
       "icon": "/images/menu-icon-gear.svg",
       "pages": [
+        "es/get-started/setup/install",
         "es/get-started/setup/cloud",
         {
           "expanded": true,
           "group": "Autogestionado",
           "pages": [
+            "es/get-started/setup/self-managed/overview",
             {
               "group": "Desarrollo local",
               "pages": [
@@ -60,20 +105,19 @@
                 "es/get-started/setup/self-managed/other-linux"
               ]
             }
-          ],
-          "root": "es/get-started/setup/self-managed/overview"
+          ]
         }
-      ],
-      "root": "es/get-started/setup/install"
+      ]
     },
     {
       "expanded": true,
       "group": "Conjuntos de datos de ejemplo",
       "icon": "/images/menu-icon-database.svg",
       "pages": [
+        "es/get-started/sample-datasets/index",
         "es/get-started/sample-datasets/playground",
         {
-          "group": "Benchmarks",
+          "group": "Pruebas de rendimiento",
           "pages": [
             "es/get-started/sample-datasets/amplab-benchmark",
             "es/get-started/sample-datasets/brown-benchmark",
@@ -94,7 +138,7 @@
           ]
         },
         {
-          "group": "Analítica web y social",
+          "group": "Analítica web y de redes sociales",
           "pages": [
             "es/get-started/sample-datasets/amazon-reviews",
             "es/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -106,7 +150,7 @@
           ]
         },
         {
-          "group": "Geoespacial y ubicación",
+          "group": "Datos geoespaciales y ubicación",
           "pages": [
             "es/get-started/sample-datasets/cell-towers",
             "es/get-started/sample-datasets/foursquare-os-places",
@@ -132,14 +176,14 @@
             "es/get-started/sample-datasets/uk-price-paid"
           ]
         }
-      ],
-      "root": "es/get-started/sample-datasets/index"
+      ]
     },
     {
       "expanded": true,
-      "group": "Migrar",
+      "group": "Migración",
       "icon": "/images/caret-double-right.svg",
       "pages": [
+        "es/get-started/migrate/overview",
         {
           "group": "PostgreSQL",
           "pages": [
@@ -153,8 +197,7 @@
               ]
             },
             "es/get-started/migrate/postgres/appendix"
-          ],
-          "root": "es/get-started/migrate/postgres/index"
+          ]
         },
         {
           "group": "BigQuery",
@@ -162,8 +205,7 @@
             "es/get-started/migrate/bigquery/overview",
             "es/get-started/migrate/bigquery/migrating-to-clickhouse-cloud",
             "es/get-started/migrate/bigquery/loading-data"
-          ],
-          "root": "es/get-started/migrate/bigquery/index"
+          ]
         },
         {
           "group": "Snowflake",
@@ -190,7 +232,8 @@
         {
           "group": "De OSS a Cloud",
           "pages": [
-            "es/get-started/migrate/oss-to-cloud/clickhouse-to-cloud"
+            "es/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
+            "es/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
           ]
         },
         {
@@ -201,8 +244,7 @@
             "es/get-started/migrate/other-methods/object-storage-to-clickhouse"
           ]
         }
-      ],
-      "root": "es/get-started/migrate/overview"
+      ]
     }
   ]
 }

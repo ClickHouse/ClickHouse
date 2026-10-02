@@ -1,0 +1,25 @@
+GROUPING SETS with a constant key
+Emma	x	1	0
+Noah	x	1	0
+	x	2	3
+ROLLUP with a constant key
+1	1	0	0
+1	1	1	0
+1	1	2	0
+3	1	0	1
+3	1	0	3
+CUBE with a constant key
+1	1	0	0
+1	1	1	0
+1	1	2	0
+3	1	0	1
+1	1	0	2
+1	1	1	2
+1	1	2	2
+3	1	0	3
+ROLLUP with a constant key and no GROUPING
+1
+1
+1
+3
+3

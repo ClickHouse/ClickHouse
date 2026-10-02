@@ -29,6 +29,8 @@ size_t getPartLevelFromChunk(const Chunk & chunk);
 
 bool isVirtualRow(const Chunk & chunk);
 
-void setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_conversions);
+/// Returns the block the virtual row was built from, i.e. the sort columns it can announce exactly.
+/// Every other column of `header` is filled with a type default and bounds nothing.
+Block setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_conversions);
 
 }

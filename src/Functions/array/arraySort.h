@@ -32,7 +32,7 @@ struct ArraySortImpl
     static void checkArguments(
         const String & name,
         const ColumnWithTypeAndName * fixed_arguments)
-        requires(num_fixed_params)
+        requires num_fixed_params
     {
         if (!fixed_arguments)
             throw Exception(
