@@ -159,7 +159,7 @@ struct ArrayAggregateImpl
     /// to return the first occurrence, which is what compareAt-based selection returns.
     template <typename Element>
     requires(has_find_extreme_implementation<Element> || underlying_has_find_extreme_implementation<Element>)
-    static bool executeMinOrMaxNumeric(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
+    static bool executeMinOrMaxFindExtreme(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
     {
         using ColVecType = ColumnVectorOrDecimal<Element>;
 
@@ -256,25 +256,25 @@ struct ArrayAggregateImpl
             return;
         }
 
-        if (executeMinOrMaxNumeric<UInt8>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<UInt16>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<UInt32>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<UInt64>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Int8>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Int16>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Int32>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Int64>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<UInt128>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<UInt256>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Int128>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Int256>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Float32>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Float64>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Decimal32>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Decimal64>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Decimal128>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Decimal256>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<DateTime64>(mapped, offsets, res_ptr))
+        if (executeMinOrMaxFindExtreme<UInt8>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt16>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int8>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int16>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt128>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt256>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int128>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int256>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Float32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Float64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal128>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal256>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<DateTime64>(mapped, offsets, res_ptr))
             return;
 
         MutableColumnPtr res_column = mapped->cloneEmpty();
