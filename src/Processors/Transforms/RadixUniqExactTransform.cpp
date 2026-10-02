@@ -10,6 +10,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <base/getL2CacheSize.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
@@ -126,6 +127,8 @@ public:
         }
     }
 
+    ALWAYS_INLINE void prefetch(Key key) const { __builtin_prefetch(&cells[slotHash(key) & mask]); }
+
     size_t size() const { return count + has_zero; }
     size_t capacity() const { return mask + 1; }
     size_t numCellsInUse() const { return count; }
@@ -146,6 +149,10 @@ private:
     size_t count = 0;
     bool has_zero = false;
 };
+
+/// When a set does not fit into the L2 cache, the cell of the key this far ahead is prefetched while a key is inserted,
+/// so that the cache misses of the inserts overlap.
+constexpr size_t PREFETCH_DISTANCE = 32;
 
 /// A stream switches from its local set to the routing once the set would outgrow this size.
 constexpr size_t MAX_LOCAL_SET_BYTES = 1024 * 1024;
@@ -231,8 +238,20 @@ public:
                 has_last_value |= !is_null;
             }
 
-            for (size_t i = 0; i < num_keys; ++i)
-                insert(stream, keys[i]);
+            if (stream.mode == Mode::UnboundedSet && stream.local_set.capacity() * sizeof(Key) > getL2CacheSize())
+            {
+                for (size_t i = 0; i < num_keys; ++i)
+                {
+                    if (i + PREFETCH_DISTANCE < num_keys)
+                        stream.local_set.prefetch(keys[i + PREFETCH_DISTANCE]);
+                    insert(stream, keys[i]);
+                }
+            }
+            else
+            {
+                for (size_t i = 0; i < num_keys; ++i)
+                    insert(stream, keys[i]);
+            }
         }
 
         rows.fetch_add(num_rows, std::memory_order_relaxed);
@@ -272,8 +291,21 @@ public:
             for (const Block * block = stream.chains[partition].head; block; block = block->next)
             {
                 const Key * keys = block->keys();
-                for (size_t i = 0; i < block->size; ++i)
-                    set.insert(keys[i]);
+                const size_t size = block->size;
+                if (set.capacity() * sizeof(Key) > getL2CacheSize())
+                {
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        if (i + PREFETCH_DISTANCE < size)
+                            set.prefetch(keys[i + PREFETCH_DISTANCE]);
+                        set.insert(keys[i]);
+                    }
+                }
+                else
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        set.insert(keys[i]);
+                }
             }
         }
 
