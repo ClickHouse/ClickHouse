@@ -3756,7 +3756,8 @@ replaces it entirely: keys and overridability flags absent from the new definiti
 
 Overriding a stored key when using the collection requires `SHOW NAMED COLLECTIONS SECRETS` on that collection,
 including keys marked `OVERRIDABLE`. Keys marked `NOT OVERRIDABLE` cannot be overridden.
-Dictionary sources can add missing keys but cannot override stored keys.
+Dictionary sources follow the same rule. The privilege is checked when the dictionary is created, attached, or restored.
+When the dictionary is loaded, only keys marked `NOT OVERRIDABLE` are enforced.
 
 **Example**
 

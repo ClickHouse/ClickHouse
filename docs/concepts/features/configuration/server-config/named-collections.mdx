@@ -30,7 +30,7 @@ GRANT SHOW NAMED COLLECTIONS SECRETS ON my_collection TO my_user;
 
 This check requires the privilege alone; it does not depend on the settings that control displaying secrets. The `allow_named_collection_override_by_default` setting is obsolete and has no effect.
 
-Dictionary sources may add parameters but cannot override stored parameters. Define a separate named collection with the required values when a dictionary needs a different configuration.
+Dictionary sources follow the same rule. The privilege is checked when the dictionary is created, attached, or restored. When the dictionary is loaded, only keys marked `NOT OVERRIDABLE` are enforced.
 
 ## Storing named collections in the system database {#storing-named-collections-in-the-system-database}
 
