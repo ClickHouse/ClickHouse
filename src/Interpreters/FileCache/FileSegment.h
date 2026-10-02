@@ -269,6 +269,7 @@ private:
     void addReservedSize(Int64 delta);
 
     void onRemovedFromCache(const FileSegmentGuard::Lock &);
+    FileSegmentEfficiencyInfo getEfficiencyInfo(const FileSegmentGuard::Lock &) const;
 
     void startEfficiencyWindowUnlocked(FileCacheEfficiency::Window window) TSA_REQUIRES(efficiency_mutex);
     /// Granules `[first, last]` that `[offset, offset + size)` overlaps, cut at the segment end.

@@ -148,14 +148,14 @@ protected:
                 else
                     col_file_size->insertDefault();
 
-                col_active_bytes->insert(file_segment.active_bytes);
-                col_passive_bytes->insert(file_segment.passive_bytes);
-                col_idle_bytes->insert(file_segment.idle_bytes);
-                if (file_segment.last_hit_windows_ago)
-                    col_last_hit_windows_ago->insert(*file_segment.last_hit_windows_ago);
+                col_active_bytes->insert(file_segment.efficiency.active_bytes);
+                col_passive_bytes->insert(file_segment.efficiency.passive_bytes);
+                col_idle_bytes->insert(file_segment.efficiency.idle_bytes);
+                if (file_segment.efficiency.last_hit_windows_ago)
+                    col_last_hit_windows_ago->insert(*file_segment.efficiency.last_hit_windows_ago);
                 else
                     col_last_hit_windows_ago->insertDefault();
-                col_last_hit_active_bytes->insert(file_segment.last_hit_active_bytes);
+                col_last_hit_active_bytes->insert(file_segment.efficiency.last_hit_active_bytes);
                 col_queue_entry_type->insert(String(magic_enum::enum_name(file_segment.queue_entry_type)));
 
                 ++num_rows;

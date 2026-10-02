@@ -4294,14 +4294,14 @@ TEST_F(FileCacheTest, EfficiencyWindow)
     auto holder_b = cache.getOrSet(key, 128, 128, 1024, {}, 0, user);
     auto b = get(holder_b, 0);
     download(b);
-    EXPECT_FALSE(FileSegment::getInfo(b).last_hit_windows_ago.has_value());
+    EXPECT_FALSE(FileSegment::getInfo(b).efficiency.last_hit_windows_ago.has_value());
 
     /// Window 0: A is read in full; B is not read and stays idle.
     a->markRead(0, 128);
-    EXPECT_EQ(FileSegment::getInfo(a).active_bytes, 128);
+    EXPECT_EQ(FileSegment::getInfo(a).efficiency.active_bytes, 128);
     expect(next_window(), /*active=*/128, /*passive=*/0);
-    EXPECT_EQ(FileSegment::getInfo(a).idle_bytes, 128);
-    EXPECT_EQ(FileSegment::getInfo(a).last_hit_windows_ago, 1);
+    EXPECT_EQ(FileSegment::getInfo(a).efficiency.idle_bytes, 128);
+    EXPECT_EQ(FileSegment::getInfo(a).efficiency.last_hit_windows_ago, 1);
 
     /// Window 1: a narrow read of A.
     a->markRead(10, 16);
@@ -4356,7 +4356,7 @@ TEST_F(FileCacheTest, EfficiencyWindow)
     ASSERT_EQ(d->range().size(), 100);
     download(d);
     d->markRead(90, 110);
-    EXPECT_EQ(FileSegment::getInfo(d).active_bytes, 10);
+    EXPECT_EQ(FileSegment::getInfo(d).efficiency.active_bytes, 10);
     expect(next_window(), 10, 90);
 
     /// Window 7: eviction (of C, then D) removes the share of a read file segment.
@@ -4411,9 +4411,9 @@ TEST_F(FileCacheTest, EfficiencyDisabled)
     download(segment);
     segment->markRead(0, 128);
 
-    EXPECT_FALSE(FileSegment::getInfo(segment).last_hit_windows_ago.has_value());
-    EXPECT_EQ(FileSegment::getInfo(segment).idle_bytes, 128);
-    EXPECT_EQ(FileSegment::getInfo(segment).active_bytes, 0);
+    EXPECT_FALSE(FileSegment::getInfo(segment).efficiency.last_hit_windows_ago.has_value());
+    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.idle_bytes, 128);
+    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.active_bytes, 0);
     const auto snapshot = cache.getEfficiency().getSnapshot();
     EXPECT_EQ(snapshot.active_bytes + snapshot.passive_bytes + snapshot.idle_bytes, 0);
 }
@@ -4451,7 +4451,7 @@ TEST_F(FileCacheTest, EfficiencyGranuleFollowsShrink)
     ASSERT_EQ(shrunk->range().size(), 10);
     ASSERT_EQ(shrunk->state(), State::DOWNLOADED);
     shrunk->markRead(0, 10);
-    EXPECT_EQ(FileSegment::getInfo(shrunk).active_bytes, 10);
+    EXPECT_EQ(FileSegment::getInfo(shrunk).efficiency.active_bytes, 10);
 
     /// The last granule is cut at the segment end.
     auto odd_key = FileCacheKey::fromPath("efficiency_granule_odd");
@@ -4460,7 +4460,7 @@ TEST_F(FileCacheTest, EfficiencyGranuleFollowsShrink)
     ASSERT_EQ(odd->range().size(), 1001);
     download(odd);
     odd->markRead(0, 1001);
-    EXPECT_EQ(FileSegment::getInfo(odd).active_bytes, 1001);
+    EXPECT_EQ(FileSegment::getInfo(odd).efficiency.active_bytes, 1001);
 }
 
 TEST_F(FileCacheTest, EfficiencyStaleWindowDoesNotMoveBack)
@@ -4485,7 +4485,7 @@ TEST_F(FileCacheTest, EfficiencyStaleWindowDoesNotMoveBack)
 
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(5));
     segment->markRead(32, 16);
-    EXPECT_EQ(FileSegment::getInfo(segment).active_bytes, 32);
+    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.active_bytes, 32);
 
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
     const auto snapshot = cache.getEfficiency().getSnapshot();
@@ -4547,7 +4547,7 @@ TEST_F(FileCacheTest, EfficiencySegmentWindows)
     download(segment);
     auto expect = [&](UInt64 active, UInt64 passive, UInt64 idle, std::optional<UInt64> last_hit_windows_ago, UInt64 last_hit_active)
     {
-        const auto info = FileSegment::getInfo(segment);
+        const auto info = FileSegment::getInfo(segment).efficiency;
         EXPECT_EQ(info.active_bytes, active);
         EXPECT_EQ(info.passive_bytes, passive);
         EXPECT_EQ(info.idle_bytes, idle);

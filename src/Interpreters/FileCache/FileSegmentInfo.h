@@ -62,6 +62,17 @@ namespace DB
 
     std::string toString(FileSegmentKind kind);
 
+    struct FileSegmentEfficiencyInfo
+    {
+        /// The live efficiency window: the three add up to `downloaded_size`.
+        uint64_t active_bytes = 0;
+        uint64_t passive_bytes = 0;
+        uint64_t idle_bytes = 0;
+        /// The latest earlier window with a cache hit; `nullopt` if there is none.
+        std::optional<uint64_t> last_hit_windows_ago;
+        uint64_t last_hit_active_bytes = 0;
+    };
+
     struct FileSegmentInfo
     {
         FileCacheKey key;
@@ -79,12 +90,6 @@ namespace DB
         bool is_unbound;
         IFileCachePriority::QueueEntryType queue_entry_type;
         FileCacheOriginInfo origin;
-        /// The live efficiency window: the three add up to `downloaded_size`.
-        uint64_t active_bytes = 0;
-        uint64_t passive_bytes = 0;
-        uint64_t idle_bytes = 0;
-        /// The latest earlier window with a cache hit; `nullopt` if there is none.
-        std::optional<uint64_t> last_hit_windows_ago;
-        uint64_t last_hit_active_bytes = 0;
+        FileSegmentEfficiencyInfo efficiency;
     };
 }

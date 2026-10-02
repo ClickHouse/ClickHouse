@@ -1393,34 +1393,37 @@ void FileSegment::assertNotDetachedUnlocked(const FileSegmentGuard::Lock & lock)
     }
 }
 
+FileSegmentEfficiencyInfo FileSegment::getEfficiencyInfo(const FileSegmentGuard::Lock &) const
+{
+    const size_t downloaded = downloaded_size;
+    FileSegmentEfficiencyInfo info;
+    info.idle_bytes = downloaded;
+    if (!cache)
+        return info;
+
+    const auto live_window = cache->getEfficiency().windowNow();
+    std::lock_guard lock(efficiency_mutex);
+    const bool hit_in_live_window = efficiency_window_id == live_window;
+    if (hit_in_live_window)
+    {
+        info.active_bytes = std::min(getActiveBytesUnlocked(), downloaded);
+        info.passive_bytes = downloaded - info.active_bytes;
+        info.idle_bytes = 0;
+    }
+
+    const auto last_hit_window = hit_in_live_window ? previous_hit_window_id : efficiency_window_id;
+    if (last_hit_window != FileCacheEfficiency::NEVER_READ && last_hit_window <= live_window)
+    {
+        info.last_hit_windows_ago = live_window - last_hit_window;
+        info.last_hit_active_bytes = hit_in_live_window ? previous_active_bytes : getActiveBytesUnlocked();
+    }
+    return info;
+}
+
 FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
 {
     auto lock = file_segment->lock();
     auto key_metadata = file_segment->tryGetKeyMetadata();
-    const size_t downloaded = file_segment->downloaded_size;
-    UInt64 active_bytes = 0;
-    UInt64 passive_bytes = 0;
-    UInt64 idle_bytes = downloaded;
-    std::optional<UInt64> last_hit_windows_ago;
-    UInt64 last_hit_active_bytes = 0;
-    if (file_segment->cache)
-    {
-        const auto live_window = file_segment->cache->getEfficiency().windowNow();
-        std::lock_guard efficiency_lock(file_segment->efficiency_mutex);
-        const bool hit_in_live_window = file_segment->efficiency_window_id == live_window;
-        if (hit_in_live_window)
-        {
-            active_bytes = std::min(file_segment->getActiveBytesUnlocked(), downloaded);
-            passive_bytes = downloaded - active_bytes;
-            idle_bytes = 0;
-        }
-        const auto last_hit_window = hit_in_live_window ? file_segment->previous_hit_window_id : file_segment->efficiency_window_id;
-        if (last_hit_window != FileCacheEfficiency::NEVER_READ && last_hit_window <= live_window)
-        {
-            last_hit_windows_ago = live_window - last_hit_window;
-            last_hit_active_bytes = hit_in_live_window ? file_segment->previous_active_bytes : file_segment->getActiveBytesUnlocked();
-        }
-    }
     return Info{
         .key = file_segment->key(),
         .offset = file_segment->offset(),
@@ -1437,11 +1440,7 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
         .is_unbound = file_segment->is_unbound,
         .queue_entry_type = file_segment->queue_iterator ? file_segment->queue_iterator->getType() : QueueEntryType::None,
         .origin = *key_metadata->origin,
-        .active_bytes = active_bytes,
-        .passive_bytes = passive_bytes,
-        .idle_bytes = idle_bytes,
-        .last_hit_windows_ago = last_hit_windows_ago,
-        .last_hit_active_bytes = last_hit_active_bytes,
+        .efficiency = file_segment->getEfficiencyInfo(lock),
     };
 }
 
