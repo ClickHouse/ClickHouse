@@ -5,6 +5,7 @@
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -69,6 +70,7 @@ namespace Setting
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsTimezone session_timezone;
+    extern const SettingsBool validate_enum_literals_in_operators;
 }
 
 namespace ErrorCodes
@@ -1562,6 +1564,7 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
+    , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
 {
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
@@ -1782,14 +1785,6 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
     rpn.emplace_back(RPNElement::FUNCTION_IN_RANGE, std::vector<size_t>{key_columns[column]}, range);
     rpn.emplace_back(RPNElement::FUNCTION_AND);
     return true;
-}
-
-bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
-{
-    RPNBuilderTreeContext tree_context(nullptr, block_with_constants, nullptr);
-    RPNBuilderTreeNode node(expr.get(), tree_context);
-
-    return node.tryGetConstant(out_value, out_type);
 }
 
 bool KeyCondition::hasOnlyConjunctions() const
@@ -2148,7 +2143,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     bool chain_is_positive = true;
     MonotonicFunctionsChain transform_functions;
     auto can_transform_constant = extractMonotonicFunctionsChainFromKey(
-        node.getTreeContext().getQueryContext(),
+        node.getContext(),
         expr_name,
         info,
         out_key_column_num,
@@ -3355,7 +3350,7 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     if (info.require_ready_sets && !future_set->get())
         return false;
 
-    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
+    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getContext());
     if (!prepared_set)
         return false;
 
@@ -3800,8 +3795,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
 
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
-        auto function = *it;
-        auto func_builder = FunctionFactory::instance().tryGet(function.getFunctionName(), node.getTreeContext().getQueryContext());
+        const auto & function = *it;
+        auto func_builder = FunctionFactory::instance().tryGet(function.getFunctionName(), node.getContext());
         if (!func_builder)
             return false;
         ColumnsWithTypeAndName arguments;
@@ -4963,6 +4958,27 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                                 return false;
                         }
 
+                        /// With validation off, `equals`/`notEquals` fold an unknown enum literal to a
+                        /// constant instead of throwing, so the index must do the same instead of converting.
+                        /// Nullable keys are declined, as for NaN above: `NULL <op> 'x'` is NULL, not a constant.
+                        if (!validate_enum_literals_in_operators && isUnknownEnumElement(*key_expr_type_not_null, const_value))
+                        {
+                            if (key_expr_type_is_nullable)
+                                return false;
+
+                            if (func_name == "equals")
+                            {
+                                out.function = RPNElement::ALWAYS_FALSE;
+                                return true;
+                            }
+                            if (func_name == "notEquals")
+                            {
+                                out.function = RPNElement::ALWAYS_TRUE;
+                                return true;
+                            }
+                            return false;
+                        }
+
                         const_value = convertFieldToType(const_value, *key_expr_type_not_null);
                         if (const_value.isNull())
                             return false;
@@ -5011,7 +5027,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
                             /// Declared against the type this cast is actually given, not the stripped
                             /// `key_expr_type` used to pick the supertype.
-                            auto func_cast = createInternalCast({chain_result_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getTreeContext().getQueryContext());
+                            auto func_cast = createInternalCast({chain_result_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getContext());
 
                             /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
                             if (!single_point && !func_cast->hasInformationAboutMonotonicity())
