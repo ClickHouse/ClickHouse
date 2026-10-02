@@ -538,6 +538,8 @@ void StorageFileLog::openFilesAndSetPos()
                     }
                 }
                 any_open_failed = true;
+                /// Published at once: a later file can throw before the end of the loop.
+                has_files_to_reopen = true;
                 continue;
             }
             auto & reader = file_ctx.reader.value();
@@ -553,6 +555,7 @@ void StorageFileLog::openFilesAndSetPos()
                         file_ctx.reader.reset();
                         file_ctx.status = FileStatus::NO_CHANGE;
                         any_open_failed = true;
+                        has_files_to_reopen = true;
                         continue;
                     }
                     file_infos.meta_by_inode.erase(file_ctx.inode);
@@ -1019,7 +1022,7 @@ Optional parameters:
 
 The delivered records are tracked automatically, so each record in a log file is only counted once.
 
-A file that cannot be opened (a symlink whose target was removed, a file not readable by the server, or the file of a single-file table that was removed) is skipped with an error in the server log and retried until it can be opened; a file that was missing is then read from its start. A symlink is read only if its target exists when the table finds it.
+A file that cannot be opened (a symlink whose target was removed, a file not readable by the server, or the file of a single-file table that was removed) is skipped with an error in the server log and retried until it can be opened while the table is loaded; a file that was missing is then read from its start. A symlink is read only if its target exists when the table finds it.
 
 `SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
 

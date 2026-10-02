@@ -14,12 +14,13 @@ sel_target=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_sel_target.jsonl
 ren_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_ren
 ovr_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_ovr
 ovr_target=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_ovr_target.jsonl
-rm -rf "${logs_dir:?}" "${target}" "${bad}" "${sel_dir:?}" "${sel_target}" "${sel_target}.old" "${ren_dir:?}" "${ovr_dir:?}" "${ovr_target}"
-mkdir -p "${logs_dir}" "${sel_dir}" "${ren_dir}" "${ovr_dir}"
+skip_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_skip
+rm -rf "${logs_dir:?}" "${target}" "${bad}" "${sel_dir:?}" "${sel_target}" "${sel_target}.old" "${ren_dir:?}" "${ovr_dir:?}" "${ovr_target}" "${skip_dir:?}"
+mkdir -p "${logs_dir}" "${sel_dir}" "${ren_dir}" "${ovr_dir}" "${skip_dir}"
 
 function wait_for_rows()
 {
-    for _ in {1..240}; do
+    for _ in {1..120}; do
         [ "$(${CLICKHOUSE_CLIENT} -q 'SELECT count() FROM dst')" -ge "$1" ] && return
         sleep 0.5
     done
@@ -27,7 +28,7 @@ function wait_for_rows()
 
 function wait_for_value()
 {
-    for _ in {1..240}; do
+    for _ in {1..120}; do
         [ "$(${CLICKHOUSE_CLIENT} -q "SELECT countIf(a = $2) FROM $1")" -ge 1 ] && return
         sleep 0.5
     done
@@ -122,6 +123,24 @@ ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_ovr TO dst_ovr AS SELECT a 
 wait_for_value dst_ovr 601
 ${CLICKHOUSE_CLIENT} -q "SELECT countIf(a = 600), countIf(a = 601) FROM dst_ovr"
 
+# Records that do not parse are reported per file, also when one read covers two files.
+for _ in {1..3}; do echo 'not json'; done > "${skip_dir}/x1.jsonl"
+for _ in {1..4}; do echo 'not json'; done > "${skip_dir}/x2.jsonl"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_skip (a UInt64) ENGINE = FileLog('${skip_dir}/', 'JSONEachRow') SETTINGS max_threads = 1"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst_skip (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_skip TO dst_skip AS SELECT a FROM file_log_skip"
+skipped="SELECT extract(message, 'of file ([^ ]+) that') AS file, sum(toUInt64OrZero(extract(message, 'Skipped ([0-9]+) records'))) AS n
+    FROM system.text_log
+    WHERE event_date >= yesterday() AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log_skip)')
+        AND message LIKE 'Skipped % records of file %'
+    GROUP BY file ORDER BY file"
+for _ in {1..120}; do
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
+    [ "$(${CLICKHOUSE_CLIENT} -q "SELECT sum(n) FROM (${skipped})")" -ge 7 ] && break
+    sleep 0.5
+done
+${CLICKHOUSE_CLIENT} -q "${skipped}"
+
 ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0, countIf(c = 0) FROM dst_count"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
@@ -149,4 +168,7 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_ren"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_ovr"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE dst_ovr"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_ovr"
-rm -rf "${logs_dir:?}" "${target}" "${sel_dir:?}" "${sel_target}" "${sel_target}.old" "${ren_dir:?}" "${ovr_dir:?}" "${ovr_target}"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_skip"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE dst_skip"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_skip"
+rm -rf "${logs_dir:?}" "${target}" "${sel_dir:?}" "${sel_target}" "${sel_target}.old" "${ren_dir:?}" "${ovr_dir:?}" "${ovr_target}" "${skip_dir:?}"
