@@ -50,7 +50,7 @@ The scaling workflow brings up a new standby from backups and performs a control
 
 1. **Standby provisioning**: A new standby instance is created with the target instance type (CPU, memory, and storage configuration)
 
-2. **Restore from S3 backups**: The standby is initialized by restoring from the most recent backup stored in S3
+2. **Restore from object storage backups**: The standby is initialized by restoring from the most recent backup stored in object storage
 
 3. **Parallel WAL replay**: The standby applies all Write-Ahead Log (WAL) changes since the backup using parallel restore mechanisms powered by [WAL-G](https://github.com/wal-g/wal-g)
    - WAL-G enables fast, parallelized restore operations
@@ -69,7 +69,7 @@ The scaling workflow brings up a new standby from backups and performs a control
 
 The total time required for scaling depends primarily on the size of your database and the amount of WAL data that needs to be replayed from backups:
 
-- **Backup restore**: Time to restore the most recent full backup from S3 to the new instance
+- **Backup restore**: Time to restore the most recent full backup from object storage to the new instance
 - **WAL replay**: Time to replay incremental WAL changes since the last full backup
 - **Parallel restore**: WAL-G's parallel restore mechanisms significantly speed up the process
 
@@ -87,9 +87,9 @@ ClickHouse Managed Postgres uses [WAL-G](https://github.com/wal-g/wal-g) to acce
 
 WAL-G provides:
 
-- **Parallel download and decompression**: Multiple backup segments are fetched from S3 and decompressed simultaneously
+- **Parallel download and decompression**: Multiple backup segments are fetched from object storage and decompressed simultaneously
 - **Efficient WAL replay**: Incremental WAL changes are applied in parallel where possible
-- **Optimized streaming**: Direct streaming from S3 storage without intermediate copies
+- **Optimized streaming**: Direct streaming from object storage without intermediate copies
 - **Fast restoration**: While the total time depends on data size, the parallelized approach makes the process quite fast
 
 These optimizations significantly reduce the time required to bring up the new standby instance. Most importantly, the restore happens entirely in the background—your application only experiences downtime during the brief ~30-second failover window.
@@ -125,7 +125,7 @@ This approach is ideal for applications with high read-to-write ratios, such as 
 
 ### CDC scaling for ClickHouse integration {#cdc-scaling}
 
-If you're replicating data to ClickHouse using [ClickPipes](/products/managed-postgres/clickhouse-integration), you can independently scale the CDC (Change Data Capture) pipeline:
+If you're replicating data to ClickHouse using [ClickPipes](/products/managed-postgres/clickpipes), you can independently scale the CDC (Change Data Capture) pipeline:
 
 - Scale CDC workers from 1 to 24 CPU cores
 - Memory automatically scales at 4x the CPU core count

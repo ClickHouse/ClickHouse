@@ -40,7 +40,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int NOT_IMPLEMENTED;
@@ -173,6 +175,25 @@ public:
 
 ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_type);
 
+/// Reads exactly `size` bytes into `s`. The size is declared by the client and the payload may
+/// never arrive, so the string grows as the bytes are received instead of being resized to the
+/// declared size up front: otherwise a tiny packet declaring a huge field makes the server
+/// allocate that much and then wait for data that never comes.
+inline void readStringOfDeclaredSize(String & s, size_t size, ReadBuffer & in)
+{
+    s.clear();
+    while (s.size() < size)
+    {
+        if (in.eof())
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Message from client declares a field of {} bytes, but contains only {}", size, s.size());
+
+        const size_t bytes_to_copy = std::min(size - s.size(), in.available());
+        s.append(in.position(), bytes_to_copy);
+        in.position() += bytes_to_copy;
+    }
+}
+
 class MessageTransport
 {
 private:
@@ -286,6 +307,40 @@ public:
      * (if type is provided for the message by the protocol).
      */
     virtual void deserialize(ReadBuffer & in) = 0;
+
+protected:
+    template <typename F>
+    static void deserializePayload(ReadBuffer & in, std::string_view message_name, F && deserialize_payload)
+    {
+        Int32 size = 0;
+        readBinaryBigEndian(size, in);
+        if (size < 4)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in {}, it must be at least 4", size, message_name);
+
+        const size_t payload_size = static_cast<size_t>(size - 4);
+        LimitReadBuffer payload_in(in, {.read_no_less = payload_size, .read_no_more = payload_size});
+        try
+        {
+            deserialize_payload(payload_in);
+        }
+        catch (...)
+        {
+            /// Keep the stream aligned before the handler starts discarding messages through `Sync`.
+            /// When the frame itself could not be read (the client closed the connection before sending
+            /// the declared bytes), the buffer is canceled and there is nothing left to align.
+            if (!payload_in.isCanceled())
+                payload_in.ignore(payload_size - payload_in.count());
+            throw;
+        }
+
+        const size_t unread_payload_bytes = payload_size - payload_in.count();
+        payload_in.ignore(unread_payload_bytes);
+        if (unread_payload_bytes != 0)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in {}, it has {} unexpected trailing payload bytes",
+                            size, message_name, unread_payload_bytes);
+    }
 };
 
 class BackendMessage : public IMessage, public ISerializable
@@ -419,7 +474,7 @@ class Terminate : FrontMessage
 public:
     void deserialize(ReadBuffer & in) override
     {
-        in.ignore(4);
+        deserializePayload(in, "Terminate message", [](ReadBuffer &) {});
     }
 
     MessageType getMessageType() const override
@@ -440,37 +495,55 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 ps = payload_size - 1;
-        while (ps > 0)
+        if (payload_size < 1)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong payload size {} for PostgreSQL startup message, it must include the terminating zero byte",
+                            payload_size);
+
+        LimitReadBuffer payload(in, {
+            .read_no_less = static_cast<size_t>(payload_size),
+            .read_no_more = static_cast<size_t>(payload_size),
+        });
+
+        size_t remaining = payload_size - 1;
+        try
         {
-            String parameter_name;
-            String parameter_value;
-            readNullTerminated(parameter_name, in);
-            readNullTerminated(parameter_value, in);
-            ps -= parameter_name.size() + 1;
-            ps -= parameter_value.size() + 1;
-
-            if (parameter_name == "user")
+            while (remaining > 0)
             {
-                user = parameter_value;
+                String parameter_name;
+                String parameter_value;
+                readNullTerminated(parameter_name, payload);
+                readNullTerminated(parameter_value, payload);
+
+                size_t parameter_size = parameter_name.size() + parameter_value.size() + 2;
+                if (parameter_size > remaining)
+                    throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                    "Parameters exceed the declared PostgreSQL startup message payload size");
+                remaining -= parameter_size;
+
+                if (parameter_name == "user")
+                    user = parameter_value;
+                else if (parameter_name == "database")
+                    database = parameter_value;
+
+                parameters.insert({std::move(parameter_name), std::move(parameter_value)});
             }
-            else if (parameter_name == "database")
-            {
-                database = parameter_value;
-            }
 
-            parameters.insert({std::move(parameter_name), std::move(parameter_value)});
-
-            /// `payload_size` is the declared size of the message and never changes, so the check
-            /// has to be made against the remaining size instead.
-            if (ps < 0)
-            {
+            char terminator = 0;
+            payload.readStrict(terminator);
+            if (terminator != 0)
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                                "Size of payload is larger than one declared in the message of type {}.",
-                                static_cast<UInt64>(getMessageType()));
-            }
+                                "PostgreSQL startup message is not terminated by a zero byte");
         }
-        in.ignore();
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
+                throw;
+            if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF || e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Cannot read the declared PostgreSQL startup message payload: {}", e.message());
+            throw;
+        }
     }
 
     MessageType getMessageType() const override
@@ -534,22 +607,18 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        UInt8 message_type = 0;
-        readBinaryBigEndian(message_type, in);
-        Int32 size = 0;
-        readBinaryBigEndian(size, in);
-        readNullTerminated(auth_method, in);
-        Int32 size_sasl_mechanism = 0;
-        readBinaryBigEndian(size_sasl_mechanism, in);
-        /// -1 is the protocol sentinel for "no initial response"; any other negative value is malformed.
-        if (size_sasl_mechanism < -1)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong SASL mechanism length {} in SASLInitialResponse, it must not be less than -1", size_sasl_mechanism);
-        if (size_sasl_mechanism > 0)
+        deserializePayload(in, "SASLInitialResponse message", [this](ReadBuffer & payload_in)
         {
-            sasl_mechanism.resize(size_sasl_mechanism);
-            in.readStrict(sasl_mechanism.data(), size_sasl_mechanism);
-        }
+            readNullTerminated(auth_method, payload_in);
+            Int32 size_sasl_mechanism = 0;
+            readBinaryBigEndian(size_sasl_mechanism, payload_in);
+            /// -1 is the protocol sentinel for "no initial response"; any other negative value is malformed.
+            if (size_sasl_mechanism < -1)
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Wrong SASL mechanism length {} in SASLInitialResponse, it must not be less than -1", size_sasl_mechanism);
+            if (size_sasl_mechanism > 0)
+                readStringOfDeclaredSize(sasl_mechanism, size_sasl_mechanism, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -594,15 +663,10 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        UInt8 message_type = 0;
-        readBinaryBigEndian(message_type, in);
-        Int32 size = 0;
-        readBinaryBigEndian(size, in);
-        if (size < 4)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong message length {} in SASLResponse, it must be at least 4", size);
-        sasl_mechanism.resize(size - 4);
-        in.readStrict(sasl_mechanism.data(), size - 4);
+        deserializePayload(in, "SASLResponse message", [this](ReadBuffer & payload_in)
+        {
+            readStringUntilEOF(sasl_mechanism, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -640,9 +704,10 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        readNullTerminated(password, in);
+        deserializePayload(in, "PasswordMessage", [this](ReadBuffer & payload_in)
+        {
+            readNullTerminated(password, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -720,9 +785,10 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        readNullTerminated(query, in);
+        deserializePayload(in, "Query message", [this](ReadBuffer & payload_in)
+        {
+            readNullTerminated(query, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -742,21 +808,22 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        readNullTerminated(function_name, in);
-        readNullTerminated(sql_query, in);
-        readBinaryBigEndian(num_params, in);
-        if (num_params < 0)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong parameter count {} in Parse message, it must not be negative", num_params);
-        parameter_types.reserve(num_params);
-        Int32 oid_param = 0;
-        for (int i = 0; i < num_params; ++i)
+        deserializePayload(in, "Parse message", [this](ReadBuffer & payload_in)
         {
-            readBinaryBigEndian(oid_param, in);
-            parameter_types.push_back(oid_param);
-        }
+            readNullTerminated(function_name, payload_in);
+            readNullTerminated(sql_query, payload_in);
+            readBinaryBigEndian(num_params, payload_in);
+            if (num_params < 0)
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Wrong parameter count {} in Parse message, it must not be negative", num_params);
+            parameter_types.reserve(num_params);
+            Int32 oid_param = 0;
+            for (int i = 0; i < num_params; ++i)
+            {
+                readBinaryBigEndian(oid_param, payload_in);
+                parameter_types.push_back(oid_param);
+            }
+        });
     }
 
     MessageType getMessageType() const override
@@ -800,56 +867,63 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        readNullTerminated(portal_name, in);
-        readNullTerminated(function_name, in);
+        deserializePayload(in, "Bind message", [this](ReadBuffer & payload_in)
+        {
+            readNullTerminated(portal_name, payload_in);
+            readNullTerminated(function_name, payload_in);
 
-        /// Read all format codes before rejecting binary values to preserve stream alignment.
-        Int16 num_format_params = 0;
-        readBinaryBigEndian(num_format_params, in);
-        if (num_format_params < 0)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong parameter format code count {} in Bind message, it must not be negative", num_format_params);
-        Int16 format_param = 0;
-        for (Int16 i = 0; i < num_format_params; ++i)
-        {
-            readBinaryBigEndian(format_param, in);
-            if (format_param != 0)
-                has_binary_format_param = true;
-        }
-        readBinaryBigEndian(num_params, in);
-        if (num_params < 0)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong parameter count {} in Bind message, it must not be negative", num_params);
-        for (int i = 0; i < num_params; ++i)
-        {
-            Int32 sz_param = 0;
-            readBinaryBigEndian(sz_param, in);
-            /// -1 is the protocol sentinel for a NULL parameter and no value bytes follow;
-            /// any other negative value is malformed.
-            if (sz_param < -1)
+            /// Read all format codes before rejecting binary values to preserve stream alignment.
+            Int16 num_format_params = 0;
+            readBinaryBigEndian(num_format_params, payload_in);
+            if (num_format_params < 0)
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                                "Wrong parameter length {} in Bind message, it must not be less than -1", sz_param);
-            if (sz_param == -1)
+                                "Wrong parameter format code count {} in Bind message, it must not be negative", num_format_params);
+            Int16 format_param = 0;
+            bool saw_non_text_format_code = false;
+            for (Int16 i = 0; i < num_format_params; ++i)
             {
-                parameters.emplace_back(std::nullopt);
-                continue;
+                readBinaryBigEndian(format_param, payload_in);
+                if (format_param != 0)
+                    saw_non_text_format_code = true;
             }
-            String current_param(sz_param, 0);
-            in.readStrict(current_param.data(), sz_param);
-            parameters.push_back(std::move(current_param));
-        }
+            readBinaryBigEndian(num_params, payload_in);
+            if (num_params < 0)
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Wrong parameter count {} in Bind message, it must not be negative", num_params);
+            bool saw_param_value = false;
+            for (int i = 0; i < num_params; ++i)
+            {
+                Int32 sz_param = 0;
+                readBinaryBigEndian(sz_param, payload_in);
+                /// -1 is the protocol sentinel for a NULL parameter and no value bytes follow;
+                /// any other negative value is malformed.
+                if (sz_param < -1)
+                    throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                    "Wrong parameter length {} in Bind message, it must not be less than -1", sz_param);
+                if (sz_param == -1)
+                {
+                    parameters.emplace_back(std::nullopt);
+                    continue;
+                }
+                String current_param;
+                readStringOfDeclaredSize(current_param, sz_param, payload_in);
+                parameters.push_back(std::move(current_param));
+                saw_param_value = true;
+            }
+            /// A format code only says how to decode a parameter value, so a message carrying no
+            /// value has nothing to decode: a NULL becomes the literal `NULL` whatever its format.
+            has_binary_format_param = saw_non_text_format_code && saw_param_value;
 
-        /// Consume result format codes; this implementation always returns text.
-        Int16 num_format_params_result = 0;
-        readBinaryBigEndian(num_format_params_result, in);
-        if (num_format_params_result < 0)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong result format code count {} in Bind message, it must not be negative", num_format_params_result);
-        Int16 format_param_result = 0;
-        for (Int16 i = 0; i < num_format_params_result; ++i)
-            readBinaryBigEndian(format_param_result, in);
+            /// Consume result format codes; this implementation always returns text.
+            Int16 num_format_params_result = 0;
+            readBinaryBigEndian(num_format_params_result, payload_in);
+            if (num_format_params_result < 0)
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Wrong result format code count {} in Bind message, it must not be negative", num_format_params_result);
+            Int16 format_param_result = 0;
+            for (Int16 i = 0; i < num_format_params_result; ++i)
+                readBinaryBigEndian(format_param_result, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -888,10 +962,11 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        in.readStrict(&describe, 1);
-        readNullTerminated(function_name, in);
+        deserializePayload(in, "Describe message", [this](ReadBuffer & payload_in)
+        {
+            payload_in.readStrict(&describe, 1);
+            readNullTerminated(function_name, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -909,10 +984,11 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        readNullTerminated(portal_name, in);
-        readBinaryBigEndian(max_rows, in);
+        deserializePayload(in, "Execute message", [this](ReadBuffer & payload_in)
+        {
+            readNullTerminated(portal_name, payload_in);
+            readBinaryBigEndian(max_rows, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -957,12 +1033,13 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        Int8 byte = 0;
-        readBinaryBigEndian(byte, in);
-        close_target = static_cast<char>(byte);
-        readNullTerminated(function_name, in);
+        deserializePayload(in, "Close message", [this](ReadBuffer & payload_in)
+        {
+            Int8 byte = 0;
+            readBinaryBigEndian(byte, payload_in);
+            close_target = static_cast<char>(byte);
+            readNullTerminated(function_name, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -1000,8 +1077,11 @@ class SyncQuery : FrontMessage
 public:
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        Int32 size = 0;
+        readBinaryBigEndian(size, in);
+        if (size != 4)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in Sync message, it must be 4", size);
     }
 
     MessageType getMessageType() const override
@@ -1149,9 +1229,10 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        readNullTerminated(query, in);
+        deserializePayload(in, "CopyData message", [this](ReadBuffer & payload_in)
+        {
+            readNullTerminated(query, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -1219,18 +1300,10 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        if (sz < static_cast<Int32>(sizeof(Int32)))
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong message length {} in CopyData, it must be at least 4", sz);
-        query.reserve(sz - sizeof(Int32));
-        for (size_t i = 0; i < sz - sizeof(Int32); ++i)
+        deserializePayload(in, "CopyData message", [this](ReadBuffer & payload_in)
         {
-            char byte = 0;
-            readBinary(byte, in);
-            query.push_back(byte);
-        }
+            readStringUntilEOF(query, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -1244,8 +1317,11 @@ class CopyDone : FrontMessage
 public:
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        Int32 size = 0;
+        readBinaryBigEndian(size, in);
+        if (size != 4)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in CopyDone message, it must be 4", size);
     }
 
     MessageType getMessageType() const override
@@ -1562,6 +1638,16 @@ public:
 
 class ScrambleSHA256Auth : public AuthenticationMethod
 {
+    /// Both SASL messages of the SCRAM exchange are sent with the `PasswordMessage` type byte.
+    static void expectPasswordMessage(Messaging::MessageTransport & mt)
+    {
+        Messaging::FrontMessageType type = mt.receiveMessageType();
+        if (type != Messaging::FrontMessageType::PASSWORD_MESSAGE)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                    "Client sent wrong message or closed the connection. Message byte was {}.",
+                    static_cast<Int32>(type));
+    }
+
     enum class ScramSaltKind : uint8_t
     {
         /// The user has no `scram_sha256_password` at all.
@@ -1825,6 +1911,7 @@ public:
                 "PostgreSQL protocol does not support this `scram_sha256_password` authentication configuration");
 
         mt.send(Messaging::AuthenticationSASL(), true);
+        expectPasswordMessage(mt);
         auto rsp = mt.receive<Messaging::SASLInitialResponse>();
 
         auto server_nonce = generateNonce();
@@ -1835,6 +1922,7 @@ public:
         auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, scram_salt.salt, num_iterations);
         mt.send(Messaging::AuthenticationSASLContinue(sasl_continue_message), true);
         auth_message += "," + sasl_continue_message;
+        expectPasswordMessage(mt);
         auto rsp_continue = mt.receive<Messaging::SASLResponse>();
         auto proof = parseProof(rsp_continue->sasl_mechanism);
         auto proof_position = findProofPosition(rsp_continue->sasl_mechanism);
@@ -2024,6 +2112,14 @@ public:
     {
         bind_query.reset();
         bound_statement.reset();
+    }
+
+    void dropUnnamedStatementAndPortal()
+    {
+        /// The unnamed prepared statement is the one stored under the empty name, and the
+        /// single bind slot is the unnamed portal (see `attachBindQuery`).
+        statements.erase("");
+        resetBindQuery();
     }
 
 private:
