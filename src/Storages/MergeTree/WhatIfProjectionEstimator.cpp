@@ -366,8 +366,7 @@ std::vector<size_t> simulateWriterMarks(
 }
 
 
-/// builds the projection part in memory, with its primary index, for each layout the writer can leave
-/// the parts have `part_rows` rows, and a sample stands in for them as in `PartFromSample`
+/// builds an in-memory projection part of `part_rows` rows for each layout the writer can leave
 /// returns the parts and the index of the likeliest layout
 std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionParts(
     ProjectionPartData & data,
