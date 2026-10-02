@@ -1,0 +1,93 @@
+<clickhouse>
+    <profiles>
+        <ro1_kw>
+            <readonly>1</readonly>
+            <constraints>
+                <readonly><changeable_in_readonly/></readonly>
+                <max_threads><changeable_in_readonly/></max_threads>
+                <run_query_in_background><changeable_in_readonly/></run_query_in_background>
+            </constraints>
+        </ro1_kw>
+        <ro2>
+            <readonly>2</readonly>
+        </ro2>
+        <ro2_kw>
+            <readonly>2</readonly>
+            <constraints>
+                <readonly><changeable_in_readonly/></readonly>
+            </constraints>
+        </ro2_kw>
+        <!-- Declares the keyword on `readonly` and sets no values. Assigned to nobody: a profile's name
+             is selectable by any session, so this is the shape that would widen the residual beyond a
+             user whose own profile declares the keyword. -->
+        <kw_only>
+            <constraints>
+                <readonly><changeable_in_readonly/></readonly>
+            </constraints>
+        </kw_only>
+        <!-- `readonly = 1` and no constraint of its own: separates the part of the profile-switch
+             route that predates this change from the part the key opens. -->
+        <ro1>
+            <readonly>1</readonly>
+        </ro1>
+        <!-- A bound on `readonly` that a clamp caller can move a value to. `max` is below every value
+             `readonly` can be tightened to, so it is the shape that turns a request to tighten into a
+             loosening; the clamp callers reach it, the throwing ones report the bound. -->
+        <ro2_max0>
+            <readonly>2</readonly>
+            <constraints>
+                <readonly><max>0</max></readonly>
+            </constraints>
+        </ro2_max0>
+        <!-- `CONST` refuses any change of `readonly`, including a tightening. -->
+        <ro2_const>
+            <readonly>2</readonly>
+            <constraints>
+                <readonly><const/></readonly>
+            </constraints>
+        </ro2_const>
+        <!-- Carries the VALUE `readonly = 0` rather than a constraint, so switching into it is itself a
+             loosening of `readonly`. Assigned to nobody. -->
+        <kw_zero>
+            <readonly>0</readonly>
+        </kw_zero>
+    </profiles>
+    <users>
+        <ro1_kw>
+            <password></password>
+            <networks><ip>::/0</ip></networks>
+            <profile>ro1_kw</profile>
+            <quota>default</quota>
+        </ro1_kw>
+        <ro2>
+            <password></password>
+            <networks><ip>::/0</ip></networks>
+            <profile>ro2</profile>
+            <quota>default</quota>
+        </ro2>
+        <ro2_kw>
+            <password></password>
+            <networks><ip>::/0</ip></networks>
+            <profile>ro2_kw</profile>
+            <quota>default</quota>
+        </ro2_kw>
+        <ro1>
+            <password></password>
+            <networks><ip>::/0</ip></networks>
+            <profile>ro1</profile>
+            <quota>default</quota>
+        </ro1>
+        <ro2_max0>
+            <password></password>
+            <networks><ip>::/0</ip></networks>
+            <profile>ro2_max0</profile>
+            <quota>default</quota>
+        </ro2_max0>
+        <ro2_const>
+            <password></password>
+            <networks><ip>::/0</ip></networks>
+            <profile>ro2_const</profile>
+            <quota>default</quota>
+        </ro2_const>
+    </users>
+</clickhouse>

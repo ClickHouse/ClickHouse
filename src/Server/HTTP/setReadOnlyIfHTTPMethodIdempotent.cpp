@@ -27,6 +27,8 @@ void setReadOnlyIfHTTPMethodIdempotent(ContextMutablePtr context, const String &
 
     if (!is_mutating_method)
     {
+        context->setHTTPMethodImpliesReadOnly();
+
         /// 'readonly' setting values mean:
         /// readonly = 0 - any query is allowed, client can change any setting.
         /// readonly = 1 - only readonly queries are allowed, client can't change settings.

@@ -94,6 +94,7 @@ possible_properties = {
         "role_cache_expiration_time_seconds": threshold_generator(0.2, 0.2, 1, 60, 31),
         "select_from_information_schema_requires_grant": true_false_lambda,
         "select_from_system_db_requires_grant": true_false_lambda,
+        "readonly_can_only_be_tightened": true_false_lambda,
         "settings_constraints_replace_previous": true_false_lambda,
         "table_engines_require_grant": true_false_lambda,
         "throw_on_unmatched_row_policies": true_false_lambda,
