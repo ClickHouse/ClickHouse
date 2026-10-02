@@ -79,6 +79,8 @@ public:
         std::optional<std::ifstream> reader = std::nullopt;
         /// The last attempt to open the file failed for a reason of the file itself (missing, not readable).
         bool open_failed = false;
+        /// Since `open_failed` was set, the path led to no file at least once (`ENOENT`, `ELOOP`).
+        bool path_missing = false;
     };
 
     struct FileMeta

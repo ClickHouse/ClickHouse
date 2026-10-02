@@ -515,22 +515,26 @@ void StorageFileLog::openFilesAndSetPos()
                 file_ctx.reader.reset();
                 file_ctx.status = FileStatus::NO_CHANGE;
                 file_ctx.open_failed = true;
+                if (open_errno == ENOENT || open_errno == ELOOP)
+                    file_ctx.path_missing = true;
                 any_open_failed = true;
                 continue;
             }
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
-            if (std::exchange(file_ctx.open_failed, false))
+            if (file_ctx.open_failed)
             {
-                file_ctx.status = FileStatus::UPDATED;
-                /// While the file could not be opened its path may have started to point to another file: read that one from the start.
-                if (const UInt64 inode = getInode(getFullDataPath(file)); inode != file_ctx.inode)
+                /// A path that led to no file, or that leads to another inode now, names a new file: read it from the start.
+                if (const UInt64 inode = getInode(getFullDataPath(file)); file_ctx.path_missing || inode != file_ctx.inode)
                 {
                     file_infos.meta_by_inode.erase(file_ctx.inode);
                     disk->removeFileIfExists(getFullMetaPath(file));
                     file_ctx.inode = inode;
                     file_infos.meta_by_inode.insert_or_assign(inode, FileMeta{.file_name = file});
                 }
+                file_ctx.open_failed = false;
+                file_ctx.path_missing = false;
+                file_ctx.status = FileStatus::UPDATED;
             }
 
             reader.seekg(0, std::ios::end);
@@ -988,7 +992,7 @@ Optional parameters:
 
 The delivered records are tracked automatically, so each record in a log file is only counted once.
 
-A file that cannot be opened (removed, a symlink whose target was removed, or not readable by the server) is skipped with an error in the server log and retried until it can be opened. A symlink is read only if its target exists when the table finds it.
+A file that cannot be opened (removed, a symlink whose target was removed, or not readable by the server) is skipped with an error in the server log and retried until it can be opened; a file that was removed is then read from its start. A symlink is read only if its target exists when the table finds it.
 
 `SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
 
