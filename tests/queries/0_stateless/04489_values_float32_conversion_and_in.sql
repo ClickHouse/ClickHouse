@@ -46,6 +46,8 @@ SELECT toFloat32(0.5) IN (0.5), toFloat32(0.5) = 0.5;
 SELECT CAST(toFloat64(toUInt64(-1)), 'Variant(Float64)') IN (toUInt64(-1)); -- { serverError TYPE_MISMATCH }
 
 SELECT '-- same IN result without the analyzer';
+SELECT toFloat32(0.1) IN (0.1) SETTINGS allow_experimental_analyzer = 0;
+SELECT toFloat32(0.5) IN (0.5) SETTINGS allow_experimental_analyzer = 0;
 
 SELECT '-- the fall-through Variant conversion path prefers a lossless alternative, falling back to lossy only when needed';
 -- When a field is not directly insertable and has to be converted, the converter tries an exact

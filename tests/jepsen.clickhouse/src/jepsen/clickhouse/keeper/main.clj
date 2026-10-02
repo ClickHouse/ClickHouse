@@ -25,7 +25,7 @@
              [tests :as tests]
              [util :as util :refer [meh]]]
             [jepsen.control.util :as cu]
-            [jepsen.clickhouse.os :as chos]
+            [jepsen.os.ubuntu :as ubuntu]
             [jepsen.checker.timeline :as timeline]
             [clojure.java.io :as io]
             [zookeeper.data :as data]
@@ -112,7 +112,7 @@
     (merge tests/noop-test
            opts
            {:name (str "clickhouse-keeper-quorum=" quorum "-"  (name (:workload opts)) "-" (name (:nemesis opts)))
-            :os chos/os
+            :os ubuntu/os
             :db (get-db opts)
             :pure-generators true
             :client (:client workload)
@@ -138,7 +138,7 @@
     (merge tests/noop-test
            opts
            {:name (str "clickhouse-keeper-perf")
-            :os chos/os
+            :os ubuntu/os
             :db (get-db opts)
             :pure-generators true
             :client (bench/bench-client (get-port opts))

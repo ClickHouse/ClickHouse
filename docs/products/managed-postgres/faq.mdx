@@ -1,21 +1,21 @@
 ---
 slug: /cloud/managed-postgres/faq
 sidebarTitle: 'FAQ'
-title: 'ClickHouse Managed Postgres FAQ'
+title: 'Managed Postgres FAQ'
 description: 'Frequently asked questions about ClickHouse Managed Postgres'
 keywords: ['managed postgres faq', 'postgres questions', 'metrics', 'extensions', 'migration', 'terraform', 'pgbouncer', 'prepared statements']
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.faq-beta" />
 
 ## Monitoring and metrics {#monitoring-and-metrics}
 
-### How can I access metrics for my ClickHouse Managed Postgres instance? {#metrics-access}
+### How can I access metrics for my Managed Postgres instance? {#metrics-access}
 
-You can monitor CPU, memory, IOPS, and storage usage directly from the ClickHouse Cloud console in the **Monitoring** tab of your ClickHouse Managed Postgres instance.
+You can monitor CPU, memory, IOPS, and storage usage directly from the ClickHouse Cloud console in the **Monitoring** tab of your Managed Postgres instance.
 
 In addition, you can explore [Query Performance Insights](https://clickhouse.com/blog/postgres-query-insights-clickhouse-cloud) for detailed analysis of your queries in the **Query Insights** tab.
 
@@ -23,25 +23,21 @@ In addition, you can explore [Query Performance Insights](https://clickhouse.com
 
 ### What backup options are available? {#backup-options}
 
-ClickHouse Managed Postgres includes automatic daily backups with continuous WAL archiving, enabling point-in-time recovery to any moment within a 7-day retention window. Backups are stored in object storage.
+Managed Postgres includes automatic daily backups with continuous WAL archiving, enabling point-in-time recovery to any moment within a 7-day retention window. Backups are stored in S3.
 
 For complete details on backup frequency, retention, and how to perform point-in-time recovery, see the [Backup and restore](/products/managed-postgres/backup-and-restore) documentation.
 
 ## Infrastructure and automation {#infrastructure-and-automation}
 
-### Which cloud providers are supported? {#supported-cloud-providers}
+### Is Terraform support available for Managed Postgres? {#terraform-support}
 
-ClickHouse Managed Postgres is available on AWS in public beta. GCP is in Private Preview. You can sign up for the GCP Private Preview waitlist [here](https://clickhouse.com/cloud/postgres#gcp-waitlist) and read the [announcement](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview) to learn more. See [Supported cloud providers](/products/managed-postgres/overview#supported-cloud-providers) for details.
-
-### Is Terraform support available for ClickHouse Managed Postgres? {#terraform-support}
-
-Yes. You can create and manage ClickHouse Managed Postgres services with the ClickHouse Terraform provider using the `clickhouse_postgres_service` resource. See the [Terraform reference](/products/managed-postgres/terraform) for details. You can also use the ClickHouse Cloud console or [OpenAPI](/products/managed-postgres/openapi) to create and manage your instances.
+Terraform support for Managed Postgres isn't currently available. We recommend using the ClickHouse Cloud console or [OpenAPI](/products/managed-postgres/openapi) to create and manage your instances.
 
 ## Extensions and configuration {#extensions-and-configuration}
 
 ### What extensions are supported? {#extensions-supported}
 
-ClickHouse Managed Postgres includes over 90 PostgreSQL extensions, including popular ones like PostGIS, pgvector, pg_cron, and many more. For the complete list of available extensions and installation instructions, see the [Extensions](/products/managed-postgres/extensions) documentation.
+Managed Postgres includes over 90 PostgreSQL extensions, including popular ones like PostGIS, pgvector, pg_cron, and many more. For the complete list of available extensions and installation instructions, see the [Extensions](/products/managed-postgres/extensions) documentation.
 
 ### Can I customize PostgreSQL configuration parameters? {#config-customization}
 
@@ -55,90 +51,32 @@ If you need a parameter that isn't currently available, contact [support](https:
 
 ### Why am I seeing `prepared statement does not exist` errors through PgBouncer? {#prepared-statement-errors}
 
-ClickHouse Managed Postgres runs PgBouncer in **transaction pooling** mode. In this mode, a backend Postgres connection is only assigned to your client for the duration of a single transaction, then returned to the pool — the next transaction from the same client may land on a different backend.
+Managed Postgres runs PgBouncer in **transaction pooling** mode. In this mode, a backend Postgres connection is only assigned to your client for the duration of a single transaction, then returned to the pool — the next transaction from the same client may land on a different backend.
 
-PgBouncer tracks **protocol-level prepared statements**, which most drivers send with the extended query protocol (`Parse`, `Bind`, and `Execute` messages). When a statement runs on a backend that hasn't seen it yet, PgBouncer prepares it there first. Each backend connection keeps up to `max_prepared_statements` of them, `200` by default. Most drivers therefore work through PgBouncer with their default settings.
-
-What doesn't work through PgBouncer:
-
-- **SQL-level prepared statements.** PgBouncer doesn't track `PREPARE` and `EXECUTE` sent as SQL, so an `EXECUTE` can land on a backend that never ran the `PREPARE`.
-- **Freeing statements with SQL `DEALLOCATE`.** PgBouncer renames statements on the backend, so a `DEALLOCATE` of the client's statement name fails. Inside a transaction, this aborts the transaction, and later statements fail with `current transaction is aborted`. Drivers built on libpq 17 or later free statements with a protocol-level `Close` message instead, which PgBouncer handles.
-- **Unnamed statements split across round trips.** Some driver modes send the `Parse` of an unnamed statement in one round trip and its `Bind` in the next. PgBouncer can run the second round trip on a different backend, which fails with `unnamed prepared statement does not exist`, or silently runs another client's statement and returns its results.
-
-These cases produce errors like:
+That breaks **server-side prepared statements**, which are tied to the specific backend that ran the `PREPARE` (or the extended-query `Parse`). When the matching `EXECUTE` lands on a different backend, you get errors like:
 
 ```text
 ERROR:  prepared statement "..." does not exist
 ERROR:  unnamed prepared statement does not exist
-ERROR:  prepared statement did not exist
 ```
 
-Symptoms that often trace back to the same root cause:
+Symptoms that often trace back to this same root cause:
 
 - Bursts of `prepared statement does not exist` errors, especially during backfills or high-concurrency writes
 - Inserts that appear to "silently fail" — the statement errors, the driver retries, and a batch can end up partially applied or dropped
-- Transactions that fail with `current transaction is aborted` after a statement is freed
-- Rows that belong to a different query
+- Returned values with the wrong type (for example, a `BIGINT` column decoded as a `float64` bit pattern) — this happens when a cached client-side plan reuses stale type/format codes against a backend that was never sent the matching `Parse`
 
-**Fix: use the setting for your driver below.** If your driver isn't listed, upgrade it to a release that uses libpq 17 or later, or disable server-side prepared statements in it.
+**Fix: disable server-side prepared statements in your driver.** The exact knob depends on your client library:
 
-| Driver | Through PgBouncer |
+| Driver | Setting |
 |---|---|
-| **node-postgres / pg** (Node.js) | No change needed. |
-| **Bun.sql** (Bun) | No change needed. If you see `prepared statement does not exist`, set `prepare: false`. |
-| **Prisma** with `@prisma/adapter-pg` | No change needed. The `pgbouncer=true` URL parameter has no effect in Prisma 7. |
-| **psycopg 3** (Python, Django) | No change needed with `psycopg[binary]` or libpq 17 or later. With an older libpq, set `prepare_threshold=None`. Django uses client-side binding by default, so it needs no change. |
-| **asyncpg** (Python, SQLAlchemy) | No change needed. If you disable the statement cache with `statement_cache_size=0` under SQLAlchemy, also set `prepared_statement_cache_size=0` in the URL. |
-| **pgjdbc** (Java) | No change needed. Use pgjdbc 42.7.5 or later; older versions can't connect through PgBouncer. See [`unsupported startup parameter`](#unsupported-startup-parameter). |
-| **Npgsql** (.NET) | No change needed: automatic preparation is off by default. Don't enable `Max Auto Prepare` or call `Prepare` through PgBouncer; if you must, also set `No Reset On Close=true`. |
-| **pgx** (Go) | Set `default_query_exec_mode=cache_describe` (or `exec`). Never use `describe_exec`, which splits unnamed statements across round trips. |
-| **Postgrex / Ecto** (Elixir) | Set `prepare: :unnamed` in your repo config. With named statements, a query of about 4 KB can hang through PgBouncer. |
-| **sqlx** (Rust) | No prepared statement setting is needed. Don't use `.persistent(false)` or `statement_cache_capacity(0)`. To connect at all, set `extra_float_digits(None)`; see [`unsupported startup parameter`](#unsupported-startup-parameter). |
-| **Active Record** (Ruby on Rails) | No change needed with a `pg` gem of 1.6 or later and libpq 17 or later. Otherwise, set `prepared_statements: false` in `config/database.yml`. |
-| **PDO** (PHP, Laravel) | No change needed when `pdo_pgsql` is compiled against libpq 17 or later. Otherwise, set `PDO::ATTR_EMULATE_PREPARES => true`. |
+| **pgx** (Go) | `statement_cache_capacity=0` and `default_query_exec_mode=exec` (or `simple_protocol`) |
+| **psycopg3** (Python) | `prepare_threshold=None` |
+| **asyncpg** (Python) | `statement_cache_size=0` |
+| **JDBC** (Java) | `prepareThreshold=0` |
+| **node-postgres / pg** (Node.js) | Don't pass a `name` to `query()` (named queries become server-prepared) |
 
-If your workload depends on SQL-level `PREPARE`, connect **directly to PostgreSQL** (port 5432) rather than the PgBouncer pooler. See [Connection](/products/managed-postgres/connection) for details on choosing between the pooled and direct endpoints.
-
-### Why do queries fail with `cached plan must not change result type` after a migration? {#cached-plan-result-type}
-
-PgBouncer keeps prepared statements on its Postgres connections and reuses them for the same SQL text. After a schema change that changes the type of a column a query returns, for example `integer` to `bigint`, that query keeps failing through PgBouncer with `cached plan must not change result type`. It fails even from new client connections, until PgBouncer replaces its Postgres connections. Some drivers decode the stale result types instead and return wrong values without an error. Over the direct connection, each connection fails at most once and then recovers.
-
-To recover, close PgBouncer's Postgres connections for that database, and PgBouncer opens new ones. PgBouncer connects to Postgres locally, so its connections have no `client_addr`. Run this over the direct connection (port `5432`), as the same user your app connects as. It ends only PgBouncer's connections for your app's user, so transactions that are running through PgBouncer at that moment fail, while direct connections aren't affected:
-
-```sql
-SELECT pg_terminate_backend(pid) FROM pg_stat_activity
-WHERE datname = '<your_database>' AND usename = current_user
-  AND client_addr IS NULL AND backend_type = 'client backend'
-  AND pid <> pg_backend_pid();
-```
-
-Drivers that use unnamed statements, such as Npgsql with its defaults, Postgrex with `prepare: :unnamed`, and pgx with `cache_describe`, aren't affected.
-
-### Why do I get `unsupported startup parameter` through PgBouncer? {#unsupported-startup-parameter}
-
-PgBouncer rejects connection-time settings that it can't apply consistently across its pooled Postgres connections, and fails with `FATAL: unsupported startup parameter: ...` or `unsupported startup parameter in options: ...`. The common cases are:
-
-- **`extra_float_digits`**, which pgjdbc 42.7.4 and earlier (for example, with Spring Boot 3) and sqlx send on every connection. Upgrade pgjdbc to 42.7.5 or later. In sqlx, set `extra_float_digits(None)` on `PgConnectOptions`.
-- **`search_path` and other settings in the connection string**, such as `currentSchema` in a JDBC URL, `Search Path` in an Npgsql connection string, `options=-c ...`, or Django's `OPTIONS["options"]`. Set the default with `ALTER ROLE ... SET` or `ALTER DATABASE ... SET` instead, use `SET LOCAL` inside a transaction, or connect directly.
-
-`application_name` and `TimeZone` are supported.
-
-### Why don't `SET` commands stick through PgBouncer? {#session-state}
-
-In transaction pooling mode, a session-level `SET` applies to the Postgres connection that ran it, not to your client. Later transactions from your client may run on other connections that don't have the setting, and other clients may run on the connection that does. This includes `SET ROLE`, so a role you assume can apply to another client's queries. Use `SET LOCAL` inside a transaction, set defaults with `ALTER ROLE ... SET` or `ALTER DATABASE ... SET`, or connect directly for workloads that rely on session state.
-
-### Why do migrations hang or fail to release an advisory lock through PgBouncer? {#migration-advisory-locks}
-
-Many migration tools take a session-level advisory lock so that only one migration runs at a time, and release it with a separate statement. Through PgBouncer, the release can run on a different Postgres connection, and the lock stays on a pooled connection. Later migrations then wait or fail with errors such as `failed to release advisory lock`, even over the direct connection. Tools that use session advisory locks include golang-migrate, sqlx, Kysely's `Migrator`, Rails, Flyway with `transactional-lock=false`, and Ecto with `migration_lock: :pg_advisory_lock`.
-
-Run migrations over the direct connection (port `5432`). A leaked lock is held by a session that's idle, while a migration that's still running holds its lock from an active session. To clear leaked locks, terminate only the idle sessions that hold advisory locks in your database, also over the direct connection:
-
-```sql
-SELECT pg_terminate_backend(l.pid) FROM pg_locks l
-JOIN pg_stat_activity a ON a.pid = l.pid
-WHERE l.locktype = 'advisory' AND a.state = 'idle'
-  AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database());
-```
+If your workload depends on prepared statements, connect **directly to PostgreSQL** (port 5432) rather than the PgBouncer pooler — direct connections support prepared statements normally. See [Connection](/products/managed-postgres/connection) for details on choosing between the pooled and direct endpoints.
 
 ### What does the `max_client_conn` setting in PgBouncer mean, and how does it relate to `max_connections` in Postgres? {#pgbouncer-vs-pg-connections}
 
@@ -147,23 +85,17 @@ They control different things:
 - **Postgres `max_connections`** caps the number of **backend** connections to PostgreSQL itself. This is the expensive number — each backend uses memory and a process slot.
 - **PgBouncer `max_client_conn`** caps the number of **client** connections that can be open in the pooler at once. PgBouncer multiplexes these many client connections onto a much smaller set of backend connections.
 
-PgBouncer accepts several times more client connections than there are Postgres backends. For example, an instance with `max_connections` set to `500` accepts `2500` client connections at the pooler. If you see connection errors at the pooler, you're far more likely to be hitting a per-pool backend limit (`default_pool_size`, or `max_db_connections` per database) than the headline client limit.
-
-To see the values for your instance, connect to the special `pgbouncer` database through PgBouncer (port `6432`) and run `SHOW CONFIG`:
-
-```bash
-psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/pgbouncer?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "SHOW CONFIG;"
-```
+A typical Managed Postgres instance is configured so PgBouncer accepts roughly **10× more client connections than there are Postgres backends** (e.g. 5000 client / 500 backend). If you see connection errors at the pooler, you're far more likely to be hitting a per-pool backend limit (`default_pool_size`) than the headline client limit.
 
 ## Database capabilities {#database-capabilities}
 
 ### Can I create multiple databases and schemas? {#multiple-databases-schemas}
 
-Yes. ClickHouse Managed Postgres provides full native PostgreSQL functionality, including support for multiple databases and schemas within a single instance. You can create and manage databases and schemas using standard PostgreSQL commands.
+Yes. Managed Postgres provides full native PostgreSQL functionality, including support for multiple databases and schemas within a single instance. You can create and manage databases and schemas using standard PostgreSQL commands.
 
 ### Is role-based access control (RBAC) supported? {#rbac-support}
 
-You have full superuser access to your ClickHouse Managed Postgres instance, which allows you to create roles and manage permissions using standard PostgreSQL commands.
+You have full superuser access to your Managed Postgres instance, which allows you to create roles and manage permissions using standard PostgreSQL commands.
 
 <Note>
 Enhanced RBAC features with console integration are planned for this year.
@@ -173,13 +105,13 @@ Enhanced RBAC features with console integration are planned for this year.
 
 ### How are PostgreSQL version upgrades handled? {#version-upgrades}
 
-Both minor and major version upgrades are performed via failover and typically result in only a few seconds of downtime. You can configure [scheduled upgrades](/products/managed-postgres/upgrades#scheduled-upgrades) to control the days and the two-hour UTC window in which upgrades are applied. For complete details, see the [Upgrades](/products/managed-postgres/upgrades) documentation.
+Both minor and major version upgrades are performed via failover and typically result in only a few seconds of downtime. You can configure a maintenance window to control when upgrades are applied. For complete details, see the [Upgrades](/products/managed-postgres/upgrades) documentation.
 
 ## Migration {#migration}
 
-### What tools are available for migrating to ClickHouse Managed Postgres? {#migration-tools}
+### What tools are available for migrating to Managed Postgres? {#migration-tools}
 
-ClickHouse Managed Postgres supports several migration approaches:
+Managed Postgres supports several migration approaches:
 
 - **pg_dump and pg_restore**: For smaller databases or one-time migrations. See the [pg_dump and pg_restore](/products/managed-postgres/migrations/pg_dump-pg_restore) guide.
 - **Logical replication**: For larger databases requiring minimal downtime. See the [Logical replication](/products/managed-postgres/migrations/logical-replication) guide.

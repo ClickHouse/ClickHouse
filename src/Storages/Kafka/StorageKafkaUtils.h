@@ -68,12 +68,6 @@ struct ConsumerStatistics // system.kafka_consumers data
 Names parseTopics(String topic_list);
 String getDefaultClientId(const StorageID & table_id);
 
-/// Parses a broker list value, checks every broker against the remote host filter, and returns the list
-/// rebuilt from the parsed entries - the string to hand to librdkafka in place of the original value.
-/// Throws `UNACCEPTABLE_URL` for a broker the filter does not allow and `BAD_ARGUMENTS` for an entry
-/// whose parse could disagree with librdkafka's.
-String validateBrokerList(const String & broker_list, const ContextPtr & context);
-
 using ErrorHandler = std::function<void(const cppkafka::Error &)>;
 
 void consumerGracefulStop(

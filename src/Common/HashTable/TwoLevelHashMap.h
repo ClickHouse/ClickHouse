@@ -11,14 +11,13 @@ template
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator,
-    template <typename ...> typename ImplTable = HashMapTable,
-    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET
+    template <typename ...> typename ImplTable = HashMapTable
 >
-class TwoLevelHashMapTable : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>
+class TwoLevelHashMapTable : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>>
 {
 public:
     using Impl = ImplTable<Key, Cell, Hash, Grower, Allocator>;
-    using Base = TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>;
+    using Base = TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>>;
     using LookupResult = typename Impl::LookupResult;
 
     using Base::Base;
@@ -52,10 +51,9 @@ template
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator,
-    template <typename ...> typename ImplTable = HashMapTable,
-    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET
+    template <typename ...> typename ImplTable = HashMapTable
 >
-using TwoLevelHashMap = TwoLevelHashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable, BITS_FOR_BUCKET>;
+using TwoLevelHashMap = TwoLevelHashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable>;
 
 
 template
@@ -65,7 +63,6 @@ template
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator,
-    template <typename ...> typename ImplTable = HashMapTable,
-    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET
+    template <typename ...> typename ImplTable = HashMapTable
 >
-using TwoLevelHashMapWithSavedHash = TwoLevelHashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable, BITS_FOR_BUCKET>;
+using TwoLevelHashMapWithSavedHash = TwoLevelHashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable>;
