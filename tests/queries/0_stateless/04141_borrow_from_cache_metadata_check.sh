@@ -1,6 +1,14 @@
--- Tags: no-fasttest, no-replicated-database
+#!/usr/bin/env bash
+# Tags: no-fasttest, no-replicated-database
 
--- `borrow_from_cache` object storage loses all data on restart, so it must use the in-memory metadata storage.
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+# The path of a custom `local_blob_storage` disk must be absolute and inside `custom_local_disks_base_directory`,
+# otherwise the disk is rejected with `BAD_ARGUMENTS` before its metadata type is checked.
+$CLICKHOUSE_CLIENT --multiquery <<EOF
+-- \`borrow_from_cache\` object storage loses all data on restart, so it must use the in-memory metadata storage.
 -- Any persistent metadata type would leave stale entries pointing to data that no longer exists.
 -- This regression test asserts the factory rejects the misconfiguration upfront.
 
@@ -51,8 +59,9 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = 'local_blob_storage',
     metadata_type = 'memory',
-    path = '04141_durable_memory/',
+    path = '${CLICKHOUSE_DISKS_FILES}/04141_durable_memory/',
     name = '04141_durable_memory_disk'
 ); -- { serverError INVALID_CONFIG_PARAMETER }
 
 DROP TABLE tmp_cache_creator;
+EOF
