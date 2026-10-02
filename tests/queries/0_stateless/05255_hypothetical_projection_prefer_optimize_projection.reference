@@ -18,7 +18,7 @@ reason: `prefer_optimize_projection = 1` overrides the cost; the projection read
 real: from the projection
 --- no filter and no ORDER BY ---
 status: not_applicable
-reason: The query has neither a filter nor an ORDER BY a projection could serve
+reason: the query has neither a filter nor an ORDER BY a projection could serve
 real: from the base table
 status: applicable
 verdict: chosen (forced)

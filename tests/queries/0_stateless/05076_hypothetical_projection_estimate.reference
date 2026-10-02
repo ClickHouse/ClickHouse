@@ -99,8 +99,8 @@ source: empirical
 real:
 ReadFromMergeTree (p_b)
 Granules: 10
-reason: The query has neither a filter nor an ORDER BY a projection could serve
-reason: The query has neither a filter nor an ORDER BY a projection could serve
+reason: the query has neither a filter nor an ORDER BY a projection could serve
+reason: the query has neither a filter nor an ORDER BY a projection could serve
 --- the INDEX form, which the optimizer serves the read from ---
 hypothetical:
 marks: 10

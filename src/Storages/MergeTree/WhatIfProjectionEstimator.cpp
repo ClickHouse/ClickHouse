@@ -496,14 +496,6 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     return {std::move(built), primary};
 }
 
-/// optimizer reasons start in lower case, WHATIF reasons are sentences
-String capitalized(String text)
-{
-    if (!text.empty())
-        text[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(text[0])));
-    return text;
-}
-
 /// fewer sampled granules can't give an error estimate
 constexpr size_t min_sampled_granules = 30;
 
@@ -854,8 +846,7 @@ bool tryEstimateProjection(
     if (!outcome.marks)
     {
         result.status = WhatIfCandidateResult::NotApplicable;
-        result.not_applicable_reason
-            = outcome.reason.empty() ? "The optimizer did not weigh the projection for this read" : capitalized(outcome.reason);
+        result.not_applicable_reason = outcome.reason.empty() ? "The optimizer did not weigh the projection for this read" : outcome.reason;
         return true;
     }
 
@@ -1078,7 +1069,7 @@ WhatIfCandidateResult evaluateProjection(
         if (scenario->outcome.nothing_to_serve && relaxing_setting.empty())
         {
             result.status = WhatIfCandidateResult::NotApplicable;
-            result.not_applicable_reason = capitalized(scenario->outcome.reason);
+            result.not_applicable_reason = scenario->outcome.reason;
             return result;
         }
         result.empirical_status = WhatIfCandidateResult::Disabled;
