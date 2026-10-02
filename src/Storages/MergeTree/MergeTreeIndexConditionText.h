@@ -170,7 +170,7 @@ private:
 
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
-        const RPNBuilderTreeNode & index_column_node,
+        const RPNBuilderTreeNode & argument_node,
         DataTypePtr value_type,
         Field value_field,
         RPNElement & out) const;
@@ -224,6 +224,8 @@ private:
     static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
+    /// Whether the index is defined over an `Array` column, whose positions restart for every element.
+    bool indexed_column_is_array = false;
     /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
     std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;
@@ -265,5 +267,9 @@ private:
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
 bool isTextIndexVirtualColumn(const String & column_name);
+
+/// Strips `CAST`, `_CAST`, `toNullable` and `toLowCardinality` from the node while the conversion never
+/// changes the value and never throws. The index is analyzed on the expression under such conversions.
+const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node);
 
 }
