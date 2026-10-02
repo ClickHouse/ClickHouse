@@ -219,7 +219,7 @@ bool FunctionSecretArgumentsFinder::isNamedCollectionName(size_t arg_idx) const
     return function->arguments->at(arg_idx)->isIdentifier();
 }
 
-ssize_t FunctionSecretArgumentsFinder::findNamedArgument(String * res, std::string_view key, size_t start)
+ssize_t FunctionSecretArgumentsFinder::findNamedArgument(String * res, std::string_view key, size_t start) const
 {
     for (size_t i = start; i < function->arguments->size(); ++i)
     {

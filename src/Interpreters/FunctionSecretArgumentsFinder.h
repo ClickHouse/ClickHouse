@@ -44,7 +44,7 @@ public:
 
     /// Looks for an argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
     /// Returns -1 if no argument was found.
-    ssize_t findNamedArgument(String * res, std::string_view key, size_t start = 0);
+    ssize_t findNamedArgument(String * res, std::string_view key, size_t start = 0) const;
 
     /// Looks for secret arguments with a specified name in format `key=value` and marks them secret.
     /// Marks *every* occurrence, not just the first: a malformed query is formatted for logging before
