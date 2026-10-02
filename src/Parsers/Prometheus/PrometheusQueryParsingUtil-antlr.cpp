@@ -1,3 +1,5 @@
+#include <unordered_set>
+
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/Exception.h>
@@ -9,6 +11,7 @@
 
 #if USE_ANTLR4_GRAMMARS
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Common/re2.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdocumentation"
@@ -168,6 +171,20 @@ namespace
                     }
                 }
             }
+            if (!error_listener.hasError() && next_token->getType() == SL_COMMENT)
+            {
+                const String token_text = next_token->getText();
+                const bool terminated_by_line_end
+                    = !token_text.empty() && (token_text.back() == '\r' || token_text.back() == '\n');
+                if (!terminated_by_line_end
+                    && (token_text.size() < 2 || (token_text[1] != ' ' && token_text[1] != '!')))
+                {
+                    const size_t token_pos = convertCodePointPositionToByteOffset(promql_query, next_token->getStartIndex());
+                    error_listener.setError("PromQL line comment at end of input must start with '# ' or '#!'", token_pos);
+                    stopLexing();
+                }
+            }
+
             return next_token;
         }
 
@@ -236,6 +253,11 @@ namespace
         size_t getStartPos(const antlr4::tree::TerminalNode * ctx) const
         {
             return convertCodePointPositionToByteOffset(promql_query, ctx->getSymbol()->getStartIndex());
+        }
+
+        size_t getStartPos(const antlr4::ParserRuleContext * ctx) const
+        {
+            return getStartPos(ctx->getStart());
         }
 
         size_t getStartPos(const antlr4::Token * token) const
@@ -445,6 +467,19 @@ namespace
                 return false;
             }
 
+            if (matcher_type == MatcherType::RE || matcher_type == MatcherType::NRE)
+            {
+                re2::RE2::Options options;
+                options.set_log_errors(false);
+                re2::RE2 regexp(res_matcher.label_value, options);
+                if (!regexp.ok())
+                {
+                    error_listener.setError(
+                        "invalid regular expression in label matcher: " + regexp.error(), getStartPos(ctx));
+                    return false;
+                }
+            }
+
             return true;
         }
 
@@ -476,6 +511,44 @@ namespace
             matcher.label_value = getMetricName(ctx);
             matcher.matcher_type = MatcherType::EQ;
             return matcher;
+        }
+
+        bool matcherMatchesEmptyString(const Matcher & matcher) const
+        {
+            switch (matcher.matcher_type)
+            {
+                case MatcherType::EQ:
+                    return matcher.label_value.empty();
+                case MatcherType::NE:
+                    return !matcher.label_value.empty();
+                case MatcherType::RE:
+                case MatcherType::NRE:
+                {
+                    re2::RE2::Options options;
+                    options.set_log_errors(false);
+                    re2::RE2 regexp(matcher.label_value, options);
+                    chassert(regexp.ok());
+
+                    const bool regexp_matches_empty_string = re2::RE2::FullMatch("", regexp);
+                    return matcher.matcher_type == MatcherType::RE
+                        ? regexp_matches_empty_string
+                        : !regexp_matches_empty_string;
+                }
+            }
+
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected PromQL matcher type");
+        }
+
+        bool validateSelectorHasNonEmptyMatcher(const MatcherList & matchers, size_t error_pos)
+        {
+            for (const auto & matcher : matchers)
+            {
+                if (!matcherMatchesEmptyString(matcher))
+                    return true;
+            }
+
+            error_listener.setError("vector selector must contain at least one non-empty matcher", error_pos);
+            return false;
         }
 
         /// Makes a node for an instant selector.
@@ -513,6 +586,9 @@ namespace
                     matchers.push_back(std::move(matcher));
                 }
             }
+
+            if (!validateSelectorHasNonEmptyMatcher(matchers, getStartPos(ctx)))
+                return nullptr;
 
             new_node->matchers = std::move(matchers);
             return addNode(std::move(new_node));
@@ -676,6 +752,27 @@ namespace
                     new_node->group_right = true;
                     if (auto * extra_labels_ctx = group_right_ctx->labelNameList())
                         new_node->extra_labels = getLabelNameList(extra_labels_ctx);
+                }
+
+                if (!error_listener.hasError() && new_node->on && !new_node->extra_labels.empty())
+                {
+                    std::unordered_set<std::string_view> extra_labels;
+                    extra_labels.reserve(new_node->extra_labels.size());
+                    for (const auto & extra_label : new_node->extra_labels)
+                        extra_labels.emplace(extra_label);
+
+                    for (const auto & label : new_node->labels)
+                    {
+                        if (extra_labels.contains(label))
+                        {
+                            const size_t error_pos = convertCodePointPositionToByteOffset(
+                                promql_query, grouping->getStart()->getStartIndex());
+                            error_listener.setError(
+                                "label " + PrometheusQueryParsingUtil::quoteStringLiteral(label) + " must not occur in ON and GROUP clause at once",
+                                error_pos);
+                            break;
+                        }
+                    }
                 }
             }
             new_node->bool_modifier = bool_modifier;
