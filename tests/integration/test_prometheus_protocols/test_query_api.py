@@ -388,7 +388,8 @@ def test_api_v1_url_path_routing_write_only_check_runs_after_authentication():
         params={"user": "default", "password": "wrong_password"},
     )
 
-    assert response.status_code == requests.codes.forbidden
+    # A wrong password of the `default` user is reported as `REQUIRED_PASSWORD`, i.e. HTTP 401.
+    assert response.status_code == requests.codes.unauthorized
     assert "Authentication failed" in response.text
     assert "supported only for remote write" not in response.text
 
