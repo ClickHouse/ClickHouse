@@ -360,7 +360,7 @@ void forEachSubquerySet(const QueryPlan * root, const std::function<bool(FutureS
             forEachSubquerySet(read_from_local->getQueryPlan(), visit);
         }
 
-        /// Deliberately NOT descending into `node->step->getChildPlans()`, unlike the other plan-wide
+        /// Deliberately NOT descending into `node->step->getChildPlans`, unlike the other plan-wide
         /// walks (`hasCorrelatedExpressions`, `DistributedPlanSets`). No set is missed by stopping
         /// here, for a different reason per carrier.
         ///

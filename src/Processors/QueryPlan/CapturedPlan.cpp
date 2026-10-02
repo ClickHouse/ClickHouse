@@ -127,7 +127,8 @@ CapturedStep captureStep(
     return captured;
 }
 
-/// Captures every step of a plan, and of any plan its steps own (`getChildPlans`). Only the walk
+/// Captures every step of a plan, and of any plan its steps have already built
+/// (`getBuiltChildPlans`, so that capturing never builds one). Only the walk
 /// knows the shape, so this is also what fills in each step's `children`.
 std::vector<CapturedStep> capturePlanSteps(
     const QueryPlan & plan,

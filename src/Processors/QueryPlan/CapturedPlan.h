@@ -26,7 +26,8 @@ struct CapturedStep
     String description;
     std::vector<String> details;
 
-    /// Ids of this step's children, and of the roots of any plans it owns (`getChildPlans`).
+    /// Ids of this step's children, and of the roots of any plans it has already built
+    /// (`getBuiltChildPlans`).
     std::vector<String> children;
 
     std::optional<AnalyzedStepData> statistics;
