@@ -153,9 +153,10 @@ public:
 
         /// Bucket-local Top-K of the final conversion, set by the `aggregation_bucket_top_k`
         /// plan optimization (never by users) when the plan proves this aggregation feeds
-        /// `ORDER BY <the lone count() output> LIMIT n`: each two-level bucket materializes
-        /// only its n best cells by that count. Exact, because a group outside its own
-        /// bucket's best n has at least n groups ahead of it globally. Zero disables. Kept
+        /// `ORDER BY` with `LIMIT n` by a count: the output of the aggregate
+        /// `bucket_top_k_rank_index`, a lone `count()`, `uniqExact` or `uniqExactIf`. Each two-level bucket
+        /// materializes only its n best cells by that count. Exact, because a group outside its
+        /// own bucket's best n has at least n groups ahead of it globally. Zero disables. Kept
         /// out of the constructor and of the plan serialization deliberately: a deserialized
         /// plan re-runs without the optimization, which is the safe direction.
         size_t bucket_top_k = 0;
@@ -602,6 +603,10 @@ private:
     /// - The aggregation logic can be inlined, meaning each row is aggregated immediately during hash table probing.
     /// - There's no need to allocate and maintain full aggregation state.
     bool is_simple_count = false;
+
+    /// Whether the aggregate `Params::bucket_top_k` ranks the groups by is `count`, whose state is the count itself.
+    /// Otherwise it is `uniqExact` or `uniqExactIf`, whose count `finalizeBucketTopKRank` reads.
+    bool bucket_top_k_ranks_by_count_state = false;
 
     LoggerPtr log = getLogger("Aggregator");
 
@@ -1050,19 +1055,31 @@ private:
         bool keep_table_buffer = false) const;
 
     /// The bucket-local Top-K conversion (see `Params::bucket_top_k`): materializes only the
-    /// bucket's n best cells by the plain count() state and destroys the rest, so the sorter
+    /// bucket's n best cells by their rank count and destroys the rest, so the sorter
     /// upstream receives at most 256 * n candidate rows instead of every group.
     template <typename Method>
     requires MapAggregationMethod<Method>
     AggregatedChunk convertOneBucketToChunkTopK(
         Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes, bool keep_table_buffer) const;
 
-    /// `bucket_top_k` ranks groups by a lone `count()`, so it is never set for a set method, which has no
-    /// aggregate functions at all. This overload exists only because the call site tests it at run time.
+    /// `bucket_top_k` ranks groups by an aggregate, so it is never set for a set method, which has no aggregate
+    /// functions at all. This overload exists only because the call site tests it at run time.
     template <typename Method>
     requires SetAggregationMethod<Method>
     AggregatedChunk convertOneBucketToChunkTopK(
         Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes, bool keep_table_buffer) const;
+
+    /// The bucket-local Top-K conversion when the rank count is the result of `uniqExact` or `uniqExactIf` rather than a
+    /// `count` state.
+    template <typename Method>
+    requires MapAggregationMethod<Method>
+    AggregatedChunk convertOneBucketToChunkTopKByFinalizedRank(
+        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes, bool keep_table_buffer) const;
+
+    /// The rank count of the group with state `place` when `Params::bucket_top_k` ranks by `uniqExact` or
+    /// `uniqExactIf`: the aggregate's result, finalized into `scratch`, a `ColumnUInt64` emptied first.
+    /// `insertResultInto` leaves the state valid for the merge and the conversion that follow.
+    UInt64 finalizeBucketTopKRank(AggregateDataPtr place, IColumn & scratch, Arena * arena) const;
 
     /// `full_group_count`, when non-null, receives the merged bucket's group count (see
     /// `convertOneBucketToChunk`).
