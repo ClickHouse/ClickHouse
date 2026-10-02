@@ -355,6 +355,14 @@ SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMet
     return res;
 }
 
+bool ReadFromFormatInfo::formatReadsHivePartitionColumns() const
+{
+    for (const auto & column : hive_partition_columns_to_read_from_file_path)
+        if (format_header.has(column.name))
+            return true;
+    return false;
+}
+
 void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     source_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);

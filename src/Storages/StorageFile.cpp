@@ -2338,8 +2338,7 @@ bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_
     if (!boost::iequals(storage->format_name, "Parquet"))
         return false;
 
-    /// The values of a Hive partition column come from the path, even when the file is read for it.
-    if (info.hive_partition_columns_to_read_from_file_path.contains(sort_column.name))
+    if (info.formatReadsHivePartitionColumns())
         return false;
 
     /// The output header of this step is broader than what the format reads: `prepareReadingFromFormat`
@@ -2575,7 +2574,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(
+        info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag, ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
     format_filter_info->top_k_filter = top_k_filter;
 
     for (size_t i = 0; i < num_streams; ++i)

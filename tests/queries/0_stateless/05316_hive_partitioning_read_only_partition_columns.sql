@@ -34,5 +34,12 @@ INSERT INTO FUNCTION file(currentDatabase() || '/05316/b=1/key=10/data.parquet',
 INSERT INTO FUNCTION file(currentDatabase() || '/05316/b=1/key=9/data.parquet', Parquet, 'key Int64') SELECT 5000 + number FROM numbers(10000) SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_row_group_size = 100;
 SELECT key FROM file(currentDatabase() || '/05316/b=1/key={10,9}/data.parquet', Parquet, 'key Int64') ORDER BY key LIMIT 3 SETTINGS max_threads = 1, optimize_count_from_files = 0, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000, input_format_parquet_use_native_reader_v3 = 1;
 
+-- Nor may a filter on the partition column use them.
+SELECT count() FROM file(currentDatabase() || '/05316/b=1/key=9/data.parquet', Parquet, 'key Int64') WHERE key = 9 SETTINGS optimize_count_from_files = 0;
+INSERT INTO FUNCTION file(currentDatabase() || '/05316/c=1/key=9/data.orc', ORC, 'key Int64') SELECT 10 FROM numbers(10) SETTINGS engine_file_truncate_on_insert = 1;
+SELECT count() FROM file(currentDatabase() || '/05316/c=1/key=9/data.orc', ORC, 'key Int64') WHERE key = 9 SETTINGS optimize_count_from_files = 0, input_format_orc_filter_push_down = 1;
+INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05316/c=1/key=9/data.orc', format = ORC, structure = 'key Int64') SETTINGS s3_truncate_on_insert = 1 SELECT 10 FROM numbers(10);
+SELECT count() FROM s3(s3_conn, filename = currentDatabase() || '/05316/c=1/key=9/data.orc', format = ORC, structure = 'key Int64') WHERE key = 9 SETTINGS optimize_count_from_files = 0, input_format_orc_filter_push_down = 1;
+
 INSERT INTO FUNCTION file(currentDatabase() || '/05316/key=9/data.native', Native) SETTINGS engine_file_truncate_on_insert = 1 SELECT 'a' AS s;
 SELECT count() FROM file(currentDatabase() || '/05316/key=9/data.native', Native) SETTINGS optimize_count_from_files = 0;
