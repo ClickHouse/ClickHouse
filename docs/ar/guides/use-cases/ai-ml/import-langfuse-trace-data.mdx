@@ -1,0 +1,202 @@
+---
+slug: /use-cases/AI/import-langfuse-trace-data
+sidebarTitle: 'استيراد بيانات التتبع من Langfuse Cloud'
+title: 'استيراد بيانات التتبع من Langfuse Cloud'
+description: 'كيفية تحميل بيانات تتبع نماذج LLM المُصدَّرة من Langfuse Cloud إلى ClickHouse Cloud باستخدام ClickPipes.'
+keywords: ['langfuse', 'observability', 'llm', 'clickpipes', 'object storage', 'blob storage', 'import']
+doc_type: 'guide'
+---
+
+يشرح هذا الدليل خطوة بخطوة كيفية تحميل بيانات تتبع نماذج LLM من [Langfuse Cloud](https://cloud.langfuse.com/) إلى ClickHouse Cloud لإجراء التحليلات في الوقت الفعلي.
+
+## التصدير من Langfuse Cloud {#export-from-langfuse-cloud}
+
+اتبع [هذا الدليل](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage) لتهيئة تكامل Blob Storage في Langfuse Cloud بهدف إجراء عمليات تصدير مجدولة. يمكنك جدولة تصدير بيانات التتبع إلى التخزين الكائني بوتيرة تصل إلى مرة كل `20 minutes`، أو وفق جدول `hourly` أو `daily` أو `weekly`. ويتضمن كل تصدير افتراضيًا `observations` الخاصة بك (مُثراةً بسمات التتبع) و`scores`.
+
+### بنية الملفات المُصدَّرة {#exported-file-layout}
+
+يكتب تكامل Blob Storage في Langfuse Cloud البيانات إلى الحاوية (bucket) أو حاوية التخزين (storage container) الهدف وفق بنية الأدلة التالية:
+
+```text
+{prefix}{project-id}/
+├── observations_v2/   # observations enriched with trace attributes
+├── scores/            # scores
+└── manifests/         # one JSON file per completed run with export metadata
+```
+
+## الاستيراد إلى ClickHouse Cloud {#import-into-clickhouse-cloud}
+
+بعد تهيئة تكامل Blob Storage في Langfuse Cloud، ستُصدَّر بيانات التتبع دوريًا وفق جدول زمني إلى الحاوية (bucket) أو حاوية التخزين الهدف. ولاستيراد هذه البيانات إلى ClickHouse Cloud، يمكنك استخدام [ClickPipes](/ar/integrations/clickpipes) وموصلات التخزين الكائني المُدارة التي يوفرها:
+
+| مصدر البيانات                                                                                                                                                                                                                                                                                                  | التفاصيل                                                                                                  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| <span style={{display: 'inline-flex', alignItems: 'flex-start'}}><img src="/images/integrations/logos/amazon_s3_logo.svg" alt="شعار Amazon S3" className="integration-table-logo" width="24" height="24" /><span><strong>Amazon S3</strong><br /><em>وخدمات التخزين الكائني المتوافقة مع S3</em></span></span> | التكامل باستخدام [S3 ClickPipes](/ar/integrations/clickpipes/object-storage/amazon-s3/overview).             |
+| <img src="/images/integrations/logos/gcs.svg" alt="شعار Google Cloud Storage" className="integration-table-logo" width="24" height="24" /> **Google Cloud Storage**                                                                                                                                            | التكامل باستخدام [GCS ClickPipes](/ar/integrations/clickpipes/object-storage/google-cloud-storage/overview). |
+| <img src="/images/integrations/logos/azureblobstorage.svg" alt="شعار Azure Blob Storage" className="integration-table-logo" width="24" height="24" /> **Azure Blob Storage**                                                                                                                                   | التكامل باستخدام [ABS ClickPipes](/ar/integrations/clickpipes/object-storage/azure-blob-storage/overview).   |
+
+### إنشاء ClickPipe {#create-a-clickpipe}
+
+يستخدم هذا المثال S3 ClickPipe لاستيراد البيانات من حاوية S3 تستقبل عمليات تصدير مجدولة من Langfuse Cloud، ويمكن اعتماده نموذجًا لجميع وجهات التصدير إلى التخزين الكائني. وللاطلاع على إرشادات خاصة بكل مصدر بيانات، راجع [وثائق ClickPipes](/ar/integrations/clickpipes).
+
+<Steps>
+  <Step title="اختر مصدر البيانات" id="1-select-the-data-source">
+    **1.** في ClickHouse Cloud، اختر **Data sources** من قائمة التنقل الرئيسية، ثم انقر على **Create ClickPipe**.
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Create ClickPipe" />
+    </Frame>
+
+    **2.** انقر على بطاقة **Amazon S3**. ويمكنك أيضًا استخدام هذه البطاقة للاتصال بخدمات أخرى متوافقة مع S3 غير مدرجة في واجهة ClickPipes.
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_step1.webp" alt="اختيار مصدر البيانات Amazon S3" />
+    </Frame>
+  </Step>
+
+  <Step title="إعداد الاتصال" id="2-set-up-the-connection">
+    **1.** املأ التفاصيل التي تحتاجها ClickPipes للاتصال بالحاوية التي تستقبل الملفات المُصدَّرة من Langfuse Cloud والمصادقة عليها.
+
+    * **Authentication method**: يدعم S3 ClickPipe [بيانات اعتماد IAM](/ar/integrations/clickpipes/object-storage/amazon-s3/overview#iam-credentials) (`Credentials`) و[المصادقة المستندة إلى دور IAM](/ar/integrations/clickpipes/object-storage/amazon-s3/overview#iam-role) (`IAM role`). ولا تحتاج ClickPipes إلا إلى صلاحية القراءة على الحاوية. راجع [الوثائق المرجعية](/ar/integrations/clickpipes/object-storage/amazon-s3/overview#access-control) للاطلاع على إرشادات المصادقة والأذونات.
+
+    * **S3 file path**: وجّه ClickPipe إلى دليل فرعي، واستخدم حرف البدل `*` لمطابقة جميع الملفات المُصدَّرة. **يجب** إنشاء ClickPipe منفصل لكل دليل فرعي، نظرًا لاختلاف مخططات الملفات المُصدَّرة من دليل فرعي إلى آخر.
+
+      | الدليل الفرعي      | مسار الملف                                                                                    |
+      | ------------------ | --------------------------------------------------------------------------------------------- |
+      | `observations_v2/` | `https://{bucket-name}.s3.{region-code}.amazonaws.com/{prefix}{project-id}/observations_v2/*` |
+      | `scores/`          | `https://{bucket-name}.s3.{region-code}.amazonaws.com/{prefix}{project-id}/scores/*`          |
+
+      راجع [الوثائق المرجعية](/ar/integrations/clickpipes/object-storage/amazon-s3/overview#file-pattern-matching) للاطلاع على إرشادات حول الأنماط المدعومة، بما في ذلك كيفية مطابقة الملفات عبر البادئات المتداخلة.
+
+    **2.** اختر **Continuous ingestion** لإدخال الملفات الجديدة تلقائيًا فور كتابة Langfuse لها في حاوية الهدف.
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_continuous_ingestion.webp" alt="بيانات الاتصال الخاصة بتصدير Langfuse، مع تفعيل الإدخال المستمر." />
+    </Frame>
+
+    **3.** انقر على **Incoming data**. ستجلب ClickPipes البيانات الوصفية من حاويتك، وتستنتج مخطط جدول الهدف في الخطوة التالية.
+  </Step>
+
+  <Step title="التحقق من صحة البيانات الواردة" id="3-validate-incoming-data">
+    **1.** ستتصل ClickPipes بحاوية التخزين الخاصة بك وتعرض الملفات الموجودة في المسار المحدد، مع استنتاج صيغة الملفات تلقائيًا. استخدمنا في هذا المثال صيغة ملفات التصدير الافتراضية في Langfuse Cloud ‏(Parquet).
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_incoming_data.webp" alt="الملفات المطابقة لمسار تصدير Langfuse، مع ضبط نوع الملف على Parquet" />
+    </Frame>
+
+    **2.** انقر على **Parse information**. ستستخدم ClickPipes ملفًا نموذجيًا لاستنتاج مخطط البيانات المُصدَّرة، ثم تربط حقول المصدر تلقائيًا بجدول الهدف في ClickHouse.
+  </Step>
+
+  <Step title="تهيئة الهدف" id="4-configure-target">
+    **1.** في هذه الخطوة، يمكنك مراجعة المخطط المستنتج وتخصيص تهيئة جدول الهدف، بما في ذلك ضبط مطابقة أنواع البيانات، وتحديد [مفتاح الفرز](/ar/best-practices/choosing-a-primary-key)، واختيار [محرك الجدول](/ar/reference/engines/table-engines).
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_table_settings.webp" alt="تصدير للدرجات يكتب إلى قاعدة بيانات langfuse مخصصة، مع ضبط مفتاح الفرز على environment وname وtimestamp وtrace_id وobservation_id وid" />
+    </Frame>
+
+    ضمن **Upload data to**، أبقِ الخيار **New table** محددًا واضبط ما يلي:
+
+    * **Database** و**Name**: قاعدة بيانات مخصصة لبيانات Langfuse (مثل `langfuse`)، واسم واضح للجدول الوجهة (مثل `scores`). تستخدم ClickPipes افتراضيًا الاسم `default.s3-<uuid>` لتجنب تعارض الأسماء.
+
+    * **Sorting key**: [مفتاح الترتيب](/ar/best-practices/choosing-a-primary-key) للجدول الوجهة، وهو الذي يحدد طريقة تخزين ClickHouse للبيانات على القرص. للحصول على أفضل أداء، ينبغي أن يتوافق مفتاح الفرز مع أنماط الوصول إلى بياناتك، بحيث تتمكن الاستعلامات من تجاوز قراءة أكبر قدر ممكن من البيانات.
+
+      | الدليل الفرعي      | الجدول الوجهة     | مفتاح الفرز المقترح                                          |
+      | ------------------ | ----------------- | ------------------------------------------------------------ |
+      | `observations_v2/` | `observations_v2` | `environment, start_time, trace_id, id`                      |
+      | `scores/`          | `scores`          | `environment, name, timestamp, trace_id, observation_id, id` |
+
+      يُستخدم هذا المفتاح أيضًا لإزالة التكرار في جداول `ReplacingMergeTree`، لذا يجب أن تحدد مجموعة الأعمدة كل سجل تحديدًا فريدًا. إذا كنت تحمّل بيانات **عدة مشاريع Langfuse** في جدول واحد، فأضف `project_id` في بداية مفتاح الفرز. راجع [الوثائق المرجعية](/ar/best-practices/choosing-a-primary-key) للاطلاع على إرشادات اختيار مفتاح الفرز.
+
+    * **Partition by**: اتركه فارغًا ما لم تكن تنوي حذف بيانات التتبّع القديمة بعد انتهاء صلاحيتها. يُستخدم [التقسيم](/ar/best-practices/choosing-a-partitioning-key) في ClickHouse لإدارة البيانات لا لتحسين الاستعلامات؛ إذ إن مفتاح الفرز المقترح يقلّص أصلًا نطاق البيانات المقروءة في استعلامات الفترات الزمنية. أما إذا كنت بحاجة إلى سياسة احتفاظ، فقسّم حسب عمود الوقت (`toYYYYMM(start_time)`، أو `toYYYYMM(timestamp)` بالنسبة إلى `scores`)، بحيث يصبح حذف شهر كامل من بيانات التتبّع عملية `DROP PARTITION` واحدة.
+
+    **2.** بعد ذلك، وسّع **Advanced settings** واضبط **Engine** على [`ReplacingMergeTree`](/ar/engines/table-engines/mergetree-family/replacingmergetree) لضمان إزالة التكرار، مع استخدام `updated_at` عمودًا لـ **Version**.
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_advanced_settings.webp" alt="الإعدادات المتقدمة مع محرك ReplacingMergeTree واستخدام updated_at عمودًا للإصدار" />
+    </Frame>
+
+    تشمل نوافذ التصدير في تكامل Langfuse Cloud Blob Storage حدَّيها كليهما، لذا قد يظهر السجل نفسه في أكثر من ملف مُصدَّر. ما لم تكن أنماط استعلاماتك التحليلية متساوية القوى (مثل `uniq()` و`max()` و`min()`)، **يجب** عليك معالجة إزالة التكرار ضمن نموذج البيانات اللاحق، باستخدام `ReplacingMergeTree` محركًا لجدول الهدف.
+
+    <Note>
+      **إزالة التكرار باستخدام ReplacingMergeTree**
+
+      يدمج محرك الجدول هذا السجلات المكررة عبر عمليات الدمج في الخلفية. ولإزالة التكرار بالكامل عند القراءة (أي اعتماد مبدأ الدمج عند القراءة)، **يجب** استخدام المُعدِّل `FINAL` (أو تجميعات من نوع `argMax()`) عند تنفيذ الاستعلام.
+    </Note>
+  </Step>
+
+  <Step title="تهيئة الأذونات" id="5-configure-permissions">
+    تُنشئ ClickPipes مستخدمًا مخصصًا لكتابة البيانات في جدول الوجهة. اختر دورًا لهذا المستخدم الداخلي، إما دورًا مخصصًا أو أحد الأدوار المُعرَّفة مسبقًا:
+
+    * `Full access`: يمنح صلاحية وصول كاملة إلى العنقود. وهو مطلوب إذا كنت تستخدم عرضًا مُجسَّدًا أو قاموسًا مع جدول الوجهة.
+    * `Only destination table`: يمنح صلاحيات `INSERT` على جدول الوجهة فقط.
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="الصلاحيات" />
+    </Frame>
+
+    انقر على **Complete setup** لإنشاء ClickPipe.
+  </Step>
+
+  <Step title="أكمل الإعداد" id="6-complete-setup">
+    وبهذا يكون كل شيء جاهزًا! ستبدأ ClickPipes أولاً بتعبئة البيانات التاريخية (backfill) لجميع الملفات الموجودة في المسار المحدد، ثم تنتقل إلى استيعاب الملفات الجديدة فور وصولها إلى الحاوية.
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_clickpipes_running.webp" alt="ClickPipes الخاصة بالملاحظات والدرجات قيد التشغيل ضمن مصادر البيانات" />
+    </Frame>
+
+    كرّر الخطوات الواردة في هذا الشرح لكل دليل فرعي تريد استيراده إلى ClickHouse Cloud.
+  </Step>
+</Steps>
+
+### الاستعلام عن بيانات التتبع {#query-trace-data}
+
+بعد أن تبدأ ClickPipes بالعمل، يمكنك الاستعلام عن بيانات التتبع الخاصة بك في Langfuse Cloud مباشرةً من ClickHouse Cloud. تتناول الأمثلة أدناه بعض أنماط الاستعلام الشائعة: التجميعات الإجمالية للتكلفة وزمن الاستجابة، وإعادة بناء تتبع واحد، وربط الدرجات بالنماذج والموجّهات.
+
+#### تجميعات المقاييس ضمن فترات زمنية {#time-bucketed-metric-rollups}
+
+<Tip>
+  تُصدَّر بعض الحقول، مثل `usage_details` و`cost_details`، كأعمدة من نوع `Map`. للوصول إلى قيمة واحدة، ابحث عنها بمفتاحها (مثلًا: `sum(cost_details['total'])`).
+</Tip>
+
+```sql
+SELECT
+    toStartOfHour(start_time) AS t,
+    provided_model_name,
+    count()                        AS spans,
+    quantile(0.95)(latency)        AS p95_latency,
+    sum(total_cost)                AS cost,
+    sum(usage_details['total'])    AS tokens
+FROM observations_v2 FINAL
+WHERE start_time >= now() - INTERVAL 7 DAY
+-- AND environment = '<environment>'
+GROUP BY t, provided_model_name
+ORDER BY t;
+```
+
+#### إعادة بناء التتبّع {#trace-reconstruction}
+
+```sql
+SELECT *
+FROM observations_v2 FINAL
+WHERE trace_id = '<trace_id>'
+ORDER BY start_time;
+```
+
+#### تحليل الجودة {#quality-analysis}
+
+```sql
+SELECT
+    o.provided_model_name,
+    s.name,
+    avg(s.value) AS avg_score
+FROM "s3-26237f63-84dc-4a7d-a0e1-7361cf55ee0b" AS s FINAL
+JOIN "s3-80899034-ce1e-4dc9-a4e6-b059ddec4175" AS o FINAL ON s.trace_id = o.trace_id
+--WHERE s.environment = '<environment>'
+GROUP BY o.provided_model_name, s.name
+ORDER BY avg_score DESC;
+```
+
+## انظر أيضًا {#see-also}
+
+* [Langfuse وClickHouse](/ar/products/cloud/features/ai-ml/langfuse)
+* [التصدير من Langfuse Cloud إلى Blob Storage](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage)
+* [ClickPipes للتخزين الكائني](/ar/integrations/clickpipes/object-storage/amazon-s3/overview)
