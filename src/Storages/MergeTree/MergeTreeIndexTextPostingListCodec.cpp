@@ -118,10 +118,21 @@ SegmentedPostingListCodec::SegmentData SegmentedPostingListCodec::readSegmentDat
     return segment_data;
 }
 
-/// Row ids within a block strictly increase, so `count` of them spanning `count` values are consecutive.
+/// Decoded row ids are not validated, so every one of them is checked, not only the first and the last.
+static bool isConsecutive(const UInt32 * row_ids, size_t count)
+{
+    if (static_cast<UInt64>(row_ids[0]) + count - 1 != row_ids[count - 1])
+        return false;
+
+    UInt32 mismatch = 0;
+    for (size_t i = 1; i + 1 < count; ++i)
+        mismatch |= row_ids[i] ^ (row_ids[0] + static_cast<UInt32>(i));
+    return mismatch == 0;
+}
+
 static void addBlockToPostings(PostingList & postings, const UInt32 * row_ids, size_t count, size_t & consecutive_blocks)
 {
-    if (static_cast<UInt64>(row_ids[0]) + count - 1 == row_ids[count - 1])
+    if (isConsecutive(row_ids, count))
     {
         postings.addRangeClosed(row_ids[0], row_ids[count - 1]);
         ++consecutive_blocks;
