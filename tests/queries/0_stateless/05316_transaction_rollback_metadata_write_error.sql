@@ -16,6 +16,10 @@ DROP TABLE IF EXISTS t_rollback_store_fail;
 CREATE TABLE t_rollback_store_fail (n Int32) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_rollback_store_fail VALUES (1), (2);
 
+-- `system.errors` keeps the counts of earlier runs, so the check below compares with this snapshot.
+CREATE TEMPORARY TABLE fault_injected_before AS
+SELECT sum(value) AS value FROM system.errors WHERE name = 'FAULT_INJECTED' AND NOT remote;
+
 BEGIN TRANSACTION;
 OPTIMIZE TABLE t_rollback_store_fail FINAL;
 SELECT 'in transaction', name FROM system.parts WHERE database = currentDatabase() AND table = 't_rollback_store_fail' AND active;
@@ -23,9 +27,9 @@ SYSTEM ENABLE FAILPOINT version_metadata_on_disk_store_fail;
 ROLLBACK;
 SYSTEM DISABLE FAILPOINT version_metadata_on_disk_store_fail;
 
--- The writes did fail, for this table.
-SELECT 'store failed', count() FROM system.errors
-WHERE name = 'FAULT_INJECTED' AND last_error_message LIKE '%' || currentDatabase() || '.t_rollback_store_fail%';
+-- The writes did fail during this ROLLBACK, for this table.
+SELECT 'store failed', value > (SELECT value FROM fault_injected_before) FROM system.errors
+WHERE name = 'FAULT_INJECTED' AND NOT remote AND last_error_message LIKE '%' || currentDatabase() || '.t_rollback_store_fail%';
 
 SELECT 'after rollback', name FROM system.parts WHERE database = currentDatabase() AND table = 't_rollback_store_fail' AND active ORDER BY name;
 SELECT 'rows', n FROM t_rollback_store_fail ORDER BY n;
