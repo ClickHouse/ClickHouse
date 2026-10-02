@@ -1443,6 +1443,20 @@ QueryPlan buildLogicalJoinForLateral(
     auto lhs_plan_header = decorrelated_plan.getCurrentHeader();
     auto rhs_plan_header = input_stream_plan.getCurrentHeader();
 
+    /// Reject nested correlated shapes whose correlated column is missing from the plans being joined,
+    /// the same way as `buildLogicalJoin`, rather than failing with `NOT_FOUND_COLUMN_IN_BLOCK` below.
+    for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
+    {
+        if (!rhs_plan_header->has(column_name)
+            || !lhs_plan_header->has(fmt::format("{}.{}", correlated_subquery.action_node_name, column_name)))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "LATERAL JOIN is not supported yet, because the correlated column '{}' is not "
+                "available in the outer query plan at this point. Available columns: {}",
+                column_name,
+                rhs_plan_header->dumpNames());
+    }
+
     using ColumnNameGetter = std::function<String(const String &)>;
     ColumnNameGetter get_lhs_column_name = [&](const String & column_name) -> String {
         return fmt::format("{}.{}", correlated_subquery.action_node_name, column_name);

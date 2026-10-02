@@ -640,9 +640,9 @@ void ASTTableJoin::readJSON(const Poco::JSON::Object & json)
     if (lateral && (kind == JoinKind::Cross || kind == JoinKind::Comma))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "LATERAL is not supported with CROSS and comma joins during AST JSON deserialization");
-    /// The parser requires `ON` or `USING` for `JOIN LATERAL` (`ON true` is mandatory), so a predicate-less one would
-    /// be formatted as SQL that does not parse back.
-    if (lateral && !has_predicate)
+    /// The parser requires `ON` or `USING` for a non-`NATURAL`, non-`PASTE` `JOIN LATERAL` (`ON true` is mandatory),
+    /// so a predicate-less one would be formatted as SQL that does not parse back.
+    if (lateral && !has_predicate && !is_natural && kind != JoinKind::Paste)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "LATERAL join requires an 'on_expression' or 'using_expression_list' during AST JSON deserialization");
 }
