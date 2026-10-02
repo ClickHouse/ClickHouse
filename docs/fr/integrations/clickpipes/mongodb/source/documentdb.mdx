@@ -22,7 +22,7 @@ ClickPipes prend en charge DocumentDB version 5.0.
 Par défaut, Amazon DocumentDB conserve les journaux du flux de changements pendant 3 heures, alors que le chargement initial peut prendre bien plus longtemps selon le volume de données déjà présent dans votre instance DocumentDB. Nous vous recommandons de porter cette durée de rétention à 72 heures ou davantage, afin d’éviter qu’ils ne soient supprimés avant la fin du snapshot initial.
 
 <div id="update-change-stream-log-retention-via-aws-console">
-  ### Mettre à jour la durée de rétention des journaux du flux de changements via la console AWS
+  ### Mettre à jour la rétention des journaux du flux de changements via la console AWS
 </div>
 
 1. Cliquez sur `Parameter groups` dans le panneau de gauche, puis repérez le groupe de paramètres utilisé par votre cluster DocumentDB (si vous utilisez le groupe de paramètres `default`, vous devrez d’abord en créer un nouveau pour pouvoir le modifier).

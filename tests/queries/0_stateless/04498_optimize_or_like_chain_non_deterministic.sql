@@ -1,8 +1,8 @@
 -- `optimize_or_like_chain` must not merge LIKE branches whose first argument contains a
 -- non-deterministic function (e.g. `rand`). Both branches render to the same alias/column
 -- name, but at runtime they evaluate independently — collapsing two `rand()` calls into
--- a single `multiSearchAny` would change query results. `optimize_or_like_chain` is a
--- new-analyzer-only optimization, so all cases use the analyzer (`enable_analyzer = 1`).
+-- a single `multiSearchAny` would change query results. `optimize_or_like_chain` is an
+-- analyzer-only optimization, so all cases use the analyzer (`enable_analyzer = 1`).
 
 SET optimize_or_like_chain = 1;
 -- Exercise the rewrite even for short chains (the default thresholds would skip 2-pattern fixtures).

@@ -2,6 +2,17 @@ from enum import Enum
 from pyspark.sql.types import DataType, StructType
 
 
+def quote_ch_identifier(name: str) -> str:
+    """Backtick-quote a ClickHouse identifier, doubling embedded backticks like
+    `SQLIdentifier` does on the BuzzHouse side. With `allow_nasty_identifiers` a name may
+    hold spaces, dots, keywords or backticks, and unquoted it is a SYNTAX_ERROR."""
+    return "`" + name.replace("`", "``") + "`"
+
+
+def quote_ch_table_path(database_name: str, table_name: str) -> str:
+    return f"{quote_ch_identifier(database_name)}.{quote_ch_identifier(table_name)}"
+
+
 class TableStorage(Enum):
     Unkown = 0
     S3 = 1
@@ -93,11 +104,15 @@ class SparkColumn:
         _spark_type: DataType,
         _nullable: bool,
         _generated: bool,
+        _clickhouse_type: str = "",
     ):
         self.column_name = _column_name
         self.spark_type = _spark_type
         self.nullable = _nullable
         self.generated = _generated
+        # Original ClickHouse type string; empty when the column has no CH-side origin
+        # (e.g. added via a Spark-side ALTER).
+        self.clickhouse_type = _clickhouse_type
 
     def _flat_column(
         self, res: dict[str, DataType], next_path: str, next_type: DataType

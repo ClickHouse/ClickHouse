@@ -33,9 +33,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 * إمكانية الوصول إلى ملفات سجلّات MongoDB
 
 <Steps>
-  <Step>
-    #### تحقّق من إعدادات التسجيل في MongoDB
-
+  <Step title="تحقّق من إعدادات التسجيل في MongoDB" id="verify-mongodb">
     ينشئ MongoDB 4.4+ سجلات JSON منظَّمة افتراضيًا. تحقّق من موقع ملف السجل:
 
     ```bash
@@ -68,9 +66,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### أنشئ تهيئة مخصّصة لـ OTel collector خاصة بـ MongoDB
-
+  <Step title="أنشئ تهيئة مخصّصة لـ OTel collector خاصة بـ MongoDB" id="custom-otel">
     يتيح لك ClickStack توسيع التهيئة الأساسية لـ OpenTelemetry Collector من خلال تحميل ملف تهيئة مخصّص وتعيين متغير بيئة. وتُدمج التهيئة المخصّصة مع التهيئة الأساسية التي يديرها HyperDX عبر OpAMP.
 
     أنشئ ملفًا باسم `mongodb-monitoring.yaml` بالتكوين التالي:
@@ -134,9 +130,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### تهيئة ClickStack لتحميل إعدادات مخصصة
-
+  <Step title="تهيئة ClickStack لتحميل إعدادات مخصصة" id="load-custom">
     لتمكين إعداد مخصص للمجمّع في عملية نشر ClickStack الحالية، يجب عليك:
 
     1. ربط ملف الإعدادات المخصص عند `/etc/otelcol-contrib/custom.config.yaml`
@@ -180,9 +174,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### التحقق من السجلات في HyperDX
-
+  <Step title="التحقق من السجلات في HyperDX" id="verifying-logs">
     بعد إتمام الإعداد، سجّل الدخول إلى HyperDX وتأكد من وصول السجلات:
 
     <Image img="/images/clickstack/mongodb/search-view.webp" alt="عرض البحث في سجلات MongoDB" />
@@ -198,9 +190,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 اختبر تكامل MongoDB باستخدام مجموعة بيانات نموذجية مُعدّة مسبقًا قبل تهيئة أنظمة الإنتاج لديك.
 
 <Steps>
-  <Step>
-    #### تنزيل مجموعة البيانات النموذجية
-
+  <Step title="تنزيل مجموعة البيانات النموذجية" id="download-sample">
     نزّل ملف السجل النموذجي:
 
     ```bash
@@ -208,9 +198,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### إنشاء تهيئة collector للاختبار
-
+  <Step title="إنشاء تهيئة collector للاختبار" id="test-config">
     أنشئ ملفًا باسم `mongodb-demo.yaml` بالتكوين التالي:
 
     ```yaml
@@ -269,10 +257,8 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### تشغيل ClickStack باستخدام التهيئة التجريبية
-
-    شغّل ClickStack باستخدام السجلات والتكوين التجريبيين:
+  <Step title="تشغيل ClickStack باستخدام التهيئة التجريبية" id="run-demo">
+    شغّل ClickStack باستخدام السجلات والتهيئة التجريبيتين:
 
     ```bash
     docker run --name clickstack-demo \
@@ -302,13 +288,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </div>
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">تنزيل</TrackedLink> تهيئة لوحة المعلومات
+  <Step title="تنزيل تهيئة لوحة المعلومات" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">تنزيل ملف تهيئة لوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step>
-    #### استيراد لوحة معلومات مُعدّة مسبقًا
-
+  <Step title="استيراد لوحة معلومات مُعدّة مسبقًا" id="import-dashboard">
     1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات.
     2. انقر على &quot;استيراد لوحة معلومات&quot; في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث.
 
@@ -319,9 +303,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/mongodb/finish-import.webp" alt="إنهاء استيراد لوحة معلومات سجلات MongoDB" />
   </Step>
 
-  <Step>
-    #### ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا
-
+  <Step title="ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا" id="created-dashboard">
     بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني ليشمل **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
     <Image img="/images/clickstack/mongodb/example-dashboard.webp" alt="لوحة معلومات سجلات MongoDB" />
@@ -371,4 +353,4 @@ tail -1 /var/log/mongodb/mongod.log | python3 -m json.tool
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات الإنتاج.
+يعتمد هذا الدليل على OpenTelemetry Collector المدمج في ClickStack لتوفير إعداد سريع. بالنسبة إلى عمليات النشر في بيئة الإنتاج، نوصي بتشغيل OTel Collector خاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.

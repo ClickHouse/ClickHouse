@@ -67,9 +67,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 في المثال التالي، نقدّم الخطوات الأولية لتهيئة Vector لاستقبال أحداث السجلات من Filebeat عبر بروتوكول Lumberjack. كما نوفّر VRL لربط أحداث ECS الواردة بمواصفة OTel، قبل إرسالها إلى ClickStack جامع OpenTelemetry عبر OTLP. ويمكن للمستخدمين الذين يستهلكون الأحداث من Kafka استبدال مصدر Vector Logstash بـ [مصدر Kafka](https://vector.dev/docs/reference/configuration/sources/kafka/) — مع بقاء جميع الخطوات الأخرى كما هي.
 
 <Steps>
-  <Step>
-    ### تثبيت Vector
-
+  <Step title="تثبيت Vector" id="install-vector">
     ثبّت Vector باستخدام [دليل التثبيت الرسمي](https://vector.dev/docs/setup/installation/).
 
     يمكن تثبيته على نفس المثيل الذي يعمل عليه OTel collector الخاص بـ Elastic Stack.
@@ -77,9 +75,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     يمكنك اتباع أفضل الممارسات المتعلقة بالمعمارية والأمان عند [نقل Vector إلى بيئة الإنتاج](https://vector.dev/docs/setup/going-to-prod/).
   </Step>
 
-  <Step>
-    ### تهيئة vector
-
+  <Step title="تهيئة vector" id="configure-vector">
     يجب تهيئة Vector لاستقبال الأحداث عبر بروتوكول Lumberjack، محاكيًا نسخة Logstash. يمكن تحقيق ذلك بتهيئة [`logstash` source](https://vector.dev/docs/reference/configuration/sources/logstash/) لـ Vector:
 
     ```yaml
@@ -294,9 +290,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ### تهيئة Filebeat
-
+  <Step title="تهيئة Filebeat" id="configure-filebeat">
     لا يلزم في عمليات تثبيت Filebeat الحالية سوى تعديلها لإرسال أحداثها إلى Vector. ويتطلب ذلك إعداد مخرج Logstash — ومرة أخرى، يمكن تهيئة TLS اختياريًا:
 
     ```yaml
@@ -336,15 +330,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    #### تثبيت Vector وتهيئته
-
+  <Step title="تثبيت Vector وتهيئته" id="install-configure-vector">
     ثبّت Vector وهيّئه باتباع [الخطوات نفسها](#install-vector) الموثقة للترحيل من Filebeat.
   </Step>
 
-  <Step>
-    #### تهيئة Elastic Agent
-
+  <Step title="تهيئة Elastic Agent" id="configure-elastic-agent">
     يجب تهيئة Elastic Agent لإرسال البيانات عبر بروتوكول Lumberjack الخاص بـ Logstash. وهذا [نمط نشر مدعوم](https://www.elastic.co/docs/manage-data/ingest/ingest-reference-architectures/ls-networkbridge)، ويمكن تهيئته مركزيًا أو [عبر ملف تهيئة الوكيل `elastic-agent.yaml`](https://www.elastic.co/docs/reference/fleet/logstash-output) عند النشر بدون Fleet.
 
     يمكن إجراء التهيئة المركزية عبر Kibana من خلال إضافة [Output إلى Fleet](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings).

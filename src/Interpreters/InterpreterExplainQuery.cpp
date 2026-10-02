@@ -8,7 +8,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -21,41 +20,82 @@
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithAlias.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
+#include <Parsers/FunctionSecretArgumentsFinderAST.h>
+#include <Parsers/parseQuery.h>
 
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/ObjectFilterStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Interpreters/FunctionSecretArgumentsFinderActionsDAG.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Processors/Sinks/EmptySink.h>
+#include <Processors/Sources/DelayedSource.h>
+#include <Processors/Sources/RemoteSource.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <QueryPipeline/printPipeline.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
+#include <Common/quoteString.h>
+#include <Common/StringUtils.h>
+#include <Common/ThreadStatus.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ProfileEvents.h>
+#include <Common/formatReadable.h>
+#include <Core/Defines.h>
 #include <Core/Settings.h>
-#include <Interpreters/HypotheticalIndexStore.h>
+#include <Interpreters/HypotheticalObjectStore.h>
 #include <Storages/MergeTree/WhatIfIndexEstimator.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
+#include <Analyzer/TableFunctionNode.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event SelectedRows;
+    extern const Event SelectedBytes;
+}
 
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool format_display_secrets_in_show_and_select;
+    extern const SettingsBool explain_syntax_single_record;
     extern const SettingsUInt64 query_plan_max_step_description_length;
+    extern const SettingsUInt64 interactive_delay;
+    extern const SettingsBool use_concurrency_control;
     extern const SettingsExplainQueryPlanDefault explain_query_plan_default;
 }
 
@@ -231,46 +271,227 @@ namespace
 
     using ExplainAnalyzedSyntaxVisitor = InDepthNodeVisitor<ExplainAnalyzedSyntaxMatcher, true>;
 
-    class TableFunctionSecretsVisitor : public InDepthQueryTreeVisitor<TableFunctionSecretsVisitor>
+    /// Recursively hide every constant inside a secret argument, preserving the expression structure
+    /// (e.g. an `encrypt` key built as `leftPad('...', 16, '*')`). Constants already masked by
+    /// `resolveFunction` are left untouched so their mask ids survive; the rest are hidden here for the
+    /// dump-only path where the analysis passes did not run (`run_passes = 0`).
+    void maskConstantsInSubtree(QueryTreeNodePtr & node)
+    {
+        if (auto * constant = node->as<ConstantNode>())
+        {
+            if (!constant->isMasked())
+                constant->setMaskId();
+            return;
+        }
+        for (auto & child : node->getChildren())
+            if (child)
+                maskConstantsInSubtree(child);
+    }
+
+    class SecretArgumentsDumpVisitor : public InDepthQueryTreeVisitor<SecretArgumentsDumpVisitor>
     {
         friend class InDepthQueryTreeVisitor;
-        bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child [[maybe_unused]])
+        static bool needChildVisit(VisitQueryTreeNodeType &, VisitQueryTreeNodeType &)
         {
-            QueryTreeNodeType type = parent->getNodeType();
-            return type == QueryTreeNodeType::QUERY || type == QueryTreeNodeType::JOIN || type == QueryTreeNodeType::TABLE_FUNCTION;
+            /// A secret-bearing function can hide under any carrier (a `UNION`, a scalar subquery, an
+            /// expression list), so descend everywhere; `visitImpl` selects the ones to mask.
+            return true;
         }
 
         void visitImpl(VisitQueryTreeNodeType & query_tree_node)
         {
-            auto * table_function_node_ptr = query_tree_node->as<TableFunctionNode>();
-            if (!table_function_node_ptr)
-                return;
-
-            if (FunctionSecretArgumentsFinder::Result secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node_ptr).getResult(); secret_arguments.count)
+            if (auto * table_function_node = query_tree_node->as<TableFunctionNode>())
             {
-                auto & argument_nodes = table_function_node_ptr->getArguments().getNodes();
+                auto secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node).getResult();
+                if (!secret_arguments.hasSecrets())
+                    return;
 
-                for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
-                {
-                    ConstantNode * constant_node = nullptr;
-                    if (secret_arguments.are_named)
+                /// A table-function secret value that is not a constant (an identifier or a constant
+                /// expression, e.g. a computed url) is hidden whole: the whole argument is the
+                /// credential carrier, and a tree dump cannot represent partial masking. Fail closed.
+                forEachSecretArgumentNode(
+                    table_function_node->getArguments().getNodes(),
+                    secret_arguments,
+                    [](size_t, QueryTreeNodePtr & node)
                     {
-                        auto * function_node = argument_nodes[n]->as<FunctionNode>();
-                        if (function_node && function_node->getArguments().getNodes().size() >= 2)
-                            constant_node = function_node->getArguments().getNodes().at(1)->as<ConstantNode>();
-                    }
+                        if (auto * constant = node->as<ConstantNode>())
+                            constant->setMaskId();
+                        else
+                            node = std::make_shared<ConstantNode>(Field("[HIDDEN]"));
+                    });
+            }
+            else if (auto * function_node = query_tree_node->as<FunctionNode>())
+            {
+                auto secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node).getResult();
+                if (!secret_arguments.hasSecrets())
+                    return;
 
-                    if (!constant_node)
-                    {
-                        constant_node = argument_nodes[n]->as<ConstantNode>();
-                    }
-
-                    if (constant_node)
-                        constant_node->setMaskId();
-                }
+                /// An ordinary secret function (`encrypt`/`decrypt`/`HMAC`, ...) is not masked by
+                /// `resolveFunction` when the dump runs with the analysis passes disabled. Its secret
+                /// is carried in constants (a literal key or one built by an expression), so hide every
+                /// constant inside the secret argument, keeping the structure visible.
+                forEachSecretArgumentNode(
+                    function_node->getArguments().getNodes(),
+                    secret_arguments,
+                    [](size_t, QueryTreeNodePtr & node) { maskConstantsInSubtree(node); });
             }
         }
     };
+
+    /// Replace a node with a single `'[HIDDEN]'` literal, keeping its alias.
+    void hideWholeNode(ASTPtr & node)
+    {
+        auto hidden = make_intrusive<ASTLiteral>(Field("[HIDDEN]"));
+        hidden->setAlias(node->tryGetAlias());
+        node = std::move(hidden);
+    }
+
+    /// Replace every literal inside a node with `'[HIDDEN]'`, keeping the expression structure. Only
+    /// for the secret arguments of `encrypt` / `HMAC`, where the shape is not a secret (a key built as
+    /// `leftPad('...', 16, '*')` stays readable as such); every other secret slot is hidden whole.
+    void hideLiteralsInSubtree(ASTPtr & node)
+    {
+        if (node->as<ASTLiteral>())
+        {
+            hideWholeNode(node);
+            return;
+        }
+        for (auto & child : node->children)
+            hideLiteralsInSubtree(child);
+    }
+
+    /// Keep in sync with the names `FunctionSecretArgumentsFinder` sends to `findEncryptionFunctionSecretArguments`
+    /// and `findHMACSecretArguments`. A name missing here only makes the dump stricter: its span is hidden whole.
+    bool isEncryptionOrHMACFunction(const ASTFunction & function)
+    {
+        return function.name == "encrypt" || function.name == "decrypt" || function.name == "aes_encrypt_mysql"
+            || function.name == "aes_decrypt_mysql" || function.name == "tryDecrypt" || equalsCaseInsensitive(function.name, "HMAC");
+    }
+
+    bool isKeyValueArgument(const IAST & node)
+    {
+        const auto * function = node.as<ASTFunction>();
+        return function && function->name == "equals" && function->arguments && function->arguments->children.size() == 2;
+    }
+
+    /// The secret value of a `key = value` argument is its second child; anything else carries the
+    /// secret in the node itself.
+    ASTPtr & secretValueSlot(ASTPtr & node)
+    {
+        if (isKeyValueArgument(*node))
+            return node->as<ASTFunction>()->arguments->children[1];
+        return node;
+    }
+
+    /// Replace an argument with the partially masked SQL the formatter prints for it: a URL with its
+    /// credentials removed, or the masked locator of a `Backup` database. The original node must not
+    /// stay in the tree, so text that does not parse, or parses into a node that cannot take the
+    /// argument's place (a `COLUMNS(...)` matcher has no alias), hides the argument whole.
+    void replaceWithMaskedText(ASTPtr & node, const String & text)
+    {
+        ParserExpression parser;
+        const char * pos = text.data();
+        String error;
+        ASTPtr parsed = tryParseQuery(
+            parser,
+            pos,
+            text.data() + text.size(),
+            error,
+            /* hilite= */ false,
+            "masked secret argument",
+            /* allow_multi_statements= */ false,
+            /* max_query_size= */ 0,
+            DBMS_DEFAULT_MAX_PARSER_DEPTH,
+            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
+            /* skip_insignificant= */ true);
+        if (!parsed || !dynamic_cast<ASTWithAlias *>(parsed.get()))
+        {
+            hideWholeNode(node);
+            return;
+        }
+        parsed->setAlias(node->tryGetAlias());
+        node = std::move(parsed);
+    }
+
+    /// `DumpASTNode` prints a literal through `IAST::getID`, value included, so the dump cannot hide
+    /// secrets while formatting as `ASTFunction::formatImpl` does. Hide them in the tree instead. As in the
+    /// formatter, a secret slot becomes one `'[HIDDEN]'` literal. That includes the slots the finder could
+    /// not inspect (a url built by `concat(...)`, an identifier in a password slot): their expression is
+    /// part of the secret and must not be dumped node by node. Only the `encrypt` / `HMAC` span keeps its
+    /// structure (see `hideLiteralsInSubtree`). All values of a nested map (`headers(...)`,
+    /// `extra_credentials(...)`) are hidden; the formatter keeps the non-secret `extra_credentials`
+    /// values, so the dump is stricter.
+    struct HideSecretArgumentsMatcher
+    {
+        struct Data
+        {
+        };
+
+        static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+
+        static void visit(ASTPtr & ast, Data &)
+        {
+            auto * function = ast->as<ASTFunction>();
+            if (!function || !function->arguments)
+                return;
+
+            auto secret_arguments = FunctionSecretArgumentsFinderAST(*function).getResult();
+            if (!secret_arguments.hasSecrets())
+                return;
+
+            auto & arguments = function->arguments->children;
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                if (auto * map = arguments[i]->as<ASTFunction>();
+                    map && map->arguments && std::ranges::contains(secret_arguments.nested_maps, map->name))
+                {
+                    for (auto & entry : map->arguments->children)
+                        hideWholeNode(secretValueSlot(entry));
+                    continue;
+                }
+
+                if (auto replaced = secret_arguments.replaced_arguments.find(i); replaced != secret_arguments.replaced_arguments.end())
+                {
+                    replaceWithMaskedText(arguments[i], replaced->second);
+                    continue;
+                }
+
+                /// An individually masked argument: only the named `key = value` form keeps its key.
+                if (auto masked = secret_arguments.masked_arguments.find(i); masked != secret_arguments.masked_arguments.end())
+                {
+                    hideWholeNode(masked->second ? secretValueSlot(arguments[i]) : arguments[i]);
+                    continue;
+                }
+
+                if (!(secret_arguments.start <= i && i < secret_arguments.start + secret_arguments.count))
+                    continue;
+
+                if (!secret_arguments.replacement.empty())
+                {
+                    const auto text
+                        = secret_arguments.quote_replacement ? quoteString(secret_arguments.replacement) : secret_arguments.replacement;
+                    replaceWithMaskedText(secret_arguments.are_named ? secretValueSlot(arguments[i]) : arguments[i], text);
+                    continue;
+                }
+
+                if (secret_arguments.are_named)
+                {
+                    hideWholeNode(secretValueSlot(arguments[i]));
+                    continue;
+                }
+
+                /// Only the span of `encrypt` / `HMAC` keeps its structure. Any other unnamed span without a
+                /// replacement, such as an unreadable url in `mongodb(concat(...), 'c')`, is hidden whole. So is a
+                /// `key = value` in the span: it is a positional secret written as a comparison.
+                if (isEncryptionOrHMACFunction(*function) && !isKeyValueArgument(*arguments[i]))
+                    hideLiteralsInSubtree(arguments[i]);
+                else
+                    hideWholeNode(arguments[i]);
+            }
+        }
+    };
+
+    using HideSecretArgumentsVisitor = InDepthNodeVisitor<HideSecretArgumentsMatcher, true>;
 
 }
 
@@ -409,6 +630,7 @@ struct QueryPlanSettings
             {"column_structure", query_plan_options.column_structure},
             {"compact", query_plan_options.compact},
             {"pretty", query_plan_options.pretty},
+            {"estimates", query_plan_options.estimates},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -429,6 +651,37 @@ struct QueryPipelineSettings
             {"compact", compact},
             {"distributed", query_pipeline_options.distributed},
             {"compact_repeated_processor_chains", query_pipeline_options.compact_repeated_processor_chains},
+    };
+
+    std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
+};
+
+struct QueryAnalyzeSettings
+{
+    ExplainPlanOptions query_plan_options
+    {.actions = true,
+    .indexes = true,
+    .compact = true,
+    .pretty = true,
+    .time = true};
+
+    constexpr static char name[] = "ANALYZE";
+
+    std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
+    {
+        {"actions", query_plan_options.actions},
+        {"indexes", query_plan_options.indexes},
+        {"compact", query_plan_options.compact},
+        {"pretty", query_plan_options.pretty},
+        {"header", query_plan_options.header},
+        {"description", query_plan_options.description},
+        {"projections", query_plan_options.projections},
+        {"sorting", query_plan_options.sorting},
+        {"input_headers", query_plan_options.input_headers},
+        {"column_structure", query_plan_options.column_structure},
+        {"processors", query_plan_options.processors_profile},
+        {"matches", query_plan_options.matches},
+        {"time", query_plan_options.time},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -492,13 +745,14 @@ struct ExplainSettings : public Settings
         }
 
         return res;
-    }
+}
 };
 
 struct QuerySyntaxSettings
 {
     bool oneline = false;
     bool run_query_tree_passes = false;
+    bool single_record = false;
     Int64 query_tree_passes = -1;
 
     constexpr static char name[] = "SYNTAX";
@@ -506,7 +760,8 @@ struct QuerySyntaxSettings
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"oneline", oneline},
-        {"run_query_tree_passes", run_query_tree_passes}
+        {"run_query_tree_passes", run_query_tree_passes},
+        {"single_record", single_record}
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings =
@@ -516,21 +771,25 @@ struct QuerySyntaxSettings
 };
 
 template <typename Settings>
-ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings, bool set_default_pretty_explain_settings = true)
+ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings, bool default_flag = true)
 {
     ExplainSettings<Settings> settings;
 
     /// These lines are needed to impose the default settings for EXPLAIN PLAN
     /// We set them here instead of QueryPlanSettings, because internally
     /// we sometimes use EXPLAIN PLAN output for logging
-    if constexpr (std::is_same_v<Settings, QueryPlanSettings>)
+    if constexpr (std::is_same_v<Settings, QueryPlanSettings> || std::is_same_v<Settings, QueryAnalyzeSettings>)
     {
-        if (set_default_pretty_explain_settings)
+        if (default_flag)
         {
             settings.query_plan_options.actions = true;
             settings.query_plan_options.compact = true;
             settings.query_plan_options.pretty  = true;
         }
+    }
+    else if constexpr (std::is_same_v<Settings, QuerySyntaxSettings>)
+    {
+        settings.single_record = default_flag;
     }
 
     if (!ast_settings)
@@ -581,12 +840,6 @@ bool explainQueryTree(
     auto query_tree = buildQueryTree(explained_query, query_context);
     bool need_newline = false;
 
-    if (!query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
-    {
-        TableFunctionSecretsVisitor visitor;
-        visitor.visit(query_tree);
-    }
-
     if (settings.run_passes)
     {
         auto query_tree_pass_manager = QueryTreePassManager(query_context);
@@ -601,6 +854,15 @@ bool explainQueryTree(
         }
 
         query_tree_pass_manager.run(query_tree, pass_index);
+    }
+
+    /// Mask secrets only after the passes: the masked tree is used solely for the dump below, so
+    /// redaction (which may replace a non-constant secret value with a hidden constant) can never
+    /// change how the query is analyzed. With run_passes = 0 the tree is dumped without analysis.
+    if (!canDisplaySecrets(query_context))
+    {
+        SecretArgumentsDumpVisitor visitor;
+        visitor.visit(query_tree);
     }
 
     if (settings.dump_tree)
@@ -618,7 +880,7 @@ bool explainQueryTree(
             buf << "\n\n";
 
         IAST::FormatSettings format_settings(settings.ast_one_line);
-        format_settings.show_secrets = query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select];
+        format_settings.show_secrets = canDisplaySecrets(query_context);
 
         ConvertToASTOptions ast_options;
         /// `EXPLAIN SYNTAX` shows the query in a canonical, close-to-syntax form, so constants are
@@ -638,6 +900,159 @@ bool explainQueryTree(
 
 }
 
+static void formatHeaderExplainAnalyze(
+        UInt64 total_time_ns,
+        UInt64 planning_ns,
+        UInt64 execute_ns,
+        const std::optional<ExecutionTimeBreakdown> & execution_breakdown,
+        UInt64 read_rows,
+        UInt64 read_bytes,
+        Int64 peak_memory,
+        WriteBuffer & out)
+{
+    out << "Query summary:\n";
+
+    /// Total time, split into the planning (logical plan, optimization, physical pipeline) and execution phases.
+    out << "  Time:        " << formatReadableTime(static_cast<double>(total_time_ns))
+        << " (planning " << formatReadableTime(static_cast<double>(planning_ns))
+        << " · execution " << formatReadableTime(static_cast<double>(execute_ns)) << ")\n";
+
+    /// Execution time, split by what the threads were doing. The shares use the same denominator as the
+    /// per-step shares, so the `in steps` share is the `branch` share of the root step.
+    if (execution_breakdown)
+    {
+        const auto print_part = [&](std::string_view name, UInt64 part_ns)
+        {
+            out << name << " " << formatReadableTime(static_cast<double>(part_ns));
+            if (execute_ns)
+                out << fmt::format(" ({:.2f}%)", 100.0 * static_cast<double>(part_ns) / static_cast<double>(execute_ns));
+        };
+
+        out << "  Execution:   ";
+        print_part("in steps", execution_breakdown->in_steps_ns);
+        out << " · ";
+        print_part("outside steps", execution_breakdown->outside_steps_ns);
+        out << " · ";
+        print_part("idle", execution_breakdown->idle_ns);
+        out << "\n";
+    }
+
+    /// Rows/bytes read from tables, with throughput relative to the execution time.
+    out << "  Read:        " << formatReadableQuantity(static_cast<double>(read_rows)) << " rows, "
+        << formatReadableSizeWithDecimalSuffix(static_cast<double>(read_bytes));
+    if (execute_ns)
+    {
+        const double rows_per_sec = static_cast<double>(read_rows) * 1e9 / static_cast<double>(execute_ns);
+        const double bytes_per_sec = static_cast<double>(read_bytes) * 1e9 / static_cast<double>(execute_ns);
+        out << " (" << formatReadableQuantity(rows_per_sec) << " rows/s., "
+            << formatReadableSizeWithDecimalSuffix(bytes_per_sec) << "/s.)";
+    }
+    out << "\n";
+
+    out << "  Peak memory: " << formatReadableSizeWithBinarySuffix(static_cast<double>(peak_memory)) << "\n";
+
+    out << "\n";
+}
+
+struct InterpreterExplainQuery::AnalyzedInnerQuery
+{
+    QueryPlan plan;
+    ContextPtr context;
+    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> parallel_replicas_builder;
+    bool ignore_quota = false;
+    bool ignore_limits = false;
+    UInt64 planning_ns = 0;
+    ExplainPlanOptions query_plan_options;
+    bool time = false;
+};
+
+InterpreterExplainQuery::InterpreterExplainQuery(const ASTPtr & query_, ContextPtr context_, const SelectQueryOptions & options_)
+    : WithContext(context_)
+    , query(query_)
+    , options(options_)
+{
+}
+
+InterpreterExplainQuery::~InterpreterExplainQuery() = default;
+
+bool InterpreterExplainQuery::isExecutableAnalyze() const
+{
+    const auto & ast = query->as<const ASTExplainQuery &>();
+    if (ast.getKind() != ASTExplainQuery::Analyze)
+        return false;
+
+    /// Only an inner SELECT is executed by EXPLAIN ANALYZE; other inner queries are rejected in executeImpl.
+    if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+        return false;
+
+    /// A plan that stays distributed is rejected in executeImpl and never runs its inner SELECT, so it
+    /// must not be charged as one. Planning here is not extra work: `ignoreQuota` plans the same
+    /// inner query at the same moment.
+    return !getAnalyzedInnerQuery().plan.staysDistributed();
+}
+
+InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyzedInnerQuery() const
+{
+    if (analyzed_inner_query)
+        return *analyzed_inner_query;
+
+    const auto & ast = query->as<const ASTExplainQuery &>();
+
+    /// Mirror the context and option setup that executeImpl applies before planning the inner SELECT,
+    /// so the effective ignore_quota / ignore_limits we expose match what actual execution would use.
+    auto inner_options = options;
+    inner_options.setExplain();
+
+    auto planning_context = Context::createCopy(getContext());
+    inner_options.max_step_description_length = planning_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+    InterpreterSetQuery::applySettingsFromQuery(query, planning_context);
+
+    auto result = std::make_unique<AnalyzedInnerQuery>();
+
+    const auto analyze_settings = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings());
+    result->query_plan_options = analyze_settings.query_plan_options;
+    result->time = analyze_settings.query_plan_options.time;
+
+    /// This is the only place that turns join statistics on, and it must happen before any interpreter
+    /// is built. Every join of the query reads the mode from the context, so joins in nested plans get it as well.
+    planning_context->setJoinAnalyzeMode(
+        result->query_plan_options.matches ? JoinAnalyzeMode::Exact : JoinAnalyzeMode::Derived);
+
+    Stopwatch watch;
+    {
+        InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), planning_context, inner_options);
+        /// A query that falls back to local execution is analyzable, and the
+        /// decision must land on the interpreter context
+        interpreter.applyDistributedPlanFallbackIfNeeded();
+        result->context = interpreter.getContext();
+        result->parallel_replicas_builder = interpreter.getQueryPlanWithParallelReplicasBuilder();
+        /// Force planning so the effective ignore flags settle before we read them.
+        interpreter.getQueryPlan();
+        result->ignore_quota = interpreter.ignoreQuota();
+        result->ignore_limits = interpreter.ignoreLimits();
+        result->plan = std::move(interpreter).extractQueryPlan();
+    }
+
+    result->planning_ns = watch.elapsed();
+
+    analyzed_inner_query = std::move(result);
+    return *analyzed_inner_query;
+}
+
+bool InterpreterExplainQuery::ignoreQuota() const
+{
+    if (!isExecutableAnalyze())
+        return IInterpreter::ignoreQuota();
+    return getAnalyzedInnerQuery().ignore_quota;
+}
+
+bool InterpreterExplainQuery::ignoreLimits() const
+{
+    if (!isExecutableAnalyze())
+        return IInterpreter::ignoreLimits();
+    return getAnalyzedInnerQuery().ignore_limits;
+}
+
 QueryPipeline InterpreterExplainQuery::executeImpl()
 {
     const auto & ast = query->as<const ASTExplainQuery &>();
@@ -646,7 +1061,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     WriteBufferFromOwnString buf;
-    bool single_line = false;
+    /// When set, the whole buffer is emitted as a single record. Otherwise the buffer is split
+    /// on line feeds into one record per line (the default for tree-like PLAN/PIPELINE/AST output).
+    bool single_record = false;
     bool insert_buf = true;
 
     ContextPtr query_context = getContext();
@@ -658,8 +1075,13 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     /// EXPLAIN is to get a good picture of how the query will execute after *static* planning.
     /// Hence disable any optimizations that stagger the planning or introduce variablility due to caches.
     auto explain_query_context = Context::createCopy(query_context);
-    explain_query_context->setSetting("use_skip_indexes_on_data_read", false);
-    explain_query_context->setSetting("use_query_condition_cache", false);
+
+    if (ast.getKind() != ASTExplainQuery::Analyze)
+    {
+        explain_query_context->setSetting("use_skip_indexes_on_data_read", false);
+        explain_query_context->setSetting("use_query_condition_cache", false);
+    }
+
     InterpreterSetQuery::applySettingsFromQuery(query, explain_query_context);
     query_context = std::move(explain_query_context);
 
@@ -674,6 +1096,14 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
             }
 
+            /// `optimize = 1` inlines views the user may read but whose secrets they may not see.
+            /// Hide them under the same gate as `SHOW CREATE`.
+            if (!canDisplaySecrets(query_context))
+            {
+                HideSecretArgumentsVisitor::Data data;
+                HideSecretArgumentsVisitor(data).visit(query);
+            }
+
             if (settings.graph)
                 dumpASTInDotFormat(*ast.getExplainedQuery(), buf);
             else
@@ -682,35 +1112,33 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::AnalyzedSyntax:
         {
-            auto settings = checkAndGetSettings<QuerySyntaxSettings>(ast.getSettings());
+            auto settings = checkAndGetSettings<QuerySyntaxSettings>(
+                ast.getSettings(), query_context->getSettingsRef()[Setting::explain_syntax_single_record]);
+            single_record = settings.single_record;
 
             /// Inline any parameterized view calls with their parameter-substituted inner queries,
             /// so EXPLAIN SYNTAX shows what the view actually expands to.
             ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
             ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
 
-            if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            {
-                bool explain_ok = explainQueryTree(ast.getExplainedQuery(), query_context, QueryTreeSettings{
-                    .run_passes = settings.run_query_tree_passes,
-                    .dump_tree = false,
-                    .dump_passes = false,
-                    .dump_ast = true,
-                    .passes = settings.query_tree_passes,
-                    .ast_one_line = settings.oneline,
-                }, buf, /*format_ast_as_syntax=*/ true);
+            bool explain_ok = explainQueryTree(ast.getExplainedQuery(), query_context, QueryTreeSettings{
+                .run_passes = settings.run_query_tree_passes,
+                .dump_tree = false,
+                .dump_passes = false,
+                .dump_ast = true,
+                .passes = settings.query_tree_passes,
+                .ast_one_line = settings.oneline,
+            }, buf, /*format_ast_as_syntax=*/ true);
 
-                if (explain_ok)
-                    break;
-                auto query_context_mutable = Context::createCopy(query_context);
-                query_context_mutable->setSetting("allow_experimental_analyzer", false);
-                query_context = std::move(query_context_mutable);
-            }
+            if (explain_ok)
+                break;
 
+            /// Not a `SELECT`: there is no query tree to dump, so the query is shown as parsed.
             ExplainAnalyzedSyntaxVisitor::Data data(query_context);
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
             IAST::FormatSettings format_settings(settings.oneline);
+            format_settings.show_secrets = canDisplaySecrets(query_context);
             IAST::FormatState format_state;
             IAST::FormatStateStacked format_frame;
             format_frame.allow_operators = false;
@@ -719,10 +1147,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::QueryTree:
         {
-            if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "EXPLAIN QUERY TREE is only supported with the analyzer. SET enable_analyzer = 1.");
-
             auto settings = checkAndGetSettings<QueryTreeSettings>(ast.getSettings());
             if (!settings.dump_tree && !settings.dump_ast)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'dump_tree' or 'dump_ast' must be set for EXPLAIN QUERY TREE query");
@@ -756,17 +1180,15 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             ContextPtr context;
 
-            if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
+                /// Decide the distributed-to-local fallback the same way execution does, so the
+                /// explained plan and the interpreter context match a real run. Skipped without
+                /// `optimize`: the raw plan is shown and no distributed decision is ever made.
+                if (settings.optimize)
+                    interpreter.applyDistributedPlanFallbackIfNeeded();
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
-            }
-            else
-            {
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, options);
-                interpreter.buildQueryPlan(plan);
-                context = interpreter.getContext();
             }
 
             if (settings.optimize)
@@ -797,7 +1219,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
                 plan_array->format(json_format_settings, format_context);
 
-                single_line = true;
+                single_record = true;
             }
             else
                 plan.explainPlan(buf, settings.query_plan_options, 0, query_context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
@@ -811,17 +1233,13 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 QueryPlan plan;
                 ContextPtr context;
 
-                if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
                 {
                     InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
+                    /// Match execution: `buildQueryPipeline` below optimizes the plan, so the
+                    /// distributed-to-local fallback must be decided on the contexts first.
+                    interpreter.applyDistributedPlanFallbackIfNeeded();
                     context = interpreter.getContext();
                     plan = std::move(interpreter).extractQueryPlan();
-                }
-                else
-                {
-                    InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, options);
-                    interpreter.buildQueryPlan(plan);
-                    context = interpreter.getContext();
                 }
 
                 auto optimization_settings = QueryPlanOptimizationSettings(context);
@@ -852,13 +1270,18 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             else if (dynamic_cast<const ASTInsertQuery *>(ast.getExplainedQuery().get()))
             {
                 auto insert_context = Context::createCopy(getContext());
+                /// Mirror the factory's provenance so EXPLAIN PIPELINE plans the same route the
+                /// real query would take (async INSERT ... SELECT is gated on is_initial_insert).
+                const bool is_initial_insert
+                    = insert_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
                 InterpreterInsertQuery insert(
                     ast.getExplainedQuery(),
                     insert_context,
                     /* allow_materialized */ false,
                     /* no_squash */ false,
                     /* no_destination */ false,
-                    /* async_insert */ false);
+                    /* async_insert */ false,
+                    is_initial_insert);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
                 // we do not need it anymore, it would not be executed
@@ -877,17 +1300,13 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             QueryPlan plan;
             ContextPtr context = query_context;
 
-            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, SelectQueryOptions());
+                /// Match execution: `buildQueryPipeline` below optimizes the plan, so the
+                /// distributed-to-local fallback must be decided on the contexts first.
+                interpreter.applyDistributedPlanFallbackIfNeeded();
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
-            }
-            else
-            {
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, SelectQueryOptions());
-                context = interpreter.getContext();
-                interpreter.buildQueryPlan(plan);
             }
 
             // Collect the selected marks, rows, parts during build query pipeline.
@@ -937,15 +1356,143 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(query_ast.get()))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN WHATIF query");
 
-            auto whatif_result = WhatIfIndexEstimator::run(query_ast, query_context, ast.getSettings());
+            auto whatif_result = estimateHypotheticalIndexes(query_ast, query_context, ast.getSettings());
             whatif_result.format(buf);
             break;
+        }
+        case DB::ASTExplainQuery::Analyze:
+        {
+            if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only SELECT is currently supported for EXPLAIN ANALYZE query");
+
+            /// Plan the inner SELECT. This is cached when ignoreQuota / ignoreLimits already triggered
+            /// it during quota charging in executeQuery, so the inner query is never planned twice.
+            /// getAnalyzedInnerQuery also validates the EXPLAIN ANALYZE settings (the same check that was
+            /// previously done here), so invalid settings are still rejected, just without re-parsing.
+            /// EXPLAIN ANALYZE executes the inner SELECT, so quota and result limits must follow the same
+            /// rules as running that SELECT directly; the inner interpreter resolves the effective
+            /// ignore_quota / ignore_limits during planning (e.g. exempt system tables such as `system.one`).
+            auto & analyzed = getAnalyzedInnerQuery();
+
+            /// A query that fell back to local execution is a plain local query and is analyzable.
+            /// Only a plan that stays distributed is rejected: its rewrite into exchange and remote
+            /// steps cannot be executed here. The decision was recorded on the plan by
+            /// `getAnalyzedInnerQuery` for both analyzers.
+            if (analyzed.plan.staysDistributed())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
+            QueryPlan plan = std::move(analyzed.plan);
+            ContextPtr context = analyzed.context;
+            auto parallel_replicas_builder = analyzed.parallel_replicas_builder;
+            const bool inner_ignore_quota = analyzed.ignore_quota;
+            const bool inner_ignore_limits = analyzed.ignore_limits;
+            UInt64 planning_ns = analyzed.planning_ns;
+            Stopwatch watch;
+
+            auto optimization_settings = QueryPlanOptimizationSettings(context);
+
+            optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+            optimization_settings.query_plan_with_parallel_replicas_builder = parallel_replicas_builder;
+
+            watch.restart();
+            plan.optimize(optimization_settings);
+            planning_ns += watch.elapsed();
+
+            /// Build the per-plan pretty-names registry now: buildQueryPipeline below moves the ActionsDAGs
+            /// out of the plan steps, so the names must be snapshotted before the pipeline consumes the plan.
+            /// EXPLAIN ANALYZE rejects distributed plans above, so this covers the whole plan tree.
+            PrettyNamesPerPlan precomputed_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(plan);
+
+            plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
+
+            watch.restart();
+            auto pipeline_builder = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context), false);
+            planning_ns += watch.elapsed();
+
+            watch.restart();
+            auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
+
+            pipeline.setNormalizedQueryHash(query_context->getNormalizedQueryHash());
+            auto to_complete = options.to_stage == QueryProcessingStage::Complete;
+            auto quota = (!inner_ignore_quota && to_complete) ? context->getQuota() : nullptr;
+
+            /// setLimitsAndQuota attaches a transform, so it must run before the pipeline is completed below.
+            if (!inner_ignore_limits && to_complete)
+            {
+                auto limits = StreamLocalLimits::forQueryResult(context->getSettingsRef());
+                pipeline.setLimitsAndQuota(limits, quota);
+            }
+
+            if (quota)
+                pipeline.setQuota(quota);
+
+            pipeline.complete(std::make_shared<EmptySink>(pipeline.getSharedHeader()));
+
+            /// Inspect the materialized pipeline rather than the plan: remote execution always shows up as one of
+            /// these sources, including when it comes from nested sub-plans the plan walk would miss.
+            for (const auto & processor : pipeline.getProcessors())
+            {
+                const auto * proc_ptr = processor.get();
+                if (dynamic_cast<const RemoteSource *>(proc_ptr)
+                    || dynamic_cast<const RemoteTotalsSource *>(proc_ptr)
+                    || dynamic_cast<const RemoteExtremesSource *>(proc_ptr)
+                    || dynamic_cast<const DelayedSource *>(proc_ptr))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
+            }
+
+            planning_ns += watch.elapsed();
+
+            auto step_profiler = std::make_shared<StepProfiler>(plan, analyzed.time);
+            pipeline.setStepProfiler(step_profiler);
+
+            CompletedPipelineExecutor executor(pipeline);
+
+            if (auto cancel_callback = getContext()->getInteractiveCancelCallback())
+                executor.setCancelCallback(
+                    std::move(cancel_callback),
+                    query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
+
+            auto outer_thread_group = CurrentThread::getGroup();
+            if (!outer_thread_group)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN ANALYZE: current thread is not attached to a thread group");
+
+            auto analyze_thread_group = ThreadGroup::createForExplainAnalyze(outer_thread_group);
+            analyze_thread_group->memory_tracker.setDescription("EXPLAIN ANALYZE");
+
+            watch.restart();
+            {
+                ThreadGroupSwitcher switcher(analyze_thread_group, ThreadName::COMPLETED_PIPELINE_EXECUTOR, /*allow_existing_group=*/true);
+                executor.execute();
+            }
+            UInt64 execute_ns = watch.elapsed();
+
+            UInt64 total_time_ns = planning_ns + execute_ns;
+
+            UInt64 read_rows   = analyze_thread_group->performance_counters[ProfileEvents::SelectedRows];
+            UInt64 read_bytes  = analyze_thread_group->performance_counters[ProfileEvents::SelectedBytes];
+            Int64  peak_memory = analyze_thread_group->memory_tracker.getPeak();
+
+            AnalyzeStepsStats steps_to_stats(pipeline, plan, *step_profiler, watch.getStart(), execute_ns);
+
+            formatHeaderExplainAnalyze(
+                total_time_ns, planning_ns, execute_ns, steps_to_stats.executionTimeBreakdown(), read_rows, read_bytes, peak_memory, buf);
+
+            plan.explainPlan(buf,
+            analyzed.query_plan_options,
+            0,
+            query_context->getSettingsRef()[Setting::query_plan_max_step_description_length],
+            &precomputed_pretty_names,
+            "",
+            false,
+            &steps_to_stats);
         }
     }
     buf.finalize();
     if (insert_buf)
     {
-        if (single_line)
+        if (single_record)
             res_columns[0]->insertData(buf.str().data(), buf.str().size());
         else
             fillColumn(*res_columns[0], buf.str());

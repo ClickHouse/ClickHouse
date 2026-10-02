@@ -11,14 +11,18 @@ title: FAQ do ClickPipes
   Para ClickPipes de streaming, as réplicas do ClickPipes acessam as fontes de dados remotas (por exemplo, um broker Kafka),
   extraem os dados, processam e fazem a ingestão no ClickHouse service de destino.
 
-  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_1.webp" size="lg" alt="Réplicas do ClickPipes - ClickPipes de streaming" border force />
+  <Frame>
+    <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_1.webp" alt="Réplicas do ClickPipes - ClickPipes de streaming" />
+  </Frame>
 
   No caso de ClickPipes de armazenamento de objetos,
   a réplica do ClickPipes orquestra a tarefa de carregamento de dados
   (identificando arquivos a serem copiados, mantendo o estado e movendo partições),
   enquanto os dados são extraídos diretamente do ClickHouse service.
 
-  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_2.webp" size="lg" alt="Réplicas do ClickPipes - Object Storage ClickPipes" border force />
+  <Frame>
+    <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_2.webp" alt="Réplicas do ClickPipes - Object Storage ClickPipes" />
+  </Frame>
 </Accordion>
 
 <Accordion title="Qual é o número padrão de réplicas e o tamanho delas?">
@@ -38,7 +42,9 @@ title: FAQ do ClickPipes
   Lembre-se de que, para ClickPipes do Kafka, você também precisa escalar as partições do broker Kafka de acordo.
   Os controles de escalonamento estão disponíveis em &quot;settings&quot; para cada ClickPipe de streaming.
 
-  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_3.webp" size="lg" alt="Réplicas do ClickPipes - De quantas réplicas do ClickPipes eu preciso?" border force />
+  <Frame>
+    <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_3.webp" alt="Réplicas do ClickPipes - De quantas réplicas do ClickPipes eu preciso?" />
+  </Frame>
 </Accordion>
 
 <Accordion title="Como é a estrutura de preços do ClickPipes?">
@@ -73,7 +79,7 @@ title: FAQ do ClickPipes
   mas apenas orquestra a transferência, que é executada pelo ClickHouse service subjacente:
 
   $$
-  0.25 \times 0.20 \times 24 = $1.2
+  0.25 \times 0,20 \times 24 = $1.2
   $$
 </Accordion>
 

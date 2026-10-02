@@ -72,7 +72,7 @@ Chunk MaterializingCTETransform::generate()
     table_out.reset();
 
     auto seconds = static_cast<double>(watch.elapsedNanoseconds()) / 1e9;
-    LOG_DEBUG(getLogger("MaterializingCTETransform"), "Finished materializing CTE with name '{}' in {} seconds", materialized_cte->cte_name, seconds);
+    LOG_DEBUG(getLogger("MaterializingCTETransform"), "Finished materializing CTE with name '{}' in {:.3f} seconds", materialized_cte->cte_name, seconds);
 
     /// `exchange(true, release)` returns the previous value: if `true`, another
     /// `MaterializingCTETransform` already finished for this same `MaterializedCTE`,

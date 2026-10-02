@@ -40,11 +40,11 @@ quantileExactHigh(level)(expr)
 
 **引数**
 
-* `expr` — カラム値に対する式。結果の型は数値型、Date、または DateTime です。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
+* `expr` — カラム値に対する式。結果の型は数値型、`Date`、`DateTime`、または `DateTime64` です。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 
 **戻り値**
 
-指定したレベルの分位数を返します。[`Float64`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
+指定したレベルの分位数を返します。数値型の場合、出力フォーマットは入力フォーマットと一致します。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 
 **例**
 

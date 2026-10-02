@@ -1,13 +1,16 @@
 #pragma once
 
-#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsMetadata.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/UncommittedState.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <memory>
+#include <unordered_map>
 
 namespace DB
 {
@@ -49,6 +52,7 @@ public:
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
     bool isReadOnly() const override { return false; }
+    bool isRemote() const override { return object_storage->isRemote(); }
     bool areBlobPathsRandom() const override { return false; }
     bool isPlain() const override { return true; }
     bool isWriteOnce() const override { return false; }
@@ -82,10 +86,12 @@ private:
     const std::string storage_path_full;
 
     std::mutex metadata_mutex;
-    std::shared_ptr<InMemoryDirectoryTree> fs_tree;
+    FsMetadata fs;
     std::shared_ptr<PlainRewritableLayout> layout;
 
     std::mutex load_mutex;
+    /// Paths from the last completed load. Validate them against the current snapshot before reuse.
+    std::unordered_map<std::string, std::string> local_paths_by_remote_directory;
     AtomicStopwatch previous_refresh;
 };
 
@@ -94,10 +100,8 @@ class MetadataStorageFromPlainRewritableObjectStorageTransaction : public IMetad
 protected:
     MetadataStorageFromPlainRewritableObjectStorage & metadata_storage;
 
-    /// Plain rewritable disks extract key names for files from generated directory keys. Here we will
-    /// maintain uncommitted directory tree that was populated during metadata transaction filling to be able
-    /// to extrace remote path of directory during nested file creation in the same transaction.
-    std::shared_ptr<InMemoryDirectoryTree> uncommitted_fs_tree;
+    std::shared_ptr<FsSnapshot> commit_snapshot;
+    UncommittedState uncommitted_state;
     MetadataOperationsHolder operations;
     StoredObjects removed_objects;
 

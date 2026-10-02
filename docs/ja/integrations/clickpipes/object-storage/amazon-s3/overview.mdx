@@ -21,7 +21,7 @@ S3 ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび�
 | **Amazon S3**                          | <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Amazon S3 ロゴ" width="32" />   | 継続的インジェストでは、デフォルトで [辞書式順序](#continuous-ingestion-lexicographical-order) が必要ですが、[任意の順序でファイルを取り込む](#continuous-ingestion-any-order) ように設定することもできます。 |
 | **Cloudflare R2** <br /> *S3 互換*       | <img src="/images/integrations/logos/cloudflare.svg" alt="Cloudflare R2 ロゴ" width="32" />   | 継続的インジェストでは [辞書式順序](#continuous-ingestion-lexicographical-order) が必要です。順不同モードはサポートされていません。                                                        |
 | **DigitalOcean Spaces** <br /> *S3 互換* | <img src="/images/integrations/logos/digitalocean.svg" alt="Digital Ocean ロゴ" width="32" /> | 継続的インジェストでは [辞書式順序](#continuous-ingestion-lexicographical-order) が必要です。順不同モードはサポートされていません。                                                        |
-| **OVH Object Storage** <br /> *S3 互換*  | <img src="/images/integrations/logos/ovh.webp" alt="Cloud ストレージ ロゴ" width="32" />            | 継続的インジェストでは [辞書式順序](#continuous-ingestion-lexicographical-order) が必要です。順不同モードはサポートされていません。                                                        |
+| **OVH Object Storage** <br /> *S3 互換*  | <img src="/images/integrations/logos/ovh.webp" alt="Cloud ストレージ ロゴ" width="32" />           | 継続的インジェストでは [辞書式順序](#continuous-ingestion-lexicographical-order) が必要です。順不同モードはサポートされていません。                                                        |
 
 <Tip>
   オブジェクトストレージサービスプロバイダーごとに URL 形式や API 実装が異なるため、すべての S3 互換サービスがそのままサポートされているわけではありません。上記に記載のないサービスで問題が発生している場合は、[弊社チームまでお問い合わせください](https://clickhouse.com/company/contact?loc=clickpipes)。
@@ -59,7 +59,7 @@ S3 ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび�
 
 デフォルトでは、S3 ClickPipe はファイルが バケット に辞書式順序で追加されることを前提としており、この暗黙の順序に基づいてファイルを順次取り込みます。つまり、新しいファイルは、最後に取り込まれたファイルよりも辞書順で後にある必要があります。たとえば、`file1`、`file2`、`file3` という名前のファイルは順番に取り込まれますが、新たに `file 0` が バケット に追加されても、ファイル名が最後に取り込まれたファイルより辞書順で後ではないため、**無視**されます。
 
-このモードでは、S3 ClickPipe は指定した path 内の**すべてのファイル**を初期ロードし、その後、設定可能な間隔 (デフォルトでは 30 秒) で新しいファイルをポーリングします。特定のファイルや時点からインジェストを開始することは**できません**。ClickPipes は常に、指定した path 内のすべてのファイルを読み込みます。
+このモードでは、S3 ClickPipe は指定した path 内の**すべてのファイル**を初期ロードし、その後、設定可能な間隔 (デフォルトでは 30 秒) で新しいファイルをポーリングします。特定のファイルの後から継続的インジェストを開始するには、**Start after** を設定します。ClickPipes は、設定した値以下の辞書式順序のファイルをスキップし、その時点からより新しいファイルの取り込みを続行します。
 
 <div id="continuous-ingestion-any-order">
   #### 任意の順序
@@ -75,13 +75,13 @@ S3 ClickPipe は、バケットに接続された [Amazon SQS](https://aws.amazo
   順不同モードは Amazon S3 で**のみ**サポートされており、パブリックバケットや S3 互換サービスでは**サポートされません**。利用するには、バケットに接続された [Amazon SQS](https://aws.amazon.com/sqs/) キューを設定し、必要に応じてイベントルーターとして [Amazon EventBridge](https://aws.amazon.com/eventbridge/) を使用する必要があります。
 </Note>
 
-このモードでは、S3 ClickPipe は選択したパス内の**すべてのファイル**を初期ロードし、その後、指定したパスに一致するキュー内の `ObjectCreated:*` イベントを監視します。すでに認識済みのファイルに対するメッセージ、パスに一致しないファイル、または別の種類のイベントは**無視**されます。
+このモードでは、S3 ClickPipe は選択したパス内の**すべてのファイル**を初期ロードし、その後、指定したパスに一致するキュー内の `ObjectCreated:*` イベントを監視します。すでに認識済みのファイルに対するメッセージ、パスに一致しないファイル、または別の種類のイベントは**無視**されます。キュー経由で配信されたファイルのみを取り込むには、**Skip initial load** を有効にします。有効にすると、ClickPipes は選択したパス内の既存ファイルの初期スキャンをスキップし、SQS キュー経由で配信されたファイルのみを処理します。
 
 <Note>
   イベントにプレフィックス/サフィックスを設定するかどうかは任意です。設定する場合は、ClickPipe に設定したパスと一致していることを確認してください。S3 では、同じイベントタイプに対して重複する複数の通知ルールは許可されません。
 </Note>
 
-ファイルは、`max insert bytes` または `max file count` で設定された閾値に達した時点、または設定可能な間隔 (デフォルトでは 30 秒) の経過後に取り込まれます。特定のファイルまたは時点からインジェストを開始することは**できません**。ClickPipes は常に選択したパス内のすべてのファイルをロードします。DLQ が設定されている場合、失敗したメッセージは再度エンキューされ、DLQ の `maxReceiveCount` パラメータで設定された回数まで再処理されます。
+ファイルは、`max insert bytes` または `max file count` で設定された閾値に達した時点、または設定可能な間隔 (デフォルトでは 30 秒) の経過後に取り込まれます。DLQ が設定されている場合、失敗したメッセージは再度エンキューされ、DLQ の `maxReceiveCount` パラメータで設定された回数まで再処理されます。
 
 <Tip>
   失敗したメッセージのデバッグや再試行をしやすくするため、SQS キューには **Dead-Letter-Queue (DLQ)** を設定することを強く推奨します。
@@ -207,7 +207,7 @@ S3 へのアクセスに必要な信頼ポリシーを持つ[ロールを作成�
 
 S3 ClickPipes では、メタデータの検出とデータのインジェストに、それぞれ ClickPipes サービスと ClickHouse Cloud サービスという 2 つの異なるネットワーク経路を使用します。追加のネットワークセキュリティ層を設定する場合 (たとえばコンプライアンス上の理由など) 、**両方の経路に対してネットワークアクセスを設定する必要があります**。
 
-* **IP ベースのアクセス制御**では、S3 バケットポリシーで、[こちら](/ja/integrations/clickpipes/home#list-of-static-ips)に記載されている ClickPipes サービスのリージョンの静的 IP と、ClickHouse Cloud サービスの[静的 IP](/ja/products/cloud/guides/data-sources/cloud-endpoints-api) の両方を許可する必要があります。ご利用の ClickHouse Cloud リージョンの静的 IP を取得するには、ターミナルを開いて次を実行します。
+* **IP ベースのアクセス制御**では、S3 バケットポリシーで、[こちら](/ja/integrations/clickpipes/networking/static-ips)に記載されている ClickPipes サービスのリージョンの静的 IP と、ClickHouse Cloud サービスの[静的 IP](/ja/products/cloud/guides/data-sources/cloud-endpoints-api) の両方を許可する必要があります。ご利用の ClickHouse Cloud リージョンの静的 IP を取得するには、ターミナルを開いて次を実行します。
 
   ```bash
   # <your-region> をご利用の ClickHouse Cloud リージョンに置き換えます
@@ -227,18 +227,20 @@ S3 ClickPipes では、メタデータの検出とデータのインジェスト
 
 ClickPipes には、ほとんどのユースケースの要件を満たす適切なデフォルト設定が用意されています。さらに細かい調整が必要な場合は、以下の設定を変更できます。
 
-| 設定                                   | デフォルト値  | 説明                                                                                                                |
-| ------------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB    | 1 回の挿入バッチで処理するバイト数。                                                                                               |
-| `Max file count`                     | 100     | 1 回の挿入バッチで処理するファイルの最大数。                                                                                           |
-| `Max threads`                        | auto(3) | ファイル処理に使用する[同時実行スレッドの最大数](/ja/reference/settings/session-settings#max_threads)。                                      |
-| `Max insert threads`                 | 1       | ファイル処理に使用する[同時実行の挿入スレッドの最大数](/ja/reference/settings/session-settings#max_insert_threads)。                            |
-| `Min insert block size bytes`        | 1GB     | テーブルに挿入できる[ブロックの最小バイトサイズ](/ja/reference/settings/session-settings#min_insert_block_size_bytes)。                      |
-| `Max download threads`               | 4       | [同時実行ダウンロードスレッドの最大数](/ja/reference/settings/session-settings#max_download_threads)。                                  |
-| `Object storage polling interval`    | 30s     | ClickHouse クラスターにデータを挿入するまでの最大待機時間を設定します。                                                                         |
-| `Parallel distributed insert select` | 2       | [Parallel distributed insert select 設定](/ja/reference/settings/session-settings#parallel_distributed_insert_select)。 |
-| `Parallel view processing`           | false   | アタッチされたビューへのプッシュを[順次ではなく並列で](/ja/reference/settings/session-settings#parallel_view_processing)有効にするかどうか。             |
-| `Use cluster function`               | true    | 複数のノードにまたがってファイルを並列処理するかどうか。                                                                                      |
+| 設定                                   | デフォルト値  | 説明                                                                                                                            |
+| ------------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB    | 1 回の挿入バッチで処理するバイト数。                                                                                                           |
+| `Max file count`                     | 100     | 1 回の挿入バッチで処理するファイルの最大数。                                                                                                       |
+| `Max threads`                        | auto(3) | ファイル処理に使用する[同時実行スレッドの最大数](/ja/reference/settings/session-settings/max-threads#max_threads)。                                   |
+| `Max insert threads`                 | 1       | ファイル処理に使用する[同時実行の挿入スレッドの最大数](/ja/reference/settings/session-settings/max-insert#max_insert_threads)。                          |
+| `Min insert block size bytes`        | 1GB     | テーブルに挿入できる[ブロックの最小バイトサイズ](/ja/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)。                    |
+| `Max download threads`               | 4       | [同時実行ダウンロードスレッドの最大数](/ja/reference/settings/session-settings/max-download#max_download_threads)。                              |
+| `Object storage polling interval`    | 30s     | ClickHouse クラスターにデータを挿入するまでの最大待機時間を設定します。                                                                                     |
+| `Start after`                        | None    | 順序付き継続的インジェストの場合、設定したファイル名またはパス以下の辞書順のファイルをスキップします。                                                                           |
+| `Skip initial load`                  | false   | 順不同継続的インジェストの場合、既存ファイルの初期スキャンをスキップし、設定した SQS キューからのオブジェクト通知のみを処理します。                                                         |
+| `Parallel distributed insert select` | 2       | [Parallel distributed insert select 設定](/ja/reference/settings/session-settings/parallel#parallel_distributed_insert_select)。 |
+| `Parallel view processing`           | false   | アタッチされたビューへのプッシュを[順次ではなく並列で](/ja/reference/settings/session-settings/parallel#parallel_view_processing)有効にするかどうか。             |
+| `Use cluster function`               | true    | 複数のノードにまたがってファイルを並列処理するかどうか。                                                                                                  |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes の高度な設定" size="lg" border />
 

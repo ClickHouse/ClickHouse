@@ -7,6 +7,7 @@ import snappy
 import sys
 import urllib
 import zipfile
+import zstandard
 
 
 PRESETS_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "presets")
@@ -34,6 +35,25 @@ def convert_time_series_to_protobuf(time_series):
                 types_pb2.Sample(timestamp=timestamp_ms, value=value)
             )
         write_request.timeseries.append(dest_timeseries)
+    return write_request
+
+
+# Converts metrics metadata
+# [ (metric_family_name, metric_type, help, unit), ... ]
+# to a protobuf message of type remote_pb2.WriteRequest.
+# `metric_type` is the name of a value of the types_pb2.MetricMetadata.MetricType enum,
+# e.g. "COUNTER" or "GAUGE".
+def convert_metrics_metadata_to_protobuf(metrics_metadata):
+    write_request = remote_pb2.WriteRequest()
+    for metric_family_name, metric_type, help, unit in metrics_metadata:
+        write_request.metadata.append(
+            types_pb2.MetricMetadata(
+                metric_family_name=metric_family_name,
+                type=types_pb2.MetricMetadata.MetricType.Value(metric_type),
+                help=help,
+                unit=unit,
+            )
+        )
     return write_request
 
 
@@ -81,23 +101,51 @@ def load_preset_from_file(preset_file):
 
 
 # Sends a protobuf message of type remote_pb2.WriteRequest to specified host and port via the RemoteWrite protocol.
-def send_protobuf_to_remote_write(host, port, path, write_request_proto):
-    response = get_response_to_remote_write(host, port, path, write_request_proto)
+def send_protobuf_to_remote_write(
+    host, port, path, write_request_proto, content_encoding="snappy", headers=None
+):
+    response = get_response_to_remote_write(
+        host, port, path, write_request_proto, content_encoding, headers=headers
+    )
     check_remote_write_response(response)
 
 
-def get_response_to_remote_write(host, port, path, write_request_proto):
+def compress_remote_write_request(serialized_proto, content_encoding):
+    if content_encoding == "snappy":
+        return snappy.compress(data=serialized_proto)
+    if content_encoding == "zstd":
+        return zstandard.compress(serialized_proto)
+    # Deliberately send uncompressed data with an unsupported Content-Encoding
+    # so that tests can check how the server rejects it.
+    return serialized_proto
+
+
+def get_response_to_remote_write(
+    host,
+    port,
+    path,
+    write_request_proto,
+    content_encoding="snappy",
+    content_type="application/x-protobuf",
+    headers=None,
+):
     url = f"http://{host}:{port}/{path.strip('/')}"
-    print(f"Posting {url}")
+    print(
+        f"Posting {url} with Content-Encoding: {content_encoding}, Content-Type: {content_type}"
+    )
+    request_headers = {
+        "Content-Encoding": content_encoding,
+        "Content-Type": content_type,
+        "User-Agent": requests.utils.default_user_agent(),
+        "X-Prometheus-Remote-Write-Version": "0.1.0",
+    }
+    request_headers.update(headers or {})
     response = requests.post(
         url,
-        data=snappy.compress(data=write_request_proto.SerializeToString()),
-        headers={
-            "Content-Encoding": "snappy",
-            "Content-Type": "application/x-protobuf",
-            "User-Agent": requests.utils.default_user_agent(),
-            "X-Prometheus-Remote-Write-Version": "0.1.0",
-        },
+        data=compress_remote_write_request(
+            write_request_proto.SerializeToString(), content_encoding
+        ),
+        headers=request_headers,
     )
     print(
         f"Status code: {response.status_code} {http.HTTPStatus(response.status_code).phrase}"
@@ -114,17 +162,20 @@ def check_remote_write_response(response):
 
 # Prepares a protobuf of type remote_pb2.ReadRequest to read time series via the RemoteRead protocol.
 def convert_read_request_to_protobuf(
-    metric_name_regexp, start_timestamp, end_timestamp
+    metric_name_regexp, start_timestamp, end_timestamp, matchers=None
 ):
     read_request = remote_pb2.ReadRequest()
     query = remote_pb2.Query()
     query.start_timestamp_ms = int(round(float(start_timestamp) * 1000))
     query.end_timestamp_ms = int(round(float(end_timestamp) * 1000))
-    matcher = types_pb2.LabelMatcher()
-    matcher.type = types_pb2.LabelMatcher.Type.RE
-    matcher.name = "__name__"
-    matcher.value = metric_name_regexp
-    query.matchers.append(matcher)
+    if matchers is None:
+        matchers = [(types_pb2.LabelMatcher.Type.RE, "__name__", metric_name_regexp)]
+    for matcher_type, name, value in matchers:
+        matcher = types_pb2.LabelMatcher()
+        matcher.type = matcher_type
+        matcher.name = name
+        matcher.value = value
+        query.matchers.append(matcher)
     read_request.queries.append(query)
     return read_request
 

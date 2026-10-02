@@ -8,7 +8,7 @@ SET use_statistics = 1;
 SET mutations_sync = 1;
 SET enable_analyzer = 1;
 SET materialize_statistics_on_insert = 1;
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1; -- CI may inject False, preventing statistics-based reordering of prewhere conditions (test validates a appears before b/c when tdigest stats are used)
 
 DROP TABLE IF EXISTS tab;
@@ -18,7 +18,7 @@ CREATE TABLE tab
     a Float64 STATISTICS(tdigest),
     b Int64 STATISTICS(tdigest)
 ) Engine = MergeTree() ORDER BY tuple()
-SETTINGS auto_statistics_types = '', default_compression_codec = 'LZ4'; -- prewhere reordering falls back to column sizes; pin codec (randomized server-side)
+SETTINGS auto_statistics_types = '', default_compression_codec = 'LZ4', enable_block_number_column = 0, enable_block_offset_column = 0; -- prewhere reordering falls back to column sizes; pin codec (randomized server-side)
 
 INSERT INTO tab select number, -number FROM system.numbers LIMIT 10000;
 SELECT 'After insert';

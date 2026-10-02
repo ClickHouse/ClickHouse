@@ -13,15 +13,11 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
 > 建议在 **Debian** 或 **Ubuntu** 上使用官方预编译的 `deb` 软件包。
 
 <Steps>
-  <Step>
-    ## 查看建议
-
+  <Step title="查看建议" id="review-recommendations">
     <Recommendations />
   </Step>
 
-  <Step>
-    ## 设置 Debian 软件源
-
+  <Step title="设置 Debian 软件源" id="setup-the-debian-repository">
     要安装 ClickHouse，请运行以下命令：
 
     ```bash
@@ -73,17 +69,13 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
     </Accordion>
   </Step>
 
-  <Step>
-    ## 安装 ClickHouse server 和 ClickHouse 客户端
-
+  <Step title="安装 ClickHouse server 和 ClickHouse 客户端" id="install-clickhouse-server-and-client">
     ```bash
     sudo apt-get install -y clickhouse-server clickhouse-client
     ```
   </Step>
 
-  <Step>
-    ## 启动 ClickHouse
-
+  <Step title="启动 ClickHouse" id="start-clickhouse-server">
     要启动 ClickHouse server，请运行：
 
     ```bash
@@ -103,9 +95,7 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 安装独立运行的 ClickHouse Keeper
-
+  <Step title="安装独立运行的 ClickHouse Keeper" id="install-standalone-clickhouse-keeper">
     <Tip>
       在生产环境中，我们强烈建议在专用节点上运行 ClickHouse Keeper。
       在测试环境中，如果你决定在同一台服务器上运行 ClickHouse Server 和 ClickHouse Keeper，
@@ -119,9 +109,7 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 启用并启动 ClickHouse Keeper
-
+  <Step title="启用并启动 ClickHouse Keeper" id="enable-and-start-clickhouse-keeper">
     ```bash
     sudo systemctl enable clickhouse-keeper
     sudo systemctl start clickhouse-keeper

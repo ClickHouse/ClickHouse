@@ -21,7 +21,6 @@ class ReadFromSystemOneBlock : public SourceStepWithFilter
 {
 public:
     std::string getName() const override { return "ReadFromSystemOneBlock"; }
-    QueryPlanStepPtr clone() const override { return std::make_unique<ReadFromSystemOneBlock>(*this); }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromSystemOneBlock(
@@ -40,14 +39,6 @@ public:
             context_)
         , storage(std::move(storage_))
         , columns_mask(std::move(columns_mask_))
-    {
-    }
-
-    ReadFromSystemOneBlock(const ReadFromSystemOneBlock & other)
-        : SourceStepWithFilter(other)
-        , storage(other.storage)
-        , columns_mask(other.columns_mask)
-        , filter(other.filter ? std::optional<ActionsDAG>(other.filter->clone()) : std::nullopt)
     {
     }
 

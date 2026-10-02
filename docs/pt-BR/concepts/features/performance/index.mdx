@@ -1,16 +1,43 @@
 ---
 slug: /operations/overview
 sidebarTitle: 'Visão geral de desempenho e otimizações'
-description: 'Página de visão geral de Desempenho e otimizações'
+description: 'Página de visão geral de desempenho e otimizações'
 title: 'Desempenho e otimizações'
 keywords: ['otimização de desempenho', 'boas práticas', 'guia de otimização', 'desempenho do ClickHouse', 'otimização de banco de dados']
-doc_type: 'reference'
+doc_type: 'referência'
+mode: wide
 ---
 
-import TableOfContents from '/snippets/pt-BR/_performance_optimizations_table_of_contents.mdx';
-
-Esta seção contém dicas e boas práticas para melhorar o desempenho com ClickHouse.
-Recomendamos que os usuários leiam [Conceitos centrais](/pt-BR/concepts/core-concepts/parts) como introdução a esta seção,
+Esta seção reúne dicas e boas práticas para melhorar o desempenho com o ClickHouse.
+Recomendamos que os usuários leiam [Conceitos principais](/pt-BR/concepts/core-concepts/parts) antes desta seção,
 que aborda os principais conceitos necessários para melhorar o desempenho.
 
-<TableOfContents />
+<CardGroup cols={2}>
+  <Card title="Otimização PREWHERE" icon="filter" href="/pt-BR/concepts/features/performance/prewhere">
+    Como `PREWHERE` reduz a E/S ao filtrar dados antes da leitura de colunas desnecessárias e como monitorar sua eficácia.
+  </Card>
+
+  <Card title="Perfil de alocação" icon="memory" href="/pt-BR/concepts/features/performance/allocation-profiling">
+    Analise alocações de memória com jemalloc.
+  </Card>
+
+  <Card title="Perfil de alocação para versões anteriores à 25.9" icon="clock-rotate-left" href="/pt-BR/concepts/features/performance/allocation-profiling-old">
+    Perfil de alocação para versões do ClickHouse anteriores à 25.9.
+  </Card>
+
+  <Card title="Caches" icon="hard-drive" href="/pt-BR/concepts/features/performance/caches/caches">
+    Tipos de cache, incluindo o cache de consultas, o cache de condições de consulta e o cache de páginas em userspace.
+  </Card>
+
+  <Card title="Data skipping indexes" icon="forward" href="/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes">
+    Entenda os data skipping indexes, com exemplos.
+  </Card>
+
+  <Card title="Materialização lazy" icon="hourglass-half" href="/pt-BR/concepts/features/performance/lazy-materialization">
+    Adie a leitura dos dados das colunas até que ela seja realmente necessária.
+  </Card>
+
+  <Card title="Solução de problemas" icon="bug" href="/pt-BR/concepts/features/performance/troubleshoot/debugging-memory-issues">
+    Depuração de problemas de memória, testes de hardware e o sampling query profiler.
+  </Card>
+</CardGroup>

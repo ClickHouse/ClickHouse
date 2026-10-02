@@ -1,4 +1,5 @@
 #include <unordered_set>
+#include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
@@ -141,10 +142,14 @@ protected:
             auto expression = buildQueryTree(predicate, execution_context);
 
             auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, metadata_snapshot->getColumns());
-            QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(dummy_storage, execution_context);
+            auto fake_table_expression = std::make_shared<TableNode>(dummy_storage, execution_context);
 
             QueryAnalyzer analyzer(false);
             analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
+
+            /// addQueryTreePasses does not run on this tree, so this pass has to be invoked
+            /// here: a correlated subquery must not be read with parallel replicas.
+            DisableParallelReplicasPass{}.run(expression, execution_context);
 
             GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
             auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
@@ -166,7 +171,6 @@ protected:
             for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
             {
                 auto query_tree = subquery->detachQueryTree();
-                auto query_tree_for_rebuild = query_tree->clone();
                 createUniqueAliasesIfNecessary(query_tree, execution_context);
                 Planner subquery_planner(
                     query_tree,
@@ -176,20 +180,6 @@ protected:
 
                 auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
                 subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
-                subquery->setQueryPlanBuilder(
-                    [query_tree_for_builder = std::move(query_tree_for_rebuild), planner_subquery_options = subquery_options, execution_context](const ContextPtr &) mutable
-                    {
-                        auto rebuilt_query_tree = query_tree_for_builder->clone();
-                        createUniqueAliasesIfNecessary(rebuilt_query_tree, execution_context);
-                        Planner rebuilt_subquery_planner(
-                            rebuilt_query_tree,
-                            planner_subquery_options,
-                            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
-                        rebuilt_subquery_planner.buildQueryPlanIfNeeded();
-
-                        auto rebuilt_subquery_plan = std::move(rebuilt_subquery_planner).extractQueryPlan();
-                        return std::make_unique<QueryPlan>(std::move(rebuilt_subquery_plan));
-                    });
             }
 
             filter_dag.emplace(std::move(actions));
@@ -231,6 +221,7 @@ protected:
             .find_exact_ranges = false,
             .is_parallel_reading_from_replicas = false,
             .has_projections = false,
+            .check_row_limits = true,
             .result = analysis_result,
         };
         return MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges, analysis_result.index_stats);

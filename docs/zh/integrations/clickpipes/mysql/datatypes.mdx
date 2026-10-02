@@ -11,26 +11,35 @@ integration:
 
 以下是 MySQL ClickPipe 支持的数据类型映射：
 
-| MySQL 类型                             | ClickHouse 类型          | 备注                                            |
-| ------------------------------------ | ---------------------- | --------------------------------------------- |
-| Enum                                 | LowCardinality(String) |                                               |
-| Set                                  | String                 |                                               |
-| Decimal                              | Decimal                |                                               |
-| TinyInt                              | Int8                   | 支持无符号类型。                                      |
-| SmallInt                             | Int16                  | 支持无符号类型。                                      |
-| MediumInt, Int                       | Int32                  | 支持无符号类型。                                      |
-| BigInt                               | Int64                  | 支持无符号类型。                                      |
-| Year                                 | Int16                  |                                               |
-| TinyText, Text, MediumText, LongText | String                 |                                               |
-| TinyBlob, Blob, MediumBlob, LongBlob | String                 |                                               |
-| Char, Varchar                        | String                 |                                               |
-| Binary, VarBinary                    | String                 |                                               |
-| TinyInt(1)                           | Bool                   |                                               |
-| JSON                                 | String                 | 仅适用于 MySQL；MariaDB 的 `json` 只是带约束的 `text` 别名。 |
-| Geometry &amp; Geometry Types        | String                 | WKT (Well-Known Text) 。WKT 可能会有轻微精度损失。        |
-| Vector                               | Array(Float32)         | 仅适用于 MySQL；MariaDB 即将支持。                      |
-| Float                                | Float32                | 由于使用文本协议，初始加载期间 ClickHouse 中的精度可能与 MySQL 不同。  |
-| Double                               | Float64                | 由于使用文本协议，初始加载期间 ClickHouse 中的精度可能与 MySQL 不同。  |
-| Date                                 | Date32                 | 日期或月份为 00 时映射为 01。                            |
-| Time                                 | DateTime64(6)          | 相对于 Unix 纪元的时间偏移。                             |
-| Datetime, Timestamp                  | DateTime64(6)          | 日期或月份为 00 时映射为 01。                            |
+| MySQL 类型                             | ClickHouse 类型          | 备注                                                                                                            |
+| ------------------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Enum                                 | LowCardinality(String) |                                                                                                               |
+| Set                                  | String                 |                                                                                                               |
+| Decimal                              | Decimal(76,38)         | 超过 38 位整数部分的值会被摄取为零。                                                                                          |
+| Bit                                  | UInt64                 |                                                                                                               |
+| TinyInt                              | Int8                   | 支持无符号类型。                                                                                                      |
+| SmallInt                             | Int16                  | 支持无符号类型。                                                                                                      |
+| MediumInt, Int                       | Int32                  | 支持无符号类型。                                                                                                      |
+| BigInt                               | Int64                  | 支持无符号类型。                                                                                                      |
+| Serial                               | UInt64                 |                                                                                                               |
+| Year                                 | Int16                  |                                                                                                               |
+| TinyInt(1)                           | Bool                   |                                                                                                               |
+| Float                                | Float32                | 由于使用文本协议，初始加载期间 ClickHouse 中的精度可能与 MySQL 不同。`Float(p)` 在 `p <= 24` 时映射为 `Float32`，在 `p >= 25` 时映射为 `Float64`。 |
+| Double                               | Float64                | 由于使用文本协议，初始加载期间 ClickHouse 中的精度可能与 MySQL 不同。                                                                  |
+| TinyText, Text, MediumText, LongText | String                 |                                                                                                               |
+| TinyBlob, Blob, MediumBlob, LongBlob | String                 |                                                                                                               |
+| Char, Varchar                        | String                 |                                                                                                               |
+| Long, Long Varchar                   | String                 |                                                                                                               |
+| Binary, VarBinary                    | String                 |                                                                                                               |
+| Long VarBinary                       | String                 |                                                                                                               |
+| JSON                                 | String                 | 仅适用于 MySQL；MariaDB 的 `json` 只是带约束的 `text` 别名。                                                                 |
+| Geometry &amp; Geometry Types        | String                 | WKT (Well-Known Text)。WKT 可能会有轻微精度损失。                                                                         |
+| UUID                                 | UUID                   | 仅适用于 MariaDB。在 CDC 期间新增的列会作为保存原始 16 字节的 `String` 添加。                                                          |
+| INET4, INET6                         | String                 | 仅适用于 MariaDB。                                                                                                 |
+| Vector                               | Array(Float32)         | 仅适用于 MySQL；MariaDB 即将支持。                                                                                      |
+| Char Byte, Raw                       | String                 | MariaDB/Oracle 模式下二进制类型的别名。                                                                                   |
+| Clob, Varchar2, XMLType              | String                 | MariaDB/Oracle 模式下文本类型的别名。                                                                                    |
+| Number                               | Decimal                | MariaDB/Oracle 模式下 `Decimal` 的别名。                                                                             |
+| Date                                 | Date32                 | 日期或月份为 00 时映射为 01。                                                                                            |
+| Time                                 | DateTime64(6)          | 相对于 Unix 纪元的时间偏移。                                                                                             |
+| Datetime, Timestamp                  | DateTime64(6)          | 日期或月份为 00 时映射为 01。                                                                                            |

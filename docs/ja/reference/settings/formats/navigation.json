@@ -1,0 +1,24 @@
+{
+  "directory": "none",
+  "group": "フォーマット設定",
+  "pages": [
+    "ja/reference/settings/formats/bool",
+    "ja/reference/settings/formats/date-time",
+    "ja/reference/settings/formats/format",
+    "ja/reference/settings/formats/format-avro",
+    "ja/reference/settings/formats/format-binary",
+    "ja/reference/settings/formats/format-capn",
+    "ja/reference/settings/formats/format-csv",
+    "ja/reference/settings/formats/format-custom",
+    "ja/reference/settings/formats/format-regexp",
+    "ja/reference/settings/formats/format-schema",
+    "ja/reference/settings/formats/format-template",
+    "ja/reference/settings/formats/input-format",
+    "ja/reference/settings/formats/output-format",
+    "ja/reference/settings/formats/schema-inference",
+    "ja/reference/settings/formats/show-create",
+    "ja/reference/settings/formats/type-json",
+    "ja/reference/settings/formats/other"
+  ],
+  "root": "ja/reference/settings/formats"
+}

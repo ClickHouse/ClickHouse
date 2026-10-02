@@ -22,6 +22,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
@@ -44,6 +45,7 @@ namespace DB::ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -214,6 +216,9 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                     field_ids[IcebergPositionDeleteTransform::positions_column_name] = IcebergPositionDeleteTransform::positions_column_field_id;
                     field_ids[IcebergPositionDeleteTransform::data_file_path_column_name] = IcebergPositionDeleteTransform::data_file_path_column_field_id;
                     column_mapper->setStorageColumnEncoding(std::move(field_ids));
+                    /// `file_path` is Iceberg `string`, so mark it: without this the string-path-aware
+                    /// writer would emit it as `binary` and produce spec-incompatible delete files.
+                    column_mapper->setIcebergStringPaths({String(IcebergPositionDeleteTransform::data_file_path_column_name)});
                     FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
                     auto output_format = FormatFactory::instance().getOutputFormat(
                         write_format, *write_buffer, delete_file_sample_block, context, format_settings, format_filter_info);
@@ -262,6 +267,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         {
             delete_data_writers[partition_key]->flush();
             delete_data_writers[partition_key]->finalize();
+            delete_data_statistics.at(partition_key).addColumnSizesOnDisk(
+                delete_data_writers[partition_key]->getColumnSizesOnDisk(), getPositionDeleteFileSampleBlock());
             delete_data_write_buffers[partition_key]->finalize();
             {
                 auto delete_bytes = delete_data_write_buffers[partition_key]->count();
@@ -284,6 +291,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         PullingPipelineExecutor executor(pipeline);
 
         auto header = interpreter->getUpdatedHeader();
+        auto update_sample_block = getNonVirtualColumns(header, /*remove_low_cardinality=*/ true);
 
         Block block;
         while (executor.pull(block))
@@ -333,6 +341,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         {
             update_data_writers[partition_key]->flush();
             update_data_writers[partition_key]->finalize();
+            update_data_statistics.at(partition_key).addColumnSizesOnDisk(
+                update_data_writers[partition_key]->getColumnSizesOnDisk(), update_sample_block);
             update_data_write_buffers[partition_key]->finalize();
             {
                 auto update_bytes = update_data_write_buffers[partition_key]->count();
@@ -415,7 +425,10 @@ static bool writeMetadataFiles(
     auto manifest_entries_in_storage = std::make_shared<Strings>();
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;
+    std::vector<Int64> manifest_entry_row_counts;
+    std::vector<Int64> manifest_entry_file_counts;
     std::vector<Iceberg::FileContentType> per_entry_content_types;
+    std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
 
     auto hint_path = filename_generator.generateVersionHint();
     const bool use_version_hint = data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint];
@@ -449,6 +462,19 @@ static bool writeMetadataFiles(
             manifest_entries_in_storage->push_back(path_resolver.resolve(manifest_entry_path));
             manifest_entries.push_back(manifest_entry_path);
             per_entry_content_types.push_back(content_type);
+            manifest_entry_row_counts.push_back(data_file.total_rows);
+            manifest_entry_file_counts.push_back(1);
+
+            /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
+            if (chunk_partitioner)
+            {
+                const auto & partition_types = chunk_partitioner->getResultTypes();
+                std::vector<std::pair<Field, DataTypePtr>> partition_summary;
+                partition_summary.reserve(partition_key.size());
+                for (size_t i = 0; i < partition_key.size(); ++i)
+                    partition_summary.emplace_back(partition_key[i], partition_types[i]);
+                entry_partition_summaries.push_back(std::move(partition_summary));
+            }
 
             auto buffer_manifest_entry = object_storage->writeObject(
                 StoredObject(path_resolver.resolve(manifest_entry_path)),
@@ -515,7 +541,13 @@ static bool writeMetadataFiles(
                 *buffer_manifest_list,
                 /* content_type */ Iceberg::FileContentType::POSITION_DELETE,
                 /* use_previous_snapshots */ true,
-                per_entry_content_types);
+                per_entry_content_types,
+                /* entry_counts */ {},
+                /* carry_forward_manifest_paths */ {},
+                /* entry_partition_spec_ids */ {},
+                entry_partition_summaries,
+                manifest_entry_row_counts,
+                manifest_entry_file_counts);
             buffer_manifest_list->finalize();
         }
 
@@ -562,6 +594,89 @@ static bool writeMetadataFiles(
     return true;
 }
 
+void validateMutationWriteFormat(const String & write_format)
+{
+    /// Fast early-reject for tables whose configured `write_format` is not Parquet.
+    /// The deeper per-data-file check runs inside the `mutate` retry loop below
+    /// and also handles mixed-format tables where `write_format` is Parquet but
+    /// existing data files are not. See issue #102508.
+    if (Poco::toLower(write_format) != "parquet")
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Iceberg DELETE and UPDATE are only supported for tables with Parquet data file format, but got {}",
+            write_format);
+}
+
+namespace
+{
+/// Validates that the current snapshot can be mutated by ClickHouse. Iceberg
+/// permits mixed-format tables, but ClickHouse mutations write Parquet position
+/// delete files. A snapshot containing non-Parquet data files or deletion vectors
+/// would produce delete files that the read side cannot safely apply. Called inside
+/// the `mutate` retry loop so validation is bound to the exact metadata version
+/// that will be written, closing the TOCTOU gap where a concurrent writer commits
+/// incompatible files after a pre-check. See issue #102508 and the PR #105893 review.
+void validateSnapshotForMutation(
+    Poco::JSON::Object::Ptr metadata,
+    ObjectStoragePtr object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    ContextPtr context,
+    LoggerPtr log,
+    Int32 current_schema_id)
+{
+    if (!metadata->has(f_current_snapshot_id) || metadata->isNull(f_current_snapshot_id))
+        return;
+    Int64 current_snapshot_id = metadata->getValue<Int64>(f_current_snapshot_id);
+    if (current_snapshot_id < 0)
+        return;
+    if (!metadata->has(f_snapshots))
+        return;
+
+    auto snapshots = metadata->getArray(f_snapshots);
+    Poco::JSON::Object::Ptr current_snapshot;
+    for (size_t i = 0; i < snapshots->size(); ++i)
+    {
+        auto snapshot_obj = snapshots->getObject(static_cast<UInt32>(i));
+        if (snapshot_obj->has(f_metadata_snapshot_id)
+            && snapshot_obj->getValue<Int64>(f_metadata_snapshot_id) == current_snapshot_id)
+        {
+            current_snapshot = snapshot_obj;
+            break;
+        }
+    }
+    if (!current_snapshot || !current_snapshot->has(f_manifest_list))
+        return;
+
+    auto manifest_list_path = IcebergPathFromMetadata::deserialize(current_snapshot->getValue<String>(f_manifest_list));
+    auto manifest_list_entries = getManifestList(object_storage, persistent_table_components, context, manifest_list_path, log);
+    for (const auto & manifest_list_entry : manifest_list_entries)
+    {
+        auto files_handle = getManifestFileEntriesHandle(
+            object_storage, persistent_table_components, context, log, manifest_list_entry, current_schema_id);
+
+        for (const auto & file_entry : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
+        {
+            const String & file_format = file_entry->parsed_entry->file_format;
+            if (Poco::toLower(file_format) != "parquet")
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Iceberg DELETE and UPDATE require all data files in the current snapshot to be Parquet, "
+                    "but data file `{}` has format `{}`",
+                    file_entry->parsed_entry->file_path_key.serialize(),
+                    file_format);
+        }
+
+        for (const auto & file_entry : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
+        {
+            if (file_entry->parsed_entry->isDeletionVector())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Iceberg DELETE and UPDATE are not supported for snapshots containing deletion vectors");
+        }
+    }
+}
+}
+
 void mutate(
     const MutationCommands & commands,
     ContextPtr context,
@@ -575,6 +690,8 @@ void mutate(
     const std::optional<FormatSettings> & format_settings,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
+    validateMutationWriteFormat(write_format);
+
     auto common_path = persistent_table_components.table_path;
     if (!common_path.starts_with('/'))
         common_path = "/" + common_path;
@@ -602,8 +719,11 @@ void mutate(
 
         auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
-        if (metadata->getValue<Int32>(f_format_version) < 2)
+        const auto format_version = metadata->getValue<Int32>(f_format_version);
+        if (format_version < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations are supported only for the second version of iceberg format");
+        if (format_version >= 3)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg DELETE and UPDATE are not supported for format-version 3 tables");
         auto partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
         auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
         Poco::JSON::Object::Ptr partititon_spec;
@@ -627,6 +747,12 @@ void mutate(
                 current_schema = schemas->getObject(static_cast<UInt32>(i));
             }
         }
+
+        /// Validate against the freshly-fetched snapshot. Bound to this exact
+        /// metadata version, so a concurrent writer that commits non-Parquet
+        /// data files between iterations is caught by the next retry.
+        validateSnapshotForMutation(
+            metadata, object_storage, persistent_table_components, context, log, static_cast<Int32>(current_schema_id));
 
         TableStateSnapshot current_iceberg_snapshot;
         current_iceberg_snapshot.metadata_file_path = metadata_path;

@@ -13,18 +13,14 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 > Este guia explica como usar o servidor MCP do ClickHouse com [Jan.ai](https://jan.ai/docs).
 
 <Steps>
-  <Step>
-    ## Instale o Jan.ai
-
+  <Step title="Instale o Jan.ai" id="install-janai">
     O Jan.ai é uma alternativa open source ao ChatGPT que funciona 100% offline.
-    Você pode baixar o Jan.ai para [Mac](https://jan.ai/docs/desktop/mac), [Windows](https://jan.ai/docs/desktop/windows) ou [Linux](https://jan.ai/docs/desktop/linux).
+    Você pode baixar o Jan.ai para [Mac](https://jan.ai/docs/desktop/install/mac), [Windows](https://jan.ai/docs/desktop/windows) ou [Linux](https://jan.ai/docs/desktop/linux).
 
     É um aplicativo nativo, então, depois de baixá-lo, você já pode iniciá-lo.
   </Step>
 
-  <Step>
-    ## Adicione um LLM ao Jan.ai
-
+  <Step title="Adicione um LLM ao Jan.ai" id="add-llm-to-janai">
     Podemos habilitar modelos pelo menu de configurações.
 
     Para habilitar o OpenAI, precisamos fornecer uma API key, como mostrado abaixo:
@@ -32,9 +28,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
     <Image img="/images/use-cases/AI_ML/MCP/0_janai_openai.webp" alt="Habilitar modelos OpenAI" size="md" />
   </Step>
 
-  <Step>
-    ## Habilite os servidores MCP
-
+  <Step title="Habilite os servidores MCP" id="enable-mcp-servers">
     No momento da redação deste guia, os servidores MCP são um recurso experimental no Jan.ai.
     Podemos habilitá-los ativando os recursos experimentais:
 
@@ -43,9 +37,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
     Depois de ativar essa opção, veremos `MCP servers` no menu à esquerda.
   </Step>
 
-  <Step>
-    ## Configure o servidor MCP do ClickHouse
-
+  <Step title="Configure o servidor MCP do ClickHouse" id="configure-clickhouse-mcp-server">
     Se clicarmos no menu `MCP servers`, veremos uma lista de servidores MCP aos quais podemos nos conectar:
 
     <Image img="/images/use-cases/AI_ML/MCP/2_janai_mcp_servers_list.webp" alt="Lista de servidores MCP" size="md" />
@@ -65,9 +57,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
     <Image img="/images/use-cases/AI_ML/MCP/5_jani_tools.webp" alt="Ferramentas do servidor MCP do ClickHouse" size="md" />
   </Step>
 
-  <Step>
-    ## Converse com o servidor MCP do ClickHouse usando o Jan.ai
-
+  <Step title="Converse com o servidor MCP do ClickHouse usando o Jan.ai" id="chat-to-clickhouse-mcp-server">
     É hora de conversar sobre alguns dados armazenados no ClickHouse!
     Vamos fazer uma pergunta:
 

@@ -13,7 +13,7 @@ doc_type: 'guide'
 
 ClickHouse accepts trace context HTTP headers, as described by the [W3C recommendation](https://www.w3.org/TR/trace-context/). It also accepts trace context over a native protocol that is used for communication between ClickHouse servers or between the client and server. For manual testing, trace context headers conforming to the Trace Context recommendation can be supplied to `clickhouse-client` using `--opentelemetry-traceparent` and `--opentelemetry-tracestate` flags.
 
-If no parent trace context is supplied or the provided trace context does not comply with W3C standard above, ClickHouse can start a new trace, with probability controlled by the [opentelemetry_start_trace_probability](/reference/settings/session-settings#opentelemetry_start_trace_probability) setting.
+If no parent trace context is supplied or the provided trace context does not comply with W3C standard above, ClickHouse can start a new trace, with probability controlled by the [opentelemetry_start_trace_probability](/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability) setting.
 
 ## Propagating the trace context {#propagating-the-trace-context}
 
@@ -22,6 +22,22 @@ The trace context is propagated to downstream services in the following cases:
 * Queries to remote ClickHouse servers, such as when using [Distributed](/reference/engines/table-engines/special/distributed) table engine.
 
 * [url](/reference/functions/table-functions/url) table function. Trace context information is sent in HTTP headers.
+
+## Spans of distributed queries {#spans-of-distributed-queries}
+
+For a distributed `SELECT`, every read from a remote shard is covered by a `RemoteQueryExecutor::execute` span. These spans carry attributes identifying the query fragment:
+
+* `clickhouse.cluster` and `clickhouse.shard_num` — the cluster and the shard the executor reads from;
+* `clickhouse.query_id` and `clickhouse.initial_query_id` — the query ids from the initiator's perspective;
+* `clickhouse.target_host` — the addresses of the established connections.
+
+The `status_code` of such a span tells how the fragment ended:
+
+* `OK` — the shard delivered its full result.
+* `ERROR` — the fragment failed: the shard returned an exception, the initiator failed to read the data, or cancelling the shard failed.
+* `UNSET` — neither success nor failure. Such spans carry an attribute to give more context.
+
+`INSERT` queries into a `Distributed` table produce analogous spans in `DistributedSink` with the same `clickhouse.cluster` and `clickhouse.shard_num` attribute keys.
 
 ## Tracing ClickHouse Keeper Requests {#tracing-clickhouse-keeper-requests}
 
@@ -63,7 +79,7 @@ When tracing is enabled, ClickHouse creates spans for both client-side and serve
 - `keeper.dispatcher.requests_queue` — Request queuing in the dispatcher
 - `keeper.write.pre_commit` — Preprocessing write requests before Raft commit
 - `keeper.write.commit` — Processing write requests after Raft commit
-- `keeper.read.wait_for_write` — Read requests waiting for dependent writes
+- `keeper.read.wait_for_write` — Read requests queued behind an in-flight request batch
 - `keeper.read.process` — Processing read requests
 - `keeper.dispatcher.responses_queue` — Response queuing in the dispatcher
 - `keeper.send_response` — Sending the response to the client
@@ -84,7 +100,7 @@ The tags or attributes are saved as two parallel arrays, containing the keys and
 
 ## Log-query-settings {#log-query-settings}
 
-Setting [log_query_settings](/reference/settings/session-settings) allows log changes to query settings during query execution. When enabled, any modifications made to query settings will be recorded in the OpenTelemetry span log. This feature is particularly useful in production environments for tracking configuration changes that may affect query performance.
+Setting [log_query_settings](/reference/settings/session-settings/log-query#log_query_settings) allows log changes to query settings during query execution. When enabled, any modifications made to query settings will be recorded in the OpenTelemetry span log. This feature is particularly useful in production environments for tracking configuration changes that may affect query performance.
 
 ## Integration with monitoring systems {#integration-with-monitoring-systems}
 

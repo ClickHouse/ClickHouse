@@ -9,6 +9,20 @@
 namespace DB
 {
 
+struct Settings;
+
+/// Settings that change how a function inside a condition evaluates without leaving any trace in the
+/// condition's `ActionsDAG` (the `formatDateTime`/`parseDateTime` family, `locate`, `least`/`greatest` and a few more
+/// read them while they run; the registration rule is in the definition).
+/// Two queries whose conditions differ only in those settings must not share a cache entry: a mark verdict
+/// computed under one value is wrong under the other. Fold the returned salt into the condition hash.
+UInt64 queryConditionCacheSettingsSalt(const Settings & settings);
+
+/// Combines the hash of a condition's `ActionsDAG` with that salt. Every producer of a query condition
+/// cache key has to use it, or a verdict written by one query is never found by the next one.
+UInt64 queryConditionCacheHash(UInt64 condition_dag_hash, UInt64 settings_salt);
+
+
 /// An implementation of predicate caching a la https://doi.org/10.1145/3626246.3653395
 ///
 /// Given the table, part name and a hash of a predicate as key, caches which marks definitely don't match the predicate and which marks may
@@ -75,6 +89,16 @@ public:
 
     /// Compute cache key from table UUID, part name and condition hash
     static Key makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash);
+
+    /// Compose the `part_name` component of a cache key for a file-backed table (e.g. `File`, `S3`,
+    /// object storage). Uses the full path (not just the base name) so files that share a name in
+    /// different directories do not collide, and folds in a content-version token so an in-place
+    /// rewrite of the file yields a different key rather than a stale hit. The token is the ETag for
+    /// remote objects, or a local identity (modification time + inode + size) for local files. For
+    /// immutable files (e.g. data-lake data files) the path alone is a stable identity and the token
+    /// may be left empty. The path and the token are separated by a NUL byte, which cannot occur in
+    /// either, so the mapping is unambiguous.
+    static String makeFilePartName(const String & path, std::string_view version_token);
 
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 

@@ -42,9 +42,9 @@ SELECT
 SELECT dateSub('1998-06-16'::Date, INTERVAL 10 week)
         )",
         R"(
-┌─minus(CAST('⋯alWeek(10))─┐
-│               1998-04-07 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalWeek(10))─┐
+│                                            1998-04-07 │
+└───────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

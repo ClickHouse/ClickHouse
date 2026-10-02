@@ -235,7 +235,7 @@ Finally, note the ability to pass a `Context` to the `Query` and `QueryRow` meth
 
 ## Async insert {#async-insert}
 
-Asynchronous inserts are supported through the Async method. This allows the user to specify whether the client should wait for the server to complete the insert or respond once the data has been received. This effectively controls the parameter [wait_for_async_insert](/reference/settings/session-settings#wait_for_async_insert).
+Asynchronous inserts are supported through the Async method. This allows the user to specify whether the client should wait for the server to complete the insert or respond once the data has been received. This effectively controls the parameter [wait_for_async_insert](/reference/settings/session-settings/wait-for#wait_for_async_insert).
 
 ```go
 conn, err := GetNativeConnection(nil, nil, nil)

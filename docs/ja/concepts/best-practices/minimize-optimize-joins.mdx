@@ -62,7 +62,7 @@ ClickHouse は、速度とメモリ使用量のトレードオフが異なる複
   各アルゴリズムでサポートされる JOIN の種類は異なります。各アルゴリズムでサポートされる JOIN タイプの完全な一覧は、[こちら](/ja/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)を参照してください。
 </Note>
 
-`join_algorithm = 'auto'` (デフォルト) を設定して最適なアルゴリズムを ClickHouse に選択させることも、ワークロードに応じて明示的に制御することもできます。パフォーマンスやメモリオーバーヘッドを最適化するために JOIN アルゴリズムを選択する必要がある場合は、[このガイド](/ja/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)をおすすめします。
+`join_algorithm = 'auto'` を設定して最適なアルゴリズムを ClickHouse に選択させることも、ワークロードに応じて明示的に制御することもできます。デフォルト値は `direct,parallel_hash,hash` であるため、右側が Dictionary またはキー・バリュー特性を持つエンジンである場合、ClickHouse は direct join を使用し、それ以外の場合は parallel hash、次に hash にフォールバックします。パフォーマンスやメモリオーバーヘッドを最適化するために JOIN アルゴリズムを選択する必要がある場合は、[このガイド](/ja/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)をおすすめします。
 
 最適なパフォーマンスを得るには:
 

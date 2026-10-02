@@ -1,4 +1,4 @@
--- The Bad-cast abort only happens with the new analyzer, and the declared tuple type name
+-- The Bad-cast abort only happens with the analyzer, and the declared tuple type name
 -- differs between analyzers (named vs unnamed), so pin the analyzer for a stable reference.
 SET enable_analyzer = 1;
 

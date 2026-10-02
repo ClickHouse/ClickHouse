@@ -13,16 +13,12 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
 > 建议在所有 Linux 发行版中使用官方预编译的 `tgz` 归档；尤其是在无法安装 `deb` 或 `rpm` 软件包时。
 
 <Steps>
-  <Step>
-    ## 查看建议
-
+  <Step title="查看建议" id="review-recommendations">
     <Recommendations />
   </Step>
 
-  <Step>
-    ## 下载并安装最新稳定版本
-
-    可以使用 `curl` 或 `wget` 从仓库 https://packages.clickhouse.com/tgz/ 下载所需版本。
+  <Step title="下载并安装最新稳定版本" id="install-latest-stable">
+    可以使用 `curl` 或 `wget` 从仓库 [https://packages.clickhouse.com/tgz/](https://packages.clickhouse.com/tgz/) 下载所需版本。
     下载完成后，解压归档文件并使用安装脚本进行安装。
 
     下面是安装最新稳定版本的示例。
@@ -34,9 +30,7 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## 获取最新的 ClickHouse 版本
-
+  <Step title="获取最新的 ClickHouse 版本" id="get-latest-version">
     从 GitHub 获取最新的 ClickHouse 版本，并将其存入 `LATEST_VERSION` 变量。
 
     ```bash
@@ -46,9 +40,7 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 检测系统架构
-
+  <Step title="检测系统架构" id="detect-system-architecture">
     检测系统架构，并相应设置 `ARCH` 变量：
 
     ```bash
@@ -60,9 +52,7 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 下载各个 ClickHouse 组件的 tarball
-
+  <Step title="下载各个 ClickHouse 组件的 tarball" id="download-tarballs">
     下载各个 ClickHouse 组件的 tarball。该循环会先尝试下载特定架构的
     软件包，如果不可用，再回退到通用软件包。
 
@@ -75,9 +65,7 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 解压并安装软件包
-
+  <Step title="解压并安装软件包" id="extract-and-install">
     运行以下命令，解压并安装下列软件包：
 
     * `clickhouse-common-static`

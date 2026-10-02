@@ -1,14 +1,10 @@
 ---
-title: 'Limite de memória excedido em consulta'
+title: 'Limite de memória excedido na consulta'
 description: 'Solução de problemas de erros de limite de memória excedido em uma consulta'
 date: 2025-07-25
 tags: ['Erros e Exceções']
 keywords: ['OOM', 'limite de memória excedido']
 ---
-
-{frontMatter.description}
-
-{/* truncate */}
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
@@ -32,8 +28,8 @@ Nesse caso, os usuários têm algumas opções.
 </div>
 
 Para cenários de agregação ou ordenação com uso intenso de memória, é possível usar as configurações
-[`max_bytes_before_external_group_by`](/pt-BR/reference/settings/session-settings#max_bytes_before_external_group_by)
-e [`max_bytes_before_external_sort`](/pt-BR/reference/settings/session-settings#max_bytes_ratio_before_external_sort), respectivamente.
+[`max_bytes_before_external_group_by`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by)
+e [`max_bytes_before_external_sort`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort), respectivamente.
 A primeira delas é discutida em detalhes [aqui](/pt-BR/reference/statements/select/group-by#group-by-in-external-memory).
 
 Em resumo, isso garante que as agregações possam ser descarregadas em disco se um
@@ -42,7 +38,7 @@ ajudará a evitar que as consultas fiquem sem memória (OOM). A segunda configur
 semelhantes em ordenações que consomem muita memória. Isso pode ser particularmente importante em
 ambientes distribuídos, nos quais um nó coordenador recebe respostas ordenadas
 de shards filhos. Nesse caso, o servidor coordenador pode ser solicitado a ordenar um
-conjunto de dados maior do que a memória disponível. Com [`max_bytes_before_external_sort`](/pt-BR/reference/settings/session-settings#max_bytes_ratio_before_external_sort),
+conjunto de dados maior do que a memória disponível. Com [`max_bytes_before_external_sort`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort),
 é possível permitir que a ordenação seja descarregada em disco. Essa configuração também é útil para
 casos em que o usuário tem um `ORDER BY` após um `GROUP BY` com um `LIMIT`,
 especialmente quando a consulta é distribuída.
@@ -58,7 +54,7 @@ Esse algoritmo carrega a tabela do lado direito do `JOIN` em uma tabela hash na 
 em relação à qual a tabela do lado esquerdo é então avaliada. Para minimizar o uso de memória,
 os usuários devem, portanto, colocar a tabela menor no lado direito. Ainda assim, essa abordagem
 tem limitações em cenários com restrição de memória. Nesses casos, a junção `partial_merge`
-pode ser habilitada por meio da configuração [`join_algorithm`](/pt-BR/reference/settings/session-settings#join_algorithm).
+pode ser habilitada por meio da configuração [`join_algorithm`](/pt-BR/reference/settings/session-settings/join#join_algorithm).
 Essa variação do [algoritmo sort-merge](https://en.wikipedia.org/wiki/Sort-merge_join)
 primeiro ordena a tabela da direita em blocos e cria um índice min-max para eles.
 Em seguida, ordena partes da tabela da esquerda pela chave de junção e faz a junção com a

@@ -916,7 +916,7 @@ def test_onelake_create_without_flag(node, catalog_manager):
     db = catalog_manager.make_database_name()
     sql = catalog_manager.create_db_sql(db)
     error = node.query_and_get_error(
-        sql, settings={"allow_experimental_database_iceberg": "0"}
+        sql, settings={"allow_database_iceberg": "0"}
     )
     assert "allow_database_iceberg" in error or "SUPPORT_IS_DISABLED" in error
 
@@ -1163,8 +1163,6 @@ def test_insert_into_table(node, catalog_manager, request):
     backend = request.node.callspec.params.get("catalog_manager")
     if backend == "biglake":
         pytest.xfail("INSERT into BigLake DataLakeCatalog does not commit to the catalog")
-    if backend == "onelake":
-        pytest.xfail("INSERT into OneLake raises StorageException during blob upload")
     data = pa.table(
         {
             "id": pa.array([1, 2], type=pa.int64()),
@@ -1188,10 +1186,31 @@ def test_insert_into_table(node, catalog_manager, request):
             f"INSERT INTO {db}.`{full}` VALUES (3, 'three')",
             settings={"allow_insert_into_iceberg": 1},
         )
-        count = node.query(
-            f"SELECT count() FROM {db}.`{full}` FORMAT TSV"
-        ).strip()
+        if backend == "onelake":
+            # OneLake's catalog is eventually consistent, so poll (cache off) for
+            # the new snapshot. Other backends must see it immediately (one-shot).
+            read_settings = {"use_iceberg_metadata_files_cache": 0}
+            deadline = time.monotonic() + 180
+            while True:
+                count = node.query(
+                    f"SELECT count() FROM {db}.`{full}` FORMAT TSV",
+                    settings=read_settings,
+                ).strip()
+                if count == "3" or time.monotonic() >= deadline:
+                    break
+                time.sleep(5)
+        else:
+            read_settings = {}
+            count = node.query(
+                f"SELECT count() FROM {db}.`{full}` FORMAT TSV"
+            ).strip()
         assert int(count) == 3
+        # count() can come from metadata alone, so read a real value too.
+        value = node.query(
+            f"SELECT value FROM {db}.`{full}` WHERE id = 3 FORMAT TSV",
+            settings=read_settings,
+        ).strip()
+        assert value == "three", value
     finally:
         catalog_manager.cleanup_table(table_name)
 
@@ -1283,13 +1302,9 @@ def test_list_tables_pagination(node, catalog_manager):
     independently of this PR).
     """
     n_tables = 60  # > Fabric's ~50-per-page boundary
-    # `pg` sorts lexicographically after any pre-existing `e2e_<hex>`
-    # or `tbl_<hex>` names produced by other tests in the same session,
-    # so any silent truncation drops our tables first.
-    prefix = f"e2e_pg_{uuid.uuid4().hex[:6]}_"
+    # Truncation shows up as tables missing by count, not by name sort order.
     data = pa.table({"id": pa.array([1], type=pa.int64())})
 
-    expected = [f"{prefix}{i:03d}" for i in range(n_tables)]
     created = []
     db = None
     try:
@@ -1303,9 +1318,11 @@ def test_list_tables_pagination(node, catalog_manager):
         # them instead of leaking catalog/storage artifacts.
         first_exc = None
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+            # No `table_name=`: only the auto-named path retries a transient
+            # catalog error, so the names must come back from create_table.
             futures = [
-                pool.submit(catalog_manager.create_table, data, table_name=short)
-                for short in expected
+                pool.submit(catalog_manager.create_table, data)
+                for _ in range(n_tables)
             ]
             for fut in concurrent.futures.as_completed(futures):
                 try:
@@ -1315,6 +1332,7 @@ def test_list_tables_pagination(node, catalog_manager):
                         first_exc = exc
         if first_exc is not None:
             raise first_exc
+        expected = sorted(created)
 
         db = catalog_manager.make_database_name()
         catalog_manager.create_catalog(node, db)

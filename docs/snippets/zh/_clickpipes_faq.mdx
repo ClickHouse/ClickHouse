@@ -8,27 +8,31 @@ title: ClickPipes 常见问题
   因此，它使用专用计算副本。
   下图展示了简化后的架构。
 
-  对于流式 ClickPipes，ClickPipes 副本会访问远程数据源 (例如 Kafka broker) ，
+  对于流式 ClickPipes，ClickPipes 副本会访问远程数据源 (例如 Kafka broker)，
   拉取数据、进行处理，并将其摄取到目标 ClickHouse 服务。
 
-  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_1.webp" size="lg" alt="ClickPipes 副本 - 流式 ClickPipes" border force />
+  <Frame>
+    <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_1.webp" alt="ClickPipes 副本 - 流式 ClickPipes" />
+  </Frame>
 
   对于对象存储 ClickPipes，
   ClickPipes 副本负责协调数据加载任务
-   (识别要复制的文件、维护状态以及移动分区) ，
+  (识别要复制的文件、维护状态以及移动分区)，
   而数据则由 ClickHouse 服务直接拉取。
 
-  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_2.webp" size="lg" alt="ClickPipes 副本 - 对象存储 ClickPipes" border force />
+  <Frame>
+    <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_2.webp" alt="ClickPipes 副本 - 对象存储 ClickPipes" />
+  </Frame>
 </Accordion>
 
 <Accordion title="默认的副本数量和规格是多少？">
   每个 ClickPipe 默认有 1 个副本，配备 2 GiB RAM 和 0.5 vCPU。
-  这相当于 **0.25** 个 ClickHouse 计算单元 (1 个单元 = 8 GiB RAM、2 个 vCPU) 。
+  这相当于 **0.25** 个 ClickHouse 计算单元 (1 个单元 = 8 GiB RAM、2 个 vCPU)。
 </Accordion>
 
 <Accordion title="ClickPipes 副本可以扩缩容吗？">
   可以，流式 ClickPipes 支持水平和垂直扩缩容。
-  水平扩缩容会增加副本数量以提升吞吐量，而垂直扩缩容则会增加分配给每个副本的资源 (CPU 和 RAM) ，以处理更高强度的工作负载。
+  水平扩缩容会增加副本数量以提升吞吐量，而垂直扩缩容则会增加分配给每个副本的资源 (CPU 和 RAM)，以处理更高强度的工作负载。
   这可以在创建 ClickPipe 时配置，也可以之后随时在 **Settings** -&gt; **Advanced Settings** -&gt; **Scaling** 中进行配置。
 </Accordion>
 
@@ -38,7 +42,9 @@ title: ClickPipes 常见问题
   请注意，对于 Kafka ClickPipes，你还需要相应地调整 Kafka broker 分区数。
   每个流式 ClickPipe 的“settings”下都提供了扩缩容控制项。
 
-  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_3.webp" size="lg" alt="ClickPipes 副本 - 我需要多少个 ClickPipes 副本？" border force />
+  <Frame>
+    <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_3.webp" alt="ClickPipes 副本 - 我需要多少个 ClickPipes 副本？" />
+  </Frame>
 </Accordion>
 
 <Accordion title="ClickPipes 的定价结构是什么样的？">
@@ -49,13 +55,13 @@ title: ClickPipes 常见问题
     这适用于所有类型的 ClickPipes。
   * **摄取数据量**：按 GB 计费
     摄取数据量费率适用于所有流式 ClickPipes
-     (Kafka、Confluent、Amazon MSK、Amazon Kinesis、Redpanda、WarpStream、
+    (Kafka、Confluent、Amazon MSK、Amazon Kinesis、Redpanda、WarpStream、
     Azure Event Hubs) 中通过副本 Pod (容器组) 传输的数据。
-    摄取数据大小 (GB) 按从源端接收的字节数计费 (无论是否压缩) 。
+    摄取数据大小 (GB) 按从源端接收的字节数计费 (无论是否压缩)。
 </Accordion>
 
 <Accordion title="ClickPipes 的公开定价是多少？">
-  * 计算资源：$0.20 / 单位 / 小时 ($0.05 / 副本 / 小时) 
+  * 计算资源：$0.20 / 单位 / 小时 ($0.05 / 副本 / 小时)
   * 摄取数据量：$0.04 / GB
 </Accordion>
 
@@ -68,7 +74,7 @@ title: ClickPipes 常见问题
 
   <br />
 
-  对于对象存储连接器 (S3 和 GCS) ，
+  对于对象存储连接器 (S3 和 GCS)，
   由于 ClickPipes pod (容器组) 并不处理数据，
   而只是协调由底层 ClickHouse 服务执行的传输，
   因此只会产生 ClickPipes 的计算资源成本：
