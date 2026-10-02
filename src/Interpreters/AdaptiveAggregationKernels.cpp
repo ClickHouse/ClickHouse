@@ -252,6 +252,15 @@ namespace
         return (bytes + 3) & ~size_t{3};
     }
 
+    /// Zeroes the padding `alignStagedRecord` put after the last field of a record, which ends at `fields_end`. The merge
+    /// never reads it, but a spill writes the records to disk as they are, and a key copied with overflow may have left
+    /// bytes of its source there. The padding is shorter than 4 bytes, and the 4 zero bytes may run past the record:
+    /// into the next record of the chunk, written after this one, or into the chunk's tail padding.
+    void ALWAYS_INLINE zeroStagedRecordPadding(char * fields_end)
+    {
+        unalignedStore<UInt32>(fields_end, 0);
+    }
+
     /// Count and key-only records: {UInt64 hash, [UInt32 count,] key}. The count is a run length
     /// within one block, which a UInt32 holds. A key whose width varies is preceded by its UInt32
     /// size; a fixed-width key has the compile-time width, so its records have a fixed stride.
@@ -910,6 +919,7 @@ void NO_INLINE Aggregator::appendDelayedRecords(
             char * record = partitions.append(partition, Record::bytes(key_size));
             Record::writeHeader(record, hash, with_count ? adaptive.miss_multiplicities[i] : 0, key_size);
             write_key(i, key_size, record + Record::key_offset);
+            zeroStagedRecordPadding(record + Record::key_offset + key_size);
             partitions.countRecords(partition, 1);
             key_bytes += key_size;
         }
@@ -996,6 +1006,7 @@ void NO_INLINE Aggregator::appendDelayedRecords(
                 unalignedStore<UInt64>(record, hash);
                 write_key(i, sizeof(SharedKey), record + Record::key_offset);
                 write_fixed_arguments(record + Record::arguments_offset, adaptive.miss_source_rows[i]);
+                zeroStagedRecordPadding(record + Record::arguments_offset + argument_layout.fixed_bytes);
                 partitions.countRecords(partition, 1);
             }
             key_bytes += total * sizeof(SharedKey);
@@ -1052,6 +1063,7 @@ void NO_INLINE Aggregator::appendDelayedRecords(
                 else
                     variable = variable_sources[j]->serializeValueIntoMemory(row, variable, &serialization_settings);
             }
+            zeroStagedRecordPadding(variable);
 
             partitions.countRecords(partition, 1);
             key_bytes += key_size;
