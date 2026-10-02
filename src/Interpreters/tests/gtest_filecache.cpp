@@ -4236,17 +4236,20 @@ TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtUnknownFileSize)
 namespace
 {
 
-/// A small LRU cache whose file segments are 128 bytes, so one granule is one byte and the
-/// expected values are exact.
+/// One efficiency granule, and a file segment of 8 granules: reads in whole granules give exact values.
+constexpr size_t G = FileSegment::EFFICIENCY_GRANULE_SIZE;
+constexpr size_t S = 8 * G;
+
+/// A small LRU cache that holds 8 file segments of `S` bytes.
 FileCacheSettings efficiencyCacheSettings(UInt64 window_sec)
 {
     FileCacheSettings settings;
     settings[FileCacheSetting::path] = cache_base_path;
-    settings[FileCacheSetting::max_size] = 1024;
+    settings[FileCacheSetting::max_size] = 8 * S;
     settings[FileCacheSetting::max_elements] = 16;
-    settings[FileCacheSetting::max_file_segment_size] = 128;
-    settings[FileCacheSetting::boundary_alignment] = 128;
-    settings[FileCacheSetting::reserve_granularity] = 32;
+    settings[FileCacheSetting::max_file_segment_size] = S;
+    settings[FileCacheSetting::boundary_alignment] = S;
+    settings[FileCacheSetting::reserve_granularity] = 2 * G;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
     settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
     settings[FileCacheSetting::efficiency_window_sec] = window_sec;
@@ -4288,37 +4291,37 @@ TEST_F(FileCacheTest, EfficiencyWindow)
         EXPECT_EQ(snapshot.active_bytes + snapshot.passive_bytes + snapshot.idle_bytes, cache.getUsedCacheSize());
     };
 
-    auto holder_a = cache.getOrSet(key, 0, 128, 1024, {}, 0, user);
+    auto holder_a = cache.getOrSet(key, 0, S, 8 * S, {}, 0, user);
     auto a = get(holder_a, 0);
     download(a);
-    auto holder_b = cache.getOrSet(key, 128, 128, 1024, {}, 0, user);
+    auto holder_b = cache.getOrSet(key, S, S, 8 * S, {}, 0, user);
     auto b = get(holder_b, 0);
     download(b);
     EXPECT_FALSE(FileSegment::getInfo(b).efficiency.last_hit_windows_ago.has_value());
 
     /// Window 0: A is read in full; B is not read and stays idle.
-    a->markRead(0, 128);
-    EXPECT_EQ(FileSegment::getInfo(a).efficiency.active_bytes, 128);
-    expect(next_window(), /*active=*/128, /*passive=*/0);
-    EXPECT_EQ(FileSegment::getInfo(a).efficiency.idle_bytes, 128);
+    a->markRead(0, S);
+    EXPECT_EQ(FileSegment::getInfo(a).efficiency.active_bytes, S);
+    expect(next_window(), /*active=*/S, /*passive=*/0);
+    EXPECT_EQ(FileSegment::getInfo(a).efficiency.idle_bytes, S);
     EXPECT_EQ(FileSegment::getInfo(a).efficiency.last_hit_windows_ago, 1);
 
-    /// Window 1: a narrow read of A.
-    a->markRead(10, 16);
-    expect(next_window(), 16, 112);
+    /// Window 1: a 16-byte read of A counts its whole granule.
+    a->markRead(G + 10, 16);
+    expect(next_window(), G, 7 * G);
 
     /// Window 2: no reads.
     expect(next_window(), 0, 0);
 
     /// Window 3: removing an unread file segment does not change the window.
-    a->markRead(0, 16);
+    a->markRead(0, G);
     holder_b.reset();
     b.reset();
-    cache.removeFileSegment(key, 128, user.user_id);
-    expect(next_window(), 16, 112);
+    cache.removeFileSegment(key, S, user.user_id);
+    expect(next_window(), G, 7 * G);
 
     /// Window 4: a read file segment leaves the window when it is removed.
-    a->markRead(0, 16);
+    a->markRead(0, G);
     holder_a.reset();
     a.reset();
     cache.removeFileSegment(key, 0, user.user_id);
@@ -4326,47 +4329,47 @@ TEST_F(FileCacheTest, EfficiencyWindow)
 
     /// Window 5: reserve-ahead growth and the shrink at completion of a read file segment.
     {
-        auto holder_c = cache.getOrSet(key, 256, 128, 1024, {}, 0, user);
+        auto holder_c = cache.getOrSet(key, 2 * S, S, 8 * S, {}, 0, user);
         auto c = get(holder_c, 0);
         ASSERT_EQ(c->getOrSetDownloader(), FileSegment::getCallerId());
         auto key_str = key.toString();
         fs::create_directories(fs::path(cache_base_path) / key_str.substr(0, 3) / key_str);
-        auto write16 = [&]
+        auto write_granule = [&]
         {
-            std::string data(16, '0');
-            c->write(data.data(), 16, c->getCurrentWriteOffset());
+            std::string data(G, '0');
+            c->write(data.data(), G, c->getCurrentWriteOffset());
         };
         std::string failure_reason;
-        ASSERT_TRUE(c->reserve(16, 1000, failure_reason));   /// reserves 32 (`reserve_granularity`)
-        write16();
-        c->markRead(256, 16);                                /// active 16, passive 16
-        ASSERT_TRUE(c->reserve(16, 1000, failure_reason));   /// fits into the reserved 32
-        write16();
-        ASSERT_TRUE(c->reserve(16, 1000, failure_reason));   /// reserves 32 more: passive 48
-        write16();
-        ASSERT_EQ(c->getReservedSize(), 64);
+        ASSERT_TRUE(c->reserve(G, 1000, failure_reason));   /// reserves 2 * G (`reserve_granularity`)
+        write_granule();
+        c->markRead(2 * S, G);                              /// active G, passive G
+        ASSERT_TRUE(c->reserve(G, 1000, failure_reason));   /// fits into the reserved 2 * G
+        write_granule();
+        ASSERT_TRUE(c->reserve(G, 1000, failure_reason));   /// reserves 2 * G more: passive 3 * G
+        write_granule();
+        ASSERT_EQ(c->getReservedSize(), 4 * G);
     }
-    /// The shrink at completion returns 16 bytes: passive 32.
-    expect(next_window(), 16, 32);
+    /// The shrink at completion returns G bytes: passive 2 * G.
+    expect(next_window(), G, 2 * G);
 
-    /// Window 6: a read past the end of a 100-byte file segment stops at its end.
+    /// Window 6: a read past the end of a file segment of `G + 100` bytes stops at its end.
     auto short_key = FileCacheKey::fromPath("efficiency_window_short");
-    auto holder_d = cache.getOrSet(short_key, 0, 100, /*file_size=*/100, {}, 0, user);
+    auto holder_d = cache.getOrSet(short_key, 0, G + 100, /*file_size=*/G + 100, {}, 0, user);
     auto d = get(holder_d, 0);
-    ASSERT_EQ(d->range().size(), 100);
+    ASSERT_EQ(d->range().size(), G + 100);
     download(d);
-    d->markRead(90, 110);
-    EXPECT_EQ(FileSegment::getInfo(d).efficiency.active_bytes, 10);
-    expect(next_window(), 10, 90);
+    d->markRead(G + 90, 110);
+    EXPECT_EQ(FileSegment::getInfo(d).efficiency.active_bytes, 100);
+    expect(next_window(), 100, G);
 
     /// Window 7: eviction (of C, then D) removes the share of a read file segment.
-    d->markRead(0, 100);
+    d->markRead(0, G + 100);
     holder_d.reset();
     d.reset();
     auto filler_key = FileCacheKey::fromPath("efficiency_window_filler");
     for (size_t i = 0; i < 8; ++i)
     {
-        auto holder = cache.getOrSet(filler_key, i * 128, 128, /*file_size=*/1024, {}, 0, user);
+        auto holder = cache.getOrSet(filler_key, i * S, S, /*file_size=*/8 * S, {}, 0, user);
         download(get(holder, 0));
     }
     expect(next_window(), 0, 0);
@@ -4381,19 +4384,19 @@ TEST_F(FileCacheTest, EfficiencyConcurrentFirstRead)
 
     const auto & user = FileCache::getCommonOrigin();
     auto key = FileCacheKey::fromPath("efficiency_concurrent_key");
-    auto holder = cache.getOrSet(key, 0, 128, 128, {}, 0, user);
+    auto holder = cache.getOrSet(key, 0, S, S, {}, 0, user);
     auto segment = get(holder, 0);
     download(segment);
 
     std::vector<std::thread> threads;
     for (size_t i = 0; i < 8; ++i)
-        threads.emplace_back([&, i] { segment->markRead(i * 16, 16); });
+        threads.emplace_back([&, i] { segment->markRead(i * G, G); });
     for (auto & thread : threads)
         thread.join();
 
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
     const auto snapshot = cache.getEfficiency().getSnapshot();
-    EXPECT_EQ(snapshot.active_bytes, 128);
+    EXPECT_EQ(snapshot.active_bytes, S);
     EXPECT_EQ(snapshot.passive_bytes, 0);
 }
 
@@ -4406,26 +4409,24 @@ TEST_F(FileCacheTest, EfficiencyDisabled)
 
     const auto & user = FileCache::getCommonOrigin();
     auto key = FileCacheKey::fromPath("efficiency_disabled_key");
-    auto holder = cache.getOrSet(key, 0, 128, 128, {}, 0, user);
+    auto holder = cache.getOrSet(key, 0, S, S, {}, 0, user);
     auto segment = get(holder, 0);
     download(segment);
-    segment->markRead(0, 128);
+    segment->markRead(0, S);
 
     EXPECT_FALSE(FileSegment::getInfo(segment).efficiency.last_hit_windows_ago.has_value());
-    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.idle_bytes, 128);
+    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.idle_bytes, S);
     EXPECT_EQ(FileSegment::getInfo(segment).efficiency.active_bytes, 0);
     const auto snapshot = cache.getEfficiency().getSnapshot();
     EXPECT_EQ(snapshot.active_bytes + snapshot.passive_bytes + snapshot.idle_bytes, 0);
 }
 
-TEST_F(FileCacheTest, EfficiencyGranuleFollowsShrink)
+TEST_F(FileCacheTest, EfficiencyLastGranuleCut)
 {
     DB::ThreadStatus thread_status;
     auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_granule_test"));
-    /// Granule of a full 1024-byte segment: 8 bytes. Alignment 1 makes the shrink exact.
+    /// Alignment 1 makes the shrink exact.
     auto settings = efficiencyCacheSettings(10);
-    settings[FileCacheSetting::max_size] = 8192;
-    settings[FileCacheSetting::max_file_segment_size] = 1024;
     settings[FileCacheSetting::boundary_alignment] = 1;
     settings[FileCacheSetting::reserve_granularity] = 0;
     auto cache = DB::FileCache("efficiency_granule", settings);
@@ -4435,9 +4436,9 @@ TEST_F(FileCacheTest, EfficiencyGranuleFollowsShrink)
     /// A file segment that shrinks to 10 bytes before its first read counts 10 bytes.
     auto shrunk_key = FileCacheKey::fromPath("efficiency_granule_shrunk");
     {
-        auto holder = cache.getOrSet(shrunk_key, 0, 1024, /*file_size=*/4096, {}, 0, user);
+        auto holder = cache.getOrSet(shrunk_key, 0, S, /*file_size=*/4 * S, {}, 0, user);
         auto segment = get(holder, 0);
-        ASSERT_EQ(segment->range().size(), 1024);
+        ASSERT_EQ(segment->range().size(), S);
         ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
         std::string failure_reason;
         ASSERT_TRUE(segment->reserve(10, 1000, failure_reason));
@@ -4446,21 +4447,21 @@ TEST_F(FileCacheTest, EfficiencyGranuleFollowsShrink)
         std::string data(10, '0');
         segment->write(data.data(), 10, segment->getCurrentWriteOffset());
     }
-    auto holder_shrunk = cache.getOrSet(shrunk_key, 0, 10, /*file_size=*/4096, {}, 0, user);
+    auto holder_shrunk = cache.getOrSet(shrunk_key, 0, 10, /*file_size=*/4 * S, {}, 0, user);
     auto shrunk = get(holder_shrunk, 0);
     ASSERT_EQ(shrunk->range().size(), 10);
     ASSERT_EQ(shrunk->state(), State::DOWNLOADED);
     shrunk->markRead(0, 10);
     EXPECT_EQ(FileSegment::getInfo(shrunk).efficiency.active_bytes, 10);
 
-    /// The last granule is cut at the segment end.
+    /// The last granule of a file segment of `2 * G + 1001` bytes is cut at its end.
     auto odd_key = FileCacheKey::fromPath("efficiency_granule_odd");
-    auto holder_odd = cache.getOrSet(odd_key, 0, 1001, /*file_size=*/1001, {}, 0, user);
+    auto holder_odd = cache.getOrSet(odd_key, 0, 2 * G + 1001, /*file_size=*/2 * G + 1001, {}, 0, user);
     auto odd = get(holder_odd, 0);
-    ASSERT_EQ(odd->range().size(), 1001);
+    ASSERT_EQ(odd->range().size(), 2 * G + 1001);
     download(odd);
-    odd->markRead(0, 1001);
-    EXPECT_EQ(FileSegment::getInfo(odd).efficiency.active_bytes, 1001);
+    odd->markRead(0, 2 * G + 1001);
+    EXPECT_EQ(FileSegment::getInfo(odd).efficiency.active_bytes, 2 * G + 1001);
 }
 
 TEST_F(FileCacheTest, EfficiencyStaleWindowDoesNotMoveBack)
@@ -4472,25 +4473,25 @@ TEST_F(FileCacheTest, EfficiencyStaleWindowDoesNotMoveBack)
 
     const auto & user = FileCache::getCommonOrigin();
     auto key = FileCacheKey::fromPath("efficiency_stale_window_key");
-    auto holder = cache.getOrSet(key, 0, 128, 128, {}, 0, user);
+    auto holder = cache.getOrSet(key, 0, S, S, {}, 0, user);
     auto segment = get(holder, 0);
     download(segment);
 
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
-    segment->markRead(0, 16);
+    segment->markRead(0, G);
 
     /// A stale reader in window 0 must not move the segment back.
     cache.getEfficiency().shiftTimeForTesting(-std::chrono::seconds(5));
-    segment->markRead(16, 16);
+    segment->markRead(G, G);
 
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(5));
-    segment->markRead(32, 16);
-    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.active_bytes, 32);
+    segment->markRead(2 * G, G);
+    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.active_bytes, 2 * G);
 
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
     const auto snapshot = cache.getEfficiency().getSnapshot();
-    EXPECT_EQ(snapshot.active_bytes, 32);
-    EXPECT_EQ(snapshot.passive_bytes, 96);
+    EXPECT_EQ(snapshot.active_bytes, 2 * G);
+    EXPECT_EQ(snapshot.passive_bytes, 6 * G);
 }
 
 TEST_F(FileCacheTest, EfficiencyEvictedNoHitBytes)
@@ -4506,7 +4507,7 @@ TEST_F(FileCacheTest, EfficiencyEvictedNoHitBytes)
 
     /// A: filled and entered again by its filler, which `hits_count` counts as a hit; never served from the cache.
     {
-        auto holder = cache.getOrSet(key, 0, 128, 1024, {}, 0, user);
+        auto holder = cache.getOrSet(key, 0, S, 8 * S, {}, 0, user);
         auto a = get(holder, 0);
         download(a);
         a->increasePriority();
@@ -4514,23 +4515,23 @@ TEST_F(FileCacheTest, EfficiencyEvictedNoHitBytes)
     }
     /// B: served from the cache.
     {
-        auto holder = cache.getOrSet(key, 128, 128, 1024, {}, 0, user);
+        auto holder = cache.getOrSet(key, S, S, 8 * S, {}, 0, user);
         auto b = get(holder, 0);
         download(b);
-        b->markRead(128, 128);
+        b->markRead(S, S);
     }
 
-    /// Eight new 128-byte file segments fill the 1024-byte cache: LRU evicts A, then B.
+    /// Eight new file segments fill the cache: LRU evicts A, then B.
     const auto before = no_hit_bytes();
     auto filler_key = FileCacheKey::fromPath("efficiency_no_hit_filler");
     for (size_t i = 0; i < 8; ++i)
     {
-        auto holder = cache.getOrSet(filler_key, i * 128, 128, /*file_size=*/1024, {}, 0, user);
+        auto holder = cache.getOrSet(filler_key, i * S, S, /*file_size=*/8 * S, {}, 0, user);
         download(get(holder, 0));
         if (i == 6)
-            EXPECT_EQ(no_hit_bytes() - before, 128);   /// A is evicted.
+            EXPECT_EQ(no_hit_bytes() - before, S);   /// A is evicted.
     }
-    EXPECT_EQ(no_hit_bytes() - before, 128);   /// B was served, so it adds nothing.
+    EXPECT_EQ(no_hit_bytes() - before, S);   /// B was served, so it adds nothing.
 }
 
 TEST_F(FileCacheTest, EfficiencySegmentWindows)
@@ -4542,7 +4543,7 @@ TEST_F(FileCacheTest, EfficiencySegmentWindows)
 
     const auto & user = FileCache::getCommonOrigin();
     auto key = FileCacheKey::fromPath("efficiency_segment_windows_key");
-    auto holder = cache.getOrSet(key, 0, 128, 128, {}, 0, user);
+    auto holder = cache.getOrSet(key, 0, S, S, {}, 0, user);
     auto segment = get(holder, 0);
     download(segment);
     auto expect = [&](UInt64 active, UInt64 passive, UInt64 idle, std::optional<UInt64> last_hit_windows_ago, UInt64 last_hit_active,
@@ -4558,15 +4559,15 @@ TEST_F(FileCacheTest, EfficiencySegmentWindows)
     };
 
     /// Window 0: read in full.
-    segment->markRead(0, 128);
-    expect(128, 0, 0, std::nullopt, 0, 0);
+    segment->markRead(0, S);
+    expect(S, 0, 0, std::nullopt, 0, 0);
 
     /// Window 1: a narrow read; the earlier hit window is window 0.
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
-    segment->markRead(0, 16);
-    expect(16, 112, 0, 1, 128, 0);
+    segment->markRead(0, G);
+    expect(G, 7 * G, 0, 1, S, 0);
 
     /// Window 2: no read; the latest hit window is window 1.
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
-    expect(0, 0, 128, 1, 16, 112);
+    expect(0, 0, S, 1, G, 7 * G);
 }

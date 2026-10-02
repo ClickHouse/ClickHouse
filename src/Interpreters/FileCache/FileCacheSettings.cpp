@@ -147,7 +147,7 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
             "current_elements_num", std::make_shared<DataTypeUInt64>(), "Current cache elements (file segments) number"));
     result.add(
         ColumnDescription(
-            "active_bytes", std::make_shared<DataTypeUInt64>(), "Unique bytes served from the cache in the last full efficiency window, rounded up to granules. Only bytes served from the cache count; a read that fills the cache does not. A hit counts the bytes that the cache fills into the read buffer (at least one buffer, `prefetch_buffer_size` by default), not the bytes that the query decompresses."));
+            "active_bytes", std::make_shared<DataTypeUInt64>(), "Unique bytes served from the cache in the last full efficiency window, rounded up to 64 KiB granules. Only bytes served from the cache count; a read that fills the cache does not. A hit counts the bytes that the cache fills into the read buffer (at least one buffer, `prefetch_buffer_size` by default), not the bytes that the query decompresses."));
     result.add(
         ColumnDescription(
             "passive_bytes", std::make_shared<DataTypeUInt64>(), "Bytes not served from the cache in the last full efficiency window, in file segments with at least one cache hit in it"));

@@ -171,6 +171,9 @@ public:
 
     void increasePriority();
 
+    /// `markRead` counts reuse in granules of this size; the last one is cut at the segment end.
+    static constexpr size_t EFFICIENCY_GRANULE_SIZE = 64 * 1024;
+
     /// Marks `[offset, offset + size)` as served from the cache. Not under a key or file segment lock.
     void markRead(size_t offset, size_t size);
 
@@ -277,8 +280,8 @@ private:
     /// Sets granules `[first, last]`; returns the bytes of the ones that were not set before.
     size_t setGranulesUnlocked(size_t first, size_t last) TSA_REQUIRES(efficiency_mutex);
     size_t getActiveBytesUnlocked() const TSA_REQUIRES(efficiency_mutex);
-    /// `low` holds granules 0-63, `high` 64-127.
-    size_t granulesToBytesUnlocked(UInt64 low, UInt64 high) const TSA_REQUIRES(efficiency_mutex);
+    /// Bytes of the granules set in `bits` of word `word`.
+    size_t granulesToBytesUnlocked(size_t word, UInt64 bits) const TSA_REQUIRES(efficiency_mutex);
 
     /// In release builds returns a single shared logger; in debug builds a per-segment one.
     const LoggerPtr & getLog() const;
@@ -365,17 +368,16 @@ private:
 
     /// Reuse coverage for `FileCacheEfficiency`. A leaf lock: only the mutex of `FileCacheEfficiency`
     /// is taken under it.
-    static constexpr size_t EFFICIENCY_GRANULES = 128;
     mutable std::mutex efficiency_mutex;
-    UInt64 active_granules[2] TSA_GUARDED_BY(efficiency_mutex) = {};
-    static_assert(sizeof(active_granules) * 8 == EFFICIENCY_GRANULES);
+    /// One bit per granule, `efficiency_granule_words` words; allocated at the first cache hit.
+    std::unique_ptr<UInt64[]> active_granules TSA_GUARDED_BY(efficiency_mutex);
     FileCacheEfficiency::Window efficiency_window_id TSA_GUARDED_BY(efficiency_mutex) = FileCacheEfficiency::NEVER_READ;
     /// The window before `efficiency_window_id` with a cache hit, and its active bytes.
     FileCacheEfficiency::Window previous_hit_window_id TSA_GUARDED_BY(efficiency_mutex) = FileCacheEfficiency::NEVER_READ;
     UInt64 previous_active_bytes TSA_GUARDED_BY(efficiency_mutex) = 0;
-    UInt32 efficiency_granule_size TSA_GUARDED_BY(efficiency_mutex) = 1;
-    bool removed_from_efficiency TSA_GUARDED_BY(efficiency_mutex) = false;
     UInt64 efficiency_window_range_size TSA_GUARDED_BY(efficiency_mutex) = 0;
+    UInt32 efficiency_granule_words TSA_GUARDED_BY(efficiency_mutex) = 0;
+    bool removed_from_efficiency TSA_GUARDED_BY(efficiency_mutex) = false;
 
     /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;

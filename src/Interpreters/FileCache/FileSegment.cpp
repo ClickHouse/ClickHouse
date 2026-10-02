@@ -1,5 +1,6 @@
 #include <Interpreters/FileCache/FileSegment.h>
 
+#include <algorithm>
 #include <bit>
 #include <filesystem>
 #include <fcntl.h>
@@ -1568,13 +1569,19 @@ void FileSegment::startEfficiencyWindowUnlocked(FileCacheEfficiency::Window wind
         previous_hit_window_id = efficiency_window_id;
         previous_active_bytes = getActiveBytesUnlocked();
     }
-    const size_t range_size = range().size();
-    const size_t granule_size = std::max<size_t>(1, (range_size + EFFICIENCY_GRANULES - 1) / EFFICIENCY_GRANULES);
-    chassert(granule_size <= std::numeric_limits<UInt32>::max());
-    efficiency_granule_size = static_cast<UInt32>(granule_size);
-    efficiency_window_range_size = range_size;
-    active_granules[0] = 0;
-    active_granules[1] = 0;
+    efficiency_window_range_size = range().size();
+    const size_t granules = (efficiency_window_range_size + EFFICIENCY_GRANULE_SIZE - 1) / EFFICIENCY_GRANULE_SIZE;
+    const size_t words = (granules + 63) / 64;
+    if (words > efficiency_granule_words)
+    {
+        chassert(words <= std::numeric_limits<UInt32>::max());
+        active_granules = std::make_unique<UInt64[]>(words);
+        efficiency_granule_words = static_cast<UInt32>(words);
+    }
+    else
+    {
+        std::fill_n(active_granules.get(), efficiency_granule_words, 0);
+    }
     efficiency_window_id = window;
     cache->getEfficiency().addPassiveBytes(window, static_cast<Int64>(reserved_size.load()));
 }
@@ -1585,41 +1592,33 @@ std::optional<std::pair<size_t, size_t>> FileSegment::getGranuleRangeUnlocked(si
     const size_t end = std::min(offset + size, left + range().size());
     if (end <= std::max(offset, left))
         return std::nullopt;
-    const size_t first = (std::max(offset, left) - left) / efficiency_granule_size;
-    const size_t last = std::min((end - 1 - left) / efficiency_granule_size, EFFICIENCY_GRANULES - 1);
-    if (first > last)
-        return std::nullopt;
+    const size_t first = (std::max(offset, left) - left) / EFFICIENCY_GRANULE_SIZE;
+    const size_t last = (end - 1 - left) / EFFICIENCY_GRANULE_SIZE;
+    chassert(last / 64 < efficiency_granule_words);
     return std::pair{first, last};
 }
 
 size_t FileSegment::setGranulesUnlocked(size_t first, size_t last)
 {
-    UInt64 new_bits[2] = {0, 0};
-    for (size_t word = 0; word < std::size(active_granules); ++word)
+    size_t bytes = 0;
+    for (size_t word = first / 64; word <= last / 64; ++word)
     {
         const size_t word_first = word * 64;
-        const size_t word_last = word_first + 63;
-        if (last < word_first || first > word_last)
-            continue;
-        const UInt64 mask = bitRange(std::max(first, word_first) - word_first, std::min(last, word_last) - word_first);
-        new_bits[word] = mask & ~active_granules[word];
+        const UInt64 mask = bitRange(std::max(first, word_first) - word_first, std::min(last, word_first + 63) - word_first);
+        bytes += granulesToBytesUnlocked(word, mask & ~active_granules[word]);
         active_granules[word] |= mask;
     }
-    return granulesToBytesUnlocked(new_bits[0], new_bits[1]);
+    return bytes;
 }
 
-size_t FileSegment::granulesToBytesUnlocked(UInt64 low, UInt64 high) const
+size_t FileSegment::granulesToBytesUnlocked(size_t word, UInt64 bits) const
 {
-    size_t bytes = (std::popcount(low) + std::popcount(high)) * efficiency_granule_size;
+    size_t bytes = std::popcount(bits) * EFFICIENCY_GRANULE_SIZE;
 
     /// Cut the last granule at the segment end.
-    if (efficiency_window_range_size)
-    {
-        const size_t last_granule = std::min((efficiency_window_range_size - 1) / efficiency_granule_size, EFFICIENCY_GRANULES - 1);
-        const UInt64 word = last_granule < 64 ? low : high;
-        if (word & (UInt64(1) << (last_granule % 64)))
-            bytes -= std::min(bytes, (last_granule + 1) * efficiency_granule_size - efficiency_window_range_size);
-    }
+    const size_t last_granule = (efficiency_window_range_size - 1) / EFFICIENCY_GRANULE_SIZE;
+    if (last_granule / 64 == word && (bits & (UInt64(1) << (last_granule % 64))))
+        bytes -= (last_granule + 1) * EFFICIENCY_GRANULE_SIZE - efficiency_window_range_size;
     return bytes;
 }
 
@@ -1656,7 +1655,10 @@ bool FileSegment::wasServedFromCache() const
 
 size_t FileSegment::getActiveBytesUnlocked() const
 {
-    return granulesToBytesUnlocked(active_granules[0], active_granules[1]);
+    size_t bytes = 0;
+    for (size_t word = 0; word < efficiency_granule_words; ++word)
+        bytes += granulesToBytesUnlocked(word, active_granules[word]);
+    return bytes;
 }
 
 FileSegment::~FileSegment()
