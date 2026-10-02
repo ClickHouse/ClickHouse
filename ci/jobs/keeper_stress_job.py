@@ -64,12 +64,14 @@ def _ready_timeout():
     return max(DEFAULT_READY_TIMEOUT, env_int("KEEPER_READY_TIMEOUT"))
 
 
-def _abort(job_name, results, stopwatch, status=None, info=None):
+def _abort(job_name, results, stopwatch, status=None, info=None, files=None):
     opts = {"name": job_name, "results": results, "stopwatch": stopwatch}
     if status is not None:
         opts["status"] = status
     if info is not None:
         opts["info"] = info
+    if files is not None:
+        opts["files"] = files
     Result.create_from(**opts).complete_job()
 
 
@@ -104,7 +106,7 @@ def set_default_env():
             "KEEPER_RUN_NO_FAULT_TESTS": "true",
             # TODO: re-enable the lsmt backend after the memory usage of huge RemoveRecursive
             # preprocessing is bounded (a whole-tree remove at bench cleanup OOMs the container).
-            "KEEPER_MATRIX_BACKENDS": "default",
+            "KEEPER_MATRIX_BACKENDS": "default,lsmt",
             "KEEPER_INCLUDE_IDS": "prod-mix-no-fault,read-multi-no-fault,write-multi-no-fault",
             "KEEPER_METRICS_INTERVAL_S": "5",
             "KEEPER_JOB_TYPE": "pr",
@@ -179,7 +181,10 @@ def get_commit_sha(env):
         if os.environ.get(k):
             return os.environ.get(k)
     try:
-        from tests.ci.pr_info import PRInfo
+        _tools_dir = os.path.join(REPO_DIR, "ci", "tools")
+        if _tools_dir not in sys.path:
+            sys.path.insert(0, _tools_dir)
+        from pr_info import PRInfo
         if getattr(PRInfo(), "sha", None):
             return PRInfo().sha
     except Exception:
@@ -488,7 +493,11 @@ def main():
     files_to_attach = []
 
     if not setup_docker():
-        _abort(job_name, results, stop_watch, status=Result.Status.ERROR)
+        dind_log = "./ci/tmp/docker-in-docker.log"
+        _abort(
+            job_name, results, stop_watch, status=Result.Status.ERROR,
+            files=[dind_log] if Path(dind_log).exists() else None,
+        )
         return
 
     Shell.run("docker system prune -af --volumes || true; docker builder prune -af || true; docker network prune -f || true")

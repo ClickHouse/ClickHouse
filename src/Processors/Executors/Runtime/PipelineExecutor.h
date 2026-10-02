@@ -1,10 +1,7 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/ExecutingGraph.h>
-#include <Processors/Executors/Runtime/PipelineExecutionStatus.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/Runtime/ExecutorTasks.h>
-#include <Common/EventCounter.h>
 #include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ISlotControl.h>
@@ -27,7 +24,9 @@ using ExecutingGraphPtr = std::unique_ptr<ExecutingGraph>;
 class ReadProgressCallback;
 using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
 
-class StepWallClockRegistry;
+class StepProfiler;
+using StepProfilerPtr = std::shared_ptr<StepProfiler>;
+
 struct WorkloadResources;
 
 /// Executes query pipeline.
@@ -43,7 +42,7 @@ public:
     /// PipelineExecutor must be destroyed before the corresponding QueryPipeline, because
     /// QueryPlanResourceHolder may hold some resources referenced by processors and used in
     /// processor destructors.
-    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, const StepWallClockRegistry * step_wall_clock_registry = nullptr);
+    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem);
     ~PipelineExecutor();
 
     /// Execute pipeline in multiple threads. Must be called once.
@@ -55,22 +54,18 @@ public:
     /// Return true if execution should be continued.
     bool executeStep(std::atomic_bool * yield_flag = nullptr);
 
-    using ExecutionStatus = PipelineExecutionStatus;
-
     /// Cancel execution. May be called from another thread.
-    void cancel() { cancel(ExecutionStatus::CancelledByUser); }
+    void cancel(IProcessor::CancelReason reason);
 
     /// Cancel processors which only read data from source. May be called from another thread.
     void cancelReading();
 
-    /// Checks the query time limits (cancelled or timeout). Throws on cancellation or when time limit is reached and the query uses "break"
-    bool checkTimeLimit();
-    /// Same as checkTimeLimit but it never throws. It returns false on cancellation or time limit reached
-    [[nodiscard]] bool checkTimeLimitSoft();
-
     /// Set callback for read progress.
     /// It would be called every time when processor reports read progress.
     void setReadProgressCallback(ReadProgressCallbackPtr callback);
+
+    /// Set the profiler of EXPLAIN ANALYZE.
+    void setStepProfiler(StepProfilerPtr step_profiler_);
 
 private:
     ExecutingGraphPtr graph;
@@ -105,10 +100,8 @@ private:
     /// system.opentelemetry_span_log
     bool trace_processors = false;
     bool trace_cpu_scheduling = false;
-    /// EXPLAIN ANALYZE
-    const StepWallClockRegistry * step_wall_clock_registry = nullptr;
 
-    std::atomic<ExecutionStatus> execution_status = ExecutionStatus::NotStarted;
+    std::atomic<IProcessor::CancelReason> cancel_reason = IProcessor::CancelReason::NotCancelled;
     std::atomic_bool cancelled_reading = false;
 
     LoggerPtr log = getLogger("PipelineExecutor");
@@ -116,11 +109,12 @@ private:
     QueryStatusPtr process_list_element;
 
     ReadProgressCallbackPtr read_progress_callback;
+    StepProfilerPtr step_profiler;
 
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
-    using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
+    using DequeWithMemoryTracker = boost::container::devector<IProcessor *, AllocatorWithMemoryTracking<IProcessor *>>;
+    using Queue = std::queue<IProcessor *, DequeWithMemoryTracker>;
 
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
@@ -130,15 +124,10 @@ private:
     void executeStepImpl(size_t thread_num, WorkloadResources && resources, std::atomic_bool * yield_flag = nullptr);
     void executeSingleThread(size_t thread_num, WorkloadResources && resources);
     void finish();
-    void cancel(ExecutionStatus reason);
 
     // Methods for CPU scheduling
     SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation);
     void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
-
-    /// If execution_status == from, change it to desired.
-    bool tryUpdateExecutionStatus(ExecutionStatus expected, ExecutionStatus desired);
-
 };
 
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;

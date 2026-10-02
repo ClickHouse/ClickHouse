@@ -20,9 +20,12 @@ if (ENABLE_LLVM_LIBC_MATH)
     target_link_libraries(global-libs INTERFACE libllvmlibc)
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
 
-    if (ARCH_AARCH64)
+    if (ARCH_AARCH64 AND NOT SANITIZE)
         # AdvSIMD/MTE string routines from ARM's optimized-routines
-        # (see contrib/optimized-routines-cmake).
+        # (see contrib/optimized-routines-cmake). Not linked under sanitizers at all:
+        # the definitions are strong, so the interceptors would otherwise only stay
+        # in effect for as long as every routine here is intercepted and the
+        # sanitizer runtimes stay ahead of `-laor` on the link line.
         link_directories("${CMAKE_BINARY_DIR}/contrib/optimized-routines-cmake")
         target_link_libraries(global-libs INTERFACE aor)
         set (DEFAULT_LIBS "${DEFAULT_LIBS} -laor")
@@ -66,6 +69,14 @@ elseif (USE_MUSL)
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -nostartfiles ${MUSL_CRT_DIR}/crtn.o")
 else ()
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
+endif ()
+
+# The GPU island is built against the system libstdc++, so a binary carrying it needs that library.
+# It must stay last: both runtimes define `__gxx_personality_v0`, the linker binds the first on the
+# command line, and libstdc++'s does not recognize a libc++ exception - earlier, and the server dies
+# on the first `throw` anywhere.
+if (ENABLE_GPU)
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${GPU_LIBSTDCXX_LIBRARY}")
 endif ()
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")

@@ -5,7 +5,9 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -14,6 +16,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
@@ -29,6 +32,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool validate_enum_literals_in_operators;
+}
 
 namespace ErrorCodes
 {
@@ -254,9 +262,10 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_nam
 /// Try to parse a Map subcolumn reference like `map.key_<serialized_key>` and resolve it
 /// against the bloom filter index header. The subcolumn name format is produced by
 /// `FunctionToSubcolumnsPass`.
-std::optional<MapIndexInfo> tryParseMapSubcolumn(const String & column_name, const Block & header)
+std::optional<MapIndexInfo> tryParseMapSubcolumn(
+    const String & column_name, const Block & header, const NameSet & shadowing_columns)
 {
-    auto parsed = tryParseMapSubcolumnName(column_name);
+    auto parsed = tryParseMapSubcolumnName(column_name, shadowing_columns);
     if (!parsed)
         return std::nullopt;
 
@@ -284,7 +293,8 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(const String & column_name, con
 
 /// Try to resolve a `MapIndexInfo` from a key node that is either an `arrayElement(map, key)`
 /// function call or a `map.key_<serialized_key>` subcolumn reference.
-std::optional<MapIndexInfo> tryResolveMapInfoFromNode(const RPNBuilderTreeNode & key_node, const Block & header)
+std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
+    const RPNBuilderTreeNode & key_node, const Block & header, const NameSet & shadowing_columns)
 {
     if (key_node.isFunction())
     {
@@ -303,14 +313,22 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(const RPNBuilderTreeNode &
         }
     }
 
-    return tryParseMapSubcolumn(key_node.getColumnName(), header);
+    return tryParseMapSubcolumn(key_node.getColumnName(), header, shadowing_columns);
 }
 
 }
 
 MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
-    const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_, size_t hash_functions_)
-    : WithContext(context_), header(header_), hash_functions(hash_functions_)
+    const ActionsDAG::Node * predicate,
+    ContextPtr context_,
+    const Block & header_,
+    size_t hash_functions_,
+    NameSet columns_shadowing_map_subcolumns_)
+    : WithContext(context_)
+    , header(header_)
+    , hash_functions(hash_functions_)
+    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
+    , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
 {
     if (!predicate)
     {
@@ -523,7 +541,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
 
         if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)
         {
-            if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext()); prepared_set)
+            if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getContext()); prepared_set)
             {
                 if (prepared_set->hasExplicitSetElements())
                 {
@@ -683,7 +701,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     }
 
     /// Handle both `arrayElement(map, 'key') IN (set)` and `map.key_<serialized_key> IN (set)`.
-    if (auto map_info = tryResolveMapInfoFromNode(key_node, header))
+    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, columns_shadowing_map_subcolumns))
     {
         /** It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
           * we return the default value for arrayElement.
@@ -839,12 +857,16 @@ static ColumnPtr createColumnFromConstantArray(
     if (value_field.getType() != Field::Types::Array)
         return nullptr;
 
+    /// The elements' own type. `convertFieldToType` needs it to convert a value that carries a unit -
+    /// a `Date` day number probed against an `Array(DateTime)` column - instead of re-basing its raw
+    /// number as seconds, which hashes something the column can never hold. Every other call in this
+    /// file passes the same hint.
     DataTypePtr element_type;
-    if (coerce_like_search_function && value_type)
+    if (value_type)
         if (const auto * value_array_type = typeid_cast<const DataTypeArray *>(removeLowCardinalityAndNullable(value_type).get()))
             element_type = value_array_type->getNestedType();
 
-    const bool coerce = element_type && searchFunctionCoercesConstant(element_type, actual_type);
+    const bool coerce = coerce_like_search_function && element_type && searchFunctionCoercesConstant(element_type, actual_type);
     const bool is_nullable = actual_type->isNullable();
     const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
     auto mutable_column = actual_type->createColumn();
@@ -866,7 +888,7 @@ static ColumnPtr createColumnFromConstantArray(
 
         Field converted = coerce
             ? coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true)
-            : convertFieldToType(f, *actual_type);
+            : convertFieldToType(f, *actual_type, element_type.get());
         if (converted.isNull())
             return nullptr;
 
@@ -979,6 +1001,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 if (array_type && bloomFilterHashDomainMatches(value_type, array_type->getNestedType()))
                 {
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
+                    if (!validate_enum_literals_in_operators && isUnknownEnumElement(*actual_type, value_field))
+                    {
+                        out.function = RPNElement::ALWAYS_FALSE;
+                        return true;
+                    }
+
                     auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
                     if (converted_field.isNull())
                         return false;
@@ -1074,6 +1102,14 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     return false;
             }
 
+            /// With validation off, `equals` against a name the enum lacks is constant false for every row,
+            /// so the conversion below must not throw; `KeyCondition` folds the same way.
+            if (function_name == "equals" && !validate_enum_literals_in_operators && isUnknownEnumElement(*actual_type, value_field))
+            {
+                out.function = RPNElement::ALWAYS_FALSE;
+                return true;
+            }
+
             auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
             if (converted_field.isNull())
                 return false;
@@ -1093,7 +1129,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             return false;
 
         auto key_type = key_node.getDAGNode()->result_type;
-        if (!isJSONPathFilterSafe(key_type, value_field))
+        if (!isJSONPathFilterSafe(key_type, value_field, value_type))
             return false;
 
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -1184,7 +1220,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     /// Handle both `arrayElement(map, 'key') = value` and `map.key_<serialized_key> = value`.
     if (function_name == "equals")
     {
-        if (auto map_info = tryResolveMapInfoFromNode(key_node, header))
+        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, columns_shadowing_map_subcolumns))
         {
             /** It is important to ignore keys like column_map['Key'] = '' because if the key does not exist in the map
               * we return the default value for arrayElement.
@@ -1300,7 +1336,8 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() c
 
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionBloomFilter>(predicate, context, index.sample_block, hash_functions);
+    return std::make_shared<MergeTreeIndexConditionBloomFilter>(
+        predicate, context, index.sample_block, hash_functions, getColumnsShadowingMapSubcolumns());
 }
 
 static void assertIndexColumnsType(const Block & header)

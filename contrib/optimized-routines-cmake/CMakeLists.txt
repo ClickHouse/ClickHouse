@@ -28,9 +28,12 @@
 # NEON/MTE ones.
 #
 # On x86_64 llvm-libc's implementations (built with AVX2/FMA) are
-# competitive, so this library is not built there.
+# competitive, so this library is not built there. It is not built under
+# sanitizers either, where these functions must stay with the libc so the
+# interceptors wrap them, and the target must not exist for the Rust symbol
+# localization in contrib/corrosion-cmake to pick up as a reference archive.
 
-if (NOT ARCH_AARCH64)
+if (NOT ARCH_AARCH64 OR NOT ENABLE_LLVM_LIBC_MATH OR SANITIZE)
     return()
 endif()
 
