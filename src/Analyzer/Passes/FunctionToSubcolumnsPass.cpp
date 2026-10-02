@@ -1407,7 +1407,8 @@ public:
 
         if (const auto * query_node = node->as<QueryNode>())
         {
-            if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
+            if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets()
+                || query_node->isGroupByWithTotals())
                 can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::group_by_use_nulls];
             has_where_prewhere_or_group_by = query_node->hasWhere() || query_node->hasPrewhere() || query_node->hasGroupBy();
             /// Push a placeholder for this query level; needChildVisit will update it
@@ -1459,7 +1460,7 @@ public:
         if (can_wrap_result_columns_with_nullable)
         {
             /// Do not optimize if we have JOIN with setting join_use_null.
-            /// Do not optimize if we have GROUP BY WITH ROLLUP/CUBE/GROUPING SETS with setting group_by_use_nulls.
+            /// Do not optimize if we have GROUP BY WITH ROLLUP/CUBE/GROUPING SETS/TOTALS with setting group_by_use_nulls.
             /// It may change the behaviour if subcolumn can be converted
             /// to Nullable while the original column cannot (e.g. for Array type).
             return {};

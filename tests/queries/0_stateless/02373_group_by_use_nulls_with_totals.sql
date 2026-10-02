@@ -146,3 +146,17 @@ GROUP BY k
     WITH TOTALS
 ORDER BY k
 SETTINGS group_by_use_nulls = 0;
+
+-- A key read through a subcolumn must still be nullified in the TOTALS row.
+DROP TABLE IF EXISTS t_totals_subcolumns;
+CREATE TABLE t_totals_subcolumns (tup Tuple(a UInt64, b Array(UInt64))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_totals_subcolumns SELECT (number % 2, range(number % 3)) FROM numbers(6);
+
+SELECT tupleElement(tup, 'a') AS k, toTypeName(k), count()
+FROM t_totals_subcolumns
+GROUP BY k
+    WITH TOTALS
+ORDER BY k
+SETTINGS group_by_use_nulls = 1, optimize_functions_to_subcolumns = 1;
+
+DROP TABLE t_totals_subcolumns;
