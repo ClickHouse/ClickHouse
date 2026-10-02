@@ -10,6 +10,7 @@ namespace
 enum class FilterPattern
 {
     Clustered,
+    SelectiveRuns,
     Random,
     SparseRandom,
     DenseRandom,
@@ -35,6 +36,18 @@ IColumn::Filter createFilter(size_t rows, FilterPattern pattern)
                 for (size_t i = block + 20; i < block + 36 && i < rows; ++i)
                     filter[i] = 1;
                 for (size_t i = block + 48; i < block + 56 && i < rows; ++i)
+                    filter[i] = 1;
+            }
+            break;
+
+        case FilterPattern::SelectiveRuns:
+            /// Two eight-row runs per block keep the filter selective while exercising
+            /// the generic path's main win: two range copies instead of sixteen single inserts.
+            for (size_t block = 0; block < rows; block += 64)
+            {
+                for (size_t i = block + 16; i < block + 24 && i < rows; ++i)
+                    filter[i] = 1;
+                for (size_t i = block + 40; i < block + 48 && i < rows; ++i)
                     filter[i] = 1;
             }
             break;
@@ -143,6 +156,7 @@ void BM_filter_in_place(benchmark::State & state)
 }
 
 BENCHMARK_TEMPLATE(BM_filter, FilterPattern::Clustered)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, FilterPattern::SelectiveRuns)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter, FilterPattern::Random)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter, FilterPattern::SparseRandom)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter, FilterPattern::DenseRandom)->Arg(1 << 20)->MinTime(1.0);
