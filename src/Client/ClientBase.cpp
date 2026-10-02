@@ -2120,7 +2120,11 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
         try
         {
             query_interrupt_handler.start(signals_before_stop);
-            SCOPE_EXIT({ query_interrupt_handler.stop(); });
+            SCOPE_EXIT({
+                if (query_interrupt_handler.receivedSignalCount() > 0)
+                    query_received_interrupt = true;
+                query_interrupt_handler.stop();
+            });
 
             /// Abort writing the result set to the output promptly when the query is cancelled.
             /// Without this, a write to a slow or stuck sink (e.g. a slow terminal) blocks the
@@ -2943,7 +2947,11 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading from INFILE is disabled when you are running client embedded into server.");
 
     query_interrupt_handler.start();
-    SCOPE_EXIT({ query_interrupt_handler.stop(); });
+    SCOPE_EXIT({
+        if (query_interrupt_handler.receivedSignalCount() > 0)
+            query_received_interrupt = true;
+        query_interrupt_handler.stop();
+    });
 
     /// Arm the cancellation hook on `std_out` as well, even though an INSERT streams no result set
     /// through it: the interactive `Cancelling query.` / `Query was cancelled.` diagnostics are
@@ -3482,6 +3490,7 @@ void ClientBase::processParsedSingleQuery(
     error_code = 0;
     cancelled = false;
     cancelled_printed = false;
+    query_received_interrupt = false;
     client_exception.reset();
     server_exception.reset();
     client_context->setInsertionTable(StorageID::createEmpty());
@@ -3762,18 +3771,37 @@ void ClientBase::processParsedSingleQuery(
 
     auto processed_rows = std::max(processed_rows_from_blocks, processed_rows_from_progress);
 
+    /// After a Ctrl+C the post-query epilogue goes to the same stdout/stderr that may still be a
+    /// stuck terminal (the very case this feature addresses, #22426), and the interrupt handler is
+    /// already stopped here, so a plain blocking write could re-hang the client in the epilogue,
+    /// right after the result-set write was made interruptible. Only in that case is the epilogue
+    /// written through the bounded best-effort path (as printCancellationMessage does) - it appears
+    /// immediately on a live sink and is dropped after a short wait on a stuck one. A query that
+    /// received no interrupt signal keeps the ordinary non-lossy writes: a slow-but-draining sink
+    /// (e.g. a pipe whose reader starts late) must eventually receive the requested output.
+    const bool bounded_epilogue = cancelled || query_received_interrupt;
+    const auto write_epilogue = [&](std::ostream & stream, WriteBufferFromFileDescriptor * fd_buf, std::string_view data)
+    {
+        if (bounded_epilogue && fd_buf)
+        {
+            /// Every write to the stream ends with an explicit "\n" or flush, so this flush is
+            /// normally a no-op; it keeps the output ordered if anything is still buffered there.
+            stream.flush();
+            fd_buf->writeBestEffort(data, /*timeout_ms*/ 1000);
+        }
+        else
+        {
+            stream << data;
+            stream.flush();
+        }
+    };
+
     if (is_interactive)
     {
-        /// This final summary is printed to the same terminal that may still be stuck after a
-        /// Ctrl+C (the very case this feature addresses, #22426): the interrupt handler is already
-        /// stopped here, so a plain blocking iostream flush of the summary could re-hang the client
-        /// in the epilogue, right after the result-set write was made interruptible. Build it in
-        /// memory and flush it through std_out's bounded best-effort path (as printCancellationMessage
-        /// does) - it appears immediately on a live terminal and is dropped after a short wait on a
-        /// stuck one. std_out wraps the same descriptor output_stream writes to, and by now std_out's
-        /// buffer is already flushed (the inner resetOutput() ran before this epilogue), so this does
-        /// not reorder against any pending formatted output. The decorative final progress table goes
-        /// through tty_buf, already budgeted above.
+        /// std_out wraps the same descriptor output_stream writes to, and by now std_out's buffer is
+        /// already flushed (the inner resetOutput() ran before this epilogue), so the bounded path of
+        /// write_epilogue does not reorder against any pending formatted output. The decorative final
+        /// progress table goes through tty_buf, already budgeted above.
         /// The elapsed time is printed with fixed 3-decimal precision to match the
         /// `std::fixed << std::setprecision(3)` the clients set on output_stream at startup.
         WriteBufferFromOwnString summary;
@@ -3783,13 +3811,7 @@ void ClientBase::processParsedSingleQuery(
         summary << "Elapsed: " << fmt::format("{:.3f}", progress_indication.elapsedSeconds()) << " sec. ";
         progress_indication.writeFinalProgress(summary);
 
-        if (std_out)
-        {
-            output_stream.flush();
-            std_out->writeBestEffort(summary.str(), /*timeout_ms*/ 1000);
-        }
-        else
-            output_stream << summary.str();
+        write_epilogue(output_stream, std_out.get(), summary.str());
 
         bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
         bool show_progress_table = !toggle_enabled || progress_table_toggle_on;
@@ -3799,16 +3821,10 @@ void ClientBase::processParsedSingleQuery(
             progress_table.writeFinalTable(*tty_buf, lock);
         }
 
-        if (std_out)
-            std_out->writeBestEffort("\n\n", /*timeout_ms*/ 1000);
-        else
-            output_stream << std::endl << std::endl;
+        write_epilogue(output_stream, std_out.get(), "\n\n");
     }
-    /// The remaining post-query diagnostics go to the same stdout/stderr that may still be a stuck
-    /// terminal after a Ctrl+C (the interrupt handler is already stopped here, like for the summary
-    /// above), so none of them may be a plain blocking iostream write: that could re-hang the client
-    /// in the epilogue right after the result-set write was made interruptible. Collect the
-    /// stderr-side ones into one string and emit it below with a single bounded best-effort write.
+    /// Collect the stderr-side diagnostics into one string and emit it below with a single write,
+    /// bounded after a Ctrl+C like the rest of the epilogue.
     /// The elapsed time is printed with fixed 3-decimal precision to match the
     /// `std::fixed << std::setprecision(3)` the clients set on error_stream at startup.
     String stderr_epilogue;
@@ -3831,15 +3847,7 @@ void ClientBase::processParsedSingleQuery(
     }
 
     if (!is_interactive && getClientConfiguration().getBool("print-num-processed-rows", false))
-    {
-        if (std_out)
-        {
-            output_stream.flush();
-            std_out->writeBestEffort(fmt::format("Processed rows: {}\n", processed_rows), /*timeout_ms*/ 1000);
-        }
-        else
-            output_stream << "Processed rows: " << processed_rows << "\n";
-    }
+        write_epilogue(output_stream, std_out.get(), fmt::format("Processed rows: {}\n", processed_rows));
 
     /// Optional ASCII `BEL` chime when a query finishes after running for at least
     /// `chime-threshold-seconds`. Emitted on both success and error paths so that a
@@ -3870,11 +3878,8 @@ void ClientBase::processParsedSingleQuery(
 
     if (!stderr_epilogue.empty())
     {
-        /// Every write to error_stream ends with an explicit "\n" or flush, so this flush is
-        /// normally a no-op; it keeps the output ordered if anything is still buffered there.
-        error_stream.flush();
         WriteBufferFromFileDescriptor stderr_buf(stderr_fd);
-        stderr_buf.writeBestEffort(stderr_epilogue, /*timeout_ms*/ 1000);
+        write_epilogue(error_stream, &stderr_buf, stderr_epilogue);
         stderr_buf.finalize();
     }
 }

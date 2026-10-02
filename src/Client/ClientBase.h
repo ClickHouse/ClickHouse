@@ -754,6 +754,11 @@ protected:
 
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_printed = false;
+    /// True when the current query received at least one interrupt signal while the interrupt
+    /// handler was armed, even if it did not stop the query (`partial_result_on_first_cancel`).
+    /// The handler is already stopped by the time the post-query epilogue is printed, so this is
+    /// what tells the epilogue that an output sink may be stuck and its writes must be bounded.
+    bool query_received_interrupt = false;
 
     /// Unpacked descriptors and streams for the ease of use.
     std::istream & input_stream;
