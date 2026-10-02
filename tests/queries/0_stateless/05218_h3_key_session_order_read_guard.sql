@@ -65,6 +65,12 @@ SELECT v FROM t_h3_geo WHERE geoToH3(lat, lon, 5) = geoToH3(80.0, 10.0, 5);
 -- whatever the guard does, so the setting is pinned rather than taken from the session.
 SELECT count() FROM (EXPLAIN SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Read type: InOrder%';
 SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k;
+-- The implicit minmax_count projection answers min/max of the first key column and the partition values
+-- from what the parts store, so it may serve only a session that agrees with the baseline.
+SELECT count() FROM (EXPLAIN SELECT min(tupleElement(h3ToGeo(h), 1)) FROM t_h3_pk SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%_minmax_count_projection%';
+SELECT min(tupleElement(h3ToGeo(h), 1)), max(tupleElement(h3ToGeo(h), 1)) FROM t_h3_pk SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+SELECT count() FROM (EXPLAIN SELECT toInt32(tupleElement(h3ToGeo(h), 1)) AS p, count() FROM t_h3_part GROUP BY p SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%_minmax_count_projection%';
+SELECT toInt32(tupleElement(h3ToGeo(h), 1)) AS p, count() FROM t_h3_part GROUP BY p ORDER BY p SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 
 SELECT '-- deviating session: element 1 is now the longitude, so the other row matches and the key must not be used';
 SET h3togeo_lon_lat_result_order = 1;
@@ -83,6 +89,10 @@ SELECT h FROM t_h3_bloom WHERE tupleElement(h3ToGeo(h), 1) = 69.99002414925245 S
 SELECT h FROM t_h3_bloom WHERE tupleElement(h3ToGeo(h), 1) = 69.99002414925245 SETTINGS force_data_skipping_indices = 'i_lat'; -- { serverError INDEX_NOT_USED }
 SELECT count() FROM (EXPLAIN SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Read type: InOrder%';
 SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k;
+SELECT count() FROM (EXPLAIN SELECT min(tupleElement(h3ToGeo(h), 1)) FROM t_h3_pk SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%_minmax_count_projection%';
+SELECT min(tupleElement(h3ToGeo(h), 1)), max(tupleElement(h3ToGeo(h), 1)) FROM t_h3_pk SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+SELECT count() FROM (EXPLAIN SELECT toInt32(tupleElement(h3ToGeo(h), 1)) AS p, count() FROM t_h3_part GROUP BY p SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%_minmax_count_projection%';
+SELECT toInt32(tupleElement(h3ToGeo(h), 1)) AS p, count() FROM t_h3_part GROUP BY p ORDER BY p SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SET h3togeo_lon_lat_result_order = 0;
 
 SELECT '-- deviating session for geoToH3: the arguments are exchanged, the result type is not';
