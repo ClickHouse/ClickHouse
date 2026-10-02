@@ -171,17 +171,19 @@ SETTINGS max_threads = 1, log_comment = '05113 multiple buffers, multi-substream
 
 DROP TABLE t_compact_stripes;
 
--- The stripes of one part may have different numbers of granules: here the first granule is bigger than
--- `compact_parts_max_bytes_to_buffer` and is written as a separate stripe, and the next granules form larger stripes.
--- The stripes are detected by any stripe of more than one granule, not only by the first one.
+-- The stripes of one part may have different numbers of granules: here a merge writes blocks of one granule, the first
+-- granule is bigger than `compact_parts_max_bytes_to_buffer` and is written as a separate stripe, and the next granules
+-- form larger stripes. The stripes are detected by any stripe of more than one granule, not only by the first one.
 CREATE TABLE t_compact_stripes (a UInt64, b UInt64, s String)
 ENGINE = MergeTree ORDER BY a
 SETTINGS index_granularity = 2, min_bytes_for_wide_part = '1G', ratio_of_defaults_for_sparse_serialization = 1.0,
-    compact_parts_max_bytes_to_buffer = 1000;
+    compact_parts_max_bytes_to_buffer = 1000, merge_max_block_size = 2;
 
 SYSTEM STOP MERGES t_compact_stripes;
-INSERT INTO t_compact_stripes SELECT number, number * 10, if(number < 2, repeat('x', 1000), 'y') FROM numbers(40)
-SETTINGS max_block_size = 2, min_insert_block_size_rows = 2, min_insert_block_size_bytes = 0, max_insert_threads = 1;
+INSERT INTO t_compact_stripes SELECT number, number * 10, repeat('x', 1000) FROM numbers(2);
+INSERT INTO t_compact_stripes SELECT number, number * 10, 'y' FROM numbers(2, 38);
+SYSTEM START MERGES t_compact_stripes;
+OPTIMIZE TABLE t_compact_stripes FINAL;
 
 SELECT 'first stripe of one granule';
 WITH (
@@ -191,7 +193,7 @@ WITH (
 ) AS offsets
 SELECT mark_number, indexOf(offsets, a.mark.1) AS rank_a, indexOf(offsets, b.mark.1) AS rank_b, indexOf(offsets, s.mark.1) AS rank_s
 FROM mergeTreeIndex(currentDatabase(), t_compact_stripes, with_marks = true)
-WHERE mark_number < 3
+WHERE rows_in_granule > 0 AND mark_number < 3
 ORDER BY mark_number;
 
 SYSTEM CLEAR MARK CACHE;
