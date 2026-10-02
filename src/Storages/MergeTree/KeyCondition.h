@@ -164,6 +164,19 @@ public:
         BoolMask initial_mask = BoolMask(false, false),
         const Hyperrectangle * key_bounds = nullptr) const;
 
+    struct SparseRangeCheckScratch
+    {
+        SparseRangeCheckScratch(
+            const std::vector<size_t> & sparse_key_indices,
+            const DataTypes & sparse_data_types,
+            size_t enumerated_key_prefix_size_,
+            const Hyperrectangle * key_bounds);
+
+        size_t enumerated_key_prefix_size;
+        Hyperrectangle sparse_key_ranges;
+        std::vector<int> key_col_to_sparse_pos;
+    };
+
     /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
     /// However, `equal_boundaries_mask` must have the information about all/prefix keys. `equal_boundaries_mask` specifies whether ith key's
     /// left and right boundaries are equal or not.
@@ -180,18 +193,6 @@ public:
     /// present in the in-memory index but bounded by the part's partition minmax). Such columns are constant
     /// coordinates: their range is `(*key_bounds)[key_index]` for the whole call, they do not participate in
     /// the hyperrectangle enumeration, and their entries in `sparse_left_keys`/`sparse_right_keys` are ignored.
-    struct SparseRangeCheckScratch
-    {
-        SparseRangeCheckScratch(
-            const std::vector<size_t> & sparse_key_indices,
-            const DataTypes & sparse_data_types,
-            size_t enumerated_key_prefix_size,
-            const Hyperrectangle * key_bounds);
-
-        Hyperrectangle sparse_key_ranges;
-        std::vector<int> key_col_to_sparse_pos;
-    };
-
     /// `scratch` is reusable while the sparse key layout, enumerated prefix size, and key bounds stay unchanged.
     BoolMask checkInRange(
         const std::vector<size_t> & sparse_key_indices,

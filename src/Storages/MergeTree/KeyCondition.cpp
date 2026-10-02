@@ -5893,8 +5893,9 @@ BoolMask KeyCondition::checkInRange(
 KeyCondition::SparseRangeCheckScratch::SparseRangeCheckScratch(
     const std::vector<size_t> & sparse_key_indices,
     const DataTypes & sparse_data_types,
-    size_t enumerated_key_prefix_size,
+    size_t enumerated_key_prefix_size_,
     const Hyperrectangle * key_bounds)
+    : enumerated_key_prefix_size(enumerated_key_prefix_size_)
 {
     const size_t sparse_keys_size = sparse_key_indices.size();
 
@@ -5908,7 +5909,7 @@ KeyCondition::SparseRangeCheckScratch::SparseRangeCheckScratch(
     const size_t mapping_size
         = sparse_keys_size > 0 ? std::max(enumerated_key_prefix_size, sparse_key_indices.back() + 1) : enumerated_key_prefix_size;
     /// Sparse columns at indices >= enumerated_key_prefix_size are constant coordinates: they take their range from `key_bounds`
-    /// here, once per call, and do not participate in the hyperrectangle enumeration. The enumerated columns
+    /// once when the scratch is initialized and do not participate in the hyperrectangle enumeration. The enumerated columns
     /// are overwritten by `forAnySparseHyperrectangle` before every callback.
     chassert(!key_bounds || key_bounds->size() >= mapping_size);
     chassert(key_bounds || mapping_size == enumerated_key_prefix_size);
@@ -5947,7 +5948,7 @@ BoolMask KeyCondition::checkInRange(
     SparseRangeCheckScratch & scratch) const
 {
     chassert(scratch.sparse_key_ranges.size() == sparse_key_indices.size());
-    chassert(scratch.key_col_to_sparse_pos.size() >= equal_boundaries_mask.size());
+    chassert(scratch.enumerated_key_prefix_size == equal_boundaries_mask.size());
 
     const auto & key_col_to_sparse_pos = scratch.key_col_to_sparse_pos;
     auto & sparse_key_ranges = scratch.sparse_key_ranges;
