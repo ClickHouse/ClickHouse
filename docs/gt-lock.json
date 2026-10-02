@@ -7,44 +7,44 @@
       "versionId": "0159cfbe2412a4134abfc3f618b242443b59fcae1b8eb175ddece07d29641579",
       "translations": {
         "zh": {
-          "updatedAt": "2026-10-02T09:23:33.100Z",
+          "updatedAt": "2026-10-02T12:11:16.648Z",
           "fileName": "docs.json",
-          "postProcessHash": "8f9528728ffff4d2934f27632c474bc8f51dc8463ba72050dd2206501a534f35"
+          "postProcessHash": "074813d411f4fa2b3955a9e6815bd93775d44456700f810dc7b330c7940a9841"
         },
         "fr": {
-          "updatedAt": "2026-10-02T09:23:33.507Z",
+          "updatedAt": "2026-10-02T12:11:17.068Z",
           "fileName": "docs.json",
-          "postProcessHash": "8f9528728ffff4d2934f27632c474bc8f51dc8463ba72050dd2206501a534f35"
+          "postProcessHash": "074813d411f4fa2b3955a9e6815bd93775d44456700f810dc7b330c7940a9841"
         },
         "ar": {
-          "updatedAt": "2026-10-02T09:23:33.297Z",
+          "updatedAt": "2026-10-02T12:11:16.862Z",
           "fileName": "docs.json",
-          "postProcessHash": "8f9528728ffff4d2934f27632c474bc8f51dc8463ba72050dd2206501a534f35"
+          "postProcessHash": "074813d411f4fa2b3955a9e6815bd93775d44456700f810dc7b330c7940a9841"
         },
         "es": {
-          "updatedAt": "2026-10-02T09:23:32.049Z",
+          "updatedAt": "2026-10-02T12:11:15.596Z",
           "fileName": "docs.json",
-          "postProcessHash": "8f9528728ffff4d2934f27632c474bc8f51dc8463ba72050dd2206501a534f35"
+          "postProcessHash": "074813d411f4fa2b3955a9e6815bd93775d44456700f810dc7b330c7940a9841"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-02T09:23:32.682Z",
+          "updatedAt": "2026-10-02T12:11:16.233Z",
           "fileName": "docs.json",
-          "postProcessHash": "8f9528728ffff4d2934f27632c474bc8f51dc8463ba72050dd2206501a534f35"
+          "postProcessHash": "074813d411f4fa2b3955a9e6815bd93775d44456700f810dc7b330c7940a9841"
         },
         "ko": {
-          "updatedAt": "2026-10-02T09:23:32.476Z",
+          "updatedAt": "2026-10-02T12:11:16.025Z",
           "fileName": "docs.json",
-          "postProcessHash": "8f9528728ffff4d2934f27632c474bc8f51dc8463ba72050dd2206501a534f35"
+          "postProcessHash": "074813d411f4fa2b3955a9e6815bd93775d44456700f810dc7b330c7940a9841"
         },
         "ru": {
-          "updatedAt": "2026-10-02T09:23:32.895Z",
+          "updatedAt": "2026-10-02T12:11:16.442Z",
           "fileName": "docs.json",
-          "postProcessHash": "8f9528728ffff4d2934f27632c474bc8f51dc8463ba72050dd2206501a534f35"
+          "postProcessHash": "074813d411f4fa2b3955a9e6815bd93775d44456700f810dc7b330c7940a9841"
         },
         "ja": {
-          "updatedAt": "2026-10-02T09:23:32.266Z",
+          "updatedAt": "2026-10-02T12:11:15.817Z",
           "fileName": "docs.json",
-          "postProcessHash": "8f9528728ffff4d2934f27632c474bc8f51dc8463ba72050dd2206501a534f35"
+          "postProcessHash": "074813d411f4fa2b3955a9e6815bd93775d44456700f810dc7b330c7940a9841"
         }
       },
       "fileName": "docs.json"
@@ -9863,51 +9863,50 @@
     },
     {
       "fileId": "e882b9d665dc100ae663c504f9884f92af254fe7972c3bece5c2bafa0ad1a298",
-      "versionId": "c342f2ae77ad3a9d10ca45623fa9c9388234c26bcd5eea1555284e9c412eb425",
+      "versionId": "524d2e889d460e00e6a20c22242661d982678eea8ad6c0ab72cb7e15bbf1bf6e",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:05.845Z",
-          "fileName": "es/concepts/core-concepts/academic-overview.mdx",
-          "postProcessHash": "371499bc3daae0896b9f4ad06df6e81d9c89484460ca42c200cca40eb93f0e08"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.845Z",
-          "fileName": "ja/concepts/core-concepts/academic-overview.mdx",
-          "postProcessHash": "7d83bae6b25fddc96a12adc5c644a86dbdebeac2aed3d4224def6fc1ba838caa"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:05.846Z",
-          "fileName": "ko/concepts/core-concepts/academic-overview.mdx",
-          "postProcessHash": "3484e9023e6dfd512b5c929c136a7ee35a06da21198768e5aead2ba60476968d"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.846Z",
-          "fileName": "pt-BR/concepts/core-concepts/academic-overview.mdx",
-          "postProcessHash": "ece794fd687f1cd49b8178bd2c39257a9edeaa1c54a67f7a920705bfd152f0cd"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:05.847Z",
-          "fileName": "ru/concepts/core-concepts/academic-overview.mdx",
-          "postProcessHash": "5feef80337bcfd1906cbf01ec4563a5536d4826ceabd5f0107158a3c2ae07f4f"
-        },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:05.847Z",
+          "updatedAt": "2026-10-02T12:11:20.870Z",
           "fileName": "zh/concepts/core-concepts/academic-overview.mdx",
-          "postProcessHash": "62ca2a893c3e2a23af5a4235e823fff99b8f049d5a5d7e18e8e438e028df916a"
+          "postProcessHash": "641afd23ad7ffb8bdc83b72d341e69ca9ce3761dbfce0a1c511856aea6ee11b7"
         },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:05.847Z",
-          "fileName": "ar/concepts/core-concepts/academic-overview.mdx",
-          "postProcessHash": "3a603081216af1ba53e4906f43574bc7efc8dbd37e0df5fbfc82d09226ca2b18"
+        "es": {
+          "updatedAt": "2026-10-02T12:11:20.871Z",
+          "fileName": "es/concepts/core-concepts/academic-overview.mdx",
+          "postProcessHash": "d14dedf92fb4fd2e7eac6e80f933e69071322beb9c141d895e0ed0d74af4db1d"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:05.848Z",
+          "updatedAt": "2026-10-02T12:11:20.872Z",
           "fileName": "fr/concepts/core-concepts/academic-overview.mdx",
-          "postProcessHash": "4319eaf7ab34c1194e3f1f4261b67479d8dba492d092d7d25efebea43186c706"
+          "postProcessHash": "87a9f2d9dfd309b68796d931b47909526cc72dad34ed9708294e0f04a3f6f647"
+        },
+        "ja": {
+          "updatedAt": "2026-10-02T12:11:20.873Z",
+          "fileName": "ja/concepts/core-concepts/academic-overview.mdx",
+          "postProcessHash": "3844b8a8ae82f0d5f667269536fab60d8886880f5dfb75ff571b8e710b3c193b"
+        },
+        "ru": {
+          "updatedAt": "2026-10-02T12:11:20.874Z",
+          "fileName": "ru/concepts/core-concepts/academic-overview.mdx",
+          "postProcessHash": "7291209b566fb4fc163d1174bf3532d4aa7343dce2ce2e3070db2c9bbdc4bfa5"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-02T12:11:20.875Z",
+          "fileName": "pt-BR/concepts/core-concepts/academic-overview.mdx",
+          "postProcessHash": "c7dc1a3c2a9db9a0db27d82f4941d4b2f855102eb88abef46e8007f3770f4212"
+        },
+        "ko": {
+          "updatedAt": "2026-10-02T12:11:20.875Z",
+          "fileName": "ko/concepts/core-concepts/academic-overview.mdx",
+          "postProcessHash": "3c7f38171d77a4ee764a87756ec2314498870829b6f7e7ac471a969295b75ca0"
+        },
+        "ar": {
+          "updatedAt": "2026-10-02T12:11:20.876Z",
+          "fileName": "ar/concepts/core-concepts/academic-overview.mdx",
+          "postProcessHash": "269dd8a891a3065b08df2cf37c8d2bff2eda74458220d2547a1016093d77daa8"
         }
       },
-      "fileName": "concepts/core-concepts/academic-overview.mdx",
-      "staged": false
+      "fileName": "concepts/core-concepts/academic-overview.mdx"
     },
     {
       "fileId": "79bc6096171f6ddf9f1560f50fe9c990ad9e3ce73761fae0e791354cfb541064",
@@ -99404,47 +99403,47 @@
     },
     {
       "fileId": "15ab5422c785698f34c66a96ab907b2b455c286c3e2b383e699b478bd1d4b608",
-      "versionId": "e164bb1cd2493d95b60e68013a9ab1d322fd0278e32d972017a05e6f64cac074",
+      "versionId": "1691885a675c93a78ad96115d2b4b18a3282165c67ffd9589f2c351487320d38",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-26T08:10:32.427Z",
-          "fileName": "es/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
-          "postProcessHash": "f6513c5cfbe6c50546bcd45d158ec54c998cda721f074a369140e1959117b5b4"
-        },
-        "ja": {
-          "updatedAt": "2026-08-26T08:10:32.427Z",
-          "fileName": "ja/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
-          "postProcessHash": "a9e1a7912a099b92d9ee0133e4e2df03341aa048bba18f9f7af040727c393ace"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T08:10:32.428Z",
-          "fileName": "ko/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
-          "postProcessHash": "3e38a261087b6c22e3bab3de1d46c7d5ff06429cffc02c3418df5f096e50bc71"
-        },
         "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:32.429Z",
+          "updatedAt": "2026-10-02T12:11:20.867Z",
           "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
-          "postProcessHash": "7bdf1a99886361d35a737ad152c797e68422221372932c464859e14ef5ae7846"
+          "postProcessHash": "d8e8b01ebb5f55b73e0f2729e4f107f5ca4e0d7d5a33aa04555553f00b8ee203"
         },
         "ru": {
-          "updatedAt": "2026-08-26T08:10:32.429Z",
+          "updatedAt": "2026-10-02T12:11:20.868Z",
           "fileName": "ru/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
-          "postProcessHash": "ae3a74abc8d65223634becff4ef6f80a4d182c1bfc656d9067c51c1d442a74d4"
-        },
-        "zh": {
-          "updatedAt": "2026-08-26T08:10:32.430Z",
-          "fileName": "zh/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
-          "postProcessHash": "f47c68a26ba6425b3fcd7c39371aa5ccb45eca404ed41801ee97157d86b53715"
-        },
-        "ar": {
-          "updatedAt": "2026-08-26T08:10:32.431Z",
-          "fileName": "ar/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
-          "postProcessHash": "e8a6bc25da4419bdfd412d41201390241abc267501cd34d204449622f102f8df"
+          "postProcessHash": "3a47821bfa1491d618a76f0abcb5a03091894459fd6e6434dc0a7ce1714bb49a"
         },
         "fr": {
-          "updatedAt": "2026-08-26T08:10:32.431Z",
+          "updatedAt": "2026-10-02T12:11:20.869Z",
           "fileName": "fr/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
-          "postProcessHash": "cb5181173a6842f3ffe455a05f1250fda6c15dbaaff2ea81f54e1dfe870f66fb"
+          "postProcessHash": "ce93140d858abc425ef1dfc11354b614c80a2a71a77c3b0020a1543f51489671"
+        },
+        "ja": {
+          "updatedAt": "2026-10-02T12:11:20.869Z",
+          "fileName": "ja/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
+          "postProcessHash": "0e3e181512fd1b672c37d8bba49e44de8855b298444b1701cce64462c8454de2"
+        },
+        "es": {
+          "updatedAt": "2026-10-02T12:11:20.870Z",
+          "fileName": "es/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
+          "postProcessHash": "a94543ca645d94c0a535ec94031b7eff2e5547886d848f02d64b6337b591afcf"
+        },
+        "zh": {
+          "updatedAt": "2026-10-02T12:11:20.871Z",
+          "fileName": "zh/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
+          "postProcessHash": "eddaa103b03b5da3905b76195bccfa0952eb65d60f263e66e8e852e29d6faf6b"
+        },
+        "ko": {
+          "updatedAt": "2026-10-02T12:11:20.872Z",
+          "fileName": "ko/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
+          "postProcessHash": "389ac7e46d93c459b486e4c52e891201c54249184e209aa726e1f2626a50b717"
+        },
+        "ar": {
+          "updatedAt": "2026-10-02T12:11:20.873Z",
+          "fileName": "ar/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
+          "postProcessHash": "115619933e92d78ce890151402a88c74df4255347b712c7197c7715e25edee07"
         }
       },
       "fileName": "products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx"
