@@ -122,6 +122,8 @@ private:
             return result;
         }
 
+        /// Only `break` out of the loop: returning the position from inside it keeps the reduction from being
+        /// vectorized on ARM for 4- and 8-byte elements.
         size_t i = 0;
         for (; size - i >= elements_per_block; i += elements_per_block)
         {
@@ -130,15 +132,15 @@ private:
                 found |= static_cast<unsigned>(data[i + j] == value);
 
             if (found)
-            {
-                if constexpr (std::is_same_v<ConcreteAction, HasAction>)
-                    return 1;
-                else
-                    return findScalar(data + i, elements_per_block, value, offset + i);
-            }
+                break;
         }
 
-        return findScalar(data + i, size - i, value, offset + i);
+        if constexpr (std::is_same_v<ConcreteAction, HasAction>)
+            if (size - i >= elements_per_block)
+                return 1;
+
+        /// The first match, if any, is in the block at `i` or, if no block matched, in the tail.
+        return findScalar(data + i, std::min(size - i, elements_per_block), value, offset + i);
     }
 
     static ALWAYS_INLINE ResultType find(const T * data, size_t size, T value)
