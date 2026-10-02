@@ -1,0 +1,26 @@
+app.log	1
+app.log	2
+-- a hard link is not read
+app.log	3
+-- a write through the other name is read under the read name
+app.log	4
+-- the read name is removed and the other name is linked again: read on, not from the start
+new.log	5
+-- the same name is linked again
+new.log	6
+-- link and unlink: the only other name reads on
+next.log	7
+-- a hard link renamed into the directory is not read
+next.log	8
+-- the read name is replaced by another file: the other name reads on, the new file is read from the start
+keep.log	10
+next.log	9
+-- a hard link made while the table is detached
+keep.log	11
+-- hard links that exist when the table is created
+a.log	1
+a.log	2
+-- a symbolic link is not read, and is not read either once it dangles
+a.log	1
+a.log	2
+b.log	3

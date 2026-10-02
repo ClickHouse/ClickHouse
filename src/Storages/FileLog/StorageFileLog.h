@@ -96,6 +96,8 @@ public:
         FileNameToContext context_by_name;
         /// File names without path.
         Names file_names;
+        /// Other names in the directory (hard links, symlinks) of files read under another name; they are not read.
+        std::unordered_map<String, UInt64> inode_by_other_name;
     };
 
     auto & getFileInfos() { return file_infos; }
@@ -198,13 +200,22 @@ private:
     /// Apply a "file `file_name` now refers to a regular file with `inode`" event
     /// (shared by `DW_ITEM_ADDED` and `DW_ITEM_MOVED_TO` branches).
     /// If the name was previously tracked with a different inode (delete+recreate
-    /// or rename-over), cleans up the stale `meta_by_inode` entry and removes the
-    /// stale on-disk meta file, guarded by filename ownership: we only drop the
-    /// stale entry if it still claims this `file_name`, so that a rename pair
+    /// or rename-over), releases the stale inode with `releaseInode`, which only
+    /// acts if its meta still claims this `file_name`, so that a rename pair
     /// re-assigning the old inode to a different filename earlier in the batch
     /// is not clobbered. Leaves `context_by_name[file_name]` at `{OPEN, inode}`
     /// and pushes the name into `file_names` exactly once.
     void onFileAppeared(const String & file_name, UInt64 inode);
+
+    /// Whether `inode` is read under a tracked, not removed name other than `file_name`.
+    bool isReadUnderOtherName(const String & file_name, UInt64 inode) const;
+    /// Records `file_name` as an other name of `inode` if `inode` is read under another name; returns whether it did.
+    bool addOtherName(const String & file_name, UInt64 inode);
+    /// The smallest recorded other name of `inode` that may still be a name of it. Drops the definitely stale ones.
+    std::optional<String> findOtherName(UInt64 inode);
+    /// `file_name` no longer has `inode`: hands the file over to one of its other names, or drops its meta.
+    void releaseInode(const String & file_name, UInt64 inode);
+    void moveMetaFile(const String & from, const String & to) const;
 
     size_t getTableDependentCount() const;
 

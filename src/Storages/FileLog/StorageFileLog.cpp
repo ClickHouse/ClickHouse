@@ -33,6 +33,7 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 
+#include <cerrno>
 #include <sys/stat.h>
 
 namespace DB
@@ -312,11 +313,34 @@ void StorageFileLog::loadFiles()
     }
 
     /// Get files inode
+    std::vector<UInt64> inodes;
+    inodes.reserve(file_infos.file_names.size());
     for (const auto & file : file_infos.file_names)
+        inodes.push_back(getInode(getFullDataPath(file)));
+
+    /// A file with several names is read under one of them: the name in its meta if it is listed, else the smallest one.
+    std::unordered_map<UInt64, String> read_name_by_inode;
+    for (size_t i = 0; i < inodes.size(); ++i)
     {
-        auto inode = getInode(getFullDataPath(file));
-        file_infos.context_by_name.emplace(file, FileContext{.inode = inode});
+        const auto & file = file_infos.file_names[i];
+        auto [it, inserted] = read_name_by_inode.emplace(inodes[i], file);
+        if (inserted)
+            continue;
+        auto meta = file_infos.meta_by_inode.find(inodes[i]);
+        auto is_meta_name = [&](const String & name) { return meta != file_infos.meta_by_inode.end() && meta->second.file_name == name; };
+        if (!is_meta_name(it->second) && (is_meta_name(file) || file < it->second))
+            it->second = file;
     }
+
+    for (size_t i = 0; i < inodes.size(); ++i)
+    {
+        const auto & file = file_infos.file_names[i];
+        if (read_name_by_inode.at(inodes[i]) == file)
+            file_infos.context_by_name.emplace(file, FileContext{.inode = inodes[i]});
+        else
+            file_infos.inode_by_other_name.emplace(file, inodes[i]);
+    }
+    std::erase_if(file_infos.file_names, [&](const String & file) { return file_infos.inode_by_other_name.contains(file); });
 
     /// Update file meta or create file meta
     for (const auto & [file, ctx] : file_infos.context_by_name)
@@ -965,7 +989,7 @@ Optional parameters:
 
 ## Description {#description}
 
-The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read.
+The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read. A file with several names in the directory (hard links, or symbolic links to it) is read once, under one of its names, and keeps being read from the same position while it has a name in the directory.
 
 `SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
 
@@ -1043,15 +1067,86 @@ void StorageFileLog::onFileAppeared(const String & file_name, UInt64 inode)
         return;
     }
     if (it->second.inode != inode)
+        releaseInode(file_name, it->second.inode); /// May rehash `context_by_name`, so `it` is invalid after it.
+    file_infos.context_by_name[file_name] = FileContext{.inode = inode};
+}
+
+bool StorageFileLog::isReadUnderOtherName(const String & file_name, UInt64 inode) const
+{
+    auto meta = file_infos.meta_by_inode.find(inode);
+    if (meta == file_infos.meta_by_inode.end() || meta->second.file_name == file_name)
+        return false;
+    auto read = file_infos.context_by_name.find(meta->second.file_name);
+    return read != file_infos.context_by_name.end() && read->second.inode == inode && read->second.status != FileStatus::REMOVED;
+}
+
+bool StorageFileLog::addOtherName(const String & file_name, UInt64 inode)
+{
+    file_infos.inode_by_other_name.erase(file_name);
+    if (!isReadUnderOtherName(file_name, inode))
+        return false;
+    if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
     {
-        if (auto meta = file_infos.meta_by_inode.find(it->second.inode);
-            meta != file_infos.meta_by_inode.end() && meta->second.file_name == file_name)
-        {
-            file_infos.meta_by_inode.erase(meta);
-            disk->removeFileIfExists(getFullMetaPath(file_name));
-        }
+        releaseInode(file_name, it->second.inode); /// May rehash `context_by_name`, so `it` is invalid after it.
+        file_infos.context_by_name.erase(file_name);
+        std::erase(file_infos.file_names, file_name);
     }
-    it->second = FileContext{.inode = inode};
+    file_infos.inode_by_other_name.emplace(file_name, inode);
+    return true;
+}
+
+std::optional<String> StorageFileLog::findOtherName(UInt64 inode)
+{
+    std::optional<String> found;
+    for (auto it = file_infos.inode_by_other_name.begin(); it != file_infos.inode_by_other_name.end();)
+    {
+        if (it->second != inode)
+        {
+            ++it;
+            continue;
+        }
+        struct stat st{};
+        const bool stat_failed = stat(getFullDataPath(it->first).c_str(), &st) != 0;
+        /// Only absence or another inode proves the name stale; another error proves nothing, so the name is kept.
+        const bool stale = stat_failed ? (errno == ENOENT || errno == ENOTDIR || errno == ELOOP) : st.st_ino != inode;
+        if (stale)
+        {
+            it = file_infos.inode_by_other_name.erase(it);
+            continue;
+        }
+        if (!found || it->first < *found)
+            found = it->first;
+        ++it;
+    }
+    return found;
+}
+
+void StorageFileLog::moveMetaFile(const String & from, const String & to) const
+{
+    if (disk->existsFile(getFullMetaPath(from)))
+        disk->replaceFile(getFullMetaPath(from), getFullMetaPath(to));
+    else
+        disk->removeFileIfExists(getFullMetaPath(to)); /// A meta file under `to` belongs to another file.
+}
+
+void StorageFileLog::releaseInode(const String & file_name, UInt64 inode)
+{
+    auto meta = file_infos.meta_by_inode.find(inode);
+    if (meta == file_infos.meta_by_inode.end() || meta->second.file_name != file_name)
+        return;
+    auto other_name = findOtherName(inode);
+    if (!other_name)
+    {
+        file_infos.meta_by_inode.erase(meta);
+        disk->removeFileIfExists(getFullMetaPath(file_name));
+        return;
+    }
+    file_infos.inode_by_other_name.erase(*other_name);
+    meta->second.file_name = *other_name;
+    moveMetaFile(file_name, *other_name);
+    /// Status `OPEN`: the file is read on from the offset in its meta.
+    file_infos.context_by_name.emplace(*other_name, FileContext{.inode = inode});
+    file_infos.file_names.push_back(*other_name);
 }
 
 bool StorageFileLog::updateFileInfos()
@@ -1113,7 +1208,22 @@ bool StorageFileLog::updateFileInfos()
                 {
                     auto inode = getInode(file_path);
 
+                    if (addOtherName(file_name, inode))
+                        break;
+
+                    /// The file kept another name in the directory, so it is not new: it is read on like a renamed one.
+                    /// Checked before `onFileAppeared`, which may release a meta.
+                    const bool kept_other_name = file_infos.meta_by_inode.contains(inode) && findOtherName(inode).has_value();
+
                     onFileAppeared(file_name, inode);
+
+                    if (kept_other_name)
+                    {
+                        auto & meta = file_infos.meta_by_inode.at(inode);
+                        moveMetaFile(meta.file_name, file_name);
+                        meta.file_name = file_name;
+                        break;
+                    }
 
                     /// An added file is read from offset 0, so any on-disk meta
                     /// under this name is stale. Drop it to stay consistent with
@@ -1137,6 +1247,16 @@ bool StorageFileLog::updateFileInfos()
                 /// skip it, the file info will be handled in DW_ITEM_ADDED case.
                 if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                     it->second.status = FileStatus::UPDATED;
+                /// A write through another name updates the name the file is read under.
+                else if (auto other = file_infos.inode_by_other_name.find(file_name); other != file_infos.inode_by_other_name.end())
+                {
+                    if (auto meta = file_infos.meta_by_inode.find(other->second); meta != file_infos.meta_by_inode.end())
+                    {
+                        if (auto read = file_infos.context_by_name.find(meta->second.file_name);
+                            read != file_infos.context_by_name.end() && read->second.status != FileStatus::REMOVED)
+                            read->second.status = FileStatus::UPDATED;
+                    }
+                }
                 break;
             }
 
@@ -1144,6 +1264,7 @@ bool StorageFileLog::updateFileInfos()
             /// The file **left** the directory
             case DirectoryWatcherBase::DW_ITEM_MOVED_FROM:
             {
+                file_infos.inode_by_other_name.erase(file_name);
                 if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                     it->second.status = FileStatus::REMOVED;
                 break;
@@ -1157,6 +1278,9 @@ bool StorageFileLog::updateFileInfos()
                 {
                     auto inode = getInode(file_path);
 
+                    if (addOtherName(file_name, inode))
+                        break;
+
                     onFileAppeared(file_name, inode);
 
                     /// File has been renamed, we should also rename meta file
@@ -1168,8 +1292,7 @@ bool StorageFileLog::updateFileInfos()
                         /// std::filesystem would resolve them against the process CWD and silently skip
                         /// the rename, leaving a stale meta file that collides when the name is reused
                         /// (e.g. a logrotate rename chain processed in one batch).
-                        if (disk->existsFile(getFullMetaPath(old_name)))
-                            disk->replaceFile(getFullMetaPath(old_name), getFullMetaPath(file_name));
+                        moveMetaFile(old_name, file_name);
                     }
                     /// May move from other place, adding new meta info
                     else
@@ -1179,34 +1302,28 @@ bool StorageFileLog::updateFileInfos()
             }
         }
     }
-    std::vector<String> valid_files;
+    Names names;
+    /// Rebuilt below: a removed name can hand its file over to another name, which is appended to `file_names`.
+    names.swap(file_infos.file_names);
 
     /// Remove file infos with REMOVE status
-    for (const auto & file_name : file_infos.file_names)
+    for (const auto & file_name : names)
     {
-        if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+        auto it = file_infos.context_by_name.find(file_name);
+        if (it == file_infos.context_by_name.end())
+            continue;
+        if (it->second.status != FileStatus::REMOVED)
         {
-            if (it->second.status == FileStatus::REMOVED)
-            {
-                /// We need to check that this inode does not hold by other file(mv),
-                /// otherwise, we can not destroy it.
-                auto inode = it->second.inode;
-                /// If it's now hold by other file, than the file_name should has
-                /// been changed during updating file_infos
-                if (auto meta = file_infos.meta_by_inode.find(inode);
-                    meta != file_infos.meta_by_inode.end() && meta->second.file_name == file_name)
-                    file_infos.meta_by_inode.erase(meta);
-
-                disk->removeFileIfExists(getFullMetaPath(file_name));
-                file_infos.context_by_name.erase(it);
-            }
-            else
-            {
-                valid_files.push_back(file_name);
-            }
+            file_infos.file_names.push_back(file_name);
+            continue;
         }
+        const UInt64 inode = it->second.inode;
+        /// Erased before `releaseInode`, which may rehash `context_by_name`.
+        file_infos.context_by_name.erase(it);
+        /// If the inode is now held by another name (mv), its meta names that one and is kept.
+        releaseInode(file_name, inode);
+        disk->removeFileIfExists(getFullMetaPath(file_name));
     }
-    file_infos.file_names.swap(valid_files);
 
     /// These file infos should always have same size(one for one)
     chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
