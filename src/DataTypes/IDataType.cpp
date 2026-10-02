@@ -365,7 +365,7 @@ Names IDataType::getSubcolumnNames() const
     forEachSubcolumn([&](const auto &, const auto & name, const auto &)
     {
         res.push_back(name);
-    }, SubstreamData(getDefaultSerialization()));
+    }, SubstreamData(getDefaultSerialization()).withType(getPtr()));
     return res;
 }
 
