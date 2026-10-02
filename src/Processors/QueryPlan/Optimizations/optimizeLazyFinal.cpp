@@ -124,6 +124,24 @@ static void addIsDeletedFilter(QueryPlan & plan, const String & is_deleted_colum
         plan.getCurrentHeader(), std::move(dag), "__is_deleted_filter", /*remove_filter_column=*/ true));
 }
 
+/// Whether the column `name` of the input of `step` reaches its output unchanged: either the step does not read it,
+/// so it passes through, or the step outputs the input itself. In both cases no other output may take its name.
+static bool keepsColumnUnchanged(const ExpressionStep & step, const String & name)
+{
+    const auto & dag = step.getExpression();
+    if (dag.hasArrayJoin())
+        return false;
+
+    const auto & inputs = dag.getInputs();
+    const auto input_it = std::ranges::find_if(inputs, [&](const ActionsDAG::Node * node) { return node->result_name == name; });
+    const auto * input = input_it == inputs.end() ? nullptr : *input_it;
+
+    const auto & outputs = dag.getOutputs();
+    if (input && std::ranges::find(outputs, input) == outputs.end())
+        return false;
+    return std::ranges::all_of(outputs, [&](const ActionsDAG::Node * output) { return output == input || output->result_name != name; });
+}
+
 /// Ensure `column_name` (if present as a DAG input) is also exposed as a DAG output,
 /// so that `ActionsDAG::updateHeader` does not erase it from the block.
 /// Used by the lazy-FINAL non-intersecting plan to keep the `is_deleted` column
@@ -446,15 +464,39 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         break;
     }
 
-    /// Check the immediate parent for a FilterStep or InputSelectorStep.
+    /// Find the filter above the reading step. Lazy materialization over joins puts a step computing the row index
+    /// right above the read, so look through expression steps that every column the filter reads passes unchanged:
+    /// the filter is then cloned over the columns of the read as if it were right above it.
     FilterStep * filter_step = nullptr;
     if (stack.size() >= 2)
     {
-        auto * parent_step = stack[stack.size() - 2].node->step.get();
-        if (auto * f = typeid_cast<FilterStep *>(parent_step))
-            filter_step = f;
-        else if (typeid_cast<InputSelectorStep *>(parent_step))
+        if (typeid_cast<InputSelectorStep *>(stack[stack.size() - 2].node->step.get()))
             return; /// Already inside an InputSelectorStep — avoid infinite re-application.
+
+        std::vector<const ExpressionStep *> expressions_between;
+        for (size_t i = stack.size() - 1; i-- > 0;)
+        {
+            auto * step = stack[i].node->step.get();
+            if (auto * f = typeid_cast<FilterStep *>(step))
+            {
+                const auto reads_columns_of_the_read = std::ranges::all_of(f->getExpression().getInputs(), [&](const ActionsDAG::Node * input)
+                {
+                    return reading_step->getOutputHeader()->has(input->result_name)
+                        && std::ranges::all_of(expressions_between, [&](const ExpressionStep * expression)
+                            {
+                                return keepsColumnUnchanged(*expression, input->result_name);
+                            });
+                });
+                if (reads_columns_of_the_read)
+                    filter_step = f;
+                break;
+            }
+
+            const auto * expression_step = typeid_cast<ExpressionStep *>(step);
+            if (!expression_step)
+                break;
+            expressions_between.push_back(expression_step);
+        }
     }
 
     /// We need either a filter or prewhere/row_policy to make this worthwhile.
