@@ -141,7 +141,9 @@ BlockIO HTTPDictionarySource::loadUpdatedAll()
 {
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
-    LOG_TRACE(log, "loadUpdatedAll {}", uri.toString());
+    String masked_uri = uri.toString();
+    maskURIPassword(&masked_uri);
+    LOG_TRACE(log, "loadUpdatedAll {}", masked_uri);
 
     auto buf = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
@@ -240,8 +242,10 @@ DictionarySourcePtr HTTPDictionarySource::clone() const
 
 std::string HTTPDictionarySource::toString() const
 {
-    Poco::URI uri(configuration.url);
-    return uri.toString();
+    /// Shown in `system.dictionaries` and in the logs.
+    String uri = Poco::URI(configuration.url).toString();
+    maskURIPassword(&uri);
+    return uri;
 }
 
 void registerDictionarySourceHTTP(DictionarySourceFactory & factory);
