@@ -4,7 +4,6 @@
 SET enable_analyzer = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_text_index_add_hint = 1;
-SET query_plan_direct_read_from_text_index = 1; -- CI may inject False; text index not used → hint profile events not fired
 
 -- Tests profile events for text search setting 'query_plan_text_index_add_hint'
 

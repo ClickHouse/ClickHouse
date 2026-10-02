@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class NestedElementsValidationTransform final : public ISimpleTransform
+class NestedElementsValidationTransform : public ISimpleTransform
 {
 public:
     explicit NestedElementsValidationTransform(SharedHeader header);
