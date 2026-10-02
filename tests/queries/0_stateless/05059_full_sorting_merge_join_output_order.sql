@@ -192,6 +192,59 @@ FROM (SELECT a.id AS k FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.
 INNER JOIN fsmj_order_c AS c ON s.k = c.v
 SETTINGS query_plan_join_shard_by_pk_ranges = 1, join_algorithm = 'parallel_full_sorting_merge';
 
+-- Swapping the join sides (`query_plan_join_swap_table`, applied by the join order optimizer) keeps the order
+-- of the side that ends up ordered: the plan children and the kind are swapped before the merge join is built.
+-- The legacy planner does not swap a merge join at all (it only swaps `FillRightFirst` joins).
+SELECT 'swapped chain plan', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT sum(a.v) + sum(b.v) + sum(c.v)
+    FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON a.id = c.id
+    SETTINGS query_plan_join_swap_table = 'true', query_plan_optimize_join_order_limit = 10);
+
+SELECT 'swapped', count(), sum(a.v), sum(b.v), sum(c.v)
+FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON a.id = c.id
+SETTINGS query_plan_join_swap_table = 'true', query_plan_optimize_join_order_limit = 10;
+SELECT 'swapped', count(), sum(a.v), sum(b.v), sum(c.v)
+FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON a.id = c.id
+SETTINGS query_plan_join_swap_table = 'true', query_plan_optimize_join_order_limit = 10, query_plan_join_shard_by_pk_ranges = 1;
+SELECT 'swapped', count(), sum(a.v), sum(b.v), sum(c.v)
+FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON a.id = c.id
+SETTINGS query_plan_join_swap_table = 'true', query_plan_optimize_join_order_limit = 10, enable_analyzer = 0;
+
+WITH (SELECT groupArray((id, v)) FROM (SELECT a.id AS id, b.v AS v FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id ORDER BY a.id, b.v SETTINGS query_plan_join_swap_table = 'true', query_plan_optimize_join_order_limit = 10)) AS rows
+SELECT 'swapped order by result', length(rows), rows = arraySort(rows);
+WITH (SELECT groupArray((id, v)) FROM (SELECT b.id AS id, a.v AS v FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b ON a.id = b.id ORDER BY b.id, a.v SETTINGS query_plan_join_swap_table = 'true', query_plan_optimize_join_order_limit = 10)) AS rows
+SELECT 'swapped right order by result', length(rows), rows = arraySort(rows);
+
+-- `ANY` and `ASOF` merge joins walk the inputs in the same way, so they keep the order of the ordered side.
+SELECT 'any chain plan', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT sum(a.v) + sum(b.v) + sum(c.v)
+    FROM fsmj_order_a AS a LEFT ANY JOIN fsmj_order_b AS b ON a.id = b.id INNER ANY JOIN fsmj_order_c AS c ON a.id = c.id);
+
+SELECT 'any', count(), sum(a.v), sum(b.v), sum(c.v)
+FROM fsmj_order_a AS a LEFT ANY JOIN fsmj_order_b AS b ON a.id = b.id LEFT ANY JOIN fsmj_order_c AS c ON a.id = c.id
+SETTINGS join_algorithm = 'hash';
+SELECT 'any', count(), sum(a.v), sum(b.v), sum(c.v)
+FROM fsmj_order_a AS a LEFT ANY JOIN fsmj_order_b AS b ON a.id = b.id LEFT ANY JOIN fsmj_order_c AS c ON a.id = c.id;
+
+WITH (SELECT groupArray((id, v)) FROM (SELECT a.id AS id, a.v AS v FROM fsmj_order_a AS a LEFT ANY JOIN fsmj_order_b AS b ON a.id = b.id ORDER BY a.id, a.v)) AS rows
+SELECT 'any order by result', length(rows), rows = arraySort(rows);
+
+SELECT 'asof chain plan', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT sum(a.v) + sum(b.v) + sum(c.v)
+    FROM fsmj_order_a AS a ASOF LEFT JOIN fsmj_order_b AS b ON a.id = b.id AND a.v >= b.v INNER JOIN fsmj_order_c AS c ON a.id = c.id);
+
+SELECT 'asof', count(), sum(a.v), sum(b.v), sum(c.v)
+FROM fsmj_order_a AS a ASOF LEFT JOIN fsmj_order_b AS b ON a.id = b.id AND a.v >= b.v INNER JOIN fsmj_order_c AS c ON a.id = c.id
+SETTINGS join_algorithm = 'hash';
+SELECT 'asof', count(), sum(a.v), sum(b.v), sum(c.v)
+FROM fsmj_order_a AS a ASOF LEFT JOIN fsmj_order_b AS b ON a.id = b.id AND a.v >= b.v INNER JOIN fsmj_order_c AS c ON a.id = c.id;
+
+WITH (SELECT groupArray((id, v)) FROM (SELECT a.id AS id, b.v AS v FROM fsmj_order_a AS a ASOF INNER JOIN fsmj_order_b AS b ON a.id = b.id AND a.v >= b.v ORDER BY a.id, b.v)) AS rows
+SELECT 'asof order by result', length(rows), rows = arraySort(rows);
+
 DROP TABLE fsmj_order_a;
 DROP TABLE fsmj_order_b;
 DROP TABLE fsmj_order_c;

@@ -36,3 +36,17 @@ pk range sharding mixed	1300	923700	506850	551100
 pk range sharding sorted subquery	1300	363700	551100
 pk range sharding sorted subquery	1300	363700	551100
 pk range sharding sorted subquery	1300	363700	551100
+swapped chain plan	0	4
+swapped	936	683928	359464	235376
+swapped	936	683928	359464	235376
+swapped	936	683928	359464	235376
+swapped order by result	1400	1
+swapped right order by result	1550	1
+any chain plan	0	4
+any	1500	1124250	123375	55083
+any	1500	1124250	123375	55083
+any order by result	1500	1
+asof chain plan	0	4
+asof	1004	753298	199248	260766
+asof	1004	753298	199248	260766
+asof order by result	750	1
