@@ -392,7 +392,10 @@ UseProjectionsResult optimizeUseNormalProjections(
     {
         rejectProjections(result.projection_reject_reasons, normal_projections, {}, reason);
         if (hypothetical)
+        {
+            hypothetical->outcome.rejected_for_query = true;
             recordHypotheticalOutcome(*hypothetical, result, {}, nullptr);
+        }
         return std::move(result);
     };
 

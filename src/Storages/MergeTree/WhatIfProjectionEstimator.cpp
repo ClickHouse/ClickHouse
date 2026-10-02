@@ -37,6 +37,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <ranges>
 
 namespace DB
@@ -831,18 +832,29 @@ bool tryEstimateProjection(
         return true;
     }
 
-    UInt64 marks_low = *outcome.marks;
-    UInt64 marks_high = *outcome.marks;
     size_t chosen_in = 0;
     for (size_t i = 0; i < weighed; ++i)
+        chosen_in += built.scenarios[i]->outcome.chosen;
+
+    /// parts have their own histories, so each part takes the extremes of its own layouts
+    UInt64 marks_low = 0;
+    UInt64 marks_high = 0;
+    for (const auto & [part_name, part] : built.scenarios[0]->parts)
     {
-        const auto & scenario_outcome = built.scenarios[i]->outcome;
-        chosen_in += scenario_outcome.chosen;
-        if (scenario_outcome.marks)
+        UInt64 part_low = std::numeric_limits<UInt64>::max();
+        UInt64 part_high = 0;
+        for (size_t i = 0; i < weighed; ++i)
         {
-            marks_low = std::min(marks_low, *scenario_outcome.marks);
-            marks_high = std::max(marks_high, *scenario_outcome.marks);
+            const auto & scenario_outcome = built.scenarios[i]->outcome;
+            if (!scenario_outcome.marks)
+                continue;
+            const auto it = scenario_outcome.ranges.find(part_name);
+            const UInt64 marks = it == scenario_outcome.ranges.end() ? 0 : it->second.getNumberOfMarks();
+            part_low = std::min(part_low, marks);
+            part_high = std::max(part_high, marks);
         }
+        marks_low += part_low == std::numeric_limits<UInt64>::max() ? 0 : part_low;
+        marks_high += part_high;
     }
     widenForSamples(built.samples, outcome, marks_low, marks_high);
 
@@ -1032,6 +1044,15 @@ WhatIfCandidateResult evaluateProjection(
     const std::string_view relaxing_setting = !read_settings[Setting::prefer_optimize_projection] ? ""
         : force_requested ? "force_optimize_projection" : "prefer_optimize_projection";
 
+    /// with no parts, the optimizer still rejects a projection that the query cannot use, and nothing is read
+    auto probe = std::make_shared<HypotheticalProjection>(projection->clone());
+    weigh(probe);
+    if (probe->outcome.rejected_for_query)
+    {
+        result.not_applicable_reason = probe->outcome.reason;
+        return result;
+    }
+
     result.status = WhatIfCandidateResult::Applicable;
 
     if (settings.empirical)
@@ -1044,15 +1065,6 @@ WhatIfCandidateResult evaluateProjection(
     }
     else
     {
-        /// without data, the optimizer still decides if the projection has anything to serve
-        auto scenario = std::make_shared<HypotheticalProjection>(projection->clone());
-        weigh(scenario);
-        if (scenario->outcome.nothing_to_serve && relaxing_setting.empty())
-        {
-            result.status = WhatIfCandidateResult::NotApplicable;
-            result.not_applicable_reason = scenario->outcome.reason;
-            return result;
-        }
         result.empirical_status = WhatIfCandidateResult::Disabled;
     }
 

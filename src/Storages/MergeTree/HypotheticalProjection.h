@@ -32,6 +32,8 @@ struct HypotheticalProjection
         bool serves_order = false;
         /// the query has no filter and no ORDER BY that a projection can serve
         bool nothing_to_serve = false;
+        /// the optimizer rejects every projection for this query, whatever the parts
+        bool rejected_for_query = false;
         String reason;
         /// parent part name -> granules read from its projection part
         std::unordered_map<String, MarkRanges> ranges;

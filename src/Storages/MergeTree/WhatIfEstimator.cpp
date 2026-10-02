@@ -385,8 +385,11 @@ WhatIfResult estimateHypotheticalObjects(
     QueryPlan plan;
     ContextPtr plan_context = local_context;
 
+    /// every plan of the statement starts from this analysis, so all see the same constants, `randConstant` too
+    QueryTreeNodePtr analyzed_query;
     {
         InterpreterSelectQueryAnalyzer interpreter(select_query_copy, local_context, query_options);
+        analyzed_query = interpreter.getQueryTree()->clone();
         interpreter.applyDistributedPlanFallbackIfNeeded();
         plan_context = interpreter.getContext();
         plan = std::move(interpreter).extractQueryPlan();
@@ -601,7 +604,7 @@ WhatIfResult estimateHypotheticalObjects(
 
     auto weigh = [&](const HypotheticalProjectionPtr & hypothetical)
     {
-        InterpreterSelectQueryAnalyzer interpreter(select_query_copy->clone(), local_context, query_options);
+        InterpreterSelectQueryAnalyzer interpreter(analyzed_query->clone(), plan_context, query_options);
         interpreter.applyDistributedPlanFallbackIfNeeded();
         auto weigh_context = interpreter.getContext();
         auto weigh_plan = std::move(interpreter).extractQueryPlan();
