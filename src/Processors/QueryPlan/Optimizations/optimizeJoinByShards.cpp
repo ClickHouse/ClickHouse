@@ -506,8 +506,8 @@ void optimizeJoinByShards(QueryPlan::Node & root)
 /// `SortingStep` is switched to scatter the rows by the hash of the join keys into independent partitions
 /// and sort each partition (one sorted stream per shard), and the join is executed shard-by-shard
 /// (`JoinStep::enableJoinByLayers` -> `joinPipelinesYShapedByShards`). Because the partitioning depends only
-/// on the join-key values (and the key types match - `FullSortingMergeJoin` requires it), equal keys land
-/// in the same shard on both sides. The join output is unordered.
+/// on the join-key values (and equal values hash equally through `LowCardinality`/`Nullable` wrappers, per
+/// `IColumn::computeHashInto`), equal keys land in the same shard on both sides. The join output is unordered.
 void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_shards)
 {
     /// Need at least two shards to gain anything; with one shard this is a plain single merge join.
@@ -559,8 +559,8 @@ void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_sha
                 /// `MergingSortedTransform`s, per-shard `MergeJoinTransform`s) wait for a chunk of one
                 /// specific input each. Two such scatters then form a circular wait - A blocked pushing to
                 /// shard `i` whose merge waits on B, B blocked pushing to shard `j` whose merge waits on A
-                /// (seen as `Logical error: Pipeline stuck` in the AST fuzzer). The full-sort path is immune:
-                /// each `MergeSortingTransform` drains its whole input before emitting anything.
+                /// (seen as `Logical error: Pipeline stuck` in the AST fuzzer). The full-sort path is immune
+                /// while every shard lane is demanded: a sleeping lane never starts draining its input.
                 ///
                 /// A pre-sorted side therefore runs as a single merge join, exactly like
                 /// `full_sorting_merge`, keeping the in-order read and its virtual rows
