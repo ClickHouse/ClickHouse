@@ -59,30 +59,40 @@ TEST(Lexer, NullInputWithMaxQuerySize)
 
 TEST(ParserCopyQuery, FormattingPreservesTableCopy)
 {
-    const std::vector<String> queries = {
-        "COPY t TO STDOUT",
-        "COPY t FROM STDIN",
-        "COPY db.t (a, b) TO STDOUT",
-        "COPY db.t (a, b) FROM STDIN",
-        "COPY `db name`.`table name` (`first col`, second) TO STDOUT",
-        "COPY t TO STDOUT WITH (FORMAT csv)",
-        "COPY t TO STDOUT WITH (FORMAT csv, HEADER)",
-        "COPY t FROM STDIN WITH (HEADER)",
-        "COPY t TO STDOUT WITH (FORMAT binary)",
+    struct TestCase
+    {
+        String query;
+        String formatted;
     };
 
-    for (const auto & query : queries)
+    const std::vector<TestCase> test_cases = {
+        {"COPY t TO STDOUT", "COPY t TO STDOUT"},
+        {"COPY t FROM STDIN", "COPY t FROM STDIN"},
+        {"COPY db.t (a, b) TO STDOUT", "COPY db.t (a, b) TO STDOUT"},
+        {"COPY db.t (a, b) FROM STDIN", "COPY db.t (a, b) FROM STDIN"},
+        {
+            R"(COPY "db name"."table name" ("first col", second) TO STDOUT)",
+            "COPY `db name`.`table name` (`first col`, second) TO STDOUT",
+        },
+        {"COPY t TO STDOUT WITH (FORMAT csv)", "COPY t TO STDOUT WITH (FORMAT CSV)"},
+        {"COPY t TO STDOUT WITH (FORMAT csv, HEADER)", "COPY t TO STDOUT WITH (FORMAT CSV, HEADER)"},
+        {"COPY t FROM STDIN WITH (HEADER)", "COPY t FROM STDIN WITH (HEADER)"},
+        {"COPY t TO STDOUT WITH (FORMAT binary)", "COPY t TO STDOUT WITH (FORMAT Binary)"},
+        {"COPY t TO STDOUT WITH (FORMAT text)", "COPY t TO STDOUT"},
+        {"COPY t TO STDOUT WITH CSV HEADER", "COPY t TO STDOUT WITH (FORMAT CSV, HEADER)"},
+    };
+
+    for (const auto & test_case : test_cases)
     {
-        ParserQuery parser(query.data() + query.size());
-        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
-        ASSERT_NE(nullptr, ast) << "query: " << query;
+        ParserQuery parser(test_case.query.data() + test_case.query.size());
+        ASTPtr ast = parseQuery(parser, test_case.query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << test_case.query;
 
         const auto * before = ast->as<ASTCopyQuery>();
-        ASSERT_NE(nullptr, before) << "query: " << query;
+        ASSERT_NE(nullptr, before) << "query: " << test_case.query;
 
         const String formatted = ast->formatWithSecretsOneLine();
-        if (query == queries.front())
-            EXPECT_EQ("COPY t TO STDOUT", formatted);
+        EXPECT_EQ(test_case.formatted, formatted) << "query: " << test_case.query;
 
         ParserQuery reparser(formatted.data() + formatted.size());
         ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
@@ -91,11 +101,11 @@ TEST(ParserCopyQuery, FormattingPreservesTableCopy)
         const auto * after = reparsed->as<ASTCopyQuery>();
         ASSERT_NE(nullptr, after) << "formatted query: " << formatted;
 
-        EXPECT_EQ(before->type, after->type) << "query: " << query;
-        EXPECT_EQ(before->table_name, after->table_name) << "query: " << query;
-        EXPECT_EQ(before->column_names, after->column_names) << "query: " << query;
-        EXPECT_EQ(before->format, after->format) << "query: " << query;
-        EXPECT_EQ(before->header, after->header) << "query: " << query;
+        EXPECT_EQ(before->type, after->type) << "query: " << test_case.query;
+        EXPECT_EQ(before->table_name, after->table_name) << "query: " << test_case.query;
+        EXPECT_EQ(before->column_names, after->column_names) << "query: " << test_case.query;
+        EXPECT_EQ(before->format, after->format) << "query: " << test_case.query;
+        EXPECT_EQ(before->header, after->header) << "query: " << test_case.query;
     }
 }
 
