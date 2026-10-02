@@ -559,6 +559,9 @@ void validateSubqueryDepth(const QueryTreeNodePtr &node, size_t initial_subquery
 
 }
 
+/// Whether a table's own storage is local but reading it reads other tables, so what it reaches has to
+/// be resolved through the catalog's dependency graph.
+///
 /// A table in a database with `lazy_load_tables`, and a permanent table created `AS` a table function
 /// (`CREATE TABLE t AS view(SELECT ...)`), is attached as a `StorageProxy` around the real storage.
 /// A proxy forwards `isRemote` and `readsFromOtherTables` but not its type, and the look-throughs in
@@ -566,27 +569,8 @@ void validateSubqueryDepth(const QueryTreeNodePtr &node, size_t initial_subquery
 /// through to the dependency walk, which records nothing for `Merge`. `StorageTableFunctionProxy` is
 /// worse still: it reports `isView() == false` outright, and the `StorageView` it wraps answers the
 /// `IStorage` default `readsFromOtherTables() == false`, so neither predicate recognizes such a table
-/// as opaque unless the proxy is resolved first.
-///
-/// Resolving the nested storage costs nothing at every call site below: each one is reached only after
-/// an `isRemote` call, which already materialized it.
-static StoragePtr unwrapStorageProxy(const StoragePtr & storage)
-{
-    static constexpr size_t max_proxy_depth = 16;
-
-    StoragePtr nested_storage = storage;
-    for (size_t i = 0; i < max_proxy_depth && nested_storage; ++i)
-    {
-        const auto * proxy = dynamic_cast<const StorageProxy *>(nested_storage.get());
-        if (!proxy)
-            break;
-        nested_storage = proxy->getNested();
-    }
-    return nested_storage;
-}
-
-/// Whether a table's own storage is local but reading it reads other tables, so what it reaches has to
-/// be resolved through the catalog's dependency graph.
+/// as opaque unless the proxy is resolved first. Resolving it costs nothing at every call site below:
+/// each one is reached only after an `isRemote` call, which already materialized it.
 static bool isOpaqueTable(const StoragePtr & storage)
 {
     auto nested_storage = unwrapStorageProxy(storage);

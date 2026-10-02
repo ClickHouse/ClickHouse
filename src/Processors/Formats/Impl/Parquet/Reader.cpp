@@ -348,10 +348,23 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
                 continue;
             }
 
-            if (column_meta.statistics.__isset.min_value)
-                column_info.decoder.decodeField(column_meta.statistics.min_value, /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
-            if (column_meta.statistics.__isset.max_value)
-                column_info.decoder.decodeField(column_meta.statistics.max_value, /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
+            const bool has_min = column_meta.statistics.__isset.min_value;
+            const bool has_max = column_meta.statistics.__isset.max_value;
+            const auto & converter = column_info.decoder.fixed_size_converter;
+            if ((!has_min || !has_max) && converter && converter->statsNeedBothBounds())
+                continue;
+
+            bool stats_usable = true;
+            if (has_min)
+                stats_usable = column_info.decoder.decodeField(column_meta.statistics.min_value, /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
+            if (stats_usable && has_max)
+                stats_usable = column_info.decoder.decodeField(column_meta.statistics.max_value, /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
+
+            if (!stats_usable)
+            {
+                range = Range::createWholeUniverse();
+                continue;
+            }
 
             adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
         }
@@ -2183,10 +2196,14 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             }
             else
             {
-                column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
-                column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
+                const bool stats_usable
+                    = column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left)
+                    && column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
 
-                adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
+                if (stats_usable)
+                    adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
+                else
+                    range = Range::createWholeUniverse();
             }
 
             /// All conjunctive predicates on this column (e.g. two `pointInPolygon` calls sharing
