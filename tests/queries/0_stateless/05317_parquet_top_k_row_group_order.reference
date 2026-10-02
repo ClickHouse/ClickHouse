@@ -34,3 +34,7 @@ OK
 7
 OK
 row groups in the table:	20
+-- the row groups skipped by the threshold are counted
+asc	1	0
+desc	1	0
+off	0	1

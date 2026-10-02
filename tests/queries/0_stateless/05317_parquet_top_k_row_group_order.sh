@@ -100,7 +100,26 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT 'row groups in the table:', ProfileEvents['ParquetReadRowGroups'] FROM system.query_log
     WHERE current_database = currentDatabase() AND query_id = '${query_id}' AND type = 'QueryFinish';
 "
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY p_05317_${CLICKHOUSE_DATABASE} ON t_05317"
+
+echo "-- the row groups skipped by the threshold are counted"
+skipped_query() {
+    # $1: sort direction, $2: use_top_k_dynamic_filtering
+    echo "SELECT k FROM t_05317 ORDER BY k $1 LIMIT 3 SETTINGS max_threads = 1, max_parsing_threads = 1,
+        max_block_size = 65409, query_plan_max_limit_for_top_k_optimization = 10000, use_top_k_dynamic_filtering = $2"
+}
+skipped_id="05317_skipped_${CLICKHOUSE_DATABASE}_${RANDOM}"
+${CLICKHOUSE_CLIENT} --query_id "${skipped_id}_asc" --query "$(skipped_query ASC 1)" > /dev/null
+${CLICKHOUSE_CLIENT} --query_id "${skipped_id}_desc" --query "$(skipped_query DESC 1)" > /dev/null
+${CLICKHOUSE_CLIENT} --query_id "${skipped_id}_off" --query "$(skipped_query ASC 0)" > /dev/null
 ${CLICKHOUSE_CLIENT} --query "
-    DROP ROW POLICY p_05317_${CLICKHOUSE_DATABASE} ON t_05317;
-    DROP TABLE t_05317;
+    SYSTEM FLUSH LOGS query_log;
+    SELECT replaceOne(query_id, '${skipped_id}_', ''),
+        ProfileEvents['ParquetTopKSkippedRowGroups'] BETWEEN 17 AND 20,
+        ProfileEvents['ParquetTopKSkippedRowGroups'] = 0
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND startsWith(query_id, '${skipped_id}_') AND type = 'QueryFinish'
+    ORDER BY query_id;
 "
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05317"
