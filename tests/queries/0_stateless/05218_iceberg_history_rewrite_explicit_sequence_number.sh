@@ -28,6 +28,10 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO t0 VALUES (4);
 "
 
+# Refresh the loaded Iceberg state after the writes above so OPTIMIZE starts
+# from the same metadata head that the test just committed.
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t0" >/dev/null
+
 ${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE t0"
 
 echo '--- Rewritten manifest entries ---'
