@@ -10,6 +10,9 @@
 namespace DB
 {
 
+namespace Runtime::V1
+{
+
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 /// This queue is used to poll descriptors. Generally, just a wrapper over epoll (kqueue on macOS).
@@ -92,5 +95,7 @@ public:
     void finish() {}
 };
 #endif
+
+}
 
 }

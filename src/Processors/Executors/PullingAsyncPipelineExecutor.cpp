@@ -1,5 +1,5 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/createExecutor.h>
 #include <Processors/Formats/LazyOutputFormat.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 struct PullingAsyncPipelineExecutor::Data
 {
-    PipelineExecutorPtr executor;
+    ExecutorPtr executor;
     std::exception_ptr exception;
     LazyOutputFormat * lazy_format = nullptr;
     std::atomic_bool is_finished = false;
@@ -103,7 +103,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     if (!data)
     {
         data = std::make_unique<Data>();
-        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+        data->executor = createExecutor(pipeline.processors, pipeline.process_list_element);
         data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
         data->executor->setStepProfiler(pipeline.getStepProfiler());
         data->lazy_format = lazy_format.get();

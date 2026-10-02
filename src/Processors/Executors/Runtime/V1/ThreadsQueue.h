@@ -8,6 +8,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace Runtime::V1
+{
+
 /// Simple struct which stores threads with numbers [0 .. num_threads - 1].
 /// Allows to push and pop specified thread, or pop any thread if has.
 /// All operations (except init) are O(1). No memory allocations after init happen.
@@ -71,5 +74,7 @@ private:
         std::swap(stack[thread_pos_in_stack[first]], stack[thread_pos_in_stack[second]]);
     }
 };
+
+}
 
 }

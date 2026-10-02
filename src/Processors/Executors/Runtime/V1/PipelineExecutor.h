@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Processors/IProcessor.h>
-#include <Processors/Executors/Runtime/ExecutorTasks.h>
+#include <Processors/Executors/Runtime/IExecutor.h>
+#include <Processors/Executors/Runtime/V1/ExecutorTasks.h>
 #include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ISlotControl.h>
@@ -18,19 +18,16 @@ namespace DB
 
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+
+namespace Runtime::V1
+{
+
 class ExecutingGraph;
 using ExecutingGraphPtr = std::unique_ptr<ExecutingGraph>;
-
-class ReadProgressCallback;
-using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
-
-class StepProfiler;
-using StepProfilerPtr = std::shared_ptr<StepProfiler>;
-
 struct WorkloadResources;
 
 /// Executes query pipeline.
-class PipelineExecutor
+class PipelineExecutor : public IExecutor
 {
 public:
     /// Get pipeline as a set of processors.
@@ -42,30 +39,15 @@ public:
     /// PipelineExecutor must be destroyed before the corresponding QueryPipeline, because
     /// QueryPlanResourceHolder may hold some resources referenced by processors and used in
     /// processor destructors.
-    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem);
-    ~PipelineExecutor();
+    explicit PipelineExecutor(std::shared_ptr<Processors> processors, QueryStatusPtr elem);
+    ~PipelineExecutor() override;
 
-    /// Execute pipeline in multiple threads. Must be called once.
-    /// In case of exception during execution throws any occurred.
-    void execute(size_t num_threads, bool concurrency_control);
-
-    /// Execute single step. Step will be stopped when yield_flag is true.
-    /// Execution is happened in a single thread.
-    /// Return true if execution should be continued.
-    bool executeStep(std::atomic_bool * yield_flag = nullptr);
-
-    /// Cancel execution. May be called from another thread.
-    void cancel(IProcessor::CancelReason reason);
-
-    /// Cancel processors which only read data from source. May be called from another thread.
-    void cancelReading();
-
-    /// Set callback for read progress.
-    /// It would be called every time when processor reports read progress.
-    void setReadProgressCallback(ReadProgressCallbackPtr callback);
-
-    /// Set the profiler of EXPLAIN ANALYZE.
-    void setStepProfiler(StepProfilerPtr step_profiler_);
+    void execute(size_t num_threads, bool concurrency_control) override;
+    bool executeUntil(std::atomic_bool * yield_flag) override;
+    void cancel(IProcessor::CancelReason reason) override;
+    void cancelReading() override;
+    void setReadProgressCallback(ReadProgressCallbackPtr callback) override;
+    void setStepProfiler(StepProfilerPtr step_profiler_) override;
 
 private:
     ExecutingGraphPtr graph;
@@ -74,7 +56,7 @@ private:
 
     /// Concurrency control related
     SlotAllocationPtr cpu_slots;
-    AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeStep()
+    AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeUntil()
     std::unique_ptr<ThreadPool> pool;
     std::mutex spawn_mutex;
 
@@ -130,6 +112,6 @@ private:
     void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
 };
 
-using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
+}
 
 }

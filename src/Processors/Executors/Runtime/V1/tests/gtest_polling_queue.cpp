@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/PollingQueue.h>
+#include <Processors/Executors/Runtime/V1/PollingQueue.h>
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 using namespace DB;
+using namespace DB::Runtime::V1;
 using namespace std::chrono;
 
 namespace

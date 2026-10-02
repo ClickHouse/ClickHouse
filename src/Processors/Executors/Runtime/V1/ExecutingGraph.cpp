@@ -1,5 +1,5 @@
-#include <Processors/Executors/Runtime/ExecutingGraph.h>
-#include <Processors/Executors/Runtime/ExecutorTasks.h>
+#include <Processors/Executors/Runtime/V1/ExecutingGraph.h>
+#include <Processors/Executors/Runtime/V1/ExecutorTasks.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
@@ -32,6 +32,9 @@ namespace FailPoints
 {
     extern const char executing_graph_add_node_fail[];
 }
+
+namespace Runtime::V1
+{
 
 namespace
 {
@@ -620,6 +623,8 @@ void ExecutingGraph::cancel(IProcessor::CancelReason reason)
 
     if (exception_ptr)
         std::rethrow_exception(exception_ptr);
+}
+
 }
 
 }

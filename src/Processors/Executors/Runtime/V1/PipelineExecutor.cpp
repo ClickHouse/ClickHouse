@@ -14,9 +14,9 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/logger_useful.h>
-#include <Processors/Executors/Runtime/ExecutionThreadContext.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
-#include <Processors/Executors/Runtime/ExecutingGraph.h>
+#include <Processors/Executors/Runtime/V1/ExecutionThreadContext.h>
+#include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/V1/ExecutingGraph.h>
 #include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
@@ -50,6 +50,10 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+namespace Runtime::V1
+{
+
 // Class helping a thread to deal with acquired workload resources
 struct WorkloadResources
 {
@@ -110,7 +114,7 @@ struct WorkloadResources
 };
 
 
-PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem)
+PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> processors, QueryStatusPtr elem)
     : process_list_element(std::move(elem))
 {
 
@@ -207,7 +211,7 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
     finalizeExecution();
 }
 
-bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
+bool PipelineExecutor::executeUntil(std::atomic_bool * yield_flag)
 {
     if (!is_execution_initialized)
     {
@@ -686,6 +690,8 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
 
         throw;
     }
+}
+
 }
 
 }

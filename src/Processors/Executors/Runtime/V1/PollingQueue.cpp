@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/PollingQueue.h>
+#include <Processors/Executors/Runtime/V1/PollingQueue.h>
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
@@ -15,6 +15,9 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+namespace Runtime::V1
+{
 
 void PollingQueue::Deadlines::arm(Key key, int64_t timeout_ms)
 {
@@ -173,6 +176,8 @@ void PollingQueue::finish()
 {
     is_finished = true;
     finish_signal.notify();
+}
+
 }
 
 }

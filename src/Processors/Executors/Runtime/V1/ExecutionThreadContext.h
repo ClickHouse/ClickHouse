@@ -15,6 +15,9 @@ class IProcessor;
 class ReadProgressCallback;
 class StepProfiler;
 
+namespace Runtime::V1
+{
+
 /// Context for each executing thread of PipelineExecutor.
 class ExecutionThreadContext
 {
@@ -78,5 +81,7 @@ public:
 
     ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback, StepProfiler * step_profiler_);
 };
+
+}
 
 }

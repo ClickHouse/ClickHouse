@@ -1,6 +1,6 @@
 #include <ctime>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Processors/Executors/Runtime/ExecutionThreadContext.h>
+#include <Processors/Executors/Runtime/V1/ExecutionThreadContext.h>
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
@@ -22,6 +22,9 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
+
+namespace Runtime::V1
+{
 
 ExecutionThreadContext::ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback, StepProfiler * step_profiler_)
     : read_progress_callback(callback)
@@ -199,6 +202,8 @@ void ExecutionThreadContext::flushWorkIntervals()
 {
     if (step_profiler)
         step_profiler->addWorkIntervals(std::move(work_intervals));
+}
+
 }
 
 }
