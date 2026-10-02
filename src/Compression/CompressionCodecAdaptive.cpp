@@ -55,6 +55,7 @@ constexpr auto SPECIALIZED_CODECS = std::to_array<SpecializedCodec>({
 
 constexpr size_t codecPosition(size_t entry) { return 2 * entry; }
 constexpr size_t chainPosition(size_t entry) { return 2 * entry + 1; }
+constexpr size_t entryOf(size_t position) { return position / 2; }
 
 /// The default and every specialized codec, each with its chain, fit the positions.
 static_assert(chainPosition(SPECIALIZED_CODECS.size()) < AdaptiveCodec::MAX_POSITIONS);
@@ -197,6 +198,14 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
             outcome.runner_up_size = std::min(outcome.runner_up_size, size);
     };
 
+    /// Apply the Default half of a chain {CODEC, Default} to a block already compressed by {CODEC}.
+    auto run_chain = [&](size_t entry, const char * base_block, UInt32 base_size)
+    {
+        char * chained = multiplexer.takeWriteDestination(base_block);
+        const UInt32 size = pool[entry].chain->compressRemainingStages(/*completed_stages=*/1, base_block, base_size, source_size, chained);
+        record(chainPosition(entry), size, chained);
+    };
+
     /// Runs the candidates the selector picks until it picks none.
     AdaptiveCodec::Candidates plan = selector->select(state, outcome);
     while (plan.any())
@@ -206,10 +215,18 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
                 ErrorCodes::LOGICAL_ERROR,
                 "Adaptive codec selector asked for a candidate that already ran on this block or is not in the pool");
 
+        /// If a codec was the best of the previous round, its block is still in a buffer. If its chain is planned, run it now half free.
+        if (outcome.best && plan[chainPosition(entryOf(*outcome.best))])
+        {
+            const size_t entry = entryOf(*outcome.best);
+            run_chain(entry, multiplexer.getBestDestination(), outcome.best_size);
+            plan.reset(chainPosition(entry));
+        }
+
         for (size_t entry = 0; entry < pool.size(); ++entry)
         {
-            const auto & [codec, chain] = pool[entry];
-            const bool with_chain = chain && plan[chainPosition(entry)];
+            const auto & codec = pool[entry].codec;
+            const bool with_chain = plan[chainPosition(entry)];
             if (!plan[codecPosition(entry)] && !with_chain)
                 continue;
 
@@ -217,13 +234,8 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
             const UInt32 size = codec->compress(source, source_size, block);
             record(codecPosition(entry), size, block);
 
-            /// A chain applies only its second codec, to the block its first one (also a candidate) just produced.
             if (with_chain)
-            {
-                char * chained = multiplexer.takeWriteDestination(block);
-                const UInt32 chained_size = chain->compressRemainingStages(/*completed_stages=*/1, block, size, source_size, chained);
-                record(chainPosition(entry), chained_size, chained);
-            }
+                run_chain(entry, block, size);
         }
 
         plan = selector->select(state, outcome);
