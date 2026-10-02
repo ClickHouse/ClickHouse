@@ -1,5 +1,4 @@
 #include <Columns/ColumnString.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
@@ -207,6 +206,3 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDistributionQueue) }
