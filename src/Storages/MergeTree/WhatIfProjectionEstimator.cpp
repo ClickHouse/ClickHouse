@@ -805,9 +805,10 @@ bool tryEstimateProjection(
     const RangesInDataParts & baseline_parts,
     UInt64 baseline_marks,
     UInt64 projection_scan_budget_rows,
-    const WeighHypotheticalProjection & weigh,
-    const ContextPtr & context)
+    const WeighHypotheticalProjection & weigh)
 {
+    /// the scan obeys the read limits of the scope that reads the table
+    const auto context = read_step->getContext();
     ScanPlan plan;
     if (!planScan(result, plan, baseline_parts, filters_on_offsets, projection_scan_budget_rows, context->getSettingsRef()))
         return false;
@@ -1060,7 +1061,7 @@ WhatIfCandidateResult evaluateProjection(
     {
         if (tryEstimateProjection(
                 result, *projection, filters_on_offsets, relaxing_setting, read_step, baseline_parts, analysis.selected_marks,
-                settings.projection_scan_budget_rows, weigh, context))
+                settings.projection_scan_budget_rows, weigh))
             return result;
         result.empirical_status = WhatIfCandidateResult::Unsupported;
     }
