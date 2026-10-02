@@ -100,6 +100,13 @@ WHERE id >= 70000 AND id < 71000 AND message LIKE '%gap%'
              use_text_index_postings_cache = 0, use_text_index_dictionary_cache = 0,
              text_index_like_rows_max_selectivity = 0.01;
 
+-- Q8: the window reaches half of `gapfar`'s posting blocks, so it counts 1000 of its 2000 rows, within 0.0075.
+SELECT count() FROM t_text_index_like_gap
+WHERE id >= 150000 AND id < 151000 AND message LIKE '%gap%'
+    SETTINGS log_comment = 'like_direct_q8', text_index_like_min_pattern_length = 3,
+             use_text_index_postings_cache = 0, use_text_index_dictionary_cache = 0,
+             text_index_like_max_postings_to_read = 1000000, text_index_like_rows_max_selectivity = 0.0075;
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT 'q1',
@@ -146,6 +153,12 @@ SELECT 'q7',
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment = 'like_direct_q7';
+
+SELECT 'q8',
+    ProfileEvents['TextIndexDiscardPatternScan'] = 0 AS scan_not_discarded
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment = 'like_direct_q8';
 
 DROP TABLE t_text_index_like_gap;
 DROP TABLE t_text_index_like_direct;

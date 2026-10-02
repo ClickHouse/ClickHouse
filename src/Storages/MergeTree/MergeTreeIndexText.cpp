@@ -783,7 +783,8 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
                     && !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings))
                 {
                     ++postings_to_read;
-                    postings_rows_to_read += infos[i]->cardinality;
+                    /// Posting blocks hold the same number of rows, so count only the share of the blocks that will be read.
+                    postings_rows_to_read += infos[i]->cardinality * *reachable_blocks / infos[i]->ranges.size();
                 }
             }
 

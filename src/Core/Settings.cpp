@@ -10109,7 +10109,7 @@ Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
     DECLARE(Double, text_index_like_rows_max_selectivity, 1.0, R"(
 Maximum fraction of a part's rows that the posting lists read for a LIKE/ILIKE pattern may cover when LIKE evaluation by the dictionary scan is enabled.
 
-While scanning the dictionary of a part, ClickHouse adds up the row counts of the matched tokens whose posting lists are stored outside the dictionary. If the sum exceeds this fraction of the part's rows, the dictionary scan stops, the pattern is not answered from the index, and the rows are read and filtered by the pattern as usual. A token whose rows an earlier filter (for example, the primary key) has already ruled out is not counted, except with `distributed_index_analysis` and `use_skip_indexes_on_data_read = 0`.
+While scanning the dictionary of a part, ClickHouse adds up the row counts of the matched tokens whose posting lists are stored outside the dictionary. If the sum exceeds this fraction of the part's rows, the dictionary scan stops, the pattern is not answered from the index, and the rows are read and filtered by the pattern as usual. A token whose rows an earlier filter (for example, the primary key) has already ruled out is not counted, and a token it has partly ruled out counts only the share of its posting blocks that are still read, except with `distributed_index_analysis` and `use_skip_indexes_on_data_read = 0`.
 
 A row can contain several matched tokens, so the sum can exceed the number of rows. The value `1` disables the check.
 
