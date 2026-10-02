@@ -31,7 +31,7 @@
       ]
     },
     {
-      "group": "Como contribuir",
+      "group": "Contribuindo",
       "pages": [
         "pt-BR/resources/develop-contribute/contribute/tests",
         "pt-BR/resources/develop-contribute/contribute/continuous-integration",
@@ -53,13 +53,13 @@
       ]
     },
     {
-      "group": "Roteiro",
+      "group": "Roadmap",
       "pages": [
         "pt-BR/resources/develop-contribute/roadmap"
       ]
     }
   ],
   "icon": "/images/icons/icon-contribute.svg",
-  "item": "Desenvolvimento e contribuições",
+  "item": "Desenvolvimento e contribuição",
   "root": "pt-BR/resources/develop-contribute/index"
 }

@@ -11,7 +11,9 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
 
 <ScalePlanFeatureBadge feature="コンピュート分離" />
 
-## コンピュート分離とは？ {#what-is-compute-compute-separation}
+<div id="what-is-compute-compute-separation">
+  ## コンピュート分離とは？
+</div>
 
 コンピュート分離について説明する前に、ClickHouse Cloud における**サービス**とは何かを理解しておくとわかりやすいでしょう。
 
@@ -65,13 +67,13 @@ ClickHouse Cloud では、*ウェアハウス* とは同じデータを共有す
 * ClickHouse データベースのバージョン
 * ClickHouse Keeper (レプリカの管理用)
 
-ウェアハウス は、データを共有する長期稼働の ClickHouse Cloud サービスをグループ化するもので、各サービスに専用の コンピュート と エンドポイント が割り当てられます。[On-Demand Compute](/ja/products/cloud/features/infrastructure/on-demand-compute) は、既存のサービスと エンドポイント を介して、マネージド pool の worker をサポート対象の ワークロード に一時的に割り当てます。
-
 <div id="access-controls">
   ## アクセス制御
 </div>
 
-### データベース認証情報 {#database-credentials}
+<div id="database-credentials">
+  ### データベース認証情報
+</div>
 
 ウェアハウス内のすべてのサービスは同じテーブル群を共有するため、サービス間でアクセス制御も共有されます。
 つまり、Service 1 で作成されたすべてのデータベースユーザーは、同じ権限 (テーブルやビューなどに対する grants) で Service 2 も利用でき、その逆も同様です。
@@ -83,7 +85,9 @@ ClickHouse Cloud では、*ウェアハウス* とは同じデータを共有す
 
 *図 4 - ユーザー Alice は Service 1 で作成されましたが、同じ認証情報を使って、同じデータを共有するすべてのサービスにアクセスできます*
 
-### ネットワークアクセス制御 {#network-access-control}
+<div id="network-access-control">
+  ### ネットワークアクセス制御
+</div>
 
 他のアプリケーションや一時的なユーザーによる特定のサービスへのアクセスを制限するには、ネットワーク制限を適用できます。
 そのためには、ClickHouse Cloudコンソールで、アクセスを制限したいサービスのタブにある**Settings**に移動します。
@@ -132,7 +136,9 @@ IP フィルタリング設定はサービスごとに個別に適用できる�
   3. サービスのタイプ (読み取り専用 または 読み書き) は作成時に固定され、その後 Cloud Console から変更することはできません。読み取り専用 と 読み書き を切り替えるには、ウェアハウス内に希望するタイプの新しいサービスを作成してください。
 </Note>
 
-## スケーリング {#scaling}
+<div id="scaling">
+  ## スケーリング
+</div>
 
 ウェアハウス内の各サービスは、独立してスケーリングされます。レプリカの数とサイズの調整、水平および垂直オートスケーリングの有効化、非アクティブ時の自動アイドル化の設定を行えます。
 
@@ -142,7 +148,9 @@ IP フィルタリング設定はサービスごとに個別に適用できる�
 
 [スケジュールスケーリング](/ja/products/cloud/features/autoscaling/scheduled-scaling) は、ウェアハウス内の個々のサービスに使用できます。ただし、ウェアハウスの上限は引き続き適用されます。ピーク時にすべてのサービスのレプリカ数の合計がウェアハウスの上限内に収まるよう、スケジュールを計画してください。詳細については、[Automatic scaling](/ja/products/cloud/features/autoscaling/overview) を参照してください。
 
-## `clusterAllReplicas` の動作の変更 {#changes-in-behavior}
+<div id="changes-in-behavior">
+  ## `clusterAllReplicas` の動作の変更
+</div>
 
 1 つの ウェアハウス に複数の サービス があると、`clusterAllReplicas()` の動作が変わります。
 `default` クラスター名を使用した場合、対象になるのは ウェアハウス 内のすべての サービス ではなく、現在の サービス に属するレプリカのみです。
@@ -158,7 +166,9 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
   ## 制限事項
 </div>
 
-### ワークロード分離の制限事項 {#workload-isolation-limitations}
+<div id="workload-isolation-limitations">
+  ### ワークロード分離の制限事項
+</div>
 
 一部のワークロードは特定のサービスに分離できません。つまり、あるサービス上のワークロードが、同じウェアハウス内の別のサービスに影響するケースがあります。具体的には、次のようなものがあります。
 
@@ -169,7 +179,9 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 
 * **idling が有効な場合、ある読み書きサービスでの inserts によって、別の読み書きサービスがアイドル状態に移行できなくなることがあります。** あるサービスが、別のサービスのためにバックグラウンドマージ処理を実行する場合があります。こうしたバックグラウンド処理によって、後者のサービスがアイドル状態に移行できなくなることがあります。バックグラウンド処理が完了すると、そのサービスはアイドル状態になります。読み取り専用サービスは影響を受けません。
 
-### 参考情報 {#callouts}
+<div id="callouts">
+  ### 参考情報
+</div>
 
 * **ClickHouse のバージョン**: [アップグレードスケジュール](/ja/products/cloud/features/admin-features/upgrades)は、プライマリサービスの設定によって決まります。セカンダリサービスに、プライマリサービスとは独立したリリーススケジュールを設定することはできません。
 
