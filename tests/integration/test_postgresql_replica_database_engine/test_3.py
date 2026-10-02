@@ -694,7 +694,7 @@ def test_failed_load_from_snapshot(started_cluster):
     # Create a table with wrong table structure
     assert "Could not convert string to i" in instance.query_and_get_error(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (a Int32, b Int32) ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY a
         """
     )
@@ -879,7 +879,7 @@ def test_dependent_loading(started_cluster):
 
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
         """
@@ -1201,7 +1201,7 @@ def test_single_table_engine_with_non_default_schema(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -1280,7 +1280,7 @@ def test_two_schemas_same_table_name_single_storage(started_cluster):
     instance.query("DROP TABLE IF EXISTS ct_cs2 SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE ct_cs1 (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -1289,7 +1289,7 @@ def test_two_schemas_same_table_name_single_storage(started_cluster):
     )
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE ct_cs2 (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -1463,7 +1463,7 @@ def test_default_schema_preserves_legacy_identity(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -1584,7 +1584,7 @@ def test_use_extended_date_and_time_types_setting_table_engine_rejected(started_
     table = "test_date_types_table_engine"
     error = instance.query_and_get_error(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, d Date)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -1807,7 +1807,7 @@ def test_backup_table_engine(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
         """
@@ -1830,7 +1830,7 @@ def test_backup_table_engine(started_cluster):
     instance.query(f"DROP TABLE {table} SYNC")
     error = instance.query_and_get_error(
         f"RESTORE TABLE {table} FROM {backup_name}",
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
     assert "from a backup is not supported" in error, error
     assert "MaterializedPostgreSQL" in error, error
@@ -1966,7 +1966,7 @@ def test_backup_table_engine_partitions(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
         """
@@ -2525,7 +2525,7 @@ def test_uppercase_table_name_single_storage(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS `{table}` SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE `{table}` (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
         """
@@ -2580,7 +2580,7 @@ def test_publication_name_case_collision_single_storage(started_cluster):
         instance.query(f"DROP TABLE IF EXISTS `{name}` SYNC")
         instance.query(
             f"""
-            SET allow_experimental_materialized_postgresql_table=1;
+            SET enable_materialized_postgresql_table=1;
             CREATE TABLE `{name}` (key Int32, value Int32)
             ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{name}', 'postgres', '{pg_pass}')
             ORDER BY key
@@ -2651,7 +2651,7 @@ def test_schema_aware_identity_publication_separator_collision(started_cluster):
     instance.query("DROP TABLE IF EXISTS sep_c2 SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE sep_c1 (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 'c', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -2660,7 +2660,7 @@ def test_schema_aware_identity_publication_separator_collision(started_cluster):
     )
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE sep_c2 (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 'b_c', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -2730,7 +2730,7 @@ def test_schema_aware_identity_slot_hyphen_distinct(started_cluster):
     instance.query("DROP TABLE IF EXISTS hyp_underscore SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE hyp_dash (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 't', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -2739,7 +2739,7 @@ def test_schema_aware_identity_slot_hyphen_distinct(started_cluster):
     )
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE hyp_underscore (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 't', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -2790,7 +2790,7 @@ def test_schema_aware_identity_long_database_name(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', '{long_pg_db}', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -2856,7 +2856,7 @@ def test_legacy_identity_adopted_on_attach_table_engine(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -3296,7 +3296,7 @@ def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
