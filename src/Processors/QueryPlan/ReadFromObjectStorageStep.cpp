@@ -41,6 +41,7 @@ namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool s3_validate_etag_on_read;
+    extern const SettingsBool use_iceberg_manifest_column_statistics;
     extern const SettingsBool azure_validate_etag_on_read;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
@@ -159,8 +160,9 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimateReadFromD
     if (!data_lake_read_estimate)
     {
         /// Column statistics cost a bound decoding per file and column, so they are computed only when they can be used.
+        const auto & settings = getContext()->getSettingsRef();
         Names column_names;
-        if (getContext()->getSettingsRef()[Setting::use_statistics])
+        if (settings[Setting::use_statistics] && settings[Setting::use_iceberg_manifest_column_statistics])
             column_names = requiredSourceColumns();
         data_lake_read_estimate = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), column_names, getContext());
     }
