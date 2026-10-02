@@ -13,6 +13,11 @@ bool isPartitionStart(const SlidingBlocks & blocks, RowNumber row)
 
 }
 
+Partition::Partition()
+{
+    finish(RowNumber{0, 0});
+}
+
 void Partition::beginAt(const SlidingBlocks & blocks, RowNumber first_row)
 {
     partition_bounds = PartitionBounds{.start = first_row, .end = blocks.next(first_row), .fully_visible = false};

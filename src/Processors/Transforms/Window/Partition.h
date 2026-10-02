@@ -16,6 +16,8 @@ struct PartitionBounds
 class Partition
 {
 public:
+    Partition();
+
     void beginAt(const SlidingBlocks & blocks, RowNumber first_row);
     void advance(const SlidingBlocks & blocks);
     void finish(RowNumber data_end);
