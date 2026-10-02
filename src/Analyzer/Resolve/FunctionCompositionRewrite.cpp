@@ -4,6 +4,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IdentifierNode.h>
+#include <Analyzer/JoinNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
@@ -292,6 +293,43 @@ void collectNamesBoundAtQueryLevel(const QueryTreeNodePtr & node, BoundNames & b
 /// decided lexically: it needs the catalog, which is not available in this rewrite. So a name
 /// that is not bound by any of the constructs above is conservatively treated as referenced,
 /// and the composition fails cleanly instead of substituting into the subquery.
+bool subqueryReferencesIdentifier(const QueryTreeNodePtr & node, const String & name, BoundNames bound_names);
+
+/// Whether a subquery the join tree selects from references the name from the outside. A column
+/// such a subquery exposes is bound at the level of the query that selects from it
+/// (`collectProjectionNames`), but the expression behind the column may itself be an outer
+/// reference, e.g. `y` in `FROM (SELECT y) AS s`. So these subqueries are checked first, with only
+/// the bindings of the enclosing scopes in effect.
+bool joinTreeSubqueryReferencesIdentifier(const QueryTreeNodePtr & node, const String & name, const BoundNames & bound_names)
+{
+    if (!node)
+        return false;
+
+    switch (node->getNodeType())
+    {
+        case QueryTreeNodeType::QUERY:
+        case QueryTreeNodeType::UNION:
+            return subqueryReferencesIdentifier(node, name, bound_names);
+        case QueryTreeNodeType::JOIN:
+        {
+            const auto & join_node = node->as<JoinNode &>();
+            return joinTreeSubqueryReferencesIdentifier(join_node.getLeftTableExpressionNode(), name, bound_names)
+                || joinTreeSubqueryReferencesIdentifier(join_node.getRightTableExpressionNode(), name, bound_names);
+        }
+        case QueryTreeNodeType::CROSS_JOIN:
+        {
+            for (const auto & table_expression : node->as<CrossJoinNode &>().getTableExpressions())
+                if (joinTreeSubqueryReferencesIdentifier(table_expression, name, bound_names))
+                    return true;
+            return false;
+        }
+        case QueryTreeNodeType::ARRAY_JOIN:
+            return joinTreeSubqueryReferencesIdentifier(node->as<ArrayJoinNode &>().getTableExpressionNode(), name, bound_names);
+        default:
+            return false;
+    }
+}
+
 bool subqueryReferencesIdentifier(const QueryTreeNodePtr & node, const String & name, BoundNames bound_names)
 {
     if (!node)
@@ -321,6 +359,10 @@ bool subqueryReferencesIdentifier(const QueryTreeNodePtr & node, const String & 
         case QueryTreeNodeType::QUERY:
         case QueryTreeNodeType::UNION:
         {
+            if (const auto * query_node = node->as<QueryNode>();
+                query_node && joinTreeSubqueryReferencesIdentifier(query_node->getJoinTreeNode(), name, bound_names))
+                return true;
+
             collectNamesBoundAtQueryLevel(node, bound_names, true /*is_root*/);
             if (bound_names.expressions.contains(name))
                 return false;
