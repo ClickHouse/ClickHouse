@@ -36,7 +36,7 @@ String ASTShowTablesQuery::getFrom() const
 
 void ASTShowTablesQuery::formatLike(WriteBuffer & ostr, const FormatSettings &) const
 {
-    if (!like.empty())
+    if (has_like)
     {
         ostr << (not_like ? " NOT" : "")
             << (case_insensitive_like ? " ILIKE " : " LIKE ")
@@ -142,7 +142,7 @@ void ASTShowTablesQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("full", true);
     if (!cluster_str.empty())
         w.writeString("cluster_str", cluster_str);
-    if (!like.empty())
+    if (has_like)
         w.writeString("like", like);
     if (not_like)
         w.writeBool("not_like", true);
@@ -185,6 +185,7 @@ void ASTShowTablesQuery::readJSON(const Poco::JSON::Object & json)
     full = r.getBool("full");
     cluster_str = r.getString("cluster_str");
     like = r.getString("like");
+    has_like = r.has("like");
     not_like = r.getBool("not_like");
     case_insensitive_like = r.getBool("case_insensitive_like");
     /// `from` is parser-produced as an `ASTIdentifier` (`ParserShowTablesQuery` uses
@@ -250,21 +251,21 @@ void ASTShowTablesQuery::readJSON(const Poco::JSON::Object & json)
             "during AST JSON deserialization");
 
     /// In every form, the parser consumes `NOT` and `ILIKE` only as part of a LIKE clause, so these
-    /// flags cannot exist without a pattern; `formatQueryImpl` silently drops them when 'like' is empty.
-    if (like.empty() && (not_like || case_insensitive_like))
+    /// flags cannot exist without a LIKE clause.
+    if (!has_like && (not_like || case_insensitive_like))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "'not_like' and 'case_insensitive_like' require a non-empty 'like' during AST JSON deserialization");
+            "'not_like' and 'case_insensitive_like' require a 'like' pattern during AST JSON deserialization");
 
     /// In the table/dictionary form, the parser accepts either a LIKE clause or a WHERE clause,
     /// never both, and `InterpreterShowTablesQuery` ignores 'where_expression' whenever 'like' is
     /// set, so the formatted SQL and the executed query would diverge.
-    if (where_expression && !like.empty())
+    if (where_expression && has_like)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'like' and 'where_expression' are mutually exclusive in `ShowTablesQuery` "
             "during AST JSON deserialization");
 
     /// `SHOW CLUSTER` and `SHOW FILESYSTEM CACHES` accept neither a LIKE pattern nor a LIMIT.
-    if ((cluster || caches) && (!like.empty() || not_like || case_insensitive_like))
+    if ((cluster || caches) && (has_like || not_like || case_insensitive_like))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "LIKE is not valid for `SHOW CLUSTER`/`SHOW FILESYSTEM CACHES` during AST JSON deserialization");
 

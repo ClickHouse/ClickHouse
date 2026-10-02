@@ -31,6 +31,9 @@ public:
     String cluster_str;
     String like;
 
+    /// `LIKE ''` is distinct from omitting the filter altogether.
+    bool has_like = false;
+
     bool not_like = false;
     bool case_insensitive_like = false;
 

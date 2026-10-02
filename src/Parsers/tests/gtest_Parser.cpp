@@ -190,6 +190,27 @@ TEST(ParserQueryWithOutput, CloneOwnsItsChildren)
     }
 }
 
+TEST(ParserShowTablesQuery, PreserveEmptyLike)
+{
+    const std::vector<String> queries = {
+        "SHOW TABLES LIKE ''",
+        "SHOW TABLES NOT ILIKE ''",
+        "SHOW DATABASES LIKE ''",
+        "SHOW CLUSTERS ILIKE ''",
+        "SHOW MERGES NOT LIKE ''",
+        "SHOW SETTINGS LIKE ''",
+        "SHOW CHANGED SETTINGS ILIKE ''",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+        EXPECT_EQ(query, ast->formatWithSecretsOneLine()) << "query: " << query;
+    }
+}
+
 /// `ASTIndexDeclaration` carries a `part_of_create_index_query` flag that switches its formatting
 /// between the `CREATE INDEX` form (`(expr) TYPE ...`, with the extra wrapper this PR restores for
 /// parenthesized expressions) and the column-list form (`name expr TYPE ...`). `clone()` must carry
