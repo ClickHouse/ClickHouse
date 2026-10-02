@@ -160,11 +160,17 @@ BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
 /// table full of rows (and, for storages that remove their data on drop, delete the data), so an
 /// unknown count refuses the drop. The table is deliberately not read to find out: a read would
 /// see the caller's row policies rather than the table, and would consume messages from
-/// stream-like engines such as `Kafka`. A plain view stores no rows, so it is always empty.
+/// stream-like engines such as `Kafka`. A plain view stores no rows, so it is always empty, and
+/// so is a materialized view with a `TO` table: its rows belong to the target table, which its
+/// drop does not touch.
 bool InterpreterDropQuery::isTableEmpty(const StoragePtr & table) const
 {
-    if (table->isView() && !dynamic_cast<const StorageMaterializedView *>(table.get()))
-        return true;
+    if (table->isView())
+    {
+        const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(table.get());
+        if (!materialized_view || !materialized_view->hasInnerTable())
+            return true;
+    }
     auto rows = table->totalRows(getContext());
     return rows && *rows == 0;
 }
@@ -179,7 +185,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     if (query.isTemporary() || table_id.database_name.empty())
     {
         if (context_->tryResolveStorageID(table_id, Context::ResolveExternal))
-            return executeToTemporaryTable(table_id.getTableName(), query.kind);
+            return executeToTemporaryTable(table_id.getTableName(), query.kind, query.if_empty);
         query.setDatabase(table_id.database_name = context_->getCurrentDatabase());
     }
 
@@ -422,7 +428,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     return {};
 }
 
-BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind)
+BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind, bool if_empty)
 {
     /// The guard in `executeToTableImpl` only catches the explicit
     /// `DETACH TEMPORARY TABLE` form (`query.isTemporary()` is true). When a user
@@ -437,6 +443,10 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
     if (resolved_id)
     {
         StoragePtr table = DatabaseCatalog::instance().getTable(resolved_id, getContext());
+        if (if_empty && !isTableEmpty(table))
+            throw Exception(ErrorCodes::TABLE_NOT_EMPTY,
+                "Temporary table {} is not empty or its storage does not know how many rows it has",
+                backQuoteIfNeed(table_name));
         if (kind == ASTDropQuery::Kind::Truncate)
         {
             auto table_lock
