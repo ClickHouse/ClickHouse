@@ -145,7 +145,9 @@ void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPt
     if (node.name().empty())
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Expected not empty name");
 
-    if (!data.private_aliases.contains(node.name()))
+    /// A field access of a lambda argument, like `x.id` in `x -> x.id`, is masked by the argument as well.
+    if (!data.private_aliases.contains(node.name())
+        && !(node.compound() && data.private_aliases.contains(node.name_parts.front())))
         data.addColumnIdentifier(node);
 }
 

@@ -3,6 +3,7 @@
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Common/Exception.h>
 #include <Common/re2.h>
@@ -42,6 +43,20 @@ bool lambdaArgumentShadowsName(const ASTFunction & lambda, const String & name)
     return std::ranges::contains(getASTLambdaArgumentNames(lambda), name);
 }
 
+/// For a compound identifier rooted at `name`, like `x.id` or `x.a.b` for `name` = `x`, returns the field access
+/// `tupleElement(...(tupleElement(replacement, 'a'), ...), 'b')` the identifier means when `x` is bound to `replacement`.
+ASTPtr tryReplaceIdentifierRoot(const IAST & ast, const ASTPtr & replacement, const String & name)
+{
+    const auto * identifier = ast.as<ASTIdentifier>();
+    if (!identifier || !identifier->compound() || identifier->name_parts.front() != name)
+        return nullptr;
+
+    ASTPtr result = replacement->clone();
+    for (size_t i = 1; i < identifier->name_parts.size(); ++i)
+        result = makeASTFunction("tupleElement", std::move(result), make_intrusive<ASTLiteral>(identifier->name_parts[i]));
+    return result;
+}
+
 void replaceLambdaArgument(ASTPtr & ast, const ASTPtr & replacement, const String & lambda_arg, bool is_masked = false)
 {
     if (!ast)
@@ -52,6 +67,11 @@ void replaceLambdaArgument(ASTPtr & ast, const ASTPtr & replacement, const Strin
         if (auto arg_name = tryGetIdentifierName(ast); arg_name && *arg_name == lambda_arg)
         {
             ast = replacement->clone();
+            return;
+        }
+        if (auto field_access = tryReplaceIdentifierRoot(*ast, replacement, lambda_arg))
+        {
+            ast = std::move(field_access);
             return;
         }
     }
@@ -193,6 +213,11 @@ void replaceColumnReferences(ASTPtr & ast, const ASTPtr & replacement, const Str
         if (const auto * id = ast->as<ASTIdentifier>(); id && id->shortName() == name)
         {
             ast = replacement->clone();
+            return;
+        }
+        if (auto field_access = tryReplaceIdentifierRoot(*ast, replacement, name))
+        {
+            ast = std::move(field_access);
             return;
         }
     }
