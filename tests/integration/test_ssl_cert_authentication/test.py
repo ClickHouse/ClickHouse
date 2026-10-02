@@ -46,6 +46,7 @@ def started_cluster():
 
 
 config = """<clickhouse>
+    <tls-sni-override>{sslHost}</tls-sni-override>
     <openSSL>
         <client>
             <verificationMode>strict</verificationMode>
@@ -64,6 +65,7 @@ def execute_query_native(node, query, user, cert_name, password=None):
         certificateFile=f"{SCRIPT_DIR}/certs/{cert_name}-cert.pem",
         privateKeyFile=f"{SCRIPT_DIR}/certs/{cert_name}-key.pem",
         caConfig=f"{SCRIPT_DIR}/certs/ca-cert.pem",
+        sslHost=SSL_HOST,
     )
 
     file = open(config_path, "w")
@@ -147,6 +149,18 @@ def test_native_fallback_to_password():
     assert "AUTHENTICATION_FAILED" in str(err.value)
 
 
+def test_native_cn_nul_byte_no_bypass():
+    # Authentication bypass: client13's CN is "client1\0.evil.com" and user 'john' is configured with
+    # <common_name>client1</common_name>. If server-side CN extraction truncated at the embedded NUL
+    # byte, the CN would collapse to "client1" and the certificate would authenticate as user 'john'.
+    # The full CN must be preserved, so the match must fail.
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="john", cert_name="client13"
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+
+
 def get_ssl_context(cert_name):
     context = WrapSSLContextWithSNI(SSL_HOST, ssl.PROTOCOL_TLS_CLIENT)
     context.load_verify_locations(cafile=f"{SCRIPT_DIR}/certs/ca-cert.pem")
@@ -219,6 +233,14 @@ def test_https_wrong_cert():
             enable_ssl_auth=False,
             cert_name="client1",
         )
+
+
+def test_https_cn_nul_byte_no_bypass():
+    # Same bypass as test_native_cn_nul_byte_no_bypass, over the HTTPS interface: client13's CN
+    # "client1\0.evil.com" must not be truncated to "client1" and authenticate as user 'john'.
+    with pytest.raises(Exception) as err:
+        execute_query_https("SELECT currentUser()", user="john", cert_name="client13")
+    assert "403" in str(err.value)
 
 
 def test_https_non_ssl_auth():
@@ -544,6 +566,21 @@ def test_x509_cn_wildcard_single_label():
             "SELECT currentUser()", user="wildcard_cn", cert_name="client12"
         )
     assert "403" in str(err.value)
+
+
+def test_x509_wildcard_nul_byte_no_bypass():
+    # Authentication bypass: client14's CN and DNS SAN are both "evil\0.corp.example.com". Users
+    # 'wildcard_cn' and 'wildcard_dns' are configured with '*.corp.example.com' and
+    # 'DNS:*.corp.example.com'. The '*' must not match the span "evil\0", so both must fail.
+    for user in ["wildcard_cn", "wildcard_dns"]:
+        with pytest.raises(Exception) as err:
+            execute_query_native(
+                instance, "SELECT currentUser()", user=user, cert_name="client14"
+            )
+        assert "AUTHENTICATION_FAILED" in str(err.value)
+        with pytest.raises(Exception) as err:
+            execute_query_https("SELECT currentUser()", user=user, cert_name="client14")
+        assert "403" in str(err.value)
 
 
 def test_x509_uri_san_wildcard_dot_in_segment():

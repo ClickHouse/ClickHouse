@@ -125,7 +125,11 @@ void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutab
     /// The subqueries are internal (they are parts of the caller's query), but each of them must still
     /// be audited on its own, with its own text and outcome. That is why the subquery's `BlockIO`
     /// callbacks are also triggered below for the subqueries that never make it into the combined pipeline.
-    auto query_io = executeQuery(subquery->formatWithSecretsOneLine(), subquery_context, QueryFlags{ .internal = true, .audit_internal = true }).second;
+    /// The subqueries are nested, hence `internal`, but their text comes from the user, hence `user_initiated`:
+    /// without it the access checks of `CREATE` subqueries would be skipped.
+    auto query_io = executeQuery(
+        subquery->formatWithSecretsOneLine(), subquery_context, QueryFlags{ .internal = true, .user_initiated = true, .audit_internal = true })
+        .second;
 
     auto & pipeline = query_io.pipeline;
 

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <map>
 #include <set>
@@ -9,7 +10,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include <Common/config_version.h>
 #include "config.h"
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
@@ -86,7 +86,6 @@
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/WasmModuleManager.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Core/SettingsQuirks.h>
@@ -121,6 +120,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/HypotheticalObjectStore.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/SessionQueryIdsHistory.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
@@ -157,7 +157,7 @@
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <filesystem>
@@ -165,7 +165,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <base/defines.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -324,6 +323,7 @@ namespace Setting
     extern const SettingsBool enable_filesystem_read_prefetches_log;
     extern const SettingsBool enable_blob_storage_log;
     extern const SettingsBool enable_blob_storage_log_for_read_operations;
+    extern const SettingsUInt64 filesystem_cache_boundary_alignment;
     extern const SettingsUInt64 filesystem_cache_max_download_size;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_wait_for_concurrent_download_timeout_milliseconds;
@@ -384,6 +384,7 @@ namespace Setting
     extern const SettingsBool reader_executor_use_long_connections;
     extern const SettingsUInt64 reader_executor_window_size;
     extern const SettingsUInt64 reader_executor_block_size;
+    extern const SettingsUInt64 reader_executor_plan_look_ahead;
     extern const SettingsUInt64 reader_executor_min_bytes_for_seek;
     extern const SettingsUInt64 reader_executor_max_tail_for_drain;
     extern const SettingsBool use_page_cache_for_disks_without_file_cache;
@@ -394,7 +395,6 @@ namespace Setting
     extern const SettingsString workload;
     extern const SettingsString compatibility;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
 }
@@ -724,7 +724,8 @@ struct ContextSharedPart : boost::noncopyable
     std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex); /// Process ddl commands from zk.
     LoadTaskPtr ddl_worker_startup_task;                         /// To postpone `ddl_worker->startup()` after all tables startup
     /// Rules for selecting the compression settings, depending on the size of the part.
-    mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector TSA_GUARDED_BY(mutex);
+    mutable OnceFlag compression_codec_selector_initialized;
+    mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     /// Storage disk chooser for MergeTree engines
     mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector TSA_GUARDED_BY(storage_policies_mutex);
     /// Storage policy chooser for MergeTree engines
@@ -753,11 +754,6 @@ struct ContextSharedPart : boost::noncopyable
     size_t max_pending_mutations_execution_time_to_warn = 86400lu;
     /// Only for system.server_settings, actually value stored in reloader itself
     std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
-
-    /// Optional server-wide override for the analyzer in mutations.
-    /// Encoded as a tri-state: -1 = unset (use session setting), 0 = force off, 1 = force on.
-    /// Refreshed on config reload.
-    std::atomic<int8_t> mutations_use_analyzer_override = -1;
 
     double min_os_cpu_wait_time_ratio_to_drop_connection = 15.0;
     double max_os_cpu_wait_time_ratio_to_drop_connection = 30.0;
@@ -1145,7 +1141,7 @@ struct ContextSharedPart : boost::noncopyable
 
         delete_async_insert_queue.reset();
 
-        TransactionLog::shutdownIfAny();
+        TransactionManager::shutdownIfAny();
 
         // Workload entity storage must be destructed when no queries or merges are running because PipelineExecutor may access it.
         // Read the `shared_ptr` under the mutex, because `getWorkloadEntityStoragePtr` may concurrently
@@ -1472,8 +1468,10 @@ ContextData::ContextData(const ContextData &o) :
     partition_id_to_max_block(o.partition_id_to_max_block),
     query_access_info(std::make_shared<QueryAccessInfo>(*o.query_access_info)),
     query_factories_info(o.query_factories_info),
+    distributed_plan_local_object(o.distributed_plan_local_object),
     query_privileges_info(o.query_privileges_info),
     async_read_counters(o.async_read_counters),
+    query_execution_counters(o.query_execution_counters),
     view_source(o.view_source),
     /// `table_function_results` is copied in the body under `o.table_function_results_mutex`
     /// to avoid a data race with `Context::executeTableFunction` and other writers
@@ -3097,6 +3095,22 @@ Context::SuppressQueryFactoriesInfoScope::~SuppressQueryFactoriesInfoScope()
     suppress_query_factories_info = prev;
 }
 
+void Context::addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind kind, const String & name) const
+{
+    /// Reading `system.functions` creates the resolver of every function to list its properties, which for `regionTo*`
+    /// touches the embedded dictionaries; that enumeration is not a use by the query, so it runs under
+    /// `SuppressQueryFactoriesInfoScope`, the same guard that keeps it out of `query_log.used_functions`. A context that
+    /// was not copied from a query context has no record.
+    if (suppress_query_factories_info || !distributed_plan_local_object)
+        return;
+    distributed_plan_local_object->add(kind, name);
+}
+
+std::shared_ptr<const DistributedPlanLocalObject> Context::getDistributedPlanLocalObject() const
+{
+    return distributed_plan_local_object;
+}
+
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
     if (suppress_query_factories_info)
@@ -3210,7 +3224,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             create.set(create.sql_security, sql_security);
 
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
-            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, view_context);
+            auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
                                                      ColumnsDescription(sample_block->getNamesAndTypesList()),
@@ -3519,6 +3533,12 @@ StoragePtr Context::getViewSource() const
     return view_source;
 }
 
+
+void Context::clearViewSource()
+{
+    view_source.reset();
+}
+
 bool Context::displaySecretsInShowAndSelect() const
 {
     return shared->server_settings[ServerSetting::display_secrets_in_show_and_select];
@@ -3528,6 +3548,41 @@ Settings Context::getSettingsCopy() const
 {
     SharedLockGuard lock(mutex);
     return *settings;
+}
+
+namespace
+{
+bool isProfileChange(const SettingChange & change)
+{
+    return change.name == "profile";
+}
+
+/// Enforces the constraints on `changes` the way `applySettingsChanges` applies them: a `profile` change
+/// installs a new constraint set for the changes after it. Each run of changes up to the next `profile`
+/// change is enforced against the constraints in force before it, then applied together with that `profile`
+/// change to a scratch copy of `context`, so a rejected list leaves `context` untouched. Returns the enforced list.
+template <typename Enforce>
+SettingsChanges enforceConstraintsAlongProfileChanges(const ContextPtr & context, const SettingsChanges & changes, Enforce && enforce)
+{
+    auto scratch_context = Context::createCopy(context);
+    SettingsChanges enforced;
+    for (auto begin = changes.begin(); begin != changes.end();)
+    {
+        auto profile = std::find_if(begin, changes.end(), isProfileChange);
+        SettingsChanges segment(begin, profile);
+        enforce(*scratch_context, segment);
+        begin = profile;
+        if (profile != changes.end())
+        {
+            segment.push_back(*profile);
+            ++begin;
+        }
+        /// `setCurrentProfile` checks the profile's own settings against the constraints in force before it.
+        scratch_context->applySettingsChanges(segment);
+        enforced.insert(enforced.end(), segment.begin(), segment.end());
+    }
+    return enforced;
+}
 }
 
 void Context::setSettings(const Settings & settings_)
@@ -3690,6 +3745,15 @@ void Context::checkSettingsConstraints(const SettingChange & change, SettingSour
 
 void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingSource source)
 {
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.checkSettingsConstraints(std::as_const(segment), source);
+        });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     settings->checkShorthandChanges(changes);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
@@ -3702,14 +3766,46 @@ void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String>
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source);
 }
 
+void Context::checkSettingsConstraintsForSettingsReset(
+    const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source)
+{
+    if (std::ranges::none_of(changes_applied_first, isProfileChange))
+    {
+        checkSettingsConstraintsForSettingsReset(names, source);
+        return;
+    }
+    /// The resets take effect after the rest of the statement, so a `profile` change in it decides the constraints.
+    auto scratch_context = Context::createCopy(shared_from_this());
+    scratch_context->applySettingsChanges(changes_applied_first);
+    scratch_context->checkSettingsConstraintsForSettingsReset(names, source);
+}
+
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.checkSettingsConstraints(segment, source);
+        });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     checkSettingsConstraintsWithLock(changes, source);
 }
 
 void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.clampToSettingsConstraints(segment, source);
+        });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     clampToSettingsConstraintsWithLock(changes, source);
 }
@@ -3989,6 +4085,7 @@ ContextMutablePtr Context::getBufferContext() const
 void Context::makeQueryContext()
 {
     query_context = shared_from_this();
+    distributed_plan_local_object = std::make_shared<DistributedPlanLocalObject>();
 
     /// Throttling should not be inherited, otherwise if you will set
     /// throttling for default profile you will not able to overwrite it
@@ -4014,22 +4111,17 @@ void Context::makeQueryContext()
     /// from unrelated earlier queries into `system.query_log.used_privileges`. See issue #105983.
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     async_read_counters = std::make_shared<AsyncReadCounters>();
+    query_execution_counters = std::make_shared<QueryExecutionCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
 
     /// A context that becomes a query context without going through a client-facing handshake -
     /// server-initiated queries such as background flushes of `Buffer` tables, streaming consumers
     /// (`Kafka`, `NATS`, `RabbitMQ`, `FileLog`, `ObjectStorageQueue`), `MaterializedPostgreSQL`
     /// replication, dictionary reloads, or asynchronous insert flushes - inherits the empty (zero)
-    /// client version of the global context. This server is the real initiator of such queries, so
-    /// fill the version with this server's version. Otherwise remote shards of any distributed
-    /// sub-query would treat the initiator as an ancient server and apply legacy compatibility
-    /// downgrades, and `RemoteQueryExecutor` rejects a zero version outright.
+    /// client version of the global context.
     /// Contexts created for real client queries overwrite the client info afterwards
     /// (see `Session::makeQueryContextImpl`), so this does not mask a client-reported version.
-    if (client_info.client_version_major == 0
-        && client_info.client_version_minor == 0
-        && client_info.client_version_patch == 0)
-        setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
+    setInitiatorVersionIfUnset();
 }
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
@@ -4045,6 +4137,15 @@ void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_set
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
     (*settings)[Setting::workload]
         = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
+
+    /// A mutation runs in the background, from a context built out of the background one rather
+    /// than from the query that submitted it, so the normalization in `executeQuery` never sees it
+    /// and a `0` written in a settings profile of the server configuration survives. The analyzer
+    /// analyzes the mutation either way, so leaving it would only make `getSetting` inside an
+    /// `UPDATE` expression report an analysis that did not happen. Every context a mutation is
+    /// analyzed and executed in comes through here.
+    if (!(*settings)[Setting::allow_experimental_analyzer])
+        (*settings)[Setting::allow_experimental_analyzer] = true;
 }
 
 void Context::makeSessionContext()
@@ -4089,11 +4190,14 @@ void Context::makeBackgroundContext(const Poco::Util::AbstractConfiguration & co
 
 const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
 {
+    /// The `region*` functions take them here when they are created, i.e. while the query is analyzed.
+    addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::EmbeddedDictionaries, "");
     return getEmbeddedDictionariesImpl(false);
 }
 
 EmbeddedDictionaries & Context::getEmbeddedDictionaries()
 {
+    addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::EmbeddedDictionaries, "");
     return getEmbeddedDictionariesImpl(false);
 }
 
@@ -5869,7 +5973,7 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
     return shared->replicated_sends_throttler;
 }
 
-ThrottlerPtr Context::getRemoteReadThrottler() const
+ThrottlerPtr Context::getRemoteReadThrottler(std::optional<UInt64> bandwidth) const
 {
     ThrottlerPtr throttler;
     {
@@ -5881,17 +5985,24 @@ ThrottlerPtr Context::getRemoteReadThrottler() const
     if (auto process_list_element = getProcessListElementSafe())
         addThrottler(throttler, process_list_element->getUserNetworkThrottler());
 
-    if (auto bandwidth = getSettingsRef()[Setting::max_remote_read_network_bandwidth])
+    /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
+    if (!bandwidth)
+    {
+        SharedLockGuard settings_lock(mutex);
+        bandwidth = getSettingsRef()[Setting::max_remote_read_network_bandwidth];
+    }
+
+    if (*bandwidth)
     {
         std::lock_guard lock(mutex);
         if (!remote_read_query_throttler)
-            remote_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryRemoteReadThrottlerBytes, ProfileEvents::QueryRemoteReadThrottlerSleepMicroseconds);
+            remote_read_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryRemoteReadThrottlerBytes, ProfileEvents::QueryRemoteReadThrottlerSleepMicroseconds);
         throttler = remote_read_query_throttler;
     }
     return throttler;
 }
 
-ThrottlerPtr Context::getRemoteWriteThrottler() const
+ThrottlerPtr Context::getRemoteWriteThrottler(std::optional<UInt64> bandwidth) const
 {
     ThrottlerPtr throttler;
     {
@@ -5903,17 +6014,24 @@ ThrottlerPtr Context::getRemoteWriteThrottler() const
     if (auto process_list_element = getProcessListElementSafe())
         addThrottler(throttler, process_list_element->getUserNetworkThrottler());
 
-    if (auto bandwidth = getSettingsRef()[Setting::max_remote_write_network_bandwidth])
+    /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
+    if (!bandwidth)
+    {
+        SharedLockGuard settings_lock(mutex);
+        bandwidth = getSettingsRef()[Setting::max_remote_write_network_bandwidth];
+    }
+
+    if (*bandwidth)
     {
         std::lock_guard lock(mutex);
         if (!remote_write_query_throttler)
-            remote_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryRemoteWriteThrottlerBytes, ProfileEvents::QueryRemoteWriteThrottlerSleepMicroseconds);
+            remote_write_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryRemoteWriteThrottlerBytes, ProfileEvents::QueryRemoteWriteThrottlerSleepMicroseconds);
         throttler = remote_write_query_throttler;
     }
     return throttler;
 }
 
-ThrottlerPtr Context::getLocalReadThrottler() const
+ThrottlerPtr Context::getLocalReadThrottler(std::optional<UInt64> bandwidth) const
 {
     ThrottlerPtr throttler;
     {
@@ -5921,17 +6039,24 @@ ThrottlerPtr Context::getLocalReadThrottler() const
         throttler = shared->local_read_throttler;
     }
 
-    if (auto bandwidth = getSettingsRef()[Setting::max_local_read_bandwidth])
+    /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
+    if (!bandwidth)
+    {
+        SharedLockGuard settings_lock(mutex);
+        bandwidth = getSettingsRef()[Setting::max_local_read_bandwidth];
+    }
+
+    if (*bandwidth)
     {
         std::lock_guard lock(mutex);
         if (!local_read_query_throttler)
-            local_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
+            local_read_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
         throttler = local_read_query_throttler;
     }
     return throttler;
 }
 
-ThrottlerPtr Context::getLocalWriteThrottler() const
+ThrottlerPtr Context::getLocalWriteThrottler(std::optional<UInt64> bandwidth) const
 {
     ThrottlerPtr throttler;
     {
@@ -5939,11 +6064,18 @@ ThrottlerPtr Context::getLocalWriteThrottler() const
         throttler = shared->local_write_throttler;
     }
 
-    if (auto bandwidth = getSettingsRef()[Setting::max_local_write_bandwidth])
+    /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
+    if (!bandwidth)
+    {
+        SharedLockGuard settings_lock(mutex);
+        bandwidth = getSettingsRef()[Setting::max_local_write_bandwidth];
+    }
+
+    if (*bandwidth)
     {
         std::lock_guard lock(mutex);
         if (!local_write_query_throttler)
-            local_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalWriteThrottlerBytes, ProfileEvents::QueryLocalWriteThrottlerSleepMicroseconds);
+            local_write_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryLocalWriteThrottlerBytes, ProfileEvents::QueryLocalWriteThrottlerSleepMicroseconds);
         throttler = local_write_query_throttler;
     }
     return throttler;
@@ -6847,6 +6979,43 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) c
 }
 
 
+std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, bool treat_local_port_as_remote) const
+{
+    if (!treat_local_port_as_remote)
+        return getCluster(cluster_name);
+
+    /// Follow the resolution order of `tryGetCluster`, so that every cluster name accepted by the
+    /// plain overload (which validates the name at `CREATE DATABASE` time for the `Remote` and
+    /// `Cluster` database engines) is also accepted here. Only the static `remote_servers` case is
+    /// rebuilt from the configuration: the pre-built object treats the replica that matches the
+    /// server's own address as a local shard, which is wrong in clickhouse-local. The clusters of
+    /// the other sources already account for `treat_local_port_as_remote` on construction (see
+    /// `DatabaseReplicated::getClusterImpl`) or describe genuinely remote discovered replicas.
+    {
+        std::lock_guard lock(shared->clusters_mutex);
+
+        const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
+        const String config_prefix = "remote_servers." + cluster_name;
+        if (config.has(config_prefix))
+            return std::make_shared<Cluster>(config, *settings, "remote_servers", cluster_name, treat_local_port_as_remote);
+
+        if (auto res = getClustersImpl(lock)->getCluster(cluster_name))
+            return res;
+
+        if (shared->cluster_discovery)
+        {
+            if (auto res = shared->cluster_discovery->getCluster(cluster_name))
+                return res;
+        }
+    }
+
+    if (auto res = tryGetReplicatedDatabaseCluster(cluster_name))
+        return res;
+
+    throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Requested cluster '{}' not found", cluster_name);
+}
+
+
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
     std::shared_ptr<Cluster> res = nullptr;
@@ -6859,7 +7028,7 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
             res = shared->cluster_discovery->getCluster(cluster_name);
     }
 
-    if (res == nullptr && !cluster_name.empty())
+    if (res == nullptr)
         res = tryGetReplicatedDatabaseCluster(cluster_name);
 
     return res;
@@ -7186,6 +7355,16 @@ std::shared_ptr<SessionLog> Context::getSessionLog() const
 }
 
 
+bool Context::hasSystemLogs() const
+{
+    std::lock_guard lock(mutex_shared_context);
+    if (!shared)
+        return false;
+
+    SharedLockGuard lock2(shared->mutex);
+    return shared->system_logs != nullptr;
+}
+
 std::shared_ptr<ZooKeeperLog> Context::getZooKeeperLog() const
 {
     std::lock_guard lock(mutex_shared_context);
@@ -7424,18 +7603,16 @@ void Context::setDashboardsConfig(const Poco::Util::AbstractConfiguration & conf
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->compression_codec_selector)
+    callOnce(shared->compression_codec_selector_initialized, [&]
     {
         constexpr auto config_name = "compression";
-        const auto & config = shared->getConfigRefWithLock(lock);
+        auto config = shared->getConfig();
 
-        if (config.has(config_name))
-            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(config, "compression");
+        if (config->has(config_name))
+            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(*config, config_name);
         else
             shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>();
-    }
+    });
 
     return shared->compression_codec_selector->choose(part_size, part_size_ratio);
 }
@@ -7790,20 +7967,6 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
 }
 
-void Context::setMutationsUseAnalyzerOverride(std::optional<bool> value)
-{
-    int8_t encoded = !value.has_value() ? int8_t{-1} : (*value ? int8_t{1} : int8_t{0});
-    shared->mutations_use_analyzer_override.store(encoded, std::memory_order_relaxed);
-}
-
-std::optional<bool> Context::getMutationsUseAnalyzerOverride() const
-{
-    int8_t encoded = shared->mutations_use_analyzer_override.load(std::memory_order_relaxed);
-    if (encoded < 0)
-        return std::nullopt;
-    return encoded != 0;
-}
-
 void Context::setConfigReloaderInterval(size_t value_ms)
 {
     shared->config_reload_interval_ms.store(value_ms, std::memory_order_relaxed);
@@ -7982,9 +8145,13 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     bool check_constraints = false;
     setCurrentProfile(shared->system_profile_name, check_constraints);
 
-    applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
-    adjustSettingsForMakeDistributedPlan(*settings);
-    doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+    /// Not around `setCurrentProfile` above, which takes the same mutex itself.
+    {
+        std::lock_guard lock(mutex);
+        applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
+        adjustSettingsForMakeDistributedPlan(*settings);
+        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+    }
 
     makeBackgroundContext(config);
 
@@ -8191,10 +8358,12 @@ void Context::setClientInterface(ClientInfo::Interface interface)
 
 void Context::setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version)
 {
-    client_info.client_version_major = client_version_major;
-    client_info.client_version_minor = client_version_minor;
-    client_info.client_version_patch = client_version_patch;
-    client_info.client_tcp_protocol_version = client_tcp_protocol_version;
+    client_info.setClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
+}
+
+void Context::setInitiatorVersionIfUnset()
+{
+    client_info.setInitiatorVersionIfUnset();
 }
 
 void Context::setScriptQueryAndLineNumber(uint32_t query_number, uint32_t line_number)
@@ -8843,6 +9012,10 @@ void Context::reloadLongConnectionLimitConfig(size_t max_remote_read_connections
 ReadSettings Context::getReadSettings() const
 {
     ReadSettings res;
+
+    /// This mutex cannot be upgraded and the throttler getters below re-enter it exclusively, so it is
+    /// released as soon as the settings have been copied; nothing after the unlock reads `settings_ref`.
+    SharedLockGuard lock(mutex);
     const auto & settings_ref = getSettingsRef();
 
     std::string_view read_method_str = getSettingsRef()[Setting::local_filesystem_read_method].value;
@@ -8883,11 +9056,13 @@ ReadSettings Context::getReadSettings() const
         = settings_ref[Setting::filesystem_cache_enable_background_download_during_fetch];
     res.filesystem_cache_settings.prefer_bigger_buffer_size = settings_ref[Setting::filesystem_cache_prefer_bigger_buffer_size];
 
+    if (settings_ref[Setting::filesystem_cache_boundary_alignment])
+        res.filesystem_cache_settings.boundary_alignment = settings_ref[Setting::filesystem_cache_boundary_alignment];
+
     res.filesystem_cache_settings.max_download_size_per_query = settings_ref[Setting::filesystem_cache_max_download_size];
     res.filesystem_cache_settings.skip_download_if_exceeds_per_query_cache_write_limit
         = settings_ref[Setting::filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit];
 
-    res.page_cache_settings.cache = getPageCache();
     res.use_page_cache_for_disks_without_file_cache = settings_ref[Setting::use_page_cache_for_disks_without_file_cache];
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
     res.use_page_cache_for_local_disks = settings_ref[Setting::use_page_cache_for_local_disks];
@@ -8896,14 +9071,30 @@ ReadSettings Context::getReadSettings() const
     res.reader_executor.use_long_connections = settings_ref[Setting::reader_executor_use_long_connections];
     res.reader_executor.window_size = settings_ref[Setting::reader_executor_window_size];
     res.reader_executor.block_size = settings_ref[Setting::reader_executor_block_size];
-    /// Below this the executor would serve near-empty windows / stall on tiny source reads.
+    res.reader_executor.plan_look_ahead = settings_ref[Setting::reader_executor_plan_look_ahead];
+    /// Below the floor the executor serves near-empty windows and stalls on tiny source reads; above
+    /// the ceiling one reader holds that much in buffers and cache pins. One band for the three sizes
+    /// keeps `plan_look_ahead >= block_size` satisfiable at every legal `block_size`.
     static constexpr UInt64 min_reader_executor_size = MIN_READER_EXECUTOR_SIZE;
-    if (res.reader_executor.window_size < min_reader_executor_size)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_window_size: must be at least {} bytes",
-            res.reader_executor.window_size, min_reader_executor_size);
-    if (res.reader_executor.block_size < min_reader_executor_size)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_block_size: must be at least {} bytes",
-            res.reader_executor.block_size, min_reader_executor_size);
+    static constexpr UInt64 max_reader_executor_size = MAX_READER_EXECUTOR_SIZE;
+    auto validate_reader_executor_size = [](std::string_view name, UInt64 value)
+    {
+        if (value < min_reader_executor_size)
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for {}: must be at least {} bytes",
+                value, name, min_reader_executor_size);
+        if (value > max_reader_executor_size)
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for {}: must be at most {} bytes",
+                value, name, max_reader_executor_size);
+    };
+    validate_reader_executor_size("reader_executor_window_size", res.reader_executor.window_size);
+    validate_reader_executor_size("reader_executor_block_size", res.reader_executor.block_size);
+    validate_reader_executor_size("reader_executor_plan_look_ahead", res.reader_executor.plan_look_ahead);
+    /// Looking ahead less than one source block is meaningless, so reject the combination rather than
+    /// silently run at `block_size` and let the setting report a value the executor ignores.
+    if (res.reader_executor.plan_look_ahead < res.reader_executor.block_size)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value {} for reader_executor_plan_look_ahead: must be at least reader_executor_block_size ({} bytes)",
+            res.reader_executor.plan_look_ahead, res.reader_executor.block_size);
     res.reader_executor.min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
     res.reader_executor.max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
     res.page_cache_settings.read_if_exists_otherwise_bypass
@@ -8931,16 +9122,12 @@ ReadSettings Context::getReadSettings() const
     res.local_fs_settings.mmap_threshold = settings_ref[Setting::min_bytes_to_use_mmap_io];
     res.priority = Priority{settings_ref[Setting::read_priority]};
 
-    res.remote_throttler = getRemoteReadThrottler();
-    res.local_throttler = getLocalReadThrottler();
-
     res.http_settings.max_tries = settings_ref[Setting::http_max_tries];
     res.http_settings.retry_initial_backoff_ms = settings_ref[Setting::http_retry_initial_backoff_ms];
     res.http_settings.retry_max_backoff_ms = settings_ref[Setting::http_retry_max_backoff_ms];
     res.http_settings.skip_not_found_url_for_globs = settings_ref[Setting::http_skip_not_found_url_for_globs];
     res.http_settings.make_head_request = settings_ref[Setting::http_make_head_request];
 
-    res.local_fs_settings.mmap_cache = getMMappedFileCache().get();
     res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
 
@@ -8950,12 +9137,26 @@ ReadSettings Context::getReadSettings() const
     res.distributed_cache_settings.validate();
 #endif
 
+    /// Read here so that the throttler getters below do not have to take this lock again.
+    const UInt64 remote_bandwidth = settings_ref[Setting::max_remote_read_network_bandwidth];
+    const UInt64 local_bandwidth = settings_ref[Setting::max_local_read_bandwidth];
+
+    lock.unlock();
+
+    res.page_cache_settings.cache = getPageCache();
+    res.local_fs_settings.mmap_cache = getMMappedFileCache().get();
+    res.remote_throttler = getRemoteReadThrottler(remote_bandwidth);
+    res.local_throttler = getLocalReadThrottler(local_bandwidth);
+
     return res;
 }
 
 WriteSettings Context::getWriteSettings() const
 {
     WriteSettings res;
+
+    /// The shared lock is released before the throttler getters, which take it exclusively.
+    SharedLockGuard lock(mutex);
     const auto & settings_ref = getSettingsRef();
 
     res.enable_filesystem_cache_on_write_operations = settings_ref[Setting::enable_filesystem_cache_on_write_operations];
@@ -8967,13 +9168,19 @@ WriteSettings Context::getWriteSettings() const
     res.s3_allow_parallel_part_upload = settings_ref[Setting::s3_allow_parallel_part_upload];
     res.azure_allow_parallel_part_upload = settings_ref[Setting::azure_allow_parallel_part_upload];
 
-    res.remote_throttler = getRemoteWriteThrottler();
-    res.local_throttler = getLocalWriteThrottler();
-
     res.write_through_distributed_cache = resolveWriteThroughDistributedCache();
 #if ENABLE_DISTRIBUTED_CACHE
     res.distributed_cache_settings.load(settings_ref);
 #endif
+
+    /// Read here so that the throttler getters below do not have to take this lock again.
+    const UInt64 remote_bandwidth = settings_ref[Setting::max_remote_write_network_bandwidth];
+    const UInt64 local_bandwidth = settings_ref[Setting::max_local_write_bandwidth];
+
+    lock.unlock();
+
+    res.remote_throttler = getRemoteWriteThrottler(remote_bandwidth);
+    res.local_throttler = getLocalWriteThrottler(local_bandwidth);
 
     return res;
 }
@@ -8983,12 +9190,14 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
     return async_read_counters;
 }
 
+QueryExecutionCountersPtr Context::getQueryExecutionCounters() const
+{
+    return query_execution_counters;
+}
+
 bool Context::canUseTaskBasedParallelReplicas() const
 {
     const auto & settings_ref = getSettingsRef();
-
-    if (!settings_ref[Setting::allow_experimental_analyzer] && settings_ref[Setting::parallel_replicas_only_with_analyzer])
-        return false;
 
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS

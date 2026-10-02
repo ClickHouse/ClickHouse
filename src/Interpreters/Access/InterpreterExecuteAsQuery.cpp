@@ -128,7 +128,13 @@ BlockIO InterpreterExecuteAsQuery::execute()
         /// The wrapped statement is internal (it is part of the caller's query), but it must still be
         /// audited on its own: the audit log otherwise sees only `EXECUTE AS`, not what was run.
         auto subquery_context = impersonateQueryContext(getContext(), target_user_name);
-        return executeQuery(query.subquery->formatWithSecretsOneLine(), subquery_context, QueryFlags{ .internal = true, .audit_internal = true }).second;
+        /// The subquery is nested, hence `internal`, but its text comes from the user, hence `user_initiated`:
+        /// without it the access checks of `CREATE` subqueries would be skipped, so the impersonated statement
+        /// would not be limited to the privileges of the target user.
+        return executeQuery(
+                   query.subquery->formatWithSecretsOneLine(), subquery_context,
+                   QueryFlags{ .internal = true, .user_initiated = true, .audit_internal = true })
+            .second;
     }
     else
     {

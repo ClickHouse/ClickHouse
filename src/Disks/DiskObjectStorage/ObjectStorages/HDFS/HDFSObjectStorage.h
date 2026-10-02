@@ -101,7 +101,7 @@ public:
     /// `static`) so this contract can be unit-tested without a live NameNode.
     static ObjectMetadata makeObjectMetadata(Int64 last_modified, Int64 size);
 
-    String copyObject( /// NOLINT
+    void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
         const ReadSettings & read_settings,
