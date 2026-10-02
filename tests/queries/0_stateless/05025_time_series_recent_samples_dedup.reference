@@ -1,4 +1,0 @@
--- the same block inserted twice is deduplicated in both the samples and the recent samples table
-2	2
--- a different block is inserted into both
-3	3

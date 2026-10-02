@@ -33,8 +33,7 @@ namespace
 std::unique_ptr<UInt8[]>
 mergeIfAndNullFlags(const UInt8 * __restrict null_map, const UInt8 * __restrict if_flags, size_t row_begin, size_t row_end)
 {
-    /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
-    auto final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
+    auto final_flags = std::make_unique<UInt8[]>(row_end);
     for (size_t i = row_begin; i < row_end; ++i)
         final_flags[i] = (!null_map[i]) & !!if_flags[i];
     return final_flags;
@@ -172,6 +171,14 @@ void SingleValueDataFixed<T>::insertResultInto(IColumn & to, const DataTypePtr &
     /// value is set to 0 in the constructor (also with JIT), so no need to check has_data()
     chassert(has() || value == T{});
     assert_cast<ColVecType &>(to).getData().push_back(value);
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::write(WriteBuffer & buf, const ISerialization &) const
+{
+    writeBinary(has(), buf);
+    if (has())
+        writeBinaryLittleEndian(value, buf);
 }
 
 template <typename T>
@@ -488,7 +495,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & 
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_index_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         return findExtremeMinIndex(vec.getData().data(), row_begin, row_end);
     }
@@ -523,7 +530,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndex(const IColumn & 
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_index_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
         return findExtremeMaxIndex(vec.getData().data(), row_begin, row_end);
 
     {
@@ -559,7 +566,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
     const auto & vec = assert_cast<const ColVecType &>(column);
     const auto & vec_data = vec.getData();
 
-    if constexpr (has_find_extreme_index_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -673,7 +680,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
     const auto & vec = assert_cast<const ColVecType &>(column);
     const auto & vec_data = vec.getData();
 
-    if constexpr (has_find_extreme_index_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
