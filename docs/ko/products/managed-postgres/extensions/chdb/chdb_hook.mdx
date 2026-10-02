@@ -125,6 +125,10 @@ URL 포맷은 대상(target)에 따라 다릅니다.
 
 #### File {#file}
 
+<Important>
+  `file://` 스킴은 일부 시스템에서 지원되지 않을 수 있습니다. 예를 들어 클라우드 플랫폼처럼 관리자가 `chdb_hook`을 컴파일할 때 `make`에 `NO_FILE_SCHEME` 옵션을 지정하여 이 스킴을 비활성화한 환경이 이에 해당합니다.
+</Important>
+
 Postgres 서버의 절대 경로여야 합니다. 상대 경로를 지정하면 오류가 발생합니다. Postgres 사용자는 용도에 따라 `pg_read_server_files` 또는 `pg_write_server_files` 역할(Role)의 멤버여야 합니다. 또한 Postgres 시스템 사용자에게 해당 파일에 대한 읽기 또는 쓰기 액세스 권한이 있어야 합니다. `COPY TO`에서 경로가 존재하지 않으면 chdb&#95;hook이 누락된 상위 디렉터리를 생성하며, 이때 필요한 파일 시스템 권한을 갖추고 있어야 합니다. 예시:
 
 ```
@@ -290,6 +294,17 @@ COPY users TO 'file:///tmp/users.parquet' (
 요청 타임아웃(밀리초 단위)입니다. HTTP, S3, GCS, Azure URL에 적용됩니다.
 기본값은 `30000`(30초)입니다.
 
+#### `encoding_check` {#encoding_check}
+
+chDB의 String 및 JSON 값을 변환할 때 [database encoding]에서 유효하지 않은 문자를 처리하는 방식을 지정합니다. 다음 값 중 하나를 사용합니다.
+
+* `fail` (기본값): 오류를 발생시킵니다
+* `remove`: 유효하지 않은 바이트를 제거합니다
+* `replace`: UTF-8 인코딩에서는 유효하지 않은 바이트를
+  유니코드 대체 문자(`�`)로 대체합니다. 다른 인코딩에서는
+  `remove`와 동일하게 동작합니다
+* `truncate`: 처음으로 나타나는 유효하지 않은 바이트 위치에서 텍스트를 잘라냅니다
+
 ### 디버깅 {#debugging}
 
 오류가 발생하면 chdb&#95;hook의 `COPY` 명령은 실행을 시도했던 [chDB] 쿼리를 오류 Context에 포함합니다:
@@ -322,10 +337,11 @@ chdb&#95;hook은 SQL injection 취약점을 방지하고 자격 증명과 같은
 
 chdb&#95;hook은 [CREATE TABLE]에도 후크를 연결하므로, 테이블이 URL에서 컬럼을 도출하고 행을 로드할 수 있습니다.
 
-URL에서 도출된 구조로 테이블을 생성하려면 `structure_from` 옵션에 URL을 전달하고 컬럼 목록은 비워 두십시오:
+URL에서 도출된 구조로 테이블을 생성하려면 `structure_from` 옵션에 URL을 전달하고 컬럼 목록은 비워 두십시오(주의: 이 공개 데이터 파일에는 4,100만 개의 행이 있습니다):
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     structure_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -334,6 +350,7 @@ CREATE TABLE reviews () WITH (
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     copy_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -350,18 +367,21 @@ CREATE TABLE times (
 ) WITH (copy_from = 's3://datasets-documentation/my-test-bucket-768/some_prefix/some_file_1.csv');
 ```
 
+`copy_from`이 컬럼을 추론할 때는 `DESCRIBE`가 반환하는 소스 스키마를 사용합니다.
+이로 인해 `Map`, `Tuple`, `Nested` 값은 텍스트 배열 컬럼으로 로드되며,
+이 컬럼에는 원래의 ClickHouse 타입 정보가 남지 않습니다.
+
 두 옵션 모두 `COPY`와 동일한 [URL scheme](#url-schemes)과
 [옵션](#options)을 지원하며, 자격 증명, 포맷, 압축, timeout,
 심지어 명시적인 [구조](#structure) 지정까지 모두 적용됩니다. Postgres는 남아 있는
 스토리지 매개변수를 그대로 유지합니다:
 
 ```sql
-CREATE TABLE users () WITH (
-    copy_from     = 's3://my-bucket/users.csv',
-    access_key    = 'AKIAIOSFODNN7EXAMPLE',
-    access_secret = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
-    format        = 'CSVWithNames',
-    fillfactor    = 90
+CREATE TABLE logs () WITH (
+    copy_from  = 's3://chdb-lakedata-public/logs/logs-2026-08-26.csv',
+    format     = 'CSVWithNames',
+    timeout    = 60000,
+    fillfactor = 90
 );
 ```
 
@@ -376,6 +396,11 @@ chdb&#95;hook에는 다음과 같은 제한 사항이 있습니다:
 * 복사를 수행하는 역할에 적용되는 [row-level security] 정책이 있는 릴레이션은
   `COPY`할 수 없습니다. Postgres는 `COPY TO`를 쿼리로 다시 작성하는 방식으로
   이러한 정책을 적용하는데, chdb&#95;hook은 이를 지원하지 않습니다.
+* `WHERE` 절을 사용하여 URL에서 `COPY FROM`을 수행할 수 없습니다.
+* chDB에는 NULL 배열이 없으므로, `COPY TO`는 NULL을 빈 배열(`[]`)로
+  저장합니다.
+* chDB는 `lseg`, `path`, `polygon`에 해당하는 값을 배열로 표현합니다.
+  따라서 이러한 타입의 NULL 값도 `COPY TO` 시 빈 배열(`[]`)로 출력됩니다.
 * ClickHouse에는 NULL 배열이 없으므로, `COPY TO`는 `NULL`을 빈 배열(`[]`)로
   저장합니다.
 * ClickHouse는 `lseg`, `path`, `polygon`에 해당하는 값을 배열로 표현합니다.
@@ -406,8 +431,6 @@ chdb&#95;hook에는 다음과 같은 제한 사항이 있습니다:
 * Protobuf 출력은 1970-01-01 이전 날짜를 지원하지 않습니다. 값을 보존하려면
   명시적인 [structure](#structure)에서 `time` 컬럼을 `String`으로
   구성하십시오. (ClickHouse/ClickHouse#111860)
-* CSVWithNames 및 CSVWithNamesAndTypes 포맷은 현재 `NULL` box 또는 circle 값을
-  가져올 수 없습니다. (ClickHouse/ClickHouse#115523)
 
 ## 데이터 타입 {#data-types}
 
@@ -415,58 +438,59 @@ chdb&#95;hook에는 다음과 같은 제한 사항이 있습니다:
 [CREATE TABLE](#create-table-overloading)은 URL의 chDB 타입을 Postgres 타입으로
 매핑합니다.
 
-### Postgres to chDB {#postgres-to-chdb}
+### Postgres에서 chDB로 {#postgres-to-chdb}
 
-명시적인 [structure](#structure) 옵션이 없으면 chdb&#95;hook은 Postgres 타입을 적절한 chDB 타입으로 매핑합니다. 이 매핑이 사용 사례에 맞지 않으면 [structure](#structure)를 지정하여 자동 생성된 타입을 필요한 타입으로 재정의하십시오.
+명시적인 [structure](#structure) 옵션이 없으면 chdb&#95;hook은
+Postgres 타입을 적절한 chDB 대응 타입으로 매핑합니다. 매핑된 타입이 사용 사례에 맞지 않으면
+[structure](#structure)를 지정하여 생성된 타입을
+원하는 타입으로 재정의하십시오.
 
-| Postgres    | chDB                                     | 참고                                                 |
-| ----------- | ---------------------------------------- | -------------------------------------------------- |
-| boolean     | Bool                                     |                                                    |
-| name        | String                                   |                                                    |
-| text        | String                                   |                                                    |
-| inet        | String                                   | 데이터에 둘 중 하나만 포함된 경우 `IPv4` 또는 `IPv6`로 재정의하십시오.     |
-| cidr        | String                                   |                                                    |
-| macaddr     | String                                   |                                                    |
-| macaddr8    | String                                   |                                                    |
-| interval    | String                                   | `IntervalDay`와 같은 `Interval` 단위로 재정의하십시오.          |
-| tsvector    | String                                   |                                                    |
-| tsquery     | String                                   |                                                    |
-| jsonpath    | String                                   |                                                    |
-| money       | String                                   |                                                    |
-| enum        | String                                   |                                                    |
-| varchar     | String                                   |                                                    |
-| varbit      | String                                   |                                                    |
-| char        | FixedString                              |                                                    |
-| bit         | FixedString                              |                                                    |
-| bpchar      | String                                   |                                                    |
-| int2        | Int16                                    |                                                    |
-| int4        | Int32                                    |                                                    |
-| int8        | Int64                                    |                                                    |
-| oid         | UInt32                                   |                                                    |
-| oid8        | UInt64                                   |                                                    |
-| xid8        | UInt64                                   |                                                    |
-| json        | String                                   | 데이터에 객체만 포함된 경우 `JSON`으로 재정의하십시오.                  |
-| jsonb       | String                                   | 데이터에 객체만 포함된 경우 `JSON`으로 재정의하십시오.                  |
-| float4      | Float32                                  |                                                    |
-| float8      | Float64                                  |                                                    |
-| date        | Date32                                   |                                                    |
-| time        | Time64(6)                                | 시간을 지원하지 않는 포맷에는 `String`으로 재정의하십시오.               |
-| timetz      | String                                   |                                                    |
-| timestamp   | DateTime64(6)                            | `UTC` time zone으로 선언되며, session time zone에서 변환됩니다. |
-| timestamptz | DateTime64(6)                            | `UTC` time zone으로 선언됩니다.                           |
-| numeric     | Decimal                                  |                                                    |
-| uuid        | UUID                                     |                                                    |
-| point       | `Point`                                  | Postgres와 동일한 두 좌표를 사용합니다.                         |
-| lseg        | `LineString`                             | 정확히 두 개의 Point로 이루어진 선입니다.                         |
-| path        | `LineString`                             | 닫힌 경로는 첫 번째 Point를 반복합니다.                          |
-| polygon     | `Ring`                                   | Ring은 Polygon과 마찬가지로 암묵적으로 닫힙니다.                   |
-| box         | `Tuple(high Point, low Point)`           | 두 모서리를 나타내며, Postgres와 동일한 순서로 정렬됩니다.              |
-| circle      | `Tuple(center Point, radius Float64)`    |                                                    |
-| line        | `Tuple(a Float64, b Float64, c Float64)` | `Ax + By + C = 0` 방정식입니다.                          |
+| PostgreSQL       | chDB                                   | 참고                                                             |
+| ---------------- | -------------------------------------- | -------------------------------------------------------------- |
+| boolean          | Bool                                   |                                                                |
+| smallint         | Int16                                  |                                                                |
+| integer          | Int32                                  |                                                                |
+| bigint           | Int64                                  |                                                                |
+| oid              | UInt32                                 |                                                                |
+| xid8             | UInt64                                 |                                                                |
+| oid8             | UInt64                                 |                                                                |
+| real             | Float32                                |                                                                |
+| double precision | Float64                                |                                                                |
+| numeric          | Decimal256(38)                         | 정밀도가 76자리를 초과하는 경우에도 이 타입으로 매핑됩니다.                             |
+| numeric(12,6)    | Decimal(12,6)                          | 정밀도(precision)와 스케일(scale)이 그대로 유지됩니다.                         |
+| text             | String                                 |                                                                |
+| bytea            | String                                 |                                                                |
+| date             | Date32                                 |                                                                |
+| time             | Time64(6)                              | 시간 타입을 지원하지 않는 포맷에서는 `String`으로 재정의하십시오.                       |
+| timestamp        | DateTime64(6, &#39;UTC&#39;)           | 세션 시간대를 기준으로 변환됩니다.                                            |
+| timestamptz      | DateTime64(6, &#39;UTC&#39;)           |                                                                |
+| interval         | String                                 | `IntervalDay`와 같은 `Interval` 단위로 재정의하십시오.                      |
+| uuid             | UUID                                   |                                                                |
+| json             | String                                 | 데이터가 객체로만 이루어진 경우 `JSON`으로 재정의하십시오.                            |
+| jsonb            | String                                 | 데이터가 객체로만 이루어진 경우 `JSON`으로 재정의하십시오.                            |
+| inet             | String                                 | 데이터가 IPv4 또는 IPv6 중 한 종류로만 이루어진 경우 `IPv4` 또는 `IPv6`으로 재정의하십시오. |
+| point            | Point                                  | Postgres와 동일하게 두 좌표로 구성됩니다.                                    |
+| lseg             | LineString                             | 정확히 두 점으로 이루어진 선입니다.                                           |
+| path             | LineString                             | 닫힌 경로는 첫 번째 점이 끝에 반복됩니다.                                       |
+| polygon          | Ring                                   | Ring은 polygon과 마찬가지로 암묵적으로 닫힙니다.                               |
+| box              | Tuple(high Point, low Point)           | 두 모서리 점이며, Postgres와 동일한 방식으로 정렬됩니다.                           |
+| circle           | Tuple(center Point, radius Float64)    |                                                                |
+| line             | Tuple(a Float64, b Float64, c Float64) | 방정식 `Ax + By + C = 0`을 나타냅니다.                                  |
 
-배열 타입은 매핑된 원소 타입의 `Array`로 매핑됩니다. ClickHouse는 널 허용 여부를 컬럼 단위로 제한하지만 Postgres는 배열 단위로 제한하므로, 원소는 항상 `Nullable`입니다.
+`name`, `varchar`, `char`, `bit`, `timetz`, `money`, enum 등
+이 표에 없는 타입은 `String`으로 매핑됩니다.
 
-`Map` 또는 `Tuple`로 매핑되는 Postgres 타입은 없지만, [structure](#structure)에서 이를 지정할 수 있습니다. `Map`은 key value 쌍의 배열로 변환할 수 있고, `Tuple`은 배열로 변환됩니다. 서로 다른 타입을 함께 담아야 하는 경우에는 `text[]`를 사용하십시오.
+배열 타입은 매핑된 원소 타입의 `Array`로 매핑됩니다. ClickHouse는
+널 허용 여부를 컬럼 단위로 제한하는 반면 Postgres는 배열 단위로 제한하므로, 원소는
+항상 `Nullable`입니다.
+
+`Map`, `Tuple`, `Nested`로 직접 매핑되는 Postgres 타입은 없지만,
+[structure](#structure)나 소스 파일에서 이러한 타입을 지정할 수 있습니다. `Tuple`은
+튜플 필드마다 원소 하나씩을 담는 `text[]`로 읽거나, 필드 타입을 보존하려면 구조가 일치하는 [composite
+type]으로 읽을 수 있습니다. `Map` 또는 `Nested`는
+키-값 쌍 또는 중첩 튜플마다 내부 배열 하나씩을 담는 `text[][]`로 읽거나,
+구조가 일치하는 복합 타입의 배열로 읽을 수 있습니다. 예시는 [수동 타입
+매핑](#manual-type-mappings)을 참조하십시오.
 
 ### 타임스탬프 변환 {#timestamp-conversion}
 
@@ -501,75 +525,129 @@ Timestamp TZ 예시:
 
 ### chDB에서 Postgres로 {#chdb-to-postgres}
 
-chdb&#95;hook은 [`DESCRIBE`]가 반환하는 ClickHouse 타입을 다음 Postgres 타입으로 매핑합니다:
+기존 테이블에서는 값이 선언된 컬럼 타입으로 변환됩니다.
+다른 스칼라 타입은 가능한 경우 PostgreSQL의 명시적 형변환을 사용하며,
+배열 원소는 선언된 원소 타입으로 변환됩니다. 지원되지 않는
+변환이나 범위를 벗어난 값은 오류를 발생시킵니다.
 
-{/* `make type-table`에서 생성한 TYPE-TABLE-BEGIN */}
+chDB `Interval` 타입을 `smallint`, `integer` 또는 `bigint`에 매핑하면 해당 단위의 개수를
+읽고 쓸 수 있습니다. 예를 들어 `IntervalDay` 값 `3`은
+정수 `3`에 매핑됩니다. `IntervalNanosecond`를 `bigint`에 매핑하면 나노초 정밀도가
+유지되지만, `interval`에 매핑하면 마이크로초 단위로 잘립니다.
 
-| chDB                | Postgres                    | 참고                       |
-| ------------------- | --------------------------- | ------------------------ |
-| Array(T)            | T[]                         | 깊이당 PG 배열 유형 하나          |
-| BFloat16            | real                        | 쓰기 시 하위 가수 비트가 버려짐       |
-| Bool                | boolean                     |                          |
-| Date                | date                        |                          |
-| Date32              | date                        |                          |
-| DateTime            | timestamp with time zone    |                          |
-| DateTime64(P)       | timestamp(P) with time zone | 6을 초과하는 P는 6으로 제한        |
-| Decimal(P,S)        | numeric(P,S)                |                          |
-| Decimal32(S)        | numeric(9,S)                |                          |
-| Decimal64(S)        | numeric(18,S)               |                          |
-| Decimal128(S)       | numeric(38,S)               |                          |
-| Decimal256(S)       | numeric(76,S)               |                          |
-| Enum8               | text                        |                          |
-| Enum16              | text                        |                          |
-| FixedString(N)      | text                        | N은 CH에서는 바이트, PG에서는 문자 수 |
-| Float32             | real                        |                          |
-| Float64             | double precision            |                          |
-| IPv4                | inet                        |                          |
-| IPv6                | inet                        |                          |
-| Int8                | smallint                    |                          |
-| Int16               | smallint                    |                          |
-| Int32               | integer                     |                          |
-| Int64               | bigint                      |                          |
-| Int128              | numeric(39,0)               |                          |
-| Int256              | numeric(77,0)               |                          |
-| IntervalDay         | interval                    |                          |
-| IntervalHour        | interval                    |                          |
-| IntervalMicrosecond | interval                    |                          |
-| IntervalMillisecond | interval                    |                          |
-| IntervalMinute      | interval                    |                          |
-| IntervalMonth       | interval                    |                          |
-| IntervalNanosecond  | interval                    | 마이크로초 단위로 절삭됨            |
-| IntervalQuarter     | interval                    |                          |
-| IntervalSecond      | interval                    |                          |
-| IntervalWeek        | interval                    |                          |
-| IntervalYear        | interval                    |                          |
-| JSON                | jsonb                       |                          |
-| LineString          | path                        |                          |
-| LowCardinality(T)   | T                           |                          |
-| Map(K,V)            | text[][]                    | 쌍마다 text 항목 한 행          |
-| MultiLineString     | path[]                      |                          |
-| MultiPolygon        | polygon[][]                 |                          |
-| Nullable(T)         | T                           | 해당 컬럼에 널 허용을 설정          |
-| Point               | point                       |                          |
-| Polygon             | polygon[]                   |                          |
-| Ring                | polygon                     |                          |
-| String              | text                        |                          |
-| Time                | time without time zone      |                          |
-| Time64(P)           | time(P) without time zone   | 6을 초과하는 P는 6으로 제한        |
-| Tuple(...)          | text[]                      | 필드가 text 항목이 됨           |
-| UInt8               | smallint                    |                          |
-| UInt16              | integer                     |                          |
-| UInt32              | bigint                      |                          |
-| UInt64              | numeric(20,0)               |                          |
-| UInt128             | numeric(39,0)               |                          |
-| UInt256             | numeric(78,0)               |                          |
-| UUID                | uuid                        |                          |
+chdb&#95;hook은 [`DESCRIBE`]가 보고하는 ClickHouse 타입을 기반으로 테이블을 생성할 때
+아래의 기본 Postgres 타입을 사용합니다. 추가 읽기 대상은
+명시적으로 선언된 컬럼에 적용되며, PostgreSQL 명시적 형변환 외의 변환도
+포함합니다. 셀이 비어 있더라도 해당 형변환은 허용됩니다. 이 대상은 읽기에 해당하며,
+쓰기에는 별도의 변환 규칙이 적용됩니다.
 
-{/* TYPE-TABLE-END */}
+| chDB                         | 기본 PostgreSQL               | 추가 읽기 대상                                | 참고                                     |
+| ---------------------------- | --------------------------- | --------------------------------------- | -------------------------------------- |
+| Array(T)                     | T[]                         |                                         | 중첩 깊이마다 PG 배열 타입 하나씩 사용                |
+| BFloat16                     | real                        |                                         |                                        |
+| Bool                         | boolean                     |                                         |                                        |
+| Date                         | date                        |                                         |                                        |
+| Date32                       | date                        |                                         |                                        |
+| DateTime                     | timestamp with time zone    | time                                    |                                        |
+| DateTime64(P)                | timestamp(P) with time zone | time                                    | P가 6을 초과하면 6으로 제한됨                     |
+| Decimal(P,S)                 | numeric(P,S)                | xid8, oid8                              |                                        |
+| Decimal32(S)                 | numeric(9,S)                | xid8, oid8                              |                                        |
+| Decimal64(S)                 | numeric(18,S)               | xid8, oid8                              |                                        |
+| Decimal128(S)                | numeric(38,S)               | xid8, oid8                              |                                        |
+| Decimal256(S)                | numeric(76,S)               | xid8, oid8                              |                                        |
+| Enum8                        | text                        | bytea; 입력 호환 타입                         | 레이블로 디코딩됨. 레이블이 일치하는 PG enum도 사용 가능    |
+| Enum16                       | text                        | bytea; 입력 호환 타입                         | 레이블로 디코딩됨. 레이블이 일치하는 PG enum도 사용 가능    |
+| FixedString(N)               | text                        | bytea; 입력 호환 타입                         | bytea만 끝부분의 NUL 문자를 유지함                |
+| Float32                      | real                        |                                         |                                        |
+| Float64                      | double precision            |                                         |                                        |
+| IPv4                         | inet                        |                                         |                                        |
+| IPv6                         | inet                        |                                         |                                        |
+| Int8                         | smallint                    | boolean                                 | 0은 false, 0이 아닌 값은 true                |
+| Int16                        | smallint                    | boolean                                 | 0은 false, 0이 아닌 값은 true                |
+| Int32                        | integer                     |                                         |                                        |
+| Int64                        | bigint                      |                                         |                                        |
+| Int128                       | numeric(39,0)               | xid8, oid8                              |                                        |
+| Int256                       | numeric(77,0)               | xid8, oid8                              |                                        |
+| IntervalDay                  | interval                    | smallint, integer, bigint               | 정수 타입에는 단위 개수가 저장됨                     |
+| IntervalHour                 | interval                    | smallint, integer, bigint               | 정수 타입에는 단위 개수가 저장됨                     |
+| IntervalMicrosecond          | interval                    | smallint, integer, bigint               | 정수 타입에는 단위 개수가 저장됨                     |
+| IntervalMillisecond          | interval                    | smallint, integer, bigint               | 정수 타입에는 단위 개수가 저장됨                     |
+| IntervalMinute               | interval                    | smallint, integer, bigint               | 정수 타입에는 단위 개수가 저장됨                     |
+| IntervalMonth                | interval                    | smallint, integer, bigint               | 정수는 단위 개수로 받습니다                        |
+| IntervalNanosecond           | interval                    | smallint, integer, bigint               | 정수는 ns 단위를 유지하며, interval은 us 단위로 잘립니다 |
+| IntervalQuarter              | interval                    | smallint, integer, bigint               | 정수는 단위 개수로 받습니다                        |
+| IntervalSecond               | interval                    | smallint, integer, bigint               | 정수는 단위 개수로 받습니다                        |
+| IntervalWeek                 | interval                    | smallint, integer, bigint               | 정수는 단위 개수로 받습니다                        |
+| IntervalYear                 | interval                    | smallint, integer, bigint               | 정수는 단위 개수로 받습니다                        |
+| JSON                         | jsonb                       | json, text, bytea; 입력 호환 타입             | jsonb는 문서를 정규화합니다                      |
+| LineString                   | path                        | lseg                                    | lseg는 점 2개가 필요합니다                      |
+| LowCardinality(T)            | T                           |                                         |                                        |
+| Map(K,V)                     | text[][]                    | composite[], T[][], text                | 쌍마다 텍스트 항목 1개 행으로 표현됩니다                |
+| MultiLineString              | path[]                      |                                         |                                        |
+| MultiPolygon                 | polygon[][]                 |                                         |                                        |
+| Nested(...)                  | text[][]                    | composite[], T[][], text                | 중첩 행마다 텍스트 항목 1개 행으로 표현됩니다             |
+| Nullable(T)                  | T                           |                                         | 컬럼에 nullable이 설정됩니다                    |
+| Point                        | point                       |                                         |                                        |
+| Polygon                      | polygon[]                   |                                         |                                        |
+| Ring                         | polygon                     | lseg                                    | lseg는 점 2개가 필요합니다                      |
+| SimpleAggregateFunction(f,T) | T                           |                                         | 값을 T로 저장합니다                            |
+| String                       | text                        | bytea; 입력 호환 타입                         | bytea는 원시 바이트를 그대로 유지합니다               |
+| Time                         | time without time zone      |                                         |                                        |
+| Time64(P)                    | time(P) without time zone   |                                         | P가 6을 초과하면 6으로 제한됩니다                   |
+| Tuple(...)                   | text[]                      | composite, T[], text; box, circle, line | 각 필드가 텍스트 항목으로 변환됩니다                   |
+| UInt8                        | smallint                    | boolean                                 | 0은 false, 0이 아닌 값은 true입니다             |
+| UInt16                       | integer                     |                                         |                                        |
+| UInt32                       | bigint                      |                                         |                                        |
+| UInt64                       | numeric(20,0)               | xid8, oid8                              |                                        |
+| UInt128                      | numeric(39,0)               | xid8, oid8                              |                                        |
+| UInt256                      | numeric(78,0)               | xid8, oid8                              |                                        |
+| UUID                         | uuid                        |                                         |                                        |
 
-이 표에 없는 chDB 타입은 모두 오류를 발생시키며, `Nested`, `Variant`, `Dynamic`이 여기에 해당합니다. 이러한 타입을 텍스트로 읽으려면 해당 타입을 `String`으로 매핑하는 [structure](#structure)를 사용하십시오.
+입력 호환 타입은 해당 PostgreSQL 입력 함수를 사용하여 문자열을 읽을 수 있습니다.
+복합 타입은 필드의 구성과 순서가 일치해야 합니다. 튜플을 배열로 읽으려면 각 필드가 배열의 원소 타입으로 변환될 수 있어야 하며, 배열인 필드가 있어서는 안 됩니다.
+
+배열로 읽을 때 `Map`은 키-값 쌍마다 한 행을, `Nested`는 중첩된 행마다 한 행을 사용합니다. 튜플을 `box`로 읽으려면 두 개의 점을 제공하고, `circle`로 읽으려면 점과 반지름을, `line`으로 읽으려면 세 개의 계수를 제공하십시오.
+
+이 표에 없는 chDB 타입은 모두 오류를 발생시키며, `Variant`, `Dynamic`, `AggregateFunction`이 여기에 해당합니다. 이러한 타입을 텍스트로 읽으려면 해당 타입을 `String`으로 매핑하는 [structure](#structure)를 사용하십시오.
 
 Postgres는 이러한 타입 중 일부에서 chDB보다 좁은 범위만 지원합니다. 따라서 24시간을 초과하는 `Time` 또는 `Time64` 값, 그리고 Postgres의 날짜 범위를 벗어난 `Date32` 값을 복사하면 오류가 발생합니다.
+
+### 수동 타입 매핑 {#manual-type-mappings}
+
+컬럼 추론 시 enum은 `text`로, `Tuple`, `Map`, `Nested` 값은 텍스트 배열로
+처리됩니다. 필드 타입을 유지하거나 enum 값을 제한하려면 PostgreSQL enum 타입과
+복합 타입(composite type)을 생성한 다음, 해당 타입으로 컬럼을 선언하십시오.
+chDB 타입은 [structure](#structure)로 지정하거나, `structure 'auto'`를 사용하여
+Postgres 테이블 대신 소스 데이터에서 추론하도록 할 수 있습니다. 예를
+들어, 다음 타입을 사용하면 이벤트 상태, 좌표, 레이블,
+중첩 항목을 로드할 수 있습니다.
+
+```sql
+CREATE TYPE event_status AS ENUM ('new', 'done');
+CREATE TYPE event_point AS (x integer, y integer);
+CREATE TYPE event_label AS (key text, value bigint);
+CREATE TYPE event_item AS (id integer, name text);
+
+CREATE TABLE events (
+    status event_status,
+    point  event_point,
+    labels event_label[],
+    items  event_item[]
+);
+
+COPY events FROM 's3://chdb-lakedata-public/examples/events.parquet' (
+    structure $$
+        status Enum8('new' = 1, 'done' = 2),
+        point  Tuple(Int32, Int32),
+        labels Map(String, Int64),
+        items  Array(Tuple(id Int32, name String))
+    $$
+);
+```
+
+복합 필드(composite field)는 호환되는 PostgreSQL 타입을 사용하여 chDB 필드 순서대로 선언하십시오. `Map` 값은 키 필드를 먼저 선언한 다음 값 필드를 선언하십시오. 각 `Tuple`은 하나의 복합 값이 되며, 각 `Map` 쌍 또는 `Nested` 행은 복합 배열의 원소 하나가 됩니다.
+
+chDB는 명시적 `structure`에 포함된 `Nested`를 필드마다 하나의 `Array` 컬럼으로 분할합니다. 위 예시처럼 `Array(Tuple(...))`를 사용하여 중첩된 행을 하나의 복합 배열 컬럼으로 읽거나, 타입 정보가 포함된 chDB 소스 포맷이라면 `structure 'auto'`를 사용하십시오.
 
 ### 텍스트 인코딩 {#text-encoding}
 
@@ -584,8 +662,8 @@ ERROR:  invalid byte sequence for encoding "UTF8": 0x00
 chDB가 기록한 바이트를 그대로 유지하려면 `bytea`로 복사하십시오. [CREATE TABLE](#create-table-overloading)은 이러한 타입에 대해 `text`를 도출하므로, 다음과 같이 이름을 지정하십시오:
 
 ```sql
-CREATE TABLE logs (id bigint, payload bytea) WITH (
-    copy_from = 's3://my-bucket/logs.parquet'
+CREATE TABLE logs (req_id numeric(20,0), resource bytea) WITH (
+    copy_from = 's3://chdb-lakedata-public/logs/logs-2026-08-26.parquet'
 );
 ```
 
@@ -717,12 +795,16 @@ Copyright (c) 2026, ClickHouse
 
 [ClickHouse 데이터 타입]: https://clickhouse.com/docs/reference/data-types/index "ClickHouse Docs: Data Types in ClickHouse"
 
+[composite type]: https://www.postgresql.org/docs/current/rowtypes.html#ROWTYPES-DECLARING "PostgreSQL Docs: Declaring Composite Types"
+
 [log_min_messages]: https://www.postgresql.org/docs/current/runtime-config-logging.html#GUC-LOG-MIN-MESSAGES "PostgreSQL Docs: log_min_messages"
 
 [`pg_get_loaded_modules()`]: https://pgpedia.info/g/pg_get_loaded_modules.html "pgPedia: pg_get_loaded_modules()"
 
 [`max_memory_usage`]: https://clickhouse.com/docs/reference/settings/session-settings/max-memory-usage "ClickHouse Docs: max_memory_usage_* session settings"
 
-[`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs: max_threads_* session settings"
+[`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs: max_threads_* 세션 설정"
 
 [`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse Docs: max_parsing_threads 세션 설정"
+
+[database encoding]: https://www.postgresql.org/docs/current/multibyte.html "PostgreSQL Docs: 문자 집합 지원"

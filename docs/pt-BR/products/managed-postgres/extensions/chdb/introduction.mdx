@@ -82,10 +82,11 @@ Depois disso, a tabela `times` contém os registros de cada arquivo carregado:
 ```
 
 Um [CREATE TABLE] também pode derivar suas colunas e carregar suas linhas a partir de uma
-URL desse tipo:
+URL desse tipo (atenção: este arquivo de dados público contém 41 milhões de linhas):
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     copy_from = 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -155,7 +156,7 @@ deixando as demais sessões intactas.
 
 ## Dependências {#dependencies}
 
-A extensão `chdb` requer o PostgreSQL 15 ou superior e a library [chDB]
+A extensão `chdb` requer o PostgreSQL 15 ou superior e a biblioteca [chDB]
 v26.7.0 ou superior (atualmente disponível apenas para Linux e macOS). A
 maneira mais simples de instalá-la é por meio do script de shell [lib.chdb.io]:
 
@@ -163,7 +164,14 @@ maneira mais simples de instalá-la é por meio do script de shell [lib.chdb.io]
 curl -sL https://lib.chdb.io | bash
 ```
 
-Para compilar estaticamente o [chDB] no aplicativo auxiliar, defina as seguintes variáveis
+No macOS, talvez seja necessário assinar a biblioteca antes de compilar a extensão:
+
+```sh
+sudo install_name_tool -id /usr/local/lib/libchdb.so /usr/local/lib/libchdb.so
+sudo codesign -f -s - /usr/local/lib/libchdb.so
+```
+
+Para compilar estaticamente o [chDB] no aplicativo helper, defina as seguintes variáveis
 antes de executar os comandos `make` da
 [Instalação](#compile-from-source).
 
@@ -244,6 +252,12 @@ padrão &quot;postgres&quot;:
 
 ```sh
 make installcheck PGUSER=postgres
+```
+
+Para desativar o esquema `file://` no hook `COPY`, defina `NO_FILE_SCHEME`:
+
+```sh
+make NO_FILE_SCHEME=1
 ```
 
 Para instalar a extensão em um prefixo personalizado no PostgreSQL 18 ou posterior, passe o argumento `prefix` para `install` (mas para nenhum outro target do `make`):

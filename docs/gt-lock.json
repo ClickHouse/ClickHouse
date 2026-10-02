@@ -7,42 +7,42 @@
       "versionId": "0159cfbe2412a4134abfc3f618b242443b59fcae1b8eb175ddece07d29641579",
       "translations": {
         "zh": {
-          "updatedAt": "2026-10-02T17:46:34.705Z",
+          "updatedAt": "2026-10-02T21:11:18.635Z",
           "fileName": "docs.json",
           "postProcessHash": "03542c8ba93745ddf44be110926137b0c76a583de15fe46bb71aaa79f2754439"
         },
         "fr": {
-          "updatedAt": "2026-10-02T17:46:35.171Z",
+          "updatedAt": "2026-10-02T21:11:19.057Z",
           "fileName": "docs.json",
           "postProcessHash": "03542c8ba93745ddf44be110926137b0c76a583de15fe46bb71aaa79f2754439"
         },
         "ar": {
-          "updatedAt": "2026-10-02T17:46:34.941Z",
+          "updatedAt": "2026-10-02T21:11:18.839Z",
           "fileName": "docs.json",
           "postProcessHash": "03542c8ba93745ddf44be110926137b0c76a583de15fe46bb71aaa79f2754439"
         },
         "es": {
-          "updatedAt": "2026-10-02T17:46:33.557Z",
+          "updatedAt": "2026-10-02T21:11:17.564Z",
           "fileName": "docs.json",
           "postProcessHash": "03542c8ba93745ddf44be110926137b0c76a583de15fe46bb71aaa79f2754439"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-02T17:46:34.247Z",
+          "updatedAt": "2026-10-02T21:11:18.207Z",
           "fileName": "docs.json",
           "postProcessHash": "03542c8ba93745ddf44be110926137b0c76a583de15fe46bb71aaa79f2754439"
         },
         "ko": {
-          "updatedAt": "2026-10-02T17:46:34.013Z",
+          "updatedAt": "2026-10-02T21:11:17.993Z",
           "fileName": "docs.json",
           "postProcessHash": "03542c8ba93745ddf44be110926137b0c76a583de15fe46bb71aaa79f2754439"
         },
         "ru": {
-          "updatedAt": "2026-10-02T17:46:34.480Z",
+          "updatedAt": "2026-10-02T21:11:18.424Z",
           "fileName": "docs.json",
           "postProcessHash": "03542c8ba93745ddf44be110926137b0c76a583de15fe46bb71aaa79f2754439"
         },
         "ja": {
-          "updatedAt": "2026-10-02T17:46:33.786Z",
+          "updatedAt": "2026-10-02T21:11:17.789Z",
           "fileName": "docs.json",
           "postProcessHash": "03542c8ba93745ddf44be110926137b0c76a583de15fe46bb71aaa79f2754439"
         }
@@ -84883,142 +84883,141 @@
     },
     {
       "fileId": "bb4f799327cd5a1b7f7e81776d8eb23c21a89f677632b868a27447ac0267fa61",
-      "versionId": "67e89ee03e08347edde9e5ce7b6e6d30157d60bb22f8856509e61ddf27e90207",
+      "versionId": "c5c86d9d8858e9f4a464eade244135e4402d6133813ef93e32eab45645cd958b",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-18T23:24:59.147Z",
-          "fileName": "es/products/managed-postgres/extensions/pg_clickhouse/introduction.mdx",
-          "postProcessHash": "dc5b08276316723a63416cc27b3ce265701f5e337a36f6532e1d7d94cfc31585"
-        },
-        "ja": {
-          "updatedAt": "2026-08-18T23:24:59.147Z",
-          "fileName": "ja/products/managed-postgres/extensions/pg_clickhouse/introduction.mdx",
-          "postProcessHash": "5f19eae20d6c80ca6adff6bb8ae2f267f072d99f7c348369cf21ee18e3a8d8e4"
+        "ru": {
+          "updatedAt": "2026-10-02T21:11:22.953Z",
+          "fileName": "ru/products/managed-postgres/extensions/pg_clickhouse/introduction.mdx",
+          "postProcessHash": "6815d324b89346f96c966b693aa05dac8e494c282de9870a55e451e3dfcf4e3a"
         },
         "ko": {
-          "updatedAt": "2026-08-18T23:24:59.148Z",
+          "updatedAt": "2026-10-02T21:11:22.954Z",
           "fileName": "ko/products/managed-postgres/extensions/pg_clickhouse/introduction.mdx",
-          "postProcessHash": "9481e99b48fde9aa2c21c0512785f2c34eec13b8a099b459c0c4143d8173c562"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-18T23:24:59.149Z",
-          "fileName": "pt-BR/products/managed-postgres/extensions/pg_clickhouse/introduction.mdx",
-          "postProcessHash": "77d1c4f8bb83ff57c02e1f78e8fbfa6116ef258729bd59eabbab5d4c28010e3e"
-        },
-        "ru": {
-          "updatedAt": "2026-08-18T23:24:59.149Z",
-          "fileName": "ru/products/managed-postgres/extensions/pg_clickhouse/introduction.mdx",
-          "postProcessHash": "59fe9fc753501fffc0fa7e648b70144717942060ab2099883a78e89513ded1b8"
-        },
-        "zh": {
-          "updatedAt": "2026-08-18T23:24:59.150Z",
-          "fileName": "zh/products/managed-postgres/extensions/pg_clickhouse/introduction.mdx",
-          "postProcessHash": "f49cb6724ac267fd0b55c760884b677bb82478762dde9c1e2b697456bbb89b5c"
-        },
-        "ar": {
-          "updatedAt": "2026-08-18T23:24:59.150Z",
-          "fileName": "ar/products/managed-postgres/extensions/pg_clickhouse/introduction.mdx",
-          "postProcessHash": "f5a281bbfc1bbf33b2933a609cfe2d4bb0f2d088eba589cbc0111fa9a7e4fc5b"
+          "postProcessHash": "208e48a800ba48a26687e2c2c13a69a67848e43b49d2b9d7492e644361621470"
         },
         "fr": {
-          "updatedAt": "2026-08-18T23:24:59.151Z",
+          "updatedAt": "2026-10-02T21:11:22.955Z",
           "fileName": "fr/products/managed-postgres/extensions/pg_clickhouse/introduction.mdx",
-          "postProcessHash": "a8d85e658cbead2cb2af1f252b6927dcdcbf313f318ef4675b5fa8fdba612c81"
+          "postProcessHash": "0f0194c94a06ddf623968dd833827d24c19be4932fadb3adf2171af89c04dbdd"
+        },
+        "es": {
+          "updatedAt": "2026-10-02T21:11:22.955Z",
+          "fileName": "es/products/managed-postgres/extensions/pg_clickhouse/introduction.mdx",
+          "postProcessHash": "25a802a7791e1fb5b5c1d9ba51aa0fa6a4d0b7e1ff8f333ae88ca1cb3d07b917"
+        },
+        "ja": {
+          "updatedAt": "2026-10-02T21:11:22.956Z",
+          "fileName": "ja/products/managed-postgres/extensions/pg_clickhouse/introduction.mdx",
+          "postProcessHash": "d2d0d0932bd0c0ce182b104ecec661b59f9df2afad83ee1455223112bfda8335"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-02T21:11:22.957Z",
+          "fileName": "pt-BR/products/managed-postgres/extensions/pg_clickhouse/introduction.mdx",
+          "postProcessHash": "2fc8368e9a2ae498cfb446612a272aa4d05db37dae1f9ac15a4d3ac16c4840f6"
+        },
+        "zh": {
+          "updatedAt": "2026-10-02T21:11:22.958Z",
+          "fileName": "zh/products/managed-postgres/extensions/pg_clickhouse/introduction.mdx",
+          "postProcessHash": "3d2117c5fa92e4571a05f8f78f890ce748312d93659023f572df727457fe909f"
+        },
+        "ar": {
+          "updatedAt": "2026-10-02T21:11:22.959Z",
+          "fileName": "ar/products/managed-postgres/extensions/pg_clickhouse/introduction.mdx",
+          "postProcessHash": "cbdbcc1498c3ac1a070cc467086690fff9ad0bfa489bd4cc31a57e76228619ce"
         }
       },
-      "fileName": "products/managed-postgres/extensions/pg_clickhouse/introduction.mdx",
-      "staged": false
+      "fileName": "products/managed-postgres/extensions/pg_clickhouse/introduction.mdx"
     },
     {
       "fileId": "b4662d0fc31dffe921f22db35f01ed5266e992f47605070e1374d34924cb9a88",
-      "versionId": "cfcdc92e5b856b2efafd200d197373281d3c442311dd835b33447e6f3394e800",
+      "versionId": "7ff6fc119589624b42c17fbff8993f07262dcb1f2661d4d8fec530157b728acb",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-26T08:10:31.218Z",
-          "fileName": "es/products/managed-postgres/extensions/pg_clickhouse/reference.mdx",
-          "postProcessHash": "865537915543ce191dc3a463d2a272777c7db21800640d18518632a8ed516027"
+        "ru": {
+          "updatedAt": "2026-10-02T21:11:22.966Z",
+          "fileName": "ru/products/managed-postgres/extensions/pg_clickhouse/reference.mdx",
+          "postProcessHash": "e3ea9cf0cf1df79fde8f41bc12dbfef89e562977546eb37e4997e8478332bc20"
         },
         "ja": {
-          "updatedAt": "2026-08-26T08:10:31.219Z",
+          "updatedAt": "2026-10-02T21:11:22.966Z",
           "fileName": "ja/products/managed-postgres/extensions/pg_clickhouse/reference.mdx",
-          "postProcessHash": "932ec7d595306dbe5b3de95995c540de9917129346949cbaf91a7070869827cd"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T08:10:31.220Z",
-          "fileName": "ko/products/managed-postgres/extensions/pg_clickhouse/reference.mdx",
-          "postProcessHash": "e74de00b9c308b46900b93e7418546653efe867c37e66f4ff61660794007a5f9"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:31.221Z",
-          "fileName": "pt-BR/products/managed-postgres/extensions/pg_clickhouse/reference.mdx",
-          "postProcessHash": "3644901412c4dbbdab8b3a75261d3aa94095c0be99073a07443253843d46e8af"
-        },
-        "ru": {
-          "updatedAt": "2026-08-26T08:10:31.223Z",
-          "fileName": "ru/products/managed-postgres/extensions/pg_clickhouse/reference.mdx",
-          "postProcessHash": "62bdc90ebef91f4fcc718857cd3eaccbf672e1e76364562abd477166155f5dac"
-        },
-        "zh": {
-          "updatedAt": "2026-08-26T08:10:31.224Z",
-          "fileName": "zh/products/managed-postgres/extensions/pg_clickhouse/reference.mdx",
-          "postProcessHash": "707269fe3b4563550e7cc8760a8af637132cc815500d72ae8d82cede0dc9dba8"
-        },
-        "ar": {
-          "updatedAt": "2026-08-26T08:10:31.225Z",
-          "fileName": "ar/products/managed-postgres/extensions/pg_clickhouse/reference.mdx",
-          "postProcessHash": "7ffdcf3cbc8c53545ffb3a96944c56014d694c6160428e095ab75c52cac686f7"
+          "postProcessHash": "2eedac48c8b87a1817d612cdfab78d4536bdbc2cab696fd78aaa5e6a739994e0"
         },
         "fr": {
-          "updatedAt": "2026-08-26T08:10:31.226Z",
+          "updatedAt": "2026-10-02T21:11:22.967Z",
           "fileName": "fr/products/managed-postgres/extensions/pg_clickhouse/reference.mdx",
-          "postProcessHash": "0f0f6b9970c051df1c0a3d7a8625a57542e600ce02bc528cb5d0ec86e9db0a74"
+          "postProcessHash": "1e3bc24ffdf6093fbcc68a64dd2c015771457f9be96645c8043c363d2636aa89"
+        },
+        "es": {
+          "updatedAt": "2026-10-02T21:11:22.968Z",
+          "fileName": "es/products/managed-postgres/extensions/pg_clickhouse/reference.mdx",
+          "postProcessHash": "39bb8ee638db933279bb24154b2567707be2f412b1128ccd0083e44972bdfe80"
+        },
+        "zh": {
+          "updatedAt": "2026-10-02T21:11:22.968Z",
+          "fileName": "zh/products/managed-postgres/extensions/pg_clickhouse/reference.mdx",
+          "postProcessHash": "b0b4d2be6b31e20bd4633bbe5782d315fac7d7347a734e7c49850f037482aa5a"
+        },
+        "ar": {
+          "updatedAt": "2026-10-02T21:11:22.969Z",
+          "fileName": "ar/products/managed-postgres/extensions/pg_clickhouse/reference.mdx",
+          "postProcessHash": "40f46ed68d9f43444a70483da6dde07c134ce7fe3ede0654060ba3f7fbfae488"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-02T21:11:22.970Z",
+          "fileName": "pt-BR/products/managed-postgres/extensions/pg_clickhouse/reference.mdx",
+          "postProcessHash": "6b76143d5fcaff5adaebe2828d483d6e8a239e8b0ec0c6f68a93c29da9856764"
+        },
+        "ko": {
+          "updatedAt": "2026-10-02T21:11:22.970Z",
+          "fileName": "ko/products/managed-postgres/extensions/pg_clickhouse/reference.mdx",
+          "postProcessHash": "74e55dee31b78c4ca28089d407014fb64fd32e36e480d6d81f582a797e0b59ee"
         }
       },
       "fileName": "products/managed-postgres/extensions/pg_clickhouse/reference.mdx"
     },
     {
       "fileId": "b4494eeefd78d56fd1dc38161f0743741a64117621deac03d46cb7627daf9540",
-      "versionId": "e1698ee7cefded50aa38afc6ba11e4ab698d94b18b13e5cfb779df89a36d54c2",
+      "versionId": "69573869885782c3967fc21c9861203ba79f1d40452f5554f1dfe87c9334ed13",
       "translations": {
-        "fr": {
-          "updatedAt": "2026-09-24T10:24:08.095Z",
-          "fileName": "fr/products/managed-postgres/extensions/pg_clickhouse/tutorial.mdx",
-          "postProcessHash": "f2e99e5066a34d9b6f1c012b6ba7f1be0c8d8b2a9e9a9516853fbab0e067c079"
-        },
         "es": {
-          "updatedAt": "2026-09-24T10:24:08.096Z",
+          "updatedAt": "2026-10-02T21:11:22.952Z",
           "fileName": "es/products/managed-postgres/extensions/pg_clickhouse/tutorial.mdx",
-          "postProcessHash": "3a04bab147a38913aedfa9c656b1802141cd66de0218c4b5f87866290b4ae468"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-24T10:24:08.098Z",
-          "fileName": "pt-BR/products/managed-postgres/extensions/pg_clickhouse/tutorial.mdx",
-          "postProcessHash": "eb5dc00589ded2ff7f56197a29c5b3c121af4a86bd8514467a3c4f169b339e10"
+          "postProcessHash": "accaa7606af3734969c19f90cf4026aa3fa528300eb21b2ebe5e1fd75ed5be8a"
         },
         "ru": {
-          "updatedAt": "2026-09-24T10:24:08.101Z",
+          "updatedAt": "2026-10-02T21:11:22.952Z",
           "fileName": "ru/products/managed-postgres/extensions/pg_clickhouse/tutorial.mdx",
-          "postProcessHash": "94b6be35a3499fa15ebf6fb86e6a2da89ef5f8efbc5c9cead01a0b990a2501a6"
-        },
-        "zh": {
-          "updatedAt": "2026-09-24T10:24:08.104Z",
-          "fileName": "zh/products/managed-postgres/extensions/pg_clickhouse/tutorial.mdx",
-          "postProcessHash": "53b703aaa91cb9b9a09462048037c9694027ba1508b265b10165bb40958bed77"
-        },
-        "ar": {
-          "updatedAt": "2026-09-24T10:24:08.108Z",
-          "fileName": "ar/products/managed-postgres/extensions/pg_clickhouse/tutorial.mdx",
-          "postProcessHash": "0f1091ee0f6e6cafd1b30e15487cc5f52d307c1d835b3b041ac7df25d6b4038a"
+          "postProcessHash": "d4615e7cbfe7dcef39b4a7ed8d753eeb189dbd05cf8f9af4e2a45fdcfef01d15"
         },
         "ja": {
-          "updatedAt": "2026-09-24T10:24:08.951Z",
+          "updatedAt": "2026-10-02T21:11:22.953Z",
           "fileName": "ja/products/managed-postgres/extensions/pg_clickhouse/tutorial.mdx",
-          "postProcessHash": "a97fd9a7207ad6a0e0c4602dbfa4e0ab15f5e4b02c404a72573a88fc8ac71972"
+          "postProcessHash": "a3e1f2cbf21fed68b4fd8cfd04328271ed567364b14dd50d72f2914371ceb60d"
+        },
+        "fr": {
+          "updatedAt": "2026-10-02T21:11:22.954Z",
+          "fileName": "fr/products/managed-postgres/extensions/pg_clickhouse/tutorial.mdx",
+          "postProcessHash": "9e0150c15535f9ad6e0728278de432051353251b6cea0e8ebf95aff7e10c2cb7"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-02T21:11:22.955Z",
+          "fileName": "pt-BR/products/managed-postgres/extensions/pg_clickhouse/tutorial.mdx",
+          "postProcessHash": "3d7c6aad941985a1a47cc1825f79e4eabfe968afb687bcc0cce2900e29a763bb"
+        },
+        "zh": {
+          "updatedAt": "2026-10-02T21:11:22.956Z",
+          "fileName": "zh/products/managed-postgres/extensions/pg_clickhouse/tutorial.mdx",
+          "postProcessHash": "30d378bea6d0629f66d3fcdb9094491723dcfcbebac014f95ae244d7ae547546"
+        },
+        "ar": {
+          "updatedAt": "2026-10-02T21:11:22.957Z",
+          "fileName": "ar/products/managed-postgres/extensions/pg_clickhouse/tutorial.mdx",
+          "postProcessHash": "8cc82c230329bdda53e906ae18933620995b486ab19cc7f9322b7df6ebf7ac3a"
         },
         "ko": {
-          "updatedAt": "2026-09-24T10:24:09.343Z",
+          "updatedAt": "2026-10-02T21:11:22.958Z",
           "fileName": "ko/products/managed-postgres/extensions/pg_clickhouse/tutorial.mdx",
-          "postProcessHash": "d4c66dd2fadb9cabcf5116166e0deb0548733d378c9407df1972389f700ebf1e"
+          "postProcessHash": "8d669ed2458774af4b075298ffa83b86a35a60f6f94f1241ac90c083f3727c75"
         }
       },
       "fileName": "products/managed-postgres/extensions/pg_clickhouse/tutorial.mdx"
@@ -138744,47 +138743,47 @@
     },
     {
       "fileId": "cd7d383d320b6b2366e02524c03dc20b555070585e2394466624acf2e0150497",
-      "versionId": "b1cc59add39e87547095942df8d1ba9c21b4b9af7e3c81eead4fc3f664cf96f2",
+      "versionId": "7509f81cad8506d150dc5c4d9c336b61846d1f44a7d3751f1e794c0c5fea9b56",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-24T10:24:07.301Z",
-          "fileName": "es/products/managed-postgres/extensions/chdb/chdb_hook.mdx",
-          "postProcessHash": "d1141ba8990125a74f11fd47368ebd71def74b980b3452ab126b8d15a09eb2a0"
-        },
-        "ja": {
-          "updatedAt": "2026-09-24T10:24:07.301Z",
-          "fileName": "ja/products/managed-postgres/extensions/chdb/chdb_hook.mdx",
-          "postProcessHash": "63a4bf836f5ce6c45a927a3e65eb12de3d0db46b02e1fd155fce813f27119b30"
-        },
         "ko": {
-          "updatedAt": "2026-09-24T10:24:07.301Z",
+          "updatedAt": "2026-10-02T21:11:22.961Z",
           "fileName": "ko/products/managed-postgres/extensions/chdb/chdb_hook.mdx",
-          "postProcessHash": "5a54d7b84248713f1c9e0344a29dab0bb317246017895978fedcd5fc1d11b4b4"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-24T10:24:07.302Z",
-          "fileName": "pt-BR/products/managed-postgres/extensions/chdb/chdb_hook.mdx",
-          "postProcessHash": "54dc418628aa7552b4c8e05c64dadd37ad12ffd402b51197f65e2ffbba11314c"
+          "postProcessHash": "a3620ae8d8ab82e85892835eaffeecb797b503c4f1a8c8e197ca416caca25166"
         },
         "ru": {
-          "updatedAt": "2026-09-24T10:24:07.303Z",
+          "updatedAt": "2026-10-02T21:11:22.961Z",
           "fileName": "ru/products/managed-postgres/extensions/chdb/chdb_hook.mdx",
-          "postProcessHash": "bfe4c69455634245e0bffeccb7004a9480db87f3d6150b32bae6883efcb87619"
-        },
-        "zh": {
-          "updatedAt": "2026-09-24T10:24:07.303Z",
-          "fileName": "zh/products/managed-postgres/extensions/chdb/chdb_hook.mdx",
-          "postProcessHash": "77bc553f73dec4a087fc3f27d9abfd81b0bdbf635dcf201430cc416217d1edc3"
+          "postProcessHash": "d57fba9cdf61b53cd1edcf951f7677e957e5bb97ac6156eea54f3de353327d63"
         },
         "ar": {
-          "updatedAt": "2026-09-24T10:24:07.304Z",
+          "updatedAt": "2026-10-02T21:11:22.962Z",
           "fileName": "ar/products/managed-postgres/extensions/chdb/chdb_hook.mdx",
-          "postProcessHash": "ee1f03ebe39f89e84ef4bd0330b65da94208fb0f0193f3e7df83d5e991a7846e"
+          "postProcessHash": "b9c22a90a3fcc49f9305c3f9dd5f880d5370b434e039f3211c079ac13805f662"
         },
         "fr": {
-          "updatedAt": "2026-09-24T10:24:07.304Z",
+          "updatedAt": "2026-10-02T21:11:22.963Z",
           "fileName": "fr/products/managed-postgres/extensions/chdb/chdb_hook.mdx",
-          "postProcessHash": "6a8fedc0c13774710b444cd61f3d846bd3cc30dd1d42b60f8930ca4758f2dd1f"
+          "postProcessHash": "645fca14159373772f34880ed5e5c7143c128d49338a36c58d64ecbbfa0d5554"
+        },
+        "es": {
+          "updatedAt": "2026-10-02T21:11:22.963Z",
+          "fileName": "es/products/managed-postgres/extensions/chdb/chdb_hook.mdx",
+          "postProcessHash": "39622ffea5039f7bfaf26ca6edfb30281fd6870de19936e98a2d1458487840bd"
+        },
+        "ja": {
+          "updatedAt": "2026-10-02T21:11:22.964Z",
+          "fileName": "ja/products/managed-postgres/extensions/chdb/chdb_hook.mdx",
+          "postProcessHash": "8339bf6c2f9e8aaa8dce7cf4edb4e44d274ca07745c98568be8c6cc9737b3d8e"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-02T21:11:22.964Z",
+          "fileName": "pt-BR/products/managed-postgres/extensions/chdb/chdb_hook.mdx",
+          "postProcessHash": "2d75547bf0bc7bf738134ea855930288eefbbb51c23c44a4efbac339440623bd"
+        },
+        "zh": {
+          "updatedAt": "2026-10-02T21:11:22.965Z",
+          "fileName": "zh/products/managed-postgres/extensions/chdb/chdb_hook.mdx",
+          "postProcessHash": "e91b355459aa6df2e5fb4be1ab4f175bea7e49f69bdf417bbb33da4dc83cc291"
         }
       },
       "fileName": "products/managed-postgres/extensions/chdb/chdb_hook.mdx"
@@ -139026,47 +139025,47 @@
     },
     {
       "fileId": "56f1eddf2e974f21a0c25d3b3eea2cea292af9d06bd2b9f667e861bd00bddbaa",
-      "versionId": "f35bbf4ef57d1afefe4fc6221cef66348679f04bfeabc67b4e9b53d241aac99c",
+      "versionId": "221a0e015ed19e6ab6672d7c163d62ff08a7e1946ed3f9ce42fc1cc648d44a20",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-24T10:24:08.093Z",
-          "fileName": "es/products/managed-postgres/extensions/chdb/introduction.mdx",
-          "postProcessHash": "a441551ccf45fdae0bd646c05a7be5229e6a3adeedeb095ff59ddbd6bb8a599d"
-        },
-        "ko": {
-          "updatedAt": "2026-09-24T10:24:08.096Z",
-          "fileName": "ko/products/managed-postgres/extensions/chdb/introduction.mdx",
-          "postProcessHash": "273e268881f6cc6d919ae7895380c4b5195772db15e908379300e1ee777b8a5f"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-24T10:24:08.098Z",
-          "fileName": "pt-BR/products/managed-postgres/extensions/chdb/introduction.mdx",
-          "postProcessHash": "11254093bb4c4743b79e22af9d62f6a356089cc506e2c45258576ae4ee0326ff"
-        },
-        "ja": {
-          "updatedAt": "2026-09-24T10:24:08.099Z",
-          "fileName": "ja/products/managed-postgres/extensions/chdb/introduction.mdx",
-          "postProcessHash": "af3a046b4110ea39ddc8bf51d73fac490413c30f2b20c6e5cf4b3f09d23b8d74"
-        },
-        "zh": {
-          "updatedAt": "2026-09-24T10:24:08.102Z",
-          "fileName": "zh/products/managed-postgres/extensions/chdb/introduction.mdx",
-          "postProcessHash": "f2e2ac3b145abb41346494af24ab162588c07a3e8f1d0d6c06cf8ef903400528"
+        "ru": {
+          "updatedAt": "2026-10-02T21:11:22.956Z",
+          "fileName": "ru/products/managed-postgres/extensions/chdb/introduction.mdx",
+          "postProcessHash": "b19db3a4cb0085988db6aec7b6fdcdefa1a14790769ed24e726840662b2468ee"
         },
         "fr": {
-          "updatedAt": "2026-09-24T10:24:08.103Z",
+          "updatedAt": "2026-10-02T21:11:22.957Z",
           "fileName": "fr/products/managed-postgres/extensions/chdb/introduction.mdx",
-          "postProcessHash": "b273252c870bb0d8f346fdb7c8e4b08b0053d8f68181bb578702fc77f86a74ac"
+          "postProcessHash": "f79be5a69c1deeff29e5fa4197f37fb2dc1a56fa05d4032d8193274dea1e49e9"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-02T21:11:22.958Z",
+          "fileName": "pt-BR/products/managed-postgres/extensions/chdb/introduction.mdx",
+          "postProcessHash": "62f860ec09b3d8ed2ddc025b254a24769f8d0dc5f6159950929fee08015ee877"
+        },
+        "ja": {
+          "updatedAt": "2026-10-02T21:11:22.959Z",
+          "fileName": "ja/products/managed-postgres/extensions/chdb/introduction.mdx",
+          "postProcessHash": "a0cf29eb99f4cb0f344d8f02bffec235a672c39ecbcd525c43dc4534a1b670ef"
         },
         "ar": {
-          "updatedAt": "2026-09-24T10:24:08.108Z",
+          "updatedAt": "2026-10-02T21:11:22.960Z",
           "fileName": "ar/products/managed-postgres/extensions/chdb/introduction.mdx",
-          "postProcessHash": "0203ff6ced8c7ab2853044fb0514a90a9a365175ef522e50a7c8267064265af5"
+          "postProcessHash": "de6b17355a4241d885e195cfe9503784600508054a16a5a4b7508d6073ea4367"
         },
-        "ru": {
-          "updatedAt": "2026-09-24T10:24:09.606Z",
-          "fileName": "ru/products/managed-postgres/extensions/chdb/introduction.mdx",
-          "postProcessHash": "c65468fa958ea2a9ae3e5da2bc4ca166735e7c0393b53069c9f5c687ce890631"
+        "zh": {
+          "updatedAt": "2026-10-02T21:11:22.960Z",
+          "fileName": "zh/products/managed-postgres/extensions/chdb/introduction.mdx",
+          "postProcessHash": "1ae1fb605a59fdf0ea70a85d3aa3d71228a79222023ae4a66657a0597ee6569b"
+        },
+        "es": {
+          "updatedAt": "2026-10-02T21:11:22.960Z",
+          "fileName": "es/products/managed-postgres/extensions/chdb/introduction.mdx",
+          "postProcessHash": "5124d9077685c8b41e4fbd9a1c45fb5e1d75fcb27cb693640125793a2b3d1e2f"
+        },
+        "ko": {
+          "updatedAt": "2026-10-02T21:11:22.962Z",
+          "fileName": "ko/products/managed-postgres/extensions/chdb/introduction.mdx",
+          "postProcessHash": "70b4617027ce63dd888fdad4cdf979657a79cbf52b2256f7ae773c737482e4f4"
         }
       },
       "fileName": "products/managed-postgres/extensions/chdb/introduction.mdx"

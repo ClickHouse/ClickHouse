@@ -130,6 +130,12 @@ COPY times FROM 's3://datasets-documentation/my-test-bucket-768/some_prefix/some
 
 #### File {#file}
 
+<Important>
+  قد لا يكون المخطط `file://` مدعوماً على جميع الأنظمة، مثل المنصات
+  السحابية، حيث يُصرِّف المسؤول `chdb_hook` بحيث يمنع استخدامه (عبر
+  الخيار `NO_FILE_SCHEME` للأداة `make`).
+</Important>
+
 يجب أن يكون مساراً مطلقاً على خادم Postgres، أما المسار النسبي فيؤدي إلى
 خطأ. يجب أن يكون مستخدم Postgres عضواً في الدور `pg_read_server_files` أو
 `pg_write_server_files`، حسب الحالة. كما يجب أن يمتلك مستخدم نظام Postgres
@@ -302,6 +308,18 @@ COPY users TO 'file:///tmp/users.parquet' (
 مهلة الطلب بالميلي ثانية. تنطبق على عناوين URL لكل من HTTP وS3 وGCS وAzure.
 القيمة الافتراضية `30000` (30 ثانية).
 
+#### `encoding_check` {#encoding_check}
+
+يحدد كيفية التعامل مع المحارف غير الصالحة وفق [ترميز قاعدة البيانات] عند
+تحويل قيم String وJSON في chDB. ويأخذ إحدى القيم التالية:
+
+* `fail` (القيمة الافتراضية): إطلاق error
+* `remove` يزيل البايتات غير الصالحة
+* `replace`: في ترميز UTF-8، يستبدل البايتات غير الصالحة بمحرف
+  الاستبدال في Unicode (`�`)؛ ويعمل عمل `remove` في الترميزات
+  الأخرى
+* `truncate` يقتطع النص عند أول بايت غير صالح
+
 ### Debugging {#debugging}
 
 عند حدوث خطأ، يُضمّن أمر `COPY` الخاص بـ chdb&#95;hook استعلام [chDB] الذي حاول تنفيذه في سياق الخطأ:
@@ -341,10 +359,12 @@ STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
 أعمدته وأن يحمّل صفوفه من عنوان URL.
 
 لإنشاء جدول ببنية مشتقة من عنوان URL، مرّر عنوان URL في
-الخيار `structure_from` واترك قائمة الأعمدة فارغة:
+الخيار `structure_from` واترك قائمة الأعمدة فارغة (تنبيه: يضمّ ملف البيانات
+العام هذا 41 مليون صف):
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     structure_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -353,12 +373,13 @@ CREATE TABLE reviews () WITH (
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     copy_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
 
 يستنتج `copy_from` الأعمدة فقط عندما لا يُحدّد الـ statement أيًّا منها بنفسه.
-فقائمة الأعمدة، أو الـ clause `INHERITS`، أو النوع `OF`، أو الـ partition، كلٌّ منها يُعرّف
+فقائمة الأعمدة، أو العبارة `INHERITS`، أو النوع `OF`، أو الـ partition، كلٌّ منها يُعرّف
 أعمدةً، وعندها لا ينسخ `copy_from` سوى ما يلي:
 
 ```sql
@@ -369,15 +390,18 @@ CREATE TABLE times (
 ) WITH (copy_from = 's3://datasets-documentation/my-test-bucket-768/some_prefix/some_file_1.csv');
 ```
 
-يدعم كلا الخيارين نفس [URL schemes](#url-schemes) و[options](#options) التي يدعمها `COPY`؛ فجميعها ينطبق هنا: بيانات الاعتماد وformat وcompression وtimeout وحتى تحديد [structure](#structure) بشكل صريح. أما Postgres فيحتفظ بما تبقّى من storage parameters:
+عندما يستنتج `copy_from` الأعمدة، فإنه يستخدم مخطط المصدر الذي يُعيده `DESCRIBE`.
+يتيح ذلك تحميل قيم `Map` و`Tuple` و`Nested` كأعمدة مصفوفات نصية،
+لا تُبيّن أنواع ClickHouse الأصلية لهذه القيم.
+
+يدعم كلا الخيارين نفس [URL schemes](#url-schemes) و[options](#options) التي يدعمها `COPY`؛ فجميعها ينطبق هنا: بيانات الاعتماد والصيغة والضغط وانتهاء المهلة وحتى تحديد [structure](#structure) بشكل صريح. أما Postgres فيحتفظ بما تبقّى من storage parameters:
 
 ```sql
-CREATE TABLE users () WITH (
-    copy_from     = 's3://my-bucket/users.csv',
-    access_key    = 'AKIAIOSFODNN7EXAMPLE',
-    access_secret = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
-    format        = 'CSVWithNames',
-    fillfactor    = 90
+CREATE TABLE logs () WITH (
+    copy_from  = 's3://chdb-lakedata-public/logs/logs-2026-08-26.csv',
+    format     = 'CSVWithNames',
+    timeout    = 60000,
+    fillfactor = 90
 );
 ```
 
@@ -392,6 +416,11 @@ CREATE TABLE users () WITH (
 * لا يمكن تنفيذ `COPY` على العلاقات التي تنطبق عليها سياسات [row-level security]
   الخاصة بالدور الذي يقوم بالنسخ. إذ يطبّق Postgres هذه السياسات عن طريق إعادة كتابة `COPY TO`
   في صورة استعلام، وهو ما لا يدعمه chdb&#95;hook.
+* لا يمكن تنفيذ `COPY FROM` من عنوان URL مع عبارة `WHERE`.
+* لا يوجد في chDB مصفوفة NULL، لذا يخزّن `COPY TO` مصفوفة فارغة (`[]`) بدلاً من
+  قيمة NULL.
+* يمثّل chDB ما يعادل `lseg` أو `path` أو `polygon` على هيئة مصفوفات؛
+  وبالتالي فإن قيم NULL من هذه الأنواع يَنسخها `COPY TO` أيضاً كمصفوفة فارغة (`[]`).
 * لا يوجد في ClickHouse مصفوفة NULL، لذا يخزّن `COPY TO` مصفوفة فارغة (`[]`) بدلاً من
   قيمة `NULL`.
 * يمثّل ClickHouse ما يعادل `lseg` أو `path` أو `polygon` على هيئة
@@ -410,22 +439,20 @@ CREATE TABLE users () WITH (
   عند الإخراج. لا تستبدل التعيين الافتراضي `String` لـ `json` و
   `jsonb` بـ `JSON` إلا إذا لم تكن قيم الكائن `null` أو كان فقدانها
   مقبولاً. (ClickHouse/ClickHouse#68428)
-* تتحقق تنسيقات JSON وJSONCompact وJSONColumnsWithMetadata دائماً من صحة
+* تتحقق صيغ JSON وJSONCompact وJSONColumnsWithMetadata دائماً من صحة
   UTF-8، لذا تُخرِج قيم bytea مع محارف استبدال.
 * يقرأ `COPY FROM` حقل Protobuf من نوع `Nullable` يحتوي على سلسلة فارغة أو
   صفراً كأنه `NULL`. (chdb-io/chdb-core#152)
 * يُسقِط `COPY TO` إلى Parquet قيم `NULL` من null map الخاص بـ Nullable Tuple.
   (ClickHouse/ClickHouse#112427)
-* لا يوجد في تنسيقات Parquet وArrow وArrowStream وORC وAvro وProtobuf وProtobufList وMsgPack
+* لا يوجد في صيغ Parquet وArrow وArrowStream وORC وAvro وProtobuf وProtobufList وMsgPack
   وBSONEachRow أي نوع يقابل `time` في Postgres أو
   `Time64` في chDB. لذا هيّئ أعمدة `time` كـ `String` في [structure](#structure)
   صريحة للحفاظ على قيمها.
-* يقتطع إخراج Protobuf قيم timestamp إلى مستوى الثانية.
+* يقتطع إخراج Protobuf قيم الطابع الزمني إلى مستوى الثانية.
 * لا يدعم إخراج Protobuf التواريخ السابقة لـ 1970-01-01. هيّئ أعمدة `time`
   كـ `String` في [structure](#structure) صريحة للحفاظ
   على قيمها. (ClickHouse/ClickHouse#111860)
-* لا يستطيع تنسيقا CSVWithNames وCSVWithNamesAndTypes حالياً استيراد
-  قيم `NULL` من نوع box أو circle. (ClickHouse/ClickHouse#115523)
 
 ## أنواع البيانات {#data-types}
 
@@ -433,64 +460,59 @@ CREATE TABLE users () WITH (
 بينما يعيّن [CREATE TABLE](#create-table-overloading) أنواع chDB الخاصة بـ URL
 إلى أنواع Postgres.
 
-### Postgres إلى chDB {#postgres-to-chdb}
+### من Postgres إلى chDB {#postgres-to-chdb}
 
-في حال عدم تحديد خيار [structure](#structure) صريح، يعيّن chdb&#95;hook أنواع
-Postgres إلى مكافئات معقولة في chDB. وإذا لم تكن ملائمة لحالة الاستخدام الخاصة بك،
-فحدّد [structure](#structure) لتجاوز الأنواع المُولَّدة بالأنواع التي تحتاجها.
+في غياب خيار [structure](#structure) صريح، يربط chdb&#95;hook
+أنواع Postgres بما يقابلها منطقيًا من أنواع chDB. وإذا لم تلائم هذه الأنواع حالة
+الاستخدام لديك، فحدِّد [structure](#structure) لتجاوز الأنواع المُولَّدة واستبدالها
+بالأنواع التي تحتاجها.
 
-| Postgres    | chDB                                     | ملاحظات                                                            |
-| ----------- | ---------------------------------------- | ------------------------------------------------------------------ |
-| boolean     | Bool                                     |                                                                    |
-| name        | String                                   |                                                                    |
-| text        | String                                   |                                                                    |
-| inet        | String                                   | تجاوزه بـ `IPv4` أو `IPv6` إذا كانت البيانات تحتوي على أحدهما فقط. |
-| cidr        | String                                   |                                                                    |
-| macaddr     | String                                   |                                                                    |
-| macaddr8    | String                                   |                                                                    |
-| interval    | String                                   | تجاوزه بوحدة `Interval` مثل `IntervalDay`.                         |
-| tsvector    | String                                   |                                                                    |
-| tsquery     | String                                   |                                                                    |
-| jsonpath    | String                                   |                                                                    |
-| money       | String                                   |                                                                    |
-| enum        | String                                   |                                                                    |
-| varchar     | String                                   |                                                                    |
-| varbit      | String                                   |                                                                    |
-| char        | FixedString                              |                                                                    |
-| bit         | FixedString                              |                                                                    |
-| bpchar      | String                                   |                                                                    |
-| int2        | Int16                                    |                                                                    |
-| int4        | Int32                                    |                                                                    |
-| int8        | Int64                                    |                                                                    |
-| oid         | UInt32                                   |                                                                    |
-| oid8        | UInt64                                   |                                                                    |
-| xid8        | UInt64                                   |                                                                    |
-| json        | String                                   | تجاوزه بـ `JSON` إذا كانت البيانات تحتوي على كائنات فقط.           |
-| jsonb       | String                                   | تجاوزه بـ `JSON` إذا كانت البيانات تحتوي على كائنات فقط.           |
-| float4      | Float32                                  |                                                                    |
-| float8      | Float64                                  |                                                                    |
-| date        | Date32                                   |                                                                    |
-| time        | Time64(6)                                | تجاوزه بـ `String` للتنسيقات التي لا تدعم الأوقات.                 |
-| timetz      | String                                   |                                                                    |
-| timestamp   | DateTime64(6)                            | مُعلَن بالمنطقة الزمنية `UTC`، ومُحوَّل من المنطقة الزمنية للجلسة. |
-| timestamptz | DateTime64(6)                            | مُعلَن بالمنطقة الزمنية `UTC`.                                     |
-| numeric     | Decimal                                  |                                                                    |
-| uuid        | UUID                                     |                                                                    |
-| point       | `Point`                                  | الإحداثيان نفسهما المستخدمان في Postgres.                          |
-| lseg        | `LineString`                             | خط مكوّن من نقطتين بالضبط.                                         |
-| path        | `LineString`                             | المسار المغلق يكرّر نقطته الأولى.                                  |
-| polygon     | `Ring`                                   | تُغلق الحلقة ضمنيًا، كما يفعل المضلّع.                             |
-| box         | `Tuple(high Point, low Point)`           | الزاويتان، مرتّبتان بترتيب Postgres نفسه.                          |
-| circle      | `Tuple(center Point, radius Float64)`    |                                                                    |
-| line        | `Tuple(a Float64, b Float64, c Float64)` | المعادلة `Ax + By + C = 0`.                                        |
+| PostgreSQL       | chDB                                   | ملاحظات                                                            |
+| ---------------- | -------------------------------------- | ------------------------------------------------------------------ |
+| boolean          | Bool                                   |                                                                    |
+| smallint         | Int16                                  |                                                                    |
+| integer          | Int32                                  |                                                                    |
+| bigint           | Int64                                  |                                                                    |
+| oid              | UInt32                                 |                                                                    |
+| xid8             | UInt64                                 |                                                                    |
+| oid8             | UInt64                                 |                                                                    |
+| real             | Float32                                |                                                                    |
+| double precision | Float64                                |                                                                    |
+| numeric          | Decimal256(38)                         | ينطبق ذلك أيضًا عندما تتجاوز الدقة 76 رقمًا.                       |
+| numeric(12,6)    | Decimal(12,6)                          | تُنقل الدقة والمقياس كما هما.                                      |
+| text             | String                                 |                                                                    |
+| bytea            | String                                 |                                                                    |
+| date             | Date32                                 |                                                                    |
+| time             | Time64(6)                              | تجاوزه بالنوع `String` مع الصيغ التي لا تدعم قيم الوقت.            |
+| timestamp        | DateTime64(6, &#39;UTC&#39;)           | يُحوَّل من المنطقة الزمنية للجلسة.                                 |
+| timestamptz      | DateTime64(6, &#39;UTC&#39;)           |                                                                    |
+| interval         | String                                 | تجاوزه بوحدة `Interval` مثل `IntervalDay`.                         |
+| uuid             | UUID                                   |                                                                    |
+| json             | String                                 | تجاوزه بالنوع `JSON` إذا كانت البيانات لا تحتوي إلا على كائنات.    |
+| jsonb            | String                                 | تجاوزه بالنوع `JSON` إذا كانت البيانات لا تحتوي إلا على كائنات.    |
+| inet             | String                                 | تجاوزه بالنوع `IPv4` أو `IPv6` إذا كانت البيانات تقتصر على أحدهما. |
+| point            | Point                                  | الإحداثيان نفسهما كما في Postgres.                                 |
+| lseg             | LineString                             | خط مكوَّن من نقطتين بالضبط.                                        |
+| path             | LineString                             | يكرر المسار المغلق نقطته الأولى.                                   |
+| polygon          | Ring                                   | تُغلَق الحلقة ضمنيًا، كما هو الحال في المضلع.                      |
+| box              | Tuple(high Point, low Point)           | الزاويتان، مرتبتين وفق ترتيب Postgres لهما.                        |
+| circle           | Tuple(center Point, radius Float64)    |                                                                    |
+| line             | Tuple(a Float64, b Float64, c Float64) | المعادلة `Ax + By + C = 0`.                                        |
 
-تُعيَّن أنواع المصفوفات إلى `Array` من نوع العنصر المقابل. تفرض ClickHouse
-قابلية القيم الفارغة على مستوى العمود، بينما يفرضها Postgres على مستوى المصفوفة، لذا تكون العناصر
-دائمًا `Nullable`.
+الأنواع غير الواردة في هذا الجدول، مثل `name` و`varchar` و`char` و`bit`
+و`timetz` و`money` وأنواع التعداد، تُربط بالنوع `String`.
 
-لا يُعيَّن أي نوع في Postgres إلى `Map` أو `Tuple`، لكن يمكن تحديد أحدهما عبر
-[structure](#structure). يمكن تحويل `Map` إلى مصفوفة من أزواج المفتاح والقيمة، ويُحوَّل `Tuple`
-إلى مصفوفة. استخدم `text[]` لدعم الأنواع غير المتجانسة.
+تُربط أنواع المصفوفات بمصفوفات `Array` من نوع العنصر المقابل. يفرض ClickHouse قابلية
+القيم الفارغة على مستوى العمود، بينما يفرضها Postgres على مستوى المصفوفة، لذا تكون العناصر
+دائمًا من النوع `Nullable`.
+
+لا يُربط أي نوع في Postgres مباشرةً بالأنواع `Map` أو `Tuple` أو `Nested`، لكن يمكن
+تحديد أحدها في [structure](#structure) أو في ملف المصدر. يمكن قراءة `Tuple`
+في `text[]`، بعنصر واحد لكل حقل من حقول الـ tuple، أو في [نوع
+مركّب] مطابق للحفاظ على أنواع الحقول. ويمكن قراءة `Map` أو `Nested` في
+`text[][]`، بمصفوفة داخلية واحدة لكل زوج مفتاح-قيمة أو tuple متداخل، أو في
+مصفوفة من نوع مركّب مطابق. راجع [مطابقة
+الأنواع اليدوية](#manual-type-mappings) للاطلاع على أمثلة.
 
 ### تحويل الطابع الزمني {#timestamp-conversion}
 
@@ -528,80 +550,143 @@ Postgres إلى مكافئات معقولة في chDB. وإذا لم تكن مل
 
 ### من chDB إلى Postgres {#chdb-to-postgres}
 
-يعيّن chdb&#95;hook أنواع ClickHouse التي يُبلّغ عنها [`DESCRIBE`] إلى أنواع
-Postgres التالية:
+بالنسبة إلى الجداول الموجودة، تُحوَّل القيم إلى أنواع الأعمدة المُعلَنة.
+وتستخدم الأنواع المفردة البديلة عمليات التحويل الصريحة في PostgreSQL حيثما توفرت،
+وتُحوَّل عناصر المصفوفة إلى نوع العنصر المُعلَن. أما عمليات التحويل غير المدعومة
+والقيم الواقعة خارج النطاق فتؤدي إلى إطلاق أخطاء.
 
-{/* TYPE-TABLE-BEGIN تم إنشاؤه باستخدام `make type-table` */}
+اربط أنواع `Interval` في chDB بالأنواع `smallint` أو `integer` أو `bigint` لقراءة
+عدد وحداتها وكتابته. على سبيل المثال، تُربَط قيمة `IntervalDay` البالغة `3`
+بالعدد الصحيح `3`. ويحافظ ربط `IntervalNanosecond` بالنوع `bigint` على
+دقة النانوثانية، بينما يؤدي ربطه بالنوع `interval` إلى اقتطاع القيمة إلى دقة الميكروثانية.
 
-| chDB                | Postgres                    | ملاحظات                                   |
-| ------------------- | --------------------------- | ----------------------------------------- |
-| Array(T)            | T[]                         | نوع مصفوفة PG واحد لكل مستوى عمق          |
-| BFloat16            | real                        | الكتابة تُسقط البتات المنخفضة من mantissa |
-| Bool                | boolean                     |                                           |
-| Date                | date                        |                                           |
-| Date32              | date                        |                                           |
-| DateTime            | timestamp with time zone    |                                           |
-| DateTime64(P)       | timestamp(P) with time zone | قيم P التي تتجاوز 6 تُحدَّد عند 6         |
-| Decimal(P,S)        | numeric(P,S)                |                                           |
-| Decimal32(S)        | numeric(9,S)                |                                           |
-| Decimal64(S)        | numeric(18,S)               |                                           |
-| Decimal128(S)       | numeric(38,S)               |                                           |
-| Decimal256(S)       | numeric(76,S)               |                                           |
-| Enum8               | text                        |                                           |
-| Enum16              | text                        |                                           |
-| FixedString(N)      | text                        | N تُعدّ بايتات في CH ومحارف في PG         |
-| Float32             | real                        |                                           |
-| Float64             | double precision            |                                           |
-| IPv4                | inet                        |                                           |
-| IPv6                | inet                        |                                           |
-| Int8                | smallint                    |                                           |
-| Int16               | smallint                    |                                           |
-| Int32               | integer                     |                                           |
-| Int64               | bigint                      |                                           |
-| Int128              | numeric(39,0)               |                                           |
-| Int256              | numeric(77,0)               |                                           |
-| IntervalDay         | interval                    |                                           |
-| IntervalHour        | interval                    |                                           |
-| IntervalMicrosecond | interval                    |                                           |
-| IntervalMillisecond | interval                    |                                           |
-| IntervalMinute      | interval                    |                                           |
-| IntervalMonth       | interval                    |                                           |
-| IntervalNanosecond  | interval                    | يُقتطع إلى الميكروثانية                   |
-| IntervalQuarter     | interval                    |                                           |
-| IntervalSecond      | interval                    |                                           |
-| IntervalWeek        | interval                    |                                           |
-| IntervalYear        | interval                    |                                           |
-| JSON                | jsonb                       |                                           |
-| LineString          | path                        |                                           |
-| LowCardinality(T)   | T                           |                                           |
-| Map(K,V)            | text[][]                    | صف واحد من العناصر النصية لكل زوج         |
-| MultiLineString     | path[]                      |                                           |
-| MultiPolygon        | polygon[][]                 |                                           |
-| Nullable(T)         | T                           | يجعل العمود قابلاً لقيمة NULL             |
-| Point               | point                       |                                           |
-| Polygon             | polygon[]                   |                                           |
-| Ring                | polygon                     |                                           |
-| String              | text                        |                                           |
-| Time                | time without time zone      |                                           |
-| Time64(P)           | time(P) without time zone   | قيم P التي تتجاوز 6 تُحدَّد عند 6         |
-| Tuple(...)          | text[]                      | تصبح الحقول عناصر نصية                    |
-| UInt8               | smallint                    |                                           |
-| UInt16              | integer                     |                                           |
-| UInt32              | bigint                      |                                           |
-| UInt64              | numeric(20,0)               |                                           |
-| UInt128             | numeric(39,0)               |                                           |
-| UInt256             | numeric(78,0)               |                                           |
-| UUID                | uuid                        |                                           |
+يستخدم chdb&#95;hook أنواع Postgres الافتراضية الواردة أدناه عند إنشاء الجداول استنادًا إلى
+أنواع ClickHouse التي يُرجعها [`DESCRIBE`]. وتنطبق أهداف القراءة الإضافية على
+الأعمدة المُعلَنة صراحةً، وتشمل عمليات تحويل تتجاوز عمليات التحويل الصريحة في PostgreSQL.
+وتظل عمليات التحويل تلك متاحة حتى في الخلايا الفارغة. تخص هذه الأهداف عمليات القراءة؛
+أما عمليات الكتابة فتخضع لقواعد تحويل منفصلة.
 
-{/* TYPE-TABLE-END */}
+| chDB                         | PostgreSQL الافتراضي        | أهداف قراءة إضافية                              | ملاحظات                                                                              |
+| ---------------------------- | --------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Array(T)                     | T[]                         |                                                 | نوع مصفوفة واحد في PG لكل مستوى تداخل                                                |
+| BFloat16                     | real                        |                                                 |                                                                                      |
+| Bool                         | boolean                     |                                                 |                                                                                      |
+| Date                         | date                        |                                                 |                                                                                      |
+| Date32                       | date                        |                                                 |                                                                                      |
+| DateTime                     | timestamp with time zone    | time                                            |                                                                                      |
+| DateTime64(P)                | timestamp(P) with time zone | time                                            | إذا تجاوزت قيمة P العدد 6 فإنها تُقيَّد عند 6                                        |
+| Decimal(P,S)                 | numeric(P,S)                | xid8, oid8                                      |                                                                                      |
+| Decimal32(S)                 | numeric(9,S)                | xid8, oid8                                      |                                                                                      |
+| Decimal64(S)                 | numeric(18,S)               | xid8, oid8                                      |                                                                                      |
+| Decimal128(S)                | numeric(38,S)               | xid8, oid8                                      |                                                                                      |
+| Decimal256(S)                | numeric(76,S)               | xid8, oid8                                      |                                                                                      |
+| Enum8                        | text                        | bytea؛ الأنواع المتوافقة مع الإدخال             | يفك ترميز التسمية؛ وتصلح أنواع enum في PG ذات التسميات المطابقة                      |
+| Enum16                       | text                        | bytea؛ الأنواع المتوافقة مع الإدخال             | يفك ترميز التسمية؛ وتصلح أنواع enum في PG ذات التسميات المطابقة                      |
+| FixedString(N)               | text                        | bytea؛ الأنواع المتوافقة مع الإدخال             | لا يحتفظ بمحارف NUL اللاحقة إلا النوع bytea                                          |
+| Float32                      | real                        |                                                 |                                                                                      |
+| Float64                      | double precision            |                                                 |                                                                                      |
+| IPv4                         | inet                        |                                                 |                                                                                      |
+| IPv6                         | inet                        |                                                 |                                                                                      |
+| Int8                         | smallint                    | boolean                                         | الصفر يعني false، وأي قيمة غير صفرية تعني true                                       |
+| Int16                        | smallint                    | boolean                                         | الصفر يعني false، وأي قيمة غير صفرية تعني true                                       |
+| Int32                        | integer                     |                                                 |                                                                                      |
+| Int64                        | bigint                      |                                                 |                                                                                      |
+| Int128                       | numeric(39,0)               | xid8, oid8                                      |                                                                                      |
+| Int256                       | numeric(77,0)               | xid8, oid8                                      |                                                                                      |
+| IntervalDay                  | interval                    | smallint, integer, bigint                       | تستقبل الأعداد الصحيحة عدد الوحدات                                                   |
+| IntervalHour                 | interval                    | smallint, integer, bigint                       | تستقبل الأعداد الصحيحة عدد الوحدات                                                   |
+| IntervalMicrosecond          | interval                    | smallint, integer, bigint                       | تستقبل الأعداد الصحيحة عدد الوحدات                                                   |
+| IntervalMillisecond          | interval                    | smallint, integer, bigint                       | تستقبل الأعداد الصحيحة عدد الوحدات                                                   |
+| IntervalMinute               | interval                    | smallint, integer, bigint                       | تستقبل الأعداد الصحيحة عدد الوحدات                                                   |
+| IntervalMonth                | interval                    | smallint, integer, bigint                       | تستقبل الأعداد الصحيحة عدد الوحدات                                                   |
+| IntervalNanosecond           | interval                    | smallint, integer, bigint                       | تحتفظ الأعداد الصحيحة بدقة النانوثانية، بينما يقتطع interval القيمة إلى الميكروثانية |
+| IntervalQuarter              | interval                    | smallint, integer, bigint                       | تستقبل الأعداد الصحيحة عدد الوحدات                                                   |
+| IntervalSecond               | interval                    | smallint, integer, bigint                       | تستقبل الأعداد الصحيحة عدد الوحدات                                                   |
+| IntervalWeek                 | interval                    | smallint, integer, bigint                       | تستقبل الأعداد الصحيحة عدد الوحدات                                                   |
+| IntervalYear                 | interval                    | smallint, integer, bigint                       | تستقبل الأعداد الصحيحة عدد الوحدات                                                   |
+| JSON                         | jsonb                       | json, text, bytea؛ الأنواع المتوافقة مع الإدخال | يوحّد jsonb صيغة المستند                                                             |
+| LineString                   | path                        | lseg                                            | يتطلب lseg نقطتين                                                                    |
+| LowCardinality(T)            | T                           |                                                 |                                                                                      |
+| Map(K,V)                     | text[][]                    | composite[], T[][], text                        | صف واحد من العناصر النصية لكل زوج                                                    |
+| MultiLineString              | path[]                      |                                                 |                                                                                      |
+| MultiPolygon                 | polygon[][]                 |                                                 |                                                                                      |
+| Nested(...)                  | text[][]                    | composite[], T[][], text                        | صف واحد من العناصر النصية لكل صف متداخل                                              |
+| Nullable(T)                  | T                           |                                                 | يجعل العمود قابلاً لقيم nullable                                                     |
+| Point                        | point                       |                                                 |                                                                                      |
+| Polygon                      | polygon[]                   |                                                 |                                                                                      |
+| Ring                         | polygon                     | lseg                                            | يتطلب lseg نقطتين                                                                    |
+| SimpleAggregateFunction(f,T) | T                           |                                                 | يخزّن القيم بالنوع T                                                                 |
+| String                       | text                        | bytea؛ الأنواع المتوافقة مع الإدخال             | يحتفظ bytea بالبايتات الخام                                                          |
+| Time                         | time without time zone      |                                                 |                                                                                      |
+| Time64(P)                    | time(P) without time zone   |                                                 | تُقيَّد قيم P التي تتجاوز 6 عند 6                                                    |
+| Tuple(...)                   | text[]                      | composite, T[], text؛ box, circle, line         | تتحول الحقول إلى عناصر نصية                                                          |
+| UInt8                        | smallint                    | boolean                                         | الصفر يعني false، وأي قيمة غير صفرية تعني true                                       |
+| UInt16                       | integer                     |                                                 |                                                                                      |
+| UInt32                       | bigint                      |                                                 |                                                                                      |
+| UInt64                       | numeric(20,0)               | xid8, oid8                                      |                                                                                      |
+| UInt128                      | numeric(39,0)               | xid8, oid8                                      |                                                                                      |
+| UInt256                      | numeric(78,0)               | xid8, oid8                                      |                                                                                      |
+| UUID                         | uuid                        |                                                 |                                                                                      |
 
-كل نوع من أنواع chDB غير مذكور في هذا الجدول يثير خطأً، ومنها `Nested`
-و`Variant` و`Dynamic`. استخدم [structure](#structure) يربطها بالنوع
-`String` لقراءتها كنص.
+يمكن للأنواع المتوافقة مع الإدخال قراءة السلاسل النصية باستخدام دالة الإدخال الخاصة بها في PostgreSQL.
+يجب أن تحتوي الأنواع المركّبة على حقول متطابقة وبالترتيب نفسه. ولقراءة Tuple
+كمصفوفة، يجب أن يكون كل حقل قابلاً للتحويل إلى نوع عناصر المصفوفة، ولا يجوز أن يكون
+أي حقل مصفوفةً بحد ذاته.
+
+عند القراءة كمصفوفة، يستخدم `Map` صفًا واحدًا لكل زوج مفتاح-قيمة، ويستخدم `Nested`
+صفًا واحدًا لكل صف متداخل. ولقراءة Tuple كنوع `box`، قدّم نقطتين؛ أما
+`circle` فقدّم له نقطة ونصف قطر؛ وأما `line` فقدّم له ثلاثة معاملات.
+
+كل نوع من أنواع chDB غير مذكور في هذا الجدول يثير خطأً، ومنها `Variant`
+و`Dynamic` و`AggregateFunction`. استخدم [structure](#structure) يربطها
+بالنوع `String` لقراءتها كنص.
 
 يدعم Postgres نطاقًا أضيق من chDB في بعض هذه الأنواع؛ ولذلك يثير النسخ خطأً عند
 وجود `Time` أو `Time64` يتجاوز 24 ساعة، وكذلك عند وجود `Date32`
 خارج نطاق التواريخ الذي يدعمه Postgres.
+
+### مطابقة الأنواع اليدوية {#manual-type-mappings}
+
+يستخدم استنتاج الأعمدة النوع `text` لأنواع enum، ومصفوفات نصية لقيم `Tuple` و`Map`
+و`Nested`. وللحفاظ على أنواع الحقول أو تقييد قيم enum، أنشئ
+أنواع enum وأنواعًا مركّبة في PostgreSQL، ثم عرّف الأعمدة باستخدام تلك الأنواع.
+حدّد أنواع chDB باستخدام [structure](#structure)، أو استخدم `structure 'auto'`
+لاستنتاجها من بيانات المصدر بدلًا من جدول Postgres. فعلى
+سبيل المثال، يمكنك استخدام هذه الأنواع لتحميل حالات الأحداث والإحداثيات والوسوم
+والعناصر المتداخلة:
+
+```sql
+CREATE TYPE event_status AS ENUM ('new', 'done');
+CREATE TYPE event_point AS (x integer, y integer);
+CREATE TYPE event_label AS (key text, value bigint);
+CREATE TYPE event_item AS (id integer, name text);
+
+CREATE TABLE events (
+    status event_status,
+    point  event_point,
+    labels event_label[],
+    items  event_item[]
+);
+
+COPY events FROM 's3://chdb-lakedata-public/examples/events.parquet' (
+    structure $$
+        status Enum8('new' = 1, 'done' = 2),
+        point  Tuple(Int32, Int32),
+        labels Map(String, Int64),
+        items  Array(Tuple(id Int32, name String))
+    $$
+);
+```
+
+عرّف الحقول المركّبة بترتيب الحقول نفسه في chDB، مستخدمًا أنواع PostgreSQL
+متوافقة. أما قيم `Map`، فعرّف لها حقلًا للمفتاح يليه حقل للقيمة. يتحوّل كل
+`Tuple` إلى قيمة مركّبة واحدة، ويتحوّل كل زوج في `Map` أو كل صف في `Nested` إلى
+عنصر واحد ضمن مصفوفة مركّبة.
+
+عند تحديد `structure` صريحة، يقسّم chDB النوع `Nested` إلى عمود `Array` مستقل لكل
+حقل. استخدم `Array(Tuple(...))` لقراءة الصفوف المتداخلة في عمود مصفوفة مركّبة
+واحد، كما هو موضّح أعلاه، أو استخدم `structure 'auto'` مع صيغة مصدر في chDB
+تتضمّن معلومات الأنواع.
 
 ### ترميز النص {#text-encoding}
 
@@ -620,8 +705,8 @@ ERROR:  invalid byte sequence for encoding "UTF8": 0x00
 [CREATE TABLE](#create-table-overloading) يستنتج النوع `text` لهذه الأنواع:
 
 ```sql
-CREATE TABLE logs (id bigint, payload bytea) WITH (
-    copy_from = 's3://my-bucket/logs.parquet'
+CREATE TABLE logs (req_id numeric(20,0), resource bytea) WITH (
+    copy_from = 's3://chdb-lakedata-public/logs/logs-2026-08-26.parquet'
 );
 ```
 
@@ -754,6 +839,8 @@ Copyright (c) 2026, ClickHouse
 
 [ClickHouse data types]: https://clickhouse.com/docs/reference/data-types/index "ClickHouse Docs: أنواع البيانات في ClickHouse"
 
+[composite type]: https://www.postgresql.org/docs/current/rowtypes.html#ROWTYPES-DECLARING "وثائق PostgreSQL: التصريح عن الأنواع المركبة"
+
 [log_min_messages]: https://www.postgresql.org/docs/current/runtime-config-logging.html#GUC-LOG-MIN-MESSAGES "وثائق PostgreSQL: log_min_messages"
 
 [`pg_get_loaded_modules()`]: https://pgpedia.info/g/pg_get_loaded_modules.html "pgPedia: pg_get_loaded_modules()"
@@ -763,3 +850,5 @@ Copyright (c) 2026, ClickHouse
 [`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs: إعدادات الجلسة max_threads_*"
 
 [`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse Docs: إعداد الجلسة max_parsing_threads"
+
+[database encoding]: https://www.postgresql.org/docs/current/multibyte.html "PostgreSQL Docs: دعم مجموعات المحارف"
