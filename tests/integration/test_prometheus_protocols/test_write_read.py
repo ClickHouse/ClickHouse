@@ -11,6 +11,7 @@ from .prometheus_test_utils import (
     receive_protobuf_from_remote_read,
     send_protobuf_to_remote_write,
 )
+import http.client
 import re
 import requests
 import time
@@ -510,6 +511,35 @@ def test_api_v1_url_path_routing_rejects_legacy_fixed_prefix():
     finally:
         node.query("DROP TABLE IF EXISTS prometheus.api SYNC")
         node.query("DROP DATABASE IF EXISTS prometheus SYNC")
+
+
+def test_remote_write_dynamic_routing_rejects_invalid_percent_escape():
+    # A malformed percent-escape in the URL path is a client mistake: it must be answered with HTTP 400,
+    # not HTTP 500, otherwise remote-write senders treat it as a retriable server failure.
+    timestamp = time.time()
+    write_request = convert_time_series_to_protobuf(
+        [({"__name__": "invalid_escape_metric", "job": "dynamic_test"}, {timestamp: 1.0})]
+    )
+
+    # `requests` would re-quote the invalid escape as `%25ZZ`, so send the raw request target with `http.client`.
+    connection = http.client.HTTPConnection(node.ip_address, 9093, timeout=30)
+    try:
+        connection.request(
+            "POST",
+            "/default/%ZZ/write",
+            body=write_request.SerializeToString(),
+            headers={
+                "Content-Encoding": "snappy",
+                "Content-Type": "application/x-protobuf",
+            },
+        )
+        response = connection.getresponse()
+        body = response.read().decode(errors="replace")
+    finally:
+        connection.close()
+
+    assert response.status == 400, body
+    assert "BAD_ARGUMENTS" in body
 
 
 def test_remote_write_zstd():

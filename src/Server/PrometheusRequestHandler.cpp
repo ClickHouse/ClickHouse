@@ -133,7 +133,19 @@ namespace
             std::string_view encoded = raw_path.substr(pos, (next == std::string_view::npos) ? std::string_view::npos : next - pos);
 
             String segment;
-            Poco::URI::decode(String{encoded}, segment);
+            try
+            {
+                Poco::URI::decode(String{encoded}, segment);
+            }
+            catch (const Poco::URISyntaxException & e)
+            {
+                /// A malformed percent-escape is a client mistake, so it must be reported as a bad request (HTTP 400)
+                /// rather than a server failure: remote-write senders keep retrying requests that fail with HTTP 5xx.
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "URL path '{}' contains an invalid percent-encoded segment: {}",
+                    raw_path, e.message());
+            }
             segments.push_back(std::move(segment));
 
             if (next == std::string_view::npos)
@@ -277,11 +289,21 @@ protected:
         });
 
         const auto & method = request.getMethod();
-        if (shouldParseFormFromRequestBody(request)
-            && (method == Poco::Net::HTTPRequest::HTTP_POST || method == Poco::Net::HTTPRequest::HTTP_PUT))
-            params = std::make_unique<HTMLForm>(default_settings, request, *request.getStream());
-        else
-            params = std::make_unique<HTMLForm>(default_settings, request);
+        try
+        {
+            if (shouldParseFormFromRequestBody(request)
+                && (method == Poco::Net::HTTPRequest::HTTP_POST || method == Poco::Net::HTTPRequest::HTTP_PUT))
+                params = std::make_unique<HTMLForm>(default_settings, request, *request.getStream());
+            else
+                params = std::make_unique<HTMLForm>(default_settings, request);
+        }
+        catch (const Poco::URISyntaxException & e)
+        {
+            /// `Poco::URI` percent-decodes the path and the query, so a malformed percent-escape in the request target
+            /// gets here. It's a client mistake, so it must be reported as a bad request (HTTP 400) rather than
+            /// a server failure: remote-write senders keep retrying requests that fail with HTTP 5xx.
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid request URI '{}': {}", request.getURI(), e.message());
+        }
         parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
 
         if (!authenticateUserAndMakeContext(request, response))
