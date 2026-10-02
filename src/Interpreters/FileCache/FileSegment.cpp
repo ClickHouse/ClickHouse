@@ -1,7 +1,6 @@
 #include <Interpreters/FileCache/FileSegment.h>
 
 #include <algorithm>
-#include <bit>
 #include <filesystem>
 #include <fcntl.h>
 #include <IO/Operators.h>
@@ -1404,7 +1403,10 @@ FileSegmentEfficiencyInfo FileSegment::getEfficiencyInfo(const FileSegmentGuard:
 
     const auto live_window = cache->getEfficiency().windowNow();
     std::lock_guard lock(efficiency_mutex);
-    const bool hit_in_live_window = efficiency_window_id == live_window;
+    if (!efficiency_state)
+        return info;
+    const auto & state = *efficiency_state;
+    const bool hit_in_live_window = state.window_id == live_window;
     if (hit_in_live_window)
     {
         info.active_bytes = std::min(getActiveBytesUnlocked(), downloaded);
@@ -1412,11 +1414,11 @@ FileSegmentEfficiencyInfo FileSegment::getEfficiencyInfo(const FileSegmentGuard:
         info.idle_bytes = 0;
     }
 
-    const auto last_hit_window = hit_in_live_window ? previous_hit_window_id : efficiency_window_id;
+    const auto last_hit_window = hit_in_live_window ? state.previous_hit_window_id : state.window_id;
     if (last_hit_window != FileCacheEfficiency::NEVER_READ && last_hit_window <= live_window)
     {
         info.last_hit_windows_ago = live_window - last_hit_window;
-        info.last_hit_active_bytes = hit_in_live_window ? previous_active_bytes : getActiveBytesUnlocked();
+        info.last_hit_active_bytes = hit_in_live_window ? state.previous_active_bytes : getActiveBytesUnlocked();
         info.last_hit_passive_bytes = downloaded - std::min<size_t>(info.last_hit_active_bytes, downloaded);
     }
     return info;
@@ -1525,18 +1527,6 @@ void FileSegment::increasePriority()
     }
 }
 
-namespace
-{
-
-/// Bits `lo..hi` (inclusive) of a 64-bit word.
-UInt64 bitRange(size_t lo, size_t hi)
-{
-    const UInt64 up_to_hi = hi == 63 ? ~UInt64(0) : (UInt64(1) << (hi + 1)) - 1;
-    return up_to_hi & ~((UInt64(1) << lo) - 1);
-}
-
-}
-
 void FileSegment::markRead(size_t offset, size_t size)
 {
     if (!size || !cache || is_unbound)
@@ -1550,11 +1540,12 @@ void FileSegment::markRead(size_t offset, size_t size)
     if (removed_from_efficiency)
         return;
 
-    /// The window id only moves forward, so a stale reader does not count.
     const auto window = efficiency.currentWindow();
-    if (efficiency_window_id != FileCacheEfficiency::NEVER_READ && efficiency_window_id > window)
-        return;
-    if (efficiency_window_id != window)
+    if (!efficiency_state)
+        efficiency_state = std::make_unique<EfficiencyState>();
+    else if (efficiency_state->window_id > window)
+        return;   /// The window id only moves forward, so a stale reader does not count.
+    if (efficiency_state->window_id != window)
         startEfficiencyWindowUnlocked(window);
 
     if (const auto granules = getGranuleRangeUnlocked(offset, size))
@@ -1564,25 +1555,15 @@ void FileSegment::markRead(size_t offset, size_t size)
 
 void FileSegment::startEfficiencyWindowUnlocked(FileCacheEfficiency::Window window)
 {
-    if (efficiency_window_id != FileCacheEfficiency::NEVER_READ)
+    auto & state = *efficiency_state;
+    if (state.window_id != FileCacheEfficiency::NEVER_READ)
     {
-        previous_hit_window_id = efficiency_window_id;
-        previous_active_bytes = getActiveBytesUnlocked();
+        state.previous_hit_window_id = state.window_id;
+        state.previous_active_bytes = getActiveBytesUnlocked();
     }
-    efficiency_window_range_size = range().size();
-    const size_t granules = (efficiency_window_range_size + EFFICIENCY_GRANULE_SIZE - 1) / EFFICIENCY_GRANULE_SIZE;
-    const size_t words = (granules + 63) / 64;
-    if (words > efficiency_granule_words)
-    {
-        chassert(words <= std::numeric_limits<UInt32>::max());
-        active_granules = std::make_unique<UInt64[]>(words);
-        efficiency_granule_words = static_cast<UInt32>(words);
-    }
-    else
-    {
-        std::fill_n(active_granules.get(), efficiency_granule_words, 0);
-    }
-    efficiency_window_id = window;
+    state.window_range_size = range().size();
+    state.active_granules.assign((state.window_range_size + EFFICIENCY_GRANULE_SIZE - 1) / EFFICIENCY_GRANULE_SIZE, false);
+    state.window_id = window;
     cache->getEfficiency().addPassiveBytes(window, static_cast<Int64>(reserved_size.load()));
 }
 
@@ -1594,44 +1575,47 @@ std::optional<std::pair<size_t, size_t>> FileSegment::getGranuleRangeUnlocked(si
         return std::nullopt;
     const size_t first = (std::max(offset, left) - left) / EFFICIENCY_GRANULE_SIZE;
     const size_t last = (end - 1 - left) / EFFICIENCY_GRANULE_SIZE;
-    chassert(last / 64 < efficiency_granule_words);
+    chassert(last < efficiency_state->active_granules.size());
     return std::pair{first, last};
 }
 
 size_t FileSegment::setGranulesUnlocked(size_t first, size_t last)
 {
-    size_t bytes = 0;
-    for (size_t word = first / 64; word <= last / 64; ++word)
-    {
-        const size_t word_first = word * 64;
-        const UInt64 mask = bitRange(std::max(first, word_first) - word_first, std::min(last, word_first + 63) - word_first);
-        bytes += granulesToBytesUnlocked(word, mask & ~active_granules[word]);
-        active_granules[word] |= mask;
-    }
-    return bytes;
+    auto & granules = efficiency_state->active_granules;
+    const auto from = granules.begin() + first;
+    const auto to = granules.begin() + last + 1;
+    const bool new_last = to == granules.end() && !granules.back();
+    const size_t new_granules = std::count(from, to, false);
+    std::fill(from, to, true);
+    return new_granules * EFFICIENCY_GRANULE_SIZE - (new_last ? lastGranuleTailUnlocked() : 0);
 }
 
-size_t FileSegment::granulesToBytesUnlocked(size_t word, UInt64 bits) const
+size_t FileSegment::lastGranuleTailUnlocked() const
 {
-    size_t bytes = std::popcount(bits) * EFFICIENCY_GRANULE_SIZE;
-
-    /// Cut the last granule at the segment end.
-    const size_t last_granule = (efficiency_window_range_size - 1) / EFFICIENCY_GRANULE_SIZE;
-    if (last_granule / 64 == word && (bits & (UInt64(1) << (last_granule % 64))))
-        bytes -= (last_granule + 1) * EFFICIENCY_GRANULE_SIZE - efficiency_window_range_size;
-    return bytes;
+    return efficiency_state->active_granules.size() * EFFICIENCY_GRANULE_SIZE - efficiency_state->window_range_size;
 }
 
 void FileSegment::addReservedSize(Int64 delta)
 {
-    std::lock_guard lock(efficiency_mutex);
-    if (delta >= 0)
-        reserved_size.fetch_add(static_cast<size_t>(delta));
-    else
-        reserved_size.fetch_sub(static_cast<size_t>(-delta));
+    auto apply = [&]
+    {
+        if (delta >= 0)
+            reserved_size.fetch_add(static_cast<size_t>(delta));
+        else
+            reserved_size.fetch_sub(static_cast<size_t>(-delta));
+    };
 
-    if (cache && !is_unbound && !removed_from_efficiency && efficiency_window_id != FileCacheEfficiency::NEVER_READ)
-        cache->getEfficiency().addPassiveBytes(efficiency_window_id, delta);
+    if (!cache || is_unbound || !cache->getEfficiency().isEnabled())
+    {
+        apply();
+        return;
+    }
+
+    /// Under the lock, so the first window start of `markRead` sees either none or all of `delta`.
+    std::lock_guard lock(efficiency_mutex);
+    apply();
+    if (!removed_from_efficiency && efficiency_state)
+        cache->getEfficiency().addPassiveBytes(efficiency_state->window_id, delta);
 }
 
 void FileSegment::onRemovedFromCache(const FileSegmentGuard::Lock &)
@@ -1640,25 +1624,26 @@ void FileSegment::onRemovedFromCache(const FileSegmentGuard::Lock &)
         return;
     std::lock_guard lock(efficiency_mutex);
     removed_from_efficiency = true;
-    if (efficiency_window_id == FileCacheEfficiency::NEVER_READ)
+    if (!efficiency_state)
         return;
     auto & efficiency = cache->getEfficiency();
-    efficiency.addPassiveBytes(efficiency_window_id, -static_cast<Int64>(reserved_size.load()));
-    efficiency.moveToActive(efficiency_window_id, -static_cast<Int64>(getActiveBytesUnlocked()));
+    efficiency.addPassiveBytes(efficiency_state->window_id, -static_cast<Int64>(reserved_size.load()));
+    efficiency.moveToActive(efficiency_state->window_id, -static_cast<Int64>(getActiveBytesUnlocked()));
 }
 
 bool FileSegment::wasServedFromCache() const
 {
     std::lock_guard lock(efficiency_mutex);
-    return efficiency_window_id != FileCacheEfficiency::NEVER_READ;
+    return efficiency_state != nullptr;
 }
 
 size_t FileSegment::getActiveBytesUnlocked() const
 {
-    size_t bytes = 0;
-    for (size_t word = 0; word < efficiency_granule_words; ++word)
-        bytes += granulesToBytesUnlocked(word, active_granules[word]);
-    return bytes;
+    if (!efficiency_state || efficiency_state->active_granules.empty())
+        return 0;
+    const auto & granules = efficiency_state->active_granules;
+    const size_t set = std::count(granules.begin(), granules.end(), true);
+    return set * EFFICIENCY_GRANULE_SIZE - (granules.back() ? lastGranuleTailUnlocked() : 0);
 }
 
 FileSegment::~FileSegment()

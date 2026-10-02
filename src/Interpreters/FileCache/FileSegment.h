@@ -15,7 +15,9 @@
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 #include <Interpreters/FileCache/FileCacheEfficiency.h>
+#include <Common/ByteMutex.h>
 #include <optional>
+#include <vector>
 
 
 namespace Poco { class Logger; }
@@ -280,8 +282,8 @@ private:
     /// Sets granules `[first, last]`; returns the bytes of the ones that were not set before.
     size_t setGranulesUnlocked(size_t first, size_t last) TSA_REQUIRES(efficiency_mutex);
     size_t getActiveBytesUnlocked() const TSA_REQUIRES(efficiency_mutex);
-    /// Bytes of the granules set in `bits` of word `word`.
-    size_t granulesToBytesUnlocked(size_t word, UInt64 bits) const TSA_REQUIRES(efficiency_mutex);
+    /// Bytes of the last granule past the segment end.
+    size_t lastGranuleTailUnlocked() const TSA_REQUIRES(efficiency_mutex);
 
     /// In release builds returns a single shared logger; in debug builds a per-segment one.
     const LoggerPtr & getLog() const;
@@ -357,6 +359,10 @@ private:
     std::condition_variable cv;
     /// Dedups concurrent increasePriority() calls; a pure try-lock, so an atomic flag is enough.
     std::atomic_flag increasing_priority;
+    /// A leaf lock for the efficiency state: only the mutex of `FileCacheEfficiency` is taken under it.
+    /// One byte each, so they fill the padding after `increasing_priority`.
+    mutable ByteMutex efficiency_mutex;
+    bool removed_from_efficiency TSA_GUARDED_BY(efficiency_mutex) = false;
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     /// Per-segment logger with a unique name; only in debug/sanitizer builds.
@@ -366,18 +372,19 @@ private:
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
 
-    /// Reuse coverage for `FileCacheEfficiency`. A leaf lock: only the mutex of `FileCacheEfficiency`
-    /// is taken under it.
-    mutable std::mutex efficiency_mutex;
-    /// One bit per granule, `efficiency_granule_words` words; allocated at the first cache hit.
-    std::unique_ptr<UInt64[]> active_granules TSA_GUARDED_BY(efficiency_mutex);
-    FileCacheEfficiency::Window efficiency_window_id TSA_GUARDED_BY(efficiency_mutex) = FileCacheEfficiency::NEVER_READ;
-    /// The window before `efficiency_window_id` with a cache hit, and its active bytes.
-    FileCacheEfficiency::Window previous_hit_window_id TSA_GUARDED_BY(efficiency_mutex) = FileCacheEfficiency::NEVER_READ;
-    UInt64 previous_active_bytes TSA_GUARDED_BY(efficiency_mutex) = 0;
-    UInt64 efficiency_window_range_size TSA_GUARDED_BY(efficiency_mutex) = 0;
-    UInt32 efficiency_granule_words TSA_GUARDED_BY(efficiency_mutex) = 0;
-    bool removed_from_efficiency TSA_GUARDED_BY(efficiency_mutex) = false;
+    /// Reuse coverage for `FileCacheEfficiency`. Allocated at the first cache hit, so a disabled cache
+    /// and a file segment without hits pay only for the pointer.
+    struct EfficiencyState
+    {
+        /// One bit per `EFFICIENCY_GRANULE_SIZE`; reset at each window start.
+        std::vector<bool> active_granules;
+        FileCacheEfficiency::Window window_id = FileCacheEfficiency::NEVER_READ;
+        /// The window before `window_id` with a cache hit, and its active bytes.
+        FileCacheEfficiency::Window previous_hit_window_id = FileCacheEfficiency::NEVER_READ;
+        UInt64 previous_active_bytes = 0;
+        UInt64 window_range_size = 0;
+    };
+    std::unique_ptr<EfficiencyState> efficiency_state TSA_GUARDED_BY(efficiency_mutex);
 
     /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;
