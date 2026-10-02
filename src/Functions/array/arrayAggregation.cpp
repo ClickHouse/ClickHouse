@@ -151,12 +151,8 @@ struct ArrayAggregateImpl
         return result;
     }
 
-    /// Fast path for fixed-width arrays supported by findExtreme*: reduce each array slice directly
-    /// instead of a per-element compareAt. Native-width integers, floats, Decimal32/64, and DateTime64
-    /// use the vectorized reduction; wide integers and decimals use the existing wide-value kernel.
-    /// The result is bitwise-identical to the generic path: the extreme value is unique up to representation,
-    /// and the only value classes with multiple representations (NaN payloads and 0.0/-0.0) are fixed up below
-    /// to return the first occurrence, which is what compareAt-based selection returns.
+    /// Reduce each supported fixed-width array slice directly with findExtreme* instead of per-element compareAt.
+    /// Decimal and DateTime64 columns use their native representation and preserve the source scale in the result.
     template <typename Element>
     requires(has_find_extreme_implementation<Element> || underlying_has_find_extreme_implementation<Element>)
     static bool executeMinOrMaxFindExtreme(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
