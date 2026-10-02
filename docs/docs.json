@@ -197,6 +197,9 @@
   },
   "scripts": [
     {
+      "src": "/_site/customizations/clickstack-availability.js"
+    },
+    {
       "src": "/_site/customizations/settings-legacy-redirect.js"
     },
     {

@@ -3675,3 +3675,32 @@ a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
 td:has(> .integration-table-logo) {
     white-space: nowrap;
 }
+#ch-product-availability {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  font-size: 12px;
+  line-height: 20px;
+}
+#ch-product-availability a {
+  border: 1px solid #d1d1d1;
+  border-radius: 999px;
+  padding: 3px 10px;
+  color: inherit;
+  text-decoration: none;
+  font-weight: 500;
+}
+#ch-product-availability a:hover { text-decoration: underline; }
+#ch-product-availability a[aria-current="page"] {
+  background: #f7f8d8;
+  border-color: #999c4b;
+  color: #393c16;
+}
+.dark #ch-product-availability a { border-color: #555; }
+.dark #ch-product-availability a[aria-current="page"] {
+  background: #292b1c;
+  border-color: #60622e;
+  color: #fdff75;
+}
