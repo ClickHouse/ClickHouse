@@ -55,6 +55,44 @@ Columns materializeColumns(Columns columns, const std::vector<bool> & should_mat
     return columns;
 }
 
+/// The order of everything the row loop keeps; every check is a no-op in release builds.
+void checkInvariants(
+    const SlidingBlocks & blocks,
+    int64_t next_output_block_number,
+    const PartitionBounds & partition,
+    const Peers & peers,
+    const FrameBounds & frame,
+    const FrameBounds & prev_frame)
+{
+    const RowPoint & current = peers.current();
+    const PeersBounds & peer_group = peers.bounds();
+
+    chassert(partition.start <= peer_group.start.location);
+    chassert(peer_group.start.location <= current.location);
+    chassert(current.location < partition.end);
+    chassert(peer_group.start.peer_group_index_in_partition == current.peer_group_index_in_partition);
+    chassert(current.peer_group_index_in_partition <= current.row_index_in_partition);
+    if (peer_group.fully_visible)
+    {
+        chassert(current.location < peer_group.end.location);
+        chassert(peer_group.end.location <= partition.end);
+    }
+
+    chassert(partition.start <= prev_frame.start.location);
+    chassert(prev_frame.start.location <= prev_frame.end.location);
+    chassert(prev_frame.end.location <= partition.end);
+    if (frame.fully_visible)
+    {
+        chassert(prev_frame.start.location <= frame.start.location);
+        chassert(frame.start.location <= frame.end.location);
+        chassert(prev_frame.end.location <= frame.end.location);
+        chassert(frame.end.location <= partition.end);
+    }
+
+    chassert(blocks.begin().block <= std::min(prev_frame.start.location.block, current.location.block));
+    chassert(next_output_block_number <= current.location.block);
+}
+
 }
 
 WindowTransform::WindowTransform(SharedHeader input_header_,
@@ -118,44 +156,6 @@ WindowTransform::~WindowTransform()
     }
 }
 
-bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
-{
-    if (x == y)
-    {
-        // For convenience, a row is always its own peer.
-        return true;
-    }
-
-    return params.arePeers(blocks.blockAt(x.block).materialized_columns, x.row, blocks.blockAt(y.block).materialized_columns, y.row);
-}
-
-void WindowTransform::checkInvariants() const
-{
-#ifndef NDEBUG
-    const RowNumber partition_end = partition.bounds().end;
-
-    chassert(partition.bounds().start <= peer_group_start.location);
-    chassert(peer_group_start.location <= current.location);
-    chassert(current.location < partition_end);
-    chassert(peer_group_start.peer_group_index_in_partition == current.peer_group_index_in_partition);
-    chassert(current.peer_group_index_in_partition <= current.row_index_in_partition);
-
-    chassert(partition.bounds().start <= prev_frame.start);
-    chassert(prev_frame.start <= prev_frame.end);
-    chassert(prev_frame.end <= partition_end);
-    if (frame.bounds().fully_visible)
-    {
-        chassert(prev_frame.start <= frame.bounds().start);
-        chassert(frame.bounds().start <= frame.bounds().end);
-        chassert(prev_frame.end <= frame.bounds().end);
-        chassert(frame.bounds().end <= partition_end);
-    }
-
-    chassert(blocks.begin().block <= std::min(prev_frame.start.block, current.location.block));
-    chassert(next_output_block_number <= current.location.block);
-#endif
-}
-
 // Update the aggregation states after the frame has changed.
 void WindowTransform::updateAggregationState()
 {
@@ -167,12 +167,12 @@ void WindowTransform::updateAggregationState()
     bool reset_aggregation = false;
     RowNumber rows_to_add_start;
     RowNumber rows_to_add_end;
-    if (current_frame.start == prev_frame.start)
+    if (current_frame.start.location == prev_frame.start.location)
     {
         // The frame start didn't change, add the tail rows.
         reset_aggregation = false;
-        rows_to_add_start = prev_frame.end;
-        rows_to_add_end = current_frame.end;
+        rows_to_add_start = prev_frame.end.location;
+        rows_to_add_end = current_frame.end.location;
     }
     else
     {
@@ -181,8 +181,8 @@ void WindowTransform::updateAggregationState()
         // subtract rows from some types of aggregation states, but for now we
         // always have to reset when the frame start changes.
         reset_aggregation = true;
-        rows_to_add_start = current_frame.start;
-        rows_to_add_end = current_frame.end;
+        rows_to_add_start = current_frame.start.location;
+        rows_to_add_end = current_frame.end.location;
     }
 
     for (auto & ws : workspaces)
@@ -245,15 +245,15 @@ void WindowTransform::updateAggregationState()
 
 void WindowTransform::writeOutCurrentRow()
 {
-    chassert(current.location < partition.bounds().end);
-    chassert(current.location.block >= blocks.begin().block);
+    chassert(peers.current().location < partition.bounds().end);
+    chassert(peers.current().location.block >= blocks.begin().block);
 
     // Whether this row's frame equals the previous row's. The first row of the partition has no
     // previous row in this partition (and thus no previous frame) to compare against.
     const FrameBounds current_frame = frame.bounds();
-    const bool frame_unchanged = current.row_index_in_partition > 0 && current_frame.start == prev_frame.start && current_frame.end == prev_frame.end;
+    const bool frame_unchanged = peers.current().row_index_in_partition > 0 && current_frame.start.location == prev_frame.start.location && current_frame.end.location == prev_frame.end.location;
 
-    const auto & block = blocks.blockAt(current.location.block);
+    const auto & block = blocks.blockAt(peers.current().location.block);
     for (size_t wi = 0; wi < workspaces.size(); ++wi)
     {
         auto & ws = workspaces[wi];
@@ -268,7 +268,7 @@ void WindowTransform::writeOutCurrentRow()
         const auto * a = ws.aggregate_function.get();
         auto * buf = ws.aggregate_function_state.data();
 
-        if (frame_unchanged && !ws.is_aggregate_function_state && current.location.row > 0)
+        if (frame_unchanged && !ws.is_aggregate_function_state && peers.current().location.row > 0)
         {
             // Same frame as the previous row -> same result. When that row is in this same block its
             // result is already in result_column one position back, so copy it instead of
@@ -276,8 +276,8 @@ void WindowTransform::writeOutCurrentRow()
             // insertRangeFrom appends via resize + memcpy from a disjoint source range, which is
             // self-safe even if the append reallocates and even for nested columns (Array, Variant,
             // Dynamic, JSON) whose sub-columns are not covered by the top-level reserve.
-            chassert(std::cmp_equal(result_column->size(), current.location.row));
-            result_column->insertRangeFrom(*result_column, current.location.row - 1, 1);
+            chassert(std::cmp_equal(result_column->size(), peers.current().location.row));
+            result_column->insertRangeFrom(*result_column, peers.current().location.row - 1, 1);
         }
         else if (ws.is_aggregate_function_state)
         {
@@ -324,18 +324,13 @@ void WindowTransform::computeReadyRows()
         // After that, try to calculate window functions for each next row.
         // We can continue until the end of partition or current end of data,
         // which is precisely the definition of the known end of the partition.
-        while (current.location < partition_end)
+        while (peers.current().location < partition_end)
         {
-            checkInvariants();
+            checkInvariants(blocks, next_output_block_number, partition.bounds(), peers, frame.bounds(), prev_frame);
 
-            // We now know that the current row is valid, so we can update the peer group start.
-            if (peer_group_start.location != current.location && blocks.blockAt(current.location.block).index.peer_group_starts[current.location.row])
-            {
-                ++current.peer_group_index_in_partition;
-                peer_group_start = current;
-            }
-
-            frame.advance(blocks, current, partition.bounds());
+            // We now know that the current row is valid, so its peer group and frame can be found.
+            peers.advancePeerGroupBounds(blocks, partition.bounds());
+            frame.advance(blocks, peers.current(), partition.bounds());
             if (!frame.bounds().fully_visible)
             {
                 // Wait for more input data to find the frame.
@@ -346,7 +341,7 @@ void WindowTransform::computeReadyRows()
 
             // The frame can be empty sometimes, e.g. the boundaries coincide
             // or the start is after the partition end.
-            checkInvariants();
+            checkInvariants(blocks, next_output_block_number, partition.bounds(), peers, frame.bounds(), prev_frame);
 
             // Now that we know the new frame boundaries, update the aggregation
             // states. Theoretically we could do this simultaneously with moving
@@ -380,8 +375,7 @@ void WindowTransform::computeReadyRows()
             // Move to the next row. The frame will have to be recalculated.
             // The peer group start is updated at the beginning of the loop,
             // because the current row might now be past-the-end.
-            current.location = blocks.next(current.location);
-            ++current.row_index_in_partition;
+            peers.advanceCurrentRow(blocks);
         }
 
         if (input_is_finished)
@@ -402,22 +396,21 @@ void WindowTransform::computeReadyRows()
         }
 
         startNextPartition();
-        checkInvariants();
+        checkInvariants(blocks, next_output_block_number, partition.bounds(), peers, frame.bounds(), prev_frame);
     }
 }
 
 void WindowTransform::startNextPartition()
 {
     const RowNumber partition_start = partition.bounds().end;
-    partition.beginAt(partition_start);
+    chassert(peers.current().location == partition_start);
+
+    partition.beginAt(blocks, partition_start);
     partition.advance(blocks);
-    // We have to reset the frame and other pointers when the new partition
-    // starts.
-    frame.enterPartition(partition_start);
-    prev_frame = FrameBounds{.start = partition_start, .end = partition_start, .fully_visible = true};
-    chassert(current.location == partition_start);
-    current = RowPoint{.location = partition_start};
-    peer_group_start = current;
+
+    peers.enterPartition(blocks, partition.bounds());
+    frame.enterPartition(blocks, peers.current(), partition.bounds());
+    prev_frame = FrameBounds{.start = peers.current(), .end = peers.current(), .fully_visible = true};
 
     // Reinitialize the aggregate function states because the new partition
     // has started.
@@ -466,17 +459,17 @@ IProcessor::Status WindowTransform::prepare()
         return Status::Finished;
     }
 
-    chassert(current.location.block >= blocks.begin().block);
+    chassert(peers.current().location.block >= blocks.begin().block);
     // The the current row might be past-the-end if we have already calculated the
     // window functions for all input rows. That's why the equality is also
     // valid here.
-    chassert(current.location.block <= blocks.end().block);
+    chassert(peers.current().location.block <= blocks.end().block);
 
     // Output the ready data prepared by work(). A block is ready when the
     // current row has left it, because rows are computed in order.
     // We inspect the calculation state and create the output chunk right here,
     // because this is pretty lightweight.
-    if (next_output_block_number < current.location.block)
+    if (next_output_block_number < peers.current().location.block)
     {
         if (output.canPush())
         {
@@ -505,7 +498,7 @@ IProcessor::Status WindowTransform::prepare()
         // and we don't have ready output data (checked above). We must be
         // finished.
         chassert(next_output_block_number == blocks.end().block);
-        chassert(current.location == blocks.end());
+        chassert(peers.current().location == blocks.end());
 
         // The consumer learns that the data ended only from the closed output port.
         output.finish();
@@ -574,7 +567,7 @@ void WindowTransform::releaseUnusedBlocks()
     // after the current frame start, so we don't have to check the latter. Note
     // that the frame start can be further than current row for some frame specs
     // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
-    const auto first_used_block = std::min({next_output_block_number, prev_frame.start.block, current.location.block});
+    const auto first_used_block = std::min({next_output_block_number, prev_frame.start.location.block, peers.current().location.block});
     while (blocks.begin().block < first_used_block)
         blocks.pop();
 }

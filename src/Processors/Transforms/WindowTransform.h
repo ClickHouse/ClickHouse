@@ -6,6 +6,7 @@
 
 #include <Processors/Transforms/Window/Frame.h>
 #include <Processors/Transforms/Window/Partition.h>
+#include <Processors/Transforms/Window/Peers.h>
 #include <Processors/Transforms/Window/SlidingBlocks.h>
 #include <Processors/Transforms/Window/SlidingIndexes.h>
 #include <Processors/Transforms/Window/WindowTransformParams.h>
@@ -24,20 +25,20 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class Arena;
 
-/* Computes several window functions that share the same window. The input must
- * be sorted by PARTITION BY (in any order), then by ORDER BY.
- * We need to track the following pointers:
- * 1) boundaries of partition -- rows that compare equal w/PARTITION BY.
- * 2) current row for which we will compute the window functions.
- * 3) boundaries of the frame for this row.
- * Both the peer group and the frame are inside the partition, but can have any
- * position relative to each other.
- * All pointers only move forward. For partition boundaries, this is ensured by
- * the order of input data. This property also trivially holds for the ROWS and
- * GROUPS frames. For the RANGE frame, the proof requires the additional fact
- * that the ranges are specified in terms of (the single) ORDER BY column.
+/* Computes several window functions that share one window. The input is sorted by PARTITION BY, then by
+ * ORDER BY, and arrives block by block; the transform keeps the blocks it still needs and walks them row by row.
  *
- * `final` is so that the isCancelled() is devirtualized, we call it every row.
+ *   blocks       [ block 7  ][ block 8  ][ block 9  ][ block 10 ] .. block 11 .. block 12 .. block 13 ..
+ *                |<------------- stored ----------------------->|<-------- not read yet ------------- ..
+ *   partition         |<---------------------------------------- - - - - - - - - - - - - - ->|
+ *   frame                        |<------------>|
+ *   peers                          |<------->|
+ *   current row                           ^
+ *
+ * - partition: rows range with the current row's PARTITION BY key.
+ * - frame: rows range used to calcualte window functions.
+ * - peers: rows range with the current row's ORDER BY key.
+ * - current row: the row being computed right now.
  */
 class WindowTransform final : public IProcessor
 {
@@ -71,10 +72,6 @@ public:
 
     /* Implementation details.
      */
-    bool arePeers(const RowNumber & x, const RowNumber & y) const;
-
-    void checkInvariants() const;
-
     void updateAggregationState();
     void writeOutCurrentRow();
 
@@ -102,26 +99,10 @@ public:
     // The next block we are going to pass to the consumer.
     Int64 next_output_block_number = 0;
 
-    // The current partition. Its start doesn't point to a valid block, because
-    // we want to drop the blocks early to save memory. We still have to track it
-    // so that we can cut off a PRECEDING frame at the partition start.
+    // Window runtime information: the current row with its peer group, the partition and the frame.
     Partition partition;
-
-    // The row for which we are now computing the window functions, with its
-    // 0-based row and peer group index in the partition for rank() and friends.
-    RowPoint current;
-    // The start of current peer group, needed for CURRENT ROW frame start.
-    // For ROWS frame, always equal to the current row, and for RANGE and GROUP
-    // frames may be earlier.
-    RowPoint peer_group_start;
-
-    // The frame of the current row and its search. When we move to the next
-    // row, both bounds may jump forward by an unknown number of blocks, e.g.
-    // under a RANGE frame, so sometimes neither of them is known. We update the
-    // states of the window functions once the frame is fully visible, and can
-    // then immediately output the result for the current row, without waiting
-    // for more data.
     Frame frame;
+    Peers peers;
 
     // The previous frame that corresponds to the current state of the
     // aggregate function. We use it to determine how to update the aggregation
