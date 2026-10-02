@@ -106,8 +106,9 @@ private:
     /// An existing publication may only be adopted or resumed through when its definition matches what
     /// ClickHouse creates: all four operation types published (pubinsert, pubupdate, pubdelete,
     /// pubtruncate - CREATE PUBLICATION's defaults), no all-tables membership, and, on PostgreSQL 15 and
-    /// newer, no row filter, column list, or schema-level membership. A publication with the right table list
-    /// but an altered
+    /// newer, no row filter, no schema-level membership, and no column list other than the ones
+    /// `materialized_postgresql_tables_list` requests (see configured_column_lists). A publication with the
+    /// right table list but an altered
     /// definition (for example ALTER PUBLICATION ... SET (publish = 'insert')) silently filters the
     /// replication stream, and the filtered-out changes cannot be recovered once the slot advances.
     /// Returns a human-readable reason when the definition does not match, or an empty string when it does.
@@ -231,6 +232,12 @@ private:
     /// `tables_list` is rewritten during startup. Used to decide whether a schema-blind legacy publication
     /// (whose name carries no schema and could belong to another engine) may be adopted on attach.
     const std::unordered_set<String> replicated_schemas;
+
+    /// The column subsets `materialized_postgresql_tables_list` requests (`table(col1, col2)`), by
+    /// (schema, table) pair with the default schema normalized to `"public"`. Parsed once from the raw
+    /// setting, before `tables_list` is rewritten during startup. The publication is created with exactly
+    /// these column lists, so publicationDefinitionConflict() accepts them and nothing else.
+    std::map<std::pair<String, String>, std::set<String>> configured_column_lists;
 
     /// See setTablesReplicatedByPreviousRun(). Only provided by the database engine on attach; the
     /// single-table engine carries its one table in `tables_list` instead.

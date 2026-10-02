@@ -5033,7 +5033,7 @@ def test_attach_fails_closed_when_publication_row_filter_added(started_cluster):
 
     assert_logs_contain_with_retry(
         instance,
-        "applies a row filter or a column list",
+        "applies a row filter",
         retry_count=60,
         sleep_time=1,
     )
@@ -5065,6 +5065,59 @@ def test_attach_fails_closed_when_publication_row_filter_added(started_cluster):
     )
     check_tables_are_synchronized(instance, table, materialized_database=mat_db)
     assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_checks_publication_column_list_against_tables_list(started_cluster):
+    # A column subset in `materialized_postgresql_tables_list` makes ClickHouse create the publication
+    # with that column list (PostgreSQL 15+), so the attach-time definition check must accept exactly the
+    # requested list - and still fail closed when an operator changes it, because resuming through a
+    # narrower column list would silently stop streaming the dropped columns.
+    table = "publication_column_list"
+    mat_db = "publication_column_list_database"
+    pg_manager.create_postgres_table(table)
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(0, 29) AS i")
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}(key, value)'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+
+    # The requested column list is what ClickHouse created, so the restart resumes through it.
+    instance.restart_clickhouse()
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 39) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 40 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    instance.stop_clickhouse()
+    cursor.execute(f'ALTER PUBLICATION "{publication}" SET TABLE ONLY {table} (key)')
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(40, 49) AS i")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "applies a column list to the published table",
+        retry_count=60,
+        sleep_time=1,
+    )
+    for _ in range(5):
+        assert 40 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        time.sleep(1)
 
     pg_manager.drop_materialized_db(mat_db)
 

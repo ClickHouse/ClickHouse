@@ -438,6 +438,55 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 
     checkReplicationSlot(replication_slot);
 
+    /// `table(col1, col2), table2, ...`: commas separate the elements, except inside a column list. The
+    /// single-table engine carries its raw remote table name in `tables_list`, which never has a column list.
+    if (is_materialized_postgresql_database && !tables_list.empty())
+    {
+        String element;
+        std::optional<std::set<String>> columns;
+        String column;
+        auto add_column = [&]
+        {
+            boost::trim(column);
+            if (!column.empty())
+                columns->insert(column);
+            column.clear();
+        };
+        auto add_element = [&]
+        {
+            boost::trim(element);
+            if (columns && !element.empty())
+            {
+                auto [schema, table] = getSchemaAndTableName(element);
+                configured_column_lists[{isDefaultPostgreSQLSchema(schema) ? "public" : schema, table}] = std::move(*columns);
+            }
+            element.clear();
+            columns.reset();
+        };
+        bool in_columns = false;
+        for (const char c : tables_list)
+        {
+            if (in_columns)
+            {
+                if (c == ',' || c == ')')
+                    add_column();
+                else
+                    column += c;
+                in_columns = c != ')';
+            }
+            else if (c == '(')
+            {
+                in_columns = true;
+                columns.emplace();
+            }
+            else if (c == ',')
+                add_element();
+            else if (!columns)
+                element += c;
+        }
+        add_element();
+    }
+
     LOG_INFO(log, "Using replication slot {} and publication {}", replication_slot, doubleQuoteString(publication_name));
 
     startup_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
@@ -2384,19 +2433,41 @@ String PostgreSQLReplicationHandler::publicationDefinitionConflict(pqxx::nontran
 
     /// Row filters (pg_publication_rel.prqual), column lists (pg_publication_rel.prattrs), and schema-level
     /// publication membership (pg_publication_namespace) exist since PostgreSQL 15; ClickHouse creates the
-    /// publication with neither and with an explicit table list. Schema-level membership can expand after
+    /// publication with no row filter, with an explicit table list, and with a column list only where
+    /// `materialized_postgresql_tables_list` requests one. Schema-level membership can expand after
     /// attach, so matching the current pg_publication_tables rows is insufficient: a later foreign-schema
     /// table with a colliding bare name would be replayed into this engine in the single-schema modes.
     if (tx.conn().server_version() >= 150000)
     {
         pqxx::result filtered{tx.exec(fmt::format(
             "SELECT count(*) FROM pg_publication_rel r JOIN pg_publication p ON r.prpubid = p.oid "
-            "WHERE p.pubname = {} AND (r.prqual IS NOT NULL OR r.prattrs IS NOT NULL)", quoteStringPostgreSQL(name)))};
+            "WHERE p.pubname = {} AND r.prqual IS NOT NULL", quoteStringPostgreSQL(name)))};
         if (filtered[0][0].as<Int64>() > 0)
             return fmt::format(
-                "the publication {} applies a row filter or a column list to at least one published table "
-                "(ClickHouse creates it with neither)",
+                "the publication {} applies a row filter to at least one published table "
+                "(ClickHouse creates it without one)",
                 doubleQuoteString(name));
+
+        std::map<std::pair<String, String>, std::set<String>> published_column_lists;
+        pqxx::result column_lists{tx.exec(fmt::format(
+            "SELECT n.nspname, c.relname, a.attname FROM pg_publication_rel r "
+            "JOIN pg_publication p ON r.prpubid = p.oid "
+            "JOIN pg_class c ON c.oid = r.prrelid "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "JOIN pg_attribute a ON a.attrelid = r.prrelid AND a.attnum = ANY(r.prattrs) "
+            "WHERE p.pubname = {} AND r.prattrs IS NOT NULL", quoteStringPostgreSQL(name)))};
+        for (const auto & row : column_lists)
+            published_column_lists[{row[0].as<String>(), row[1].as<String>()}].insert(row[2].as<String>());
+
+        for (const auto & [table, columns] : published_column_lists)
+        {
+            auto it = configured_column_lists.find(table);
+            if (it == configured_column_lists.end() || it->second != columns)
+                return fmt::format(
+                    "the publication {} applies a column list to the published table {}.{} that "
+                    "`materialized_postgresql_tables_list` does not request",
+                    doubleQuoteString(name), table.first, table.second);
+        }
 
         pqxx::result schema_membership{tx.exec(fmt::format(
             "SELECT count(*) FROM pg_publication_namespace n JOIN pg_publication p ON n.pnpubid = p.oid "
