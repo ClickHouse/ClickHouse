@@ -2,6 +2,7 @@
 
 #include "config.h"
 
+#include <Common/Exception.h>
 
 #if USE_SSL
 #    include <openssl/evp.h>
