@@ -31,6 +31,16 @@ ATTACH TABLE test_custom_disk;
 SELECT 'after attach', count() FROM system.disks WHERE name = '$table_disk';
 SELECT 'rows after attach', count() FROM test_custom_disk;
 
+-- The new settings of an \`ALTER\` take over the disk from the old ones, so it is still released on detach.
+ALTER TABLE test_custom_disk MODIFY SETTING merge_with_ttl_timeout = 3600;
+SELECT 'after alter', count() FROM system.disks WHERE name = '$table_disk';
+INSERT INTO test_custom_disk SELECT number FROM numbers(2);
+SELECT 'rows after alter', count() FROM test_custom_disk;
+
+DETACH TABLE test_custom_disk;
+SELECT 'after detach following alter', count() FROM system.disks WHERE name = '$table_disk';
+ATTACH TABLE test_custom_disk;
+
 DROP TABLE test_custom_disk SYNC;
 SELECT 'after drop', count() FROM system.disks WHERE name = '$table_disk';
 "
