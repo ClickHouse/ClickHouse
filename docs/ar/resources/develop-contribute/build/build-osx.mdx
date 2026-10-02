@@ -17,9 +17,7 @@ doc_type: 'guide'
 
 أما المصرّف، فالمعتمد فقط هو Clang من Homebrew.
 
-<div id="install-prerequisites">
-  ## تثبيت المتطلبات الأساسية
-</div>
+## تثبيت المتطلبات الأساسية {#install-prerequisites}
 
 أولًا، راجع [وثائق المتطلبات الأساسية](/ar/resources/develop-contribute/introduction/developer-instruction).
 
@@ -33,15 +31,23 @@ brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils
 ```
 
 <Note>
-  تستخدم Apple نظام ملفات غير حساس لحالة الأحرف افتراضيًا. ورغم أن هذا لا يؤثر عادةً في التجميع (خصوصًا أن عمليات البناء من الصفر ستعمل)، فقد يسبب التباسًا في عمليات مثل `git mv`.
+  كما هو الحال مع `llvm`، فإن حزمة `rustup` من Homebrew من نوع keg-only، لذا لا يُضاف دليل `bin` الخاص بها إلى `PATH` تلقائيًا. صدّره بالطريقة نفسها التي يُصدَّر بها `PATH` الخاص بـ `llvm` في [إصدار ClickHouse](#build-clickhouse):
+
+  ```bash
+  export PATH=$(brew --prefix rustup)/bin:$PATH
+  ```
+
+  يحدّد ClickHouse أيضًا إصدارًا ثابتًا من سلسلة أدوات Rust التي تستخدمها وحدة `corrosion` الإضافية. ثبّتها واخترها باتباع قسم [تثبيت مصرّف Rust](/ar/development/build#install-the-rust-compiler-optional) في دليل الإصدار على Linux. وبدون ذلك، يفشل `cmake` عند وحدة `corrosion` الإضافية مع ظهور الخطأ `Cannot find nightly-<date> Rust toolchain`.
+</Note>
+
+<Note>
+  تستخدم Apple نظام ملفات غير حساس لحالة الأحرف افتراضيًا. ورغم أن هذا لا يؤثر عادةً في التجميع (خصوصًا أن عمليات الإصدار من الصفر ستعمل)، فقد يسبب التباسًا في عمليات مثل `git mv`.
   إذا كنت تعمل بجدية على التطوير في macOS، فتأكد من تخزين الشيفرة المصدرية على وحدة تخزين حساسة لحالة الأحرف، وراجع مثلًا [هذه التعليمات](https://brianboyko.medium.com/a-case-sensitive-src-folder-for-mac-programmers-176cc82a3830).
 </Note>
 
-<div id="build-clickhouse">
-  ## بناء ClickHouse
-</div>
+## إصدار ClickHouse {#build-clickhouse}
 
-لبناء ClickHouse، يجب استخدام مصرّف Clang الخاص بـ Homebrew:
+لإصدار ClickHouse، يجب استخدام مصرّف Clang الخاص بـ Homebrew:
 
 ```bash
 cd ClickHouse
@@ -53,13 +59,15 @@ cmake --build build
 ```
 
 <Note>
+  يثبّت الأمر `brew install llvm` بصيغته المجرّدة دائمًا أحدث إصدار من LLVM يوفّره Homebrew، وقد يكون أحدث من إصدار Clang المعتمد لعمليات CI وإصدارات Linux (راجع [تثبيت مصرّف Clang](/ar/development/build#install-the-clang-compiler)). وقد يُفعِّل إصدار Clang الأحدث تشخيصات من `-Weverything` لم تُكتم بعد في عملية الإصدار، فيفشل الإصدار عند استخدام `-Werror`. إذا حدث ذلك، فثبّت الإصدار الرئيسي المعتمد بدلًا من تعطيل التحذيرات، على سبيل المثال عبر صيغة (formula) مقيّدة بإصدار محدد (`brew install llvm@<version>`) إن كان Homebrew لا يزال يوفّرها.
+</Note>
+
+<Note>
   إذا واجهت أخطاء من نوع `ld: archive member '/' not a mach-o file in ...` أثناء مرحلة الربط، فقد تحتاج
   إلى استخدام llvm-ar عبر ضبط الوسيط `-DCMAKE_AR=/opt/homebrew/opt/llvm/bin/llvm-ar`.
 </Note>
 
-<div id="caveats">
-  ## ملاحظات مهمة
-</div>
+## ملاحظات مهمة {#caveats}
 
 إذا كنت تنوي تشغيل `clickhouse-server`، فتأكّد من زيادة قيمة المتغيّر `maxfiles` على النظام.
 
