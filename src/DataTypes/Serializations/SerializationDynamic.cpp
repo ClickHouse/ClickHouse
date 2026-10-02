@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/checkStackSize.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
@@ -41,7 +42,7 @@ struct SerializeBinaryBulkStateDynamic : public ISerialization::SerializeBinaryB
 
     /// For flattened serialization only.
     std::optional<FlattenedDynamicColumn> flattened_column;
-    std::vector<ISerialization::SerializeBinaryBulkStatePtr> flattened_states;
+    VectorWithMemoryTracking<ISerialization::SerializeBinaryBulkStatePtr> flattened_states;
     ISerialization::SerializeBinaryBulkStatePtr flattened_indexes_state;
 
     explicit SerializeBinaryBulkStateDynamic(SerializationDynamic::SerializationVersion structure_version_)
@@ -57,7 +58,7 @@ struct DeserializeBinaryBulkStateDynamic : public ISerialization::DeserializeBin
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
 
     /// For flattened serialization only.
-    std::vector<ISerialization::DeserializeBinaryBulkStatePtr> flattened_states;
+    VectorWithMemoryTracking<ISerialization::DeserializeBinaryBulkStatePtr> flattened_states;
     ISerialization::DeserializeBinaryBulkStatePtr flattened_indexes_state;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
