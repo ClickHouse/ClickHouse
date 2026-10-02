@@ -44,5 +44,11 @@ BACKUP TABLE t TO S3('http://bucket.s3.amazonaws.com/backup', 'access_key_id', '
 CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(CLICKHOUSE(HOST 'localhost' USER 'user' PASSWORD 'plain_password' TABLE 't')) LIFETIME(0) LAYOUT(FLAT())
 CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(MONGODB(URI 'mongodb://user:plain_password@localhost:27017/db' COLLECTION 'c')) LIFETIME(0) LAYOUT(FLAT())
 CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(ODBC(CONNECTION_STRING 'DSN=mydb;UID=user;PWD=plain_password' TABLE 't')) LIFETIME(0) LAYOUT(FLAT())
+CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(HTTP(URL 'http://user:plain_password@localhost/data' FORMAT 'TSV')) LIFETIME(0) LAYOUT(FLAT())
 CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(YTSAURUS(HTTP_PROXY_URLS 'http://localhost:8000' CYPRESS_PATH '//tmp/t' OAUTH_TOKEN 'plain_token')) LIFETIME(0) LAYOUT(FLAT())
 EOF
+
+# A dictionary source key that is only partly secret still makes the logged query masked.
+$CLICKHOUSE_CLIENT -q "CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_mongodb_uri (key UInt64, value String) PRIMARY KEY key SOURCE(MONGODB(URI 'mongodb://user:plain_mongodb_password@localhost:27017/db' COLLECTION 'c')) LIFETIME(0) LAYOUT(FLAT())"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT -q "SELECT countIf(query LIKE '%plain_mongodb_password%'), countIf(query LIKE '%[HIDDEN]%') FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE 'CREATE DICTIONARY%dict_mongodb_uri%' AND type = 'QueryFinish'"
