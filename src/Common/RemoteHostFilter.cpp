@@ -3,6 +3,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/StringUtils.h>
 #include <Common/Exception.h>
+#include <Common/parseAddress.h>
 #include <Common/re2.h>
 #include <IO/WriteHelpers.h>
 
@@ -10,6 +11,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int UNACCEPTABLE_URL;
 }
 
@@ -27,6 +29,29 @@ void RemoteHostFilter::checkHostAndPort(const std::string & host, const std::str
         !checkForDirectEntry(host + ":" + port))
         throw Exception(ErrorCodes::UNACCEPTABLE_URL, "URL \"{}:{}\" is not allowed in configuration file, "
                                                       "see <remote_url_allow_hosts>", host, port);
+}
+
+std::string RemoteHostFilter::checkAndGetCanonicalHostAndPort(
+    const std::string & host_and_port, UInt16 default_port, const std::string & description) const
+{
+    for (const char c : host_and_port)
+    {
+        const bool is_visible_ascii = isPrintableASCII(c) && c != ' ';
+        const bool is_url_separator = c == '/' || c == '@' || c == '\\';
+        if (!is_visible_ascii || is_url_separator)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected character '{}' in {} '{}': expected host[:port]",
+                c, description, host_and_port);
+    }
+
+    const auto [host, port] = parseAddress(host_and_port, default_port);
+    if (host.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty host in {} '{}'", description, host_and_port);
+
+    checkHostAndPort(host, toString(port));
+
+    return host + ':' + toString(port);
 }
 
 void RemoteHostFilter::setValuesFromConfig(const Poco::Util::AbstractConfiguration & config)
