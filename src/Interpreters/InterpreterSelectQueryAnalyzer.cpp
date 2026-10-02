@@ -230,7 +230,7 @@ static void extractTableReferencesOutsideViews(const QueryTreeNodePtr & node, bo
     }
     else if (const auto * query_node = node->as<QueryNode>())
     {
-        for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped(), /*add_array_join=*/ false, /*recursive=*/ false))
+        for (const auto & table_expression : extractTableExpressions(query_node->getJoinTree(), /*add_array_join=*/ false, /*recursive=*/ false))
             extractTableReferencesOutsideViews(table_expression, is_view_inner, result);
     }
     else if (const auto * union_node = node->as<UnionNode>())
