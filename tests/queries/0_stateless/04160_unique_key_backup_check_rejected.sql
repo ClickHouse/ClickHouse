@@ -1,9 +1,8 @@
 -- Tags: no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage, no-fasttest
 -- no-fasttest: UNIQUE KEY INSERT writes the dense-index SST, which needs RocksDB.
--- UNIQUE KEY interim guards: BACKUP and CHECK TABLE are rejected on tables with
--- a UNIQUE KEY. Both operations would mishandle the per-part delete-bitmap
--- sidecars (BACKUP omits them; CHECK flags them as unexpected files). Real
--- sidecar-aware support is deferred to a follow-up PR. All keys distinct.
+-- UNIQUE KEY interim guard: BACKUP is rejected on a table with a UNIQUE KEY. Not because the
+-- sidecars would be omitted -- they reach the backup now -- but because restore renames every
+-- part while a bitmap names its target in its file name. All keys distinct.
 
 SET enable_unique_key = 1;
 SET async_insert = 0;
@@ -18,7 +17,10 @@ ORDER BY (id);
 INSERT INTO uk_guard VALUES (1, 'a'), (2, 'b'), (3, 'c');
 
 BACKUP TABLE uk_guard TO Null FORMAT Null; -- { serverError SUPPORT_IS_DISABLED }
-CHECK TABLE uk_guard; -- { serverError SUPPORT_IS_DISABLED }
+
+-- CHECK TABLE is NOT rejected any more. Asserting only that it passes would prove nothing: a
+-- bitmap with no checksum entry is declared by `getFileNamesWithoutChecksums` and skipped just as
+-- quietly. Only corrupting one tells the two apart, which needs the write paths that stage one.
 
 -- A plain MergeTree table (no UNIQUE KEY) is unaffected: CHECK still works.
 DROP TABLE IF EXISTS plain_guard;

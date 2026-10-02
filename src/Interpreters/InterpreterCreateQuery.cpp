@@ -1201,13 +1201,17 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         create.set(create.columns_list, make_intrusive<ASTColumns>());
 
     /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside it
-    /// checks a row against another row's value, or reads past the end of a shorter column. Screened for
+    /// checks a row against another row's value, or reads past the end of a shorter column. And a second
+    /// declaration of a name is reachable only once the first one has been dropped. Screened for
     /// every definition the user supplies now - an explicit column list, a full-definition `ATTACH`, and
     /// the `AS src` / `CLONE AS src` copy of the constraints of another table, which may have been stored
-    /// by a version without this check. A replay of stored metadata is not screened, so such a table
+    /// by a version without these checks. A replay of stored metadata is not screened, so such a table
     /// still attaches.
     if (isFreshTableDefinition(mode, create.attach_short_syntax))
+    {
         properties.constraints.checkExpressionsPreserveRowCount();
+        properties.constraints.checkNamesAreUnique();
+    }
 
     ASTPtr new_columns = formatColumns(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
@@ -1782,6 +1786,16 @@ bool isReplicated(const ASTStorage & storage)
         return false;
     const auto & storage_name = storage.engine->name;
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
+}
+
+/// The drop privilege matching the kind of an existing table.
+AccessType getDropAccessType(const IStorage & table)
+{
+    if (table.isView())
+        return AccessType::DROP_VIEW;
+    if (table.isDictionary())
+        return AccessType::DROP_DICTIONARY;
+    return AccessType::DROP_TABLE;
 }
 
 }
@@ -3054,12 +3068,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                 {
                     /// The replaced table is dropped after the swap, under an internal temporary name that
                     /// grants cannot cover, so check the drop privilege for its kind here, on its real name.
-                    AccessType drop_access = AccessType::DROP_TABLE;
-                    if (to_drop->isView())
-                        drop_access = AccessType::DROP_VIEW;
-                    else if (to_drop->isDictionary())
-                        drop_access = AccessType::DROP_DICTIONARY;
-                    current_context->checkAccess(drop_access, to_drop_id);
+                    current_context->checkAccess(getDropAccessType(*to_drop), to_drop_id);
                     to_drop->checkTableSizeBelowDropLimit(current_context);
                 }
             });
@@ -3240,7 +3249,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
             /// own check on the temporary name. A `CREATE TABLE ... CLONE AS` that populates the final table
             /// directly requires exactly these grants, so the contract is the same either way.
             getContext()->checkAccess(InterpreterAlterQuery::getRequiredAccessForCommand(
-                *command, create.getDatabase(), published_table_name, /*row_exists_is_lightweight_marker=*/false));
+                *command, create.getDatabase(), published_table_name, InterpreterAlterQuery::RowExistsColumnKind::Regular));
             interpreter_alter.setSkipAccessCheck(true);
         }
         return interpreter_alter.execute();
@@ -3764,6 +3773,16 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
                 required_access.emplace_back(AccessType::DROP_TABLE, create.getDatabase(), create.getTable());
             required_access.emplace_back(AccessType::CREATE_TABLE, create.getDatabase(), create.getTable());
         }
+    }
+
+    /// Replicated and ON CLUSTER replays run with full access, so the drop privilege for the replaced
+    /// table's kind must be required here, on its real name, while the query still runs as the user.
+    if ((create.replace_table || create.create_or_replace || create.replace_view) && !create.isTemporary())
+    {
+        String database_name = getContext()->resolveDatabase(create.getDatabase());
+        if (auto database = DatabaseCatalog::instance().tryGetDatabase(database_name))
+            if (auto table = database->tryGetTable(create.getTable(), getContext()))
+                required_access.emplace_back(getDropAccessType(*table), database_name, create.getTable());
     }
 
     if (create.targets)
