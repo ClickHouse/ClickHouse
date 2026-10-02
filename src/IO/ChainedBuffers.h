@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <deque>
 #include <memory>
+#include <utility>
 #include <vector>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/DequeWithMemoryTracking.h>
@@ -16,7 +17,11 @@ struct ByteRange
     size_t size = 0;
     size_t end() const { return offset + size; }
     /// Whether this range shares at least one byte with `other` (half-open; touching ranges do not).
-    bool overlaps(ByteRange other) const { return offset < other.end() && other.offset < end(); }
+    bool overlaps(ByteRange other) const;
+    /// The common part of this range and `other`; empty if they do not overlap.
+    ByteRange intersect(ByteRange other) const;
+    /// The parts of this range outside `other`: before it and after it. Either can be empty.
+    std::pair<ByteRange, ByteRange> subtract(ByteRange other) const;
 };
 
 /// Abstract backing memory for a chain node.

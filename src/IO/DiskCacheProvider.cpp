@@ -328,15 +328,9 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
 
 void DiskCacheWriter::markReadExceptOwnFill(ByteRange range)
 {
-    if (!own_fill.overlaps(range))
-    {
-        segment().markRead(range.offset, range.size);
-        return;
-    }
-    if (range.offset < own_fill.offset)
-        segment().markRead(range.offset, own_fill.offset - range.offset);
-    if (range.end() > own_fill.end())
-        segment().markRead(own_fill.end(), range.end() - own_fill.end());
+    const auto [before, after] = range.subtract(own_fill);
+    segment().markRead(before.offset, before.size);
+    segment().markRead(after.offset, after.size);
 }
 
 size_t DiskCacheWriter::committed() const
