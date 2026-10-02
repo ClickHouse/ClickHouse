@@ -124,6 +124,11 @@ public:
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
+    /// Returns true if `read` is known to require an analyzed query (an AST or a query tree) in
+    /// `SelectQueryInfo`, which not every caller of `read` has: a remote read always does, and so does a
+    /// read that rewrites the query per underlying table. Wrappers answer for the table they forward to.
+    virtual bool readRequiresAnalyzedQuery() const { return isRemote(); }
+
     /// Returns true for storages that do not store data themselves but read it from other tables,
     /// e.g. `Distributed`, `Merge`, `Buffer`, `Alias`. The `_table` and `_database` virtual columns
     /// of the rows read from such a storage carry the name of the table that actually produced
@@ -267,6 +272,9 @@ public:
     {
         return metadata.get();
     }
+
+    /// Whether this table has a unique-key constraint.
+    virtual bool hasUniqueKey() const;
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
@@ -825,9 +833,11 @@ public:
     /// - For total_rows column in system.tables
     ///
     /// Does takes underlying Storage (if any) into account.
+    /// Passed context pointer must not be `nullptr`.
     virtual std::optional<UInt64> totalRows(ContextPtr) const { return {}; }
 
     /// Same as above but also take partition predicate into account.
+    /// Passed context pointer must not be `nullptr`.
     virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG &, ContextPtr) const { return {}; }
 
     /// Aggregated `(num_rows, num_defaults)` for `column_name` across all visible parts,

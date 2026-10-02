@@ -89,6 +89,7 @@
               "pages": [
                 "concepts/features/operations/insert/inserting-data",
                 "concepts/features/operations/insert/asyncinserts",
+                "concepts/features/operations/insert/async-insert-select",
                 "concepts/features/operations/insert/bulkinserts",
                 "concepts/features/operations/insert/deduplication",
                 "concepts/features/operations/insert/deduplicating-inserts-on-retries",
@@ -222,7 +223,6 @@
                 "concepts/features/interfaces/framing-formats",
                 "concepts/features/interfaces/tcp",
                 "concepts/features/interfaces/adbc",
-                "concepts/features/interfaces/jdbc",
                 "concepts/features/interfaces/mysql",
                 { "$ref": "features/interfaces/odbc/navigation.json" },
                 "concepts/features/interfaces/postgresql",
@@ -234,7 +234,6 @@
                 "concepts/features/interfaces/arrowflight"
               ]
             },
-            "concepts/features/interfaces/cpp",
             "concepts/features/interfaces/schema-inference",
             "concepts/features/interfaces/documentation-search",
             "concepts/features/interfaces/web-sql",
