@@ -1865,13 +1865,11 @@ struct DictionaryValueHashes
 {
     std::vector<UInt64> hashes;
     std::optional<UInt64> default_value_hash;
-    /// Whether `hashes` is sorted yet, and how many probes were answered by scanning it unsorted.
     bool sorted = false;
     size_t scanned_probes = 0;
 
     /// Whether any of `probes` is among the dictionary's values.
-    /// Sorting costs about log2(n) scans and a value set is usually probed by only a few constants, so
-    /// up to max(8, log2(n)) probes in total scan the unsorted `hashes`; after that it is sorted once.
+    /// Sorting costs about log2(n) scans, so the first max(8, log2(n)) probes scan the unsorted `hashes`.
     ///
     /// For a sorted probe sequence - which is what `KeyCondition::prepareBloomFilterData` produces -
     /// this is an intersection of two sorted sequences rather than a sequence of independent binary
