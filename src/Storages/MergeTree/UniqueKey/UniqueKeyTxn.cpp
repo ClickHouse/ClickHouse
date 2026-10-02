@@ -213,16 +213,8 @@ CSN UniqueKeyTxnManager::commitTransaction(
 
     try
     {
-        /// Normally nothing is unresolved: every writer resolves inside the guard. A given-up wait leaves a part
-        /// unresolved until the transaction log resolves it.
-        if (hasUnresolvedPart(data, partition_id))
-        {
-            LOG_DEBUG(log, "UNIQUE KEY {} (partition {}): waiting for an unresolved part, tid {}", kind, partition_id, txn->tid);
-            waitUntilResolved(
-                [&] { return !hasUnresolvedPart(data, partition_id); },
-                cancelled,
-                fmt::format("{} (partition {}): a part is still unresolved", kind, partition_id));
-        }
+        /// Before staging, it needs to see the latest state
+        waitForUnresolvedParts(partition_id, kind, txn->tid, cancelled);
 
         staged = write.stage(*write_guard);
         if (!staged)
@@ -283,6 +275,20 @@ CSN UniqueKeyTxnManager::commitTransaction(
     TransactionManager::instance().waitForCSNLoaded(csn);
 
     return csn;
+}
+
+void UniqueKeyTxnManager::waitForUnresolvedParts(
+    const String & partition_id, std::string_view kind, const TransactionID & tid, const std::atomic<bool> * cancelled) const
+{
+    /// Normally nothing is unresolved: every writer resolves inside the guard.
+    if (!hasUnresolvedPart(data, partition_id))
+        return;
+
+    LOG_DEBUG(log, "UNIQUE KEY {} (partition {}): waiting for an unresolved part, tid {}", kind, partition_id, tid);
+    waitUntilResolved(
+        [&] { return !hasUnresolvedPart(data, partition_id); },
+        cancelled,
+        fmt::format("{} (partition {}): a part is still unresolved", kind, partition_id));
 }
 
 }
