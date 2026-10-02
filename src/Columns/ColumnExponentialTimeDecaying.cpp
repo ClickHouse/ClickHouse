@@ -82,18 +82,125 @@ UInt64 getOrderingKey(
         value, time, column.getDecayLength());
 }
 
-void updateOrderingKeyHash(
-    const ColumnExponentialTimeDecaying & column, size_t row, SipHash & hash)
+constexpr UInt8 LOGICAL_KEY_NEGATIVE = 0;
+constexpr UInt8 LOGICAL_KEY_ZERO = 1;
+constexpr UInt8 LOGICAL_KEY_POSITIVE = 2;
+constexpr size_t LOGICAL_KEY_SERIALIZED_SIZE = sizeof(UInt8) + sizeof(UInt64);
+
+struct LogicalKey
 {
-    hash.update(getOrderingKey(column, row));
+    UInt8 domain;
+    UInt64 sortable_unit_timestamp;
+};
+
+LogicalKey getLogicalKey(Float64 value, Float64 time, Float64 decay_length)
+{
+    if (value == 0)
+        return {LOGICAL_KEY_ZERO, 0};
+
+    return {
+        std::signbit(value) ? LOGICAL_KEY_NEGATIVE : LOGICAL_KEY_POSITIVE,
+        getExponentialTimeDecayingSortableFloatKey(
+            getExponentialTimeDecayingUnitTimestamp(value, time, decay_length))};
 }
 
-UInt32 orderingKeyWeakHash(
+LogicalKey getLogicalKey(const ColumnExponentialTimeDecaying & column, size_t row)
+{
+    const auto & tuple = column.getStorageTuple();
+    const Float64 value
+        = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row];
+    const Float64 time
+        = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row];
+    return getLogicalKey(value, time, column.getDecayLength());
+}
+
+bool isValidLogicalKey(const LogicalKey & key)
+{
+    if (key.domain > LOGICAL_KEY_POSITIVE)
+        return false;
+
+    if (key.domain == LOGICAL_KEY_ZERO)
+        return key.sortable_unit_timestamp == 0;
+
+    return std::isfinite(
+        getExponentialTimeDecayingFloatFromSortableKey(key.sortable_unit_timestamp));
+}
+
+ExponentialTimeDecayingCanonicalDirectValue getCanonicalDirectValue(const LogicalKey & key)
+{
+    if (key.domain == LOGICAL_KEY_ZERO)
+        return {0, 0};
+
+    return {
+        key.domain == LOGICAL_KEY_NEGATIVE ? -1.0 : 1.0,
+        getExponentialTimeDecayingFloatFromSortableKey(key.sortable_unit_timestamp)};
+}
+
+int compareLogicalKeys(const LogicalKey & lhs, const LogicalKey & rhs)
+{
+    if (lhs.domain != rhs.domain)
+        return lhs.domain < rhs.domain ? -1 : 1;
+
+    if (lhs.domain == LOGICAL_KEY_ZERO
+        || lhs.sortable_unit_timestamp == rhs.sortable_unit_timestamp)
+        return 0;
+
+    const bool lhs_less
+        = lhs.sortable_unit_timestamp < rhs.sortable_unit_timestamp;
+    if (lhs.domain == LOGICAL_KEY_NEGATIVE)
+        return lhs_less ? 1 : -1;
+
+    return lhs_less ? -1 : 1;
+}
+
+void writeLogicalKey(const LogicalKey & key, char * memory)
+{
+    memory[0] = static_cast<char>(key.domain);
+    UInt64 sortable = key.sortable_unit_timestamp;
+    transformEndianness<std::endian::little>(sortable);
+    std::memcpy(memory + sizeof(UInt8), &sortable, sizeof(sortable));
+}
+
+LogicalKey readLogicalKey(const char * pos, size_t length)
+{
+    if (length != LOGICAL_KEY_SERIALIZED_SIZE)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Serialized ExponentialTimeDecaying logical key must contain {} bytes, got {}",
+            LOGICAL_KEY_SERIALIZED_SIZE,
+            length);
+
+    LogicalKey key{static_cast<UInt8>(pos[0]), 0};
+    std::memcpy(
+        &key.sortable_unit_timestamp,
+        pos + sizeof(UInt8),
+        sizeof(key.sortable_unit_timestamp));
+    transformEndianness<std::endian::native, std::endian::little>(
+        key.sortable_unit_timestamp);
+
+    if (!isValidLogicalKey(key))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Serialized ExponentialTimeDecaying logical key is invalid");
+
+    return key;
+}
+
+void updateLogicalKeyHash(
+    const ColumnExponentialTimeDecaying & column, size_t row, SipHash & hash)
+{
+    const auto key = getLogicalKey(column, row);
+    hash.update(key.domain);
+    hash.update(key.sortable_unit_timestamp);
+}
+
+UInt32 logicalKeyWeakHash(
     const ColumnExponentialTimeDecaying & column, size_t row)
 {
-    const UInt64 key = getOrderingKey(column, row);
-    return static_cast<UInt32>(
-        intHashCRC32(key, WEAK_HASH32_INITIAL_VALUE));
+    const auto key = getLogicalKey(column, row);
+    UInt32 hash = intHashCRC32(
+        static_cast<UInt64>(key.domain), WEAK_HASH32_INITIAL_VALUE);
+    return intHashCRC32(key.sortable_unit_timestamp, hash);
 }
 
 }
@@ -184,29 +291,8 @@ MutableColumnPtr ColumnExponentialTimeDecaying::cloneResized(size_t new_size) co
 
 void ColumnExponentialTimeDecaying::insertData(const char * pos, size_t length)
 {
-    if (length != sizeof(UInt64))
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Serialized ExponentialTimeDecaying key must contain {} bytes, got {}",
-            sizeof(UInt64),
-            length);
-
-    UInt64 key = 0;
-    std::memcpy(&key, pos, sizeof(key));
-    transformEndianness<std::endian::native, std::endian::little>(key);
-
-    const auto direct
-        = getExponentialTimeDecayingCanonicalDirectValue(key);
-    if ((direct.value_at_anchor != 0 && !std::isfinite(direct.anchor_time))
-        || getExponentialTimeDecayingOrderingKey(
-               direct.value_at_anchor, direct.anchor_time, decay_length)
-            != key)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Serialized ExponentialTimeDecaying ordering key is invalid");
-
-    storage->insert(
-        Tuple{direct.value_at_anchor, direct.anchor_time});
+    const auto direct = getCanonicalDirectValue(readLogicalKey(pos, length));
+    storage->insert(Tuple{direct.value_at_anchor, direct.anchor_time});
     appendOrderingKey(size() - 1);
 }
 
@@ -287,12 +373,9 @@ std::string_view ColumnExponentialTimeDecaying::serializeValueIntoArena(
     char const *& begin,
     const IColumn::SerializationSettings *) const
 {
-    UInt64 key = getOrderingKey(*this, n);
-    transformEndianness<std::endian::little>(key);
-
-    char * memory = arena.allocContinue(sizeof(key), begin);
-    std::memcpy(memory, &key, sizeof(key));
-    return {memory, sizeof(key)};
+    char * memory = arena.allocContinue(LOGICAL_KEY_SERIALIZED_SIZE, begin);
+    writeLogicalKey(getLogicalKey(*this, n), memory);
+    return {memory, LOGICAL_KEY_SERIALIZED_SIZE};
 }
 
 char * ColumnExponentialTimeDecaying::serializeValueIntoMemory(
@@ -300,10 +383,8 @@ char * ColumnExponentialTimeDecaying::serializeValueIntoMemory(
     char * memory,
     const IColumn::SerializationSettings *) const
 {
-    UInt64 key = getOrderingKey(*this, n);
-    transformEndianness<std::endian::little>(key);
-    std::memcpy(memory, &key, sizeof(key));
-    return memory + sizeof(key);
+    writeLogicalKey(getLogicalKey(*this, n), memory);
+    return memory + LOGICAL_KEY_SERIALIZED_SIZE;
 }
 
 void ColumnExponentialTimeDecaying::collectSerializedValueSizes(
@@ -324,12 +405,12 @@ void ColumnExponentialTimeDecaying::collectSerializedValueSizes(
     if (is_null)
     {
         for (size_t row = 0; row < rows; ++row)
-            sizes[row] += 1 + (is_null[row] ? 0 : sizeof(UInt64));
+            sizes[row] += 1 + (is_null[row] ? 0 : LOGICAL_KEY_SERIALIZED_SIZE);
     }
     else
     {
         for (size_t row = 0; row < rows; ++row)
-            sizes[row] += sizeof(UInt64);
+            sizes[row] += LOGICAL_KEY_SERIALIZED_SIZE;
     }
 }
 
@@ -337,21 +418,19 @@ void ColumnExponentialTimeDecaying::deserializeAndInsertFromArena(
     ReadBuffer & in,
     const IColumn::SerializationSettings *)
 {
-    UInt64 key = 0;
-    readBinaryLittleEndian(key, in);
+    UInt8 domain = 0;
+    UInt64 sortable_unit_timestamp = 0;
+    readBinary(domain, in);
+    readBinaryLittleEndian(sortable_unit_timestamp, in);
 
-    const auto direct
-        = getExponentialTimeDecayingCanonicalDirectValue(key);
-    if ((direct.value_at_anchor != 0 && !std::isfinite(direct.anchor_time))
-        || getExponentialTimeDecayingOrderingKey(
-               direct.value_at_anchor, direct.anchor_time, decay_length)
-            != key)
+    const LogicalKey key{domain, sortable_unit_timestamp};
+    if (!isValidLogicalKey(key))
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
-            "Serialized ExponentialTimeDecaying ordering key is invalid");
+            "Serialized ExponentialTimeDecaying logical key is invalid");
 
-    storage->insert(
-        Tuple{direct.value_at_anchor, direct.anchor_time});
+    const auto direct = getCanonicalDirectValue(key);
+    storage->insert(Tuple{direct.value_at_anchor, direct.anchor_time});
     appendOrderingKey(size() - 1);
 }
 
@@ -366,18 +445,23 @@ int ColumnExponentialTimeDecaying::doCompareAt(
     const auto & rhs = assert_cast<const ColumnExponentialTimeDecaying &>(rhs_);
     chassert(decay_length == rhs.decay_length);
 
-    return ordering_key->compareAt(n, m, rhs.getOrderingKeyColumn(), nan_direction_hint);
+    const int prefix_comparison
+        = ordering_key->compareAt(n, m, rhs.getOrderingKeyColumn(), nan_direction_hint);
+    if (prefix_comparison != 0)
+        return prefix_comparison;
+
+    return compareLogicalKeys(getLogicalKey(*this, n), getLogicalKey(rhs, m));
 }
 
 void ColumnExponentialTimeDecaying::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    updateOrderingKeyHash(*this, n, hash);
+    updateLogicalKeyHash(*this, n, hash);
 }
 
 void ColumnExponentialTimeDecaying::updateHashFast(SipHash & hash) const
 {
     for (size_t row = 0; row < size(); ++row)
-        updateOrderingKeyHash(*this, row, hash);
+        updateLogicalKeyHash(*this, row, hash);
 }
 
 void ColumnExponentialTimeDecaying::computeHashInto(
@@ -385,7 +469,7 @@ void ColumnExponentialTimeDecaying::computeHashInto(
 {
     for (size_t row = row_begin; row < row_end; ++row)
     {
-        const UInt32 value = orderingKeyWeakHash(*this, row);
+        const UInt32 value = logicalKeyWeakHash(*this, row);
         UInt32 & out = hash_out[row - row_begin];
         out = initial ? value : combineWeakHash32(value, out);
     }

@@ -88,7 +88,7 @@ public:
     std::optional<size_t> getSerializedValueSize(
         size_t, const IColumn::SerializationSettings *) const override
     {
-        return sizeof(UInt64);
+        return sizeof(UInt8) + sizeof(UInt64);
     }
 
     void collectSerializedValueSizes(

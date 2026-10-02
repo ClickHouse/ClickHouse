@@ -126,9 +126,9 @@ SELECT
     exponentialTimeDecaying(10)(1, toFloat64(0))
     < exponentialTimeDecaying(20)(1, toFloat64(0)); -- { serverError BAD_ARGUMENTS, ILLEGAL_TYPE_OF_ARGUMENT }
 
--- The UInt64 ordering key intentionally merges neighboring Float64 unit timestamps
--- that differ only in the discarded low-order bit. Comparison and hashing must
--- use the same key.
+-- The compact UInt64 ordering prefix intentionally merges neighboring Float64
+-- unit timestamps that differ only in the discarded low-order bit. A prefix
+-- collision must not become logical equality or a logical hash collision.
 WITH
     reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS t1,
     reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2) AS t2,
@@ -139,4 +139,36 @@ SELECT
     a < b,
     a > b,
     cityHash64(a) = cityHash64(b);
+
+-- Serialized hash-table keys must retain the full logical key too.
+SELECT count()
+FROM
+(
+    SELECT value
+    FROM
+    (
+        SELECT exponentialTimeDecaying(1)(
+            1.,
+            reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1)) AS value
+        UNION ALL
+        SELECT exponentialTimeDecaying(1)(
+            1.,
+            reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2)) AS value
+    )
+    GROUP BY value
+);
+
+-- Re-anchored representations of the same curve still have one logical key.
+SELECT count()
+FROM
+(
+    SELECT value
+    FROM
+    (
+        SELECT exponentialTimeDecaying(10)(2., toFloat64(0)) AS value
+        UNION ALL
+        SELECT exponentialTimeDecaying(10)(1., toFloat64(10 * log(2))) AS value
+    )
+    GROUP BY value
+);
 

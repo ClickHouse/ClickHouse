@@ -827,15 +827,17 @@ The decay length is part of the logical type: `ExponentialTimeDecaying(decay_len
 stored per row. The persisted payload contains the authoritative
 `(value_at_anchor, anchor_time)` pair. Arithmetic uses that direct payload.
 
-For ordering, equality, hashing, arena serialization, primary-key marks, and `minmax` indexes, the
-type derives one 8-byte `UInt64` key with `shiftOneBitAndSign(unit_timestamp)`. The sign divides
-the key space around zero and one low-order bit of the sortable `Float64` unit timestamp is
-discarded. Neighboring curves can therefore share an ordering key; when they do, the type treats
-them as equal for ordering and hashing.
+For ordered presentation and sparse indexes, the type derives one 8-byte `UInt64` prefix with
+`shiftOneBitAndSign(unit_timestamp)`. The sign divides the key space around zero and one low-order
+bit of the sortable `Float64` unit timestamp is discarded. The prefix is only an accelerator:
+neighboring curves can share it, so equality and ordering fall back to the full sign and sortable
+unit timestamp when the prefixes collide. Logical hashing and arena keys use that full logical key
+as well, so the discarded prefix bit never changes equality, `GROUP BY`, or `DISTINCT` semantics.
 
 For a nonzero curve, `unit_timestamp = anchor_time + decay_length * ln(abs(value_at_anchor))` is the
-time at which its magnitude is one. The authoritative internal payload is
-`(value_at_anchor, anchor_time)`, and ordering uses the derived `UInt64` key described above.
+time at which its magnitude is one. The authoritative persisted payload remains
+`(value_at_anchor, anchor_time)`; the full logical key and the compact `UInt64` prefix are derived
+from it.
 There is no three-field sign/unit-time/decay-length representation. Sign and unit-time may be
 derived for inspection, but a tuple containing them is not a value representation or constructor.
 
