@@ -10826,6 +10826,7 @@ Strings StorageReplicatedMergeTree::getMutationsWithLegacyPartitionScope() const
     /// `/mutations` may not be loaded yet. `alter` does not pull it for a `MODIFY COLUMN` either, and
     /// the partition key type change allowed on a stale view would make that entry undecodable once it
     /// is loaded. Load the new entries from ZooKeeper first.
+    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::getMutationsWithLegacyPartitionScope");
     const_cast<ReplicatedMergeTreeQueue &>(queue).updateMutations(getZooKeeper());
     return queue.getMutationsWithLegacyPartitionScope();
 }
