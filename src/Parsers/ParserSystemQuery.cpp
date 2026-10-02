@@ -8,8 +8,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Poco/String.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -1130,14 +1128,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserSystemQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementSystem(StatementFactory & factory)
-{
-    factory.registerStatement("SYSTEM",
+    documentation["SYSTEM"] =
     {
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -2122,7 +2117,9 @@ SYSTEM DISABLE ALL FAILPOINTS
 SYSTEM WAIT FAILPOINT name [PAUSE|RESUME] | NOTIFY FAILPOINT name
 )",
         .related = {"KILL", "OPTIMIZE", "ALTER", "SHOW", "ON CLUSTER"},
-    });
+    };
+
+    return documentation;
 }
 
 }

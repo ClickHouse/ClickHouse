@@ -523,6 +523,10 @@ add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Alg
 add_object_library(clickhouse_processors_streaming Processors/Streaming)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
+add_object_library(clickhouse_processors_queryplan_profiling_execution Processors/QueryPlan/Profiling/Execution)
+add_object_library(clickhouse_processors_queryplan_profiling_metrics Processors/QueryPlan/Profiling/Metrics)
+add_object_library(clickhouse_processors_queryplan_profiling_time Processors/QueryPlan/Profiling/Time)
+add_object_library(clickhouse_processors_queryplan_profiling_analysis Processors/QueryPlan/Profiling/Analysis)
 add_object_library(clickhouse_processors_queryplan_streaming Processors/QueryPlan/Streaming)
 add_object_library(clickhouse_processors_queryplan_optimizations_cascades Processors/QueryPlan/Optimizations/Cascades)
 add_object_library(clickhouse_processors_queryplan_optimizations_cascades_rules Processors/QueryPlan/Optimizations/Cascades/Rules)
@@ -549,6 +553,7 @@ add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 set_property(SOURCE
     Columns/IColumn.cpp                        # hashjoin_with_large_output
     Processors/Transforms/WindowTransform.cpp  # window functions
+    Processors/Transforms/Window/SlidingBlocks.cpp  # window functions
     Processors/Transforms/Window/WindowTransformParams.cpp  # window functions
     WindowFunctions/WindowFunctionRank.cpp                   # window functions
     WindowFunctions/WindowFunctionDenseRank.cpp              # window functions

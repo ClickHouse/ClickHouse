@@ -1062,8 +1062,24 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
             if (!settings.show_secrets)
             {
+                /// An individually masked argument: for the named `key = value` form the key stays
+                /// visible; anything else (a positional secret, or a malformed argument swept in by
+                /// a fail-closed rule) is hidden whole.
+                if (auto masked = secret_arguments.masked_arguments.find(i); masked != secret_arguments.masked_arguments.end())
+                {
+                    const auto * func_ast = typeid_cast<const ASTFunction *>(argument.get());
+                    if (masked->second && func_ast && func_ast->name == "equals" && func_ast->arguments && func_ast->arguments->children.size() == 2)
+                    {
+                        func_ast->arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);
+                        ostr << " = ";
+                    }
+                    ostr << "'[HIDDEN]'";
+                    continue;
+                }
+
                 /// An argument with a partially masked replacement (e.g. a presigned S3 URL whose
-                /// credential parameters are hidden but whose host and path are kept).
+                /// credential parameters are hidden but whose host and path are kept). Checked after the
+                /// individual masks, so an argument a fail-closed rule hides whole is not partially shown.
                 if (auto replaced = secret_arguments.replaced_arguments.find(i); replaced != secret_arguments.replaced_arguments.end())
                 {
                     ostr << replaced->second;
@@ -1092,21 +1108,6 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                             ostr << "'[HIDDEN]'";
                     }
                     ostr << ")";
-                    continue;
-                }
-
-                /// An individually masked argument: for the named `key = value` form the key stays
-                /// visible; anything else (a positional secret, or a malformed argument swept in by
-                /// a fail-closed rule) is hidden whole.
-                if (auto masked = secret_arguments.masked_arguments.find(i); masked != secret_arguments.masked_arguments.end())
-                {
-                    const auto * func_ast = typeid_cast<const ASTFunction *>(argument.get());
-                    if (masked->second && func_ast && func_ast->name == "equals" && func_ast->arguments && func_ast->arguments->children.size() == 2)
-                    {
-                        func_ast->arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);
-                        ostr << " = ";
-                    }
-                    ostr << "'[HIDDEN]'";
                     continue;
                 }
 
