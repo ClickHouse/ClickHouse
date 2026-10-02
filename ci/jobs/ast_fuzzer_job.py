@@ -75,12 +75,21 @@ AST_FUZZER_ORACLE_THROW_ERROR_CODE = 906
 AST_FUZZER_ORACLE_THROW_EXIT_CODE = AST_FUZZER_ORACLE_THROW_ERROR_CODE & 0xFF
 
 
-def _last_exception_line(fuzzer_log: Path, error_code: int) -> str:
-    """The exception that ended the run. Several codes share an exit code, so it is the proof."""
-    return Shell.get_output(
-        f"tail -n1000 {fuzzer_log} | rg --text -o 'Code: {error_code}[.].*' | tail -n1",
-        verbose=False,
-    ).strip()
+def _last_exception(fuzzer_log: Path, error_code: int, error_name: str) -> str:
+    """The exception that ended the run. Several codes share an exit code, so it is the proof.
+    Multi-line messages (e.g. health check `Details:`) run until the `(ERROR_NAME)` suffix."""
+    lines = Shell.get_output(f"tail -n1000 {fuzzer_log}", verbose=False).splitlines()
+    marker = f"Code: {error_code}."
+    start = next((i for i in reversed(range(len(lines))) if marker in lines[i]), None)
+    if start is None:
+        return ""
+    block = [lines[start][lines[start].index(marker) :]]
+    if f"({error_name})" not in block[0]:
+        for line in lines[start + 1 : start + 100]:
+            block.append(line)
+            if f"({error_name})" in line:
+                break
+    return "\n".join(block).strip()
 
 # A client-origin 241 line: "Code: 241" with NO "Received from" on the same line.
 # clickhouse-client raises 241 for its own --max_memory_usage_in_client cap (see
@@ -496,10 +505,12 @@ def run_fuzz_job(check_name: str):
         info.append("Server hit its memory limit (Code 241) but stayed alive")
         info.append("\n")
     elif fuzzer_exit_code == BUZZHOUSE_ORACLE_EXIT_CODE and (
-        oracle_error := _last_exception_line(fuzzer_log, BUZZHOUSE_ORACLE_ERROR_CODE)
+        oracle_error := _last_exception(
+            fuzzer_log, BUZZHOUSE_ORACLE_ERROR_CODE, "BUZZHOUSE_ORACLE"
+        )
     ):
         # A BuzzHouse oracle or the disallowed error code check caught the server misbehaving
-        name = oracle_error.removeprefix(
+        name = oracle_error.splitlines()[0].removeprefix(
             f"Code: {BUZZHOUSE_ORACLE_ERROR_CODE}. DB::Exception: "
         )
         name = name.removesuffix(" (BUZZHOUSE_ORACLE)").removesuffix(".")
@@ -510,18 +521,24 @@ def run_fuzz_job(check_name: str):
             status=Result.Status.FAIL,
         )
         info.append(f"BuzzHouse oracle failure: {oracle_error}")
-    elif fuzzer_exit_code == BUZZHOUSE_EXCEPTION_EXIT_CODE:
-        # The fuzzer itself failed, e.g. on its configuration; findings have their own code
+    elif (
+        buzzhouse
+        and fuzzer_exit_code == BUZZHOUSE_EXCEPTION_EXIT_CODE
+        and (error_info := _last_exception(fuzzer_log, 739, "BUZZHOUSE"))
+    ):
+        # The fuzzer itself failed, e.g. on its configuration; findings have their own code.
+        # Other codes ending in 227 fall through to the generic client failure
         status = Result.Status.ERROR
-        error_info = _last_exception_line(fuzzer_log, 739)
-        info.append(f"ERROR: {error_info or 'BuzzHouse fuzzer exception not found, fuzzer issue?'}")
+        info.append(f"ERROR: {error_info}")
     elif oracle_error := (
         fuzzer_exit_code == AST_FUZZER_ORACLE_EXIT_CODE
         and not buzzhouse
         and Shell.get_output(f"rg --text -A 30 'AST FUZZER ORACLE MISMATCH' {fuzzer_log}")
     ) or (
         fuzzer_exit_code == AST_FUZZER_ORACLE_THROW_EXIT_CODE
-        and _last_exception_line(fuzzer_log, AST_FUZZER_ORACLE_THROW_ERROR_CODE)
+        and _last_exception(
+            fuzzer_log, AST_FUZZER_ORACLE_THROW_ERROR_CODE, "AST_FUZZER_ORACLE_MISMATCH"
+        )
     ):
         # The `_exit(49)` marker block (with the reproducer) tells this apart from a client
         # `LOGICAL_ERROR`, also 49; the peer server comparison throws instead
