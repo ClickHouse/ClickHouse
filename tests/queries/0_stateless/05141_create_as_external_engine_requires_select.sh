@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# `CREATE TABLE x AS y` inherits the engine of `y` with its credentials, masked in `SHOW CREATE TABLE`.
-# That needs SELECT on `y`; anything else still needs only SHOW COLUMNS.
+# CREATE TABLE x AS y copies the engine of y with its credentials, which SHOW CREATE TABLE masks.
+# That copy needs SELECT on y. Any other definition needs only SHOW COLUMNS.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -11,7 +11,7 @@ user="user_${CLICKHOUSE_DATABASE}"
 blind="blind_${CLICKHOUSE_DATABASE}"
 db="${CLICKHOUSE_DATABASE}"
 
-# The URLs are never contacted, only the definitions are copied.
+# the server does not contact the URLs. it only copies the definitions
 ${CLICKHOUSE_CLIENT} -q "
     DROP USER IF EXISTS ${user}, ${blind};
     CREATE USER ${user}, ${blind};
@@ -32,7 +32,7 @@ ${CLICKHOUSE_CLIENT} -q "
     GRANT SHOW COLUMNS ON ${db}.function_src_no_password TO ${user};
 "
 
-# Prints the missing privilege, or the engine of the copy. Further arguments go to the client.
+# prints the missing privilege, or the engine of the copy. more arguments go to the client
 function try_copy()
 {
     local name=$1 source=$2
@@ -47,10 +47,10 @@ echo "with SHOW COLUMNS only:"
 try_copy copy_of_local_src local_src
 try_copy copy_of_url_src url_src
 try_copy copy_of_function_src function_src
-# Nothing is masked in these two, so they are copied as before.
+# these two hold nothing masked, so the server copies them as before
 try_copy copy_of_url_src_no_password url_src_no_password
 try_copy copy_of_function_src_no_password function_src_no_password
-# Both are replaced by `Null` here, so nothing masked is inherited.
+# Null replaces both here, so the copy inherits nothing masked
 try_copy null_copy_of_url_src url_src --restore_replace_external_engines_to_null 1
 try_copy null_copy_of_function_src function_src --restore_replace_external_table_functions_to_null 1
 
@@ -62,7 +62,7 @@ ${CLICKHOUSE_CLIENT} -q "
 try_copy copy_of_url_src url_src
 try_copy copy_of_function_src function_src
 
-# A user who cannot see the source is told so, credentials or not.
+# a user who cannot see the source gets the same error for both tables
 echo "without SHOW COLUMNS:"
 for src in local_src url_src
 do

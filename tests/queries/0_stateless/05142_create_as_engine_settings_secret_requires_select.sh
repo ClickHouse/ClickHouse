@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# no-fasttest: the Kafka engine is not built in the fast test.
+# no-fasttest: the fast test does not build the Kafka engine
 
-# Credentials can sit in the engine settings rather than its arguments. `kafka_sasl_password` is masked
-# all the same, so inheriting it needs SELECT too.
+# the engine settings can hold credentials, not only the engine arguments. SHOW CREATE TABLE masks
+# kafka_sasl_password too, so a copy of it also needs SELECT.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,7 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 user="user_${CLICKHOUSE_DATABASE}"
 db="${CLICKHOUSE_DATABASE}"
 
-# The broker is never contacted, only the definition is copied.
+# the server does not contact the broker. it only copies the definition
 ${CLICKHOUSE_CLIENT} -q "
     DROP USER IF EXISTS ${user};
     CREATE USER ${user};
@@ -30,8 +30,8 @@ echo "with SHOW COLUMNS only:"
 ${CLICKHOUSE_CLIENT} --user "${user}" -q "CREATE TABLE ${db}.copy_of_kafka_src AS ${db}.kafka_src" 2>&1 \
     | grep -oE "necessary to have the grant [A-Z ]+ ON ${db}\.[a-z_]+" | head -n 1 | sed "s/${db}/db/"
 
-# An overridden setting is not inherited, so the copy needs nothing more.
-echo "with the password overridden:"
+# the copy does not inherit a setting that this query gives, so it needs nothing more
+echo "with a password in this query:"
 ${CLICKHOUSE_CLIENT} --user "${user}" -q "CREATE TABLE ${db}.own_password AS ${db}.kafka_src SETTINGS kafka_sasl_password = 'own'"
 ${CLICKHOUSE_CLIENT} -q "SELECT engine FROM system.tables WHERE database = '${db}' AND name = 'own_password'"
 

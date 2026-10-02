@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-replicated-database
-# Tag no-replicated-database: `ON CLUSTER` is not allowed for a Replicated database.
+# Tag no-replicated-database: a Replicated database does not allow ON CLUSTER
 
-# The older entry format ships the query as written and the worker materializes `AS src` with no user,
-# so the initiator has to authorize the source, and the engine it brings along, itself.
+# the older entry format sends the query as written and the worker builds AS src with no user.
+# the initiator must check the source, and the engine that comes with it, itself.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -34,7 +34,7 @@ ${CLICKHOUSE_CLIENT} -q "
 legacy=(--user "${user}" --distributed_ddl_output_mode throw --distributed_ddl_entry_format_version 2)
 current=(--user "${user}" --distributed_ddl_output_mode throw)
 
-# Prints why the copy was refused, or the engine of the copy. Each case uses its own destination name.
+# prints the missing privilege, or the engine of the copy. each case uses its own name
 function try_copy()
 {
     local name=$1 source=$2
@@ -46,11 +46,11 @@ function try_copy()
 }
 
 echo "with SHOW COLUMNS only:"
-# Nothing is masked in this one, so it is copied without SELECT, as on the current version.
+# this one holds nothing masked, so the copy needs no SELECT, as on the current version
 try_copy copy_legacy_plain "${db}.plain_src" "${legacy[@]}"
 try_copy copy_legacy "${db}.url_src" "${legacy[@]}"
 try_copy copy_current "${db}.url_src" "${current[@]}"
-# An unqualified source is authorized, and read, in the database of this query.
+# the server checks and reads a source without a database name in the database of this query
 try_copy copy_legacy_unqualified url_src "${legacy[@]}"
 
 echo "after GRANT SELECT:"
@@ -59,12 +59,12 @@ try_copy copy_legacy "${db}.url_src" "${legacy[@]}"
 try_copy copy_current "${db}.url_src" "${current[@]}"
 try_copy copy_legacy_unqualified url_src "${legacy[@]}"
 
-# The oldest version ships no settings, so the worker replaces nothing: a plain copy is still fine.
+# the oldest version sends no settings, so the worker replaces nothing and a plain copy still works
 echo "with the oldest version and restore_replace_external_engines_to_null:"
 try_copy copy_oldest_plain "${db}.plain_src" --user "${user}" --distributed_ddl_output_mode throw \
     --distributed_ddl_entry_format_version 1 --restore_replace_external_engines_to_null 1
 
-# A collection the engine refers to needs its grant too, on both entry format versions.
+# the collection that the engine uses needs its grant too, on both entry formats
 ${CLICKHOUSE_CLIENT} -q "
     DROP NAMED COLLECTION IF EXISTS creds_${db};
     CREATE NAMED COLLECTION creds_${db} AS url = 'http://127.0.0.1:1/', format = 'CSV';
@@ -76,7 +76,7 @@ echo "without the grant for the collection:"
 try_copy copy_collection_legacy "${db}.collection_src" "${legacy[@]}"
 try_copy copy_collection_current "${db}.collection_src" "${current[@]}"
 
-# The engine comes along with the source, so it needs the grant for it as well.
+# the engine comes with the source, so the copy needs the grant for the engine too
 echo "with SELECT but without the grant for the engine:"
 try_copy copy_no_url "${db}.url_src" --user "${no_url}" --distributed_ddl_output_mode throw --distributed_ddl_entry_format_version 2
 
