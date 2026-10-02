@@ -16,15 +16,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # Merges are stopped so the part count stays fixed; the counts below are per part.
+# The implicit minmax indices of add_minmax_index_for_numeric_columns would give the plain table a skip index.
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS qcc_lookup_plain;
     DROP TABLE IF EXISTS qcc_lookup_indexed;
     CREATE TABLE qcc_lookup_plain (a UInt64, b UInt64)
     ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 8, min_bytes_for_wide_part = 0, auto_statistics_types = '';
+    SETTINGS index_granularity = 8, min_bytes_for_wide_part = 0, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE qcc_lookup_indexed (a UInt64, b UInt64, INDEX bx b TYPE minmax GRANULARITY 1)
     ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 8, min_bytes_for_wide_part = 0, auto_statistics_types = '';
+    SETTINGS index_granularity = 8, min_bytes_for_wide_part = 0, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
     SYSTEM STOP MERGES qcc_lookup_plain;
     SYSTEM STOP MERGES qcc_lookup_indexed;
     INSERT INTO qcc_lookup_plain SELECT number, number % 100 FROM numbers(400);
