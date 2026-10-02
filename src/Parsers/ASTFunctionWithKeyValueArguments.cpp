@@ -90,10 +90,14 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
 
 bool ASTPair::hasSecretParts() const
 {
-    /// Only a key hidden whole is a secret part: a partly secret value (a `uri`) has nothing to mask when empty.
-    String value;
-    const auto * finder = getSecretArgumentsFinder();
-    return (finder && finder->maskDictionarySourceValue(first, value)) || second->hasSecretParts();
+    /// A partly secret value (a `uri` with a password) is a secret part only when its masker finds one.
+    if (const auto * finder = getSecretArgumentsFinder())
+    {
+        String value = second->formatWithSecretsOneLine();
+        if (finder->maskDictionarySourceValue(first, value))
+            return true;
+    }
+    return second->hasSecretParts();
 }
 
 
