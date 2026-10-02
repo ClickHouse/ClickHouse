@@ -13,6 +13,26 @@ namespace DB
 /// why the server transpiles up front (see executeQuery) rather than inside a parser.
 String transpilePolyglotToClickHouse(std::string_view query, std::string_view source_dialect, size_t max_query_size);
 
+/// Parse the statements that the polyglot dialect takes as ClickHouse SQL instead of transpiling them:
+/// `SET`, `SET ROLE` / `SET DEFAULT ROLE` and `SET TRANSACTION SNAPSHOT`, so that `dialect` and
+/// `polyglot_dialect` can always be changed back. Returns false, leaving `pos` unchanged, when the
+/// input is foreign SQL that must go to the transpiler. Shared by `ParserPolyglotQuery` (client) and
+/// `executeQuery` (server), so both sides classify a statement the same way.
+bool parsePolyglotNativeStatement(IParser::Pos & pos, ASTPtr & node, Expected & expected);
+
+/// A parser for the statements accepted by `parsePolyglotNativeStatement`.
+class ParserPolyglotNativeStatement final : public IParserBase
+{
+public:
+    const char * getName() const override { return "Polyglot native ClickHouse statement"; }
+
+protected:
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        return parsePolyglotNativeStatement(pos, node, expected);
+    }
+};
+
 /// Transpiles a SQL query from a foreign dialect to ClickHouse SQL using the
 /// polyglot-sql library and then parses the result with the standard ClickHouse
 /// parser.
@@ -59,11 +79,9 @@ public:
 
     const char * getName() const override { return "Polyglot SQL Statement"; }
 
-    /// The input is foreign SQL handed to the transpiler as an opaque string: it may contain tokens
-    /// that the ClickHouse Lexer reports as errors (e.g. a bare `!` in `SELECT !0`). The generic
-    /// lexical checks of the original buffer must be skipped, otherwise the client would reject
-    /// statements that the server (which transpiles before parsing) executes fine.
-    bool consumesForeignText() const override { return true; }
+    /// The remaining input is opaque foreign SQL (see the class comment above): the SQL lexer's
+    /// tokens are only used to find the end of the statement, so a token it rejects isn't an error.
+    bool consumesRawText() const override { return true; }
 
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

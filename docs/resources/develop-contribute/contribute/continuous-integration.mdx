@@ -265,11 +265,13 @@ The performance test report is described in detail [here](https://github.com/Cli
 
 ## Revert pull requests {#revert-pull-requests}
 
-A pull request that reverts a merged change gets a green light at once: every CI job is skipped, the `Ready For Merge` status is set to success, and its description says why, so that the revert can be merged as quickly as possible.
+A pull request that reverts a merged change gets a green light at once: every CI job except the style check is skipped, so that the revert can be merged as quickly as possible.
 The reasoning is that a revert restores a state of `master` that CI has already validated, while the state it replaces is broken, and every minute spent on the pull request's own checks is a minute `master` stays broken.
+The style check still runs because it is fast and catches a revert left unformatted by conflict resolution.
 The merge queue still runs its own (small) set of checks, and the full CI runs on `master` after the merge.
 
-A pull request counts as a revert by its canonical shape only, which is what `git revert`, the GitHub "Revert" button and the [Revert CI regressions](#revert-ci-regressions) job produce: the title `Revert "..."`, or the `Reverts ClickHouse/ClickHouse#<number>` line in the description.
+A pull request counts as a revert by its canonical title shape only, which is what `git revert` and the GitHub "Revert" button produce: `Revert "<title of the reverted change>"`.
+Reverting a revert nests the wrappers (`Revert "Revert "..."`), so the nesting depth decides the net effect: an odd depth is a real revert and is skipped, while an even depth re-applies the original change and is tested as usual.
 A pull request that merely mentions a revert in prose is tested as usual.
 
 To run the full CI on a revert pull request anyway, for example when the revert had to resolve conflicts or you doubt it is the right fix, add the `ci-force-all` label and push an empty commit to restart the checks.

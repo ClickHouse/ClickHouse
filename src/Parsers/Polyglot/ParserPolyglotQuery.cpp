@@ -7,10 +7,16 @@
 #endif
 
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserTransactionControl.h>
+#include <Parsers/Access/ParserSetRoleQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/scope_guard.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {
@@ -81,14 +87,90 @@ String transpilePolyglotToClickHouse(
 #endif
 }
 
-bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+namespace
+{
+
+/// Words that MySQL and PostgreSQL put right after `SET` and that are not ClickHouse settings:
+/// scope modifiers (`SET SESSION sql_mode = ...`, `SET GLOBAL x = 1`, `SET LOCAL x TO 1`) and
+/// special forms (`SET NAMES utf8mb4`, `SET CHARACTER SET utf8mb4`). `TIME` is not here: `ParserSetQuery`
+/// parses `SET TIME ZONE 'tz'` itself, so a shorthand `SET TIME` followed by junk is a malformed ClickHouse SET.
+bool isForeignSetPrefix(const ASTPtr & name)
+{
+    const auto * identifier = name ? name->as<ASTIdentifier>() : nullptr;
+    if (!identifier || identifier->compound())
+        return false;
+
+    static constexpr std::string_view prefixes[]
+        = {"SESSION", "GLOBAL", "LOCAL", "PERSIST", "PERSIST_ONLY", "NAMES", "CHARACTER"};
+    const String & word = identifier->name();
+    for (const auto prefix : prefixes)
+        if (equalsCaseInsensitive(word, prefix))
+            return true;
+    return false;
+}
+
+}
+
+bool parsePolyglotNativeStatement(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// SET queries are standard ClickHouse SQL and must be handled normally
     /// so that settings like `dialect` and `polyglot_dialect` can be changed.
     /// This is checked before the feature gate so users can recover from
-    /// misconfigured profiles (e.g. `SET dialect = 'clickhouse'`).
-    ParserSetQuery set_p;
-    if (set_p.parse(pos, node, expected))
+    /// misconfigured profiles (e.g. `SET dialect = 'clickhouse'`). Only an input that
+    /// unambiguously starts a SET statement is taken from the foreign text, so that the
+    /// `SET <setting>` shorthand does not swallow statements merely starting with `set`.
+    /// Falling through on failure matters here: ParserSetQuery declines `SET TRANSACTION ...` and
+    /// ParserTransactionControl takes only `SET TRANSACTION SNAPSHOT <number>`, so e.g.
+    /// `SET TRANSACTION ISOLATION LEVEL ...` still goes to the transpiler. A SET that stops right after the
+    /// `SET <word>` shorthand with more input left falls through as well when `<word>` is a foreign
+    /// prefix (see `isForeignSetPrefix`): e.g. MySQL `SET SESSION sql_mode = ...` would otherwise be
+    /// taken as the shorthand `SET SESSION` (`SESSION = true`) followed by junk. Any other SET that
+    /// leaves trailing input, like `SET max_threads = 1 garbage`, `SET max_threads garbage` or
+    /// `SET ROLE NONE garbage`, stays a ClickHouse SET, so the caller reports the ordinary syntax
+    /// error at the trailing token.
+    if (isCommittedToSetQuery(pos))
+    {
+        const auto set_begin = pos;
+
+        /// SET ROLE / SET DEFAULT ROLE are role statements: ParserSetQuery would take the leading
+        /// ROLE / DEFAULT as a setting-name shorthand, so they go first, as in ParserQuery.
+        ParserSetRoleQuery set_role_p;
+        if (set_role_p.parse(pos, node, expected))
+            return true;
+
+        ParserSetQuery set_p;
+        if (set_p.parse(pos, node, expected))
+        {
+            if (pos->isEnd() || pos->type == TokenType::Semicolon)
+                return true;
+
+            auto shorthand_end = set_begin;
+            Expected shorthand_expected;
+            ASTPtr shorthand_name;
+            ParserKeyword(Keyword::SET).ignore(shorthand_end, shorthand_expected);
+            ParserCompoundIdentifier().parse(shorthand_end, shorthand_name, shorthand_expected);
+            if (pos != shorthand_end || !isForeignSetPrefix(shorthand_name))
+                return true;
+
+            pos = set_begin;
+            node = nullptr;
+        }
+
+        /// SET TRANSACTION SNAPSHOT is a transaction statement, which ParserSetQuery declines,
+        /// so it goes next, as in ParserQuery.
+        ParserTransactionControl transaction_control_p;
+        if (transaction_control_p.parse(pos, node, expected))
+            return true;
+    }
+
+    return false;
+}
+
+bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    /// See `parsePolyglotNativeStatement`. This is checked before the feature gate so users can recover
+    /// from misconfigured profiles (e.g. `SET dialect = 'clickhouse'`).
+    if (parsePolyglotNativeStatement(pos, node, expected))
         return true;
 
     if (!feature_enabled)
