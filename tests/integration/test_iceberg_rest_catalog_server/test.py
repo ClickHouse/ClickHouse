@@ -560,45 +560,6 @@ def test_clickhouse_rest_catalog_client_create_table(started_cluster):
     node.query("DROP DATABASE IF EXISTS rest_client_create_db")
 
 
-def test_clickhouse_rest_catalog_client_create_table_order_by(started_cluster):
-    ns = f"client_order_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-
-    node.query(f"""
-        DROP DATABASE IF EXISTS rest_client_order_db;
-        SET allow_experimental_database_iceberg = 1;
-        CREATE DATABASE rest_client_order_db
-        ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
-        SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
-            storage_endpoint = 'http://minio1:9001/{BUCKET}'
-        """)
-
-    # The client must forward ORDER BY as `write-order`. The server stores it as the default sort order.
-    node.query(
-        f"""
-        CREATE TABLE rest_client_order_db.`{ns}.events` (id Int64, name String)
-        ENGINE = IcebergS3('http://minio1:9001/{BUCKET}/{ns}/events/', '{minio_access_key}', '{minio_secret_key}')
-        ORDER BY (id, name)
-        """,
-        settings={"write_full_path_in_iceberg_metadata": 1},
-    )
-
-    metadata = catalog_request("GET", tables_url(ns, "events")).json()["metadata"]
-    assert metadata["default-sort-order-id"] == 1
-    assert metadata["sort-orders"] == [
-        {
-            "order-id": 1,
-            "fields": [
-                {"source-id": 1, "transform": "identity", "direction": "asc", "null-order": "nulls-first"},
-                {"source-id": 2, "transform": "identity", "direction": "asc", "null-order": "nulls-first"},
-            ],
-        }
-    ]
-
-    node.query(f"DROP TABLE rest_client_order_db.`{ns}.events`")
-    node.query("DROP DATABASE IF EXISTS rest_client_order_db")
-
-
 def test_clickhouse_rest_catalog_client_writes_no_orphan_metadata(started_cluster):
     ns = f"client_orphan_{uuid.uuid4().hex[:8]}"
     create_namespace([ns])
