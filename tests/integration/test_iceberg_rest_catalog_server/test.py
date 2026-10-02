@@ -560,6 +560,37 @@ def test_clickhouse_rest_catalog_client_create_table(started_cluster):
     node.query("DROP DATABASE IF EXISTS rest_client_create_db")
 
 
+def test_clickhouse_rest_catalog_client_writes_no_orphan_metadata(started_cluster):
+    ns = f"client_orphan_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+
+    node.query(f"""
+        DROP DATABASE IF EXISTS rest_client_orphan_db;
+        SET allow_experimental_database_iceberg = 1;
+        CREATE DATABASE rest_client_orphan_db
+        ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
+        SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
+            storage_endpoint = 'http://minio1:9001/{BUCKET}'
+        """)
+
+    node.query(
+        f"""
+        CREATE TABLE rest_client_orphan_db.`{ns}.events` (id Int64, name String)
+        ENGINE = IcebergS3('http://minio1:9001/{BUCKET}/{ns}/events/', '{minio_access_key}', '{minio_secret_key}')
+        """,
+        settings={"write_full_path_in_iceberg_metadata": 1},
+    )
+
+    # The server writes the only metadata file. The client must not prewrite `v1.metadata.json` next to it.
+    loaded = catalog_request("GET", tables_url(ns, "events")).json()
+    assert list_metadata_files(loaded["metadata"]["location"]) == [
+        metadata_key(loaded["metadata-location"])
+    ]
+
+    node.query(f"DROP TABLE rest_client_orphan_db.`{ns}.events`")
+    node.query("DROP DATABASE IF EXISTS rest_client_orphan_db")
+
+
 def test_keeper_layout(started_cluster):
     ns = f"layout-{uuid.uuid4().hex[:8]}"
     create_namespace([ns, "eu-west"], properties={"owner": "asya"})

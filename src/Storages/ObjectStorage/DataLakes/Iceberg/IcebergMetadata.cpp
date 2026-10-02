@@ -937,14 +937,15 @@ void IcebergMetadata::createInitial(
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Iceberg table, but storage configuration is expired");
 
-    const bool catalog_manages_location = catalog && catalog->managesTableLocation();
+    /// Either way the catalog writes the first metadata file, so the existence check and the prewrite move to it.
+    const bool catalog_writes_metadata = catalog && (catalog->managesTableLocation() || catalog->writesInitialMetadata());
 
     String namespace_name;
     String table_name;
     if (catalog)
         std::tie(namespace_name, table_name) = DataLake::parseTableName(table_id_.getTableName());
 
-    if (catalog_manages_location)
+    if (catalog_writes_metadata)
     {
         DataLake::TableMetadata existing_table;
         if (catalog->tryGetTableMetadata(namespace_name, table_name, existing_table))
@@ -996,7 +997,7 @@ void IcebergMetadata::createInitial(
         catalog->createNamespaceIfNotExists(namespace_name, location_path);
     }
 
-    if (!catalog_manages_location)
+    if (!catalog_writes_metadata)
     {
         try
         {
