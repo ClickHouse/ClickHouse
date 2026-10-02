@@ -2325,7 +2325,6 @@ struct ReplayGateNeeds
     bool analyzable_query_text = false;
     bool ordinary_database = false;
     bool replicated_database = false;
-    bool existing_database = false; /// `CREATE DATABASE IF NOT EXISTS` (`default`) keeps the engine the target already has
     bool materialized_postgresql_database = false;
     bool materialized_mysql_database = false;
     bool materialized_postgresql_table = false;
@@ -2546,6 +2545,8 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
         if (name.starts_with("enable_") && name.ends_with("_codec"))
             codec_gate_names.push_back(name);
 
+    /// Whether a dumped database is, or may be, `Replicated` at replay.
+    std::map<String, bool> database_may_be_replicated;
     for (const auto & create_query : create_queries)
     {
         ASTPtr create_ast;
@@ -2559,7 +2560,6 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
             /// Cannot rule any gate out for a statement that does not parse, so keep them all.
             return {.explicit_uuid = true, .replicated_engine_arguments = true, .materialized_view = true,
                     .parse_failed = true, .analyzable_query_text = true, .ordinary_database = true, .replicated_database = true,
-                    .existing_database = true,
                     .materialized_postgresql_database = true, .materialized_mysql_database = true,
                     .materialized_postgresql_table = true, .time_series_table = true,
                     .kafka_keeper_offsets = true, .nullable_tuple_type = true, .unique_key = true,
@@ -2571,8 +2571,17 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
         if (!create)
             continue;
 
+        /// The explicit-UUID and engine-argument checks run only for an object created in a `Replicated` database.
+        /// The dump creates its databases before their objects; `IF NOT EXISTS` (`default`) keeps whatever engine exists.
+        bool in_replicated_database = true;
+        if (create->getTable().empty())
+            database_may_be_replicated[create->getDatabase()] = create->if_not_exists
+                || (create->storage && create->storage->engine && equalsCaseInsensitive(create->storage->engine->name, "Replicated"));
+        else if (auto it = database_may_be_replicated.find(create->getDatabase()); it != database_may_be_replicated.end())
+            in_replicated_database = it->second;
+
         /// What `assertOrSetUUID` re-enters on when the dump is replayed into a `Replicated` database.
-        if (create->has_uuid || create->has_uuid_clause)
+        if (!create->getTable().empty() && in_replicated_database && (create->has_uuid || create->has_uuid_clause))
             needs.explicit_uuid = true;
 
         /// All three `allow_materialized_view_with_bad_select` checks sit inside
@@ -2597,8 +2606,6 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
         /// `registerStorageMergeTree` re-enters its check only for an engine that kept its arguments.
         if (create->getTable().empty())
         {
-            if (create->if_not_exists)
-                needs.existing_database = true;
             if (create->storage && create->storage->engine)
             {
                 const auto & engine = *create->storage->engine;
@@ -2636,7 +2643,8 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
             for (const auto * storage : table_storages)
             {
                 const auto * engine = storage->engine;
-                if (startsWithCaseInsensitive(engine->name, "Replicated") && engine->arguments && !engine->arguments->children.empty())
+                if (in_replicated_database && startsWithCaseInsensitive(engine->name, "Replicated") && engine->arguments
+                    && !engine->arguments->children.empty())
                     needs.replicated_engine_arguments = true;
                 if (equalsCaseInsensitive(engine->name, "MaterializedPostgreSQL"))
                     needs.materialized_postgresql_table = true;
@@ -2793,12 +2801,10 @@ String replaySettingsPrelude(
     const ReplayGateNeeds needs = collectReplayGateNeeds(create_queries);
     auto is_needed = [&needs, materialized_view_may_need_bad_select](const String & name)
     {
-        /// Both are read only in a `Replicated` database: one the dump creates, or one it keeps with IF NOT EXISTS.
-        const bool replicated_database = needs.replicated_database || needs.existing_database;
         if (name == "database_replicated_allow_explicit_uuid")
-            return needs.explicit_uuid && replicated_database;
+            return needs.explicit_uuid;
         if (name == "database_replicated_allow_replicated_engine_arguments")
-            return needs.replicated_engine_arguments && replicated_database;
+            return needs.replicated_engine_arguments;
         if (name == "allow_materialized_view_with_bad_select")
             return needs.materialized_view && (needs.parse_failed || materialized_view_may_need_bad_select);
         if (name == "allow_deprecated_database_ordinary")
@@ -2958,32 +2964,48 @@ std::set<String> insertableColumnNames(const ASTCreateQuery & create)
     return names;
 }
 
-/// `url` over HTTP and `file` with a relative path build their storage from a literal format and structure without reading
-/// the source; other locations meet a per-server check such as `user_files_path`, and an `auto` format reads the data.
-bool fileLikeHasStaticStructure(const ASTFunction & function)
+/// A table function the server builds from a literal structure without reading the source, by its own `hasStaticStructure`.
+/// Data lakes read their metadata even then, and `file`/`url` must not reach a per-server `user_files_path` check.
+bool tableFunctionHasStaticStructure(const ASTFunction & function, const ContextPtr & context)
 {
-    const bool is_url = function.name == "url";
-    if ((!is_url && function.name != "file") || !function.arguments || function.arguments->children.size() < 3)
+    static const std::set<std::string_view> names
+        = {"url", "file", "s3", "gcs", "oss", "cosn", "azureBlobStorage", "hdfs", "input", "executable", "hive", "filesystem"};
+    if (!names.contains(function.name) || !function.arguments)
         return false;
     const auto & arguments = function.arguments->children;
-    const auto * location = arguments[0]->as<ASTLiteral>();
-    const auto * structure = arguments[2]->as<ASTLiteral>();
-    if (!location || location->value.getType() != Field::Types::String || !structure || structure->value.getType() != Field::Types::String)
+    for (const auto & argument : arguments)
+    {
+        /// An `auto` format or structure is resolved from the data.
+        const auto * literal = argument->as<ASTLiteral>();
+        const auto * identifier = argument->as<ASTIdentifier>();
+        const bool is_auto_literal = literal && literal->value.getType() == Field::Types::String
+            && equalsCaseInsensitive(literal->value.safeGet<String>(), "auto");
+        if (is_auto_literal || (identifier && equalsCaseInsensitive(identifier->name(), "auto")))
+            return false;
+    }
+    if (function.name == "url" || function.name == "file")
+    {
+        const auto * location = arguments.empty() ? nullptr : arguments.front()->as<ASTLiteral>();
+        if (!location || location->value.getType() != Field::Types::String)
+            return false;
+        const String & path = location->value.safeGet<String>();
+        if (function.name == "url" ? !(startsWithCaseInsensitive(path, "http://") || startsWithCaseInsensitive(path, "https://"))
+                                   : path.starts_with('/') || path.contains(".."))
+            return false;
+    }
+    try
+    {
+        /// Parsing these reads only their arguments.
+        return TableFunctionFactory::instance().get(function.clone(), context)->hasStaticStructure();
+    }
+    catch (const Poco::Exception &)
+    {
         return false;
-    String format;
-    if (const auto * literal = arguments[1]->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
-        format = literal->value.safeGet<String>();
-    else if (const auto * identifier = arguments[1]->as<ASTIdentifier>())
-        format = identifier->name();
-    const String & path = location->value.safeGet<String>();
-    const bool server_independent = is_url ? startsWithCaseInsensitive(path, "http://") || startsWithCaseInsensitive(path, "https://")
-                                       : !path.starts_with('/') && !path.contains("..");
-    return server_independent && !format.empty() && !equalsCaseInsensitive(format, "auto")
-        && !equalsCaseInsensitive(structure->value.safeGet<String>(), "auto");
+    }
 }
 
-/// Always analyzes on replay: `numbers`/`zeros` with counts, `generateRandom`/`values` with constant arguments, `url`/`file`
-/// with a static structure, and a `merge` or `loop` reading another emitted table, which replay creates before `owner`.
+/// Always analyzes on replay: `numbers`/`zeros` with counts, `generateRandom`/`values` with constant arguments, a source with
+/// a static structure, and a `merge` or `loop` reading another emitted table, which replay creates before `owner`.
 bool tableFunctionAlwaysAnalyzes(
     const IAST & node, const TableInfo & owner, const std::map<std::pair<String, String>, const TableInfo *> & emitted_tables,
     const ContextPtr & context)
@@ -3092,7 +3114,7 @@ bool tableFunctionAlwaysAnalyzes(
             return false;
         }
     }
-    return fileLikeHasStaticStructure(*function);
+    return tableFunctionHasStaticStructure(*function, context);
 }
 
 bool containsTableFunction(

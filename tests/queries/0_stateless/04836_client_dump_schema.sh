@@ -667,12 +667,16 @@ CREATE MATERIALIZED VIEW ${ATOMIC_ARGS_DB}.mv ENGINE = ReplicatedMergeTree('/$CL
 "
 $CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 --dump-schema="${ATOMIC_ARGS_DB}" > "$REPL_DUMP_FILE" 2>"$ERR_FILE"
 echo "Atomic database with uuids and engine arguments, Replicated-database gates emitted: $(grep -cE '^SET database_replicated_allow_(explicit_uuid|replicated_engine_arguments) = 3;$' "$REPL_DUMP_FILE")"
+
+# The gates follow the database that owns the carrier, not any Replicated database in the same dump.
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE ${REPLICATED_ARGS_DB} ENGINE = Replicated('/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dump_schema/replicated_args', 's1', 'r1')" > /dev/null
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ${REPLICATED_ARGS_DB}.src (x UInt64) ENGINE = MergeTree ORDER BY x" > /dev/null
+$CLICKHOUSE_CLIENT --dump-schema="${ATOMIC_ARGS_DB},${REPLICATED_ARGS_DB}" > "$REPL_DUMP_FILE" 2>"$ERR_FILE"
+echo "Atomic engine arguments next to a Replicated database, engine-arguments gate emitted: $(grep -c '^SET database_replicated_allow_replicated_engine_arguments = 3;$' "$REPL_DUMP_FILE")"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${ATOMIC_ARGS_DB} SYNC"
 
 # Retained replicated-engine arguments need quiet gate value 3; a materialized view keeps its engine in `targets`.
-$CLICKHOUSE_CLIENT -q "CREATE DATABASE ${REPLICATED_ARGS_DB} ENGINE = Replicated('/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dump_schema/replicated_args', 's1', 'r1')" > /dev/null
 $CLICKHOUSE_CLIENT --database_replicated_allow_replicated_engine_arguments=1 -mq "
-CREATE TABLE ${REPLICATED_ARGS_DB}.src (x UInt64) ENGINE = MergeTree ORDER BY x;
 CREATE MATERIALIZED VIEW ${REPLICATED_ARGS_DB}.mv ENGINE = ReplicatedMergeTree('/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dump_schema/replicated_args_mv/{shard}', '{replica}') ORDER BY x AS SELECT x FROM ${REPLICATED_ARGS_DB}.src;
 " > /dev/null
 $CLICKHOUSE_CLIENT --dump-schema="${REPLICATED_ARGS_DB}" > "$REPL_DUMP_FILE" 2>"$ERR_FILE"
