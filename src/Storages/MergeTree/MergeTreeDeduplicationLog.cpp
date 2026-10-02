@@ -13,7 +13,6 @@
 #include <boost/algorithm/string/trim.hpp>
 
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -140,11 +139,9 @@ void MergeTreeDeduplicationLog::load()
         /// Start new log, drop previous
         rotateAndDropIfNeeded();
 
-        /// If the current log is unfinished, an appending writer for it is opened lazily on the first
-        /// written record (see `prepareToWrite`). Opening it eagerly here would add a phantom blob to the
-        /// log file on object storages when the table is shut down without writing any record: finalizing
-        /// an empty `WriteMode::Append` buffer registers the blob in the metadata without uploading any
-        /// object, and a subsequent load would fail to read it (e.g. with `NoSuchKey` on S3).
+        /// Can happen in case we have unfinished log
+        if (!current_writer)
+            current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
     }
 }
 
@@ -182,8 +179,7 @@ void MergeTreeDeduplicationLog::rotate()
     existing_logs.emplace(new_log_number, new_log_description);
 
     /// Nothing below can throw.
-    /// `finalize` throws a logical error on a canceled buffer, which has nothing left to flush.
-    if (current_writer && !current_writer->isCanceled())
+    if (current_writer)
     {
         try
         {
@@ -208,16 +204,9 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
     /// Go from end to the beginning
     for (auto itr = existing_logs.rbegin(); itr != existing_logs.rend(); ++itr)
     {
-        /// Never drop the current active log — it may still be open for writing
-        if (itr->first == current_log_number)
+        if (current_sum > deduplication_window)
         {
-            current_sum += itr->second.entries_count;
-            continue;
-        }
-
-        if (current_sum >= deduplication_window)
-        {
-            /// We have more logs than required, all older files (excluding current) can be dropped
+            /// We have more logs than required, all older files (including current) can be dropped
             remove_from_value = itr->first;
             break;
         }
@@ -233,10 +222,7 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
         for (auto itr = existing_logs.begin(); itr != existing_logs.end();)
         {
             size_t number = itr->first;
-            LOG_DEBUG(getLogger("MergeTreeDeduplicationLog"), "Dropping outdated deduplication log {}", itr->second.path);
-            /// A writer that was canceled instead of finalized never published its path on an
-            /// object-storage disk, so the log this entry names may not exist.
-            disk->removeFileIfExists(itr->second.path);
+            disk->removeFile(itr->second.path);
             itr = existing_logs.erase(itr);
             if (remove_from_value == number)
                 break;
@@ -273,25 +259,6 @@ void MergeTreeDeduplicationLog::rotateAndDropIfNeededAfterWrite()
     }
 }
 
-void MergeTreeDeduplicationLog::prepareToWrite()
-{
-    /// A failed flush cancels the writer, and a canceled buffer rejects every later write, so a dead
-    /// writer must be replaced. `rotate` also works on a disk that cannot append.
-    if (current_writer && (current_writer->isCanceled() || current_writer->isFinalized()))
-        rotate();
-    else if (!current_writer)
-    {
-        /// There is no writer for an unfinished log until the first record is written to it, so open
-        /// it here (see the comment in `load`). A disk that cannot append gets a new log instead.
-        if (disk_supports_writing_with_append && !existing_logs.empty())
-            current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
-        else
-            rotate();
-    }
-
-    chassert(current_writer != nullptr);
-}
-
 std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(const std::vector<std::string> & block_ids, const MergeTreePartInfo & part_info)
 {
     std::lock_guard lock(state_mutex);
@@ -323,7 +290,7 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we add this part.");
     }
 
-    prepareToWrite();
+    chassert(current_writer != nullptr);
 
     for (const auto & block_id : block_ids)
     {
@@ -361,6 +328,8 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
     }
 
+    chassert(current_writer != nullptr);
+
     for (auto itr = deduplication_map.begin(); itr != deduplication_map.end(); /* no increment here, we erasing from map */)
     {
         const auto & part_info = itr->value;
@@ -368,8 +337,6 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         /// deduplication history
         if (drop_part_info.contains(part_info))
         {
-            prepareToWrite();
-
             /// Create drop record
             MergeTreeDeduplicationLogRecord record;
             record.operation = MergeTreeDeduplicationOp::DROP;
@@ -411,8 +378,9 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
     deduplication_map.setMaxSize(deduplication_window);
     rotateAndDropIfNeeded();
 
-    /// If the current log is unfinished, an appending writer for it is opened lazily on the first
-    /// written record (see `prepareToWrite` and the comment in `load`).
+    /// Can happen in case we have unfinished log
+    if (!current_writer)
+        current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
 }
 
 
@@ -430,12 +398,7 @@ void MergeTreeDeduplicationLog::shutdown()
         /// any error, causing logical error (see ~MemoryBuffer()).
         try
         {
-            /// `finalize` throws a logical error on a canceled buffer, which has nothing left to flush.
-            if (!current_writer->isCanceled())
-            {
-                current_writer->finalize();
-                current_writer->sync();
-            }
+            current_writer->finalize();
             current_writer.reset();
         }
         catch (...)

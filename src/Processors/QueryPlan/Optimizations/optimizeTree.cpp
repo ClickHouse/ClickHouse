@@ -90,7 +90,6 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
         optimization_settings.serialize_query_plan,
-        optimization_settings.enable_parallel_replicas,
         optimization_settings.short_circuit_function_evaluation_disabled,
         optimization_settings.lower_array_join_function,
         optimization_settings.enable_lazy_columns_replication,
@@ -380,31 +379,6 @@ void optimizeTreeSecondPass(
                 [&](auto & frame_node) { registerLeftSideIndexAnalysisSecondPass(frame_node, optimization_settings); });
     }
 
-    /// The runtime `FilterStep`s added and pushed down just above are invisible to the
-    /// `updateQueryConditionCache` walk at the beginning of this function, but they change the
-    /// running TopK threshold. Re-walk the plan so a TopK read under such a filter stops reusing and
-    /// writing threshold-dependent query condition cache entries.
-    if (join_runtime_filters_were_added && optimization_settings.use_query_condition_cache)
-    {
-        Stack top_k_qcc_stack;
-        top_k_qcc_stack.push_back({.node = &root});
-        while (!top_k_qcc_stack.empty())
-        {
-            disableTopKQueryConditionCacheUnderNonDeterministicFilters(top_k_qcc_stack, optimization_settings);
-
-            auto & top_k_qcc_frame = top_k_qcc_stack.back();
-            if (top_k_qcc_frame.next_child < top_k_qcc_frame.node->children.size())
-            {
-                auto * next_node = top_k_qcc_frame.node->children[top_k_qcc_frame.next_child];
-                ++top_k_qcc_frame.next_child;
-                top_k_qcc_stack.push_back({.node = next_node});
-                continue;
-            }
-
-            top_k_qcc_stack.pop_back();
-        }
-    }
-
     /// Run after runtime filter push-down so that chains of joins are detected correctly. The pass only
     /// recognizes physical JoinStep, so with parallel replicas - where the conversion is deferred until
     /// after `applyParallelReplicas` - it runs there instead, see below.
@@ -598,15 +572,6 @@ void optimizeTreeSecondPass(
                 pushLimitByIntoSort(frame_node);
         });
 
-    /// The TopK filter is merged into the read's PREWHERE, so it needs the final read: after PREWHERE
-    /// promotion, after a projection has replaced the read, and after reading in order was decided.
-    /// All three change what there is to merge into, and the last one whether to merge at all.
-    traverseQueryPlan(stack, root,
-        [&](auto & frame_node)
-        {
-            installTopKDynamicFilter(frame_node, nodes);
-        });
-
     /// Find ReadFromLocalParallelReplicaStep and replace with optimized local plan.
     /// Place it after projection optimization to avoid executing projection optimization twice in the local plan,
     /// Which would cause an exception when force_use_projection is enabled.
@@ -636,10 +601,11 @@ void optimizeTreeSecondPass(
             /// So keep the outer `optimization_settings` (it carries the contracts this local plan must be
             /// optimized under — deferred set building, reused index/PK analysis, etc.) and override, with the
             /// subquery's values, exactly the settings that gate an optimization which can call
-            /// `requestReadingInOrder`: `optimizeReadInOrder` (`read_in_order`, `read_in_order_through_join`
-            /// and, for a sort with window partitions, `reuse_storage_ordering_for_window_functions`),
-            /// `optimizeAggregationInOrder` (`aggregation_in_order`) and `optimizeDistinctInOrder`
-            /// (`distinct_in_order`). If a new such optimization is added, its gate must be added here too.
+            /// `requestReadingInOrder`: `optimizeReadInOrder` (`read_in_order`, `read_in_order_through_join`),
+            /// `optimizeAggregationInOrder` (`aggregation_in_order`), `optimizeDistinctInOrder`
+            /// (`distinct_in_order`) and `tryReuseStorageOrderingForWindowFunctions`
+            /// (`reuse_storage_ordering_for_window_functions`). If a new such optimization is added, its gate
+            /// must be added here too.
             auto local_optimization_settings = optimization_settings;
             if (auto local_context = read_from_local->getContext())
             {

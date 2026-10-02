@@ -20,8 +20,8 @@ if (TARGET ch_rust::polyglot)
     target_link_libraries(clickhouse_parsers PRIVATE ch_rust::polyglot)
 endif ()
 
-if (TARGET clickhouse_antlr4_grammars)
-    target_link_libraries(clickhouse_parsers PRIVATE clickhouse_antlr4_grammars)
+if (TARGET ch_contrib::antlr4_grammars)
+    target_link_libraries(clickhouse_parsers PRIVATE ch_contrib::antlr4_grammars)
 endif ()
 
 if(ENABLE_EXAMPLES)

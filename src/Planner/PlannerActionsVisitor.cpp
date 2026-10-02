@@ -2,7 +2,7 @@
 #include <ranges>
 #include <Planner/PlannerActionsVisitor.h>
 
-#include <WindowFunctions/IWindowFunction.h>
+#include <AggregateFunctions/WindowFunction.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -888,12 +888,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             const auto & arg_names = lambda_node.getArguments().getNames();
             if (std::find(arg_names.begin(), arg_names.end(), column_node_name) != arg_names.end())
             {
-                /// The synthetic column of an `INTERPOLATE` expression is not backed by a table expression,
-                /// so it has no column identifier. Derive a name that no lambda argument can have instead.
-                const auto * column_identifier = planner_context->getColumnNodeIdentifierOrNull(node);
-                String disambiguated = column_identifier
-                    ? *column_identifier
-                    : fmt::format("__{}.{}", column_source ? toString(column_source->getNodeType()) : "COLUMN", column_node_name);
+                const auto & disambiguated = planner_context->getColumnNodeIdentifierOrThrow(node);
 
                 actions_stack[i].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
 

@@ -22,8 +22,6 @@ using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 
 class QueryPlan;
 
-struct DistributedPlanLocalObject;
-
 struct QueryPlanOptimizationSettings
 {
     QueryPlanOptimizationSettings(
@@ -139,9 +137,6 @@ struct QueryPlanOptimizationSettings
     bool cascades_aggregation_pushdown = true;
 
     bool make_distributed_plan = false;
-    /// The query's record of resolved server-local objects (dictionaries, `Join` tables, ...): a live pointer to the
-    /// query context's, read by the fallback decision. Null outside a query.
-    std::shared_ptr<const DistributedPlanLocalObject> distributed_plan_local_object;
     bool serialize_query_plan = false;
     bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
     bool distributed_plan_single_stage = false;  /// For debugging purposes: force distributed plan to be single-stage

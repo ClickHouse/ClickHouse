@@ -6,10 +6,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Interpreters/Cluster.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 
-#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 
@@ -23,6 +21,7 @@ namespace Setting
     extern const SettingsBool allow_window_partitions_independently;
     extern const SettingsBool force_window_partitions_independently;
     extern const SettingsBool allow_creating_set_partitions_independently;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
@@ -226,14 +225,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     query_plan_optimize_join_order_randomize = from[Setting::query_plan_optimize_join_order_randomize];
     if (query_plan_optimize_join_order_randomize == 1)
     {
-        /// This constructor runs once per plan construction and one query builds several plans, one per replica
-        /// among them, so the seed has to come from a value that is stable across them. 0 and 1 are sentinels.
-        if (initial_query_id_.empty())
-            query_plan_optimize_join_order_randomize = randomSeed(); /// Internal or background plan: no query to follow.
-        else
-            query_plan_optimize_join_order_randomize = sipHash64(initial_query_id_);
-        if (query_plan_optimize_join_order_randomize <= 1)
-            query_plan_optimize_join_order_randomize = 2;
+        query_plan_optimize_join_order_randomize = randomSeed();
     }
     if (query_plan_optimize_join_order_randomize)
     {
@@ -261,7 +253,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
     optimize_aggregation_in_order_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order_limit];
     optimize_projection = from[Setting::optimize_use_projections];
-    use_query_condition_cache = from[Setting::use_query_condition_cache];
+    use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     use_query_condition_cache_for_top_k = from[Setting::use_query_condition_cache_for_top_k];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
     /// The count optimization recovers the search query from the index read tasks that only the direct-read rewrite builds.
@@ -326,12 +318,12 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     enable_cascades_optimizer = from[Setting::enable_cascades_optimizer];
     cascades_aggregation_pushdown = from[Setting::cascades_aggregation_pushdown];
 
-    optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization];
+    optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
     optimize_lazy_materialization_for_object_storage = from[Setting::query_plan_optimize_lazy_materialization_for_object_storage];
     optimize_lazy_materialization_for_file = from[Setting::query_plan_optimize_lazy_materialization_for_file];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
-    optimize_lazy_final = from[Setting::query_plan_optimize_lazy_final];
+    optimize_lazy_final = from[Setting::query_plan_optimize_lazy_final] && from[Setting::allow_experimental_analyzer];
     max_rows_for_lazy_final = from[Setting::max_rows_for_lazy_final];
     max_bytes_for_lazy_final = from[Setting::max_bytes_for_lazy_final];
     min_filtered_ratio_for_lazy_final = from[Setting::min_filtered_ratio_for_lazy_final];
@@ -406,7 +398,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
             && from->getSettingsRef()[Setting::parallel_replicas_local_plan]
             && from->getSettingsRef()[Setting::parallel_replicas_support_projection])
 {
-    distributed_plan_local_object = from->getDistributedPlanLocalObject();
     max_parallel_replicas = from->getSettingsRef()[Setting::max_parallel_replicas];
     if (auto cluster_name = from->getSettingsRef()[Setting::cluster_for_parallel_replicas].value; !cluster_name.empty())
     {
@@ -430,11 +421,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
     }
 #endif
 
-    /// A foreign shard scope is declined later, in `ClusterProxy::canUseParallelReplicasOnInitiator`,
-    /// so it has to be declined here as well: otherwise the optimizations that only run for a local read
-    /// are skipped for a read that ends up being local anyway. The check is last because it resolves a cluster.
+    /// The plan-based implementation requires the analyzer: without it the planner never builds the
+    /// distributed plan this optimization works on.
     enable_parallel_replicas = from->canUseParallelReplicasOnInitiator()
         && from->getSettingsRef()[Setting::parallel_replicas_plan_based]
-        && !ClusterProxy::hasForeignShardScope(from);
+        && from->getSettingsRef()[Setting::allow_experimental_analyzer];
 }
 }

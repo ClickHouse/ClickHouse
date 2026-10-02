@@ -183,13 +183,16 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool input_is_serialized) override
     {
         if (!temporary_files)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Object storage for Persisted exchanges is not configured, exchange stream id: {}",
                 exchange_stream_id.toString());
+        if (input_is_serialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Persisted exchange {} has no serializer, its sink takes data chunks", exchange_stream_id.toString());
+
         auto file_name = exchange_stream_id.toString();
         return std::make_shared<NativeCompressedSink>(input_header, temporary_files->getTemporaryFileForWriting(file_name), file_name);
     }
@@ -276,12 +279,6 @@ public:
         std::lock_guard lock(mutex);
         return reader_detached;
     }
-
-    /// Identifies one stream of an exchange, not the whole exchange: it is
-    /// `ExchangeStreamId::toString()`, so the buckets of one exchange have distinct names.
-    const String & getStreamName() const { return name; }
-
-    LoggerPtr getLog() const { return log; }
 
     /// Waits up to `timeout` for a chunk. Returns std::nullopt if nothing arrived in time.
     /// An empty chunk is the producer's end-of-data marker. Chunks queued before a cancel are
@@ -401,8 +398,11 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool input_is_serialized) override
     {
+        if (input_is_serialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "In-memory exchange {} has no serializer, its sink takes data chunks", exchange_stream_id.toString());
+
         auto file_name = exchange_stream_id.toString();
         auto exchange = InMemoryExchanges::instance()->getExchange(query_id, file_name);
         return std::make_shared<SinkFromInMemoryExchange>(input_header, exchange);
@@ -437,7 +437,6 @@ private:
             /// data that nobody reads.
             if (exchange->isReaderDetached())
             {
-                LOG_TRACE(exchange->getLog(), "Closing input of exchange stream {}, reader detached", exchange->getStreamName());
                 input.close();
                 return Status::Finished;
             }
@@ -481,7 +480,6 @@ private:
             if (!detach_notified && getPort().isFinished())
             {
                 detach_notified = true;
-                LOG_TRACE(exchange->getLog(), "NoMoreDataNeeded from exchange stream {}, detaching reader", exchange->getStreamName());
                 exchange->detachReader();
             }
             return ISource::prepare();
@@ -568,9 +566,9 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool input_is_serialized) override
     {
-        return lookupFor(exchange_stream_id.exchange_id).createSink(std::move(input_header), exchange_stream_id);
+        return lookupFor(exchange_stream_id.exchange_id).createSink(std::move(input_header), exchange_stream_id, input_is_serialized);
     }
 
     std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
@@ -757,11 +755,8 @@ ExchangeLookupPtr createExchangeLookup(
         if (address.port == 0)
             address.port = static_cast<UInt16>(streaming_exchange_port);
 
-    /// The auth token this node presents when opening an outbound exchange connection, taken from
-    /// the query context (empty when connection authentication is not configured).
     auto streaming_exchanges = createStreamingExchangeLookup(
-        query_id, ExchangeConnections::instance(), sources_with_ports, std::move(cancellation), /*auth_token=*/ String{},
-        streamingExchangeCompressionCodec(context->getSettingsRef()));
+        query_id, ExchangeConnections::instance(), sources_with_ports, std::move(cancellation));
     return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 #else
     UNUSED(exchange_stream_sources, context, cancellation);
@@ -947,16 +942,10 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
     String object_storage_path = getTemporaryFilesPath(unique_temp_file_path, context);
     if (config.has(config_prefix))
     {
-        ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, /*run_access_check=*/true, /*run_local_paths_check=*/false);
+        ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, false);
         return {object_storage, object_storage_path};
     }
     return {nullptr, object_storage_path};
-}
-
-/// `initial_query_id` is shared by every fragment of a plan, and is empty when the client itself sent a secondary query.
-static String logicalQueryId(const ClientInfo & client_info)
-{
-    return client_info.initial_query_id.empty() ? client_info.current_query_id : client_info.initial_query_id;
 }
 
 static void executeTask(const UUID & unique_query_id, const DistributedQueryTaskDescription & task, ContextPtr context, DistributedQueryCancellationPtr cancellation)
@@ -968,23 +957,8 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
     /// initiator's) gives the task its own per-query state, such as the runtime filter lookup.
     auto task_context = Context::createCopy(context);
     task_context->makeQueryContext();
-
-    {
-        ClientInfo client_info = task_context->getClientInfo();
-        client_info.initial_query_id = logicalQueryId(client_info);
-        client_info.current_query_id = toString(unique_query_id) + "::" + task.task.task_id;
-        client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        task_context->setClientInfo(client_info);
-    }
-
     auto query_scope = QueryScope::create(task_context);
     setThreadName(ThreadName::DISTRIBUTED_QUERY_TASK);
-
-    /// A query's log row reports the profile counters of its process-list entry's thread group.
-    auto process_list_entry = task_context->getProcessList().insert(
-        task.task.task_id, sipHash64(task.serialized_query_plan), /*ast=*/ nullptr, task_context,
-        clock_gettime_ns(CLOCK_MONOTONIC), /*is_internal=*/ true);
-    task_context->setProcessListElement(process_list_entry->getQueryStatus());
 
     /// Only DistributedQueryPlanExecutorLocal reaches here, so the task always runs in-process.
     doExecuteTask(task, object_storage, object_storage_path, toString(unique_query_id), std::move(task_context),
@@ -1810,7 +1784,7 @@ protected:
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
         DistributedQueryTaskDescription task_description;
-        task_description.initial_query_id = logicalQueryId(context->getClientInfo());
+        task_description.initial_query_id = context->getCurrentQueryId();
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
@@ -1878,7 +1852,6 @@ protected:
 
 DistributedQueryCancellation::DistributedQueryCancellation()
     : wakeup(std::make_shared<WakeupFd>())
-    , cancelled_wakeup(std::make_shared<WakeupFd>())
 {
 }
 
@@ -1896,7 +1869,6 @@ void DistributedQueryCancellation::cancel()
     cancelled_by_pipeline = true;
     cancelled = true;
     notifyStageWakeup(wakeup);
-    notifyStageWakeup(cancelled_wakeup);
 }
 
 bool DistributedQueryCancellation::recordException(std::exception_ptr exception)
@@ -1918,7 +1890,6 @@ bool DistributedQueryCancellation::recordException(std::exception_ptr exception)
         driving_source_reports = !execution_finished;
     }
     notifyStageWakeup(wakeup);
-    notifyStageWakeup(cancelled_wakeup);
     return driving_source_reports;
 }
 
@@ -1926,12 +1897,6 @@ void DistributedQueryCancellation::markExecutionFinished()
 {
     std::lock_guard lock(mutex);
     execution_finished = true;
-}
-
-bool DistributedQueryCancellation::isExecutionFinished() const
-{
-    std::lock_guard lock(mutex);
-    return execution_finished;
 }
 
 std::exception_ptr DistributedQueryCancellation::getFailure() const

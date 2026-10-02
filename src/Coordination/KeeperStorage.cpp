@@ -237,7 +237,7 @@ std::pair<KeeperResponsesForSessions, Int64> KeeperStorage::processWatchesImpl(
             {
                 std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_list_response
                     = std::make_shared<Coordination::ZooKeeperWatchResponse>();
-                watch_list_response->path = std::string{path};
+                watch_list_response->path = current_path;
                 watch_list_response->xid = Coordination::WATCH_XID;
                 watch_list_response->zxid = -1;
                 watch_list_response->type = event_type;
@@ -1060,11 +1060,7 @@ void KeeperStorage::updateWatches(
         if (resp->error == Coordination::Error::ZOK)
         {
             static constexpr std::array list_requests{
-                Coordination::OpNum::List,
-                Coordination::OpNum::SimpleList,
-                Coordination::OpNum::FilteredList,
-                Coordination::OpNum::FilteredListWithStatsAndData,
-                Coordination::OpNum::ListWithOptions};
+                Coordination::OpNum::List, Coordination::OpNum::SimpleList, Coordination::OpNum::FilteredList, Coordination::OpNum::FilteredListWithStatsAndData};
 
             auto watch_type = std::ranges::contains(list_requests, req->getOpNum()) ? WatchType::LIST_WATCH : WatchType::WATCH;
 

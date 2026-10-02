@@ -8,7 +8,9 @@ doc_type: 'reference'
 
 ClickHouse 会在解析查询时，根据运算符的优先级、先后顺序和结合性，将其转换为相应的函数。
 
-## 访问运算符 {#access-operators}
+<div id="access-operators">
+  ## 访问运算符
+</div>
 
 `a[N]` – 访问数组中的元素。对应 `arrayElement(a, N)` 函数。
 `N` 也可以是整数数组，此时会将这些位置上的所有元素作为数组返回，
@@ -18,13 +20,17 @@ ClickHouse 会在解析查询时，根据运算符的优先级、先后顺序和
 
 `a.N` – 访问 Tuple 元素。对应 `tupleElement(a, N)` 函数。
 
-## 数值取负运算符 {#numeric-negation-operator}
+<div id="numeric-negation-operator">
+  ## 数值取负运算符
+</div>
 
 `-a` – `negate(a)` 函数。
 
 有关 Tuple 取负，请参见：[tupleNegate](/zh/reference/functions/regular-functions/tuple-functions#tupleNegate)。
 
-## 乘法和除法运算符 {#multiplication-and-division-operators}
+<div id="multiplication-and-division-operators">
+  ## 乘法和除法运算符
+</div>
 
 `a * b` – `multiply(a, b)` 函数。
 
@@ -36,7 +42,9 @@ ClickHouse 会在解析查询时，根据运算符的优先级、先后顺序和
 
 `a % b` – `modulo(a, b)` 函数。
 
-## 加法和减法运算符 {#addition-and-subtraction-operators}
+<div id="addition-and-subtraction-operators">
+  ## 加法和减法运算符
+</div>
 
 `a + b` – `plus(a, b)` 函数。
 
@@ -46,73 +54,105 @@ ClickHouse 会在解析查询时，根据运算符的优先级、先后顺序和
 
 对于 Tuple 减法，请参见：[tupleMinus](/zh/reference/functions/regular-functions/tuple-functions#tupleMinus)。
 
-## 比较运算符 {#comparison-operators}
+<div id="comparison-operators">
+  ## 比较运算符
+</div>
 
-### equals 函数 {#equals-function}
+<div id="equals-function">
+  ### equals 函数
+</div>
 
 `a = b` – 表示 `equals(a, b)` 函数。
 
 `a == b` – 表示 `equals(a, b)` 函数。
 
-### notEquals 函数 {#notequals-function}
+<div id="notequals-function">
+  ### notEquals 函数
+</div>
 
 `a != b` – 表示 `notEquals(a, b)` 函数。
 
 `a <> b` – 表示 `notEquals(a, b)` 函数。
 
-### lessOrEquals 函数 {#lessorequals-function}
+<div id="lessorequals-function">
+  ### lessOrEquals 函数
+</div>
 
 `a <= b` – 即 `lessOrEquals(a, b)` 函数。
 
-### greaterOrEquals 函数 {#greaterorequals-function}
+<div id="greaterorequals-function">
+  ### greaterOrEquals 函数
+</div>
 
 `a >= b` —— `greaterOrEquals(a, b)` 函数。
 
-### less 函数 {#less-function}
+<div id="less-function">
+  ### less 函数
+</div>
 
 `a < b` —— `less(a, b)` 函数。
 
-### greater 函数 {#greater-function}
+<div id="greater-function">
+  ### greater 函数
+</div>
 
 `a > b` — `greater(a, b)` 函数。
 
-### like 函数 {#like-function}
+<div id="like-function">
+  ### like 函数
+</div>
 
 `a LIKE b` —— 即 `like(a, b)` 函数。
 
-### notLike 函数 {#notlike-function}
+<div id="notlike-function">
+  ### notLike 函数
+</div>
 
 `a NOT LIKE b` —— 即 `notLike(a, b)` 函数。
 
-### ilike 函数 {#ilike-function}
+<div id="ilike-function">
+  ### ilike 函数
+</div>
 
 `a ILIKE b` —— 即 `ilike(a, b)` 函数。
 
-### match 函数 {#match-function}
+<div id="match-function">
+  ### match 函数
+</div>
 
 `a REGEXP b`：`match(a, b)` 函数。
 
 `a ~ b`：`match(a, b)` 函数 (PostgreSQL 风格的正则表达式匹配) 。
 
-### notMatch 函数 {#notmatch-function}
+<div id="notmatch-function">
+  ### notMatch 函数
+</div>
 
 `a !~ b` – `notMatch(a, b)` 函数 (检查 `a` 是否与正则表达式 `b` 不匹配) 。
 
-### matchCaseInsensitive 函数 {#matchcaseinsensitive-function}
+<div id="matchcaseinsensitive-function">
+  ### matchCaseInsensitive 函数
+</div>
 
 `a ~* b` – `matchCaseInsensitive(a, b)` 函数 (执行不区分大小写的正则表达式匹配) 。
 
-### notMatchCaseInsensitive 函数 {#notmatchcaseinsensitive-function}
+<div id="notmatchcaseinsensitive-function">
+  ### notMatchCaseInsensitive 函数
+</div>
 
 `a !~* b` – `notMatchCaseInsensitive(a, b)` 函数 (检查 `a` 是否不匹配正则表达式 `b`，且不区分大小写) 。
 
-### BETWEEN 函数 {#between-function}
+<div id="between-function">
+  ### BETWEEN 函数
+</div>
 
 `a BETWEEN b AND c` – 等同于 `a >= b AND a <= c`。
 
 `a NOT BETWEEN b AND c` – 等同于 `a < b OR a > c`。
 
-### `is not distinct from` 运算符 (`<=>`) {#is-not-distinct-from}
+<div id="is-not-distinct-from">
+  ### `is not distinct from` 运算符 (`<=>`)
+</div>
 
 <Note>
   从 25.10 版本开始，你可以像使用其他运算符一样使用 `<=>`。
@@ -146,48 +186,70 @@ SELECT
 └──────────────────────────┴──────────────────────────┘
 ```
 
-## 用于处理字符串的运算符 {#operators-for-working-with-strings}
+<div id="operators-for-working-with-strings">
+  ## 用于处理字符串的运算符
+</div>
 
-### OVERLAY {#overlay}
+<div id="overlay">
+  ### OVERLAY
+</div>
 
 * `OVERLAY(string PLACING replacement FROM offset)` - `overlay(string, replacement, offset)` 函数。
 * `OVERLAY(string PLACING replacement FROM offset FOR length)` - `overlay(string, replacement, offset, length)` 函数。
 * `OVERLAYUTF8(string PLACING replacement FROM offset)` - `overlayUTF8(string, replacement, offset)` 函数。
 * `OVERLAYUTF8(string PLACING replacement FROM offset FOR length)` - `overlayUTF8(string, replacement, offset, length)` 函数。
 
-## 用于处理数据集的运算符 {#operators-for-working-with-data-sets}
+<div id="operators-for-working-with-data-sets">
+  ## 用于处理数据集的运算符
+</div>
 
 请参阅 [IN 运算符](/zh/reference/statements/in) 和 [EXISTS](/zh/reference/operators/exists) 运算符。
 
-### in 函数 {#in-function}
+<div id="in-function">
+  ### in 函数
+</div>
 
 `a IN ...` —— `in(a, b)` 函数。
 
-### notIn 函数 {#notin-function}
+<div id="notin-function">
+  ### notIn 函数
+</div>
 
 `a NOT IN ...` —— `notIn(a, b)` 函数。
 
-### globalIn 函数 {#globalin-function}
+<div id="globalin-function">
+  ### globalIn 函数
+</div>
 
 `a GLOBAL IN ...` — `globalIn(a, b)` 函数。
 
-### globalNotIn 函数 {#globalnotin-function}
+<div id="globalnotin-function">
+  ### globalNotIn 函数
+</div>
 
 `a GLOBAL NOT IN ...` —— `globalNotIn(a, b)` 函数。
 
-### in 子查询函数 {#in-subquery-function}
+<div id="in-subquery-function">
+  ### in 子查询函数
+</div>
 
 `a = ANY (subquery)` – 即 `in(a, subquery)` 函数。
 
-### notIn 子查询函数 {#notin-subquery-function}
+<div id="notin-subquery-function">
+  ### notIn 子查询函数
+</div>
 
 `a != ANY (subquery)` —— 与 `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)` 相同。
 
-### in 子查询函数 {#in-subquery-function-1}
+<div id="in-subquery-function">
+  ### in 子查询函数
+</div>
 
 `a = ALL (subquery)` – 等同于 `a IN (SELECT singleValueOrNull(*) FROM subquery)`。
 
-### notIn 子查询函数 {#notin-subquery-function-1}
+<div id="notin-subquery-function">
+  ### notIn 子查询函数
+</div>
 
 `a != ALL (subquery)` —— 即 `notIn(a, subquery)` 函数。
 
@@ -225,7 +287,9 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 └───┘
 ```
 
-### 数组上的 `SOME` / `ALL` {#some-all-on-arrays}
+<div id="some-all-on-arrays">
+  ### 数组上的 `SOME` / `ALL`
+</div>
 
 除了上文描述的子查询形式外，`SOME` / `ALL` 的右侧也可以是数组表达式 (数组字面量、数组类型的列，或任何返回数组的表达式) 。这是 PostgreSQL 风格的数组量词语法。它会在解析时被识别并重写为数组函数，因此无需手动重写：
 
@@ -275,9 +339,13 @@ SELECT
   ```
 </Info>
 
-## 日期和时间运算符 {#operators-for-working-with-dates-and-times}
+<div id="operators-for-working-with-dates-and-times">
+  ## 日期和时间运算符
+</div>
 
-### EXTRACT {#extract}
+<div id="extract">
+  ### EXTRACT
+</div>
 
 ```sql
 EXTRACT(part FROM date);
@@ -363,7 +431,9 @@ FROM test.Orders;
 
 你可以在 [tests](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00619_extract.sql) 中查看更多示例。
 
-### INTERVAL {#interval}
+<div id="interval">
+  ### INTERVAL
+</div>
 
 创建一个 [Interval](/zh/reference/data-types/special-data-types/interval) 类型的值，用于与 [Date](/zh/reference/data-types/date) 和 [DateTime](/zh/reference/data-types/datetime) 类型的值进行算术运算。
 
@@ -437,7 +507,9 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 * [Interval](/zh/reference/data-types/special-data-types/interval) 数据类型
 * [toInterval](/zh/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) 类型转换函数
 
-### 日期与时间相加 {#date-time-addition}
+<div id="date-time-addition">
+  ### 日期与时间相加
+</div>
 
 可以使用 `+` 运算符将 [Date](/zh/reference/data-types/date) 或 [Date32](/zh/reference/data-types/date32) 值与 [Time](/zh/reference/data-types/time) 或 [Time64](/zh/reference/data-types/time64) 值相加。结果为 [DateTime](/zh/reference/data-types/datetime) 或 [DateTime64](/zh/reference/data-types/datetime64)，表示该日期中给定时刻的日期时间值。该运算满足交换律。
 
@@ -487,7 +559,9 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 └─────────────────────────┴────────────────┘
 ```
 
-### AT TIME ZONE 和 AT LOCAL {#at-time-zone}
+<div id="at-time-zone">
+  ### AT TIME ZONE 和 AT LOCAL
+</div>
 
 后缀运算符 `AT TIME ZONE` 和 `AT LOCAL` 会将 `DateTime` 或 `DateTime64` 值转换到不同的时区。它们是现有 [`toTimeZone`](/zh/reference/functions/regular-functions/date-time-functions#toTimezone) 函数的语法糖：
 
@@ -542,19 +616,27 @@ SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
 * [`toTimeZone`](/zh/reference/functions/regular-functions/date-time-functions#toTimezone)
 * [`timeZone`](/zh/reference/functions/regular-functions/date-time-functions#timezone)
 
-## 逻辑 AND 运算符 {#logical-and-operator}
+<div id="logical-and-operator">
+  ## 逻辑 AND 运算符
+</div>
 
 语法 `SELECT a AND b` — 使用函数 [and](/zh/reference/functions/regular-functions/logical-functions#and) 计算 `a` 与 `b` 的逻辑与。
 
-## 逻辑 OR 运算符 {#logical-or-operator}
+<div id="logical-or-operator">
+  ## 逻辑 OR 运算符
+</div>
 
 语法 `SELECT a OR b` — 使用函数 [or](/zh/reference/functions/regular-functions/logical-functions#or) 计算 `a` 与 `b` 的逻辑或。
 
-## 逻辑非运算符 {#logical-negation-operator}
+<div id="logical-negation-operator">
+  ## 逻辑非运算符
+</div>
 
 语法 `SELECT NOT a` — 使用函数 [not](/zh/reference/functions/regular-functions/logical-functions#not) 对 `a` 进行逻辑非运算。
 
-## 条件运算符 {#conditional-operator}
+<div id="conditional-operator">
+  ## 条件运算符
+</div>
 
 `a ? b : c` – `if(a, b, c)` 函数。
 
@@ -562,7 +644,9 @@ SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
 
 条件运算符会先计算 b 和 c 的值，再检查是否满足条件 a，然后返回对应的值。如果 `b` 或 `C` 是 [arrayJoin()](/zh/reference/functions/regular-functions/array-join) 函数，则无论 “a” 条件是否成立，每一行都会被复制。
 
-## 条件表达式 {#conditional-expression}
+<div id="conditional-expression">
+  ## 条件表达式
+</div>
 
 ```sql
 CASE [x]
@@ -578,43 +662,57 @@ END
 
 `transform` 函数不支持 `NULL`。
 
-## 拼接运算符 {#concatenation-operator}
+<div id="concatenation-operator">
+  ## 拼接运算符
+</div>
 
 `s1 || s2` – `concat(s1, s2)` 函数。
 
-## Lambda 创建运算符 {#lambda-creation-operator}
+<div id="lambda-creation-operator">
+  ## Lambda 创建运算符
+</div>
 
 `x -> expr` – `lambda(x, expr)` 函数。
 
 以下运算符没有优先级，因为它们是括号：
 
-## 数组创建运算符 {#array-creation-operator}
+<div id="array-creation-operator">
+  ## 数组创建运算符
+</div>
 
 `[x1, ...]` – `array(x1, ...)` 函数。
 
-## Tuple 创建运算符 {#tuple-creation-operator}
+<div id="tuple-creation-operator">
+  ## Tuple 创建运算符
+</div>
 
 `(x1, x2, ...)` – 即 `tuple(x2, x2, ...)` 函数。
 
-## 结合性 {#associativity}
+<div id="associativity">
+  ## 结合性
+</div>
 
 所有二元运算符都是左结合的。例如，`1 + 2 + 3` 会被转换为 `plus(plus(1, 2), 3)`。
 但有时结果可能不符合你的预期。例如，`SELECT 4 > 2 > 3` 的结果将为 0。
 
 出于效率考虑，`and` 和 `or` 函数可以接受任意数量的参数。相应的 `AND` 和 `OR` 运算符链会被转换为对这些函数的一次调用。
 
-## 检查 `NULL` 值 {#checking-for-null}
+<div id="checking-for-null">
+  ## 检查 `NULL` 值
+</div>
 
 ClickHouse 支持 `IS NULL` 和 `IS NOT NULL` 运算符。
 
-### IS NULL {#is_null}
+<div id="is_null">
+  ### IS NULL
+</div>
 
 * 对于 [Nullable](/zh/reference/data-types/nullable) 类型的值，`IS NULL` 运算符返回：
   * 如果值为 `NULL`，则返回 `1`。
   * 否则返回 `0`。
 * 对于其他值，`IS NULL` 运算符始终返回 `0`。
 
-可通过启用 [optimize&#95;functions&#95;to&#95;subcolumns](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 设置来优化。将 `optimize_functions_to_subcolumns = 1` 时，该函数只会读取 [null](/zh/reference/data-types/nullable#finding-null) 子列，而不是读取并处理整个列数据。查询 `SELECT n IS NULL FROM table` 会被转换为 `SELECT n.null != 0 FROM TABLE`。
+可通过启用 [optimize&#95;functions&#95;to&#95;subcolumns](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 设置来优化。将 `optimize_functions_to_subcolumns = 1` 时，该函数只会读取 [null](/zh/reference/data-types/nullable#finding-null) 子列，而不是读取并处理整个列数据。查询 `SELECT n IS NULL FROM table` 会被转换为 `SELECT n.null FROM TABLE`。
 
 {/* */}
 
@@ -628,7 +726,9 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 └──────────────┘
 ```
 
-### IS NOT NULL {#is_not_null}
+<div id="is_not_null">
+  ### IS NOT NULL
+</div>
 
 * 对于 [Nullable](/zh/reference/data-types/nullable) 类型的值，`IS NOT NULL` 运算符返回：
   * 如果该值为 `NULL`，则返回 `0`。
@@ -649,7 +749,9 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 
 可通过启用 [optimize&#95;functions&#95;to&#95;subcolumns](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 设置进行优化。将 `optimize_functions_to_subcolumns = 1` 时，该函数仅读取 [null](/zh/reference/data-types/nullable#finding-null) 子列，而不是读取并处理整个列数据。查询 `SELECT n IS NOT NULL FROM table` 会被转换为 `SELECT NOT n.null FROM TABLE`。
 
-## 检查布尔值 {#checking-boolean-values}
+<div id="checking-boolean-values">
+  ## 检查布尔值
+</div>
 
 ClickHouse 支持 `IS TRUE`、`IS FALSE`、`IS UNKNOWN`、`IS NOT TRUE`、`IS NOT FALSE` 和 `IS NOT UNKNOWN` 运算符。
 它们可与 [Bool](/zh/reference/data-types/boolean) 和 `Nullable(Bool)` 表达式一起使用。

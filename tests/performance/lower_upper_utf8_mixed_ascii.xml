@@ -2,9 +2,7 @@
     <settings>
         <max_threads>1</max_threads>
         <max_insert_threads>1</max_insert_threads>
-        <!-- 65409 rows (the default) of 128-byte values plus padding stay below 8 MiB, so the ASCII and
-             non-ASCII paths of lowerUTF8/upperUTF8 get result buffers of the same size. -->
-        <max_block_size>65409</max_block_size>
+        <max_block_size>65536</max_block_size>
     </settings>
 
     <substitutions>
@@ -78,7 +76,7 @@
             unicode_16,
             unicode_16_late,
             if(number % 2 = 0, unicode_16_late, ascii_16),
-            if(number % 65409 >= 65345, unicode, ascii)
+            if(number % 65536 >= 65472, unicode, ascii)
         FROM
         (
             SELECT

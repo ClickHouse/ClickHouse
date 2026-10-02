@@ -661,15 +661,16 @@ static void BM_RuntimeFilterAdaptiveBuildTransformInsertOnlyUInt64(benchmark::St
                 /*filter_name_=*/"_runtime_filter_benchmark",
                 /*filter_key_=*/String{},
                 /*filters_to_merge_=*/0,
-                RuntimeFilterBuildOptions{
-                    .exact_values_limit = ADAPTIVE_EXACT_VALUES_LIMIT,
-                    .bloom = RuntimeBloomFilterParameters{BLOOM_FILTER_BYTES, BLOOM_FILTER_HASH_FUNCTIONS},
-                    .max_ratio_of_set_bits = DISABLE_BLOOM_FULLNESS_CHECK,
-                    .polarity = RuntimeFilterPolarity::Contains,
-                    .track_key_range = false,
-                    .distinct_keys_hint = std::nullopt,
-                    .distinct_keys_hint_matches_filter_key = false},
-                RuntimeFilterConfig{DISABLE_ADAPTIVE_SKIP_THRESHOLD, BLOCKS_TO_SKIP_BEFORE_REENABLING},
+                ADAPTIVE_EXACT_VALUES_LIMIT,
+                BLOOM_FILTER_BYTES,
+                BLOOM_FILTER_HASH_FUNCTIONS,
+                DISABLE_ADAPTIVE_SKIP_THRESHOLD,
+                BLOCKS_TO_SKIP_BEFORE_REENABLING,
+                DISABLE_BLOOM_FULLNESS_CHECK,
+                /*allow_to_use_not_exact_filter_=*/true,
+                /*track_key_range_=*/false,
+                /*distinct_keys_hint_=*/std::nullopt,
+                /*distinct_keys_hint_matches_filter_key_=*/false,
                 /*query_context_=*/nullptr);
             state.ResumeTiming();
 
@@ -708,15 +709,16 @@ static void BM_RuntimeFilterAdaptiveBuildTransformInsertOnlyCastUInt32ToUInt64(b
                 /*filter_name_=*/"_runtime_filter_benchmark",
                 /*filter_key_=*/String{},
                 /*filters_to_merge_=*/0,
-                RuntimeFilterBuildOptions{
-                    .exact_values_limit = ADAPTIVE_EXACT_VALUES_LIMIT,
-                    .bloom = RuntimeBloomFilterParameters{BLOOM_FILTER_BYTES, BLOOM_FILTER_HASH_FUNCTIONS},
-                    .max_ratio_of_set_bits = DISABLE_BLOOM_FULLNESS_CHECK,
-                    .polarity = RuntimeFilterPolarity::Contains,
-                    .track_key_range = false,
-                    .distinct_keys_hint = std::nullopt,
-                    .distinct_keys_hint_matches_filter_key = false},
-                RuntimeFilterConfig{DISABLE_ADAPTIVE_SKIP_THRESHOLD, BLOCKS_TO_SKIP_BEFORE_REENABLING},
+                ADAPTIVE_EXACT_VALUES_LIMIT,
+                BLOOM_FILTER_BYTES,
+                BLOOM_FILTER_HASH_FUNCTIONS,
+                DISABLE_ADAPTIVE_SKIP_THRESHOLD,
+                BLOCKS_TO_SKIP_BEFORE_REENABLING,
+                DISABLE_BLOOM_FULLNESS_CHECK,
+                /*allow_to_use_not_exact_filter_=*/true,
+                /*track_key_range_=*/false,
+                /*distinct_keys_hint_=*/std::nullopt,
+                /*distinct_keys_hint_matches_filter_key_=*/false,
                 /*query_context_=*/nullptr);
             state.ResumeTiming();
 
