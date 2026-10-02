@@ -2,6 +2,7 @@
 # A glob in the file name of the FileLog path selects which files of the directory are read.
 # A file that is already read keeps being read after it is renamed to a non-matching name (log rotation),
 # also across DETACH/ATTACH, until it is removed.
+# A file renamed from a matching name before the table read it is read, and a rotation chain renamed while detached keeps its offsets.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -33,7 +34,7 @@ function read_rows()
         sleep 0.2
     done
     echo "-- $1"
-    grep -v -e '^barrier_' -e '^$' <<< "$rows" | sort
+    grep -v -e '^barrier_' -e '^$' <<< "$rows" | LC_ALL=C sort
 }
 
 read_rows "initial scan"
@@ -73,6 +74,31 @@ printf '700\n' > "$outside/replacement"
 mv "$outside/replacement" "$dir/app.log.0"
 printf '14\n' >> "$dir/app.log.0"
 read_rows "renamed file replaced"
+
+printf '15\n' > "$dir/fresh.log"
+mv "$dir/fresh.log" "$dir/fresh.log.1"
+printf '16\n' >> "$dir/fresh.log.1"
+read_rows "renamed before it was read"
+
+printf '20\n' > "$dir/chain.log"
+read_rows "chain"
+mv "$dir/chain.log" "$dir/chain.log.1"
+printf '2100\n' > "$dir/chain.log"
+read_rows "chain rotation"
+mv "$dir/chain.log.1" "$dir/chain.log.2"
+mv "$dir/chain.log" "$dir/chain.log.1"
+printf '220000\n' > "$dir/chain.log"
+read_rows "chain second rotation"
+
+$CLICKHOUSE_CLIENT -q "DETACH TABLE file_log"
+mv "$dir/chain.log.2" "$dir/chain.log.3"
+mv "$dir/chain.log.1" "$dir/chain.log.2"
+mv "$dir/chain.log" "$dir/chain.log.1"
+printf '23\n' > "$dir/chain.log"
+printf '24\n' >> "$dir/chain.log.1"
+printf '25\n' >> "$dir/chain.log.3"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE file_log"
+read_rows "chain rotation while detached"
 
 echo "-- errors"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE file_log_bad (v UInt64) ENGINE = FileLog('$dir/*/app.log', 'TSV')" 2>&1 | grep -q 'Globs are supported only in the file name of the path' && echo OK || echo FAIL

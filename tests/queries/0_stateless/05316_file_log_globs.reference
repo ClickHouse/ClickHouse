@@ -18,6 +18,19 @@ app.log.2	12
 -- compression
 app.log	13
 -- renamed file replaced
+-- renamed before it was read
+fresh.log.1	15
+fresh.log.1	16
+-- chain
+chain.log	20
+-- chain rotation
+chain.log	2100
+-- chain second rotation
+chain.log	220000
+-- chain rotation while detached
+chain.log	23
+chain.log.1	24
+chain.log.3	25
 -- errors
 OK
 OK

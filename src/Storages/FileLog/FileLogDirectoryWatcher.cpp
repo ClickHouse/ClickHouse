@@ -63,13 +63,13 @@ void FileLogDirectoryWatcher::onItemModified(DirectoryWatcherBase::DirectoryEven
 void FileLogDirectoryWatcher::onItemMovedFrom(DirectoryWatcherBase::DirectoryEvent ev)
 {
     std::lock_guard lock(mutex);
-    events.emplace_back(ev.path, EventInfo{ev.event, "onItemMovedFrom"});
+    events.emplace_back(ev.path, EventInfo{ev.event, "onItemMovedFrom", ev.cookie});
 }
 
 void FileLogDirectoryWatcher::onItemMovedTo(DirectoryWatcherBase::DirectoryEvent ev)
 {
     std::lock_guard lock(mutex);
-    events.emplace_back(ev.path, EventInfo{ev.event, "onItemMovedTo"});
+    events.emplace_back(ev.path, EventInfo{ev.event, "onItemMovedTo", ev.cookie});
 }
 
 void FileLogDirectoryWatcher::onError(Exception e)

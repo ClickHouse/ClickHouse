@@ -334,6 +334,7 @@ void StorageFileLog::loadFiles()
     }
 
     /// Update file meta or create file meta
+    std::vector<String> renamed_files;
     for (const auto & [file, ctx] : file_infos.context_by_name)
     {
         if (auto it = file_infos.meta_by_inode.find(ctx.inode); it != file_infos.meta_by_inode.end())
@@ -341,8 +342,11 @@ void StorageFileLog::loadFiles()
             /// data file have been renamed, need update meta file's name
             if (it->second.file_name != file)
             {
-                disk->replaceFile(getFullMetaPath(it->second.file_name), getFullMetaPath(file));
+                /// Through a temporary name: the renames of a rotation chain are visited in any order.
+                if (disk->existsFile(getFullMetaPath(it->second.file_name)))
+                    disk->replaceFile(getFullMetaPath(it->second.file_name), getFullMetaPath(file) + TMP_SUFFIX);
                 it->second.file_name = file;
+                renamed_files.push_back(file);
             }
         }
         /// New file
@@ -352,6 +356,9 @@ void StorageFileLog::loadFiles()
             file_infos.meta_by_inode.emplace(ctx.inode, meta);
         }
     }
+    for (const auto & file : renamed_files)
+        if (disk->existsFile(getFullMetaPath(file) + TMP_SUFFIX))
+            disk->replaceFile(getFullMetaPath(file) + TMP_SUFFIX, getFullMetaPath(file));
 
     /// Clear unneeded meta file, because data files may be deleted
     if (file_infos.meta_by_inode.size() > file_infos.context_by_name.size())
@@ -1024,7 +1031,7 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 
 When the file name in `path_to_logs` has globs, the table reads the files of that directory whose names match, including the ones that appear later. Globs are not supported in the directory part of the path.
 
-A file that the table reads keeps being read when it is renamed to a name that does not match, until it is removed from the directory. This is what log rotation needs. For example, `logrotate` with `compress` and `delaycompress` keeps the directory like this:
+A file that the table reads keeps being read when it is renamed to a name that does not match, until it is removed from the directory. A file that is created and renamed to a name that does not match while the table is detached or the server is stopped is not read. This is what log rotation needs. For example, `logrotate` with `compress` and `delaycompress` keeps the directory like this:
 
 ```text
 app.log         the file the application writes
@@ -1129,6 +1136,7 @@ bool StorageFileLog::updateFileInfos()
     /// be observed before any later `DW_ITEM_ADDED` for the source name, so
     /// that `onFileAppeared`'s filename-ownership guard sees the post-rename
     /// `file_name` in `meta_by_inode` rather than the stale pre-rename one.
+    std::unordered_set<uint64_t> renamed_from_matching_name;
     for (const auto & [file_name, event_info] : events)
     {
         String file_path = getFullDataPath(file_name);
@@ -1175,6 +1183,8 @@ bool StorageFileLog::updateFileInfos()
             /// The file **left** the directory
             case DirectoryWatcherBase::DW_ITEM_MOVED_FROM:
             {
+                if (event_info.type == DirectoryWatcherBase::DW_ITEM_MOVED_FROM && event_info.cookie && fileNameMatches(file_name))
+                    renamed_from_matching_name.insert(event_info.cookie);
                 if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                     it->second.status = FileStatus::REMOVED;
                 break;
@@ -1188,7 +1198,7 @@ bool StorageFileLog::updateFileInfos()
                 {
                     auto inode = getInode(file_path);
 
-                    if (!fileNameMatches(file_name) && !file_infos.meta_by_inode.contains(inode))
+                    if (!fileNameMatches(file_name) && !file_infos.meta_by_inode.contains(inode) && !renamed_from_matching_name.contains(event_info.cookie))
                     {
                         /// The file read under this name, if any, was replaced by one that is not read.
                         if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())

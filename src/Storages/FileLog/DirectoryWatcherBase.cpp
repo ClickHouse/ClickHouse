@@ -138,12 +138,12 @@ void DirectoryWatcherBase::watchFunc()
                         }
                         if ((p_event->mask & IN_MOVED_FROM) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_FROM))
                         {
-                            DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_FROM);
+                            DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_FROM, p_event->cookie);
                             owner.onItemMovedFrom(ev);
                         }
                         if ((p_event->mask & IN_MOVED_TO) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_TO))
                         {
-                            DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_TO);
+                            DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_TO, p_event->cookie);
                             owner.onItemMovedTo(ev);
                         }
                     }
@@ -567,7 +567,7 @@ void DirectoryWatcherBase::watchFunc()
             if (is_rename(state.inode))
             {
                 if (eventMask() & DW_ITEM_MOVED_FROM)
-                    owner.onItemMovedFrom(DirectoryEvent(name, DW_ITEM_MOVED_FROM));
+                    owner.onItemMovedFrom(DirectoryEvent(name, DW_ITEM_MOVED_FROM, state.inode));
             }
             else if (eventMask() & DW_ITEM_REMOVED)
                 owner.onItemRemoved(DirectoryEvent(name, DW_ITEM_REMOVED));
@@ -578,7 +578,7 @@ void DirectoryWatcherBase::watchFunc()
         {
             changed = true;
             if (eventMask() & DW_ITEM_MOVED_TO)
-                owner.onItemMovedTo(DirectoryEvent(name, DW_ITEM_MOVED_TO));
+                owner.onItemMovedTo(DirectoryEvent(name, DW_ITEM_MOVED_TO, current.at(name).inode));
         }
 
         /// Arrived identities that are genuinely new (including a name whose inode was replaced).

@@ -22,6 +22,7 @@ public:
     {
         DirectoryWatcherBase::DirectoryEventType type;
         std::string callback;
+        uint64_t cookie = 0;
     };
 
     /// Events are accumulated as a flat chronologically-ordered sequence so that
