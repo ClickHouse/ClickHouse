@@ -170,7 +170,7 @@ private:
 
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
-        const RPNBuilderTreeNode & index_column_node,
+        const RPNBuilderTreeNode & argument_node,
         DataTypePtr value_type,
         Field value_field,
         RPNElement & out) const;
@@ -189,7 +189,7 @@ private:
     /// index's column.
     std::optional<String> tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const;
 
-    /// Everything a `keyValuePairs` index supports; currently only `m['key'] = 'value'`.
+    /// A `keyValuePairs` index in the (column, constant) shape; currently only `m['key'] = 'value'`.
     bool traverseMapElementKeyValueNode(
         const String & function_name,
         const RPNBuilderTreeNode & index_column_node,
@@ -197,6 +197,9 @@ private:
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out) const;
+
+    /// `mapContainsKeyValue(m, 'key', 'value')`: both pair tokens, searched as one `Any` query.
+    bool traverseMapContainsKeyValueNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
     VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;
     VectorWithMemoryTracking<String> stringToTokens(std::string_view raw) const;
@@ -221,6 +224,8 @@ private:
     static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
+    /// Whether the index is defined over an `Array` column, whose positions restart for every element.
+    bool indexed_column_is_array = false;
     /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
     std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;
@@ -262,5 +267,9 @@ private:
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
 bool isTextIndexVirtualColumn(const String & column_name);
+
+/// Strips `CAST`, `_CAST`, `toNullable` and `toLowCardinality` from the node while the conversion never
+/// changes the value and never throws. The index is analyzed on the expression under such conversions.
+const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node);
 
 }
