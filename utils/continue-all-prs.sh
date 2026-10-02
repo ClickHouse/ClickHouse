@@ -664,8 +664,30 @@ ensure_worktree()
     canonical_wt=$(realpath -m "$wt")
 
     if git -C "$MAIN_REPO" worktree list --porcelain | grep -xF "worktree $canonical_wt" >/dev/null; then
-        banner "Reusing existing worktree: $canonical_wt"
-        return 0
+        if [[ -d "$canonical_wt" ]]; then
+            banner "Reusing existing worktree: $canonical_wt"
+            return 0
+        fi
+        # The directory was deleted externally (e.g. to free disk space), but
+        # its registration, and possibly the registrations of worktrees nested
+        # below it, remain. Nested ones created by agents are often locked, so
+        # plain `git worktree prune` would keep them. Drop only registrations
+        # at or below this path whose directories no longer exist.
+        banner "Registered worktree is missing on disk, pruning: $canonical_wt"
+        local candidate
+        while IFS= read -r candidate; do
+            [[ -e "$candidate" ]] && continue
+            git -C "$MAIN_REPO" worktree unlock "$candidate" 2>/dev/null || true
+        done < <(
+            git -C "$MAIN_REPO" worktree list --porcelain \
+                | sed -n 's/^worktree //p' \
+                | awk -v wt="$canonical_wt" '$0 == wt || index($0, wt "/") == 1'
+        )
+        git -C "$MAIN_REPO" worktree prune
+        if is_registered_worktree "$canonical_wt"; then
+            echo "${S}ERROR: could not prune stale worktree registration: $canonical_wt${R}" >&2
+            return 1
+        fi
     fi
     if [[ -e "$canonical_wt" ]]; then
         echo "${S}ERROR: path exists but is not a registered worktree: $canonical_wt${R}" >&2
