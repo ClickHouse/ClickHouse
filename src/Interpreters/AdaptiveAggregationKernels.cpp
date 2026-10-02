@@ -207,6 +207,17 @@ namespace
         }
     }
 
+    /// Emplaces the key of a source table's cell into `table` with the cell's hash. The key of a string table is a view
+    /// its iteration handed out (see `forEachMappedCellWithHash`), which goes in with `emplaceIteratedKey`.
+    template <typename Table, typename Key>
+    void ALWAYS_INLINE emplaceSourceKey(Table & table, const Key & key, typename Table::LookupResult & it, bool & inserted, size_t hash)
+    {
+        if constexpr (requires { table.begin(); })
+            table.emplace(key, it, inserted, hash);
+        else
+            table.emplaceIteratedKey(key, it, inserted, hash);
+    }
+
     /// Prefetches the table slot of a staged record ahead of its emplace: hash-organized tables
     /// by the routing hash, string tables from the key bytes and the hash.
     template <typename Key, typename Table>
@@ -339,8 +350,9 @@ namespace
     }
 
     /// Visits every cell of a map table with its key as the table stores it, its mapped value and its hash: from the
-    /// iterator, which reads a saved hash instead of rehashing, where the table has one, and through `forEachValue`
-    /// for the string table, whose sub-maps share no iterator.
+    /// iterator, which reads a saved hash instead of rehashing, where the table has one, and through
+    /// `forEachValueWithHash` for the string table, whose sub-maps share no iterator, and which hands out the short
+    /// keys as views that only `emplaceIteratedKey` may read.
     template <typename Table, typename Callback>
     void forEachMappedCellWithHash(Table & table, Callback && callback)
     {
@@ -351,13 +363,13 @@ namespace
         }
         else
         {
-            table.forEachValue([&](const auto & key, auto & mapped) { callback(key, mapped, table.hash(key)); });
+            table.forEachValueWithHash(callback);
         }
     }
 
     /// Visits every cell of a map table like `forEachMappedCellWithHash`, but hands out a callable that returns the
-    /// cell's hash, valid during the call, for a caller that needs the hashes of a few cells: a table without saved
-    /// hashes rehashes the key.
+    /// cell's hash, valid during the call, for a caller that needs the hashes of a few cells: an iterator over a table
+    /// without saved hashes rehashes the key.
     template <typename Table, typename Callback>
     void forEachMappedCellWithHashOnDemand(Table & table, Callback && callback)
     {
@@ -368,7 +380,7 @@ namespace
         }
         else
         {
-            table.forEachValue([&](const auto & key, auto & mapped) { callback(mapped, [&] { return table.hash(key); }); });
+            table.forEachValueWithHash([&](const auto &, auto & mapped, size_t hash) { callback(mapped, [hash] { return hash; }); });
         }
     }
 
@@ -1722,7 +1734,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                         continue;
                     typename Table::LookupResult it;
                     bool inserted = false;
-                    table.emplace(cell.key, it, inserted, cell.hash);
+                    emplaceSourceKey(table, cell.key, it, inserted, cell.hash);
                     const UInt64 count = getCountState(*cell.mapped + rank_offset);
                     if (inserted)
                         getInlineCountState(it->getMapped()) = count;
@@ -1797,7 +1809,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                     }
                     typename Table::LookupResult it;
                     bool inserted = false;
-                    table.emplace(cell.key, it, inserted, cell.hash);
+                    emplaceSourceKey(table, cell.key, it, inserted, cell.hash);
                     AggregateDataPtr & source_place = *cell.mapped;
                     if (inserted)
                     {
@@ -1849,7 +1861,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                     }
                     typename Table::LookupResult it;
                     bool inserted = false;
-                    table.emplace(cell.key, it, inserted, cell.hash);
+                    emplaceSourceKey(table, cell.key, it, inserted, cell.hash);
                     AggregateDataPtr & source_place = *cell.mapped;
                     if (is_simple_count)
                     {
@@ -1881,7 +1893,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                         continue;
                     typename Table::LookupResult it;
                     bool inserted = false;
-                    table.emplace(cell.key, it, inserted, cell.hash);
+                    emplaceSourceKey(table, cell.key, it, inserted, cell.hash);
                 }
             }
 
