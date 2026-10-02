@@ -46,7 +46,7 @@
   <!-- terraform apply -->
   <rect x="670" y="120" width="580" height="190" rx="10" fill="#8a8a8a" fill-opacity="0.10" stroke="#7d7d7d" stroke-width="1.5"/>
   <text x="960" y="152" text-anchor="middle" font-size="13.5" font-weight="600" font-family="'SF Mono', Menlo, Consolas, monospace" fill="#7d7d7d">terraform apply</text>
-  <text x="960" y="174" text-anchor="middle" font-size="11" fill="#7d7d7d">the roots create infrastructure only</text>
+  <text x="960" y="174" text-anchor="middle" font-size="11" fill="#7d7d7d">the roots create the cluster, its system node group, and the managed EKS addons</text>
   <rect x="679" y="192" width="130" height="38" rx="8" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.25"/>
   <text x="744" y="216" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">VPC or your VPC</text>
   <rect x="823" y="192" width="130" height="38" rx="8" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.25"/>
@@ -56,7 +56,8 @@
   <rect x="1111" y="192" width="130" height="38" rx="8" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.25"/>
   <text x="1176" y="216" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">KMS keys</text>
   <text x="960" y="262" text-anchor="middle" font-size="11" fill="#7d7d7d">existing-vpc and existing-eks add what is missing</text>
-  <text x="960" y="280" text-anchor="middle" font-size="11" fill="#7d7d7d">everything inside the cluster is installed afterwards</text>
+  <text x="960" y="280" text-anchor="middle" font-size="11" fill="#7d7d7d">clicklink clctl init then adds the platform layer:</text>
+  <text x="960" y="298" text-anchor="middle" font-size="11" fill="#7d7d7d">Karpenter, the load balancer controller, the StorageClass, and the pinned components</text>
 
   <!-- Outputs written back to your machine -->
   <path d="M710 310 L710 350 L140 350 L140 384" fill="none" stroke="#7d7d7d" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#ah-n)"/>
