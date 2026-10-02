@@ -95,17 +95,23 @@ public:
 
     const ContextPtr & getContext() const { return context; }
 
+    /// Checks `dictGet` access to the dictionary without loading it. Must be called before the dictionary
+    /// or its definition is read, so that a user without access learns nothing about the dictionary.
+    void checkAccess(const String & dictionary_name)
+    {
+        if (access_checked)
+            return;
+
+        auto dictionary_id = context->getExternalDictionariesLoader().getDictionaryID(dictionary_name, context);
+        context->checkAccess(AccessType::dictGet, IDictionary::getDatabaseOrNoDatabaseTag(dictionary_id), dictionary_id.getTableName());
+        access_checked = true;
+    }
+
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
-        auto dict = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
-
-        if (!access_checked)
-        {
-            context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
-            access_checked = true;
-        }
-
-        return dict;
+        /// Check access before loading the dictionary, because loading contacts the dictionary source.
+        checkAccess(dictionary_name);
+        return context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
     }
 
     std::shared_ptr<const IDictionary> getDictionary(const ColumnPtr & column)
@@ -165,8 +171,9 @@ public:
         return getDictionary(dictionary_name)->isInjective(attribute_name);
     }
 
-    DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
+    DictionaryStructure getDictionaryStructure(const String & dictionary_name)
     {
+        checkAccess(dictionary_name);
         return context->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, context);
     }
 

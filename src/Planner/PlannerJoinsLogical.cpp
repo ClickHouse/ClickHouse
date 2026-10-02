@@ -600,11 +600,15 @@ PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expr
     if (result.storage_join)
         return result;
 
-    auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
-    if (storage_dictionary && storage_dictionary->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
+    if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage))
     {
-        result.storage_key_value = std::dynamic_pointer_cast<const IKeyValueEntity>(storage_dictionary->getDictionary());
-        return result;
+        /// This runs even if the right table is not read, e.g. for `CREATE VIEW`, so the access must be checked here.
+        auto dictionary = storage_dictionary->getDictionary(planner_context->getQueryContext());
+        if (dictionary->getSpecialKeyType() != DictionarySpecialKeyType::Range)
+        {
+            result.storage_key_value = std::dynamic_pointer_cast<const IKeyValueEntity>(dictionary);
+            return result;
+        }
     }
 
     result.storage_key_value = std::dynamic_pointer_cast<IKeyValueEntity>(storage);

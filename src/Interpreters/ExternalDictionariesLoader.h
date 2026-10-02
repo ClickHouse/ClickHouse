@@ -51,6 +51,10 @@ public:
 
     DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextPtr context) const;
 
+    /// The ID of the dictionary, taken from the loaded dictionary if there is one, otherwise from its configuration.
+    /// Does not load the dictionary, so it can be used to check access rights before loading.
+    StorageID getDictionaryID(const std::string & dictionary_name, ContextPtr context) const;
+
     /// The layout type of the dictionary as written in its definition, e.g. "hashed" or "naive_bayes".
     /// Read from the dictionary configuration, so it works without loading the dictionary. Throws for
     /// a definition whose layout element does not have exactly one child, like loading it would.

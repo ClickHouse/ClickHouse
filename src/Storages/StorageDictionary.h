@@ -82,9 +82,15 @@ public:
     /// count() can return wrong result, see test_dictionaries_redis/test_long.py::test_redis_dict_long
     bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 
-    std::shared_ptr<const IDictionary> getDictionary() const;
+    /// Loads the dictionary after checking that the user of `query_context` may read it, see `checkDictionaryAccess`.
+    std::shared_ptr<const IDictionary> getDictionary(const ContextPtr & query_context) const;
 
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure, bool validate_id_type);
+
+    /// Checks the access needed to read the dictionary with the given ID as a table. For backward compatibility reasons
+    /// either `SELECT` or `dictGet` is enough; if neither is granted, asks to grant `dictGet`.
+    /// Must be called before the dictionary is loaded or its definition is read.
+    static void checkDictionaryAccess(const StorageID & dictionary_id, const ContextPtr & local_context);
 
     bool isDictionary() const override { return true; }
     bool supportsTruncate() const override { return false; }

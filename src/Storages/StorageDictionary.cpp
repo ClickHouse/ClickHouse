@@ -213,27 +213,27 @@ Pipe StorageDictionary::read(
     const size_t max_block_size,
     const size_t threads)
 {
-    auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
-    auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
-
-    /**
-     * For backward compatibility reasons we require either SELECT or dictGet permission to read directly from the dictionary.
-     * If none of these conditions are met - we ask to grant a dictGet.
-     */
-    bool has_dict_get = local_context->getAccess()->isGranted(
-        AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
-    bool has_select = local_context->getAccess()->isGranted(
-        AccessType::SELECT, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
-    if (!has_dict_get && !has_select)
-        local_context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
-
+    auto dictionary = getDictionary(local_context);
     return dictionary->read(column_names, max_block_size, threads);
 }
 
-std::shared_ptr<const IDictionary> StorageDictionary::getDictionary() const
+void StorageDictionary::checkDictionaryAccess(const StorageID & dictionary_id, const ContextPtr & local_context)
+{
+    auto dictionary_database = IDictionary::getDatabaseOrNoDatabaseTag(dictionary_id);
+    const auto & access = local_context->getAccess();
+    if (!access->isGranted(AccessType::dictGet, dictionary_database, dictionary_id.getTableName())
+        && !access->isGranted(AccessType::SELECT, dictionary_database, dictionary_id.getTableName()))
+        local_context->checkAccess(AccessType::dictGet, dictionary_database, dictionary_id.getTableName());
+}
+
+std::shared_ptr<const IDictionary> StorageDictionary::getDictionary(const ContextPtr & query_context) const
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
-    return getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, getContext());
+    const auto & external_loader = getContext()->getExternalDictionariesLoader();
+
+    /// Check access before loading the dictionary, because loading contacts the dictionary source.
+    checkDictionaryAccess(external_loader.getDictionaryID(registered_dictionary_name, query_context), query_context);
+    return external_loader.getDictionary(registered_dictionary_name, query_context);
 }
 
 void StorageDictionary::shutdown(bool)
@@ -405,7 +405,12 @@ void registerStorageDictionary(StorageFactory & factory)
 
         if (args.mode <= LoadingStrictnessLevel::CREATE)
         {
-            const auto & dictionary = args.getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, args.getContext());
+            /// The user creating the table must be allowed to read the dictionary. Check it before loading the dictionary,
+            /// because loading contacts the dictionary source. The name is resolved with the query context,
+            /// like when the table is read.
+            const auto & external_loader = local_context->getExternalDictionariesLoader();
+            StorageDictionary::checkDictionaryAccess(external_loader.getDictionaryID(dictionary_name, local_context), local_context);
+            const auto & dictionary = external_loader.getDictionary(dictionary_name, local_context);
             const DictionaryStructure & dictionary_structure = dictionary->getStructure();
             checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
         }

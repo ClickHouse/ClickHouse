@@ -208,6 +208,24 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
     return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
 }
 
+StorageID ExternalDictionariesLoader::getDictionaryID(const std::string & dictionary_name, ContextPtr query_context) const
+{
+    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context);
+
+    auto load_result = getLoadResult(resolved_name);
+
+    if (load_result.object)
+    {
+        const auto dictionary = std::static_pointer_cast<const IDictionary>(load_result.object);
+        return dictionary->getDictionaryID();
+    }
+
+    if (!load_result.config)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary {} config not found", backQuote(dictionary_name));
+
+    return StorageID::fromDictionaryConfig(*load_result.config->config, load_result.config->key_in_config);
+}
+
 std::string ExternalDictionariesLoader::getDictionaryLayoutType(const std::string & dictionary_name, ContextPtr query_context) const
 {
     std::string resolved_name = resolveDictionaryName(dictionary_name, query_context);

@@ -1,0 +1,26 @@
+--- no grants
+SELECT dictGet('d', 'no_such_attribute', toUInt64(1))
+ACCESS_DENIED
+DESCRIBE (SELECT dictGet('d', 'value', toUInt64(1)))
+ACCESS_DENIED
+SELECT dictGet('d', 'value', number) FROM numbers(0)
+ACCESS_DENIED
+SELECT dictGetOrDefault('d', 'value', toUInt64(1), 'x')
+ACCESS_DENIED
+SELECT dictGetOrNull('d', 'value', toUInt64(1))
+ACCESS_DENIED
+SELECT dictGetKeys('d', 'value', 'a')
+ACCESS_DENIED
+SELECT dictGetKeys('d', 'no_such_attribute', 'a')
+ACCESS_DENIED
+SELECT naiveBayesClassifier('d', 'good')
+ACCESS_DENIED
+--- dictGet
+DESCRIBE (SELECT dictGet('d', 'value', toUInt64(1)))
+dictGet(\'d\', \'value\', toUInt64(1))	String					
+SELECT dictGet('d', 'no_such_attribute', toUInt64(1))
+No such attribute
+SELECT dictGetKeys('d', 'no_such_attribute', 'a')
+has no attribute
+SELECT naiveBayesClassifier('d', 'good')
+NAIVE_BAYES layout

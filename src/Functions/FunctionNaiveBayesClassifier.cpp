@@ -59,9 +59,24 @@ void validateArguments(
         });
 }
 
-void validateDictionaryIsNaiveBayes(const ContextPtr & context, const IFunction & func, const ColumnsWithTypeAndName & arguments)
+/// Checks `dictGet` access to the dictionary without loading it. Must be called before the dictionary
+/// or its definition is read, so that a user without access learns nothing about the dictionary.
+void checkDictionaryAccess(const ContextPtr & context, std::atomic<bool> & access_checked, const String & dictionary_name)
+{
+    if (access_checked.load(std::memory_order_relaxed))
+        return;
+
+    auto dictionary_id = context->getExternalDictionariesLoader().getDictionaryID(dictionary_name, context);
+    context->checkAccess(AccessType::dictGet, IDictionary::getDatabaseOrNoDatabaseTag(dictionary_id), dictionary_id.getTableName());
+    access_checked.store(true, std::memory_order_relaxed);
+}
+
+void validateDictionaryIsNaiveBayes(
+    const ContextPtr & context, std::atomic<bool> & access_checked, const IFunction & func, const ColumnsWithTypeAndName & arguments)
 {
     const String dictionary_name{arguments[0].column->getDataAt(0)};
+
+    checkDictionaryAccess(context, access_checked, dictionary_name);
 
     const auto layout_type = context->getExternalDictionariesLoader().getDictionaryLayoutType(dictionary_name, context);
     if (layout_type != "naive_bayes")
@@ -86,13 +101,10 @@ void executeNaiveBayes(
 
     const String dictionary_name{arguments[0].column->getDataAt(0)};
 
-    auto dictionary = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
+    /// Check access before loading the dictionary, because loading contacts the dictionary source.
+    checkDictionaryAccess(context, access_checked, dictionary_name);
 
-    if (!access_checked.load(std::memory_order_relaxed))
-    {
-        context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
-        access_checked.store(true, std::memory_order_relaxed);
-    }
+    auto dictionary = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
 
     const auto * nb_dict = typeid_cast<const NaiveBayesDictionary *>(dictionary.get());
     if (!nb_dict)
@@ -160,7 +172,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         validateArguments(*this, arguments);
-        validateDictionaryIsNaiveBayes(context, *this, arguments);
+        validateDictionaryIsNaiveBayes(context, access_checked, *this, arguments);
         DataTypePtr result_type = std::make_shared<DataTypeUInt32>();
         return arguments[1].type->isNullable() ? makeNullable(result_type) : result_type;
     }
@@ -210,7 +222,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         validateArguments(*this, arguments);
-        validateDictionaryIsNaiveBayes(context, *this, arguments);
+        validateDictionaryIsNaiveBayes(context, access_checked, *this, arguments);
         DataTypePtr result_type = makeClassProbTuple();
         return arguments[1].type->isNullable() ? makeNullable(result_type) : result_type;
     }
@@ -278,7 +290,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         validateArguments(*this, arguments);
-        validateDictionaryIsNaiveBayes(context, *this, arguments);
+        validateDictionaryIsNaiveBayes(context, access_checked, *this, arguments);
         DataTypePtr result_type = std::make_shared<DataTypeArray>(makeClassProbTuple());
         return arguments[1].type->isNullable() ? makeNullableSafe(result_type) : result_type;
     }
