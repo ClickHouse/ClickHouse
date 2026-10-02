@@ -23,7 +23,7 @@ ${CLICKHOUSE_CLIENT} \
     WHERE sleepEachRow(0.001) = 0
 " &
 INSERT_PID=$!
-wait_for_query_to_start "insert_case9_${CLICKHOUSE_DATABASE}" 30
+wait_for_query_to_start "insert_case9_${CLICKHOUSE_DATABASE}" 30 "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_transformer_single ADD COLUMN d UInt32 DEFAULT 99"
 wait "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_transformer_single"
@@ -45,7 +45,7 @@ ${CLICKHOUSE_CLIENT} \
     WHERE sleepEachRow(0.001) = 0
 " &
 INSERT_PID=$!
-wait_for_query_to_start "insert_case10_${CLICKHOUSE_DATABASE}" 30
+wait_for_query_to_start "insert_case10_${CLICKHOUSE_DATABASE}" 30 "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_transformer_multi ADD COLUMN d UInt32 DEFAULT 99"
 wait "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_transformer_multi"
