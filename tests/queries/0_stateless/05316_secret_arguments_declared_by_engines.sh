@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the fast test build has no NATS, RabbitMQ, Kafka, MySQL, S3 or DataLakeCatalog, whose arguments it then hides whole
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
