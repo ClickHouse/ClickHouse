@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <array>
+#include <bit>
 #include <string_view>
 
 #if defined(__SSE2__)
@@ -10,9 +11,6 @@
 #endif
 #if defined(__SSE4_2__)
     #include <nmmintrin.h>
-#endif
-#if defined(__AVX2__)
-    #include <immintrin.h>
 #endif
 #if defined(__aarch64__)
     #include <arm_neon.h>
@@ -157,18 +155,41 @@ inline __m128i mm_is_in_execute(__m128i bytes, const std::array<__m128i, 16u> & 
 #endif
 
 #if defined(__AVX2__)
-template <char s0>
-inline __m256i mm256_is_in(__m256i bytes)
+/// Use compiler vector extensions instead of AVX2 intrinsics. This keeps the
+/// implementation close to scalar C++ while still lowering to 32-byte AVX2
+/// operations in x86-v3 builds.
+using UInt8x32 = uint8_t __attribute__((vector_size(32)));
+
+inline UInt8x32 load_avx2_bytes(const char * pos)
 {
-    return _mm256_cmpeq_epi8(bytes, _mm256_set1_epi8(s0));
+    UInt8x32 bytes;
+    memcpy(&bytes, pos, sizeof(bytes));
+    return bytes;
 }
 
-template <char s0, char s1, char... tail>
-inline __m256i mm256_is_in(__m256i bytes)
+template <char s0, char... tail>
+inline UInt8x32 avx2_is_in(UInt8x32 bytes)
 {
-    __m256i eq0 = _mm256_cmpeq_epi8(bytes, _mm256_set1_epi8(s0));
-    __m256i eq = mm256_is_in<s1, tail...>(bytes);
-    return _mm256_or_si256(eq0, eq);
+    UInt8x32 matches = bytes == static_cast<uint8_t>(s0);
+    ((matches |= bytes == static_cast<uint8_t>(tail)), ...);
+    return matches;
+}
+
+inline bool avx2_any(UInt8x32 matches)
+{
+    const auto lanes = std::bit_cast<std::array<uint64_t, 4>>(matches);
+    return (lanes[0] | lanes[1] | lanes[2] | lanes[3]) != 0;
+}
+
+inline size_t avx2_first(UInt8x32 matches)
+{
+    const auto lanes = std::bit_cast<std::array<uint64_t, 4>>(matches);
+    for (size_t i = 0; i < lanes.size(); ++i)
+    {
+        if (lanes[i])
+            return i * sizeof(uint64_t) + std::countr_zero(lanes[i]) / 8;
+    }
+    __builtin_unreachable();
 }
 #endif
 
@@ -328,46 +349,61 @@ inline const char * find_first_symbols_sse2(const char * const begin, const char
 }
 
 #if defined(__AVX2__)
+template <bool positive, char... symbols>
+inline const char * find_first_symbols_avx2_block(const char * pos)
+{
+    UInt8x32 matches0 = avx2_is_in<symbols...>(load_avx2_bytes(pos));
+    UInt8x32 matches1 = avx2_is_in<symbols...>(load_avx2_bytes(pos + 32));
+
+    UInt8x32 combined;
+    if constexpr (positive)
+        combined = matches0 | matches1;
+    else
+        combined = ~(matches0 & matches1);
+
+    if (!avx2_any(combined))
+        return nullptr;
+
+    if constexpr (!positive)
+        matches0 = ~matches0;
+    if (avx2_any(matches0))
+        return pos + avx2_first(matches0);
+
+    if constexpr (!positive)
+        matches1 = ~matches1;
+    return pos + 32 + avx2_first(matches1);
+}
+
 template <bool positive, ReturnMode return_mode, char... symbols>
 [[gnu::noinline]] const char * find_first_symbols_avx2(const char * const begin, const char * const end)
 {
     const char * pos = begin;
 
-    /// Check two 64-byte groups per iteration, but stop at the first matching
-    /// group. Combining each pair saves a movemask on the common no-match path.
+    /// Scan 128 bytes per loop iteration to keep loop overhead low while still
+    /// stopping after each 64-byte group so the earliest match is preserved.
     for (; end - pos >= 128; pos += 128)
     {
-        for (size_t offset = 0; offset < 128; offset += 64)
-        {
-            __m256i bytes0 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos + offset));
-            __m256i bytes1 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos + offset + 32));
-            __m256i eq0 = mm256_is_in<symbols...>(bytes0);
-            __m256i eq1 = mm256_is_in<symbols...>(bytes1);
-            __m256i combined;
-            if constexpr (positive)
-                combined = _mm256_or_si256(eq0, eq1);
-            else
-                combined = _mm256_and_si256(eq0, eq1);
-            if (maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(combined))))
-            {
-                /// The combined mask loses the group order; inspect the first
-                /// vector before the second to return the earliest match.
-                const uint32_t mask0 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq0)));
-                if (mask0)
-                    return pos + offset + __builtin_ctz(mask0);
-                const uint32_t mask1 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq1)));
-                return pos + offset + 32 + __builtin_ctz(mask1);
-            }
-        }
+        if (const char * found = find_first_symbols_avx2_block<positive, symbols...>(pos))
+            return found;
+        if (const char * found = find_first_symbols_avx2_block<positive, symbols...>(pos + 64))
+            return found;
     }
 
-    for (; end - pos >= 32; pos += 32)
+    if (end - pos >= 64)
     {
-        __m256i bytes = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos));
-        __m256i eq = mm256_is_in<symbols...>(bytes);
-        uint32_t mask = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq)));
-        if (mask)
-            return pos + __builtin_ctz(mask);
+        if (const char * found = find_first_symbols_avx2_block<positive, symbols...>(pos))
+            return found;
+        pos += 64;
+    }
+
+    if (end - pos >= 32)
+    {
+        UInt8x32 matches = avx2_is_in<symbols...>(load_avx2_bytes(pos));
+        if constexpr (!positive)
+            matches = ~matches;
+        if (avx2_any(matches))
+            return pos + avx2_first(matches);
+        pos += 32;
     }
 
     return find_first_symbols_sse2<positive, return_mode, symbols...>(pos, end);
