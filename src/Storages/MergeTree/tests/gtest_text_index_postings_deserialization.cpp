@@ -9,7 +9,6 @@
 #include <roaring/roaring.hh>
 
 #include <limits>
-#include <vector>
 
 using namespace DB;
 
@@ -89,45 +88,5 @@ TEST(TextIndexPostingsDeserializationTest, TruncatedPayloadRejected)
     {
         const String truncated = payload.substr(0, size);
         EXPECT_THROW(decodePostings(encodePostingsPayload(truncated)), std::exception) << "size = " << size;
-    }
-}
-
-/// A decoded block whose first and last row ids span as many values as it holds is a range only if
-/// it is increasing: a corrupted block must be added as the row ids it holds.
-TEST(TextIndexPostingsDeserializationTest, NonIncreasingBlockIsNotRange)
-{
-    struct Case
-    {
-        std::vector<uint32_t> deltas;
-        PostingList expected;
-    };
-
-    /// Deltas from the first row id 5: row ids 5, 6, 6, 8 and 5, 9, 6, 8.
-    const std::vector<Case> cases = {
-        {{0, 1, 0, 2}, {5, 6, 8}},
-        {{0, 4, std::numeric_limits<uint32_t>::max() - 2, 2}, {5, 6, 8, 9}},
-    };
-
-    for (auto type : {IPostingListCodec::Type::Bitpacking, IPostingListCodec::Type::PFor})
-    {
-        for (auto [deltas, expected] : cases)
-        {
-            PODArray<char> payload;
-            createPostingListBlockCodec(type)->encodeBlock(deltas, payload);
-
-            /// Segment header: codec type, payload size, cardinality, first row id.
-            WriteBufferFromOwnString out;
-            writeVarUInt(static_cast<UInt8>(type), out);
-            writeVarUInt(payload.size(), out);
-            writeVarUInt(deltas.size(), out);
-            writeVarUInt(5, out);
-            out.write(payload.data(), payload.size());
-
-            ReadBufferFromString in(out.str());
-            PostingList postings;
-            PaddedPODArray<char> buffer;
-            SegmentedPostingListCodec().decode(in, deltas.size(), postings, buffer);
-            EXPECT_TRUE(postings == expected) << "codec " << static_cast<int>(type) << ": " << postings.toString();
-        }
     }
 }

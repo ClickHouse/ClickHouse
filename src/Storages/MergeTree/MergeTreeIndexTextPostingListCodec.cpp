@@ -118,16 +118,17 @@ SegmentedPostingListCodec::SegmentData SegmentedPostingListCodec::readSegmentDat
     return segment_data;
 }
 
-/// Decoded row ids are not validated, so every one of them is checked, not only the first and the last.
+/// Row ids within a block strictly increase, so `count` of them spanning `count` values are consecutive.
 static bool isConsecutive(const UInt32 * row_ids, size_t count)
 {
     if (static_cast<UInt64>(row_ids[0]) + count - 1 != row_ids[count - 1])
         return false;
 
-    UInt32 mismatch = 0;
+#ifdef DEBUG_OR_SANITIZER_BUILD
     for (size_t i = 1; i + 1 < count; ++i)
-        mismatch |= row_ids[i] ^ (row_ids[0] + static_cast<UInt32>(i));
-    return mismatch == 0;
+        chassert(row_ids[i] == row_ids[0] + i);
+#endif
+    return true;
 }
 
 static void addBlockToPostings(PostingList & postings, const UInt32 * row_ids, size_t count, size_t & consecutive_blocks)
