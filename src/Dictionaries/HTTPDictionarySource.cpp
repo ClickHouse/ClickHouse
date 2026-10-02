@@ -1,4 +1,5 @@
 #include <Dictionaries/HTTPDictionarySource.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/maskURIPassword.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Core/ServerSettings.h>
@@ -33,6 +34,29 @@ namespace ErrorCodes
 }
 
 static const UInt64 max_block_size = 8192;
+
+/// Hides the credentials a url can carry: the `user:password@` userinfo and sensitive query parameters
+/// (`access_token`, `sig`, ...). Returns whether anything was masked.
+static bool maskURLCredentials(String & url)
+{
+    bool masked = maskURIPassword(&url);
+    String without_parameters = maskSensitiveQueryParametersInURI(url);
+    masked |= without_parameters != url;
+    url = std::move(without_parameters);
+    return masked;
+}
+
+/// The same for a url given as an SQL string literal in a dictionary `SOURCE`, keeping its quotes.
+static bool maskQuotedURLCredentials(String & literal)
+{
+    if (literal.size() < 2 || literal.front() != '\'' || literal.back() != '\'')
+        return maskURLCredentials(literal);
+    String url = literal.substr(1, literal.size() - 2);
+    if (!maskURLCredentials(url))
+        return false;
+    literal = "'" + url + "'";
+    return true;
+}
 
 static const std::unordered_set<std::string_view> optional_configuration_keys = { // STYLE_CHECK_ALLOW_STD_CONTAINERS
     "url",
@@ -142,7 +166,7 @@ BlockIO HTTPDictionarySource::loadUpdatedAll()
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
     String masked_uri = uri.toString();
-    maskURIPassword(&masked_uri);
+    maskURLCredentials(masked_uri);
     LOG_TRACE(log, "loadUpdatedAll {}", masked_uri);
 
     auto buf = BuilderRWBufferFromHTTP(uri)
@@ -244,7 +268,7 @@ std::string HTTPDictionarySource::toString() const
 {
     /// Shown in `system.dictionaries` and in the logs.
     String uri = Poco::URI(configuration.url).toString();
-    maskURIPassword(&uri);
+    maskURLCredentials(uri);
     return uri;
 }
 
@@ -355,15 +379,15 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
     };
-    /// The `url` and `endpoint` can carry basic-auth credentials (`http://user:password@host/`).
+    /// The `url` and `endpoint` can carry credentials in the userinfo and in the query parameters.
     factory.registerSource(
         "http",
         create_table_source,
         SecretArgumentsSpec{
             .secret_keys = {"headers", "header"},
             .partial = {
-                {"url", [](String & value) { return maskURIPassword(&value); }},
-                {"endpoint", [](String & value) { return maskURIPassword(&value); }},
+                {"url", maskQuotedURLCredentials},
+                {"endpoint", maskQuotedURLCredentials},
             },
         },
         Documentation{
