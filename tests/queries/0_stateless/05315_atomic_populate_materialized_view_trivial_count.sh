@@ -25,7 +25,7 @@ for analyzer in 0 1; do
 
     $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT atomic_populate_pause_before_population"
 
-    $CLICKHOUSE_CLIENT --enable_analyzer "$analyzer" --optimize_trivial_count_query 1 -q "
+    $CLICKHOUSE_CLIENT --enable_analyzer "$analyzer" --optimize_trivial_count_query 1 --materialized_views_populate_atomically 1 -q "
         CREATE MATERIALIZED VIEW mv_05315 ENGINE = MergeTree ORDER BY c POPULATE AS SELECT count() AS c FROM src_05315
     " &
     CREATE_PID=$!
