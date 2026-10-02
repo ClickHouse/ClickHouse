@@ -127,6 +127,10 @@ public:
 
     Token nextToken();
 
+    /// Advance the lexer position. Used by query normalizers to skip over
+    /// large literals (e.g. vector array literals) without per-element tokenization.
+    void setPosition(const char * new_pos) { pos = new_pos; }
+
 private:
     const char * const begin;
     const char * pos;

@@ -6799,6 +6799,24 @@ Possible values:
 - Any string
 )", 0, \
         {"24.8", "", "", "New setting for labeling query cache settings."}) \
+    DECLARE(UInt64, vector_query_plan_cache_max_size_in_bytes, 0, R"(The maximum amount of memory (in bytes) the current user may allocate in the vector query plan cache. 0 means unlimited. )", 0, \
+        {"26.10", 0, 0, "Introduced vector query plan cache. The maximum amount of memory (in bytes) the current user may allocate in the vector query plan cache. 0 means unlimited."}) \
+    DECLARE(UInt64, vector_query_plan_cache_max_entries, 0, R"("The maximum number of query results the current user may store in the vector query plan cache. 0 means unlimited.)", 0, \
+        {"26.10", 0, 0, "Introduced vector query plan cache. The maximum number of query results the current user may store in the vector query plan cache. 0 means unlimited."}) \
+    DECLARE(Bool, vector_query_plan_cache, false, R"("Enable Vector Query plan cache.)", 0, \
+        {"26.10", false, false, "New setting to enable/disable vector Query plan cache."}) \
+    DECLARE(Bool, vector_use_cast, false, R"("Enable CAST in query.)", 0, \
+        {"26.10", false, false, "New setting to enable/disable CAST with no cached vector query plans."}) \
+    DECLARE(Bool, vector_query_plan_cache_only_vector, false, R"("VectorQueryPlanCache parse only vector.)", 0, \
+        {"26.10", false, false, "New setting to parse only vector VectorQueryPlan."}) \
+    DECLARE(Bool, vector_only_cache_query_plan, false, R"("Enable only cache query plan.)", 0, \
+        {"26.10", false, false, "New setting to enable/disable only cache query plan."}) \
+    DECLARE(Bool, enable_vector_performance_test, false, R"("Enable Vector performance test.)", 0, \
+        {"26.10", false, false, "New setting to enable/disable vector performance test."}) \
+    DECLARE(Seconds, vector_query_plan_cache_ttl, 60, R"("After this time in seconds entries in the vector query plan cache become stale)", 0, \
+        {"26.10", 60, 60, "Introduced vector query plan cache. After this time in seconds entries in the vector query plan cache become stale."}) \
+    DECLARE(String, vector_query_plan_cache_tag, "", R"("A string which acts as a label for vector query plan cache entries.)", 0, \
+        {"26.10", "", "", "New setting for labeling vector query plan cache settings."}) \
     DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \
