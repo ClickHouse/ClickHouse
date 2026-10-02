@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest  # pylint:disable=import-error; for style check
 
-from helpers.cluster import run_and_check
+from helpers.cluster import arm_per_test_coverage_for_module, run_and_check
 
 # This is a workaround for a problem with logging in pytest [1].
 #
@@ -137,6 +137,13 @@ def cleanup_environment():
     except Exception as e:
         logging.exception("cleanup_environment:%s", e)
 
+    yield
+
+
+@pytest.fixture(autouse=True, scope="module")
+def per_test_coverage_module():
+    # A cluster shared between modules keeps running into the next one.
+    arm_per_test_coverage_for_module()
     yield
 
 

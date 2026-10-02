@@ -32,7 +32,7 @@ q_p_a
 3
 a	b
 2	2
-a	f_a	f_b
+a	f_x.a	f_b
 99	1	2
 upper(toString(a))
 1
