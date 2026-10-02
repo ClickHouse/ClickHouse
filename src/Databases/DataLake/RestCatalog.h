@@ -81,9 +81,6 @@ public:
 
     bool isTransactional() const override { return true; }
 
-    /// The Iceberg REST spec makes the server write the metadata file on create.
-    bool writesInitialMetadata() const override { return true; }
-
     void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
 
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
