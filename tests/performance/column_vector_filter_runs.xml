@@ -38,7 +38,8 @@
             toUInt8(number % 64 != 32),
             toUInt8((number % 14 BETWEEN 0 AND 2) OR (number % 14 BETWEEN 7 AND 10)),
             toUInt8(cityHash64(number) % 10 = 0),
-            toUInt8(cityHash64(number) % 10 != 0)
+            toUInt8(cityHash64(number) % 10 != 0),
+            toUInt8((number % 64 BETWEEN 16 AND 23) OR (number % 64 BETWEEN 40 AND 47))
         FROM numbers(10000000)
     </fill_query>
 
