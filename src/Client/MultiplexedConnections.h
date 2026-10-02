@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <mutex>
 #include <Common/Throttler.h>
 #include <Client/Connection.h>
@@ -42,6 +43,8 @@ public:
     void sendQueryPlan(const QueryPlan & query_plan) override;
 
     bool supportsQueryPlanSerializationVersion(UInt64 version) const override;
+
+    UInt64 getMinQueriedServerRevision() const override { return min_queried_server_revision; }
 
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response) override;
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
@@ -106,6 +109,7 @@ private:
 
     bool sent_query = false;
     bool cancelled = false;
+    UInt64 min_queried_server_revision = std::numeric_limits<UInt64>::max();
 
     /// std::nullopt if parallel reading from replicas is not used
     std::optional<ReplicaInfo> replica_info;

@@ -252,17 +252,19 @@ All Data-family packets share the same Block wire format. The variants differ on
 
 `num_rows` is written independently of `num_columns`, so a block can declare rows while carrying no
 columns at all. That is not a contradiction: a query can ask a server for a number of rows and nothing
-else — the part of `SELECT count() OVER () FROM distributed_table` that the shards compute, where the
-window function is evaluated on the initiator and takes no arguments — and then every row of the answer
-holds no values. A reader must take the row count of such a block from `num_rows`: with no columns to
+else — the part of `SELECT count() OVER () FROM distributed_table WHERE x > 0` that the shards compute,
+where the window function is evaluated on the initiator and takes no arguments — and then every row of
+the answer holds no values. A reader must take the row count of such a block from `num_rows`: with no columns to
 count, it has no other source, and the count is not recoverable from the (empty) payload. Since the
 row count is all there is, a column-less block with `num_rows > 0` carries no column entries, exactly
 like the other `num_columns = 0` variants.
 
 A reader below revision `54493` rejects this variant (`INCORRECT_DATA`), so a writer only emits it once
-the negotiated revision is at least that; below it the block is written as an empty block, and its rows
-are lost. This also keeps a `Native` file — written at revision `0` — free of the variant, where a
-declared row count with no columns remains a sign of a truncated or corrupted stream.
+the negotiated revision is at least that. Below it the writer refuses such a block with an error
+(`NOT_IMPLEMENTED`) instead of writing an empty block that would lose its rows, and an initiator that
+expects a result with no columns refuses a peer below the revision the same way. This also keeps a
+`Native` file — written at revision `0` — free of the variant, where a declared row count with no
+columns remains a sign of a truncated or corrupted stream.
 
 ### Byte-level examples {#byte-level-examples}
 

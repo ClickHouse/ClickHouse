@@ -11,6 +11,7 @@
 namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int NOT_IMPLEMENTED;
 }
 
 using namespace DB;
@@ -52,11 +53,27 @@ TEST(NativeColumnLessBlock, RowCountRoundTrips)
     ASSERT_EQ(result.info.num_rows_without_columns, 42);
 }
 
-/// A peer below that revision rejects a column-less block that declares rows, so the writer sends zero rows to it.
-TEST(NativeColumnLessBlock, OlderPeerGetsZeroRows)
+/// A peer below that revision rejects a column-less block that declares rows, and sending zero rows to it
+/// would lose them, so the writer refuses.
+TEST(NativeColumnLessBlock, OlderPeerIsRefused)
 {
     constexpr UInt64 revision = DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT - 1;
-    auto result = readFromString(writeToString(makeColumnLessBlock(42), revision), revision);
+    try
+    {
+        writeToString(makeColumnLessBlock(42), revision);
+        FAIL() << "Expected NOT_IMPLEMENTED";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+}
+
+/// A column-less block with no rows is still written to an older peer as before.
+TEST(NativeColumnLessBlock, OlderPeerGetsEmptyBlock)
+{
+    constexpr UInt64 revision = DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT - 1;
+    auto result = readFromString(writeToString(makeColumnLessBlock(0), revision), revision);
     ASSERT_EQ(result.columns(), 0);
     ASSERT_EQ(result.info.num_rows_without_columns, 0);
 }

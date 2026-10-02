@@ -1653,7 +1653,21 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                     // A block with no columns is not empty when it carries rows that hold no values.
                     const bool block_has_data = !block.empty() || block.info.num_rows_without_columns > 0;
                     if (block_has_data && !state.io.null_format && !discard_query_data)
+                    {
+                        /// An older initiator cannot receive the number of rows of a block with no columns, so the
+                        /// rows of this part of the result would be lost there. Fail rather than return a wrong result.
+                        if (block.columns() == 0 && client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT)
+                            throw Exception(
+                                ErrorCodes::NOT_IMPLEMENTED,
+                                "Cannot send {} rows that carry no columns: the client speaks protocol revision {}, "
+                                "and sending the number of rows of a block with no columns requires revision {}. "
+                                "Upgrade the server that initiates the query",
+                                block.info.num_rows_without_columns,
+                                client_tcp_protocol_version,
+                                DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT);
+
                         sendData(state, block);
+                    }
 
                     out->sync();
                 }

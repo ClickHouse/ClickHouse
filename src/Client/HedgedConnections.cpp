@@ -256,6 +256,8 @@ void HedgedConnections::sendQuery(
             "enable_packed_string_keys_in_aggregation",
             static_cast<bool>(modified_settings[Setting::enable_packed_string_keys_in_aggregation]));
 
+        min_queried_server_revision = std::min<UInt64>(min_queried_server_revision, replica.connection->getServerRevision(timeouts));
+
         replica.connection->sendQuery(
             timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
 

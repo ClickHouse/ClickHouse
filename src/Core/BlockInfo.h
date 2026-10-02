@@ -48,9 +48,9 @@ struct BlockInfo
     /** num_rows_without_columns:
       * `Block::rows` takes the number of rows from the first column, so a block with no columns always
       * reports zero rows. Such a block is not always empty - its rows can carry no values at all, which
-      * is what a shard produces for `SELECT count() OVER () FROM distributed_table`, where the initiator
-      * needs the number of rows and nothing else. For those blocks the row count is kept here, so that it
-      * survives the conversion from a `Chunk` and the serialization.
+      * is what a shard produces for `SELECT count() OVER () FROM distributed_table WHERE x > 0`, where
+      * the initiator needs the number of rows and nothing else. For those blocks the row count is kept
+      * here, so that it survives the conversion from a `Chunk` and the serialization.
       *
       * This is not one of the serialized fields above: on the wire the value is the row count of the
       * block, which the `Native` format writes independently of the columns.

@@ -2,6 +2,7 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <functional>
+#include <limits>
 #include <queue>
 #include <optional>
 
@@ -96,6 +97,8 @@ public:
     void sendQueryPlan(const QueryPlan & query_plan) override;
 
     bool supportsQueryPlanSerializationVersion(UInt64 version) const override;
+
+    UInt64 getMinQueriedServerRevision() const override { return min_queried_server_revision; }
 
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) override
     {
@@ -223,6 +226,7 @@ private:
     ThrottlerPtr throttler;
     bool sent_query = false;
     bool cancelled = false;
+    UInt64 min_queried_server_revision = std::numeric_limits<UInt64>::max();
 
     ReplicaInfo replica_info;
 

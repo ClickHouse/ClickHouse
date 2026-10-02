@@ -33,6 +33,10 @@ public:
     /// query-plan packet serialized at it.
     virtual bool supportsQueryPlanSerializationVersion(UInt64 version) const = 0;
 
+    /// The lowest protocol revision among the replicas the query has been sent to so far.
+    /// A replica receives the query before it sends any packet for it.
+    virtual UInt64 getMinQueriedServerRevision() const = 0;
+
     virtual void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) = 0;
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
     virtual void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) = 0;

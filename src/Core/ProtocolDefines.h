@@ -316,8 +316,8 @@ static constexpr auto DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATI
 
 /// Send the number of rows of a block that has no columns. Such a block is not empty: its rows carry
 /// no values, which is what a shard produces for a query whose intermediate result needs nothing from
-/// it, e.g. `SELECT count() OVER () FROM distributed_table`. The count cannot be derived from the
-/// columns, and an older receiver rejects a column-less block that declares rows.
+/// it, e.g. `SELECT count() OVER () FROM distributed_table WHERE x > 0`. The count cannot be derived
+/// from the columns, and an older receiver rejects a column-less block that declares rows.
 static constexpr auto DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT = 54493;
 
 
