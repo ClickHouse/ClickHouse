@@ -159,14 +159,14 @@ def assert_took(took, should_take):
 
 
 def local_read_settings(policy="default"):
-    # The default `pread_threadpool` does not account the reads that are served from the OS page
-    # cache in the local read throttler, and the data written by these tests is still in the page
-    # cache. Read it with a method that cannot tell a cached read from a device read, so that the
+    # The default `pread_threadpool` and `pread` do not account the reads that are served from the
+    # OS page cache in the local read throttler, and the data written by these tests is still in the
+    # page cache. Read it with a method that cannot tell a cached read from a device read, so that the
     # throttler has something to account. `05111_local_read_throttler_page_cache` covers the
-    # accounting of `pread_threadpool` itself.
+    # accounting of `pread_threadpool` and `pread` themselves.
     if policy != "default":
         return {}
-    return {"local_filesystem_read_method": "pread"}
+    return {"local_filesystem_read_method": "read"}
 
 
 @pytest.mark.parametrize(

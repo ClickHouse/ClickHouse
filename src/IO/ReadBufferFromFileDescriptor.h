@@ -24,6 +24,15 @@ protected:
 
     ThrottlerPtr throttler;
 
+    /// Try to read the data from the OS page cache first to tell such reads apart for the `throttler`.
+    /// See `enableOSPageCacheReadsDetection`.
+    bool detect_os_page_cache_reads = false;
+
+    /// To be called by the descendants that know the flags the file was opened with.
+    /// Has an effect only for `pread` and when there is a `throttler`,
+    /// and is a no-op for `O_DIRECT`, where every read reaches the device.
+    void enableOSPageCacheReadsDetection(int flags);
+
     bool nextImpl() override;
     void prefetch(Priority priority) override;
 

@@ -24,7 +24,7 @@ SETTINGS local_filesystem_read_method = 'pread_threadpool', min_bytes_to_use_dir
 SYSTEM FLUSH LOGS query_log;
 
 -- The throttler must account nothing but the reads that were not page cache hits. Besides the device reads of
--- the thread pool, that includes the small metadata files read synchronously (e.g. with the `read`
+-- the thread pool and of `pread`, that includes the small metadata files read synchronously (e.g. with the `read`
 -- method, which cannot tell a cached read from a device read). It can be less than that when a
 -- prefetched buffer is discarded without being consumed.
 -- Whether the reads were page cache hits at all is not checked: `preadv2` with `RWF_NOWAIT` is not
@@ -32,7 +32,9 @@ SYSTEM FLUSH LOGS query_log;
 -- falls back to `pread`, is accounted as a device read, and the check below holds trivially.
 SELECT
     ProfileEvents['QueryLocalReadThrottlerBytes']
-        <= ProfileEvents['ReadBufferFromFileDescriptorReadBytes'] - ProfileEvents['ThreadPoolReaderPageCacheHitBytes'] AS page_cache_hits_not_throttled
+        <= ProfileEvents['ReadBufferFromFileDescriptorReadBytes']
+            - ProfileEvents['ThreadPoolReaderPageCacheHitBytes']
+            - ProfileEvents['ReadBufferFromFileDescriptorPageCacheHitBytes'] AS page_cache_hits_not_throttled
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment = '05111_local_read_throttler_page_cache';
