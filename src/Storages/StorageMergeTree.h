@@ -189,7 +189,10 @@ private:
 
     const bool support_transaction;
 
+    /// Reads the mutation entries; called from the constructor before the parts are loaded.
     void loadMutations();
+    /// Completes the loading of mutations once the parts are loaded: advances `increment` and marks done mutations.
+    void finishLoadingMutations();
 
     /// Load and initialize deduplication logs. Even if deduplication setting
     /// equals zero creates object with deduplication window equals zero.
@@ -308,7 +311,7 @@ private:
     /// default argument nothing is stamped — the caller observed the mutations as done without
     /// knowing their actual completion moment, and `finish_time` stays zero (unknown).
     /// Must be called under `currently_processing_in_background_mutex` (except in the constructor,
-    /// where locking is unnecessary — see `loadMutations`).
+    /// where locking is unnecessary — see `loadMutations` and `finishLoadingMutations`).
     size_t markFinishedMutations(UInt64 first_just_completed_version = std::numeric_limits<UInt64>::max());
 
     size_t clearOldMutations(bool truncate = false);

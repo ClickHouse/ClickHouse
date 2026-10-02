@@ -2709,8 +2709,9 @@ void IMergeTreeDataPart::assertColumnsReadableAtCurrentMetadataVersion(
       * The part's own metadata version is not set yet here, so the replicated lookup, which filters
       * by it, returns every metadata mutation the table still remembers; the data version does the
       * filtering for both engines. Mutations already cleared from the table are gone for good, so the
-      * lookup is complete only while the table remembers them; at server start the mutations are
-      * loaded after the parts, so it finds nothing then.
+      * lookup is complete only while the table remembers them. When the table is loaded, `MergeTree`
+      * reads its mutations before its parts, so the lookup works there too; `ReplicatedMergeTree` loads
+      * its queue from `ZooKeeper` only after the parts, so while it loads only the name check below applies.
       */
     NameSet part_column_names;
     for (const auto & column : part_columns)

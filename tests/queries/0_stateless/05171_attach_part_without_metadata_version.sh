@@ -79,6 +79,27 @@ SELECT 'still detached', count() FROM system.detached_parts WHERE database = cur
 SELECT 'nothing attached', count() FROM swapped;
 "
 
+# The same reused-name rename, but with the part found in the table's directory when the table is
+# loaded, not attached: the table reads its mutations before its parts, so the part is refused there
+# too (and detached as broken) instead of serving the stale `a`.
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+CREATE TABLE reloaded (id UInt64, a UInt32, b UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO reloaded SELECT number, 0, number FROM numbers(1000);
+ALTER TABLE reloaded DETACH PARTITION tuple();
+ALTER TABLE reloaded DROP COLUMN a;
+ALTER TABLE reloaded RENAME COLUMN b TO a;
+"
+
+reloaded_path=$(${CLICKHOUSE_LOCAL} --path "${workdir}" -q "SELECT arrayJoin(data_paths) FROM system.tables WHERE database = currentDatabase() AND name = 'reloaded'")
+rm "${reloaded_path}detached/all_1_1_0/metadata_version.txt"
+mv "${reloaded_path}detached/all_1_1_0" "${reloaded_path}"
+
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "SELECT 'reloaded part not served', count() FROM reloaded"
+# A broken part is moved to `detached` in the background after the load: look at it from a later run.
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+SELECT 'reloaded part detached', count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 'reloaded' AND startsWith(reason, 'broken');
+"
+
 # The same missing file over an unchanged schema: the part's columns match the table's, so reading it
 # at the current version is the same as reading it at its own.
 ${CLICKHOUSE_LOCAL} --path "${workdir}" -q "

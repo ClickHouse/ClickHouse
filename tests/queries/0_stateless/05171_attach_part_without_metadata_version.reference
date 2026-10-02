@@ -8,5 +8,7 @@ nothing attached	0
 swapped names refused: 1
 still detached	1
 nothing attached	0
+reloaded part not served	0
+reloaded part detached	1
 unchanged schema attaches	1000	499500
 dropped column attaches	1000	499500

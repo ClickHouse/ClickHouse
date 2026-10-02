@@ -239,6 +239,10 @@ StorageMergeTree::StorageMergeTree(
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
+    /// Mutations are read before the parts, so that a part found without `metadata_version.txt` can be
+    /// checked against the `RENAME COLUMN` mutations it has not applied (see `IMergeTreeDataPart::loadColumns`).
+    loadMutations();
+
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
 
     if (mode < LoadingStrictnessLevel::ATTACH && !getDataPartsForInternalUsage().empty() && !isTableReadonly())
@@ -250,7 +254,7 @@ StorageMergeTree::StorageMergeTree(
 
     increment.set(getMaxBlockNumber());
 
-    loadMutations();
+    finishLoadingMutations();
     loadDeduplicationLog();
     prewarmCaches(getActivePartsLoadingThreadPool().get(), getCachesToPrewarm(0));
 }
@@ -1818,6 +1822,10 @@ void StorageMergeTree::loadMutations()
         }
     }
 
+}
+
+void StorageMergeTree::finishLoadingMutations()
+{
     if (!current_mutations_by_version.empty())
         increment.value = std::max(increment.value.load(), current_mutations_by_version.rbegin()->first);
 
