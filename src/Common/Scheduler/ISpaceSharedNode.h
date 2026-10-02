@@ -25,8 +25,9 @@ namespace DB
 ///      one leaf-to-root path as `Update::reclaimable_delta`, adding to every ancestor (cost O(depth)).
 ///  - `reclaiming` counts issued but unsettled bytes, including requests not yet executing. Issuance
 ///      propagates synchronously from the queue to the root; completion or removal propagates the opposite delta.
-///  - Per allocation `0 <= reclaimable <= max(0, allocated - reclaiming)`; node counters sum the
-///      corresponding child counters. `reclaiming` can exceed `allocated` until a request is settled.
+///  - `ResourceAllocation::reclaimable` retains the absolute estimate, including outstanding requests.
+///      Its contribution to node `reclaimable` is `max(0, min(reclaimable, allocated) - reclaiming)`.
+///      `reclaiming` can exceed `allocated` until a request is settled.
 ///  - Spilling never blocks the increase chain. Only the hard limit (`AllocationLimit::max_allocated`)
 ///      can null out `increase`; a soft-limit breach merely issues a `spillAllocation` signal.
 ///  - Spill victim selection (`selectAllocationToSpill`) touches at most one root-to-leaf path — no more

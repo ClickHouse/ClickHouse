@@ -130,14 +130,16 @@ void AllocationQueue::updateFairKey(ResourceAllocation & allocation, ResourceCos
         increasing_allocations.insert(allocation);
 }
 
-bool AllocationQueue::applyReclaimable(ResourceAllocation & allocation, ResourceCost new_reclaimable) // TSA_REQUIRES(mutex)
+ResourceCost AllocationQueue::getAvailableReclaimable(const ResourceAllocation & allocation) // TSA_REQUIRES(mutex)
 {
-    chassert(new_reclaimable >= 0 && new_reclaimable <= std::max<ResourceCost>(0, allocation.allocated - allocation.reclaiming));
-    if (new_reclaimable == allocation.reclaimable)
-        return false;
-    pending_reclaimable_delta += new_reclaimable - allocation.reclaimable;
-    allocation.reclaimable = new_reclaimable;
-    return true;
+    return std::max<ResourceCost>(0, std::min(allocation.reclaimable, allocation.allocated) - allocation.reclaiming);
+}
+
+bool AllocationQueue::applyReclaimable(const ResourceAllocation & allocation, ResourceCost previous_available) // TSA_REQUIRES(mutex)
+{
+    ResourceCost delta = getAvailableReclaimable(allocation) - previous_available;
+    pending_reclaimable_delta += delta;
+    return delta != 0;
 }
 
 void AllocationQueue::setReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total)
@@ -149,8 +151,9 @@ void AllocationQueue::setReclaimable(ResourceAllocation & allocation, ResourceCo
         return;
 
     /// The report includes bytes already requested for spilling. Only publish uncommitted capacity.
-    ResourceCost total = std::clamp<ResourceCost>(reclaimable_total, 0, allocation.allocated);
-    if (applyReclaimable(allocation, std::max<ResourceCost>(0, total - allocation.reclaiming)))
+    ResourceCost previous_available = getAvailableReclaimable(allocation);
+    allocation.reclaimable = std::max<ResourceCost>(0, reclaimable_total);
+    if (applyReclaimable(allocation, previous_available))
         scheduleActivation();
 }
 
@@ -164,10 +167,11 @@ ResourceCost AllocationQueue::requestSpill(ResourceAllocation & allocation, Reso
         if (is_not_usable)
             return 0;
 
-        request = std::min(max_bytes, allocation.reclaimable);
+        ResourceCost previous_available = getAvailableReclaimable(allocation);
+        request = std::min(max_bytes, previous_available);
         allocation.reclaiming += request;
         updateFairKey(allocation, allocation.fair_key - request);
-        applyReclaimable(allocation, allocation.reclaimable - request);
+        applyReclaimable(allocation, previous_available);
 
         // Publish pending estimates with the new key before another selection can use this subtree.
         // Settlements stay pending until activation also publishes their reservation decreases.
@@ -194,10 +198,11 @@ void AllocationQueue::finishSpill(ResourceAllocation & allocation, ResourceCost 
         return; // Queue has been purged — `allocationFailed` has already notified the owner.
 
     chassert(settled_bytes >= 0 && settled_bytes <= allocation.reclaiming);
+    ResourceCost previous_available = getAvailableReclaimable(allocation);
     allocation.reclaiming -= settled_bytes;
     updateFairKey(allocation, allocation.fair_key + settled_bytes);
-    ResourceCost total = allocation.removing_hook.is_linked() ? 0 : std::clamp<ResourceCost>(reclaimable_total, 0, allocation.allocated);
-    applyReclaimable(allocation, std::max<ResourceCost>(0, total - allocation.reclaiming));
+    allocation.reclaimable = allocation.removing_hook.is_linked() ? 0 : std::max<ResourceCost>(0, reclaimable_total);
+    applyReclaimable(allocation, previous_available);
     pending_spilled_settled_bytes += settled_bytes;
 
     scheduleActivation();
@@ -216,7 +221,9 @@ void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
     // freed object.
     if (!allocation.pending_hook.is_linked() && !allocation.running_hook.is_linked())
         return;
-    applyReclaimable(allocation, 0);
+    ResourceCost previous_available = getAvailableReclaimable(allocation);
+    allocation.reclaimable = 0;
+    applyReclaimable(allocation, previous_available);
     removing_allocations.push_back(allocation);
     if (&allocation == &*removing_allocations.begin())
         scheduleActivation();
@@ -340,7 +347,10 @@ void AllocationQueue::approveIncrease(IncreaseRequest & request) // TSA_REQUIRES
     else
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
     apply(request);
+    ResourceCost previous_available = getAvailableReclaimable(allocation);
     allocation.allocated += request.size;
+    if (applyReclaimable(allocation, previous_available))
+        scheduleActivation();
     // `apply` above incremented `allocations` for `Kind::Pending`/`Kind::Initial`. Mark the
     // allocation as admitted so its eventual removal propagates a matching `removing_allocation`
     // decrease (instead of underflowing `allocations` in the hierarchy).
@@ -376,12 +386,12 @@ void AllocationQueue::approveDecrease(DecreaseRequest & request) // TSA_REQUIRES
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
     // Update the key and other fields
     apply(request);
+    ResourceCost previous_available = getAvailableReclaimable(allocation);
     allocation.allocated -= request.size;
     allocation.fair_key -= request.size;
 
     /// Shrinking cannot make already requested bytes available for another request.
-    ResourceCost new_reclaimable = std::min(allocation.reclaimable, std::max<ResourceCost>(0, allocation.allocated - allocation.reclaiming));
-    if (applyReclaimable(allocation, new_reclaimable))
+    if (applyReclaimable(allocation, previous_available))
         scheduleActivation();
 
     // Reinsert into the appropriate data structures unless this is a removal
@@ -434,14 +444,14 @@ ResourceAllocation * AllocationQueue::selectAllocationToSpill(ResourceCost at_le
     std::lock_guard lock(mutex);
     auto it = std::find_if(running_allocations.rbegin(), running_allocations.rend(), [](const auto & allocation)
     {
-        return allocation.reclaimable > 0;
+        return getAvailableReclaimable(allocation) > 0;
     });
     if (it == running_allocations.rend())
         return nullptr; // Nothing reclaimable here — fail-close.
 
     ResourceAllocation & victim = *it;
     details = fmt::format("Asking an allocation of size {} (available reclaimable {}) in workload '{}' to reclaim at least {}.",
-        formatReadableCost(victim.allocated), formatReadableCost(victim.reclaimable), getWorkloadName(), formatReadableCost(at_least));
+        formatReadableCost(victim.allocated), formatReadableCost(getAvailableReclaimable(victim)), getWorkloadName(), formatReadableCost(at_least));
     return &victim;
 }
 
@@ -459,7 +469,9 @@ void AllocationQueue::processActivation()
             ResourceAllocation & allocation = removing_allocations.front();
             removing_allocations.pop_front(); // Unlink before calling allocationFailed() to avoid use-after-free race
 
-            applyReclaimable(allocation, 0);
+            ResourceCost previous_available = getAvailableReclaimable(allocation);
+            allocation.reclaimable = 0;
+            applyReclaimable(allocation, previous_available);
             pending_spilled_settled_bytes += std::exchange(allocation.reclaiming, 0);
 
             if (allocation.pending_hook.is_linked()) // Allocation is still pending - cancel it

@@ -57,7 +57,8 @@ private:
     ResourceCost allocated = 0; /// Currently allocated.
     bool admitted = false; /// True once `apply(IncreaseRequest)` has incremented `allocations` in the hierarchy for this allocation.
     ResourceCost reclaiming = 0; /// Bytes requested for spilling but not yet settled, including requests not yet executing.
-    ResourceCost reclaimable = 0; /// Uncommitted bytes available for new spill requests, clamped at zero.
+    /// Last absolute estimate, including outstanding requests; retained even when larger than `allocated`.
+    ResourceCost reclaimable = 0;
 
     IncreaseRequest increase;
     DecreaseRequest decrease;

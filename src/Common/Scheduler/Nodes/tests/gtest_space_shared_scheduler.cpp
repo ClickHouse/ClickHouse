@@ -1104,6 +1104,37 @@ TEST(SchedulerSpaceShared, ReclaimableClampedOnShrink)
 }
 
 
+TEST(SchedulerSpaceShared, ReclaimableReportBeforeGrowth)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    auto * limit = r.addLimit("/", 1000);
+    auto * queue = r.addQueue("/queue");
+    r.registerResource();
+    r.setSoftLimit(limit, 50);
+
+    SpillableAllocation a(queue, "a", 0);
+    a.reportReclaimable(100);
+    r.expectSpillState({queue, limit, &t.scheduler}, 0, 0);
+
+    // Approval must make the earlier report available without another report from the processor.
+    a.setSize(100);
+    r.expectSpillState({queue, limit, &t.scheduler}, 50, 50);
+    a.setSize(0);
+    r.expectSpillState({queue, limit, &t.scheduler}, 0, 50);
+    a.setSize(100);
+    r.expectSpillState({queue, limit, &t.scheduler}, 50, 50);
+    EXPECT_EQ(a.spillCount(), 1);
+
+    // A completion's new estimate must also survive clamping to the current allocation.
+    a.setSize(0);
+    a.finishSpill(50, 80);
+    r.expectSpillState({queue, limit, &t.scheduler}, 0, 0);
+    a.setSize(100);
+    r.expectSpillState({queue, limit, &t.scheduler}, 30, 50);
+    EXPECT_EQ(a.spillCount(), 2);
+}
+
 TEST(SchedulerSpaceShared, SpillReclaimableClampedOnShrinkWithOutstandingRequests)
 {
     SpaceSharedTest t;

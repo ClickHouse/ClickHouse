@@ -57,8 +57,10 @@ private:
     void approveIncrease(IncreaseRequest & request);
     void approveDecrease(DecreaseRequest & request);
     void updateFairKey(ResourceAllocation & allocation, ResourceCost new_key);
-    /// Updates uncommitted capacity and returns whether it changed. Requires `mutex`.
-    bool applyReclaimable(ResourceAllocation & allocation, ResourceCost new_reclaimable);
+    /// Derives uncommitted capacity from the absolute estimate and current reservation. Requires `mutex`.
+    static ResourceCost getAvailableReclaimable(const ResourceAllocation & allocation);
+    /// Accounts for the capacity change after updating the allocation. Requires `mutex`.
+    bool applyReclaimable(const ResourceAllocation & allocation, ResourceCost previous_available);
     void ensureUsable() const;
 
     /// Protects all the following fields

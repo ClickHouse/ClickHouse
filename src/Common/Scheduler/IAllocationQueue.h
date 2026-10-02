@@ -38,7 +38,7 @@ public:
 
     /// Reports the amount of this allocation's size that can be spilled or discarded on request.
     /// `reclaimable_total` is an absolute total (not a delta), including bytes already requested for spilling.
-    /// It is clamped to the current size before subtracting outstanding requests and clamping at zero.
+    /// Availability is computed by clamping it to the current size, subtracting outstanding requests, and clamping at zero.
     /// Advisory: never blocks and never fails. The per-subtree `reclaimable` aggregate is updated on the
     /// scheduler thread and propagated to the root; the scheduler uses it to choose spill victims.
     virtual void setReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total) = 0;
