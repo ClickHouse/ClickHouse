@@ -278,7 +278,7 @@ private:
     FileSegmentEfficiencyInfo getEfficiencyInfo(const FileSegmentGuard::Lock &) const;
 
     void startEfficiencyWindowUnlocked(FileCacheEfficiency::Window window) TSA_REQUIRES(efficiency_mutex);
-    /// Granules `[first, last]` that `[offset, offset + size)` overlaps, cut at the segment end.
+    /// Granules `[first, last]` of this segment that `[offset, offset + size)` overlaps; `nullopt` if none.
     std::optional<std::pair<size_t, size_t>> getGranuleRangeUnlocked(size_t offset, size_t size) const TSA_REQUIRES(efficiency_mutex);
     /// Sets granules `[first, last]`; returns the bytes of the ones that were not set before.
     size_t setGranulesUnlocked(size_t first, size_t last) TSA_REQUIRES(efficiency_mutex);

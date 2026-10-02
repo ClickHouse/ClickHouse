@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fcntl.h>
+#include <IO/ChainedBuffers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/FileCache/FileCache.h>
@@ -1585,11 +1586,11 @@ void FileSegment::startEfficiencyWindowUnlocked(FileCacheEfficiency::Window wind
 std::optional<std::pair<size_t, size_t>> FileSegment::getGranuleRangeUnlocked(size_t offset, size_t size) const
 {
     const size_t left = range().left;
-    const size_t end = std::min(offset + size, left + range().size());
-    if (end <= std::max(offset, left))
+    const auto read = ByteRange{offset, size}.intersect(ByteRange{left, range().size()});
+    if (read.size == 0)
         return std::nullopt;
-    const size_t first = (std::max(offset, left) - left) / EFFICIENCY_GRANULE_SIZE;
-    const size_t last = (end - 1 - left) / EFFICIENCY_GRANULE_SIZE;
+    const size_t first = (read.offset - left) / EFFICIENCY_GRANULE_SIZE;
+    const size_t last = (read.end() - 1 - left) / EFFICIENCY_GRANULE_SIZE;
     chassert(last < efficiency_state->active_granules.size());
     return std::pair{first, last};
 }
