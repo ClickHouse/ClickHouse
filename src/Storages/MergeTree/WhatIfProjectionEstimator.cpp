@@ -406,7 +406,8 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     {
         chunkings.emplace_back(merge_rows, merge_bytes);
         chunkings.emplace_back(merge_rows, granule_bytes);
-        /// a level-zero part is one block, a merged part is merge blocks, cut at each source when the widths vary
+        /// the writer writes a level-zero part in one block and a merged part in merge blocks
+        /// when the row widths differ, the merge also cuts a block at each source
         if (parent_part->info.level > 0)
             primary = uneven_rows ? chunkings.size() - 1 : chunkings.size() - 2;
     }
