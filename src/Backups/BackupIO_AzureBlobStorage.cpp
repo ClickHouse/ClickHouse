@@ -1,4 +1,5 @@
 #include <Backups/BackupIO_AzureBlobStorage.h>
+#include <Common/StringUtils.h>
 #include <Common/setThreadName.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -70,9 +71,11 @@ namespace
     /// The storage account a blob endpoint URL names, lower-cased, or an empty string when the URL does not
     /// reveal it. The host is consulted first: `<account>.blob.<suffix>`, `<account>.dfs.<suffix>` and their
     /// `<account>.privatelink.<service>.<suffix>` aliases (any Azure cloud) name the account, and a path such a
-    /// URL carries is a container or a prefix, never an account. Only when the host reveals nothing is the first
-    /// path segment taken as the account: that is the shape of path-style endpoints such as Azurite's
-    /// `http://127.0.0.1:10000/devstoreaccount1`. A custom domain without a path reveals nothing.
+    /// URL carries is a container or a prefix, never an account. Only for an emulator or development endpoint,
+    /// whose host is an IPv4 address or a bare name such as `localhost` or `azurite1`, is the first path segment
+    /// taken as the account: that is the shape of Azurite's `http://127.0.0.1:10000/devstoreaccount1`. Any other
+    /// host reveals nothing, with or without a path: a `storage_account_url` is recorded verbatim and may be a
+    /// proxy whose path prefix is not an account.
     String storageAccountOfURL(const String & url)
     {
         Azure::Core::Url parsed;
@@ -94,9 +97,10 @@ namespace
         if (host_names_account)
             return labels[0];
 
-        /// `GetPath()` carries no leading slash.
-        const String & path = parsed.GetPath();
-        if (!path.empty())
+        const bool ipv4 = labels.size() == 4
+            && std::ranges::all_of(labels, [](const String & label) { return !label.empty() && std::ranges::all_of(label, [](char c) { return isNumericASCII(c); }); });
+        const String & path = parsed.GetPath(); /// without the leading slash
+        if ((labels.size() == 1 || ipv4) && !path.empty())
             return Poco::toLower(path.substr(0, path.find('/')));
 
         return "";
