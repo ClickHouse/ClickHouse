@@ -50,6 +50,23 @@ SELECT count() FROM file(currentDatabase() || '/05316/c=1/key=9/data.orc', ORC, 
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05316/c=1/key=9/data.orc', format = ORC, structure = 'key Int64') SETTINGS s3_truncate_on_insert = 1 SELECT 10 FROM numbers(10);
 SELECT count() FROM s3(s3_conn, filename = currentDatabase() || '/05316/c=1/key=9/data.orc', format = ORC, structure = 'key Int64') WHERE key = 9 SETTINGS optimize_count_from_files = 0, input_format_orc_filter_push_down = 1;
 10
+-- Nor may a row policy on the partition column, on a `File` or an `S3` table.
+CREATE TABLE t_05316_file AS file(currentDatabase() || '/05316/b=1/key=9/data.parquet', Parquet, 'key Int64');
+CREATE TABLE t_05316_s3 (key Int64) ENGINE = S3(s3_conn, filename = currentDatabase() || '/05316/c=1/key=9/data.orc', format = ORC);
+CREATE ROW POLICY p_05316_file ON t_05316_file USING key = 9 TO ALL;
+CREATE ROW POLICY p_05316_s3 ON t_05316_s3 USING key = 9 TO ALL;
+SELECT key, count() FROM t_05316_file GROUP BY key SETTINGS optimize_count_from_files = 0;
+9	10000
+SELECT key, count() FROM t_05316_s3 GROUP BY key SETTINGS optimize_count_from_files = 0, input_format_orc_filter_push_down = 1;
+9	10
+ALTER ROW POLICY p_05316_file ON t_05316_file USING key = 10;
+ALTER ROW POLICY p_05316_s3 ON t_05316_s3 USING key = 10;
+SELECT count() FROM t_05316_file SETTINGS optimize_count_from_files = 0;
+0
+SELECT count() FROM t_05316_s3 SETTINGS optimize_count_from_files = 0, input_format_orc_filter_push_down = 1;
+0
+DROP ROW POLICY p_05316_file ON t_05316_file;
+DROP ROW POLICY p_05316_s3 ON t_05316_s3;
 INSERT INTO FUNCTION file(currentDatabase() || '/05316/key=9/data.native', Native) SETTINGS engine_file_truncate_on_insert = 1 SELECT 'a' AS s;
 SELECT count() FROM file(currentDatabase() || '/05316/key=9/data.native', Native) SETTINGS optimize_count_from_files = 0;
 1
