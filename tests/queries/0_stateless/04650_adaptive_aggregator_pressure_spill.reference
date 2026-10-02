@@ -1,8 +1,8 @@
-Routing table spills once it crosses the key floor
+Spilled staged records merge back exactly
 1
-The drain processed multiple spill floors of records
+The producers spilled almost every staged record
 1
-The spill was exercised
+The spill reached the disk
 1
 Learning-phase tables spill under the external threshold
 1

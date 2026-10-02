@@ -1,11 +1,11 @@
 -- Tags: long
 
 -- Exercises the adaptive aggregator under memory pressure: past the external-aggregation
--- threshold the staged backlogs are drained early into the shared routing table, and the
--- routing table spills through the ordinary external-aggregation machinery. A threshold of one
--- byte keeps the pressure valve firing for the whole query, so every drained record takes the
--- persist-key path and the merge goes external. Every cell compares the same query with the
--- feature off (and no forced spilling) and on.
+-- threshold the producers write their staged records to the session's spill streams, which the
+-- merge reads back bucket by bucket, and when a producer on the baseline path spills its table as
+-- well, the merge goes external and the staged records are written as ordinary spilled parts. A
+-- threshold of one byte keeps the producers spilling for the whole query. Every cell compares the
+-- same query with the feature off (and no forced spilling) and on.
 
 SET max_threads = 4;
 SET max_block_size = 8192;
@@ -26,7 +26,7 @@ SELECT
     =
     (SELECT count(), sum(s), sum(mn) FROM (SELECT number % 100000 AS g, sum(number) AS s, min(number) AS mn FROM numbers_mt(400000) GROUP BY g SETTINGS enable_adaptive_aggregator = 1, max_bytes_before_external_group_by = 1));
 
-SELECT 'String keys persist into the routing table under pressure';
+SELECT 'String keys under constant pressure';
 SELECT
     (SELECT count(), sum(cityHash64(k)), sum(c) FROM (SELECT concat('key_', toString(number % 100000)) AS k, count() AS c FROM numbers_mt(400000) GROUP BY k SETTINGS enable_adaptive_aggregator = 0))
     =
@@ -38,9 +38,9 @@ SELECT
     =
     (SELECT count(), sum(cityHash64(k)), sum(cityHash64(m)) FROM (SELECT repeat(toString(number % 50000), 5) AS k, max(repeat(toString(number), 7)) AS m FROM numbers_mt(200000) GROUP BY k SETTINGS enable_adaptive_aggregator = 1, max_bytes_before_external_group_by = 1));
 
--- A moderate threshold engages the valve mid-query instead of constantly, so early-drained,
--- late-drained, and spilled data mix in one result.
-SELECT 'Partial pressure mixes early and merge-time drains';
+-- A moderate threshold makes the producers spill only once the query has grown past it, so
+-- records read back from disk and records still in memory merge into one result.
+SELECT 'Partial pressure mixes spilled and in-memory records';
 SELECT
     (SELECT count(), sum(s) FROM (SELECT number % 200000 AS g, sum(number) AS s FROM numbers_mt(600000) GROUP BY g SETTINGS enable_adaptive_aggregator = 0))
     =
@@ -63,7 +63,7 @@ SELECT
     =
     (SELECT count(), sum(c) FROM (SELECT concat(toString(number), repeat('x', number % 40)) AS k, count() AS c FROM numbers_mt(3000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 4000000, adaptive_aggregator_freeze_threshold_bytes = 0, group_by_two_level_threshold = 1000, max_bytes_before_external_group_by = 20000000, max_bytes_ratio_before_external_group_by = 0));
 
--- Few distinct keys spread over many routing buckets leave each bucket holding only a handful
+-- Few distinct keys spread over the 256 buckets leave each bucket holding only a handful
 -- of records, and small blocks mean a bucket's first block often carries none of them. Both
 -- string key layouts are compared, because each pre-sizes its table differently.
 SELECT 'Sparsely populated buckets under pressure';
