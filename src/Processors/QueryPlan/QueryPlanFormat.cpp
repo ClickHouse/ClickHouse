@@ -143,14 +143,11 @@ namespace QueryPlanFormat
         out << '\n';
     }
 
-    /// How constant values render inside an expression. `ShowAll` prints every value; `HideSecrets`
-    /// hides the values in secret argument positions (keys, passwords); `InSecretSlot` is the state
-    /// within such a position, where every value is hidden.
+    /// Whether secret function arguments (keys, passwords) render as `[HIDDEN]` or as written.
     enum class SecretRendering
     {
         ShowAll,
         HideSecrets,
-        InSecretSlot,
     };
 
     static String formatNodePretty(
@@ -349,9 +346,6 @@ namespace QueryPlanFormat
         return slots;
     }
 
-    /// `InSecretSlot` is kept for the whole subtree of a secret argument: the secret may sit below a
-    /// wrapping expression (`HMAC(mode, msg, concat(k, 'salt'))`), so the whole argument inherits it,
-    /// and a nested function adds its own secret slots on top.
     static String formatNodePretty(
         const ActionsDAG::Node * node,
         const std::unordered_map<String, PrettyColumnName> & pretty_names,
@@ -367,19 +361,6 @@ namespace QueryPlanFormat
         /// before we dispatch into formatting its value or its child expression.
         if (node->is_masked_secret)
             return "[HIDDEN]";
-
-        /// Inside a secret argument, `is_masked_secret` cannot be relied upon: the planner flags only
-        /// the constants it sees, while a secret coming from another plan step (a subquery or the
-        /// other side of a JOIN) is bound to its constant by later rewrites that build fresh nodes.
-        /// So every value in there is hidden, and a column reference shows its name only, never the
-        /// expression a child step computes it from.
-        if (secrets == SecretRendering::InSecretSlot)
-        {
-            if (node->column)
-                return "[HIDDEN]";
-            if (node->type == ActionType::INPUT)
-                return trimColumnIdentifier(node->result_name);
-        }
 
         switch (node->type)
         {
@@ -506,6 +487,8 @@ namespace QueryPlanFormat
                     return result;
                 }
 
+                /// A secret argument is hidden whole, as `SHOW CREATE` does. Rendering its structure would
+                /// have to catch every place a value can surface (constants, `IN` sets, ...), so fail closed.
                 const auto secret_slots = secrets == SecretRendering::HideSecrets
                     ? getSecretArgumentSlots(*node)
                     : std::vector<bool>(node->children.size(), false);
@@ -513,8 +496,10 @@ namespace QueryPlanFormat
                 args.reserve(node->children.size());
                 for (size_t i = 0; i < node->children.size(); ++i)
                 {
-                    auto child_secrets = secret_slots[i] ? SecretRendering::InSecretSlot : secrets;
-                    args.push_back(formatNodePretty(node->children[i], pretty_names, runtime_filter_names, subquery_set_names, child_secrets, 0));
+                    if (secret_slots[i])
+                        args.push_back("[HIDDEN]");
+                    else
+                        args.push_back(formatNodePretty(node->children[i], pretty_names, runtime_filter_names, subquery_set_names, secrets, 0));
                 }
 
                 return func_name + "(" + fmt::format("{}", fmt::join(args, ", ")) + ")";

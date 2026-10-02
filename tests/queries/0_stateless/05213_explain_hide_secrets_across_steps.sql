@@ -37,17 +37,25 @@ FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 1, keep_logical_steps = 
     SELECT n.number FROM numbers(1) AS n
     INNER JOIN (SELECT 'SEKRIT_JOINKEY' AS k) AS s ON HMAC('sha256', toString(n.number), s.k) = ''));
 
--- A non-constant key from the opposite JOIN side stays an input; the pretty dump must show the
--- column name, not the expression the other side computes it from.
-SELECT countIf(explain LIKE '%SEKRIT_MATKEY%') AS join_column_leaks, countIf(explain LIKE '%HMAC(''sha256'', toString(number), k)%') AS join_column_shown
+-- A non-constant key from the opposite JOIN side stays an input; the pretty dump must not expand it
+-- into the expression the other side computes it from. The slot is hidden whole, as SHOW CREATE does.
+SELECT countIf(explain LIKE '%SEKRIT_MATKEY%') AS join_column_leaks, countIf(explain LIKE '%HMAC(''sha256'', toString(number), [HIDDEN])%') AS join_column_hidden
 FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 1', (
     SELECT n.number FROM numbers(1) AS n
     INNER JOIN (SELECT materialize('SEKRIT_MATKEY') AS k) AS s ON HMAC('sha256', toString(n.number), s.k) = ''));
 
--- A column expression in a secret slot is still shown; only values are hidden.
-SELECT countIf(explain LIKE '%encrypt(''aes-128-ecb'', toString(number), [HIDDEN])%') AS column_argument_shown
+-- Every argument in a secret position is hidden whole, a column expression included: the secret
+-- span of encrypt covers the plaintext as well as the key.
+SELECT countIf(explain LIKE '%encrypt(''aes-128-ecb'', [HIDDEN], [HIDDEN])%') AS secret_span_hidden
 FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 1', (
     SELECT encrypt('aes-128-ecb', toString(number), 'SEKRIT_LITERALKEY') FROM numbers(1)));
+
+-- A literal set inside a secret slot: the IN operator formats its set without going through the
+-- per-node rendering, so the slot must be hidden before descending into the argument.
+SELECT countIf(explain LIKE '%SEKRIT_IN%') AS in_set_leaks
+FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 1', (
+    SELECT number FROM numbers(1)
+    WHERE empty(HMAC('sha256', toString(number), if(toString(number) IN ('SEKRIT_IN1', 'SEKRIT_IN2'), 'a', 'b')))));
 
 -- The exact shape from the report: the HMAC key is a decrypt() of a hex ciphertext with an IV,
 -- computed on the opposite JOIN side.
