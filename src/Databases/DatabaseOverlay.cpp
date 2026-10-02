@@ -3,6 +3,7 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/AsyncLoader.h>
+#include <Access/ContextAccess.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Interpreters/Context.h>
@@ -637,11 +638,24 @@ DatabaseOverlayReadOnly::DatabaseOverlayReadOnly(const String & name_, Strings s
 {
 }
 
+bool DatabaseOverlayReadOnly::isSourceTableVisible(const String & source, const String & table_name, const ContextPtr & context_)
+{
+    return context_->getAccess()->isGranted(AccessType::SHOW_TABLES, source, table_name);
+}
+
 String DatabaseOverlayReadOnly::findSourceDatabase(const String & table_name, ContextPtr context_) const
 {
     for (const auto & source : source_databases)
+    {
         if (auto database = tryGetOverlaySource(source); database && database->isTableExist(table_name, context_))
+        {
+            /// A table of a source that the caller cannot see is hidden, as in the source database itself.
+            /// It does not fall through to the next source, which would reveal that the hidden table exists.
+            if (!isSourceTableVisible(source, table_name, context_))
+                return {};
             return source;
+        }
+    }
     return {};
 }
 
@@ -659,19 +673,58 @@ StoragePtr DatabaseOverlayReadOnly::tryGetTable(const String & table_name, Conte
 }
 
 DatabaseTablesIteratorPtr DatabaseOverlayReadOnly::getTablesIterator(
-    ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool /*skip_not_loaded*/) const
+    ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
+    return getTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, {});
+}
+
+DatabaseTablesIteratorPtr DatabaseOverlayReadOnly::getTablesIteratorWithHint(
+    ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded, const TablesFilter & tables_filter) const
+{
+    /// A table is represented by a `StorageAlias`, which resolves the source table lazily, so a table that its source
+    /// lists without a resolved storage object is kept, as the source's own hinted iterator does.
     Tables tables;
+    NameSet seen;
     for (const auto & source : source_databases)
     {
         auto database = tryGetOverlaySource(source);
         if (!database)
             continue;
-        for (auto it = database->getTablesIterator(context_, filter_by_table_name); it->isValid(); it->next())
-            if (!tables.contains(it->name()))
-                tables.emplace(it->name(), std::make_shared<StorageAlias>(StorageID(getDatabaseName(), it->name()), getContext(), source, it->name()));
+        for (auto it = database->getTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, tables_filter); it->isValid(); it->next())
+        {
+            const String & name = it->name();
+            if (seen.insert(name).second && isSourceTableVisible(source, name, context_))
+                tables.emplace(name, std::make_shared<StorageAlias>(StorageID(getDatabaseName(), name), getContext(), source, name));
+        }
     }
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
+}
+
+std::vector<LightWeightTableDetails> DatabaseOverlayReadOnly::getLightweightTablesIterator(
+    ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
+{
+    return getLightweightTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, {});
+}
+
+std::vector<LightWeightTableDetails> DatabaseOverlayReadOnly::getLightweightTablesIteratorWithHint(
+    ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded, const TablesFilter & tables_filter) const
+{
+    /// Merge the names from the sources' own lightweight listings, which can contain tables that the full listing omits.
+    std::vector<LightWeightTableDetails> result;
+    NameSet seen;
+    for (const auto & source : source_databases)
+    {
+        auto database = tryGetOverlaySource(source);
+        if (!database)
+            continue;
+        for (auto & table : database->getLightweightTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, tables_filter))
+        {
+            if (seen.insert(table.name).second && isSourceTableVisible(source, table.name, context_))
+                result.push_back(std::move(table));
+        }
+    }
+    std::sort(result.begin(), result.end(), [](const auto & lhs, const auto & rhs) { return lhs.name < rhs.name; });
+    return result;
 }
 
 ASTPtr DatabaseOverlayReadOnly::getCreateTableQueryImpl(const String & table_name, ContextPtr context_, bool throw_on_error) const
@@ -750,7 +803,7 @@ An `Overlay` database cannot be used as a source of another `Overlay` database.
 ## Access control {#access-control}
 
 As for an `Alias` table, working with a table of the overlay database requires the grants both on the overlay database and on the source table, and the row policies of both apply.
-The names of the tables of the source databases are visible to anyone who can list the tables of the overlay database.
+A table of the overlay database is visible only to a user who can see both the overlay database and the source table (the `SHOW TABLES` privilege on both). A table that is hidden in the first source database that has it does not fall through to the next source.
 )DOCS_MD",
         .syntax = "ENGINE = Overlay(db1[, db2, ...])",
         .examples = {{

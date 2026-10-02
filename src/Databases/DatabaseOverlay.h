@@ -124,6 +124,12 @@ public:
     bool isTableExist(const String & table_name, ContextPtr context) const override;
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+    DatabaseTablesIteratorPtr getTablesIteratorWithHint(
+        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded, const TablesFilter & tables_filter) const override;
+    std::vector<LightWeightTableDetails> getLightweightTablesIterator(
+        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+    std::vector<LightWeightTableDetails> getLightweightTablesIteratorWithHint(
+        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded, const TablesFilter & tables_filter) const override;
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
     bool shouldBeEmptyOnDetach() const override { return false; }
@@ -137,7 +143,11 @@ protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
 
 private:
-    /// The name of the first source database that has the table, or an empty string.
+    /// Whether the caller can see the table of the source database, i.e. has `SHOW_TABLES` on it.
+    static bool isSourceTableVisible(const String & source, const String & table_name, const ContextPtr & context);
+
+    /// The name of the first source database that has the table, or an empty string,
+    /// also when the caller cannot see the table in that source.
     String findSourceDatabase(const String & table_name, ContextPtr context) const;
 
     const Strings source_databases;

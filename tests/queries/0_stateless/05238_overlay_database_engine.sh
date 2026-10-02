@@ -80,6 +80,13 @@ error $CLICKHOUSE_CLIENT --user "${user}" -q "SELECT * FROM ${ov}.t"
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON ${ov}.* TO ${user}"
 $CLICKHOUSE_CLIENT --user "${user}" -q "SELECT sum(x) FROM ${ov}.t"
 
+echo "--- tables that are hidden in the source database are hidden in the overlay database"
+$CLICKHOUSE_CLIENT --user "${user}" -q "SHOW TABLES FROM ${ov}"
+$CLICKHOUSE_CLIENT --user "${user}" -q "SELECT name FROM system.tables WHERE database = '${ov}' ORDER BY name"
+$CLICKHOUSE_CLIENT --user "${user}" -q "SELECT name, engine FROM system.tables WHERE database = '${ov}' ORDER BY name"
+$CLICKHOUSE_CLIENT --user "${user}" -q "EXISTS TABLE ${ov}.only2"
+error $CLICKHOUSE_CLIENT --user "${user}" -q "SELECT * FROM ${ov}.only2"
+
 echo "--- row policies of the source table apply"
 $CLICKHOUSE_CLIENT -q "CREATE ROW POLICY p_${CLICKHOUSE_DATABASE} ON ${db1}.t USING x > 2 TO ${user}"
 $CLICKHOUSE_CLIENT --user "${user}" -q "SELECT * FROM ${ov}.t ORDER BY x"

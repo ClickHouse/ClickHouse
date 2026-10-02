@@ -28,10 +28,16 @@ UNKNOWN_TABLE
 --- detach and attach
 4
 --- access requires grants on both the overlay database and the source table
-ACCESS_DENIED
-ACCESS_DENIED
+UNKNOWN_TABLE
+UNKNOWN_TABLE
 ACCESS_DENIED
 10
+--- tables that are hidden in the source database are hidden in the overlay database
+t
+t
+t	Alias
+0
+UNKNOWN_TABLE
 --- row policies of the source table apply
 3
 4
