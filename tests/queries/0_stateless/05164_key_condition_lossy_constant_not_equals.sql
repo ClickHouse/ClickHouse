@@ -133,6 +133,32 @@ SELECT count() FROM t_lossy_const_dynamic WHERE k NOT IN (SELECT CAST(toInt64(2)
 
 DROP TABLE t_lossy_const_dynamic;
 
+-- A `Set` over `Variant` compares the discriminator before the value in the same way. A `Variant` element
+-- reaches a `Nullable(String)` key through the safe cast, which skips the round trip, and renders as
+-- `'2'` whichever alternative holds it, while the key cast into the `Variant` takes the `String`
+-- alternative and matches neither element at row level. Such a set must not be exact either.
+SELECT 'a Variant subquery element';
+
+DROP TABLE IF EXISTS t_lossy_const_variant;
+
+CREATE TABLE t_lossy_const_variant (k Nullable(String)) ENGINE = MergeTree ORDER BY k SETTINGS allow_nullable_key = 1;
+
+INSERT INTO t_lossy_const_variant VALUES ('2');
+INSERT INTO t_lossy_const_variant VALUES ('3');
+
+SET allow_suspicious_variant_types = 1;
+
+SELECT count() FROM t_lossy_const_variant WHERE k IN (SELECT CAST(toUInt8(2), 'Variant(UInt8, String)'));
+SELECT countIf(k IN (SELECT CAST(toUInt8(2), 'Variant(UInt8, String)'))) FROM t_lossy_const_variant;
+SELECT count() FROM t_lossy_const_variant WHERE k NOT IN (SELECT CAST(toUInt8(2), 'Variant(UInt8, String)'));
+SELECT countIf(k NOT IN (SELECT CAST(toUInt8(2), 'Variant(UInt8, String)'))) FROM t_lossy_const_variant;
+SELECT count() FROM t_lossy_const_variant WHERE k NOT IN (SELECT CAST('2', 'Variant(UInt8, String)'));
+SELECT countIf(k NOT IN (SELECT CAST('2', 'Variant(UInt8, String)'))) FROM t_lossy_const_variant;
+
+SET allow_suspicious_variant_types = DEFAULT;
+
+DROP TABLE t_lossy_const_variant;
+
 SELECT 'a String constant that is not the key rendering';
 
 DROP TABLE IF EXISTS t_lossy_const_str;

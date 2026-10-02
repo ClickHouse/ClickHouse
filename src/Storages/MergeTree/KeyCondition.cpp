@@ -3013,6 +3013,19 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
     }
 }
 
+/// Whether `type` holds a `Dynamic`, a `Variant` or a `JSON` anywhere, i.e. whether a value of it carries
+/// a type of its own that hashing and comparison look at before the value.
+static bool typeHasValueCarriers(const IDataType & type)
+{
+    bool result = type.hasDynamicSubcolumns() || isVariant(type);
+    type.forEachChild([&](const IDataType & child)
+    {
+        if (isVariant(child))
+            result = true;
+    });
+    return result;
+}
+
 static bool tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
@@ -3072,15 +3085,19 @@ static bool tryPrepareSetColumnsForIndex(
         auto set_element_type = set_types[set_element_index];
         ColumnPtr set_column = set_columns[set_element_index];
 
-        /// `IN` asks the `Set`, and a `Set` over a `Dynamic` element is carrier-sensitive: it hashes and
-        /// compares the type each value was inserted with before the value itself, and `Set::execute`
-        /// casts the key into the set's type, where it takes the key column's type as its carrier. So
-        /// `k IN (SELECT CAST(toUInt8(2), 'Dynamic'))` over `k Int64` matches no row, while the element
-        /// normalized into the key type is `Int64(2)`. A `Field` cannot see the difference - a `UInt8`
-        /// and a `UInt64` are both carried as `UInt64` - so the round trip below cannot either, and such
-        /// a set is reported as inexact. `has` compares by value, which is where the round trip is the
-        /// right question (`05055_not_has_tuple_layout_and_variant_key_condition`).
-        if (membership_compares_carriers && set_element_type->hasDynamicSubcolumns()
+        /// `IN` asks the `Set`, and a `Set` over a `Dynamic` or a `Variant` element is carrier-sensitive:
+        /// it hashes and compares the type (the discriminator) each value was inserted with before the
+        /// value itself, and `Set::execute` casts the key into the set's type, where it takes the key
+        /// column's type as its carrier. So `k IN (SELECT CAST(toUInt8(2), 'Dynamic'))` over `k Int64`
+        /// matches no row, while the element normalized into the key type is `Int64(2)`. A `Field`
+        /// cannot see the difference - a `UInt8` and a `UInt64` are both carried as `UInt64` - so the
+        /// round trip below cannot either. A `Variant` element mostly fails the round trip anyway,
+        /// because it cannot be inside `Nullable`, but `canBeSafelyCast` takes it to a `Nullable(String)`
+        /// key without one: `k IN (SELECT CAST(toUInt8(2), 'Variant(UInt8, String)'))` matches no row,
+        /// since the key is cast into the `String` alternative, while the element renders as `'2'`.
+        /// Such a set is reported as inexact. `has` compares by value, which is where the round trip is
+        /// the right question (`05055_not_has_tuple_layout_and_variant_key_condition`).
+        if (membership_compares_carriers && typeHasValueCarriers(*set_element_type)
             && !recursiveRemoveLowCardinality(set_element_type)->equals(*key_column_type))
             out_is_exact = false;
 
