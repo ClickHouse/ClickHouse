@@ -40,7 +40,7 @@ SELECT isValidPrefixedID('user_NffrFeUfNV2Hib', ''); -- { serverError BAD_ARGUME
 -- Constant identifier with a non-constant expected prefix.
 SELECT isValidPrefixedID('user_NffrFeUfNV2Hib', prefix) FROM (SELECT arrayJoin(['user', 'ord']) AS prefix);
 
--- Generator: format, default and usertom body length, multi-segment prefix, non-constant arguments.
+-- Generator: format, default and custom body length, multi-segment prefix, non-constant arguments.
 SELECT match(generatePrefixedID('user'), '^user_[0-9A-Za-z]{22}$');
 SELECT match(generatePrefixedID('ch_test', 10), '^ch_test_[0-9A-Za-z]{10}$');
 SELECT match(generatePrefixedID('a', 1), '^a_[0-9A-Za-z]$');

@@ -546,8 +546,9 @@ The split is purely positional and never fails; use [`isValidPrefixedID`](#isVal
         "SELECT splitPrefixedID('ch_test_51TpZvW');",
         R"(
 ┌─splitPrefixedID('ch_test_51TpZvW')─┐
-│ ('ch_test','51TpZvW')              │
-└────────────────────────────────────┘
+├─prefix───────────┬─body────────────┤
+│ ch_test          │ 51TpZvW         │
+└──────────────────┴─────────────────┘
         )"
     }
     };
