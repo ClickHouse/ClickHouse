@@ -1641,7 +1641,8 @@ void ClientBase::pinOutboundDialect(const String & outbound_query)
     if (!current_query_parsed_as_json_dialect)
     {
         /// The text is sent exactly as the client accepted it. A query-local `SETTINGS dialect = ...`
-        /// (or `SETTINGS enable_json_ast_dialect = ...`, `SETTINGS enable_trino_dialect = ...`) has already
+        /// (or `SETTINGS enable_json_ast_dialect = ...`, `SETTINGS enable_trino_dialect = ...`,
+        /// `SETTINGS allow_experimental_logsql_dialect = ...`) has already
         /// been folded into the client context by `InterpreterSetQuery::applySettingsFromQuery`, but it must
         /// not change how this very query text is parsed on the other side - it only applies to the
         /// statements that follow it. Only a value the query itself changed is restored (the others are
@@ -1653,6 +1654,8 @@ void ClientBase::pinOutboundDialect(const String & outbound_query)
             client_context->setSetting("enable_json_ast_dialect", *current_query_parse_json_ast_gate);
         if (current_query_parse_trino_gate)
             client_context->setSetting("enable_trino_dialect", *current_query_parse_trino_gate);
+        if (current_query_parse_logsql_gate)
+            client_context->setSetting("allow_experimental_logsql_dialect", *current_query_parse_logsql_gate);
         return;
     }
 
@@ -3001,6 +3004,7 @@ void ClientBase::processParsedSingleQuery(
         const Field parse_dialect = client_context->getSettingsRef().get("dialect");
         const Field parse_json_ast_gate = client_context->getSettingsRef().get("enable_json_ast_dialect");
         const Field parse_trino_gate = client_context->getSettingsRef().get("enable_trino_dialect");
+        const Field parse_logsql_gate = client_context->getSettingsRef().get("allow_experimental_logsql_dialect");
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
         /// Remember only the values this query's own `SETTINGS` clause changed: those are pinned back for
         /// the outbound query. A setting the query left alone is not pinned, so what
@@ -3014,6 +3018,7 @@ void ClientBase::processParsedSingleQuery(
         current_query_parse_dialect = changed_by_query("dialect", parse_dialect);
         current_query_parse_json_ast_gate = changed_by_query("enable_json_ast_dialect", parse_json_ast_gate);
         current_query_parse_trino_gate = changed_by_query("enable_trino_dialect", parse_trino_gate);
+        current_query_parse_logsql_gate = changed_by_query("allow_experimental_logsql_dialect", parse_logsql_gate);
         connection->setFormatSettings(getFormatSettings(client_context));
 
         /// Deliberately without a round trip: this runs before every query. The only case that needs
