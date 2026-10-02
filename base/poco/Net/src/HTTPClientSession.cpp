@@ -547,8 +547,10 @@ StreamSocket HTTPClientSession::proxyConnect(const SocketAddress * resolvedProxy
 
 	SharedPtr<HTTPClientSession> proxySession (_proxySessionFactory.createClientSession(proxyUri));
 
-	if (resolvedProxyAddress)
-		proxySession->setResolvedHost(resolvedProxyAddress->host().toString());
+	_connect_address.clear();
+	const SocketAddress proxyAddress = resolvedProxyAddress ? *resolvedProxyAddress : SocketAddress(getProxyHost(), getProxyPort());
+	_connect_address = proxyAddress.toString();
+	proxySession->setResolvedHost(proxyAddress.host().toString());
 
 	proxySession->setTimeout(getTimeout());
 	std::string targetAddress(_host);

@@ -1193,6 +1193,29 @@ TEST(SocketImplError, ResetAbortedAndTimeoutNameTheAddress)
     expectSocketErrorNamesAddress<Poco::TimeoutException>(POCO_ETIMEDOUT);
 }
 
+TEST(HTTPClientSessionProxyTunnel, ReportsProxyInResolvedAddress)
+{
+    /// `proxyTunnel` (used by WebSocket) dials the proxy, so the proxy is what must be reported.
+    Poco::Net::ServerSocket port_probe(Poco::Net::SocketAddress(Poco::Net::IPAddress("127.0.0.1"), 0));
+    const auto dead_port = port_probe.address().port();
+    port_probe.close();
+
+    struct ExposedSession : public Poco::Net::HTTPClientSession
+    {
+        using Poco::Net::HTTPClientSession::HTTPClientSession;
+        using Poco::Net::HTTPClientSession::proxyTunnel;
+    };
+
+    ExposedSession session("tunnel-target.invalid", 9999);
+    Poco::Net::HTTPClientSession::ProxyConfig proxy_config;
+    proxy_config.host = "127.0.0.1";
+    proxy_config.port = dead_port;
+    session.setProxyConfig(proxy_config);
+
+    ASSERT_THROW(session.proxyTunnel(), Poco::Exception);
+    ASSERT_EQ("127.0.0.1:" + std::to_string(dead_port), session.getResolvedAddress());
+}
+
 #if USE_SSL
 TEST_F(ConnectionPoolTest, ProxyTunnelDialsTheCallerResolvedAddress)
 {

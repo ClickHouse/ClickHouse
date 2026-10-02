@@ -137,7 +137,7 @@ namespace Net
         /// Returns the port number of the target HTTP server.
 
         std::string getResolvedAddress() const;
-        /// Returns the host:port that `reconnect` attempted (the proxy when one is used),
+        /// Returns the host:port of the last connect attempt (the proxy when one is used),
         /// or the target host:port before the first connect.
 
         void setProxy(

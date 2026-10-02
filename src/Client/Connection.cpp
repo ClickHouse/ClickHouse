@@ -213,7 +213,6 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
     for (auto it = addresses.begin(); it != addresses.end();)
     {
         have_more_addresses_to_connect = it != std::prev(addresses.end());
-        current_resolved_address = *it;
 
         LOG_TRACE(log_wrapper.get(), "Connecting to {}:{} (using address {}, {}/{})", host, port, it->toString(), std::distance(addresses.begin(), it) + 1, addresses.size());
 
@@ -256,6 +255,8 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
 
         try
         {
+            /// Set only now, so a failure in the local setup above is not reported as this peer's.
+            current_resolved_address = *it;
             if (async_callback)
             {
                 address_connect_timeout_expired = false;
