@@ -254,8 +254,9 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
 
     /// Equality key pairs, for the output column equivalences.
     std::vector<std::pair<String, String>> equi_pairs;
+    const auto & join_operator = join_step.getJoinOperator();
 
-    for (const auto & predicate_expression : join_step.getJoinOperator().expression)
+    for (const auto & predicate_expression : join_operator.expression)
     {
         const auto & predicate = predicate_expression.asBinaryPredicate();
         auto left_column_actions = get<1>(predicate);
@@ -283,17 +284,10 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
 
         UInt64 left_number_of_distinct_values = 1;
         UInt64 right_number_of_distinct_values = 1;
-        UInt64 min_number_of_distinct_values = UInt64(std::min(left_statistics.estimated_row_count, right_statistics.estimated_row_count));
         if (left_column_statistics != left_statistics.column_statistics.end())
-        {
             left_number_of_distinct_values = left_column_statistics->second.num_distinct_values;
-            min_number_of_distinct_values = std::min(min_number_of_distinct_values, left_number_of_distinct_values);
-        }
         if (right_column_statistics != right_statistics.column_statistics.end())
-        {
             right_number_of_distinct_values = right_column_statistics->second.num_distinct_values;
-            min_number_of_distinct_values = std::min(min_number_of_distinct_values, right_number_of_distinct_values);
-        }
 
         /// Estimate `JOIN` equality predicate selectivity as 1 / max(NDV(A), NDV(B)) based on assumption that distinct values have equal probabilities.
         /// An empty relation or a supplied hint can carry NDV = 0; clamp to 1, otherwise the division
@@ -301,9 +295,23 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
         UInt64 max_number_of_distinct_values = std::max<UInt64>({left_number_of_distinct_values, right_number_of_distinct_values, 1});
         Float64 predicate_selectivity = 1.0 / Float64(max_number_of_distinct_values);
 
-        /// NDV for join predicate columns can decrease if the other column has smaller NDV
-        statistics.column_statistics[left_column].num_distinct_values = min_number_of_distinct_values;
-        statistics.column_statistics[right_column].num_distinct_values = min_number_of_distinct_values;
+        /// An input's key NDV is bounded by its own row count. The shared update then narrows only
+        /// sides whose rows can be filtered by this join.
+        statistics.column_statistics[left_column].num_distinct_values = std::min(
+            left_column_statistics != left_statistics.column_statistics.end()
+                ? left_column_statistics->second.num_distinct_values
+                : UInt64(left_statistics.estimated_row_count),
+            UInt64(left_statistics.estimated_row_count));
+        statistics.column_statistics[right_column].num_distinct_values = std::min(
+            right_column_statistics != right_statistics.column_statistics.end()
+                ? right_column_statistics->second.num_distinct_values
+                : UInt64(right_statistics.estimated_row_count),
+            UInt64(right_statistics.estimated_row_count));
+        QueryPlanOptimizations::updateJoinKeyDistinctCounts(
+            statistics.column_statistics.at(left_column),
+            statistics.column_statistics.at(right_column),
+            join_operator.kind,
+            join_operator.strictness);
 
         /// Predicate reuses a column already seen on one side - redundant for selectivity.
         if (left_already_bound || right_already_bound)
@@ -337,7 +345,6 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     /// Constrain the inner-product estimate to the join semantics (outer joins keep the preserved side,
     /// semi/anti/any bound it). Applied after the join-order hint so a hint cannot exceed a semantic
     /// upper bound (e.g. a semi join above its preserved-side row count).
-    const auto & join_operator = join_step.getJoinOperator();
     statistics.estimated_row_count = clampJoinRowCount(join_operator.kind, join_operator.strictness,
         statistics.estimated_row_count, left_statistics.estimated_row_count, right_statistics.estimated_row_count);
     statistics.max_row_count = clampJoinMaxRowCount(join_operator.kind, join_operator.strictness,

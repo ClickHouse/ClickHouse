@@ -26,8 +26,6 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTOrderByElement.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Core/UUID.h>
 
 
@@ -1943,14 +1941,11 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || dictionary_p.parse(pos, node, expected);
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserCreateQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementCreate(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE",
+    documentation["CREATE"] =
     {
         .description = R"DOCS_MD(
 CREATE queries create (for example) new [databases](/reference/statements/create/database), [tables](/reference/statements/create/table) and [views](/reference/statements/create/view).
@@ -1966,9 +1961,9 @@ CREATE USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
 CREATE TOKEN ...
 )",
         .related = {"ATTACH", "DROP", "CREATE TABLE", "CREATE DATABASE", "CREATE VIEW", "CREATE DICTIONARY"},
-    });
+    };
 
-    factory.registerStatement("CREATE DATABASE",
+    documentation["CREATE DATABASE"] =
     {
         .description = R"DOCS_MD(
 Creates a new database.
@@ -2073,9 +2068,9 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 )",
         .parent = "CREATE",
         .related = {"CREATE", "CREATE TABLE", "DROP"},
-    });
+    };
 
-    factory.registerStatement("CREATE TABLE",
+    documentation["CREATE TABLE"] =
     {
         .description = R"DOCS_MD(
 Creates a new table. By default, tables are created only on the current server.
@@ -2538,9 +2533,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], ...)] ENGINE = engi
 )",
         .parent = "CREATE",
         .related = {"CREATE", "CREATE TEMPORARY TABLE", "REPLACE TABLE", "CODEC", "ALTER", "DROP"},
-    });
+    };
 
-    factory.registerStatement("CREATE TEMPORARY TABLE",
+    documentation["CREATE TEMPORARY TABLE"] =
     {
         .description = R"DOCS_MD(
 ## Temporary table support {#temporary-table-support}
@@ -2584,9 +2579,9 @@ CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
 )",
         .parent = "CREATE TABLE",
         .related = {"CREATE TABLE", "DROP"},
-    });
+    };
 
-    factory.registerStatement("REPLACE TABLE",
+    documentation["REPLACE TABLE"] =
     {
         .description = R"DOCS_MD(
 ## Overview {#overview}
@@ -2761,9 +2756,9 @@ SELECT * FROM base.t1;
 )",
         .parent = "CREATE TABLE",
         .related = {"CREATE TABLE", "EXCHANGE", "RENAME"},
-    });
+    };
 
-    factory.registerStatement("CODEC",
+    documentation["CODEC"] =
     {
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -3044,9 +3039,9 @@ column_name type CODEC(codec1[(arguments)][, codec2[(arguments)], ...])
 )",
         .parent = "CREATE TABLE",
         .related = {"CREATE TABLE", "ALTER TABLE ... COLUMN"},
-    });
+    };
 
-    factory.registerStatement("CREATE VIEW",
+    documentation["CREATE VIEW"] =
     {
         .description = R"DOCS_MD(
 import { DeprecatedBadge } from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
@@ -3259,6 +3254,9 @@ To change SQL security for an existing view, use
 ```sql
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
+
+A `DEFINER` that is not the current user requires the `SET DEFINER` grant on that user, both when the view is created and with `MODIFY SQL SECURITY`.
+To change the query of a `SQL SECURITY DEFINER` or `SQL SECURITY NONE` view with [`ALTER TABLE ... MODIFY QUERY`](/reference/statements/alter/view#required-privileges), the same grants are necessary as to declare its SQL security.
 
 ### Examples {#examples}
 ```sql
@@ -3623,9 +3621,9 @@ AS SELECT ...
 )",
         .parent = "CREATE",
         .related = {"CREATE", "CREATE TABLE", "ALTER TABLE ... MODIFY QUERY", "DROP"},
-    });
+    };
 
-    factory.registerStatement("CREATE DICTIONARY",
+    documentation["CREATE DICTIONARY"] =
     {
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -3730,9 +3728,9 @@ COMMENT 'Comment'
 )",
         .parent = "CREATE",
         .related = {"CREATE", "DROP", "SYSTEM"},
-    });
+    };
 
-    factory.registerStatement("CREATE NAMED COLLECTION",
+    documentation["CREATE NAMED COLLECTION"] =
     {
         .description = R"DOCS_MD(
 Creates a new named collection.
@@ -3776,9 +3774,9 @@ AS key_name1 = 'some value' [[NOT] OVERRIDABLE], key_name2 = 'some value' [[NOT]
 )",
         .parent = "CREATE",
         .related = {"CREATE", "ALTER NAMED COLLECTION", "DROP"},
-    });
+    };
 
-    factory.registerStatement("ATTACH",
+    documentation["ATTACH"] =
     {
         .description = R"DOCS_MD(
 Attaches a table or a dictionary, for example, when moving a database to another server.
@@ -3913,7 +3911,9 @@ ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ATTACH TABLE [db.]name AS [NOT] REPLICATED
 )",
         .related = {"DETACH", "CREATE", "DROP"},
-    });
+    };
+
+    return documentation;
 }
 
 }

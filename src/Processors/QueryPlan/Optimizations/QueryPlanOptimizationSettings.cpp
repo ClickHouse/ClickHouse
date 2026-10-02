@@ -53,10 +53,10 @@ namespace Setting
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool query_plan_aggregation_bucket_top_k;
-    extern const SettingsBool query_plan_aggregation_in_order;
     extern const SettingsBool query_plan_convert_any_join_to_semi_or_anti_join;
     extern const SettingsBool query_plan_convert_join_to_in;
     extern const SettingsBool query_plan_convert_outer_join_to_inner_join;
+    extern const SettingsBool query_plan_convert_outer_join_to_inner_join_transitively;
     extern const SettingsBool query_plan_short_circuit_constant_false_join;
     extern const SettingsBool query_plan_direct_read_from_text_index;
     extern const SettingsBool query_plan_optimize_count_from_text_index;
@@ -64,6 +64,7 @@ namespace Setting
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsBool query_plan_execute_functions_after_sorting;
     extern const SettingsBool query_plan_filter_push_down;
+    extern const SettingsBool query_plan_filter_push_down_below_limit_by;
     extern const SettingsBool query_plan_propagate_predicate_across_join;
     extern const SettingsBool query_plan_fuse_filter_into_array_join;
     extern const SettingsBool query_plan_lower_array_join_function;
@@ -81,7 +82,7 @@ namespace Setting
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool query_plan_optimize_lazy_materialization_for_object_storage;
     extern const SettingsBool query_plan_optimize_lazy_materialization_for_file;
-    extern const SettingsBool query_plan_optimize_prewhere;
+    extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool query_plan_push_down_volume_reducing_functions;
     extern const SettingsBool optimize_prewhere_after_pushdown;
     extern const SettingsBool query_plan_push_down_limit;
@@ -89,7 +90,6 @@ namespace Setting
     extern const SettingsBool query_plan_top_k_through_join;
     extern const SettingsBool query_plan_read_in_order_through_join;
     extern const SettingsBool optimize_aggregation_in_order_limit;
-    extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool query_plan_remove_redundant_distinct;
     extern const SettingsBool query_plan_remove_redundant_sorting;
     extern const SettingsBool query_plan_remove_unused_columns;
@@ -192,6 +192,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     merge_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filters];
     push_limit_by_into_sort = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_limit_by_into_sort];
     filter_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_filter_push_down];
+    /// The filter push-down pass also runs with `filter_push_down` off, once a JOIN runtime filter has been added.
+    filter_push_down_below_limit_by = from[Setting::query_plan_filter_push_down_below_limit_by];
     /// Without `use_primary_key` the copy would just be a full scan filter
     propagate_predicate_across_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_propagate_predicate_across_join]
         && from[Setting::use_primary_key];
@@ -203,6 +205,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     push_down_volume_reducing_functions
         = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_volume_reducing_functions];
     convert_outer_join_to_inner_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_outer_join_to_inner_join];
+    convert_outer_join_to_inner_join_transitively = convert_outer_join_to_inner_join && from[Setting::query_plan_convert_outer_join_to_inner_join_transitively];
     short_circuit_constant_false_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_short_circuit_constant_false_join];
     execute_functions_after_sorting = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_execute_functions_after_sorting];
     reuse_storage_ordering_for_window_functions = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_reuse_storage_ordering_for_window_functions];
@@ -250,9 +253,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     use_join_disjunctions_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::use_join_disjunctions_push_down];
     remove_unused_columns = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_unused_columns];
 
-    optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_prewhere];
+    optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_move_to_prewhere];
     optimize_prewhere_after_pushdown = optimize_prewhere && from[Setting::optimize_prewhere_after_pushdown];
-    read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order] && from[Setting::query_plan_read_in_order];
+    read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order];
     distinct_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_distinct_in_order];
     limit_by_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_limit_by_in_order];
     limit_by_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_limit_by_partitions_independently];
@@ -261,7 +264,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     force_window_partitions_independently = from[Setting::force_window_partitions_independently];
     creating_set_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_creating_set_partitions_independently];
     optimize_sorting_by_input_stream_properties = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_sorting_by_input_stream_properties];
-    aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
+    aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order];
     optimize_aggregation_in_order_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order_limit];
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache];
