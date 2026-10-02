@@ -95,6 +95,19 @@ void MetadataOperationsHolder::commit()
             tryLogCurrentException(__PRETTY_FUNCTION__);
             error.rethrow();
         }
+        catch (...)
+        {
+            /// An operation may have already changed the storage when it throws something other than `DB::Exception`,
+            /// such as `std::bad_alloc`, so it is rolled back the same way.
+            state = MetadataStorageTransactionState::FAILED;
+
+            Exception error(getCurrentExceptionCode(), "{}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
+            error.addMessage(fmt::format("While committing metadata operation #{}", i));
+            rollback(i, error);
+
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            throw error;
+        }
     }
 
     state = MetadataStorageTransactionState::COMMITTED;
