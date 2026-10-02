@@ -836,10 +836,10 @@ private:
         PaddedPODArray<AggregateDataPtr> & places,
         RowStorePointers & records) const;
 
-    /// Adds the rows of every group of a producer's own table to its count bins (see `AdaptiveTopKPruning`).
+    /// Adds the rank count of every group of a producer's own table to its count bins (see `AdaptiveTopKPruning`).
     void addAdaptiveCountsToBins(AggregatedDataVariants & variants, UInt16 * bins) const;
     template <typename Method>
-    void addAdaptiveCountsToBins(Method & method, UInt16 * bins) const;
+    void addAdaptiveCountsToBins(Method & method, Arena * arena, UInt16 * bins) const;
 
     /// Checks that every producer handed its count bins over, which the bounds rely on, and orders the buckets for the
     /// merge by their bounds; drops the pruning otherwise. Called with the merge's producers before the merge starts.

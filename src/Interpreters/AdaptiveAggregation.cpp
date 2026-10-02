@@ -28,8 +28,8 @@ void Aggregator::initAdaptiveSession(AdaptiveAggregationSession & shared) const
 {
     shared.layout = AdaptivePartitionLayout::forProducers(params.max_threads, params.max_bytes_before_external_group_by);
 
-    /// The bins bound the counts from above, which serves a descending order only. A throw-mode group limit needs every
-    /// group counted, which a skipped unit is not.
+    /// The bins bound the rank counts from above, which serves a descending order only. A throw-mode group limit needs
+    /// every group counted, which a skipped unit is not.
     if (params.bucket_top_k && !params.bucket_top_k_ascending && !params.max_rows_to_group_by)
         shared.top_k_pruning = std::make_unique<AdaptiveTopKPruning>(params.bucket_top_k);
 

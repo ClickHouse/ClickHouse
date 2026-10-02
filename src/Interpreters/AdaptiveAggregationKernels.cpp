@@ -1389,7 +1389,7 @@ void Aggregator::addAdaptiveCountsToBins(AggregatedDataVariants & variants, UInt
 {
 #define M(NAME) \
     else if (variants.type == AggregatedDataVariants::Type::NAME) \
-        addAdaptiveCountsToBins(*variants.NAME, bins);
+        addAdaptiveCountsToBins(*variants.NAME, variants.aggregates_pool, bins);
 
     if (variants.empty()) {} // NOLINT
     APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
@@ -1400,20 +1400,28 @@ void Aggregator::addAdaptiveCountsToBins(AggregatedDataVariants & variants, UInt
 }
 
 template <typename Method>
-void Aggregator::addAdaptiveCountsToBins(Method & method, UInt16 * bins) const
+void Aggregator::addAdaptiveCountsToBins(Method & method, Arena * arena, UInt16 * bins) const
 {
     if constexpr (MapAggregationMethod<Method>)
     {
-        const size_t count_offset = offsets_of_aggregate_states[params.bucket_top_k_rank_index];
+        /// A `uniqExact` or `uniqExactIf` rank adds the distinct count of the cell: the distinct count of a merged group
+        /// is at most the sum of those of the cells and records merged into it, so the bins bound it as they bound a row
+        /// count.
+        const size_t rank_offset = offsets_of_aggregate_states[params.bucket_top_k_rank_index];
+        auto scratch = ColumnUInt64::create();
+        const auto rank_count = [&](AggregateDataPtr & mapped) -> UInt64
+        {
+            if (is_simple_count)
+                return getInlineCountState(mapped);
+            if (bucket_top_k_ranks_by_count_state)
+                return getCountState(mapped + rank_offset);
+            return finalizeBucketTopKRank(mapped, *scratch, arena);
+        };
         const auto add = [&](auto & table)
         {
             forEachMappedCellWithHash(
                 table,
-                [&](const auto &, AggregateDataPtr & mapped, size_t hash)
-                {
-                    const UInt64 rows = is_simple_count ? getInlineCountState(mapped) : getCountState(mapped + count_offset);
-                    addToCountBin(bins[adaptiveCountBin(hash)], rows);
-                });
+                [&](const auto &, AggregateDataPtr & mapped, size_t hash) { addToCountBin(bins[adaptiveCountBin(hash)], rank_count(mapped)); });
         };
         if constexpr (requires { method.data.impls; })
         {

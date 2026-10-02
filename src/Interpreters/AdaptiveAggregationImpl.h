@@ -127,13 +127,15 @@ inline size_t adaptiveCountBin(UInt64 hash)
     return (hash >> 14) & (adaptive_count_bins - 1);
 }
 
-/// The bin-bound top-K pruning of an aggregation that feeds `ORDER BY count() DESC LIMIT n`
-/// (`Aggregator::Params::bucket_top_k`). Every producer counts the rows of its staged records, and at its finish the
-/// rows of its own table, into its bins. Summed over the producers, a bin bounds the count of every group in it from
-/// above: the rows of all its groups are in it. The merge keeps the `limit` best exact counts of the groups it has
-/// converted; once there are `limit` of them, a group whose bin is bounded below the smallest one has `limit` groups
-/// ahead of it, so the merge skips the units, staged records and source cells of such bins without draining them.
-/// The merge takes the buckets with the largest bounds first, so the threshold rises early.
+/// The bin-bound top-K pruning of an aggregation that feeds `ORDER BY count() DESC LIMIT n`, or the same by `uniqExact`
+/// or `uniqExactIf` (`Aggregator::Params::bucket_top_k`). Every producer counts the rows of its
+/// staged records, and at its finish the counts of the groups of its own table, into its bins. Summed over the
+/// producers, a bin bounds the count of every group in it from above: a row adds one to a group's count at most, and
+/// merging adds the counts of the merged groups for `count`, or at most adds them for the distinct count of
+/// `uniqExact`, as a union has no more elements than its parts together. The merge keeps the `limit` best exact counts
+/// of the groups it has converted; once there are `limit` of them, a group whose bin is bounded below the smallest
+/// one has `limit` groups ahead of it, so the merge skips the units, staged records and source cells of such bins
+/// without draining them. The merge takes the buckets with the largest bounds first, so the threshold rises early.
 struct AdaptiveTopKPruning
 {
     explicit AdaptiveTopKPruning(size_t limit_) : limit(limit_) { }
@@ -206,8 +208,8 @@ struct AdaptiveAggregationSession
     /// table at the next block and returns to the baseline path for good.
     std::atomic<bool> thaw_all{false};
 
-    /// Set by the first freeze when the aggregation feeds `ORDER BY count() DESC LIMIT n` (see
-    /// `AdaptiveTopKPruning`).
+    /// Set by the first freeze when the aggregation feeds `ORDER BY count() DESC LIMIT n`, or the same by `uniqExact` or
+    /// `uniqExactIf` (see `AdaptiveTopKPruning`).
     std::unique_ptr<AdaptiveTopKPruning> top_k_pruning;
 };
 
