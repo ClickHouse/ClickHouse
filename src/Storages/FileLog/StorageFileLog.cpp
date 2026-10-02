@@ -163,6 +163,15 @@ private:
     StorageSnapshotPtr storage_snapshot;
 };
 
+/// A relative `path` is resolved against `user_files_path`. A relative path that is already inside `user_files_path`
+/// from the current working directory is kept as is, so such existing tables read the same files.
+String resolveFileLogPath(const String & path, const String & user_files_path)
+{
+    if (user_files_path.empty() || std::filesystem::path(path).is_absolute() || fileOrSymlinkPathStartsWith(path, user_files_path))
+        return path;
+    return std::filesystem::path(user_files_path) / path;
+}
+
 StorageFileLog::StorageFileLog(
     const StorageID & table_id_,
     ContextPtr context_,
@@ -177,7 +186,7 @@ StorageFileLog::StorageFileLog(
     , WithContext(context_->getGlobalContext())
     , filelog_context(configureContext(getContext()))
     , filelog_settings(std::move(settings))
-    , path(path_)
+    , path(resolveFileLogPath(path_, getContext()->getUserFilesPath()))
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
     , log(getLogger("StorageFileLog (" + table_id_.getFullTableName() + ")"))
@@ -938,7 +947,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Engine arguments:
 
-- `path_to_logs` – Path to log files to subscribe. It can be path to a directory with log files or to a single log file. Note that ClickHouse allows only paths inside `user_files` directory.
+- `path_to_logs` – Path to log files to subscribe. It can be path to a directory with log files or to a single log file. A relative path is resolved against the `user_files_path` directory, like in the [file](/reference/functions/table-functions/file) table function; a relative path that is already inside `user_files_path` from the working directory of the server (for example, `user_files/my_app/app.log` when the server runs in its data directory, as in the official Docker image) keeps that meaning. Note that ClickHouse allows only paths inside `user_files` directory.
 - `format_name` - Record format. Note that FileLog process each line in a file as a separate record and not all data formats are suitable for it.
 
 Optional parameters:
@@ -972,7 +981,7 @@ CREATE TABLE logs (
     timestamp UInt64,
     level String,
     message String
-  ) ENGINE = FileLog('user_files/my_app/app.log', 'JSONEachRow');
+  ) ENGINE = FileLog('my_app/app.log', 'JSONEachRow');
 
 CREATE TABLE daily (
     day Date,
