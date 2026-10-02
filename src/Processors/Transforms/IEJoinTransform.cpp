@@ -1125,6 +1125,18 @@ void IEJoinAlgorithm::appendGathered(Chunk & chunk, size_t side, const ColumnUIn
         chunk.addColumn(column->index(indexes, 0));
 }
 
+void IEJoinAlgorithm::cancelResidual() noexcept
+{
+    if (!residual)
+        return;
+
+    for (const auto & node : residual->actions->getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+            node.function->cancelExecution();
+    }
+}
+
 IColumn::Filter IEJoinAlgorithm::evaluateResidualMask(const ColumnUInt64 & left_rows, const ColumnUInt64 & right_rows)
 {
     const size_t num_pairs = left_rows.size();
@@ -1141,7 +1153,11 @@ IColumn::Filter IEJoinAlgorithm::evaluateResidualMask(const ColumnUInt64 & left_
     /// comparing it is a backstop against a row-count-changing action; it compares totals only.
     size_t num_rows_after_execute = num_pairs;
     Columns results = residual->actions->executeOnColumns(
-        std::move(expression_columns), residual_input_header, residual_input_positions, num_rows_after_execute);
+        std::move(expression_columns), residual_input_header, residual_input_positions, num_rows_after_execute, /*dry_run=*/ false, is_cancelled);
+    /// The query was cancelled while the residual was evaluated: its result is incomplete, but the
+    /// output of a cancelled processor is discarded, so no candidate pair has to be decided.
+    if (is_cancelled && is_cancelled->load(std::memory_order_acquire))
+        return IColumn::Filter(num_pairs, 0);
     if (num_rows_after_execute != num_pairs)
     {
         throw Exception(
@@ -1274,6 +1290,13 @@ IEJoinTransform::IEJoinTransform(
         max_block_size,
         max_block_bytes)
 {
+    algorithm.setCancellationFlag(&getCancellationFlag());
+}
+
+void IEJoinTransform::onCancel() noexcept
+{
+    Base::onCancel();
+    algorithm.cancelResidual();
 }
 
 }
