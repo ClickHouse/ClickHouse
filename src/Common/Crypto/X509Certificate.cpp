@@ -2,8 +2,6 @@
 
 #include <base/scope_guard.h>
 
-#include <ctime>
-
 
 #if USE_SSL
 
@@ -61,7 +59,7 @@ X509Certificate::X509Certificate(const std::string & path)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "PEM_read_bio_X509 failed for file {}: {}", path, getOpenSSLErrors());
 }
 
-static X509Certificate::List readCertificatesFromBIO(const BIO_ptr & bio, const std::string & source_description)
+X509Certificate::List readCertificatesFromBIO(const BIO_ptr & bio, const std::string & source_description)
 {
     X509Certificate::List certs;
 
@@ -136,14 +134,10 @@ std::string X509Certificate::serialNumber() const
 {
     ASN1_INTEGER * serial = X509_get_serialNumber(certificate);
     BIGNUM * bn = ASN1_INTEGER_to_BN(serial, nullptr);
-    if (!bn)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "ASN1_INTEGER_to_BN failed: {}", getOpenSSLErrors());
 
     SCOPE_EXIT({ BN_free(bn); });
 
     char * hex = BN_bn2hex(bn);
-    if (!hex)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "BN_bn2hex failed: {}", getOpenSSLErrors());
     std::string result(hex);
 
     SCOPE_EXIT({ OPENSSL_free(hex); });
@@ -173,45 +167,26 @@ std::string X509Certificate::subjectName() const
     return buffer;
 }
 
-/// Extract the value of the first entry with the given NID from an X509 name as a length-delimited
-/// string. We read the ASN1_STRING bytes directly instead of X509_NAME_get_text_by_NID because that
-/// function copies into a fixed C buffer and NUL-terminates: an embedded NUL byte (e.g. a CN of
-/// "admin\0.evil.com") would be silently truncated to "admin", letting a certificate impersonate a
-/// different subject during authentication. Preserving the exact bytes makes such a value compare
-/// unequal to any NUL-free configured subject, and also avoids silent truncation of long names.
-static std::string extractNameEntry(X509_NAME * name, uint nid)
-{
-    if (!name)
-        return {};
-
-    const int index = X509_NAME_get_index_by_NID(name, static_cast<int>(nid), -1);
-    if (index < 0)
-        return {};
-
-    const X509_NAME_ENTRY * entry = X509_NAME_get_entry(name, index);
-    if (!entry)
-        return {};
-
-    const ASN1_STRING * data = X509_NAME_ENTRY_get_data(entry);
-    if (!data)
-        return {};
-
-    const unsigned char * bytes = ASN1_STRING_get0_data(data);
-    const int length = ASN1_STRING_length(data);
-    if (!bytes || length < 0)
-        return {};
-
-    return std::string(reinterpret_cast<const char *>(bytes), static_cast<size_t>(length));
-}
-
 std::string X509Certificate::issuerName(uint nid) const
 {
-    return extractNameEntry(X509_get_issuer_name(certificate), nid);
+    if (X509_NAME * issuer = X509_get_issuer_name(certificate))
+    {
+        char buffer[X509Certificate::NAME_BUFFER_SIZE];
+        if (X509_NAME_get_text_by_NID(issuer, nid, buffer, sizeof(buffer)) >= 0)
+            return std::string(buffer);
+    }
+    return {};
 }
 
 std::string X509Certificate::subjectName(uint nid) const
 {
-    return extractNameEntry(X509_get_subject_name(certificate), nid);
+    if (X509_NAME * subj = X509_get_subject_name(certificate))
+    {
+        char buffer[X509Certificate::NAME_BUFFER_SIZE];
+        if (X509_NAME_get_text_by_NID(subj, nid, buffer, sizeof(buffer)) >= 0)
+            return std::string(buffer);
+    }
+    return {};
 }
 
 std::string X509Certificate::commonName() const
@@ -246,29 +221,6 @@ std::string X509Certificate::expiresOn() const
 {
     ASN1_TIME * not_before = X509_get_notAfter(certificate);
     return reinterpret_cast<char *>(not_before->data);
-}
-
-static time_t asn1TimeToTimeT(const ASN1_TIME * time)
-{
-    if (!time)
-        return 0;
-
-    struct tm tm_time{};
-    if (ASN1_TIME_to_tm(time, &tm_time) != 1)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "ASN1_TIME_to_tm failed: {}", getOpenSSLErrors());
-
-    /// ASN1_TIME_to_tm yields a broken-down time in UTC, so convert it back with timegm (not mktime).
-    return timegm(&tm_time);
-}
-
-time_t X509Certificate::notBefore() const
-{
-    return asn1TimeToTimeT(X509_get0_notBefore(certificate));
-}
-
-time_t X509Certificate::notAfter() const
-{
-    return asn1TimeToTimeT(X509_get0_notAfter(certificate));
 }
 
 const X509Certificate::Subjects::container & X509Certificate::Subjects::at(Type type_) const
@@ -328,7 +280,7 @@ bool X509Certificate::Subjects::operator==(const X509Certificate::Subjects & rhs
     return true;
 }
 
-X509Certificate::Subjects X509Certificate::extractAllSubjects() const
+X509Certificate::Subjects X509Certificate::extractAllSubjects()
 {
     Subjects subjects;
 
