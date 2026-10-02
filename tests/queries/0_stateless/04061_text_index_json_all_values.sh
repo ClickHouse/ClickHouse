@@ -82,8 +82,8 @@ $MY_CLICKHOUSE_CLIENT --query "
     INSERT INTO tab VALUES (2, '{\"tags\": \"not_an_array\", \"name\": \"carol\"}');
 "
 
-run_query "SELECT id FROM tab WHERE data.tags = ['foo', 'bar'] ORDER BY id"
-run_query "SELECT id FROM tab WHERE data.tags = 'not_an_array' ORDER BY id"
+run_query "SELECT id FROM tab WHERE data.tags.:\`Array(Nullable(String))\` = ['foo', 'bar'] ORDER BY id"
+run_query "SELECT id FROM tab WHERE data.tags.:String = 'not_an_array' ORDER BY id"
 run_query "SELECT id FROM tab WHERE hasAllTokens(data.tags::String, 'foo') ORDER BY id"
 run_query "SELECT id FROM tab WHERE hasAllTokens(data.tags::String, 'not array') ORDER BY id"
 

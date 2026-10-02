@@ -1055,6 +1055,36 @@ static String serializeFieldAsText(const Field & value, const DataTypePtr & type
     return buf.str();
 }
 
+/// A `Dynamic` or `Variant` value is compared in its own type after converting the constant (a stored `true` equals `1`),
+/// and its cast to `String` follows the query's format settings, while `JSONAllValues` holds its text in the default format.
+static bool readsDynamicOrVariantValues(const RPNBuilderTreeNode & node)
+{
+    const auto * path_node = node.getDAGNode();
+    if (node.isFunction())
+    {
+        const auto function = node.toFunctionNode();
+        const auto function_name = function.getFunctionName();
+        if ((function_name == "CAST" || function_name == "_CAST") && function.getArgumentsSize() == 2)
+            path_node = function.getArgumentAt(0).getDAGNode();
+    }
+
+    if (!path_node)
+        return true;
+
+    const auto & path_type = *path_node->result_type;
+    bool holds_values_of_different_types = isDynamic(path_type) || isVariant(path_type);
+    path_type.forEachChild([&](const IDataType & child) { holds_values_of_different_types |= isDynamic(child) || isVariant(child); });
+    return holds_values_of_different_types;
+}
+
+/// With a string needle, these functions accept only a string haystack.
+static bool searchesOnlyStrings(const String & function_name)
+{
+    return function_name == "hasToken" || function_name == "hasTokenOrNull" || function_name == "hasPhrase"
+        || function_name == "like" || function_name == "ilike" || function_name == "match"
+        || function_name == "startsWith" || function_name == "endsWith";
+}
+
 static void validateRegexpPatterns(const Array & patterns, const Settings & settings)
 {
     VectorWithMemoryTracking<std::string_view> needles;
@@ -1294,6 +1324,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
     {
+        /// Only a `String` value, whose text the index holds, can satisfy a search that accepts only a string haystack.
+        const bool reads_only_strings = !index_column_node.isFunction() && searchesOnlyStrings(function_name)
+            && WhichDataType(value_type).isStringOrFixedString();
+        if (!reads_only_strings && readsDynamicOrVariantValues(index_column_node))
+            return false;
+
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
@@ -2271,7 +2307,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             return true;
         }
         return hasIndexForColumn(node.getColumnName())
-            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
+            || (tryMatchNodeToJSONIndex(node, header, "JSONAllValues") && !readsDynamicOrVariantValues(node));
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")

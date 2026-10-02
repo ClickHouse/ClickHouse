@@ -1202,11 +1202,11 @@ Text indexes can be used to accelerate searches on [JSON](/reference/data-types/
 Values of non-string datatypes (e.g. integers and arrays) are converted to their text representation.
 A text index build using `JSONAllValues` indexes these text representations across all JSON paths in each row.
 This index can then accelerate queries that filter on individual JSON subcolumns.
-When a query filters on a specific subcolumn (e.g. `data.user_name = 'alice'`), the text index can quickly skip rows (and granules) that do not contain the search tokens in any of their JSON values.
+When a query filters on a specific subcolumn (e.g. `data.user_name.:String = 'alice'`), the text index can quickly skip rows (and granules) that do not contain the search tokens in any of their JSON values.
 
 <Note>
 The index may produce false positives when different JSON paths contain the same tokens.
-For example, if row 1 has `{"a": "hello", "b": "world"}` and a query searches for `data.a = 'world'`, the text index cannot distinguish that `world` belongs to path `b`, not `a`.
+For example, if row 1 has `{"a": "hello", "b": "world"}` and a query searches for `data.a.:String = 'world'`, the text index cannot distinguish that `world` belongs to path `b`, not `a`.
 In such cases, the index will not skip the row, and the filter on the actual column data will handle the final evaluation.
 This is the same behavior as with other text index use cases where the index acts as a fast pre-filter.
 </Note>
@@ -1228,29 +1228,30 @@ ORDER BY id;
 
 ##### Supported query patterns {#json-all-values-supported-query-patterns}
 
-Once the index is created, it can speed up queries on JSON subcolumns using the same functions as for `String` columns and function `equals` for all columns.
+Once the index is created, it can speed up queries on JSON subcolumns using the same functions as for `String` columns.
+A path without a type hint has type `Dynamic`, and a path with a `Variant` type hint also holds values of several types: their values keep their own types, so `equals`, `has`, `IN` and a cast of the path compare them after a conversion (a stored `true` equals `1`) while the index holds their text.
+On such paths only `LIKE`, `ILIKE`, `match`, `startsWith`, `endsWith`, `hasToken`, `hasTokenOrNull` and `hasPhrase` with a string constant use the index; other queries use it on a typed subcolumn such as `data.user_name.:String`, or on a path whose type hint contains neither `Dynamic` nor `Variant`.
 
 Subcolumn access:
 
 ```sql
-SELECT * FROM events WHERE data.user_name = 'alice';
 SELECT * FROM events WHERE data.message LIKE '% error %';
 SELECT * FROM events WHERE startsWith(data.status, 'fail');
 SELECT * FROM events WHERE hasToken(data.title, 'clickhouse');
 ```
 
-Subcolumn access with explicit `CAST`:
+Typed subcolumn access:
 
 ```sql
-SELECT * FROM events WHERE hasAllTokens(data.message::String, 'connection timeout');
-SELECT * FROM events WHERE data.status_code::UInt64 = 404;
-SELECT * FROM events WHERE has(data.tags::Array(String), 'bug')
+SELECT * FROM events WHERE data.user_name.:String = 'alice';
+SELECT * FROM events WHERE hasAllTokens(data.message.:String, 'connection timeout');
+SELECT * FROM events WHERE data.status_code.:Int64 = 404;
 ```
 
 `IN` operator:
 
 ```sql
-SELECT * FROM events WHERE data.level IN ('error', 'critical');
+SELECT * FROM events WHERE data.level.:String IN ('error', 'critical');
 ```
 
 ### Phrase search {#text-index-phrase-search}
