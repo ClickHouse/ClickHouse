@@ -15,6 +15,7 @@
 #include <absl/container/inlined_vector.h>
 
 #include <array>
+#include <type_traits>
 
 #include "config.h"
 
@@ -147,8 +148,21 @@ public:
         }
 
         auto normalized_parameters = nested_state.getParameters();
-        auto normalized_function = std::make_shared<Derived>(
-            nested_state.getFunction(), normalized_argument_types, normalized_parameters);
+
+        AggregateFunctionPtr normalized_function;
+        if constexpr (std::is_constructible_v<Derived, const String &, AggregateFunctionPtr, const DataTypes &, const Array &>)
+        {
+            /// AggregateFunctionIfNullUnary caches the full combinator name separately from
+            /// its nested function, so preserve it when reconstructing the normalized wrapper.
+            normalized_function = std::make_shared<Derived>(
+                this->getName(), nested_state.getFunction(), normalized_argument_types, normalized_parameters);
+        }
+        else
+        {
+            normalized_function = std::make_shared<Derived>(
+                nested_state.getFunction(), normalized_argument_types, normalized_parameters);
+        }
+
         return std::make_shared<DataTypeAggregateFunction>(
             std::move(normalized_function), normalized_argument_types, normalized_parameters);
     }
