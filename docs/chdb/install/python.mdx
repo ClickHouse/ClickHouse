@@ -54,7 +54,7 @@ For better resource management and performance:
 ```python
 import chdb
 
-# Create connection (in-memory by default)
+# Create connection (":memory:" is a temporary, non-persistent database)
 conn = chdb.connect(":memory:")
 # Or use file-based: conn = chdb.connect("mydata.db")
 

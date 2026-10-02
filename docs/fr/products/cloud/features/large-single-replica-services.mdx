@@ -1,0 +1,47 @@
+---
+sidebarTitle: 'Services volumineux à réplique unique'
+sidebar_label: 'Services volumineux à réplique unique'
+sidebar_position: 8
+slug: /cloud/features/large-single-replica-services
+title: 'Services volumineux à réplique unique'
+description: 'Comprendre la disponibilité et la mise à l’échelle des services volumineux à réplique unique dans ClickHouse Cloud'
+keywords: ['réplique unique', 'mise à l’échelle verticale', 'autoscaling', 'niveau Scale', 'niveau Enterprise']
+doc_type: 'guide'
+---
+
+Les services volumineux à réplique unique permettent d’exécuter un service ClickHouse Cloud avec une seule réplique de calcul, tout en bénéficiant des ressources de calcul configurables disponibles avec les niveaux Scale et Enterprise. Contrairement aux services du niveau Basic, dont la taille est fixe, leur comportement de mise à l’échelle dépend du niveau et du profil matériel.
+
+<div id="availability">
+  ## Disponibilité
+</div>
+
+Les services volumineux à réplique unique sont disponibles dans les niveaux Scale et Enterprise. Les services du niveau Basic utilisent également une seule réplique, mais leur mémoire totale est limitée à `8 GiB` ou `12 GiB` et ils ne prennent pas en charge la mise à l&#39;échelle verticale ou horizontale.
+
+Dans les niveaux Scale et Enterprise, vous pouvez créer un service principal ou secondaire à une seule réplique sans contacter le support. Les services d&#39;un [warehouse](/fr/products/cloud/features/infrastructure/warehouses) évoluent indépendamment.
+
+<div id="when-to-use-a-single-replica-service">
+  ## Quand utiliser un service à réplique unique
+</div>
+
+Un service à réplique unique de grande taille peut réduire les coûts de calcul pour les charges de travail nécessitant plus de CPU ou de mémoire qu’un service du niveau Basic, sans nécessiter de redondance de calcul. Il peut également être utile pour le développement, les tests, le traitement par lots et d’autres charges de travail non critiques.
+
+<Warning>
+  Les services à réplique unique offrent une disponibilité moindre et ne sont pas recommandés pour les charges de travail de production nécessitant une haute disponibilité. Utilisez au moins deux répliques pour assurer une haute disponibilité.
+</Warning>
+
+<div id="scaling">
+  ## Mise à l’échelle
+</div>
+
+Le comportement de la mise à l’échelle verticale dépend du niveau de service et du profil matériel :
+
+* Les services des niveaux Scale et Enterprise avec des profils standard `1:4` prennent en charge la [mise à l’échelle verticale automatique](/fr/products/cloud/features/autoscaling/vertical). Vous pouvez configurer les ressources CPU et mémoire minimales et maximales dans la Cloud Console.
+* Les services du niveau Enterprise avec des profils personnalisés ne prennent pas en charge la mise à l’échelle verticale automatique ni la mise à l’échelle verticale manuelle dans la Cloud Console. Contactez le support pour redimensionner verticalement votre service.
+
+Les services des niveaux Scale et Enterprise prennent en charge la [mise à l’échelle horizontale](/fr/products/cloud/features/autoscaling/horizontal), ce qui vous permet d’ajouter plusieurs répliques, puis de revenir à une seule réplique.
+
+<div id="service-limits">
+  ## Limites de service
+</div>
+
+Les services à réplique unique sont limités à `100` bases de données et `500` tables dans tous les niveaux, y compris Scale et Enterprise. Les autres limites des services (vues, dictionnaires, colonnes, partitions, parties, etc.) suivent les limites standard. Pour en savoir plus, consultez [Limites d’utilisation](/fr/products/cloud/guides/best-practices/usagelimits).

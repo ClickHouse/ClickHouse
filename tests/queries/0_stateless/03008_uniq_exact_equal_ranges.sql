@@ -11,8 +11,8 @@ SET max_bytes_ratio_before_external_group_by = 0;
 SET optimize_aggregation_in_order = 0;
 
 -- Data volume is kept small (30k rows per key, 10 parts, 300k total) to let
--- `OPTIMIZE FINAL` complete quickly under slow CI configurations (MSan +
--- WasmEdge + aggressive randomized `MergeTree` settings such as tiny
+-- `OPTIMIZE FINAL` complete quickly under slow CI configurations (MSan
+-- + aggressive randomized `MergeTree` settings such as tiny
 -- `index_granularity` and forced vertical merge). `max_block_size` is pinned
 -- so that both the threshold=1.0 and threshold=0.5 paths for
 -- `min_hit_rate_to_use_consecutive_keys_optimization` are exercised across

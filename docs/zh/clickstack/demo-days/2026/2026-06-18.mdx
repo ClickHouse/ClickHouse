@@ -1,0 +1,90 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-06-18
+title: '演示日 - 2026-06-18'
+sidebarTitle: '2026-06-18'
+sidebar_label: '2026-06-18'
+sidebar_position: 618
+description: '2026-06-18 ClickStack 演示日'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+<div id="source-filters-now-everywhere">
+  ## 数据源过滤器，现已无处不在
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Zl5ymdzoM6U" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+数据源过滤器现已在服务仪表盘的各处可用。选择带有服务名称过滤器的 trace 或日志数据源后，仪表盘会先等待您选择一个值，再运行查询。随后，该过滤器会一致地应用到所有图表、查询和侧边面板中。打开某个 span 时，trace 瀑布图也遵循相同的行为：它会继承搜索页面中的数据源过滤器，同时仍允许您添加其他过滤器。Sessions 页面也已更新，数据源过滤器会传递到侧边栏、trace 面板和嵌套视图中。
+
+数据源过滤器的自动补全功能也已扩展。此前该功能仅在搜索页面可用，现在所有支持数据源过滤器的位置均可使用，包括仪表盘。自动补全现在可跨多个数据源解析键和值，即使每个数据源都有自己的一组过滤器也是如此。同样的改进也适用于原始 SQL 编辑器和查询构建器中的所有数据源过滤器输入框。
+
+**相关 PR：**[#2331](https://github.com/hyperdxio/hyperdx/pull/2331) 为仪表盘过滤器添加数据源范围限定，[#2459](https://github.com/hyperdxio/hyperdx/pull/2459) 在排除数据源范围过滤器的卡片上显示图标
+
+<div id="better-ai-generated-dashboards-for-custom-schemas">
+  ## 改进自定义 schema 的 AI 生成仪表盘
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/LUi5047F3fs" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+一位使用 AI 基于自定义 schema 创建仪表盘的用户遇到了严重的性能问题。根本原因在于，生成的原始 SQL 卡片硬编码了时间范围，而没有使用仪表盘时间过滤宏，因此更改仪表盘时间范围不会生效。其中一张卡片还对整数型 timestamp 列进行了过滤，绕过了主键，导致执行全表扫描。
+
+为解决这一问题，原始 SQL 仪表盘卡片的 MCP schema 现在明确要求智能体使用仪表盘时间过滤宏。当生成的 SQL 卡片缺少这些宏时，ClickStack UI 也会发出警告，以便在保存仪表盘前及时发现问题。部署这些更改后，再次运行该客户的原始 prompt，生成的 SQL 使用了正确的宏，仪表盘速度也显著提升。
+
+**相关 PR：** [#2473](https://github.com/hyperdxio/hyperdx/pull/2473) 引导智能体在原始 SQL 卡片中使用宏
+
+<div id="simpler-hashing-for-otel-metrics-and-a-primary-key-idea">
+  ## 简化 OTel 指标哈希，并探讨主键优化思路
+</div>
+
+*[@dhable](https://github.com/dhable) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/MjAUdJJbC8M" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+社区贡献修复了使用 JSON 属性列的指标的属性哈希问题，但也引入了两条不同的代码路径。JSON schema 使用 `cityHash64` 的可变参数形式，而基于 Map 的 schema 则会先拼接三个 Map，再进行哈希。事实证明，这些额外操作并无必要。现在，这两种 schema 类型都使用相同的 `cityHash64` 实现，既简化了代码，也避免了哈希过程中不必要的 Map 内存分配。
+
+这项工作还揭示了 OpenTelemetry 指标 schema 的一项潜在优化。目前，主键存储完整的属性 Map；由于 ClickHouse 会将该 Map 作为索引的一部分保留在内存中，这会增加内存使用量。一种思路是在写入时物化属性哈希，并改为将其用于主键。目前尚未进行任何更改，但随着 OpenTelemetry schema 更新再次提上议程，这项优化值得重新评估。
+
+**相关 PR：**[#2475](https://github.com/hyperdxio/hyperdx/pull/2475) 将 AttributesHash 统一为可变参数 cityHash64
+
+<div id="filter-pill-and-data-source-polish">
+  ## 过滤器标签和数据源优化
+</div>
+
+*由 [@alex-fedotyev](https://github.com/alex-fedotyev) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Zi6HPj5_JQg" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+本周推出了两项虽小却实用的体验改进。根据客户反馈，排除条件的过滤器标签现在更易于辨识；此前的样式使移除按钮难以看清。现在它们采用了更柔和的红色样式，在浅色和深色模式下均提高了对比度。
+
+管理大量数据源也变得更加轻松。现在可为数据源指定一个可选的分区，以便在数据源选择器中进行分组。未指定分区的数据源仍会显示在“其他”下，因此不会影响现有配置。搜索功能也已更新，可匹配分区名称；即使只记得相关数据源所属的分组，也能更轻松地找到它们。该功能目前正在内部使用，团队将在更广泛推出前评估用户通常如何组织数据源。
+
+**相关 PR：**[#2478](https://github.com/hyperdxio/hyperdx/pull/2478) 让排除条件的过滤器标签在浅色主题下更易辨识、[#2432](https://github.com/hyperdxio/hyperdx/pull/2432) 为数据源添加可选的分区字段、[#2476](https://github.com/hyperdxio/hyperdx/pull/2476) 按分区对数据源选择器分组并支持标签式搜索、[#2477](https://github.com/hyperdxio/hyperdx/pull/2477) 在数据源表单中推荐现有分区名称
+
+<div id="per-chart-series-limits-for-high-cardinality-charts">
+  ## 高基数图表的单图表时间序列限制
+</div>
+
+*演示者：[ @wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/xKpHvhbo-PI" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+图表现在可以限制返回的时间序列数量，避免在按 HTTP 路由或 span ID 等高基数字段分组时出现性能问题。此前，这类查询可能产生数十万条时间序列，导致仪表盘变慢甚至无响应。现在，您可以将图表限定为前 N 条时间序列，从而减少渲染时间和传输的数据量。
+
+对于分块查询，高效地选择排名靠前的时间序列会更复杂。当前实现根据最新分块确定前 N 条时间序列，然后将同一组时间序列应用于整个查询，并由 ClickHouse 而非浏览器完成相关处理。该方法仍在评估中，随着更多查询优化的引入，后续可能会有所调整。
+
+**相关 PR：** [#2449](https://github.com/hyperdxio/hyperdx/pull/2449) 使时间序列限制可选启用，并确保各分块间保持一致；[#2429](https://github.com/hyperdxio/hyperdx/pull/2429) 将 group-by 时间序列限制为前 N 条，以防止 OOM

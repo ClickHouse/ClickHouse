@@ -14,7 +14,7 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 
 递归遍历目录，并返回一个包含文件元数据 (路径、大小、类型、权限、修改时间) 以及可选文件内容的表。
 
-在 `clickhouse-server` 模式下，路径必须位于 [user&#95;files&#95;path](/zh/reference/settings/server-settings/settings#user_files_path) 目录内。对于 `user_files_path` 内部指向外部的符号链接，也会继续跟随，但只会返回其路径 (经由该符号链接) 以 `user_files_path` 开头的条目。
+在 `clickhouse-server` 模式下，路径必须位于 [user&#95;files&#95;path](/zh/reference/settings/server-settings/settings/user#user_files_path) 目录内。对于 `user_files_path` 内部指向外部的符号链接，也会继续跟随，但只会返回其路径 (经由该符号链接) 以 `user_files_path` 开头的条目。
 
 在 `clickhouse-local` 模式下，路径不受限制。
 
@@ -34,7 +34,7 @@ filesystem([path])
 | ------ | --------------------------------------------------------------------------------------------------------------- |
 | `path` | 要列出的目录。可以是绝对路径 (在服务器模式下必须位于 `user_files_path` 内) ，也可以是相对于 `user_files_path` 的路径。如果为空或省略，则默认为 `user_files_path`。 |
 
-<div id="returned_columns">
+<div id="returned-columns">
   ## 返回的列
 </div>
 

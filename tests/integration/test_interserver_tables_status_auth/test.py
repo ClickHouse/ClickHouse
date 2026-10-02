@@ -1,26 +1,33 @@
 import socket
+import time
 
 import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
-# Regression tests for PR #99854: an interserver `TablesStatusRequest` must not return
-# table existence / readonly / replication-delay status to a peer that has not proven
-# knowledge of the cluster `<secret>`. Four paths are covered:
+# Regression tests for pre-authentication interserver packet handling: in interserver mode the
+# connection is not authenticated until the `Query` packet is processed, so a packet that the
+# server rejects before then must disclose nothing, and a rejected `Data` packet must not have
+# its payload deserialized. An unsigned `TablesStatusRequest` is the one packet that is not
+# rejected: it is answered with a placeholder response that does not depend on the state of the
+# tables, so a rolling upgrade keeps working without anything being disclosed. Five paths are
+# covered:
 #
-#  * old protocol (no hash), default settings -> placeholder response that does not depend
-#    on the state of the tables, so an old initiator keeps working without disclosure;
-#  * old protocol (no hash) + `interserver_tables_status_require_auth` -> rejected;
-#  * new protocol with a wrong cluster secret -> hash validation fails -> rejected;
-#  * a real mixed-version cluster (26.6 initiator, current build serving the data) ->
-#    the `Distributed` query works, which is the rolling upgrade PR #113602 restored.
+#  * `TablesStatusRequest`, old protocol (no hash), default settings -> placeholder response;
+#  * `TablesStatusRequest`, old protocol (no hash) + `interserver_tables_status_require_auth`
+#    -> rejected;
+#  * `TablesStatusRequest`, new protocol signed with the wrong cluster secret -> rejected;
+#  * `Data` before any `Query` -> rejected without the Native block being read;
+#  * a real mixed-version cluster (26.6 initiator, current build serving the data) -> the
+#    `Distributed` query works, which is what this change restored.
 #
 # The legitimate authenticated path is covered by `test_distributed_inter_server_secret`.
 
 cluster = ClickHouseCluster(__file__)
 node_a = cluster.add_instance("node_a", main_configs=["configs/secret_a.xml"])
 node_b = cluster.add_instance("node_b", main_configs=["configs/secret_b.xml"])
+
 node_default = cluster.add_instance(
     "node_default", main_configs=["configs/secret_default.xml"]
 )
@@ -44,6 +51,14 @@ node_new = cluster.add_instance("node_new", main_configs=["configs/secret_upgrad
 # DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 (no nonce in the server Hello).
 OLD_REVISION = 54449
 USER_INTERSERVER_MARKER = " INTERSERVER SECRET "
+
+# A type name no other test can produce, so the log assertions below cannot be crossed.
+BOGUS_TYPE = "NoSuchTypeGroeneAI"
+BOGUS_TYPE_READ = f"Unknown data type family: {BOGUS_TYPE}"
+# An interserver connection is unauthenticated until its `Query` packet, so a `Data` packet arriving
+# before then is reported as an authentication failure (an ordinary client gets
+# `UNEXPECTED_PACKET_FROM_CLIENT`); matching that wording also proves interserver mode was reached.
+DATA_REJECTED = "Unexpected data packet received before interserver authentication"
 
 
 @pytest.fixture(scope="module")
@@ -93,14 +108,10 @@ def read_varstring(sock):
     return recv_exact(sock, read_varuint(sock))
 
 
-def connect_as_old_interserver_peer(node):
-    """Handshake as an old-protocol interserver peer and return the socket.
-
-    The Hello names the existing cluster `mismatch` (which has a secret) so that the
-    handshake itself is accepted and the behaviour under test is exercised at the
-    `TablesStatusRequest` stage; a Hello with an unknown or secret-less cluster is
-    already rejected during the handshake (covered by
-    `test_interserver_marker_requires_cluster_secret`)."""
+def open_interserver_connection(node):
+    """Connect and complete an interserver handshake that the server accepts. The Hello
+    names cluster `mismatch` (which has a secret) so the handshake is accepted into
+    interserver mode, where nothing is authenticated yet."""
     hello = (
         varuint(0)
         + varstring("test")           # client name
@@ -110,10 +121,9 @@ def connect_as_old_interserver_peer(node):
         + varstring("")               # default database
         + varstring(USER_INTERSERVER_MARKER)
         + varstring("")               # password (empty -> interserver mode)
-        + varstring("mismatch")       # cluster name (must exist and have a secret, or the Hello itself is rejected)
+        + varstring("mismatch")       # cluster name (must exist and have a secret)
         + varstring("")               # salt
     )
-
     sock = socket.create_connection((node.ip_address, 9000), timeout=20)
     sock.settimeout(20)
     sock.sendall(hello)
@@ -156,6 +166,19 @@ def read_tables_status_response(sock):
     return states
 
 
+def wait_for_log_growth(node, needles, baseline, timeout=60):
+    """Poll until one of `needles` occurs more often in the node's log than in `baseline`,
+    returning the final counts (parallel to `needles`) grown or not. The verdict is logged
+    while the connection handler unwinds, so an assertion evaluated without this barrier
+    could be satisfied by reading the log too early."""
+    deadline = time.monotonic() + timeout
+    while True:
+        counts = [int(node.count_in_log(needle)) for needle in needles]
+        if any(c > b for c, b in zip(counts, baseline)) or time.monotonic() > deadline:
+            return counts
+        time.sleep(0.5)
+
+
 def test_old_protocol_unauthenticated_request_gets_placeholder_response(started_cluster):
     """By default an old-protocol peer (which sends no secret hash) is answered with a
     placeholder response instead of an error, so a `Distributed` query initiated on a
@@ -165,7 +188,7 @@ def test_old_protocol_unauthenticated_request_gets_placeholder_response(started_
     node_default.query("DROP TABLE IF EXISTS t_present SYNC")
     node_default.query("CREATE TABLE t_present (x UInt32) ENGINE = MergeTree ORDER BY x")
 
-    sock = connect_as_old_interserver_peer(node_default)
+    sock = open_interserver_connection(node_default)
     try:
         sock.sendall(
             tables_status_request([("default", "t_present"), ("default", "t_absent")])
@@ -260,7 +283,7 @@ def test_rolling_upgrade_initiator_on_old_version_is_rejected_in_strict_mode(
 def test_old_protocol_unauthenticated_request_is_rejected(started_cluster):
     """With `interserver_tables_status_require_auth` enabled, an old-protocol peer that
     sends no secret hash must be rejected instead of getting the placeholder response."""
-    sock = connect_as_old_interserver_peer(node_a)
+    sock = open_interserver_connection(node_a)
     try:
         sock.sendall(tables_status_request([("default", "any_table")]))
         try:
@@ -273,6 +296,7 @@ def test_old_protocol_unauthenticated_request_is_rejected(started_cluster):
         )
     finally:
         sock.close()
+
 
 
 def test_new_protocol_wrong_secret_request_is_rejected(started_cluster):
@@ -302,3 +326,75 @@ def test_new_protocol_wrong_secret_request_is_rejected(started_cluster):
     assert node_b.contains_in_log(
         "Interserver authentication failed for TablesStatusRequest"
     ), "node_b did not reject the wrong-secret TablesStatusRequest via hash validation"
+
+
+def test_data_packet_before_query_is_not_deserialized(started_cluster):
+    """A `Data` packet arriving before any `Query` must be rejected without its payload
+    being read. Two connections cover the two halves of that: the first sends a complete
+    block declaring a column type that does not exist, so reading the payload would hand
+    that name to `DataTypeFactory` and log it as an unknown family; the second sends the
+    packet type alone and half-closes, so a handler that needs any payload byte reaches
+    end-of-stream instead of the rejection."""
+    # Uncompressed: the compression method is only negotiated while a query is processed.
+    # rows=0 carries no column data, since the type name precedes it on the wire.
+    data_packet = (
+        varuint(2)                    # Protocol::Client::Data
+        + varstring("")               # external table name
+        + varuint(0)                  # BlockInfo field terminator
+        + varuint(1)                  # columns
+        + varuint(0)                  # rows
+        + varstring("c")              # column name
+        + varstring(BOGUS_TYPE)       # column type name
+    )
+
+    before_read = int(node_a.count_in_log(BOGUS_TYPE_READ))
+    before_rejected = int(node_a.count_in_log(DATA_REJECTED))
+
+    sock = open_interserver_connection(node_a)
+    try:
+        sock.sendall(data_packet)
+        try:
+            data = sock.recv(4096)
+        except ConnectionResetError:
+            data = b""
+        assert not data, "server answered a Data packet sent before any query"
+    finally:
+        sock.close()
+
+    after_read, after_rejected = wait_for_log_growth(
+        node_a, [BOGUS_TYPE_READ, DATA_REJECTED], [before_read, before_rejected]
+    )
+
+    assert after_read == before_read, (
+        f"the type name {BOGUS_TYPE} came off the wire and reached DataTypeFactory: the "
+        "Native block was deserialized without the cluster secret being proved"
+    )
+    assert (
+        after_rejected > before_rejected
+    ), "the Data packet was not rejected before interserver authentication"
+
+    # The block above shows no type was constructed; this one shows no payload byte was
+    # needed at all. The write side is closed right after the packet type, so a handler
+    # that reads the external table name first ends at end-of-stream and never rejects.
+    before_type_only = int(node_a.count_in_log(DATA_REJECTED))
+
+    sock = open_interserver_connection(node_a)
+    try:
+        sock.sendall(varuint(2))    # Protocol::Client::Data, with no body at all
+        sock.shutdown(socket.SHUT_WR)
+        try:
+            data = sock.recv(4096)
+        except ConnectionResetError:
+            data = b""
+        assert not data, "server answered a Data packet sent before any query"
+    finally:
+        sock.close()
+
+    (after_type_only,) = wait_for_log_growth(
+        node_a, [DATA_REJECTED], [before_type_only]
+    )
+
+    assert after_type_only > before_type_only, (
+        "the Data packet was not rejected on its packet type alone, so a payload byte "
+        "was required"
+    )
