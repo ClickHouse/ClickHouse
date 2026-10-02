@@ -8283,6 +8283,15 @@ checkURL(true);
     updateDocsURL();
 }
 
+function getAuthHeaders(user, password) {
+    const headers = { 'Authorization': 'never' };
+    if (user)
+        headers['X-ClickHouse-User'] = user;
+    if (password)
+        headers['X-ClickHouse-Key'] = password;
+    return headers;
+}
+
 /// `quiet` runs a background panel-maintenance query without touching the main result pane:
 /// a failure must not wipe the current result and replace it with this query's error, and a
 /// success must not clear an error the user's own query left on screen. It is used for the
@@ -8306,9 +8315,6 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
         /// document, so a framing carried by the connection URL or by the HTTP session behind it
         /// would turn it into a packet stream that no panel query can read.
         'add_http_cors_header=1&framing_output_format=None&default_format=JSON' + url_params;
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
-
     /// Whether this request still belongs to the active connection. Re-evaluated after the
     /// `await` (not captured up front) because the connection can change while the fetch is in
     /// flight; a stale request must not touch the shared result pane.
@@ -8316,7 +8322,7 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
 
     let response;
     try {
-        response = await fetch(url, { method: "POST", body: query, headers: { 'Authorization': 'never' } });
+        response = await fetch(url, { method: "POST", body: query, headers: getAuthHeaders(user, password) });
     } catch (e) {
         if (!quiet && belongs_to_active_connection()) {
             clear();
@@ -8349,10 +8355,8 @@ async function getServerStatus(server_address, user, password) {
         /// Framing is pinned off for the same reason as in `auxiliaryQuery`: the response is
         /// parsed as JSON, not as a packet stream.
         'add_http_cors_header=1&framing_output_format=None&default_format=JSONEachRow';
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
     try {
-        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t", headers: { 'Authorization': 'never' } });
+        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t", headers: getAuthHeaders(user, password) });
         if (!response.ok) return false;
         json = await response.json();
         return json;
@@ -10931,8 +10935,6 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
         /// Ask server to allow cross-domain requests.
         'add_http_cors_header=1';
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
     url += '&enable_http_compression=1';
     /// We will put the result in the query cache, so it can be used when download is initiated later.
     /// But we don't use cached results, so the results that we get here, are always fresh.
@@ -11075,7 +11077,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             throw new Error("This page requires framing to render results; it cannot run a query that sets framing_output_format = 'None' - or to a value it cannot know upfront (DEFAULT, or a query-parameter placeholder like {fmt:String}).");
         }
 
-        const fetch_options = { method: "POST", body: query, signal: abortController.signal, headers: { 'Authorization': 'never' } };
+        const fetch_options = { method: "POST", body: query, signal: abortController.signal, headers: getAuthHeaders(user, password) };
         response = await fetch(use_framing ? framing_url : url, fetch_options);
 
         /// Detect image results (e.g. `FORMAT PNG`) by the response `Content-Type` rather than by
@@ -17946,12 +17948,8 @@ function wasmAvailable() {
 
 /// Build the request URL the same way `postImpl` does, but for the completion query.
 function buildCompletionUrl() {
-    const user = user_elem.value;
-    const password = password_elem.value;
     const server_address = url_elem.value;
     let url = server_address + (server_address.indexOf('?') >= 0 ? '&' : '?') + 'add_http_cors_header=1';
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
     /// Framing is pinned off (not merely unset): the completion response is read as plain
     /// `TSVRaw` text, so a framing carried by the connection URL or by the HTTP session would
     /// otherwise wrap it into packets.
@@ -17988,7 +17986,7 @@ async function loadCompletions() {
         const response = await fetch(buildCompletionUrl(), {
             method: "POST",
             body: COMPLETION_QUERY,
-            headers: { 'Authorization': 'never' },
+            headers: getAuthHeaders(user_elem.value, password_elem.value),
         });
         /// The connection settings changed while loading — discard this stale result.
         if (generation !== connectionGeneration) {

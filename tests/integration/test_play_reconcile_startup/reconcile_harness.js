@@ -480,6 +480,58 @@ function extractScript(html) {
     return blocks.reduce((a, b) => (a.length >= b.length ? a : b));
 }
 
+function extractTopLevelFunction(js, name) {
+    const startMatch = new RegExp(`^(?:async )?function ${name}\\s*\\(`, 'm').exec(js);
+    if (!startMatch) throw new Error(`function ${name} not found in play.html`);
+    const afterStart = startMatch.index + startMatch[0].length;
+    const nextMatch = /^(?:async )?function [A-Za-z_$][\w$]*\s*\(/m.exec(js.slice(afterStart));
+    return js.slice(startMatch.index, nextMatch ? afterStart + nextMatch.index : js.length);
+}
+
+function checkAuthHeaderTransport(js) {
+    const helperMatch = js.match(/function getAuthHeaders\(user, password\) \{\n[\s\S]*?\n\}/);
+    if (!helperMatch) throw new Error('getAuthHeaders not found in play.html');
+    const getAuthHeaders = vm.runInNewContext(`(${helperMatch[0]})`);
+    const cases = [
+        ['named-user', 'alice', 'p&?#%', { Authorization: 'never', 'X-ClickHouse-User': 'alice', 'X-ClickHouse-Key': 'p&?#%' }],
+        ['empty-password', 'alice', '', { Authorization: 'never', 'X-ClickHouse-User': 'alice' }],
+        ['default-user', '', 'secret', { Authorization: 'never', 'X-ClickHouse-Key': 'secret' }],
+        ['default-credentials', '', '', { Authorization: 'never' }],
+    ];
+    for (const [name, user, password, expected] of cases) {
+        const actual = getAuthHeaders(user, password);
+        check('auth-header-cases', `${name} uses the expected headers`,
+            JSON.stringify(actual) === JSON.stringify(expected), actual);
+    }
+
+    const requestFunctions = [
+        ['auxiliaryQuery', 'headers: getAuthHeaders(user, password)'],
+        ['getServerStatus', 'headers: getAuthHeaders(user, password)'],
+        ['postImpl', 'headers: getAuthHeaders(user, password)'],
+        ['loadCompletions', 'headers: getAuthHeaders(user_elem.value, password_elem.value)'],
+    ];
+    for (const [name, headerCall] of requestFunctions) {
+        const source = extractTopLevelFunction(js, name);
+        check('auth-header-cases', `${name} uses header authentication`, source.includes(headerCall), name);
+        check('auth-header-cases', `${name} does not append credentials to its URL`,
+            !/url \+= '&(?:user|password)=/.test(source), name);
+    }
+
+    const completionUrlSource = js.match(/function buildCompletionUrl\(\) \{\n[\s\S]*?\n\}/);
+    if (!completionUrlSource) throw new Error('buildCompletionUrl not found in play.html');
+    const buildCompletionUrl = vm.runInNewContext(`(${completionUrlSource[0]})`, {
+        url_elem: { value: 'http://localhost:8123/?tenant=default' },
+    });
+    const completionUrl = new URL(buildCompletionUrl());
+    check('auth-header-cases', 'completion URL keeps query options without credentials',
+        completionUrl.searchParams.get('tenant') === 'default'
+            && completionUrl.searchParams.get('add_http_cors_header') === '1'
+            && completionUrl.searchParams.get('framing_output_format') === 'None'
+            && completionUrl.searchParams.get('default_format') === 'TSVRaw'
+            && !completionUrl.searchParams.has('user')
+            && !completionUrl.searchParams.has('password'), completionUrl.href);
+}
+
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function runScenario(js, config) {
@@ -559,6 +611,7 @@ async function main() {
     }
     const js = extractScript(html);
     const base = 'http://127.0.0.1:8123/play';
+    checkAuthHeaderTransport(js);
 
     /// Contract 1: a mixed workspace (blank + non-blank saved tabs) restores only the
     /// non-blank tabs on a plain load; the blank one is pruned from IndexedDB too.

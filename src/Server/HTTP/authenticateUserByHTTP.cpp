@@ -142,8 +142,8 @@ bool authenticateUserByHTTP(
     /// origin, it attaches the `Authorization` header to every subsequent request to that
     /// origin automatically - including requests that the application has no way to add or
     /// remove headers from, such as a form submission or a download navigation. The Web UI
-    /// (`play.html`) authenticates by putting the user name and password into the URL query
-    /// parameters, so without this precedence such a request would carry both the remembered
+    /// (`play.html`) download form puts the user name and password into the URL query
+    /// parameters, so without this precedence a download request would carry both the remembered
     /// header and the parameters and be rejected. (The special value `Authorization: never`
     /// also suppresses the header, but it can only be set from a scripted request such as
     /// `fetch` or `XHR`, not from a plain navigation.)
