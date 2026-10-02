@@ -1,0 +1,36 @@
+20
+-- the row group with the smallest (largest) k is read first and the others are skipped
+[[0], [1], [2]] at most 3 row groups read: True
+[[19999], [19998], [19997]] at most 3 row groups read: True
+-- results identical with and without the optimization
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+-- functions that depend on the rows of their block below the sort see the same rows
+0	11000
+1	11001
+2	11002
+OK
+1
+4
+7
+OK
+-- the same for a row policy
+1
+4
+7
+OK
+row groups in the table:	20
