@@ -229,23 +229,26 @@ bool ReadBufferFromGCS::nextImpl()
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSMicroseconds, elapsed_microseconds);
 
-    if (bytes_read == 0)
+    /// A transport failure can arrive together with the bytes delivered before it, so the status is
+    /// checked after every read, not only after one that produced nothing: otherwise a consumer that
+    /// stops early would accept the truncated data as complete, exactly as `readBigAt` guards against.
+    if (!read_stream->status().ok())
     {
-        /// The read produced no bytes: either clean EOF (status stays ok) or a transport error.
-        if (!read_stream->status().ok())
-        {
-            read_failed = true;
-            ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSRequestsErrors);
-            logGCSReadFailure(blob_storage_log, bucket, key, elapsed_microseconds, read_stream->status());
-            throwReadFailure(
-                read_stream->status(),
-                bucket,
-                key,
-                expected_generation,
-                fmt::format("while reading '{}' in bucket '{}' at offset {}", key, bucket, offset));
-        }
-        return false;
+        read_failed = true;
+        ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSRequestsErrors);
+        logGCSReadFailure(blob_storage_log, bucket, key, elapsed_microseconds, read_stream->status());
+        throwReadFailure(
+            read_stream->status(),
+            bucket,
+            key,
+            expected_generation,
+            fmt::format("while reading '{}' in bucket '{}' at offset {} ({} bytes read before the failure)",
+                key, bucket, offset, bytes_read));
     }
+
+    /// No bytes and no error: clean end of the object.
+    if (bytes_read == 0)
+        return false;
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSBytes, bytes_read);
     BufferBase::set(data_ptr, bytes_read, 0);
