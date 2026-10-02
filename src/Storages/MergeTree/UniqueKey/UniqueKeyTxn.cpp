@@ -137,18 +137,15 @@ void UniqueKeyTxnManager::waitForCommitsInFlight(const String & partition_id)
     std::lock_guard wait_out(partitionLock(partition_id));
 }
 
-namespace
-{
-
 /// A part is active from `publish` on, inside its commit's partition guard, so an unresolved creation is
 /// waited out there.
-CSN creationCSN(const IMergeTreeDataPart & part)
+CSN UniqueKeyTxnManager::creationCSN(const IMergeTreeDataPart & part)
 {
     const VersionInfo info = part.version->getInfo();
     CSN csn = info.creation_csn != Tx::UnknownCSN ? info.creation_csn : TransactionManager::getCSN(info.creation_tid);
     if (csn == Tx::UnknownCSN)
     {
-        part.storage.uniqueKeyTxnManager().waitForCommitsInFlight(part.info.getPartitionId());
+        waitForCommitsInFlight(part.info.getPartitionId());
         csn = TransactionManager::getCSN(info.creation_tid);
     }
 
@@ -156,8 +153,6 @@ CSN creationCSN(const IMergeTreeDataPart & part)
         throw Exception(ErrorCodes::SERIALIZATION_ERROR,
             "Source part {} was created by transaction {}, which is not committed", part.name, info.creation_tid);
     return csn;
-}
-
 }
 
 void throwIfInsideTransaction(const MergeTreeTransactionPtr & current, std::string_view operation)
@@ -178,7 +173,7 @@ MergeTreeTransactionHolder beginUniqueKeyTransaction(
     auto & manager = TransactionManager::instance();
     CSN sources_csn = Tx::NonTransactionalCSN;
     for (const auto & part : source_parts)
-        sources_csn = std::max(sources_csn, creationCSN(*part));
+        sources_csn = std::max(sources_csn, part->storage.uniqueKeyTxnManager().creationCSN(*part));
     manager.waitForCSNLoaded(sources_csn);
 
     auto txn = manager.beginTransaction();

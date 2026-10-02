@@ -105,10 +105,14 @@ public:
     CSN commitTransaction(
         MergeTreeTransactionHolder & transaction, IUniqueKeyCommit & write, const std::atomic<bool> * cancelled = nullptr);
 
+    /// The creation csn of @part, a part of this table, once a commit still in flight for it has finished.
+    /// Throws SERIALIZATION_ERROR if the creation is not committed.
+    CSN creationCSN(const IMergeTreeDataPart & part);
+
+private:
     /// Returns once every write that published a part into @partition_id before the call has left its commit.
     void waitForCommitsInFlight(const String & partition_id);
 
-private:
     /// Returns once no Active part in @partition_id is unresolved
     void waitForUnresolvedParts(
         const String & partition_id, std::string_view kind, const TransactionID & tid, const std::atomic<bool> * cancelled) const;
