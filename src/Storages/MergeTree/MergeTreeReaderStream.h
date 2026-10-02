@@ -106,7 +106,7 @@ protected:
     MergeTreeMarksGetterPtr marks_getter;
 
 private:
-    MarkRangesPtr request_map = settings.request_map;
+    MarkRangesPtr request_map;
 };
 
 /// Class for reading a single column (or index) from file

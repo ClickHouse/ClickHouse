@@ -249,15 +249,6 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 {
     Readers new_readers;
 
-    /// Copied only to carry a map.
-    std::optional<MergeTreeReaderSettings> settings_with_map;
-    if (const auto & map = read_request_map ? read_request_map : read_info->read_request_map)
-    {
-        settings_with_map = extras.reader_settings;
-        settings_with_map->request_map = map;
-    }
-    const auto & reader_settings = settings_with_map ? *settings_with_map : extras.reader_settings;
-
     auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
     {
         return createMergeTreeReader(
@@ -270,7 +261,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.uncompressed_cache,
             extras.mark_cache,
             is_prewhere ? nullptr : read_info->deserialization_prefixes_cache.get(),
-            reader_settings,
+            extras.reader_settings,
             extras.value_size_map,
             extras.profile_callback);
     };
@@ -305,19 +296,8 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             new_readers.prewhere.back()->setReadHints(read_info->read_hints, pre_columns_per_step);
     }
 
-    const auto & patch_maps = patch_read_request_maps.empty() ? read_info->patch_read_request_maps : patch_read_request_maps;
-    if (!patch_maps.empty() && patch_maps.size() != read_info->patch_parts.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} patch request maps for {} patch parts", patch_maps.size(), read_info->patch_parts.size());
-
     auto create_patch_reader = [&](size_t part_idx)
     {
-        std::optional<MergeTreeReaderSettings> patch_settings_with_map;
-        if (!patch_maps.empty())
-        {
-            patch_settings_with_map = extras.reader_settings;
-            patch_settings_with_map->request_map = patch_maps[part_idx];
-        }
-
         return createMergeTreeReader(
             read_info->patch_parts[part_idx].part,
             read_info->task_columns.patch_columns[part_idx],
@@ -328,7 +308,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.uncompressed_cache,
             extras.mark_cache,
             /*deserialization_prefixes_cache=*/ nullptr,
-            patch_settings_with_map ? *patch_settings_with_map : extras.reader_settings,
+            extras.reader_settings,
             extras.value_size_map,
             extras.profile_callback);
     };
@@ -340,6 +320,11 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             create_patch_reader(i),
             extras.patch_join_cache));
     }
+
+    const auto & map = read_request_map ? read_request_map : read_info->read_request_map;
+    const auto & patch_maps = patch_read_request_maps.empty() ? read_info->patch_read_request_maps : patch_read_request_maps;
+    if (map || !patch_maps.empty())
+        new_readers.updateReadRequestMap(map, patch_maps);
 
     return new_readers;
 }

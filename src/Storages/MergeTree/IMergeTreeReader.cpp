@@ -545,7 +545,7 @@ void IMergeTreeReader::updateAllMarkRanges(const MarkRanges & ranges)
 
 void IMergeTreeReader::updateReadRequestMap(MarkRangesPtr request_map)
 {
-    settings.request_map = std::move(request_map);
+    read_request_map = std::move(request_map);
 }
 
 std::optional<IMergeTreeReader::ColumnForOffsets>
