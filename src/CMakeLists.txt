@@ -322,6 +322,7 @@ endif ()
 # frame pointer here shaves a couple of instructions off each call (almost a 2x speedup of
 # the ThreadFuzzer test); see commit d5825ec8 / azat 2024-03-04.
 set_source_files_properties(Common/ThreadFuzzer.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
+set_source_files_properties(Columns/ColumnsCommon.cpp PROPERTIES COMPILE_FLAGS "-Wno-psabi")
 
 # Arrow IPC buffers use intentionally unaligned int32 offset arrays — suppress the alignment check.
 # RocksDB EmbeddedRocksDB full scan hits a pointer-overflow when a corrupted slice size
