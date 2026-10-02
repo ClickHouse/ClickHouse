@@ -693,6 +693,47 @@ $CLICKHOUSE_CLIENT --multiquery --query "
 "
 rm -rf "$CYCLE_DIR" "$CYCLE_DIR_OUT" "$ERR_FILE"
 
+echo '--- directory dump orders a Cluster proxy source before its reader ---'
+# The reader sorts first, so only the proxy's source edge puts the source database before it.
+CLUSTER_SOURCE_DB="${DB}_cluster_z_source"
+CLUSTER_PROXY_DB="${DB}_cluster_b_proxy"
+CLUSTER_READER_DB="${DB}_cluster_a_reader"
+CLUSTER_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_cluster_dir"
+CLUSTER_DIR_OUT="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_cluster_dir.out"
+$CLICKHOUSE_CLIENT --multiquery --query "
+    DROP DATABASE IF EXISTS ${CLUSTER_READER_DB};
+    DROP DATABASE IF EXISTS ${CLUSTER_PROXY_DB};
+    DROP DATABASE IF EXISTS ${CLUSTER_SOURCE_DB};
+    CREATE DATABASE ${CLUSTER_SOURCE_DB};
+    CREATE TABLE ${CLUSTER_SOURCE_DB}.t (id UInt64) ENGINE = MergeTree ORDER BY id;
+    CREATE DATABASE ${CLUSTER_PROXY_DB} ENGINE = Cluster(test_shard_localhost, '${CLUSTER_SOURCE_DB}');
+    CREATE DATABASE ${CLUSTER_READER_DB};
+    CREATE VIEW ${CLUSTER_READER_DB}.v AS SELECT * FROM ${CLUSTER_PROXY_DB}.t;
+"
+for show_remote in 1 0; do
+    rm -rf "$CLUSTER_DIR"
+    if $CLICKHOUSE_CLIENT --show_remote_databases_in_system_tables=$show_remote \
+        --dump-schema="${CLUSTER_READER_DB},${CLUSTER_PROXY_DB},${CLUSTER_SOURCE_DB}" \
+        --dump-schema-dir="$CLUSTER_DIR" > "$CLUSTER_DIR_OUT" 2>"$ERR_FILE"; then
+        SOURCE_LINE=$(grep -n "Dumped database ${CLUSTER_SOURCE_DB} schema" "$CLUSTER_DIR_OUT" | cut -d: -f1)
+        READER_LINE=$(grep -n "Dumped database ${CLUSTER_READER_DB} schema" "$CLUSTER_DIR_OUT" | cut -d: -f1)
+        if [ -n "$SOURCE_LINE" ] && [ -n "$READER_LINE" ] && [ "$SOURCE_LINE" -lt "$READER_LINE" ]; then
+            echo "OK: source database ordered before the Cluster proxy reader (show_remote_databases_in_system_tables = $show_remote)"
+        else
+            echo "FAIL: Cluster proxy order source=$SOURCE_LINE reader=$READER_LINE (show_remote_databases_in_system_tables = $show_remote)"
+        fi
+    else
+        echo "FAIL: Cluster directory dump rejected: $(cat "$ERR_FILE")"
+    fi
+done
+$CLICKHOUSE_CLIENT --multiquery --query "
+    DROP DATABASE IF EXISTS ${CLUSTER_READER_DB};
+    DROP DATABASE IF EXISTS ${CLUSTER_PROXY_DB};
+    DROP DATABASE IF EXISTS ${CLUSTER_SOURCE_DB} SYNC;
+"
+rm -rf "$CLUSTER_DIR"
+rm -f "$CLUSTER_DIR_OUT" "$ERR_FILE"
+
 echo '--- a simple dump does not read protected cluster or macro metadata ---'
 LEAN_DB="${DB}_lean_rbac"
 LEAN_USER="${DB}_lean_rbac_user"

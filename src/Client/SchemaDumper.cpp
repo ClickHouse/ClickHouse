@@ -367,7 +367,7 @@ ExternalTableVisibility detectExternalTableVisibility(
         "SELECT name FROM system.databases WHERE engine = 'DataLakeCatalog' AND name IN (" + database_list + ")", base_settings);
 
     auto remote_databases = fetchStringColumn(connection, timeouts, client_info,
-        "SELECT name FROM system.databases WHERE engine IN ('MySQL', 'PostgreSQL', 'Remote', 'RemoteSecure') AND name IN ("
+        "SELECT name FROM system.databases WHERE engine IN ('MySQL', 'PostgreSQL', 'Remote', 'RemoteSecure', 'Cluster') AND name IN ("
             + database_list + ")",
         base_settings);
 
@@ -1681,10 +1681,12 @@ std::vector<TableInfo> resolveTables(
     for (auto & row : rows)
     {
         const auto & database_engine = database_info.at(row.database).engine;
-        if (database_engine != "Remote" && database_engine != "RemoteSecure")
+        const bool cluster_database = database_engine == "Cluster";
+        if (database_engine != "Remote" && database_engine != "RemoteSecure" && !cluster_database)
             continue;
 
-        const bool use_database_create = row.create_query.empty();
+        /// A `Cluster` proxy is always resolved through its database's `Cluster(...)` arguments.
+        const bool use_database_create = row.create_query.empty() || cluster_database;
         const String & create_query = use_database_create ? database_queries.at(row.database) : row.create_query;
         ASTPtr create_ast;
         try
@@ -1721,7 +1723,19 @@ std::vector<TableInfo> resolveTables(
                 continue;
             engine = proxy_engine;
         }
-        if (!engine || (engine->name != "Remote" && engine->name != "RemoteSecure"))
+        else if (use_database_create && stored_engine && stored_engine->name == "Cluster")
+        {
+            /// `Cluster('name', 'db')` serves each table the way `cluster('name', 'db', 'table')` reads it.
+            if (!stored_engine->arguments || stored_engine->arguments->children.size() != 2)
+                continue;
+            effective_engine = makeASTFunction(
+                "cluster",
+                stored_engine->arguments->children[0]->clone(),
+                stored_engine->arguments->children[1]->clone(),
+                make_intrusive<ASTLiteral>(row.name));
+            engine = effective_engine->as<ASTFunction>();
+        }
+        if (!engine || (engine->name != "Remote" && engine->name != "RemoteSecure" && engine->name != "cluster"))
         {
             if (use_database_create)
                 continue;

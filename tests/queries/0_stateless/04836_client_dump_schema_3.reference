@@ -99,6 +99,9 @@ OK: source database ordered before the nested proxy reader
 OK: proxy ordered before source database
 OK: replayed cycle directory dump in order
 replayed view resolves: 1
+--- directory dump orders a Cluster proxy source before its reader ---
+OK: source database ordered before the Cluster proxy reader (show_remote_databases_in_system_tables = 1)
+OK: source database ordered before the Cluster proxy reader (show_remote_databases_in_system_tables = 0)
 --- a simple dump does not read protected cluster or macro metadata ---
 OK: system.clusters is denied
 OK: system.macros is denied
