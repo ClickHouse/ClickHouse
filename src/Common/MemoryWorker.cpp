@@ -1024,6 +1024,10 @@ void MemoryWorker::updateResidentMemoryThread()
             /// would pin the tracker at that peak and every allocation would fail with `MEMORY_LIMIT_EXCEEDED`
             /// until the hard limit rises above it (https://github.com/ClickHouse/ClickHouse/issues/117681).
             /// `correct_tracker` is different: it re-applies `memory_usage.allocated` on every tick, so it cannot get stuck.
+            ///
+            /// When the tracker is not corrected on this tick, refresh `MemoryTrackingUncorrected`
+            /// anyway, so that the metric stays a snapshot of the plain counter that is at most
+            /// one tick old in both modes.
             if (first_run || total_memory_tracker.get() < 0) [[unlikely]]
             {
 #if USE_JEMALLOC
@@ -1034,6 +1038,8 @@ void MemoryWorker::updateResidentMemoryThread()
             }
             else if (correct_tracker)
                 MemoryTracker::updateAllocated(memory_usage.allocated, /*log_change=*/false);
+            else
+                MemoryTracker::updateUncorrected();
 
             /// Capture the settings generation before reading ratio/ceiling. We re-read
             /// it just before `setHardLimit` and skip the write if a reload happened
