@@ -1,5 +1,7 @@
 --- a healthy materialized view does not get the bad-select gate ---
 healthy views, bad-select gate emitted: 0
+healthy views, GROUP BY and ORDER BY gates emitted: 0
+healthy views, correlated-subquery gate emitted: 1
 OK: healthy views replayed
 healthy views, replayed objects: 10
 --- a materialized view accepted under a relaxed check gets the gate exactly once ---
@@ -37,6 +39,7 @@ plain mixed schema, bad-select gate emitted: 0
 plain mixed schema, recovery gates emitted: 0
 plain mixed schema, time-series gate emitted: 0
 plain mixed schema, keeper gate emitted: 0
+plain mixed schema, analyzer gates emitted: 0
 plain mixed schema, carrier-derived shared gates emitted: 0
 OK: plain mixed schema replayed
 plain mixed schema, replayed objects: 8
@@ -91,4 +94,4 @@ columns named lowcardinality, fixedstring, json and neighbor, their gates emitte
 --- a plain dump replays under every carrier-gate constraint ---
 plain dump, join-key/minmax-JSON/suspicious-index/url-wildcard gates emitted: 0
 OK: constrained replay succeeded
-constrained replay tables present: 20
+constrained replay tables present: 21

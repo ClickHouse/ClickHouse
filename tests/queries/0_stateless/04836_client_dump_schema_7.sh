@@ -56,9 +56,12 @@ CREATE MATERIALIZED VIEW ${DB}.mv_values (x Int64) ENGINE = Memory AS SELECT x F
 CREATE MATERIALIZED VIEW ${DB}.mv_url (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM url('http://127.0.0.1:1/data.csv', CSV, 'x Int64'));
 CREATE MATERIALIZED VIEW ${DB}.mv_static (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM s3('http://127.0.0.1:1/bucket/data.csv', NOSIGN, CSV, 'x Int64')) AND x IN (SELECT x FROM input('x Int64'));
 CREATE MATERIALIZED VIEW ${DB}.mv_folded (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT number FROM numbers(1 + 1)) AND x IN (SELECT x FROM values('x Int64', 1 + 1));
-CREATE MATERIALIZED VIEW ${DB}.mv_more (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT toInt64(zero) FROM zeros() LIMIT 1) AND x IN (SELECT x FROM loop(${DB}.src) LIMIT 1) AND x IN (SELECT x FROM generateRandom('x Int64', 1, 10, 2, SETTINGS null_ratio = 0.5) LIMIT 1);
+CREATE MATERIALIZED VIEW ${DB}.mv_more (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT toInt64(zero) FROM zeros() LIMIT 1) AND x IN (SELECT x FROM loop(${DB}.src) LIMIT 1) AND x IN (SELECT x FROM generateRandom('x Int64', 1, 10, 2, SETTINGS null_ratio = 0.5) LIMIT 1)
+    AND x IN (SELECT toInt64(prime) FROM primes(3)) AND x IN (SELECT toInt64(generate_series) FROM generateSeries(1, 3));
 "
 echo "healthy views, bad-select gate emitted: $(grep -c "$BADSEL_RE" "$DUMP_FILE")"
+echo "healthy views, GROUP BY and ORDER BY gates emitted: $(grep -cE '^SET allow_suspicious_types_in_(group|order)_by = 1;' "$DUMP_FILE")"
+echo "healthy views, correlated-subquery gate emitted: $(grep -cE '^SET (allow_experimental_correlated_subqueries|allow_correlated_subqueries) = 1;' "$DUMP_FILE")"
 replay_local 'healthy views' 'mv%'
 
 echo '--- a materialized view accepted under a relaxed check gets the gate exactly once ---'
@@ -135,7 +138,8 @@ CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_values (x Int64) ENGINE = Memory AS
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_url (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT x FROM url('http://127.0.0.1:1/data.csv', CSV, 'x Int64'));
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_static (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT x FROM s3('http://127.0.0.1:1/bucket/data.csv', NOSIGN, CSV, 'x Int64')) AND x IN (SELECT x FROM input('x Int64'));
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_folded (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT number FROM numbers(1 + 1)) AND x IN (SELECT x FROM values('x Int64', 1 + 1));
-CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_more (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT toInt64(zero) FROM zeros() LIMIT 1) AND x IN (SELECT x FROM loop(${CONSTRAINT_DB}.src) LIMIT 1) AND x IN (SELECT x FROM generateRandom('x Int64', 1, 10, 2, SETTINGS null_ratio = 0.5) LIMIT 1);
+CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_more (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT toInt64(zero) FROM zeros() LIMIT 1) AND x IN (SELECT x FROM loop(${CONSTRAINT_DB}.src) LIMIT 1) AND x IN (SELECT x FROM generateRandom('x Int64', 1, 10, 2, SETTINGS null_ratio = 0.5) LIMIT 1)
+    AND x IN (SELECT toInt64(prime) FROM primes(3)) AND x IN (SELECT toInt64(generate_series) FROM generateSeries(1, 3));
 "
 $CLICKHOUSE_LOCAL --path "$LOCAL_PATH" --dump-schema="$CONSTRAINT_DB" > "$DUMP_FILE" 2>"$ERR_FILE"
 rm -rf "$LOCAL_PATH"
@@ -190,6 +194,7 @@ echo "plain mixed schema, bad-select gate emitted: $(grep -c "$BADSEL_RE" "$DUMP
 echo "plain mixed schema, recovery gates emitted: $(grep -cE "${TS_RE}|${KEEPER_RE}|${PG_RE}" "$DUMP_FILE")"
 echo "plain mixed schema, time-series gate emitted: $(grep -cE "$TS_RE" "$DUMP_FILE")"
 echo "plain mixed schema, keeper gate emitted: $(grep -cE "$KEEPER_RE" "$DUMP_FILE")"
+echo "plain mixed schema, analyzer gates emitted: $(grep -cE '^SET (allow_suspicious_types_in_group_by|allow_suspicious_types_in_order_by|allow_experimental_correlated_subqueries) = 1;' "$DUMP_FILE")"
 echo "plain mixed schema, carrier-derived shared gates emitted: $(grep -cE '^SET (allow_fuzz_query_functions|allow_deprecated_error_prone_window_functions|allow_hyperscan|allow_suspicious_codecs|allow_suspicious_low_cardinality_types|allow_experimental_full_text_index|allow_suspicious_primary_key|allow_experimental_funnel_functions|allow_experimental_nlp_functions|allow_suspicious_fixed_string_types|allow_suspicious_variant_types|allow_suspicious_ttl_expressions|allow_dynamic_type_in_join_keys|allow_deprecated_syntax_for_merge_tree) = ' "$DUMP_FILE")"
 replay_local 'plain mixed schema' '%'
 
@@ -229,12 +234,14 @@ CREATE MATERIALIZED VIEW ${DB}.mv_table_function (s String) ENGINE = Memory AS S
 echo "fuzzQuery table function, fuzz-functions gate emitted: $(grep -c '^SET allow_fuzz_query_functions = 1;' "$DUMP_FILE")"
 replay_local 'fuzzQuery table function' 'mv%'
 make_dump "
-CREATE TABLE ${DB}.c (x Int64 CODEC(Delta, LZ4)) ENGINE = MergeTree ORDER BY x;
+SET allow_suspicious_codecs = 1;
+CREATE TABLE ${DB}.c (x UInt64 CODEC(Delta)) ENGINE = MergeTree ORDER BY tuple();
 "
 echo "CODEC column, suspicious-codecs gate emitted: $(grep -c '^SET allow_suspicious_codecs = 1;' "$DUMP_FILE")"
 replay_local 'CODEC column' '%'
 make_dump "
-CREATE TABLE ${DB}.lc (s LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple();
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE ${DB}.lc (s LowCardinality(UInt64)) ENGINE = MergeTree ORDER BY tuple();
 "
 echo "LowCardinality column, low-cardinality gate emitted: $(grep -c '^SET allow_suspicious_low_cardinality_types = 1;' "$DUMP_FILE")"
 replay_local 'LowCardinality column' '%'
@@ -251,13 +258,15 @@ CREATE TABLE ${DB}.pk (k SimpleAggregateFunction(sum, UInt64)) ENGINE = Aggregat
 echo "SimpleAggregateFunction key, suspicious-primary-key gate emitted: $(grep -c '^SET allow_suspicious_primary_key = 1;' "$DUMP_FILE")"
 replay_local 'SimpleAggregateFunction key' '%'
 make_dump "
-CREATE TABLE ${DB}.tc (d DateTime, t Time, x Int64 TTL d + INTERVAL 1 DAY) ENGINE = MergeTree ORDER BY d;
+SET allow_suspicious_ttl_expressions = 1;
+CREATE TABLE ${DB}.tc (d DateTime, t Time, x Int64 TTL now() + INTERVAL 1 DAY) ENGINE = MergeTree ORDER BY d;
 "
 echo "Time column and column TTL, time-type gate emitted: $(grep -c '^SET allow_experimental_time_time64_type = 1;' "$DUMP_FILE")"
 echo "Time column and column TTL, suspicious-TTL gate emitted: $(grep -c '^SET allow_suspicious_ttl_expressions = 1;' "$DUMP_FILE")"
 replay_local 'Time column and column TTL' '%'
 make_dump "
-CREATE TABLE ${DB}.tt (d DateTime) ENGINE = MergeTree ORDER BY d TTL d + INTERVAL 1 DAY;
+SET allow_suspicious_ttl_expressions = 1;
+CREATE TABLE ${DB}.tt (d DateTime) ENGINE = MergeTree ORDER BY d TTL now() + INTERVAL 1 DAY;
 "
 echo "table TTL, suspicious-TTL gate emitted: $(grep -c '^SET allow_suspicious_ttl_expressions = 1;' "$DUMP_FILE")"
 make_dump "
@@ -266,7 +275,8 @@ CREATE TABLE ${DB}.named (time UInt32, ttl UInt32) ENGINE = MergeTree ORDER BY t
 echo "columns named time and ttl, time-type gate emitted: $(grep -c '^SET allow_experimental_time_time64_type = 1;' "$DUMP_FILE")"
 echo "columns named time and ttl, suspicious-TTL gate emitted: $(grep -c '^SET allow_suspicious_ttl_expressions = 1;' "$DUMP_FILE")"
 make_dump "
-CREATE TABLE ${DB}.vt (v Variant(String, UInt64)) ENGINE = MergeTree ORDER BY tuple();
+SET allow_suspicious_variant_types = 1;
+CREATE TABLE ${DB}.vt (v Variant(UInt32, Int64)) ENGINE = MergeTree ORDER BY tuple();
 "
 echo "Variant column, suspicious-variant gate emitted: $(grep -c '^SET allow_suspicious_variant_types = 1;' "$DUMP_FILE")"
 replay_local 'Variant column' '%'
@@ -323,6 +333,7 @@ CREATE VIEW ${CONSTRAINT_DB}.vlc AS SELECT toLowCardinality(x) AS l FROM ${CONST
 CREATE VIEW ${CONSTRAINT_DB}.u_star AS SELECT * FROM url('http://127.0.0.1:1/*.csv', CSV, 'x UInt8');
 CREATE VIEW ${CONSTRAINT_DB}.vnt AS SELECT CAST(NULL, 'Nullable(Tuple(a UInt8))') AS t;
 CREATE TABLE ${CONSTRAINT_DB}.strings (s String DEFAULT 'time' COMMENT 'variant') ENGINE = MergeTree ORDER BY tuple() COMMENT 'lowcardinality';
+CREATE TABLE ${CONSTRAINT_DB}.safe (s LowCardinality(String), f FixedString(16), v Variant(UInt64, String), c UInt64 CODEC(LZ4), d DateTime, e UInt64 TTL d + INTERVAL 1 DAY, k SimpleAggregateFunction(sum, UInt64)) ENGINE = MergeTree ORDER BY d TTL d + INTERVAL 1 DAY;
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_url (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.mt WHERE x IN (SELECT x FROM url('http://127.0.0.1:1/time/variant.csv', CSV, 'x Int64'));
 "
 $CLICKHOUSE_LOCAL --path "$LOCAL_PATH" --dump-schema="$CONSTRAINT_DB" > "$DUMP_FILE" 2>"$ERR_FILE"

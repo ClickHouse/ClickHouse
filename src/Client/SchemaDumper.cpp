@@ -3,6 +3,7 @@
 #include <Client/IServerConnection.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Compression/CompressionFactory.h>
 #include <Core/Block.h>
 #include <Core/Defines.h>
 #include <Core/Field.h>
@@ -10,6 +11,7 @@
 #include <Core/QualifiedTableName.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Databases/TablesDependencyGraph.h>
 #include <Databases/enableAllExperimentalSettings.h>
 #include <Functions/FunctionFactory.h>
@@ -23,6 +25,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
 #include <Interpreters/misc.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
@@ -33,13 +36,17 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTViewTargets.h>
+#include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDataType.h>
@@ -2322,7 +2329,9 @@ struct ReplayGateNeeds
     bool replicated_engine_arguments = false;
     bool materialized_view = false;
     bool parse_failed = false; /// a statement did not parse, so the gates it might need are unknown
-    bool analyzable_query_text = false;
+    bool analyzer_group_by = false; /// a GROUP BY or window PARTITION BY in analyzed text
+    bool analyzer_order_by = false; /// an ORDER BY or window ORDER BY in analyzed text
+    bool analyzer_subquery = false; /// a subquery in analyzed text, which may be correlated
     bool ordinary_database = false;
     bool replicated_database = false;
     bool materialized_postgresql_database = false;
@@ -2473,7 +2482,7 @@ void forEachNode(const IAST & node, const std::function<void(const IAST &)> & vi
 
 /// Lowercase function names and type names of `ast`, without the column, table and database names, so that
 /// a gate matched on them is never carried by an object's name.
-String nameTokens(const IAST & ast, const IAST * skip, bool with_types)
+String nameTokens(const IAST & ast, const IAST * skip, bool with_types, std::vector<ASTPtr> * validated_types = nullptr)
 {
     String names;
     std::set<const IAST *> table_functions;
@@ -2490,7 +2499,13 @@ String nameTokens(const IAST & ast, const IAST * skip, bool with_types)
             IParser & parser = is_structure ? static_cast<IParser &>(structure_parser) : type_parser;
             const ASTPtr parsed = parseQuery(
                 parser, literal->value.safeGet<String>(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-            names += nameTokens(*parsed, nullptr, true);
+            names += nameTokens(*parsed, nullptr, true, validated_types);
+            if (validated_types && !is_structure)
+                validated_types->push_back(parsed);
+            else if (validated_types)
+                for (const auto & child : parsed->children)
+                    if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getType())
+                        validated_types->push_back(column->getType());
         }
         catch (const Exception &) // NOLINT(bugprone-empty-catch)
         {
@@ -2520,30 +2535,149 @@ String nameTokens(const IAST & ast, const IAST * skip, bool with_types)
         else if (const auto * data_type = node.as<ASTDataType>(); data_type && with_types)
         {
             names += data_type->name + ' ';
+            /// `AggregateFunction(sum, UInt64)` names its function with a bare identifier.
             if (const auto arguments = data_type->getArguments())
-            {
-                /// `AggregateFunction(sum, UInt64)` names its function with a bare identifier.
                 for (const auto & argument : arguments->children)
                     if (const auto * identifier = argument->as<ASTIdentifier>())
                         names += identifier->name() + ' ';
-                /// `enable_nullable_tuple_type` gates a `Nullable(Tuple(...))` wherever a type is validated.
-                const auto * nested = arguments->children.empty() ? nullptr : arguments->children.front()->as<ASTDataType>();
-                if (equalsCaseInsensitive(data_type->name, "Nullable") && nested && equalsCaseInsensitive(nested->name, "Tuple"))
-                    names += "nullable_tuple ";
-            }
         }
     }, skip);
     std::ranges::transform(names, names.begin(), [](unsigned char c) { return std::tolower(c); });
     return names;
 }
 
-ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_queries)
+/// Which type gates `validateDataType` reads for a type: each is switched off alone, and is needed when that throws.
+/// A type this client cannot build needs all of them.
+struct TypeGateNeeds
+{
+    bool low_cardinality = true;
+    bool fixed_string = true;
+    bool variant = true;
+    bool time = true;
+    bool nullable_tuple = true;
+};
+
+TypeGateNeeds typeGateNeeds(const ASTPtr & type_ast)
+{
+    DataTypePtr type;
+    try
+    {
+        type = DataTypeFactory::instance().get(type_ast);
+    }
+    catch (const Exception &)
+    {
+        return {};
+    }
+    const auto fails_without = [&type](bool DataTypeValidationSettings::*gate)
+    {
+        DataTypeValidationSettings settings;
+        settings.*gate = false;
+        try
+        {
+            validateDataType(type, settings);
+            return false;
+        }
+        catch (const Exception &)
+        {
+            return true;
+        }
+    };
+    return {
+        .low_cardinality = fails_without(&DataTypeValidationSettings::allow_suspicious_low_cardinality_types),
+        .fixed_string = fails_without(&DataTypeValidationSettings::allow_suspicious_fixed_string_types),
+        .variant = fails_without(&DataTypeValidationSettings::allow_suspicious_variant_types),
+        .time = fails_without(&DataTypeValidationSettings::enable_time_time64_type),
+        .nullable_tuple = fails_without(&DataTypeValidationSettings::enable_nullable_tuple_type),
+    };
+}
+
+/// The codec gates the codec factory reads for a column's CODEC: each is switched off alone, and is needed when that
+/// throws. A column type this client cannot build needs all of them.
+std::vector<String> codecGateNeeds(const ASTPtr & codec, const ASTPtr & type_ast, const std::vector<String> & gates)
+{
+    DataTypePtr type;
+    try
+    {
+        if (type_ast)
+            type = DataTypeFactory::instance().get(type_ast);
+    }
+    catch (const Exception &)
+    {
+        return gates;
+    }
+    if (!type)
+        return gates;
+    std::vector<String> needed;
+    for (const auto & gate : gates)
+    {
+        Settings settings;
+        for (const auto & other : gates)
+            settings.set(other, Field(other != gate));
+        try
+        {
+            CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, type, CodecValidationSettings(settings));
+        }
+        catch (const Exception &)
+        {
+            needed.push_back(gate);
+        }
+    }
+    return needed;
+}
+
+/// `verifySortingKey` rejects only a `SimpleAggregateFunction` column in the sorting key, so only a key naming one needs
+/// `allow_suspicious_primary_key`. The old `MergeTree(date, key, ...)` form keeps its key in the engine arguments.
+bool sortingKeyMayUseSimpleAggregateFunction(const ASTStorage & storage, const ASTCreateQuery & create)
+{
+    if (!create.columns_list || !create.columns_list->columns)
+        return true;
+    std::set<String> columns;
+    for (const auto & child : create.columns_list->columns->children)
+        if (const auto * column = child->as<ASTColumnDeclaration>())
+            if (const auto * type = column->getType() ? column->getType()->as<ASTDataType>() : nullptr;
+                type && equalsCaseInsensitive(type->name, "SimpleAggregateFunction"))
+                columns.insert(column->name);
+    bool found = false;
+    const auto visit = [&](const IAST & node)
+    {
+        if (const auto * identifier = node.as<ASTIdentifier>(); identifier && columns.contains(identifier->shortName()))
+            found = true;
+    };
+    for (const IAST * key : {storage.order_by, storage.primary_key, storage.engine->arguments.get()})
+        if (key)
+            forEachNode(*key, visit);
+    return found;
+}
+
+/// `allow_suspicious_ttl_expressions` only skips the TTL checks: the expression reads a column and calls only
+/// deterministic functions. A TTL that passes them on its AST alone does not need the gate.
+bool ttlMayNeedSuspiciousGate(const IAST & expression, const std::set<String> & columns, const ContextPtr & context)
+{
+    bool reads_column = false;
+    bool suspicious = false;
+    forEachNode(expression, [&](const IAST & node)
+    {
+        if (const auto * identifier = node.as<ASTIdentifier>())
+            reads_column |= columns.contains(identifier->shortName());
+        else if (const auto * function = node.as<ASTFunction>())
+        {
+            /// An aggregate function or a lambda is not a regular function, and keeps the gate.
+            const auto resolver = FunctionFactory::instance().tryGet(function->name, context);
+            suspicious |= !resolver || !resolver->isDeterministic();
+        }
+        else if (!node.as<ASTLiteral>() && !node.as<ASTExpressionList>())
+            suspicious = true;
+    });
+    return suspicious || !reads_column;
+}
+
+ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_queries, const ContextPtr & context)
 {
     ReplayGateNeeds needs;
-    std::vector<String> codec_gate_names;
+    std::vector<String> codec_gates_to_check = {"allow_suspicious_codecs"};
     for (const auto & name : allExperimentalSettingNames())
         if (name.starts_with("enable_") && name.ends_with("_codec"))
-            codec_gate_names.push_back(name);
+            codec_gates_to_check.push_back(name);
 
     /// Whether a dumped database is, or may be, `Replicated` at replay.
     std::map<String, bool> database_may_be_replicated;
@@ -2559,7 +2693,8 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
         {
             /// Cannot rule any gate out for a statement that does not parse, so keep them all.
             return {.explicit_uuid = true, .replicated_engine_arguments = true, .materialized_view = true,
-                    .parse_failed = true, .analyzable_query_text = true, .ordinary_database = true, .replicated_database = true,
+                    .parse_failed = true, .analyzer_group_by = true, .analyzer_order_by = true,
+                    .analyzer_subquery = true, .ordinary_database = true, .replicated_database = true,
                     .materialized_postgresql_database = true, .materialized_mysql_database = true,
                     .materialized_postgresql_table = true, .time_series_table = true,
                     .kafka_keeper_offsets = true, .nullable_tuple_type = true, .unique_key = true,
@@ -2598,10 +2733,34 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
 
         /// The analyzer-side gates fire only where stored query text is re-analysed at replay: a
         /// view's AS SELECT, or a projection (`ProjectionsDescription` runs `runOnlyResolve` on it).
-        if ((create->select && !plain_view)
-            || (create->columns_list && create->columns_list->projections
-                && !create->columns_list->projections->children.empty()))
-            needs.analyzable_query_text = true;
+        /// The analyzer reads them for GROUP BY / PARTITION BY keys, ORDER BY keys and correlated subqueries.
+        const auto scan_analyzed = [&needs](const IAST & query)
+        {
+            forEachNode(query, [&needs](const IAST & node)
+            {
+                if (const auto * select = node.as<ASTSelectQuery>())
+                {
+                    needs.analyzer_group_by |= select->groupBy() || select->group_by_all;
+                    needs.analyzer_order_by |= select->orderBy() != nullptr;
+                }
+                else if (const auto * projection = node.as<ASTProjectionSelectQuery>())
+                {
+                    needs.analyzer_group_by |= projection->groupBy() != nullptr;
+                    needs.analyzer_order_by |= projection->orderBy() != nullptr;
+                }
+                else if (const auto * window = node.as<ASTWindowDefinition>())
+                {
+                    needs.analyzer_group_by |= window->partition_by != nullptr;
+                    needs.analyzer_order_by |= window->order_by != nullptr;
+                }
+                else if (node.as<ASTSubquery>())
+                    needs.analyzer_subquery = true;
+            });
+        };
+        if (create->select && !plain_view)
+            scan_analyzed(*create->select);
+        if (create->columns_list && create->columns_list->projections)
+            scan_analyzed(*create->columns_list->projections);
 
         /// `registerStorageMergeTree` re-enters its check only for an engine that kept its arguments.
         if (create->getTable().empty())
@@ -2669,16 +2828,10 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
                 if (inner_engine->unique_key)
                     needs.unique_key = true;
 
-        /// `enable_nullable_tuple_type` gates `Nullable(Tuple(...))` column types.
-        if (!plain_view && create->columns_list && create->columns_list->columns)
-            for (const auto & child : create->columns_list->columns->children)
-                if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getType())
-                    if (column->getType()->formatWithSecretsOneLine().contains("Nullable(Tuple"))
-                        needs.nullable_tuple_type = true;
-
         /// Shared gates: each carrier is matched on the statement's names or AST, over-approximated
         /// where the exact check site is not worth mirroring.
-        const String names = nameTokens(*create_ast, unread_select, /* with_types= */ !plain_view);
+        std::vector<ASTPtr> validated_types;
+        const String names = nameTokens(*create_ast, unread_select, /* with_types= */ !plain_view, &validated_types);
 
         needs.funnel_functions |= hasToken(names, "sequencenextnode", true);
         needs.nlp_functions |= hasToken(names, "synonyms") || hasToken(names, "lemmatize") || hasToken(names, "detectlanguage", true)
@@ -2689,20 +2842,34 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
         needs.hyperscan_functions |= hasToken(names, "multimatch", true) || hasToken(names, "multifuzzymatch", true);
         needs.time_series_aggregate_functions |= hasTimeSeriesFunction(names);
 
-        /// `validateDataType` reads these for column types, table-function structures and CAST types only.
-        needs.low_cardinality_type |= hasToken(names, "lowcardinality");
-        needs.fixed_string_type |= hasToken(names, "fixedstring") || hasToken(names, "binary");
-        needs.variant_type |= hasToken(names, "variant");
-        needs.time_type |= hasToken(names, "time") || hasToken(names, "time64");
-        needs.nullable_tuple_type |= hasToken(names, "nullable_tuple");
-
-        if (hasToken(names, "codec"))
+        /// Type gates come from `validateDataType` itself. `InterpreterCreateQuery` validates the stored columns except a
+        /// view's; a materialized view's inner table validates them on its own CREATE.
+        const bool columns_validated = !plain_view && !(create->is_materialized_view && create->hasTargetTableID(ViewTarget::To));
+        if (columns_validated && create->columns_list && create->columns_list->columns)
+            for (const auto & child : create->columns_list->columns->children)
+                if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getType())
+                    validated_types.push_back(column->getType());
+        for (const auto & type : validated_types)
         {
-            needs.suspicious_codecs = true;
-            for (const auto & gate : codec_gate_names)
-                if (hasToken(names, std::string_view(gate).substr(7, gate.size() - 7 - 6)))
-                    needs.codec_gates.insert(gate);
+            const TypeGateNeeds type_needs = typeGateNeeds(type);
+            needs.low_cardinality_type |= type_needs.low_cardinality;
+            needs.fixed_string_type |= type_needs.fixed_string;
+            needs.variant_type |= type_needs.variant;
+            needs.time_type |= type_needs.time;
+            needs.nullable_tuple_type |= type_needs.nullable_tuple;
         }
+
+        /// Codec gates come from the codec factory itself, for every column CODEC (`getColumnsDescription`).
+        if (create->columns_list && create->columns_list->columns)
+            for (const auto & child : create->columns_list->columns->children)
+                if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getCodec())
+                    for (const auto & gate : codecGateNeeds(column->getCodec(), column->getType(), codec_gates_to_check))
+                    {
+                        if (gate == "allow_suspicious_codecs")
+                            needs.suspicious_codecs = true;
+                        else
+                            needs.codec_gates.insert(gate);
+                    }
 
         if (create->dictionary && create->dictionary->source && equalsCaseInsensitive(create->dictionary->source->name, "ytsaurus"))
             needs.ytsaurus_dictionary_source = true;
@@ -2758,21 +2925,51 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
 
         if (has_merge_tree)
         {
-            needs.suspicious_primary_key |= hasToken(names, "simpleaggregatefunction");
-            /// Read only for a table TTL or a column TTL.
+            std::set<String> columns;
+            /// The TTL build is stricter for `Variant`/`Dynamic` values without the gate.
+            bool variant_or_dynamic_column = false;
+            if (create->columns_list && create->columns_list->columns)
+                for (const auto & child : create->columns_list->columns->children)
+                    if (const auto * column = child->as<ASTColumnDeclaration>())
+                    {
+                        columns.insert(column->name);
+                        const String type = column->getType() ? column->getType()->formatWithSecretsOneLine() : "";
+                        variant_or_dynamic_column |= type.empty() || type.contains("Variant") || type.contains("Dynamic")
+                            || type.contains("JSON") || type.contains("Object");
+                    }
+            const auto ttl_needs_gate = [&](const IAST & expression)
+            {
+                return variant_or_dynamic_column || ttlMayNeedSuspiciousGate(expression, columns, context);
+            };
             for (const auto * storage : storages)
-                needs.suspicious_ttl_expressions |= storage->ttl_table != nullptr;
+            {
+                if (!endsWithCaseInsensitive(storage->engine->name, "MergeTree"))
+                    continue;
+                needs.suspicious_primary_key |= sortingKeyMayUseSimpleAggregateFunction(*storage, *create);
+                if (storage->ttl_table)
+                    for (const auto & child : storage->ttl_table->children)
+                    {
+                        /// A WHERE, GROUP BY, SET or RECOMPRESS part goes through more checks; keep the gate, which skips them all.
+                        const auto * element = child->as<ASTTTLElement>();
+                        needs.suspicious_ttl_expressions |= !element || !element->ttl() || element->where()
+                            || !element->group_by_key.empty() || !element->group_by_assignments.empty() || element->recompression_codec
+                            || ttl_needs_gate(*element->ttl());
+                    }
+            }
             if (create->columns_list && create->columns_list->columns)
                 for (const auto & child : create->columns_list->columns->children)
                     if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getTTL())
-                        needs.suspicious_ttl_expressions = true;
+                        needs.suspicious_ttl_expressions |= ttl_needs_gate(*column->getTTL());
         }
     }
     return needs;
 }
 
 String replaySettingsPrelude(
-    const std::set<String> & settings_known_to_server, const std::vector<String> & create_queries, bool materialized_view_may_need_bad_select)
+    const std::set<String> & settings_known_to_server,
+    const std::vector<String> & create_queries,
+    bool materialized_view_may_need_bad_select,
+    const ContextPtr & context)
 {
     /// Nothing to replay means no gate can fire. Reachable whenever every database is predefined
     /// or excluded, which leaves the dump empty.
@@ -2798,7 +2995,7 @@ String replaySettingsPrelude(
         {"database_replicated_allow_explicit_uuid", "3"},
     };
     /// Emit only dump-specific gates known by the source server and required by these statements.
-    const ReplayGateNeeds needs = collectReplayGateNeeds(create_queries);
+    const ReplayGateNeeds needs = collectReplayGateNeeds(create_queries, context);
     auto is_needed = [&needs, materialized_view_may_need_bad_select](const String & name)
     {
         if (name == "database_replicated_allow_explicit_uuid")
@@ -2827,7 +3024,7 @@ String replaySettingsPrelude(
     };
 
     String res;
-    /// Shared gates stay conservative, except dead ones and those whose only carrier is proven absent.
+    /// Gates no replayed CREATE reads; a statement that does not parse cannot need them either.
     static const std::set<std::string_view> dead_settings = {
         "allow_experimental_window_functions",
         "allow_experimental_hash_functions",
@@ -2841,11 +3038,10 @@ String replaySettingsPrelude(
         /// Read only by ALTER; CREATE checks the table's own MergeTree setting of the same name, kept in its SETTINGS.
         "allow_minmax_index_for_json",
         "allow_suspicious_indices",
-    };
-    static const std::set<std::string_view> analyzer_settings = {
-        "allow_suspicious_types_in_group_by",
-        "allow_suspicious_types_in_order_by",
-        "allow_experimental_correlated_subqueries",
+        /// Read only by Iceberg INSERT, ALTER and EXECUTE.
+        "allow_insert_into_iceberg",
+        "allow_iceberg_remove_orphan_files",
+        "allow_experimental_expire_snapshots",
     };
     /// Read only when a `DataLakeCatalog` database is created, each by its own `catalog_type`.
     static const std::set<std::string_view> data_lake_catalog_settings = {
@@ -2858,21 +3054,15 @@ String replaySettingsPrelude(
         "allow_database_iceberg",
         "allow_experimental_database_paimon_rest_catalog",
     };
-    /// Read only by Iceberg INSERT, ALTER and EXECUTE, never by a replayed CREATE.
-    static const std::set<std::string_view> iceberg_write_settings = {
-        "allow_insert_into_iceberg",
-        "allow_iceberg_remove_orphan_files",
-        "allow_experimental_expire_snapshots",
-    };
     /// Read only when a `DeltaLake*` table is created; a `DataLakeCatalog` database's tables are not replayed.
     static const std::set<std::string_view> delta_lake_settings = {
         "allow_delta_lake_create_table",
         "allow_delta_kernel_rs",
         "allow_experimental_delta_lake_writes",
     };
-    /// The CREATE-statement feature that reads each remaining shared gate. A gate not listed here is always emitted,
-    /// except a per-codec `enable_<family>_codec`, which is emitted when that codec is named.
-    static const std::map<std::string_view, bool ReplayGateNeeds::*> residual_carriers = {
+    /// The CREATE-statement feature that reads each shared gate. A gate with no carrier here is never emitted,
+    /// except a per-codec `enable_<family>_codec`, which follows the codecs the columns use.
+    static const std::map<std::string_view, bool ReplayGateNeeds::*> carriers = {
         {"allow_experimental_funnel_functions", &ReplayGateNeeds::funnel_functions},
         {"allow_experimental_nlp_functions", &ReplayGateNeeds::nlp_functions},
         {"allow_fuzz_query_functions", &ReplayGateNeeds::fuzz_query_functions},
@@ -2886,6 +3076,7 @@ String replaySettingsPrelude(
         {"allow_suspicious_fixed_string_types", &ReplayGateNeeds::fixed_string_type},
         {"allow_suspicious_variant_types", &ReplayGateNeeds::variant_type},
         {"allow_experimental_time_time64_type", &ReplayGateNeeds::time_type},
+        {"allow_experimental_nullable_tuple_type", &ReplayGateNeeds::nullable_tuple_type},
         {"allow_suspicious_codecs", &ReplayGateNeeds::suspicious_codecs},
         {"allow_deprecated_syntax_for_merge_tree", &ReplayGateNeeds::deprecated_merge_tree_syntax},
         {"allow_suspicious_primary_key", &ReplayGateNeeds::suspicious_primary_key},
@@ -2893,14 +3084,26 @@ String replaySettingsPrelude(
         {"allow_experimental_full_text_index", &ReplayGateNeeds::full_text_index},
         {"allow_experimental_object_storage_queue_hive_partitioning", &ReplayGateNeeds::queue_hive_partitioning},
         {"allow_experimental_url_wildcard_from_index_pages", &ReplayGateNeeds::url_wildcard},
+        {"allow_suspicious_types_in_group_by", &ReplayGateNeeds::analyzer_group_by},
+        {"allow_suspicious_types_in_order_by", &ReplayGateNeeds::analyzer_order_by},
+        {"allow_experimental_correlated_subqueries", &ReplayGateNeeds::analyzer_subquery},
+        {"allow_experimental_unique_key", &ReplayGateNeeds::unique_key},
+        {"allow_experimental_ytsaurus_table_engine", &ReplayGateNeeds::ytsaurus_table},
+        {"allow_experimental_paimon_storage_engine", &ReplayGateNeeds::paimon_table},
     };
-    auto residual_needed = [&needs](const String & name)
+    auto shared_needed = [&needs](const String & name)
     {
+        if (dead_settings.contains(name))
+            return false;
         if (needs.parse_failed)
             return true;
-        if (auto it = residual_carriers.find(name); it != residual_carriers.end())
+        if (auto it = carriers.find(name); it != carriers.end())
             return needs.*(it->second);
-        return !(name.starts_with("enable_") && name.ends_with("_codec")) || needs.codec_gates.contains(name);
+        if (data_lake_catalog_settings.contains(name))
+            return needs.data_lake_catalog_database || needs.data_lake_catalog_gates.contains(name);
+        if (delta_lake_settings.contains(name))
+            return needs.delta_lake_table;
+        return needs.codec_gates.contains(name);
     };
     /// A dump-specific gate is emitted by the loop below, with its own value and condition.
     std::set<String> dump_specific_names;
@@ -2918,16 +3121,7 @@ String replaySettingsPrelude(
         return std::nullopt;
     };
     for (const auto & name : allExperimentalSettingNames())
-        if (!dead_settings.contains(name)
-            && !dump_specific_names.contains(name) && residual_needed(name)
-            && !iceberg_write_settings.contains(name)
-            && (!analyzer_settings.contains(name) || needs.analyzable_query_text)
-            && (name != "allow_experimental_unique_key" || needs.unique_key)
-            && (!data_lake_catalog_settings.contains(name) || needs.data_lake_catalog_database || needs.data_lake_catalog_gates.contains(name))
-            && (name != "allow_experimental_ytsaurus_table_engine" || needs.ytsaurus_table)
-            && (name != "allow_experimental_paimon_storage_engine" || needs.paimon_table)
-            && (name != "allow_experimental_nullable_tuple_type" || needs.nullable_tuple_type)
-            && (!delta_lake_settings.contains(name) || needs.delta_lake_table))
+        if (!dump_specific_names.contains(name) && shared_needed(name))
             if (const auto spelling = server_spelling(name))
                 res += "SET " + *spelling + " = 1;\n";
     /// Emit dump-specific gates only when the dumped AST proves they are needed.
@@ -3014,10 +3208,12 @@ bool tableFunctionAlwaysAnalyzes(
     if (!function || !function->arguments)
         return false;
     ASTs arguments = function->arguments->children;
-    /// These fold their arguments as constant expressions, so `numbers(1 + 1)` is checked as `numbers(2)`.
-    if (equalsCaseInsensitive(function->name, "numbers") || equalsCaseInsensitive(function->name, "numbers_mt")
-        || equalsCaseInsensitive(function->name, "zeros") || equalsCaseInsensitive(function->name, "zeros_mt")
-        || equalsCaseInsensitive(function->name, "values") || equalsCaseInsensitive(function->name, "generateRandom"))
+    /// These local generators fold their arguments as constant expressions, so `numbers(1 + 1)` is checked as `numbers(2)`.
+    static const std::set<std::string_view> generators = {"numbers", "numbers_mt", "zeros", "zeros_mt", "values", "generateRandom",
+        "generateSeries", "generate_series", "primes", "null", "fuzzQuery"};
+    const bool is_generator
+        = std::ranges::any_of(generators, [&](std::string_view name) { return equalsCaseInsensitive(function->name, name); });
+    if (is_generator)
     {
         for (auto & argument : arguments)
         {
@@ -3041,9 +3237,10 @@ bool tableFunctionAlwaysAnalyzes(
         const auto * literal = argument->as<ASTLiteral>();
         return literal && literal->value.getType() == Field::Types::UInt64;
     };
-    if (equalsCaseInsensitive(function->name, "numbers") || equalsCaseInsensitive(function->name, "numbers_mt"))
+    /// `numbers`, `generateSeries` and `primes` convert any non-negative number to `UInt64`; a third argument is a step,
+    /// which must not be zero.
+    const auto counts_with_step = [&](size_t min_arguments)
     {
-        /// `numbers` converts any non-negative number to `UInt64`; its optional third argument is a step, which must not be zero.
         const auto non_negative = [](const ASTPtr & argument) -> std::optional<UInt64>
         {
             const auto * literal = argument->as<ASTLiteral>();
@@ -3053,10 +3250,26 @@ bool tableFunctionAlwaysAnalyzes(
                 return static_cast<UInt64>(literal->value.safeGet<Int64>());
             return std::nullopt;
         };
-        return arguments.size() <= 3
+        return arguments.size() >= min_arguments && arguments.size() <= 3
             && std::ranges::all_of(arguments, [&](const ASTPtr & argument) { return non_negative(argument).has_value(); })
             && (arguments.size() < 3 || *non_negative(arguments[2]) != 0);
+    };
+    if (equalsCaseInsensitive(function->name, "numbers") || equalsCaseInsensitive(function->name, "numbers_mt"))
+        return counts_with_step(0);
+    if (equalsCaseInsensitive(function->name, "generateSeries") || equalsCaseInsensitive(function->name, "generate_series"))
+        return counts_with_step(2);
+    if (equalsCaseInsensitive(function->name, "primes"))
+        return counts_with_step(1);
+    /// `null` takes a structure, `fuzzQuery` a query and its limits.
+    const auto is_literal = [](const ASTPtr & argument) { return argument->as<ASTLiteral>() != nullptr; };
+    if (equalsCaseInsensitive(function->name, "null"))
+    {
+        const auto * structure = arguments.size() == 1 ? arguments[0]->as<ASTLiteral>() : nullptr;
+        return structure && structure->value.getType() == Field::Types::String
+            && !equalsCaseInsensitive(structure->value.safeGet<String>(), "auto");
     }
+    if (equalsCaseInsensitive(function->name, "fuzzQuery"))
+        return !arguments.empty() && std::ranges::all_of(arguments, is_literal);
     if (equalsCaseInsensitive(function->name, "zeros") || equalsCaseInsensitive(function->name, "zeros_mt"))
         return arguments.size() <= 1 && std::ranges::all_of(arguments, is_count);
     if (equalsCaseInsensitive(function->name, "generateRandom") && !arguments.empty() && arguments.back()->as<ASTSetQuery>())
@@ -3396,7 +3609,8 @@ void dumpDatabaseSchema(
         out << replaySettingsPrelude(
             settings_known_to_server,
             dumped_creates,
-            std::any_of(tables.begin(), tables.end(), [](const TableInfo & table) { return table.emit && table.needs_bad_select_gate; }));
+            std::any_of(tables.begin(), tables.end(), [](const TableInfo & table) { return table.emit && table.needs_bad_select_gate; }),
+            context);
 
         for (const auto & db : target_databases)
             out << create_database_query_by_db.at(db) << ";\n\n";
@@ -3472,7 +3686,8 @@ void dumpDatabaseSchema(
             std::any_of(
                 tables.begin(),
                 tables.end(),
-                [&](const TableInfo & table) { return table.database == db && table.emit && table.needs_bad_select_gate; }));
+                [&](const TableInfo & table) { return table.database == db && table.emit && table.needs_bad_select_gate; }),
+            context);
         file << create_database_query_by_db.at(db) << ";\n\nUSE " << backQuoteIfNeed(db) << ";\n\n";
         for (size_t i : order)
             if (tables[i].emit && tables[i].database == db)
