@@ -686,9 +686,14 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr &
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
     const auto row_exists_column_kind = getRowExistsColumnKind(storage, getContext());
+    /// Session temporary tables are not visible on the hosts of `ON CLUSTER`, so the source of
+    /// `REPLACE PARTITION ... FROM` is resolved only for a local query. For `ON CLUSTER` its database
+    /// must stay empty: `executeDDLQueryOnCluster` then substitutes the default database both into
+    /// the access check and into the query sent to the hosts.
+    const ContextPtr context_for_source = alter.cluster.empty() ? getContext() : nullptr;
     for (const auto & child : alter.command_list->children)
         required_access.append_range(
-            getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable(), row_exists_column_kind, getContext()));
+            getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable(), row_exists_column_kind, context_for_source));
 
     return required_access;
 }
@@ -925,9 +930,13 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
             /// `SELECT ON <current_db>.src`, a grant that has nothing to do with the table actually read.
             /// Resolve the name the same way the execution does, so a temporary source is checked as
             /// `TEMPORARY_DATABASE` (access to temporary tables is always granted to their owner session).
-            auto from_id = context_->tryResolveStorageID({command.from_database, command.from_table});
-            if (!from_id)
-                from_id = StorageID{command.from_database, command.from_table};
+            /// Any other source keeps its database as written, so an empty one is still bound by the caller.
+            StorageID from_id{command.from_database, command.from_table};
+            if (context_ && command.from_database.empty())
+            {
+                if (auto temporary_id = context_->tryResolveStorageID(from_id, Context::ResolveExternal))
+                    from_id = temporary_id;
+            }
             required_access.emplace_back(AccessType::SELECT, from_id.database_name, from_id.table_name);
             /// `REPLACE PARTITION ... FROM` drops the data currently in the destination partition,
             /// so it needs `ALTER DELETE` on top of `INSERT`. `ATTACH PARTITION ... FROM` is the same

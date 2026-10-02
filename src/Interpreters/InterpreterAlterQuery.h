@@ -33,7 +33,8 @@ public:
     /// `row_exists_column_kind` distinguishes the hidden lightweight-delete marker from an ordinary
     /// physical column. An unknown kind requires both `ALTER DELETE` and `ALTER UPDATE` for `_row_exists = 0`.
     /// `context_` resolves the source table of `ATTACH`/`REPLACE PARTITION ... FROM`, so that a session
-    /// temporary table is checked under `TEMPORARY_DATABASE` rather than the current database.
+    /// temporary table is checked under `TEMPORARY_DATABASE` rather than the current database. Pass null
+    /// to keep the source as written (e.g. for `ON CLUSTER`, where temporary tables are not visible).
     static AccessRightsElements getRequiredAccessForCommand(
         const ASTAlterCommand & command,
         const String & database,
