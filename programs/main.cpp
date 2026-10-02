@@ -17,6 +17,8 @@
 
 #if defined(OS_WINDOWS)
 #include <Poco/Net/Net.h>
+#include <Poco/UnWindows.h>
+#include <shellapi.h>
 #endif
 
 #include <algorithm>
@@ -395,6 +397,45 @@ static __attribute__((constructor(202))) void init_ssl()
     DB::OpenSSLInitializer::instance();
 }
 
+#if defined(OS_WINDOWS)
+/// The C runtime's `main` receives `argv` decoded through the active code page, so an argument
+/// outside it - a non-ASCII `--query`, file name or setting value - is mangled before ClickHouse
+/// sees it, while everything past this point treats strings as UTF-8. Rebuild `argv` from the
+/// wide command line instead. The strings are static because `argv` has to outlive `main`.
+static bool getUtf8Argv(int & argc, char **& argv)
+{
+    int wide_argc = 0;
+    LPWSTR * wide_argv = CommandLineToArgvW(GetCommandLineW(), &wide_argc);
+    if (!wide_argv)
+        return false;
+    SCOPE_EXIT({ LocalFree(wide_argv); });
+
+    static std::vector<std::string> utf8_args;
+    static std::vector<char *> utf8_argv;
+    utf8_args.reserve(wide_argc);
+
+    for (int i = 0; i < wide_argc; ++i)
+    {
+        /// With a length of `-1` the sizes include the terminating NUL.
+        const int size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_argv[i], -1, nullptr, 0, nullptr, nullptr);
+        if (size <= 0)
+            return false;
+        std::string & arg = utf8_args.emplace_back(size, '\0');
+        if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_argv[i], -1, arg.data(), size, nullptr, nullptr) != size)
+            return false;
+        arg.resize(size - 1);
+    }
+
+    for (auto & arg : utf8_args)
+        utf8_argv.push_back(arg.data());
+    utf8_argv.push_back(nullptr);
+
+    argc = wide_argc;
+    argv = utf8_argv.data();
+    return true;
+}
+#endif
+
 /// This allows to implement assert to forbid initialization of a class in static constructors.
 /// Usage:
 ///
@@ -416,6 +457,12 @@ int main(int argc_, char ** argv_)
     /// initializer were compiled out. `WSAStartup` is reference-counted, so the double start is
     /// harmless; the extra reference also keeps Winsock alive through static destruction.
     Poco::Net::initializeNetwork();
+
+    if (!getUtf8Argv(argc_, argv_))
+    {
+        std::cerr << "Cannot read the command line as UTF-8, error code: " << GetLastError() << std::endl;
+        return 1;
+    }
 #endif
 
     /// PHDR cache is required for query profiler to work reliably

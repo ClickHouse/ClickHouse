@@ -565,6 +565,12 @@ def main():
                         f"{wine_env} ./utils/windows-selftest/backup-non-ascii-names.sh"
                         f" {backup_dir} \"$({wine_env} winepath -w {backup_dir})\""
                         f" wine {build_dir}/programs/clickhouse.exe",
+                        # A non-ASCII argument reaches the query as UTF-8: the C runtime decodes
+                        # `argv` through the active code page, and `main` rebuilds it from the wide
+                        # command line. `LC_ALL=C.UTF-8` makes Wine decode the Unix command line as
+                        # UTF-8 in the first place. `тест` is `D182D0B5D181D182` in UTF-8.
+                        f"test \"$(LC_ALL=C.UTF-8 {wine_env} wine {build_dir}/programs/clickhouse.exe"
+                        f" local --query \"SELECT hex('тест')\")\" = D182D0B5D181D182",
                     ],
                     # Run all of them even after one fails. The step still fails if any command
                     # does, but while the port is being brought up every round of this job is the

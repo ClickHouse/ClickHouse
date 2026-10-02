@@ -134,11 +134,6 @@ cannot be checked there at all (see [CI](#ci)). Note for a development host that
 not `x86_64`: an `x86_64` PE needs an `x86_64` host, or an emulator such as FEX, which Wine on
 ARM does not ship.
 
-**The command line is not UTF-8.** The programs take `argv` from the C runtime's `main`, which
-decodes the command line through the active code page, so a non-ASCII `--query`, file name or
-setting value is mangled before ClickHouse sees it. Reading `GetCommandLineW` and converting
-it to UTF-8 at startup would fix that; until then, pass such text on stdin or in a file.
-
 **Debug info.** The build passes `-g0` on Windows. A PE image cannot exceed 4 GiB, the DWARF
 for this binary is several times that on its own, and PE has no `.gnu_debuglink` equivalent to
 carry it in a separate file. A crash therefore symbolizes to a module and an offset, not to a
@@ -222,8 +217,13 @@ The step also runs `utils/windows-selftest/backup-non-ascii-names.sh`, which mak
 not ASCII, restores both, and then looks for the backups on the host under their UTF-8 names.
 The last part is the point: a name that enters `std::filesystem::path` through the active code
 page instead of `pathFromString` is still restored correctly, because both directions are
-mangled the same way, but the backup lands in a directory with a different name. The script
-passes its SQL on stdin, for the reason given in [Remaining work](#remaining-work).
+mangled the same way, but the backup lands in a directory with a different name.
+
+The C runtime's `main` decodes the command line through the active code page, so `main` in
+`programs/main.cpp` rebuilds `argv` from `GetCommandLineW` as UTF-8 before anything reads it.
+The step checks that by passing a non-ASCII `--query` and comparing the `hex` of the string the
+query received. It runs Wine under a UTF-8 locale, without which Wine itself would decode the
+Unix command line through a narrower code page before the program started.
 
 One limit of running on Wine rather than on Windows is worth knowing before writing such a
 check: Wine stubs whole interfaces while reporting success. `QueryInformationJobObject` for

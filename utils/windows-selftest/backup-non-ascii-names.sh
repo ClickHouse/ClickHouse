@@ -11,8 +11,8 @@
 #   Linux: backup-non-ascii-names.sh /tmp/w /tmp/w clickhouse
 #   Wine:  backup-non-ascii-names.sh /tmp/w "$(winepath -w /tmp/w)" wine clickhouse.exe
 #
-# The SQL goes in on stdin, not in `--query`: the Windows port does not decode the command line as
-# UTF-8, so a non-ASCII argument would be mangled before it reached the backup code.
+# The SQL goes in on stdin, so that this checks only the paths; non-ASCII arguments are checked
+# separately, in `ci/jobs/build_clickhouse.py`.
 
 set -eu
 
