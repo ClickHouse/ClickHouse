@@ -37,8 +37,8 @@ TEST(FileCacheEfficiency, SnapshotOfLastFullWindow)
 
     const UInt64 window = t.efficiency.currentWindow();
     EXPECT_EQ(window, 0);
-    t.efficiency.addHeldBytes(window, 200);
-    t.efficiency.addActiveBytes(window, 50);
+    t.efficiency.addPassiveBytes(window, 200);
+    t.efficiency.moveToActive(window, 50);
 
     /// The live window is not visible until it ends.
     expectSnapshot(t.efficiency.getSnapshot(), 0, 0, 0);
@@ -54,8 +54,8 @@ TEST(FileCacheEfficiency, StaleWindowUpdatesAreIgnored)
 
     t.advance(10);
     EXPECT_EQ(t.efficiency.currentWindow(), 1);
-    t.efficiency.addHeldBytes(/*window=*/0, 100);
-    t.efficiency.addActiveBytes(/*window=*/0, 100);
+    t.efficiency.addPassiveBytes(/*window=*/0, 100);
+    t.efficiency.moveToActive(/*window=*/0, 100);
 
     t.advance(10);
     expectSnapshot(t.efficiency.getSnapshot(), 0, 0, 100);
@@ -65,7 +65,7 @@ TEST(FileCacheEfficiency, WindowsWithoutRotation)
 {
     TestEfficiency t(10);
     t.used_size = 100;
-    t.efficiency.addHeldBytes(t.efficiency.currentWindow(), 100);
+    t.efficiency.addPassiveBytes(t.efficiency.currentWindow(), 100);
 
     /// Windows 1 and 2 pass with no call; the last full window (2) had no reads.
     t.advance(30);
@@ -77,12 +77,12 @@ TEST(FileCacheEfficiency, NegativeAndInconsistentValuesAreClamped)
     TestEfficiency t(10);
     t.used_size = 50;
     const UInt64 window = t.efficiency.currentWindow();
-    t.efficiency.addHeldBytes(window, 10);
-    t.efficiency.addActiveBytes(window, 30);   /// active > held: passive < 0, clamp it to 0
+    t.efficiency.addPassiveBytes(window, 10);
+    t.efficiency.moveToActive(window, 30);   /// more than passive: passive < 0, clamp it to 0
     t.advance(10);
     expectSnapshot(t.efficiency.getSnapshot(), 30, 0, 20);
 
-    t.efficiency.addHeldBytes(t.efficiency.currentWindow(), -20);   /// held < 0: clamp to 0
+    t.efficiency.addPassiveBytes(t.efficiency.currentWindow(), -20);   /// passive < 0: clamp to 0
     t.advance(10);
     expectSnapshot(t.efficiency.getSnapshot(), 0, 0, 50);
 }
@@ -92,7 +92,7 @@ TEST(FileCacheEfficiency, Disabled)
     TestEfficiency t(0);
     t.used_size = 100;
     EXPECT_FALSE(t.efficiency.isEnabled());
-    t.efficiency.addHeldBytes(t.efficiency.currentWindow(), 100);
+    t.efficiency.addPassiveBytes(t.efficiency.currentWindow(), 100);
     t.advance(1000);
     EXPECT_EQ(t.efficiency.currentWindow(), 0);
     expectSnapshot(t.efficiency.getSnapshot(), 0, 0, 0);

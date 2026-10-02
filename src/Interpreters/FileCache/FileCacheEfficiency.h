@@ -39,9 +39,9 @@ public:
     /// Rotates if the live window ended.
     UInt64 currentWindow();
 
-    /// No-op unless `window` is the live window. Held bytes start as passive; active bytes move out of passive.
-    void addHeldBytes(UInt64 window, Int64 bytes);
-    void addActiveBytes(UInt64 window, Int64 bytes);
+    /// No-op unless `window` is the live window.
+    void addPassiveBytes(UInt64 window, Int64 bytes);
+    void moveToActive(UInt64 window, Int64 bytes);
 
     /// The last full window.
     Snapshot getSnapshot();

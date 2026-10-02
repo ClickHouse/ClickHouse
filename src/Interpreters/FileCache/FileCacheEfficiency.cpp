@@ -54,14 +54,14 @@ void FileCacheEfficiency::rotateIfNeeded(UInt64 now_window)
     live_window = now_window;
 }
 
-void FileCacheEfficiency::addHeldBytes(UInt64 window, Int64 bytes)
+void FileCacheEfficiency::addPassiveBytes(UInt64 window, Int64 bytes)
 {
     std::lock_guard lock(mutex);
     if (window == live_window)
         live_passive_bytes += bytes;
 }
 
-void FileCacheEfficiency::addActiveBytes(UInt64 window, Int64 bytes)
+void FileCacheEfficiency::moveToActive(UInt64 window, Int64 bytes)
 {
     std::lock_guard lock(mutex);
     if (window == live_window)

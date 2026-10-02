@@ -1555,7 +1555,7 @@ void FileSegment::markRead(size_t offset, size_t size)
         active_granules[0] = 0;
         active_granules[1] = 0;
         efficiency_window_id = window;
-        efficiency.addHeldBytes(window, static_cast<Int64>(reserved_size.load()));
+        efficiency.addPassiveBytes(window, static_cast<Int64>(reserved_size.load()));
     }
 
     const size_t left = range().left;
@@ -1582,7 +1582,7 @@ void FileSegment::markRead(size_t offset, size_t size)
         active_granules[word] |= mask;
     }
     if (const size_t bytes = granulesToBytesUnlocked(new_bits[0], new_bits[1]))
-        efficiency.addActiveBytes(window, static_cast<Int64>(bytes));
+        efficiency.moveToActive(window, static_cast<Int64>(bytes));
 }
 
 size_t FileSegment::granulesToBytesUnlocked(UInt64 low, UInt64 high) const
@@ -1609,7 +1609,7 @@ void FileSegment::addReservedSize(Int64 delta)
         reserved_size.fetch_sub(static_cast<size_t>(-delta));
 
     if (cache && !is_unbound && !removed_from_efficiency && efficiency_window_id != FileCacheEfficiency::NEVER_READ)
-        cache->getEfficiency().addHeldBytes(efficiency_window_id, delta);
+        cache->getEfficiency().addPassiveBytes(efficiency_window_id, delta);
 }
 
 void FileSegment::onRemovedFromCache(const FileSegmentGuard::Lock &)
@@ -1621,8 +1621,8 @@ void FileSegment::onRemovedFromCache(const FileSegmentGuard::Lock &)
     if (efficiency_window_id == FileCacheEfficiency::NEVER_READ)
         return;
     auto & efficiency = cache->getEfficiency();
-    efficiency.addHeldBytes(efficiency_window_id, -static_cast<Int64>(reserved_size.load()));
-    efficiency.addActiveBytes(efficiency_window_id, -static_cast<Int64>(getActiveBytesUnlocked()));
+    efficiency.addPassiveBytes(efficiency_window_id, -static_cast<Int64>(reserved_size.load()));
+    efficiency.moveToActive(efficiency_window_id, -static_cast<Int64>(getActiveBytesUnlocked()));
 }
 
 bool FileSegment::wasServedFromCache() const
