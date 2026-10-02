@@ -41,7 +41,6 @@ namespace Setting
     extern const SettingsBool enable_lightweight_update;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsBool validate_mutation_query;
 }
 
 namespace MergeTreeSetting
@@ -102,12 +101,15 @@ BlockIO InterpreterDeleteQuery::execute()
         && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
 
+    if (delete_query.cluster.empty())
+        checkNoRowPolicyForSetOperands(query_ptr, table_id.database_name, getContext());
+
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = true}, std::move(guard));
     }
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
@@ -142,17 +144,12 @@ BlockIO InterpreterDeleteQuery::execute()
         mutation_commands.emplace_back(mut_command);
 
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
-        /// Replicated-storage non-determinism check must always run, even when
-        /// `validate_mutation_query=0` — bypassing it would let nondeterministic mutations
-        /// diverge replicas.  The heavier query-shape validation that constructs a full
-        /// `MutationsInterpreter` is gated by the setting, since invalid mutations may
-        /// reference not-yet-existing objects when the user opts out of validation.
+        /// Checked ahead of the full validation below, which repeats it, so that a
+        /// nondeterministic mutation is reported as such even when the predicate also fails
+        /// to analyze.
         MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, mutation_commands, getContext());
-        if (getContext()->getSettingsRef()[Setting::validate_mutation_query])
-        {
-            MutationsInterpreter::Settings mutation_settings(false);
-            MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
-        }
+        MutationsInterpreter::Settings mutation_settings(false);
+        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
         table->mutate(mutation_commands, getContext());
         return {};
     }
@@ -191,6 +188,10 @@ BlockIO InterpreterDeleteQuery::execute()
 
             DDLQueryOnClusterParams params;
             params.access_to_check.emplace_back(AccessType::ALTER_DELETE, table_id.database_name, table_id.table_name);
+            params.additional_access_check = [captured_query_ptr = query_ptr, table_id, context = getContext()](const String &, bool throw_if_unresolved)
+            {
+                checkNoRowPolicyForSetOperands(captured_query_ptr, table_id.database_name, context, throw_if_unresolved);
+            };
             return executeDDLQueryOnCluster(query_ptr, getContext(), params);
         }
 
