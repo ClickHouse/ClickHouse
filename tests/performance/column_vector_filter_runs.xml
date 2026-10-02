@@ -20,7 +20,8 @@
             dense_mask UInt8,
             short_runs_mask UInt8,
             sparse_random_mask UInt8,
-            dense_random_mask UInt8
+            dense_random_mask UInt8,
+            selective_runs_mask UInt8
         )
         ENGINE = MergeTree ORDER BY tuple()
     </create_query>
@@ -129,6 +130,15 @@
         SELECT sum(value)
         FROM t_column_vector_filter_runs
         PREWHERE dense_random_mask = 1
+        FORMAT Null
+    </query>
+
+    <!-- Keep the output on UInt128 but remove aggregation overhead so the generic filter path dominates. -->
+    <!-- Two eight-row runs per 64 rows become two range copies instead of sixteen single inserts. -->
+    <query>
+        SELECT value
+        FROM t_column_vector_filter_runs
+        WHERE selective_runs_mask = 1
         FORMAT Null
     </query>
 
