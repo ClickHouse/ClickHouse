@@ -1,5 +1,4 @@
 #include <Backups/BackupIO_AzureBlobStorage.h>
-#include <Common/StringUtils.h>
 #include <Common/setThreadName.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -13,7 +12,6 @@
 #include <Disks/IDisk.h>
 #include <Disks/DiskType.h>
 
-#include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <boost/algorithm/string.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
@@ -68,52 +66,48 @@ namespace
         };
     }
 
-    /// The storage account a blob endpoint URL names, lower-cased, or an empty string when the URL does not
-    /// reveal it. The host is consulted first: `<account>.blob.<suffix>`, `<account>.dfs.<suffix>` and their
-    /// `<account>.privatelink.<service>.<suffix>` aliases (any Azure cloud) name the account, and a path such a
-    /// URL carries is a container or a prefix, never an account. Only for an emulator or development endpoint,
-    /// whose host is an IPv4 address or a bare name such as `localhost` or `azurite1`, is the first path segment
-    /// taken as the account: that is the shape of Azurite's `http://127.0.0.1:10000/devstoreaccount1`. Any other
-    /// host reveals nothing, with or without a path: a `storage_account_url` is recorded verbatim and may be a
-    /// proxy whose path prefix is not an account.
-    String storageAccountOfURL(const String & url)
+    /// The recorded endpoint of a snapshot's source disk as a service URL: scheme, host, port and path, without
+    /// query parameters and trailing slashes. A source disk that authenticates with a SAS records it in the
+    /// query, and one configured with a connection string records the connection string itself; the snapshot
+    /// is read with the backup's credential in any case, so only the service URL is kept.
+    String snapshotServiceURL(const String & endpoint)
     {
         Azure::Core::Url parsed;
         try
         {
-            parsed = Azure::Core::Url(url);
+            parsed = endpoint.starts_with("http") ? Azure::Core::Url(endpoint)
+                                                  : Azure::Storage::_internal::ParseConnectionString(endpoint).BlobServiceUrl;
         }
-        catch (const std::logic_error & e)
+        catch (const std::exception & e)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse Azure storage account URL {}: {}", url, e.what());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse the endpoint of a lightweight snapshot: {}", e.what());
         }
+        if (parsed.GetScheme().empty() || parsed.GetHost().empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The endpoint of a lightweight snapshot is not a service URL");
 
-        const String host = Poco::toLower(parsed.GetHost());
-        std::vector<String> labels;
-        boost::split(labels, host, boost::is_any_of("."));
-        const auto is_storage_service = [](const String & label) { return label == "blob" || label == "dfs"; };
-        const bool host_names_account = labels.size() >= 3
-            && (is_storage_service(labels[1]) || (labels.size() >= 4 && labels[1] == "privatelink" && is_storage_service(labels[2])));
-        if (host_names_account)
-            return labels[0];
-
-        const bool ipv4 = labels.size() == 4
-            && std::ranges::all_of(labels, [](const String & label) { return !label.empty() && std::ranges::all_of(label, [](char c) { return isNumericASCII(c); }); });
-        const String & path = parsed.GetPath(); /// without the leading slash
-        if ((labels.size() == 1 || ipv4) && !path.empty())
-            return Poco::toLower(path.substr(0, path.find('/')));
-
-        return "";
+        String url = parsed.GetScheme() + "://" + parsed.GetHost();
+        if (parsed.GetPort() != 0)
+            url += ":" + std::to_string(parsed.GetPort());
+        if (!parsed.GetPath().empty())
+            url += "/" + parsed.GetPath();
+        while (url.ends_with('/'))
+            url.pop_back();
+        return url;
     }
 
-    /// The storage account of a connection string: its `AccountName`, or the account its blob endpoint names.
-    /// `ConnectionParams::getConnectionURL()` has already parsed the string, so it is well-formed here.
-    String storageAccountOfConnectionString(const String & connection_string, const String & blob_service_url)
+    /// The connection string with its blob endpoint replaced by `service_url`. `CreateFromConnectionString()`
+    /// takes the endpoint from the connection string alone, so this is how a connection string is pointed at
+    /// the recorded endpoint of a snapshot; the account key or SAS it carries then authorises the reads there,
+    /// or Azure refuses them if it belongs to another account.
+    String withBlobEndpoint(const String & connection_string, const String & service_url)
     {
-        const auto account_name = Azure::Storage::_internal::ParseConnectionString(connection_string).AccountName;
-        if (!account_name.empty())
-            return Poco::toLower(account_name);
-        return storageAccountOfURL(blob_service_url);
+        std::vector<String> parts;
+        boost::split(parts, connection_string, boost::is_any_of(";"));
+        String result;
+        for (const auto & part : parts)
+            if (!part.empty() && !part.starts_with("BlobEndpoint="))
+                result += part + ";";
+        return result + "BlobEndpoint=" + service_url;
     }
 }
 
@@ -122,41 +116,16 @@ AzureBlobStorage::ConnectionParams makeSnapshotSourceConnectionParams(
 {
     auto connection_params = backup_connection_params;
 
-    if (std::holds_alternative<AzureBlobStorage::ConnectionString>(connection_params.auth_method))
+    /// The objects are read from the recorded endpoint with the backup's credential, as the S3 reader does.
+    const String service_url = snapshotServiceURL(endpoint);
+    if (const auto * connection_string = std::get_if<AzureBlobStorage::ConnectionString>(&connection_params.auth_method))
     {
-        /// A connection string carries one account and its key, so it cannot be pointed at another
-        /// account: the snapshot's objects must live in the account the backup is read from. The accounts
-        /// are compared by name, not by URL: one account is reachable through several hosts (a private
-        /// link alias, Azurite by IP or by host name), and the manifest may record a different one than
-        /// the connection string uses. A side that does not reveal its account (a custom domain) is rejected
-        /// as well: the restore would otherwise proceed against the backup's account, and since the container
-        /// is marked as existing below, nothing probes the source before the first blob is read, so another
-        /// account with the same container and key layout would be restored from silently.
-        const String backup_account_url = connection_params.getConnectionURL();
-        const String snapshot_account = storageAccountOfURL(endpoint);
-        const String backup_account = storageAccountOfConnectionString(
-            std::get<AzureBlobStorage::ConnectionString>(connection_params.auth_method).toUnderType(), backup_account_url);
-        if (snapshot_account.empty() || backup_account.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot read the objects of a lightweight snapshot from {}: the backup is read with a connection string ({}), "
-                "which cannot access another storage account, and {} does not reveal its storage account, so the snapshot "
-                "cannot be verified to be in the backup's storage account",
-                endpoint,
-                backup_account_url,
-                snapshot_account.empty() ? "the snapshot's endpoint" : "the connection string");
-        if (snapshot_account != backup_account)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot read the objects of a lightweight snapshot from {} (storage account {}): the backup is read with a "
-                "connection string for storage account {} ({}), which cannot access another storage account",
-                endpoint,
-                snapshot_account,
-                backup_account,
-                backup_account_url);
+        const String repointed = withBlobEndpoint(connection_string->toUnderType(), service_url);
+        connection_params.auth_method = AzureBlobStorage::ConnectionString{repointed};
+        connection_params.endpoint.storage_account_url = repointed;
     }
     else
-        connection_params.endpoint.storage_account_url = endpoint;
+        connection_params.endpoint.storage_account_url = service_url;
 
     const auto slash_pos = blob_namespace.find('/');
     connection_params.endpoint.container_name = blob_namespace.substr(0, slash_pos);
