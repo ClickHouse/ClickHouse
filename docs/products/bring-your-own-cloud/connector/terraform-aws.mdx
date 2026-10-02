@@ -153,15 +153,7 @@ clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target he
   --from-terraform outputs.json --platform-bundle bundle.yaml
 ```
 
-On a VM (`--target systemd`) the outputs fill `--cluster-name`, `--server`, and `--ca-data`, so `init` reaches the cluster with `cluster_endpoint` and `cluster_ca` from the file and needs no kube context. `--platform-bundle` is refused there; the bundle is applied after enrollment:
-
-```bash
-sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target systemd --managed \
-  --from-terraform outputs.json
-sudo clicklink clctl platform approve --config /etc/clicklink/config.yaml --bundle bundle.yaml
-```
-
-Both commands run on the connector host as root: `init` enrolls the VM, and `approve` applies the bundle once `init` has reported success.
+The roots support the Helm target only. On a VM (`--target systemd`) `init` refuses `--platform-bundle`, and `clicklink clctl platform approve --bundle` installs only the pinned components, so the cluster has no node provisioner. Use `--target systemd` only for connectors that register ClickHouse you run yourself; it is not supported with these roots.
 
 `--platform-bundle` installs what the roots leave out: Karpenter with an `EC2NodeClass` and the `clickhouse-server` and `clickhouse-keeper` NodePools, the AWS Load Balancer controller, the `gp3-encrypted` StorageClass (encrypted with the EBS key when the outputs carry one), and the platform components the bundle pins: the snapshot controller, the ClickHouse operator, and the monitoring collectors. The bundle is the platform manifest ClickHouse Cloud renders for your environment; your account team delivers it during onboarding, and its `cluster:` section pins the Karpenter and load balancer controller versions. The flag needs `--target helm`, `--managed`, and `--from-terraform`. A component that is already present is left as it is, so re-running the command is safe, and `init` prints a report of what it installed, what it skipped, and why. Without the flag, `init` enrolls the connector but installs none of these, and the cluster cannot run a service until they are in place. Later [platform updates](/products/bring-your-own-cloud/connector/platform-updates) change the snapshot controller, the operator, and the collectors; Karpenter, the load balancer controller, and the StorageClass stay as `init` installed them.
 
