@@ -104,7 +104,6 @@ void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, c
 }
 
 
-
 /// the whole part, or one granule from every run of `sample_step` at a hashed position,
 /// so data that repeats with the step can't line up with the sample
 MarkRanges marksToScan(const DataPartPtr & part, size_t sample_step)
@@ -730,8 +729,7 @@ void setVerdict(
     size_t weighed,
     std::string_view relaxing_setting,
     UInt64 baseline_marks,
-    UInt64 uneven_width_parts,
-    UInt64 scanned_parts)
+    const Scenarios & built)
 {
     const UInt64 projection_marks = *outcome.marks;
     const UInt64 marks_low = result.estimated_marks_low;
@@ -753,7 +751,7 @@ void setVerdict(
         result.verdict = "chosen (forced)";
         result.verdict_reason = fmt::format("`{} = 1` overrides the cost; {}", relaxing_setting, cost);
     }
-    else if (uneven_width_parts != 0)
+    else if (built.uneven_width_parts != 0)
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
@@ -761,8 +759,8 @@ void setVerdict(
             "so the granule layout depends on the blocks the writer was fed and the mark count is a model, not a measurement",
             marks_text(projection_marks),
             baseline_marks,
-            uneven_width_parts,
-            scanned_parts);
+            built.uneven_width_parts,
+            built.scanned_parts);
     }
     else if ((chosen_in != 0 && chosen_in != weighed) || beats_base(marks_low) != beats_base(marks_high))
     {
@@ -848,7 +846,7 @@ bool tryEstimateProjection(
     result.estimated_rows = outcome.rows;
     result.estimated_marks_low = marks_low;
     result.estimated_marks_high = marks_high;
-    setVerdict(result, outcome, chosen_in, weighed, relaxing_setting, baseline_marks, built.uneven_width_parts, built.scanned_parts);
+    setVerdict(result, outcome, chosen_in, weighed, relaxing_setting, baseline_marks, built);
     result.estimate_source = WhatIfCandidateResult::Empirical;
     result.empirical_status = WhatIfCandidateResult::Ok;
     return true;

@@ -681,10 +681,10 @@ UseProjectionsResult optimizeUseNormalProjections(
 
         size_t parent_reading_marks = parent_reading_select_result->selected_marks;
         bool sort_order_helps = projection_sort_order_useful(projection);
-        const bool worse_by_cost = candidate.sum_marks > parent_reading_marks
-            || (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !sort_order_helps);
         if (hypothetical && projection == &hypothetical->projection)
         {
+            const bool worse_by_cost = candidate.sum_marks > parent_reading_marks
+                || (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !sort_order_helps);
             hypothetical->outcome.forced = relax_projection_checks && (helps_nothing || worse_by_cost);
             hypothetical->outcome.serves_order = sort_order_helps;
         }
