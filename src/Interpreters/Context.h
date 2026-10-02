@@ -2112,6 +2112,7 @@ public:
     /// A pinned storage snapshot to be returned by the table's getStorageSnapshot instead of a fresh one.
     /// Used by atomic `CREATE MATERIALIZED VIEW ... POPULATE`.
     void setPinnedStorageSnapshot(const UUID & table_uuid, StorageSnapshotPtr snapshot);
+    /// Looks in this context, then in its query context. Returns nullptr if the table has no pin.
     StorageSnapshotPtr getPinnedStorageSnapshot(const UUID & table_uuid) const;
 
     const ServerSettings & getServerSettings() const;

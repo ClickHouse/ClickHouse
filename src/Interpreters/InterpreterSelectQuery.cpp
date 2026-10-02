@@ -2724,6 +2724,8 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
         && !empty_result_for_aggregation_by_empty_set
         && storage
         && storage->supportsTrivialCountOptimization(storage_snapshot, getContext())
+        /// `totalRows` counts the live table, not the snapshot pinned for this query.
+        && !context->getPinnedStorageSnapshot(storage->getStorageID().uuid)
         && query_info.filter_asts.empty()
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)
