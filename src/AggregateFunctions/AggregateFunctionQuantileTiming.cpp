@@ -70,13 +70,13 @@ The calculation is accurate if:
 
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
-:::note
+<Note>
 For calculating page loading time quantiles, this function is more effective and accurate than [`quantile`](/reference/functions/aggregate-functions/quantile).
-:::
+</Note>
 
-:::note
+<Note>
 If no values are passed to the function (when using `quantileTimingIf`), [NaN](/reference/data-types/float#nan-and-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](/reference/statements/select/order-by) for notes on sorting `NaN` values.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
 quantileTiming(level)(expr)
@@ -126,9 +126,9 @@ The calculation is accurate if:
 
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
-:::note
+<Note>
 For calculating page loading time quantiles, this function is more effective and accurate than [`quantiles`](/reference/functions/aggregate-functions/quantiles).
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_quantiles = R"(
 quantilesTiming(level1, level2, ...)(expr)
