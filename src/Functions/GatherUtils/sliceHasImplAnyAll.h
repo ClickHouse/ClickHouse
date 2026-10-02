@@ -37,6 +37,21 @@ ALWAYS_INLINE bool allLanesSet(Mask mask)
     return __builtin_reduce_and(mask) == ~0ULL;
 }
 
+/// All ones in the lanes that are not zero. Converting to `bool` lanes is `!= 0`; a comparison would depend on
+/// `-faltivec-src-compat` on PowerPC.
+template <typename Vector>
+ALWAYS_INLINE Vector nonZeroLanes(Vector vector)
+{
+    using Lanes = bool __attribute__((ext_vector_type(__builtin_vectorelements(Vector))));
+    return -__builtin_convertvector(__builtin_convertvector(vector, Lanes), Vector);
+}
+
+template <typename Vector>
+ALWAYS_INLINE Vector equalLanes(Vector lhs, Vector rhs)
+{
+    return ~nonZeroLanes(lhs ^ rhs);
+}
+
 inline ALWAYS_INLINE bool hasNull(const UInt8 * null_map, size_t null_map_size)
 {
     if (null_map == nullptr)
@@ -88,7 +103,7 @@ ALWAYS_INLINE bool sliceContains(const NumericArraySlice<T> & slice, const UInt8
         {
             Vector elements;
             memcpy(&elements, slice.data + begin + offset, sizeof(elements));
-            auto equal = elements == needle;
+            auto equal = equalLanes(elements, needle);
             if constexpr (has_null_map)
             {
                 NullBytes nulls;
@@ -183,7 +198,8 @@ bool sliceHasAllBytes(const NumericArraySlice<T> & first, const NumericArraySlic
         {
             NullBytes nulls;
             memcpy(&nulls, first_null_map + begin, sizeof(nulls));
-            elements = nulls == 0 ? elements : fillers;
+            const auto null_lanes = reinterpret_cast<Vector>(nonZeroLanes(nulls));
+            elements = (elements & ~null_lanes) | (fillers & null_lanes);
         }
         /// The comparison masks are combined with an unsigned maximum, which is an OR for lanes that are 0 or 0xFF. With
         /// `|`, LLVM merged the 16 masks into booleans and rebuilt the bytes from them in every iteration (`psllw` and
@@ -192,7 +208,7 @@ bool sliceHasAllBytes(const NumericArraySlice<T> & first, const NumericArraySlic
         Bytes hits[lanes];
         [&]<size_t... shift>(std::index_sequence<shift...>) ALWAYS_INLINE
         {
-            ((hits[shift] = reinterpret_cast<Bytes>(values == rotateLanes<shift>(elements, lane_indices))), ...);
+            ((hits[shift] = reinterpret_cast<Bytes>(equalLanes(values, rotateLanes<shift>(elements, lane_indices)))), ...);
         }(lane_indices);
         /// Combined as a tree: a chain of 16 dependent maximums limited AArch64 to one per `umax` latency.
         for (size_t width = lanes / 2; width > 0; width /= 2)
@@ -214,7 +230,7 @@ bool sliceHasAllBytes(const NumericArraySlice<T> & first, const NumericArraySlic
         {
             NullBytes nulls;
             memcpy(&nulls, second_null_map + begin, sizeof(nulls));
-            found = reinterpret_cast<SearchMask<16>>(nulls != 0);
+            found = reinterpret_cast<SearchMask<16>>(nonZeroLanes(nulls));
         }
 
         size_t i = 0;
