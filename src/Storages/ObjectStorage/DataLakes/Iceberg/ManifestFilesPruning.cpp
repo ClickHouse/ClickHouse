@@ -247,6 +247,23 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
 namespace
 {
 
+Field decodePartitionValue(const Field & value, const IDataType & type)
+{
+    auto decoded = partitionValueToFieldOfType(value, type);
+    if (!decoded.has_value())
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg partition value of a decimal column is {} bytes long, which does not fit into {}",
+            value.safeGet<String>().size(),
+            type.getName());
+    return *decoded;
+}
+
+}
+
+namespace
+{
+
 enum class PartitionTransformKind : uint8_t
 {
     Day,
@@ -437,7 +454,7 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
                 if (field.isNull())
                     field = POSITIVE_INFINITY;
                 else
-                    field = convertPartitionValueToType(field, type);
+                    field = decodePartitionValue(field, *type);
             }
 
             bool can_be_true = partition_key_condition->mayBeTrueInRange(

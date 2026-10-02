@@ -43,6 +43,11 @@ std::optional<Field> deserializeDecimalFromBinaryRepr(
 /// the pair is ordered by unsigned byte comparison, which is not the order of ClickHouse `UUID`.
 std::optional<Field> deserializeUUIDPointFromBinaryRepr(const String & lower, const String & upper);
 
+/// A non-NULL partition value as a value of `type`, the type of its partition key column: a `DateTime64` that older
+/// ClickHouse writers stored as a plain `long` gets the type's scale, and a decimal's unscaled bytes are decoded.
+/// Returns nothing for decimal bytes that do not fit the type.
+std::optional<Field> partitionValueToFieldOfType(const Field & value, const IDataType & type);
+
 }
 
 #endif
