@@ -31,6 +31,9 @@ private:
     bool dont_wait = false;
 };
 
+/// Throws the Poco error for a failed fiber IO call, naming the call unless Poco prints the argument as the peer.
+void throwIoError(int code, const char * operation);
+
 }
 
 #endif
