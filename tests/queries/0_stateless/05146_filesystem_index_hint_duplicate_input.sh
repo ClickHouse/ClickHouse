@@ -27,4 +27,13 @@ $CLICKHOUSE_CLIENT --query "
     SELECT name FROM filesystem('${TEST_REL}') WHERE name = 'a.txt'
 "
 
+# Hints that read no cheap column at all: the split filter must still produce one value per entry.
+$CLICKHOUSE_CLIENT --query "
+    SELECT name FROM filesystem('${TEST_REL}') WHERE indexHint(materialize(1)) AND type = 'regular' ORDER BY name
+"
+
+$CLICKHOUSE_CLIENT --query "
+    SELECT count() FROM filesystem('${TEST_REL}') WHERE indexHint(materialize(0))
+"
+
 rm -rf "${CLICKHOUSE_USER_FILES_UNIQUE}"

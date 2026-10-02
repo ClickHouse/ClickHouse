@@ -382,7 +382,11 @@ private:
         /// inner DAG, so the same cheap column can appear as two distinct `INPUT` nodes with one name,
         /// while the block above holds each column exactly once. This is what
         /// `filterBlockWithExpression` passes for the same reason.
-        filter_expression->execute(cheap_block, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
+        /// The row count is passed explicitly: a predicate that reads no cheap column at all, such as
+        /// `indexHint(materialize(1))`, would otherwise be evaluated over an empty block when the table
+        /// exposes no cheap columns, and produce fewer rows than there are entries.
+        size_t num_rows = entries.size();
+        filter_expression->execute(cheap_block, num_rows, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
 
         const auto & result_name = filter_expression->getSampleBlock().getByPosition(
             filter_expression->getSampleBlock().columns() - 1).name;
