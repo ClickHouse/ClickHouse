@@ -16,6 +16,7 @@ SET optimize_move_to_prewhere_if_final = 0;
 
 DROP TABLE IF EXISTS f;
 DROP TABLE IF EXISTS d;
+DROP TABLE IF EXISTS s;
 
 CREATE TABLE f (k UInt64, v UInt64, a UInt64, heavy String) ENGINE = ReplacingMergeTree(v) ORDER BY k SETTINGS index_granularity = 64;
 CREATE TABLE d (k UInt64, b UInt64, dheavy String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64;
@@ -26,6 +27,10 @@ INSERT INTO f SELECT number, 1, number % 97, concat('v1_', toString(number)) FRO
 INSERT INTO f SELECT number * 2, 2, (number * 2) % 89, concat('v2_', toString(number * 2)) FROM numbers(5000);
 INSERT INTO f SELECT number + 30000, 1, number % 97, concat('v1_', toString(number + 30000)) FROM numbers(10000);
 INSERT INTO d SELECT number, number % 7, concat('d', toString(number)) FROM numbers(40000);
+
+-- A few keys only, so that a runtime filter built from it is selective.
+CREATE TABLE s (k UInt64, sheavy String) ENGINE = MergeTree ORDER BY k;
+INSERT INTO s SELECT number * 101, concat('s', toString(number * 101)) FROM numbers(50);
 
 -- Each query is followed by whether the read is lazy, and whether lazy FINAL replaced it.
 
@@ -45,10 +50,16 @@ SELECT '-- the join order optimization may put the FINAL table on either side';
 SELECT f.k, f.v, f.heavy, d.dheavy FROM d JOIN f FINAL ON f.k = d.k WHERE f.k % 5 = 1 ORDER BY f.a DESC, f.k LIMIT 5 SETTINGS query_plan_join_swap_table = 'auto', query_plan_optimize_join_order_limit = 10;
 SELECT countIf(explain LIKE '%LazilyReadFromMergeTree%') >= 2, countIf(explain LIKE '%InputSelector%') FROM (EXPLAIN SELECT f.k, f.v, f.heavy, d.dheavy FROM d JOIN f FINAL ON f.k = d.k WHERE f.k % 5 = 1 ORDER BY f.a DESC, f.k LIMIT 5 SETTINGS query_plan_join_swap_table = 'auto', query_plan_optimize_join_order_limit = 10);
 
+SELECT '-- a runtime filter joins the WHERE, and lazy FINAL copies it to the read that collects the keys';
+SELECT f.k, f.v, f.heavy, s.sheavy FROM f FINAL JOIN s ON f.k = s.k WHERE f.k % 5 = 1 ORDER BY f.a DESC, f.k LIMIT 5 SETTINGS enable_join_runtime_filters = 1;
+SELECT countIf(explain LIKE '%LazilyReadFromMergeTree%') >= 2, countIf(explain LIKE '%InputSelector%'), countIf(explain LIKE '%BuildRuntimeFilter%') FROM (EXPLAIN SELECT f.k, f.v, f.heavy, s.sheavy FROM f FINAL JOIN s ON f.k = s.k WHERE f.k % 5 = 1 ORDER BY f.a DESC, f.k LIMIT 5 SETTINGS enable_join_runtime_filters = 1);
+
 SELECT '-- the same results without lazy FINAL';
 SELECT f.k, f.v, f.heavy, d.dheavy FROM f FINAL JOIN d ON f.k = d.k WHERE f.k % 5 = 1 ORDER BY f.a DESC, f.k LIMIT 5 SETTINGS query_plan_optimize_lazy_final = 0;
 SELECT f.k, f.v, f.heavy, d.dheavy FROM f FINAL JOIN d ON f.k = d.k WHERE f.v = 1 ORDER BY f.a DESC, f.k LIMIT 5 SETTINGS query_plan_optimize_lazy_final = 0;
 SELECT f.k, f.v, f.heavy, d.dheavy FROM f FINAL LEFT JOIN d ON f.k + 38000 = d.k WHERE f.k % 5 = 1 ORDER BY f.a DESC, f.k LIMIT 5 SETTINGS query_plan_optimize_lazy_final = 0;
+SELECT f.k, f.v, f.heavy, s.sheavy FROM f FINAL JOIN s ON f.k = s.k WHERE f.k % 5 = 1 ORDER BY f.a DESC, f.k LIMIT 5 SETTINGS query_plan_optimize_lazy_final = 0, enable_join_runtime_filters = 0;
 
 DROP TABLE f;
 DROP TABLE d;
+DROP TABLE s;

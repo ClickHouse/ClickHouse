@@ -26,6 +26,13 @@
 3491	1	v1_3491	d3491
 4461	1	v1_4461	d4461
 1	1
+-- a runtime filter joins the WHERE, and lazy FINAL copies it to the read that collects the keys
+2121	1	v1_2121	s2121
+3636	2	v2_3636	s3636
+606	2	v2_606	s606
+4141	1	v1_4141	s4141
+2626	2	v2_2626	s2626
+1	1	1
 -- the same results without lazy FINAL
 581	1	v1_581	d581
 1551	1	v1_1551	d1551
@@ -42,3 +49,8 @@
 2521	1	v1_2521	
 3491	1	v1_3491	
 4461	1	v1_4461	
+2121	1	v1_2121	s2121
+3636	2	v2_3636	s3636
+606	2	v2_606	s606
+4141	1	v1_4141	s4141
+2626	2	v2_2626	s2626
