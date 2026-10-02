@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: `force_optimize_projection` fails without the parallel replicas local plan.
--- Random settings limits: query_plan_optimize_lazy_materialization=(1, 1); query_plan_max_limit_for_lazy_materialization=(10, None); optimize_use_projections=(1, 1); use_top_k_dynamic_filtering=(0, 0); max_insert_threads=(1, 1)
+-- Random settings limits: query_plan_optimize_lazy_materialization=(1, 1); query_plan_max_limit_for_lazy_materialization=(10, None); optimize_use_projections=(1, 1); use_top_k_dynamic_filtering=(0, 0); max_insert_threads=(1, 1); optimize_on_insert=(1, 1)
 -- Lazily read columns are correct when `_part_offset` / `_part_starting_offset` of the read are not its own row positions.
 
 DROP TABLE IF EXISTS t_proj;
