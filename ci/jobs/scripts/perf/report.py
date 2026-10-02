@@ -28,7 +28,9 @@ slower_queries = 0
 unstable_queries = 0
 very_unstable_queries = 0
 unstable_backward_incompatible_queries = 0
-benchmarks = {"clickbench", "tpch", "tpcds"}
+# The Iceberg TPC-H twins run the same SF10 queries as tpch.xml and need the
+# same per-query budget, whether their dataset is local or on job-local S3.
+benchmarks = {"clickbench", "tpch", "tpcds", "iceberg_suite_local_tpch", "iceberg_suite_s3_tpch"}
 
 # max seconds to run one query by itself, not counting preparation
 # by default it's 2 seconds, but for benchmarks it's 8 seconds

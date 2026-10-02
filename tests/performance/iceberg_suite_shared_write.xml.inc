@@ -1,23 +1,4 @@
-<!-- https://clickhouse.com/docs/getting-started/example-datasets/tpch -->
-<!-- Scale factor: 10 -->
-<test>
-    <settings>
-        <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
-        <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
-        <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>
-    </settings>
-
-    <!-- WRITE suite: append-only IcebergLocal write paths; each query depends only on setup and its own runs, so CI may sample and shuffle them freely; mutations that rewrite data or change schema live in iceberg_suite_rw_features.xml. -->
-
-    <substitutions>
-        <substitution>
-            <name>database</name>
-            <values>
-                <value>iceberg_suite_write</value>
-            </values>
-        </substitution>
-    </substitutions>
-
+<fragment>
     <create_query>CREATE DATABASE IF NOT EXISTS {database}</create_query>
 
 
@@ -32,7 +13,7 @@
             l_shipdate Date, l_commitdate Date, l_receiptdate Date,
             l_shipinstruct String, l_shipmode String, l_comment String
         )
-        ENGINE = IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/iceberg_suite_write_wr_large_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')
+        ENGINE = {engine_function_wr_large}
     </create_query>
     <create_query>INSERT INTO {database}.wr_large SELECT * FROM tpch10.lineitem LIMIT 100000 SETTINGS max_threads = 1, max_insert_threads = 1, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0</create_query>
 
@@ -55,7 +36,7 @@
             l_shipdate Date, l_commitdate Date, l_receiptdate Date,
             l_shipinstruct String, l_shipmode String, l_comment String
         )
-        ENGINE = IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/iceberg_suite_write_wr_small_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')
+        ENGINE = {engine_function_wr_small}
     </create_query>
     <create_query>INSERT INTO {database}.wr_small SELECT * FROM tpch10.lineitem LIMIT 100000 SETTINGS max_threads = 1, max_insert_threads = 1, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0</create_query>
 
@@ -74,7 +55,7 @@
             l_shipdate Date, l_commitdate Date, l_receiptdate Date,
             l_shipinstruct String, l_shipmode String, l_comment String
         )
-        ENGINE = IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/iceberg_suite_write_wr_planned_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')
+        ENGINE = {engine_function_wr_planned}
     </create_query>
     <create_query>INSERT INTO {database}.wr_planned SELECT * FROM tpch10.lineitem LIMIT 0, 100000 SETTINGS max_threads = 1, max_insert_threads = 1, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0</create_query>
     <create_query>INSERT INTO {database}.wr_planned SELECT * FROM tpch10.lineitem LIMIT 100000, 100000 SETTINGS max_threads = 1, max_insert_threads = 1, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0</create_query>
@@ -94,4 +75,4 @@
     <drop_query>DROP TABLE IF EXISTS {database}.wr_large</drop_query>
     <drop_query>DROP TABLE IF EXISTS {database}.wr_small</drop_query>
     <drop_query>DROP TABLE IF EXISTS {database}.wr_planned</drop_query>
-</test>
+</fragment>

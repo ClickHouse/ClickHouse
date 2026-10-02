@@ -1,0 +1,29 @@
+<!-- https://clickhouse.com/docs/getting-started/example-datasets/tpch -->
+<!-- Scale factor: 10 -->
+<test requires_s3="1" run_all_queries="1" profile_all_queries="1">
+    <settings>
+        <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
+        <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+        <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>
+    </settings>
+    <!-- Append-only writes into each server's isolated perf_s3 namespace. -->
+    <substitutions>
+        <substitution>
+            <name>database</name>
+            <values><value>iceberg_suite_s3_write</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_wr_large</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_write_wr_large_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_wr_small</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_write_wr_small_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_wr_planned</name>
+            <values><value>IcebergS3(perf_s3, filename = 'iceberg_suite_s3_write_wr_planned_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</value></values>
+        </substitution>
+    </substitutions>
+    <include file="iceberg_suite_shared_write.xml.inc"/>
+</test>

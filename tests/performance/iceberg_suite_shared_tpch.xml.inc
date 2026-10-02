@@ -1,22 +1,4 @@
-<!-- https://clickhouse.com/docs/getting-started/example-datasets/tpch -->
-<!-- Scale factor: 10 -->
-<test>
-    <settings file="../benchmarks/tpc-h/settings.json"/>
-    <settings>
-        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
-        <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
-    </settings>
-
-    <!-- The 22 queries of tpch.xml, unchanged, over the CI-attached `tpch_ice10` Iceberg dataset; nothing is built or dropped here, and `iceberg_delete_data_on_drop` must stay off because the dataset is shared. -->
-    <substitutions>
-        <substitution>
-            <name>database</name>
-            <values>
-                <value>tpch_ice10</value>
-            </values>
-        </substitution>
-    </substitutions>
-
+<fragment>
     <!-- The query files use unqualified table names, as in tpch.xml, so the session has to point at the dataset's database. -->
     <fill_query>USE {database}</fill_query>
 
@@ -42,4 +24,4 @@
     <!-- Q20 --> <query file="../benchmarks/tpc-h/queries/query_20.sql"/>
     <!-- Q21 --> <query file="../benchmarks/tpc-h/queries/query_21.sql"/>
     <!-- Q22 --> <query file="../benchmarks/tpc-h/queries/query_22.sql"/>
-</test>
+</fragment>
