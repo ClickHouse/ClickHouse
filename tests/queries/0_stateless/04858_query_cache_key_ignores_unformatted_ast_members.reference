@@ -8,3 +8,5 @@ UNION ALL nesting does not reach the key
 1
 a different set operation still separates keys
 2
+union_mode of a normalized single select does not reach the key
+1

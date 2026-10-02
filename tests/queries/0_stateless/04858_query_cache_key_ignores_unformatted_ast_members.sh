@@ -61,3 +61,16 @@ SELECT sum(x) FROM (SELECT 1 AS x UNION ALL SELECT 1);
 SELECT sum(x) FROM (SELECT 1 AS x UNION DISTINCT SELECT 1);
 " > /dev/null
 entries _union_control
+
+echo 'union_mode of a normalized single select does not reach the key'
+# A normalized union with one select has no separator, so its union_mode is dead state: both
+# JSON ASTs format and execute as the same single SELECT and must share one cache entry.
+union_json() {
+    echo "{\"type\":\"SelectWithUnionQuery\",\"union_mode\":\"$1\",\"is_normalized\":true,\"list_of_selects\":{\"type\":\"ExpressionList\",\"children\":[{\"type\":\"SelectQuery\",\"select\":{\"type\":\"ExpressionList\",\"children\":[{\"type\":\"Literal\",\"value\":{\"field_type\":\"UInt64\",\"value\":858}}]}}]}}"
+}
+for mode in UNION_ALL UNION_DISTINCT; do
+    ${CLICKHOUSE_CLIENT} --enable_json_ast_dialect 1 --dialect clickhouse_json \
+        --use_query_cache 1 --query_cache_min_query_runs 0 --query_cache_min_query_duration 0 \
+        --query_cache_tag "${CLICKHOUSE_DATABASE}_single_union" --query "$(union_json $mode)" > /dev/null
+done
+entries _single_union

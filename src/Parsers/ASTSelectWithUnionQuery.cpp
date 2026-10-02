@@ -97,7 +97,11 @@ void ASTSelectWithUnionQuery::updateTreeHashImpl(SipHash & hash_state, bool igno
 {
     /// The set operation joining the selects is not a child, so the default implementation does not
     /// see it: without hashing the modes, `a UNION ALL b` and `a UNION DISTINCT b` hash equally.
-    hash_state.update(union_mode);
+    /// A normalized union with a single select has no separator, so its `union_mode` is dead state
+    /// (see `restoreSetOfModes`) and must not separate two queries that format to the same SQL.
+    const bool union_mode_is_relevant = !is_normalized || list_of_selects->children.size() > 1;
+    if (union_mode_is_relevant)
+        hash_state.update(union_mode);
 
     /// Mirror `formatQueryImpl`'s `get_mode`, which reads `list_of_modes` only while the query is
     /// not normalized and repeats `union_mode` once it is. Hashing the vector unconditionally would
