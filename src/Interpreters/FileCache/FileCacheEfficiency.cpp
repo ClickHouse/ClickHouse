@@ -35,12 +35,12 @@ void FileCacheEfficiency::rotateIfNeeded(UInt64 now_window)
     const Int64 used = static_cast<Int64>(get_used_size());
     if (live_window + 1 == now_window)
     {
-        const Int64 held = std::max<Int64>(live_held_bytes, 0);
-        const Int64 active = std::clamp<Int64>(live_active_bytes, 0, held);
+        const Int64 active = std::max<Int64>(live_active_bytes, 0);
+        const Int64 passive = std::max<Int64>(live_passive_bytes, 0);
         snapshot = Snapshot{
             .active_bytes = static_cast<UInt64>(active),
-            .passive_bytes = static_cast<UInt64>(held - active),
-            .idle_bytes = static_cast<UInt64>(std::max<Int64>(used - held, 0)),
+            .passive_bytes = static_cast<UInt64>(passive),
+            .idle_bytes = static_cast<UInt64>(std::max<Int64>(used - active - passive, 0)),
         };
     }
     else
@@ -49,8 +49,8 @@ void FileCacheEfficiency::rotateIfNeeded(UInt64 now_window)
         snapshot = Snapshot{.active_bytes = 0, .passive_bytes = 0, .idle_bytes = static_cast<UInt64>(used)};
     }
 
-    live_held_bytes = 0;
     live_active_bytes = 0;
+    live_passive_bytes = 0;
     live_window = now_window;
 }
 
@@ -58,14 +58,17 @@ void FileCacheEfficiency::addHeldBytes(UInt64 window, Int64 bytes)
 {
     std::lock_guard lock(mutex);
     if (window == live_window)
-        live_held_bytes += bytes;
+        live_passive_bytes += bytes;
 }
 
 void FileCacheEfficiency::addActiveBytes(UInt64 window, Int64 bytes)
 {
     std::lock_guard lock(mutex);
     if (window == live_window)
+    {
         live_active_bytes += bytes;
+        live_passive_bytes -= bytes;
+    }
 }
 
 FileCacheEfficiency::Snapshot FileCacheEfficiency::getSnapshot()

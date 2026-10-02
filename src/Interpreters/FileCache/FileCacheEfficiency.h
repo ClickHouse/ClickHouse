@@ -39,7 +39,7 @@ public:
     /// Rotates if the live window ended.
     UInt64 currentWindow();
 
-    /// No-op unless `window` is the live window.
+    /// No-op unless `window` is the live window. Held bytes start as passive; active bytes move out of passive.
     void addHeldBytes(UInt64 window, Int64 bytes);
     void addActiveBytes(UInt64 window, Int64 bytes);
 
@@ -60,8 +60,8 @@ private:
 
     std::mutex mutex;
     UInt64 live_window TSA_GUARDED_BY(mutex) = 0;
-    Int64 live_held_bytes TSA_GUARDED_BY(mutex) = 0;
     Int64 live_active_bytes TSA_GUARDED_BY(mutex) = 0;
+    Int64 live_passive_bytes TSA_GUARDED_BY(mutex) = 0;
     Snapshot snapshot TSA_GUARDED_BY(mutex);
 };
 

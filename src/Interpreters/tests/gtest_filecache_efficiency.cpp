@@ -78,9 +78,9 @@ TEST(FileCacheEfficiency, NegativeAndInconsistentValuesAreClamped)
     t.used_size = 50;
     const UInt64 window = t.efficiency.currentWindow();
     t.efficiency.addHeldBytes(window, 10);
-    t.efficiency.addActiveBytes(window, 30);   /// active > held: clamp active to held
+    t.efficiency.addActiveBytes(window, 30);   /// active > held: passive < 0, clamp it to 0
     t.advance(10);
-    expectSnapshot(t.efficiency.getSnapshot(), 10, 0, 40);
+    expectSnapshot(t.efficiency.getSnapshot(), 30, 0, 20);
 
     t.efficiency.addHeldBytes(t.efficiency.currentWindow(), -20);   /// held < 0: clamp to 0
     t.advance(10);
