@@ -580,10 +580,9 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
         /// send, whatever surface supplied it — `headers(...)` in a query, an endpoint `<header>` /
         /// `<access_header>` entry, or a disk `<header>` entry. The S3 transports validate their
         /// final header set before the client is built; do the same here so switching to the native
-        /// backend cannot smuggle a forbidden header past the filter. checkAndNormalizeHeaders
-        /// mutates (normalizes) the entries, so run it on the copy the client options are built from.
+        /// backend cannot smuggle a forbidden header past the filter.
         auto headers = settings.headers;
-        context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
+        context->getHTTPHeaderFilter().checkHeaders(headers);
 
         gc::CustomHeadersOption::Type custom_headers;
         for (const auto & header : headers)
