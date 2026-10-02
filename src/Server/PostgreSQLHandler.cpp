@@ -27,6 +27,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Server/TCPServer.h>
 #include <boost/algorithm/string/trim.hpp>
+#include <base/find_symbols.h>
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
@@ -280,6 +281,85 @@ private:
     bool protocol_error = false;
     String abort_reason;
 };
+
+/// Copies the payload of a `COPY ... FROM STDIN` up to PostgreSQL's end-of-data marker, a line holding only
+/// `\.`. `psql` before version 18 sends that line as part of the data, and PostgreSQL ends the data there (in
+/// the CSV format only outside of a quoted value) and ignores what follows. The input is read to its end
+/// either way, so that the copy sub-protocol still runs up to `CopyDone`.
+void copyCopyInPayload(ReadBuffer & in, WriteBuffer & out, bool is_csv)
+{
+    bool at_line_start = true;
+    bool in_quotes = false;
+    bool marker_found = false;
+    /// What may be the beginning of the marker at the start of a line: `\`, `\.` or `\.\r`.
+    String pending;
+
+    while (!in.eof())
+    {
+        if (marker_found)
+        {
+            in.position() = in.buffer().end();
+            continue;
+        }
+
+        char * pos = in.position();
+        char * end = in.buffer().end();
+
+        if (!pending.empty())
+        {
+            const String candidate = pending + *pos;
+            if (candidate == "\\." || candidate == "\\.\r")
+            {
+                pending = candidate;
+                ++in.position();
+            }
+            else if (candidate == "\\.\n" || candidate == "\\.\r\n")
+            {
+                marker_found = true;
+                ++in.position();
+            }
+            else
+            {
+                /// Not the marker: the bytes are data, and the current byte is processed as usual.
+                out.write(pending.data(), pending.size());
+                pending.clear();
+                at_line_start = false;
+            }
+            continue;
+        }
+
+        if (at_line_start && !in_quotes && *pos == '\\')
+        {
+            pending = "\\";
+            ++in.position();
+            continue;
+        }
+
+        /// Copy everything up to and including the next byte that can change the state.
+        char * next = is_csv ? find_first_symbols<'"', '\n'>(pos, end) : find_first_symbols<'\n'>(pos, end);
+        if (next == end)
+        {
+            out.write(pos, end - pos);
+            in.position() = end;
+            at_line_start = false;
+            continue;
+        }
+
+        out.write(pos, next + 1 - pos);
+        in.position() = next + 1;
+        if (*next == '"')
+        {
+            in_quotes = !in_quotes;
+            at_line_start = false;
+        }
+        else
+            at_line_start = !in_quotes;
+    }
+
+    /// The marker may also be the last line of the data without a line feed after it.
+    if (!marker_found && pending != "\\." && pending != "\\.\r")
+        out.write(pending.data(), pending.size());
+}
 
 UInt32 generateRandomUInt32()
 {
@@ -1523,7 +1603,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         CascadeWriteBuffer staged_out(std::move(staging_buffers), std::move(staging_buffers_lazy));
         try
         {
-            copyData(copy_in_stream, staged_out);
+            copyCopyInPayload(copy_in_stream, staged_out, copy_query->format == ASTCopyQuery::Formats::CSV);
             staged_out.finalize();
         }
         catch (...)
