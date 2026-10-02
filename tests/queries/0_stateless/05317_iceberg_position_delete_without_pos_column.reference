@@ -1,0 +1,9 @@
+1
+7	42
+7	42
+pos roaring=0:
+has no column 'pos' (ICEBERG_SPECIFICATION_VIOLATION)
+pos roaring=1:
+has no column 'pos' (ICEBERG_SPECIFICATION_VIOLATION)
+file_path:
+has no column 'file_path' (ICEBERG_SPECIFICATION_VIOLATION)
