@@ -338,6 +338,10 @@ How many messages have been dropped from text_log due to the async log queue bei
 
 How many messages (accepted or dropped) have been sent to the async queue for the text_log
 
+### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
+
+Number of times automatic parallel replicas built a candidate plan with parallel replicas to compare against the single-node plan. Not every such plan is used: it is built to be costed, and is discarded when the single-node plan wins
+
 ### AzureClients {#azureclients}
 
 Number of created Azure blob storage container clients.
@@ -593,10 +597,6 @@ Number of times writing a file segment into the filesystem cache was stopped mid
 ### CachedReadBufferCreateBufferMicroseconds {#cachedreadbuffercreatebuffermicroseconds}
 
 Prepare buffer time
-
-### CachedReadBufferPredownloadedBytes {#cachedreadbufferpredownloadedbytes}
-
-Bytes read from filesystem cache source. Cache segments are read from left to right as a whole, it might be that we need to predownload some part of the segment irrelevant for the current task just to get to the needed data
 
 ### CachedReadBufferPredownloadedFromSourceBytes {#cachedreadbufferpredownloadedfromsourcebytes}
 
@@ -1748,10 +1748,6 @@ Total time spent during distributed index analysis
 
 Number of missing parts during distributed index analysis that will be resolved locally
 
-### DistributedIndexAnalysisParts {#distributedindexanalysisparts}
-
-Number of parts send for distributed index analysis
-
 ### DistributedIndexAnalysisReplicaFallback {#distributedindexanalysisreplicafallback}
 
 Number of times distributed index analysis failed on one of replicas with fallback to local replica
@@ -1908,10 +1904,6 @@ Amount of data (uncompressed, before compression) written to disk for aggregatio
 
 Number of times a temporary file was written to disk for aggregation in external memory.
 
-### ExternalDataSourceLocalCacheReadBytes {#externaldatasourcelocalcachereadbytes}
-
-Bytes read from local cache buffer in RemoteReadBufferCache
-
 ### ExternalDistinctCompressedBytes {#externaldistinctcompressedbytes}
 
 Number of compressed bytes written for DISTINCT in external memory.
@@ -1919,6 +1911,14 @@ Number of compressed bytes written for DISTINCT in external memory.
 ### ExternalDistinctMerge {#externaldistinctmerge}
 
 Number of times temporary files were merged for DISTINCT in external memory.
+
+### ExternalDistinctTailKeptRows {#externaldistincttailkeptrows}
+
+Number of buffered rows retained in memory for the final external DISTINCT merge.
+
+### ExternalDistinctTailSpilledRows {#externaldistincttailspilledrows}
+
+Number of buffered rows selected for spilling before the final external DISTINCT merge.
 
 ### ExternalDistinctUncompressedBytes {#externaldistinctuncompressedbytes}
 
@@ -2067,10 +2067,6 @@ File segment increase priority time
 ### FileSegmentLockMicroseconds {#filesegmentlockmicroseconds}
 
 Lock file segment time
-
-### FileSegmentRemoveMicroseconds {#filesegmentremovemicroseconds}
-
-File segment remove() time
 
 ### FileSegmentWaitMicroseconds {#filesegmentwaitmicroseconds}
 
@@ -4072,10 +4068,6 @@ Number of replicas available to execute a query with task-based parallel replica
 
 Time spent collecting segments meant by hash
 
-### ParallelReplicasDeniedRequests {#parallelreplicasdeniedrequests}
-
-Number of completely denied requests to the initiator
-
 ### ParallelReplicasHandleAnnouncementMicroseconds {#parallelreplicashandleannouncementmicroseconds}
 
 Time spent processing replicas announcements
@@ -4999,18 +4991,6 @@ Number of S3 PUT, COPY, POST and LIST requests passed through throttler: blocked
 ### S3PutRequestThrottlerSleepMicroseconds {#s3putrequestthrottlersleepmicroseconds}
 
 Total time a query was sleeping to conform S3 PUT, COPY, POST and LIST request throttling.
-
-### S3QueueSetFileFailedMicroseconds {#s3queuesetfilefailedmicroseconds}
-
-Time spent to set file as failed
-
-### S3QueueSetFileProcessedMicroseconds {#s3queuesetfileprocessedmicroseconds}
-
-Time spent to set file as processed
-
-### S3QueueSetFileProcessingMicroseconds {#s3queuesetfileprocessingmicroseconds}
-
-Time spent to set file as processing
 
 ### S3ReadMicroseconds {#s3readmicroseconds}
 
@@ -6311,10 +6291,6 @@ Time spent executing WebAssembly code
 ### WasmGuestExecuteMicroseconds {#wasmguestexecutemicroseconds}
 
 Time spent executing WebAssembly code
-
-### WasmMemoryAllocated {#wasmmemoryallocated}
-
-Total memory allocated for WebAssembly compartments
 
 ### WasmModuleInstatiate {#wasmmoduleinstatiate}
 
