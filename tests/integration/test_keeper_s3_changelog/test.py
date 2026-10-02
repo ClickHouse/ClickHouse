@@ -142,7 +142,13 @@ def test_correctness(started_cluster):
         # The static config sets `s3_experimental_changelog=true` and
         # `s3_log_disk=s3_changelog`, so changelog segments must land in MinIO
         # under `snaplogs/` rather than on the local log disk.
-        s3_changelog_files = list_s3_objects(started_cluster, "snaplogs/")
+        # The segment that is still being written is uploaded under the
+        # `s3_in_progress_` prefix and published under its final name on flush.
+        s3_changelog_files = [
+            name
+            for name in list_s3_objects(started_cluster, "snaplogs/")
+            if not name.startswith("s3_in_progress_")
+        ]
         assert (
             len(s3_changelog_files) > 0
         ), f"expected S3 changelog files under snaplogs/, got: {s3_changelog_files}"
