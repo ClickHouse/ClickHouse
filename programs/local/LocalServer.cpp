@@ -26,6 +26,7 @@
 #include <Databases/DatabaseOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
+#include <Interpreters/CancellationChecker.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
@@ -67,7 +68,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
-#include <Parsers/registerStatements.h>
+#include <Parsers/registerParsers.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
@@ -95,6 +96,7 @@
 #include <Poco/ThreadPool.h>
 
 #include <algorithm>
+#include <thread>
 
 #include "config.h"
 
@@ -314,12 +316,11 @@ Poco::Util::LayeredConfiguration & LocalServer::getClientConfiguration()
     return config();
 }
 
-void LocalServer::processError(std::string_view) const
+void LocalServer::processError(std::string_view query) const
 {
-    if (ignore_error)
-        return;
-
-    if (is_interactive)
+    /// `--ignore-error` asks to carry on with the next statement, not to hide what went wrong, so
+    /// the exception is reported here rather than rethrown - rethrowing it would end the run.
+    if (is_interactive || ignore_error)
     {
         String message;
         if (server_exception)
@@ -335,7 +336,10 @@ void LocalServer::processError(std::string_view) const
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         fmt::print(stderr, "Received exception:\n{}\n", message);
-        fmt::print(stderr, "\n");
+        if (is_interactive)
+            fmt::print(stderr, "\n");
+        else
+            fmt::print(stderr, "(query: {})\n", query);
 #pragma clang diagnostic pop
     }
     else
@@ -1269,7 +1273,7 @@ try
     }
 
     registerInterpreters();
-    registerStatements();
+    registerParsers();
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
@@ -1283,7 +1287,22 @@ try
 
     processConfig();
 
+    /// `workerFunction()` returns only on `terminateThread()`, so it must not hold a slot of a
+    /// bounded pool. SCOPE_EXIT is LIFO, so registering this guard before the `cleanup()` one keeps
+    /// the checker running while `cleanup()` waits for listener connections to drain.
+    std::thread cancellation_thread;
+
+    SCOPE_EXIT({
+        if (cancellation_thread.joinable())
+        {
+            CancellationChecker::getInstance().terminateThread();
+            cancellation_thread.join();
+        }
+    });
+
     SCOPE_EXIT({ cleanup(); });
+
+    cancellation_thread = std::thread([] { CancellationChecker::getInstance().workerFunction(); });
 
     initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")),
         toProgressOption(config().getString("progress-table", "default")));
