@@ -385,11 +385,14 @@ MergeTreeReaderStream * MergeTreeReaderWide::getOrAddStream(const ISerialization
 
         auto create_stream = [&]<typename Stream>()
         {
-            return std::make_unique<Stream>(
+            auto stream = std::make_unique<Stream>(
                 data_part_info_for_read->getDataPartStorage(), stream_name, DATA_FILE_EXTENSION,
                 num_marks_in_part, all_mark_ranges, stream_settings,
                 uncompressed_cache, data_file_size,
                 std::move(marks_loader), profile_callback, clock_type);
+            /// Streams of `Dynamic` subcolumns are created while a task reads, after the map was announced.
+            stream->updateReadRequestMap(read_request_map);
+            return stream;
         };
 
         if (read_without_marks)
