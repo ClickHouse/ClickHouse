@@ -741,7 +741,9 @@ bool tryEstimateProjection(
         /// a time limit in `break` mode or a cancelled query stops the read without an error
         if (part_data.rows != part->index_granularity->getRowsCountInRanges(ranges))
         {
-            result.empirical_unsupported_reason = "The projection scan was cut short by a time limit in `break` mode or a cancel";
+            result.empirical_unsupported_reason = "The projection scan was cut short by a time limit in `break` mode or a cancelled query";
+            /// the same time limit also stops the output, so only the log shows why the estimate is missing
+            LOG_DEBUG(log, "{}", result.empirical_unsupported_reason);
             return false;
         }
 
