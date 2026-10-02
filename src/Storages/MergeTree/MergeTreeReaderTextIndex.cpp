@@ -349,15 +349,15 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
     }
 }
 
-void MergeTreeReaderTextIndex::initializePostingStreams()
+void MergeTreeReaderTextIndex::initializeTokensToRead()
 {
     const auto & analyzer = granule->getAnalyzer();
     const auto & token_infos = analyzer.getAllTokenInfos();
 
-    for (const auto & [token, token_info] : token_infos)
+    for (const auto & [token, _] : token_infos)
     {
         if (analyzer.isTokenNeeded(token) && !analyzer.hasReadPostings(token))
-            large_postings_streams.emplace(token, makePostingsStream(*token_info));
+            tokens_to_read.insert(token);
     }
 }
 
@@ -448,7 +448,7 @@ size_t MergeTreeReaderTextIndex::readRows(
 
         is_initialized = true;
         classifyVirtualColumns();
-        initializePostingStreams();
+        initializeTokensToRead();
         initializePositionsStream();
     }
 
@@ -568,10 +568,7 @@ std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makePostingsStr
 
 MergeTreeReaderStream & MergeTreeReaderTextIndex::getPostingsStream(std::string_view token, const TokenPostingsInfo & token_info)
 {
-    if (auto it = large_postings_streams.find(token); it != large_postings_streams.end())
-        return *it->second;
-
-    auto [it, inserted] = other_postings_streams.try_emplace(token);
+    auto [it, inserted] = postings_streams.try_emplace(token);
     if (inserted)
         it->second = makePostingsStream(token_info);
 
@@ -646,7 +643,7 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
 
     for (const auto & [token, token_info] : query_builder.tokens)
     {
-        if (!large_postings_streams.contains(token))
+        if (!tokens_to_read.contains(token))
             continue;
 
         auto read_blocks = readPostingsBlocksForToken(token, *token_info, range);
@@ -687,15 +684,16 @@ std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken
         return {};
 
     std::vector<PostingListPtr> result;
+    auto & postings_stream = getPostingsStream(token, token_info);
+
     for (const auto & block_idx : blocks_to_read)
     {
-        auto * postings_stream = large_postings_streams.at(token).get();
         auto [it, inserted] = postings_blocks[token].try_emplace(block_idx);
 
         if (inserted)
         {
             it->second = MergeTreeIndexGranuleText::readPostingsBlock(
-                *postings_stream,
+                postings_stream,
                 *deserialization_state,
                 token_info,
                 block_idx,

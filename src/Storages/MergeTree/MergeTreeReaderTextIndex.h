@@ -59,8 +59,7 @@ private:
     std::unique_ptr<MergeTreeReaderStream> makeTextIndexStream(const MergeTreeIndexSubstream & substream) const;
     /// Opens the postings stream of one token, with the buffer sized to the token's largest segment.
     std::unique_ptr<MergeTreeReaderStream> makePostingsStream(const TokenPostingsInfo & token_info) const;
-    /// The postings stream of a token: the one opened by `initializePostingStreams` for the tokens the analysis
-    /// left to read, otherwise one opened on demand and kept in `other_postings_streams`.
+    /// The postings stream of a token, opened on first use and kept in `postings_streams`.
     MergeTreeReaderStream & getPostingsStream(std::string_view token, const TokenPostingsInfo & token_info);
 
     /// Returns combined postings per column for the given mark, clipped to `slice_range`
@@ -82,7 +81,8 @@ private:
     void readGranule();
     /// Sets per-column flags from the analyzer's verdict and collects tokens to materialize.
     void classifyVirtualColumns();
-    void initializePostingStreams();
+    /// Collects the tokens whose postings the analysis left to read into `tokens_to_read`.
+    void initializeTokensToRead();
     void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
     void fillColumnLazy(IColumn & column, size_t column_idx, size_t row_offset, size_t num_rows, PostingList & range_posting);
 
@@ -128,12 +128,11 @@ private:
     /// and the predicate must be evaluated directly via fallback_expressions.
     std::vector<bool> use_fallback;
     /// A separate stream is created for each token to read postings blocks continuously without additional
-    /// seeks, with the buffer sized to the token's largest segment. Opened upfront for the tokens the analysis
-    /// left to read, which is also how the queries tell those tokens apart.
-    absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> large_postings_streams;
-    /// Streams of the other tokens, opened on demand: phrase tokens whose lists the analysis folded already, and
-    /// cursors of tokens it no longer needs. Kept as members because cached lazy cursors hold references to them.
-    absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> other_postings_streams;
+    /// seeks, with the buffer sized to the token's largest segment. Kept as members because cached lazy
+    /// cursors hold references to them.
+    absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> postings_streams;
+    /// Tokens the analysis left to read: needed by some query and without postings read during the analysis.
+    absl::flat_hash_set<std::string_view> tokens_to_read;
 
     /// Stream for position data (.pos file) used for phrase queries.
     std::unique_ptr<MergeTreeReaderStream> positions_stream;
