@@ -411,7 +411,7 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     {
         chunkings.emplace_back(merge_rows, merge_bytes);
         chunkings.emplace_back(merge_rows, granule_bytes);
-        /// a level-zero part was written in one go, a merged one block by block
+        /// the writer writes a level-zero part in one go, and a merged part block by block
         if (parent_part->info.level > 0)
             primary = uneven_rows ? chunkings.size() - 1 : chunkings.size() - 2;
     }
@@ -666,7 +666,8 @@ bool tryEstimateProjection(
         }
     }
 
-    /// a range end is known up to the gap between neighbouring sample rows, a sampling step if the key follows the parent order
+    /// the estimate knows a range end only up to the gap between neighbouring sample rows
+    /// that gap is a sampling step if the key follows the parent order
     std::vector<double> granule_shares;
     UInt64 layout_marks = 0;
     double range_end_spread = 0;
@@ -950,10 +951,14 @@ WhatIfCandidateResult evaluateProjection(
         const bool skip_folding = !context->getSettingsRef()[Setting::use_constant_folding_in_index_analysis];
         const auto & proj_columns = projection->metadata->getColumns();
         if (!projection->with_parent_part_offset && !proj_columns.has("_part_offset"))
-            filters_on_offsets = (!proj_columns.has("_part")
-                    && MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(predicate_dag, projection->metadata, skip_folding, context))
+        {
+            const auto & proj_metadata = projection->metadata;
+            filters_on_offsets
+                = (!proj_columns.has("_part")
+                   && MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(predicate_dag, proj_metadata, skip_folding, context))
                 || (!proj_columns.has("_part_starting_offset")
-                    && MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(predicate_dag, projection->metadata, skip_folding, context));
+                    && MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(predicate_dag, proj_metadata, skip_folding, context));
+        }
     }
 
     /// read the setting from the context of the read, as the optimizer does
