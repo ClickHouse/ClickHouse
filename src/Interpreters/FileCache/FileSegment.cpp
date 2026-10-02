@@ -1398,11 +1398,11 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
     auto lock = file_segment->lock();
     auto key_metadata = file_segment->tryGetKeyMetadata();
     size_t active_bytes = 0;
-    std::optional<UInt64> windows_since_touch;
+    std::optional<UInt64> windows_since_hit;
     {
         std::lock_guard efficiency_lock(file_segment->efficiency_mutex);
         active_bytes = file_segment->getActiveBytesUnlocked();
-        windows_since_touch = file_segment->getWindowsSinceTouchUnlocked();
+        windows_since_hit = file_segment->getWindowsSinceHitUnlocked();
     }
     return Info{
         .key = file_segment->key(),
@@ -1421,7 +1421,7 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
         .queue_entry_type = file_segment->queue_iterator ? file_segment->queue_iterator->getType() : QueueEntryType::None,
         .origin = *key_metadata->origin,
         .active_bytes = active_bytes,
-        .windows_since_touch = windows_since_touch,
+        .windows_since_hit = windows_since_hit,
     };
 }
 
@@ -1611,7 +1611,7 @@ size_t FileSegment::getActiveBytesUnlocked() const
     return granulesToBytesUnlocked(active_granules[0], active_granules[1]);
 }
 
-std::optional<UInt64> FileSegment::getWindowsSinceTouchUnlocked() const
+std::optional<UInt64> FileSegment::getWindowsSinceHitUnlocked() const
 {
     if (!cache || efficiency_window_id == FileCacheEfficiency::NEVER_READ)
         return std::nullopt;

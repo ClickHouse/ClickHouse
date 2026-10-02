@@ -273,7 +273,7 @@ private:
     size_t getActiveBytesUnlocked() const TSA_REQUIRES(efficiency_mutex);
     /// `low` holds granules 0-63, `high` 64-127.
     size_t granulesToBytesUnlocked(UInt64 low, UInt64 high) const TSA_REQUIRES(efficiency_mutex);
-    std::optional<UInt64> getWindowsSinceTouchUnlocked() const TSA_REQUIRES(efficiency_mutex);
+    std::optional<UInt64> getWindowsSinceHitUnlocked() const TSA_REQUIRES(efficiency_mutex);
 
     /// In release builds returns a single shared logger; in debug builds a per-segment one.
     const LoggerPtr & getLog() const;

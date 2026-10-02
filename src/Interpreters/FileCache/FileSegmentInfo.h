@@ -81,6 +81,6 @@ namespace DB
         FileCacheOriginInfo origin;
         uint64_t active_bytes = 0;
         /// 0 = live window, 1 = last full window; `nullopt` = never served.
-        std::optional<uint64_t> windows_since_touch;
+        std::optional<uint64_t> windows_since_hit;
     };
 }

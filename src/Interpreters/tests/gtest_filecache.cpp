@@ -4294,13 +4294,13 @@ TEST_F(FileCacheTest, EfficiencyWindow)
     auto holder_b = cache.getOrSet(key, 128, 128, 1024, {}, 0, user);
     auto b = get(holder_b, 0);
     download(b);
-    EXPECT_FALSE(FileSegment::getInfo(b).windows_since_touch.has_value());
+    EXPECT_FALSE(FileSegment::getInfo(b).windows_since_hit.has_value());
 
     /// Window 0: A is read in full; B is not read and stays idle.
     a->markRead(0, 128);
-    EXPECT_EQ(FileSegment::getInfo(a).windows_since_touch, 0);
+    EXPECT_EQ(FileSegment::getInfo(a).windows_since_hit, 0);
     expect(next_window(), /*active=*/128, /*passive=*/0);
-    EXPECT_EQ(FileSegment::getInfo(a).windows_since_touch, 1);
+    EXPECT_EQ(FileSegment::getInfo(a).windows_since_hit, 1);
 
     /// Window 1: a narrow read of A.
     a->markRead(10, 16);
@@ -4410,7 +4410,7 @@ TEST_F(FileCacheTest, EfficiencyDisabled)
     download(segment);
     segment->markRead(0, 128);
 
-    EXPECT_FALSE(FileSegment::getInfo(segment).windows_since_touch.has_value());
+    EXPECT_FALSE(FileSegment::getInfo(segment).windows_since_hit.has_value());
     EXPECT_EQ(FileSegment::getInfo(segment).active_bytes, 0);
     const auto snapshot = cache.getEfficiency().getSnapshot();
     EXPECT_EQ(snapshot.active_bytes + snapshot.passive_bytes + snapshot.idle_bytes, 0);
@@ -4483,7 +4483,7 @@ TEST_F(FileCacheTest, EfficiencyStaleWindowDoesNotMoveBack)
 
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(5));
     segment->markRead(32, 16);
-    EXPECT_EQ(FileSegment::getInfo(segment).windows_since_touch, 0);
+    EXPECT_EQ(FileSegment::getInfo(segment).windows_since_hit, 0);
 
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
     const auto snapshot = cache.getEfficiency().getSnapshot();
