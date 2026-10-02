@@ -37,6 +37,9 @@
 
 #include <sys/stat.h>
 
+#include <unordered_map>
+#include <unordered_set>
+
 namespace DB
 {
 namespace Setting
@@ -321,7 +324,9 @@ void StorageFileLog::loadFiles()
                 continue;
             String file_name = dir_entry.path().filename();
             /// A file renamed to a non-matching name while it was read (log rotation) keeps being read.
-            if (fileNameMatches(file_name) || file_infos.meta_by_inode.contains(getInode(dir_entry.path().string())))
+            struct stat file_stat{};
+            if (fileNameMatches(file_name)
+                || (stat(dir_entry.path().c_str(), &file_stat) == 0 && file_infos.meta_by_inode.contains(file_stat.st_ino)))
                 file_infos.file_names.push_back(std::move(file_name));
         }
     }
@@ -1136,10 +1141,23 @@ bool StorageFileLog::updateFileInfos()
     /// be observed before any later `DW_ITEM_ADDED` for the source name, so
     /// that `onFileAppeared`'s filename-ownership guard sees the post-rename
     /// `file_name` in `meta_by_inode` rather than the stale pre-rename one.
-    renamed_from_read_name[1] = std::exchange(renamed_from_read_name[0], {});
-    renamed_to_vanished_name[1] = std::exchange(renamed_to_vanished_name[0], {});
-    for (const auto & [file_name, event_info] : events)
+    /// Only the last add, removal or rename of a name is applied to the file found there now; earlier events of the
+    /// name only record whether the file they leave under it is read.
+    std::unordered_map<String, size_t> last_change;
+    for (size_t i = 0; i < events.size(); ++i)
+        if (events[i].second.type != DirectoryWatcherBase::DW_ITEM_MODIFIED)
+            last_change[events[i].first] = i;
+    std::unordered_map<String, bool> name_is_read;
+    std::unordered_set<UInt64> renamed_from_read_name;
+    auto is_read = [&](const String & name)
     {
+        auto it = name_is_read.find(name);
+        return it != name_is_read.end() ? it->second : fileNameMatches(name) || file_infos.context_by_name.contains(name);
+    };
+
+    for (size_t i = 0; i < events.size(); ++i)
+    {
+        const auto & [file_name, event_info] = events[i];
         String file_path = getFullDataPath(file_name);
         LOG_TRACE(log, "New event {} watched, file_name: {}", event_info.callback, file_name);
 
@@ -1147,6 +1165,9 @@ bool StorageFileLog::updateFileInfos()
         {
             case DirectoryWatcherBase::DW_ITEM_ADDED:
             {
+                name_is_read[file_name] = fileNameMatches(file_name);
+                if (last_change.at(file_name) != i)
+                    break;
                 /// Check if it is a regular file, and new file may be renamed or removed
                 if (std::filesystem::is_regular_file(file_path) && fileNameMatches(file_name))
                 {
@@ -1184,10 +1205,9 @@ bool StorageFileLog::updateFileInfos()
             /// The file **left** the directory
             case DirectoryWatcherBase::DW_ITEM_MOVED_FROM:
             {
-                if (event_info.type == DirectoryWatcherBase::DW_ITEM_MOVED_FROM && event_info.cookie
-                    && (fileNameMatches(file_name) || file_infos.context_by_name.contains(file_name)
-                        || renamed_to_vanished_name[0].erase(file_name) > 0 || renamed_to_vanished_name[1].erase(file_name) > 0))
-                    renamed_from_read_name[0].insert(event_info.cookie);
+                if (event_info.type == DirectoryWatcherBase::DW_ITEM_MOVED_FROM && event_info.cookie && is_read(file_name))
+                    renamed_from_read_name.insert(event_info.cookie);
+                name_is_read[file_name] = false;
                 if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                     it->second.status = FileStatus::REMOVED;
                 break;
@@ -1195,8 +1215,10 @@ bool StorageFileLog::updateFileInfos()
             /// The file **arrived** in this directory
             case DirectoryWatcherBase::DW_ITEM_MOVED_TO:
             {
-                const bool renamed_from_read = event_info.cookie
-                    && (renamed_from_read_name[0].contains(event_info.cookie) || renamed_from_read_name[1].contains(event_info.cookie));
+                const bool renamed_from_read = event_info.cookie && renamed_from_read_name.contains(event_info.cookie);
+                name_is_read[file_name] = renamed_from_read || fileNameMatches(file_name);
+                if (last_change.at(file_name) != i)
+                    break;
                 /// Similar to DW_ITEM_ADDED, but if it removed from an old file
                 /// should obtain old meta file and rename meta file
                 if (std::filesystem::is_regular_file(file_path))
@@ -1229,9 +1251,6 @@ bool StorageFileLog::updateFileInfos()
                     else
                         file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
                 }
-                /// Renamed again before this event was processed: its next rename starts from this name.
-                else if (renamed_from_read)
-                    renamed_to_vanished_name[0].insert(file_name);
                 break;
             }
         }

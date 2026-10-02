@@ -57,6 +57,8 @@ private:
     void onItemMovedFrom(DirectoryWatcherBase::DirectoryEvent ev);
     void onItemMovedTo(DirectoryWatcherBase::DirectoryEvent ev);
     void onError(Exception);
+    /// Hands the events of one watcher pass to `getEventsAndReset` together.
+    void commitEvents();
 
     const std::string path;
 
@@ -70,6 +72,8 @@ private:
     /// And we should put other members before dw as well, because all of them can be
     /// accessed in thread created by dw.
     Events events;
+    /// Events of the current watcher pass, used only by the watcher thread.
+    Events pending;
 
     /// Dedup state for repeated `DW_ITEM_MODIFIED` events within a single
     /// batch. The original aggregation stored this per-name in `FileEvents`;

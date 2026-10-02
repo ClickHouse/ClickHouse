@@ -32,6 +32,12 @@ chain.log	220000
 chain.log	23
 chain.log.1	24
 chain.log.3	25
+-- replaced and renamed again
+chain.log.2	27
+-- renamed over a new file
+new2.log	29
+-- renamed twice, first name refilled
+gate.log.2	40
 -- errors
 OK
 OK

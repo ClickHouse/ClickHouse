@@ -15,6 +15,8 @@
 
 #if defined(OS_LINUX)
 #include <sys/inotify.h>
+#include <chrono>
+#include <unordered_set>
 #elif defined(OS_DARWIN)
 #include <map>
 #include <set>
@@ -111,47 +113,65 @@ void DirectoryWatcherBase::watchFunc()
         if (poll(pfds, 2, static_cast<int>(milliseconds_to_wait)) > 0 && pfds[0].revents & POLLIN)
         {
             milliseconds_to_wait = (*settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds();
-            ssize_t n = read(inotify_fd, buffer.data(), buffer.size());
-            int i = 0;
-            if (n > 0)
+            /// The IN_MOVED_FROM and IN_MOVED_TO of one rename can come in two reads (see inotify(7)): read on for a
+            /// moment until every IN_MOVED_FROM has its IN_MOVED_TO, then hand the events over together.
+            std::unordered_set<uint32_t> unpaired_moves;
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
+            while (true)
             {
-                while (n > 0)
+                ssize_t n = read(inotify_fd, buffer.data(), buffer.size());
+                int i = 0;
+                if (n > 0)
                 {
-                    struct inotify_event * p_event = reinterpret_cast<struct inotify_event *>(buffer.data() + i);
-
-                    if (p_event->len > 0)
+                    while (n > 0)
                     {
-                        if ((p_event->mask & IN_CREATE) && (eventMask() & DirectoryWatcherBase::DW_ITEM_ADDED))
-                        {
-                            DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_ADDED);
-                            owner.onItemAdded(ev);
-                        }
-                        if ((p_event->mask & IN_DELETE) && (eventMask() & DirectoryWatcherBase::DW_ITEM_REMOVED))
-                        {
-                            DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_REMOVED);
-                            owner.onItemRemoved(ev);
-                        }
-                        if ((p_event->mask & IN_MODIFY) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MODIFIED))
-                        {
-                            DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MODIFIED);
-                            owner.onItemModified(ev);
-                        }
-                        if ((p_event->mask & IN_MOVED_FROM) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_FROM))
-                        {
-                            DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_FROM, p_event->cookie);
-                            owner.onItemMovedFrom(ev);
-                        }
-                        if ((p_event->mask & IN_MOVED_TO) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_TO))
-                        {
-                            DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_TO, p_event->cookie);
-                            owner.onItemMovedTo(ev);
-                        }
-                    }
+                        struct inotify_event * p_event = reinterpret_cast<struct inotify_event *>(buffer.data() + i);
 
-                    i += sizeof(inotify_event) + p_event->len;
-                    n -= sizeof(inotify_event) + p_event->len;
+                        if (p_event->len > 0)
+                        {
+                            if ((p_event->mask & IN_CREATE) && (eventMask() & DirectoryWatcherBase::DW_ITEM_ADDED))
+                            {
+                                DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_ADDED);
+                                owner.onItemAdded(ev);
+                            }
+                            if ((p_event->mask & IN_DELETE) && (eventMask() & DirectoryWatcherBase::DW_ITEM_REMOVED))
+                            {
+                                DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_REMOVED);
+                                owner.onItemRemoved(ev);
+                            }
+                            if ((p_event->mask & IN_MODIFY) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MODIFIED))
+                            {
+                                DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MODIFIED);
+                                owner.onItemModified(ev);
+                            }
+                            if ((p_event->mask & IN_MOVED_FROM) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_FROM))
+                            {
+                                DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_FROM, p_event->cookie);
+                                owner.onItemMovedFrom(ev);
+                            }
+                            if ((p_event->mask & IN_MOVED_TO) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_TO))
+                            {
+                                DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_TO, p_event->cookie);
+                                owner.onItemMovedTo(ev);
+                            }
+
+                            if (p_event->mask & IN_MOVED_FROM)
+                                unpaired_moves.insert(p_event->cookie);
+                            if (p_event->mask & IN_MOVED_TO)
+                                unpaired_moves.erase(p_event->cookie);
+                        }
+
+                        i += sizeof(inotify_event) + p_event->len;
+                        n -= sizeof(inotify_event) + p_event->len;
+                    }
                 }
+
+                const auto wait_ms = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+                pollfd more{.fd = inotify_fd, .events = POLLIN, .revents = 0};
+                if (unpaired_moves.empty() || wait_ms <= 0 || poll(&more, 1, static_cast<int>(wait_ms)) <= 0)
+                    break;
             }
+            owner.commitEvents();
 
             /// Wake up reader thread
             owner.storage.wakeUp();
@@ -608,6 +628,7 @@ void DirectoryWatcherBase::watchFunc()
             }
         }
 
+        owner.commitEvents();
         snapshot.swap(current);
         /// This pass committed successfully, so its drained deletes have been applied; start the next
         /// pass with a clean set. (On a retried pass we skip this via `continue`, keeping them.)

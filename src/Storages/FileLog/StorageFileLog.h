@@ -10,14 +10,12 @@
 #include <Storages/IStorage.h>
 #include <Common/SettingsChanges.h>
 
-#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <optional>
-#include <unordered_set>
 
 namespace re2
 {
@@ -154,10 +152,6 @@ private:
 
     /// Set when the file name of `path` has globs.
     std::shared_ptr<const re2::RE2> file_name_matcher;
-    /// Cookies of renames whose source name is read, and the targets of such renames that were already gone when
-    /// processed. A rename's two events can land in two `updateFileInfos` calls, so index 1 holds the previous call's.
-    std::array<std::unordered_set<UInt64>, 2> renamed_from_read_name;
-    std::array<std::unordered_set<String>, 2> renamed_to_vanished_name;
 
     FileInfos file_infos;
 

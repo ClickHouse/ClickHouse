@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
+# Tags: long
 # A glob in the file name of the FileLog path selects which files of the directory are read.
 # A file that is already read keeps being read after it is renamed to a non-matching name (log rotation),
 # also across DETACH/ATTACH, until it is removed.
 # A file renamed from a matching name before the table read it is read, also after a second rename, and a rotation chain renamed while detached keeps its offsets.
+# An unread file never becomes read by passing through a read name, and a read file renamed over a new file keeps its offset.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -104,6 +106,27 @@ printf '24\n' >> "$dir/chain.log.1"
 printf '25\n' >> "$dir/chain.log.3"
 $CLICKHOUSE_CLIENT -q "ATTACH TABLE file_log"
 read_rows "chain rotation while detached"
+
+printf '800\n' > "$outside/replacement2"
+mv "$outside/replacement2" "$dir/chain.log.3"
+mv "$dir/chain.log.3" "$dir/chain.log.9"
+printf '26\n' >> "$dir/chain.log.9"
+printf '27\n' >> "$dir/chain.log.2"
+read_rows "replaced and renamed again"
+
+printf '50\n' > "$dir/new2.log"
+mv "$dir/chain.log.1" "$dir/new2.log"
+printf '29\n' >> "$dir/new2.log"
+read_rows "renamed over a new file"
+
+printf '40\n' > "$dir/gate.log"
+# The macOS watcher compares directory listings: it has to list the file before it is renamed.
+sleep 1
+mv "$dir/gate.log" "$dir/gate.log.1"
+mv "$dir/gate.log.1" "$dir/gate.log.2"
+printf '900\n' > "$outside/other"
+mv "$outside/other" "$dir/gate.log.1"
+read_rows "renamed twice, first name refilled"
 
 echo "-- errors"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE file_log_bad (v UInt64) ENGINE = FileLog('$dir/*/app.log', 'TSV')" 2>&1 | grep -q 'Globs are supported only in the file name of the path' && echo OK || echo FAIL
