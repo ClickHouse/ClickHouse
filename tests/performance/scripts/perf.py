@@ -737,8 +737,22 @@ def shell_env_for(conn_index):
     # process: without it, `clickhouse-local` uses the persistent default
     # directory in the home, and a benchmark starting several of them at once
     # (e.g. tests/performance/insert_direct_parallel.xml) would fail with
-    # `Another server instance in same directory is already running`.
-    env["CLICKHOUSE_LOCAL"] = f"{binary} local --tmp"
+    # `Another server instance in same directory is already running`. The
+    # reference build of the comparison can be older than this option: it
+    # rejects `--tmp` as an unrecognized argument, but it already uses a unique
+    # temporary directory by default, so the option is passed only to a binary
+    # that lists it in `--help`.
+    local_help = subprocess.run(
+        [binary, "local", "--help"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    local_tmp_option = (
+        " --tmp" if re.search(r"^\s*--tmp\s", local_help, re.MULTILINE) else ""
+    )
+    env["CLICKHOUSE_LOCAL"] = f"{binary} local{local_tmp_option}"
     # `--fail` makes curl exit non-zero on an HTTP 4xx/5xx response, and `-S`
     # prints the error even under `-s`. Unlike tests/queries/shell_config.sh
     # (which omits `--fail` because some stateless tests inspect error bodies),
@@ -766,7 +780,9 @@ def run_shell_query(conn_index, script, timeout):
     write it); standard error is captured for diagnostics. A non-zero exit code
     raises an exception, which the caller treats the same way as a failed SQL
     query."""
-    env = shell_envs.setdefault(conn_index, shell_env_for(conn_index))
+    env = shell_envs.get(conn_index)
+    if env is None:
+        env = shell_envs[conn_index] = shell_env_for(conn_index)
     start = time.perf_counter()
     proc = subprocess.Popen(
         ["bash", "-e", "-o", "pipefail", "-c", script],
