@@ -77,6 +77,8 @@ SELECT k, max(upper_k), sum(n_mod) FROM t GROUP BY k ORDER BY k;
 SELECT '-- ROLLUP and GROUPING SETS';
 SELECT k, upper_k, sum(v) FROM t GROUP BY k WITH ROLLUP ORDER BY k;
 SELECT k, upper_k, n, sum(v) FROM t GROUP BY GROUPING SETS ((k), (n)) ORDER BY k, n;
+-- `group_by_use_nulls` affects only ROLLUP, CUBE and GROUPING SETS.
+SELECT k, upper_k, sum(v) FROM t GROUP BY k WITH TOTALS ORDER BY k SETTINGS group_by_use_nulls = 1;
 
 SELECT '-- remote';
 SELECT k, upper_k, sum(v) FROM remote('127.0.0.{1,2}', currentDatabase(), t) GROUP BY k ORDER BY k;

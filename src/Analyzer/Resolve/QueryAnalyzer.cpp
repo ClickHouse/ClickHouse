@@ -7093,9 +7093,10 @@ private:
 
 void inlineAliasColumnsAfterAggregation(const QueryTreeNodePtr & query_node, const IdentifierResolveScope & scope)
 {
-    /// With `group_by_use_nulls` the GROUP BY keys inside the resolved ALIAS expressions are converted to Nullable,
-    /// so an ALIAS column that is a key itself would not be recognized as a key and would be replaced.
-    /// After ROLLUP, CUBE or GROUPING SETS its replacement would not be NULL where the key is NULL.
+    /// `scope.group_by_use_nulls` is set only for ROLLUP, CUBE or GROUPING SETS with the `group_by_use_nulls` setting.
+    /// Then the GROUP BY keys inside the resolved ALIAS expressions are converted to Nullable,
+    /// so an ALIAS column that is a key itself would not be recognized as a key and would be replaced,
+    /// and its replacement would not be NULL in the rows where the key is NULL.
     if (scope.group_by_use_nulls)
         return;
 

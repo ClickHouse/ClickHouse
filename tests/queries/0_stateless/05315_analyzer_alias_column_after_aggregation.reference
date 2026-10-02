@@ -65,6 +65,11 @@ bb	BB	30
 a	A	0	50
 b	B	0	20
 bb	BB	0	30
+a	A	50
+b	B	20
+bb	BB	30
+
+		100
 -- remote
 a	A	100
 b	B	40
