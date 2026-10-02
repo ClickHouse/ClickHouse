@@ -80,10 +80,10 @@ ArchiveListing listPacked(const DiskPtr & disk_in, const String & input_file)
 {
     PackedFilesReader reader(disk_in, input_file, getReadSettings());
     const auto & index = reader.getIndex();
-    const fs::path archive_path(input_file);
+    const fs::path archive_path = pathFromString(input_file);
     VectorWithMemoryTracking<PackedFileInfo> files;
     for (const auto & [name, offset] : index)
-        files.push_back({name, pathToString(archive_path.filename()), offset});
+        files.push_back({name, pathToGenericString(archive_path.filename()), offset});
     /// Sort by offset to make the order as in the archive.
     std::sort(files.begin(), files.end(),
         [](const auto & a, const auto & b) { return a.offset.offset < b.offset.offset; });
@@ -92,18 +92,18 @@ ArchiveListing listPacked(const DiskPtr & disk_in, const String & input_file)
 
 MapWithMemoryTracking<fs::path, ArchiveListing> listPackedRecursive(const DiskPtr & disk_in, const String & base_input_dir, const String & sub_dir)
 {
-    auto sub_dir_path = fs::path(sub_dir);
-    auto input_dir = base_input_dir / sub_dir_path;
-    if (!disk_in->existsDirectory(pathToString(input_dir)))
+    auto sub_dir_path = pathFromString(sub_dir);
+    auto input_dir = pathFromString(base_input_dir) / sub_dir_path;
+    if (!disk_in->existsDirectory(pathToGenericString(input_dir)))
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Input path {} doesn't exist or is not a directory", input_dir);
 
     MapWithMemoryTracking<fs::path, ArchiveListing> listing;
-    for (auto it = disk_in->iterateDirectory(pathToString(input_dir)); it->isValid(); it->next())
+    for (auto it = disk_in->iterateDirectory(pathToGenericString(input_dir)); it->isValid(); it->next())
     {
-        auto in_path = input_dir / it->name();
+        auto in_path = input_dir / pathFromString(it->name());
         if (disk_in->existsDirectory(pathToGenericString(in_path)))
         {
-            auto subtree_listing = listPackedRecursive(disk_in, base_input_dir, pathToGenericString(sub_dir_path / it->name()));
+            auto subtree_listing = listPackedRecursive(disk_in, base_input_dir, pathToGenericString(sub_dir_path / pathFromString(it->name())));
             for (auto & [subtree_path, subtree_files] : subtree_listing)
                 listing[subtree_path] = subtree_files;
         }
@@ -146,7 +146,7 @@ void extractPacked(const DiskPtr & disk_in, const String & input_file, const Dis
     {
         /// File names come from the archive index, so a crafted archive could contain an absolute path
         /// or `..` components to escape output_dir. Reject those before writing anything to disk_out.
-        const fs::path entry_path(file_name);
+        const fs::path entry_path = pathFromString(file_name);
         if (entry_path.is_absolute())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Packed archive entry has an absolute path: {}", file_name);
         for (const auto & component : entry_path)
@@ -154,7 +154,7 @@ void extractPacked(const DiskPtr & disk_in, const String & input_file, const Dis
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Packed archive entry escapes the output directory: {}", file_name);
 
         auto in = reader.readFile(disk_in, input_file, file_name, {}, {});
-        auto out = disk_out->writeFile(pathToString(output_dir / entry_path));
+        auto out = disk_out->writeFile(pathToGenericString(pathFromString(output_dir) / entry_path));
         copyData(*in, *out);
         out->finalize();
     }
@@ -167,22 +167,22 @@ void extractPackedRecursive(const DiskPtr & disk_in, const String & input_dir, c
 
     assertOutputNotInsideInput(disk_in, input_dir, disk_out, output_dir);
 
-    auto input_dir_path = fs::path(normalizePath(input_dir));
-    auto output_dir_path = output_dir / input_dir_path.filename();
+    auto input_dir_path = pathFromString(normalizePath(input_dir));
+    auto output_dir_path = pathFromString(output_dir) / input_dir_path.filename();
 
-    if (!disk_out->existsDirectory(pathToString(output_dir_path)))
-        disk_out->createDirectories(pathToString(output_dir_path));
+    if (!disk_out->existsDirectory(pathToGenericString(output_dir_path)))
+        disk_out->createDirectories(pathToGenericString(output_dir_path));
 
     for (auto it = disk_in->iterateDirectory(input_dir); it->isValid(); it->next())
     {
-        auto in_path = input_dir_path / fs::path(it->name());
+        auto in_path = input_dir_path / pathFromString(it->name());
 
-        if (disk_in->existsDirectory(pathToString(in_path)))
-            extractPackedRecursive(disk_in, pathToString(in_path), disk_out, pathToString(output_dir_path));
+        if (disk_in->existsDirectory(pathToGenericString(in_path)))
+            extractPackedRecursive(disk_in, pathToGenericString(in_path), disk_out, pathToGenericString(output_dir_path));
         else if (in_path.extension() == PackedFilesIO::ARCHIVE_EXTENSION)
-            extractPacked(disk_in, pathToString(in_path), disk_out, pathToString(output_dir_path));
+            extractPacked(disk_in, pathToGenericString(in_path), disk_out, pathToGenericString(output_dir_path));
         else
-            disk_in->copyFile(pathToString(in_path), *disk_out, pathToString(output_dir_path / it->name()), getReadSettings());
+            disk_in->copyFile(pathToGenericString(in_path), *disk_out, pathToGenericString(output_dir_path / pathFromString(it->name())), getReadSettings());
     }
 }
 
@@ -207,11 +207,11 @@ void createPacked(const DiskPtr & disk_in, const String & input_dir, const DiskP
 
     for (auto it = disk_in->iterateDirectory(input_dir); it->isValid(); it->next())
     {
-        auto in_path = input_dir / fs::path(it->name());
-        if (disk_in->existsDirectory(pathToString(in_path)))
+        auto in_path = pathFromString(input_dir) / pathFromString(it->name());
+        if (disk_in->existsDirectory(pathToGenericString(in_path)))
             continue;
 
-        auto in = disk_in->readFile(pathToString(in_path), read_settings);
+        auto in = disk_in->readFile(pathToGenericString(in_path), read_settings);
         auto out = writer.writeFile(it->name());
         copyData(*in, *out);
         out->finalize();
@@ -233,19 +233,19 @@ void createPackedRecursive(const DiskPtr & disk_in, const String & input_dir, co
 {
     assertOutputNotInsideInput(disk_in, input_dir, disk_out, output_dir);
 
-    auto input_dir_path = fs::path(normalizePath(input_dir));
-    auto output_dir_path = output_dir / input_dir_path.filename();
+    auto input_dir_path = pathFromString(normalizePath(input_dir));
+    auto output_dir_path = pathFromString(output_dir) / input_dir_path.filename();
 
-    if (!disk_out->existsDirectory(pathToString(output_dir_path)))
-        disk_out->createDirectories(pathToString(output_dir_path));
+    if (!disk_out->existsDirectory(pathToGenericString(output_dir_path)))
+        disk_out->createDirectories(pathToGenericString(output_dir_path));
 
-    auto output_file = fs::path(output_dir_path) / (String("data") + PackedFilesIO::ARCHIVE_EXTENSION);
+    auto output_file = output_dir_path / (String("data") + PackedFilesIO::ARCHIVE_EXTENSION);
     createPacked(disk_in, input_dir, disk_out, pathToGenericString(output_file), file_order_hint);
 
     for (auto it = disk_in->iterateDirectory(input_dir); it->isValid(); it->next())
     {
-        auto in_path = input_dir / fs::path(it->name());
-        if (!disk_in->existsDirectory(pathToString(in_path)))
+        auto in_path = pathFromString(input_dir) / pathFromString(it->name());
+        if (!disk_in->existsDirectory(pathToGenericString(in_path)))
             continue;
 
         String sub_dir_prefix = it->name() +"/";
@@ -254,7 +254,7 @@ void createPackedRecursive(const DiskPtr & disk_in, const String & input_dir, co
         for (const auto & file : file_order_hint)
             if (file.starts_with(sub_dir_prefix))
                 files_order_hint_for_subdir.push_back(file.substr(sub_dir_prefix.size()));
-        createPackedRecursive(disk_in, pathToString(in_path), disk_out, pathToString(output_dir_path), files_order_hint_for_subdir);
+        createPackedRecursive(disk_in, pathToGenericString(in_path), disk_out, pathToGenericString(output_dir_path), files_order_hint_for_subdir);
     }
 }
 
