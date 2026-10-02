@@ -26,6 +26,7 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Core/SettingsFields.h>
 
 namespace DB
 {
@@ -37,6 +38,8 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsString ignore_data_skipping_indexes;
     extern const SettingsString force_data_skipping_indexes;
+    extern const SettingsBool force_optimize_projection;
+    extern const SettingsBool prefer_optimize_projection;
 }
 
 namespace ErrorCodes
@@ -149,6 +152,37 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
 
     for (const auto & child : node->children)
         stripWhatIfControlledSettings(child.get(), removed_force);
+}
+
+/// a subquery plan can't see hypothetical projections, so a forced one must not fail it: inner `SETTINGS` get
+/// `prefer_optimize_projection`, which relaxes the same projection checks and never throws, with each scope's value
+void replaceForceWithPrefer(IAST * node, bool force, bool prefer, bool & force_requested)
+{
+    if (auto * select = node->as<ASTSelectQuery>(); select && select->settings())
+    {
+        auto & changes = select->settings()->as<ASTSetQuery &>().changes;
+        bool scoped = false;
+        for (const auto & change : changes)
+        {
+            if (change.name == "force_optimize_projection")
+                force = SettingFieldBool(change.value).value;
+            else if (change.name == "prefer_optimize_projection")
+                prefer = SettingFieldBool(change.value).value;
+            else
+                continue;
+            scoped = true;
+        }
+        if (scoped)
+        {
+            force_requested |= force;
+            std::erase_if(changes, [](const auto & change)
+                { return change.name == "force_optimize_projection" || change.name == "prefer_optimize_projection"; });
+            changes.emplace_back("prefer_optimize_projection", Field{force || prefer});
+        }
+    }
+
+    for (const auto & child : node->children)
+        replaceForceWithPrefer(child.get(), force, prefer, force_requested);
 }
 
 /// Check applicability, then try empirical → statistical → applicability_only
@@ -324,6 +358,13 @@ WhatIfResult estimateHypotheticalIndexes(
     std::vector<String> forced_strings;
     stripWhatIfControlledSettings(select_query_copy.get(), forced_strings);
 
+    const bool force = context->getSettingsRef()[Setting::force_optimize_projection];
+    const bool prefer = context->getSettingsRef()[Setting::prefer_optimize_projection];
+    bool force_requested = force;
+    local_context->setSetting("force_optimize_projection", Field{false});
+    local_context->setSetting("prefer_optimize_projection", Field{force || prefer});
+    replaceForceWithPrefer(select_query_copy.get(), force, prefer, force_requested);
+
     if (forced_strings.empty() && context->getSettingsRef()[Setting::force_data_skipping_indexes].changed)
         forced_strings.push_back(context->getSettingsRef()[Setting::force_data_skipping_indexes]);
 
@@ -339,10 +380,7 @@ WhatIfResult estimateHypotheticalIndexes(
         plan = std::move(interpreter).extractQueryPlan();
     }
 
-    /// plan as the query would, but a forced projection that is not used must not fail the statement
-    QueryPlanOptimizationSettings optimization_settings(plan_context);
-    optimization_settings.force_use_projection = false;
-    plan.optimize(optimization_settings);
+    plan.optimize(QueryPlanOptimizationSettings(plan_context));
 
     std::vector<ReadFromMergeTree *> read_steps;
     collectReadSteps(plan.getRootNode(), read_steps);
@@ -551,7 +589,8 @@ WhatIfResult estimateHypotheticalIndexes(
 
     for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
         result.candidates.push_back(
-            evaluateProjection(projection, read_step, analysis, baseline_parts, settings, plan.getRootNode(), plan_context));
+            evaluateProjection(
+                projection, read_step, analysis, baseline_parts, settings, force_requested, plan.getRootNode(), plan_context));
 
     if (result.candidates.empty())
         appendNoCandidatesRow(result);

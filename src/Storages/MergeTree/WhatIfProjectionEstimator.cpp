@@ -51,7 +51,6 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsBool optimize_use_projections;
-    extern const SettingsBool force_optimize_projection;
     extern const SettingsBool prefer_optimize_projection;
     extern const SettingsBool use_primary_key;
     extern const SettingsBool use_constant_folding_in_index_analysis;
@@ -908,6 +907,7 @@ WhatIfCandidateResult evaluateProjection(
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & baseline_parts,
     const WhatIfSettings & settings,
+    bool force_requested,
     QueryPlan::Node * plan_root,
     ContextPtr context)
 {
@@ -1075,10 +1075,10 @@ WhatIfCandidateResult evaluateProjection(
             key_condition.reset();
     }
 
-    /// both lift the gate below; read from the read's own context, as the optimizer does
+    /// lifts the gate below; read from the read's own context, as the optimizer does
     const auto & read_settings = read_step->getContext()->getSettingsRef();
-    const std::string_view relaxing_setting = read_settings[Setting::force_optimize_projection] ? "force_optimize_projection"
-        : read_settings[Setting::prefer_optimize_projection] ? "prefer_optimize_projection" : "";
+    const std::string_view relaxing_setting = !read_settings[Setting::prefer_optimize_projection] ? ""
+        : force_requested ? "force_optimize_projection" : "prefer_optimize_projection";
 
     /// same gate as the optimizer: needs a filter or a useful sort order
     if (!filter_dag && sort_help != SortOrderHelp::Helps && relaxing_setting.empty())

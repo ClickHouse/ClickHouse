@@ -24,13 +24,15 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
     const ContextPtr & context,
     String & reason);
 
-/// like evaluateIndex, for a hypothetical projection
+/// like evaluateIndex, for a hypothetical projection; `force_requested` names `force_optimize_projection` in the
+/// verdict, which the statement plans as `prefer_optimize_projection`
 WhatIfCandidateResult evaluateProjection(
     const ProjectionDescription & stored_projection,
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & baseline_parts,
     const WhatIfSettings & settings,
+    bool force_requested,
     QueryPlan::Node * plan_root,
     ContextPtr context);
 
