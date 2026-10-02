@@ -35,7 +35,7 @@ $CLICKHOUSE_CLIENT --multiquery -q "
     INSERT INTO readonly_outdated_window SELECT number FROM numbers(10);
     INSERT INTO readonly_outdated_window SELECT number + 10 FROM numbers(10);
     OPTIMIZE TABLE readonly_outdated_window FINAL;
-    -- The merged part is removed by TRUNCATE; its two original parts remain outdated on disk.
+    -- TRUNCATE may leave the merged part for a later cleanup pass; the two inserted parts remain outdated on disk.
     TRUNCATE TABLE readonly_outdated_window;
     ALTER TABLE readonly_outdated_window MODIFY SETTING table_readonly = 1;
     DETACH TABLE readonly_outdated_window;
@@ -78,11 +78,11 @@ sleep 3
 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT LOADING PARTS readonly_outdated_window"
 echo "outdated parts loaded after failed toggle: $(inactive_parts)"
 
-# A successful toggle loads them. Cleanup is stopped, so the empty cover and both outdated parts exist.
+# A successful toggle loads them. Cleanup is stopped, so the empty cover and both inserted parts exist.
 $CLICKHOUSE_CLIENT -q "ALTER TABLE readonly_outdated_window MODIFY SETTING table_readonly = 0"
 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT LOADING PARTS readonly_outdated_window"
 $CLICKHOUSE_CLIENT -q "SELECT 'parts after successful toggle: ' || toString(countIf(active AND rows = 0)) || ' empty active, '
-        || toString(countIf(NOT active AND rows > 0)) || ' outdated'
+        || toString(countIf(NOT active AND level = 0)) || ' outdated inserted parts'
     FROM system.parts WHERE database = currentDatabase() AND table = 'readonly_outdated_window'"
 echo "rows after successful toggle: $($CLICKHOUSE_CLIENT -q 'SELECT count() FROM readonly_outdated_window')"
 
