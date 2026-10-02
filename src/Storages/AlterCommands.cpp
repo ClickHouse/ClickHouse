@@ -2565,14 +2565,19 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context, insert_time_default_columns);
 }
 
-bool AlterCommands::hasNonReplicatedAlterCommand() const
+static bool isNonReplicatedAlterCommand(const AlterCommand & command, bool column_comments_are_replicated)
 {
-    return std::any_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter() || c.isTableCommentAlter(); });
+    return command.isSettingsAlter() || (column_comments_are_replicated ? command.isTableCommentAlter() : command.isCommentAlter());
 }
 
-bool AlterCommands::areNonReplicatedAlterCommands() const
+bool AlterCommands::hasNonReplicatedAlterCommand(bool column_comments_are_replicated) const
 {
-    return std::all_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter() || c.isTableCommentAlter(); });
+    return std::any_of(begin(), end(), [&](const AlterCommand & c) { return isNonReplicatedAlterCommand(c, column_comments_are_replicated); });
+}
+
+bool AlterCommands::areNonReplicatedAlterCommands(bool column_comments_are_replicated) const
+{
+    return std::all_of(begin(), end(), [&](const AlterCommand & c) { return isNonReplicatedAlterCommand(c, column_comments_are_replicated); });
 }
 
 bool AlterCommands::isSettingsAlter() const

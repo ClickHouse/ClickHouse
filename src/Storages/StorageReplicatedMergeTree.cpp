@@ -7119,7 +7119,7 @@ void StorageReplicatedMergeTree::alter(
     /// matches neither single-type predicate above. Apply it locally like both of them combined
     /// instead of writing a replicated log entry, so it stays consistent with the DDLWorker
     /// routing (ASTAlterQuery::isSettingsOrTableCommentAlter) that sends it to every replica.
-    if (commands.areNonReplicatedAlterCommands())
+    if (commands.areNonReplicatedAlterCommands(/*column_comments_are_replicated=*/ true))
     {
         merge_strategy_picker.refreshState();
         auto old_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);

@@ -266,10 +266,12 @@ public:
         const MergeTreeSettings * settings_defaults = nullptr) const;
 
     /// At least one command modify settings or comments.
-    bool hasNonReplicatedAlterCommand() const;
+    /// If `column_comments_are_replicated` (e.g. `ReplicatedMergeTree`, which stores them in ZooKeeper),
+    /// only table comments count as non-replicated.
+    bool hasNonReplicatedAlterCommand(bool column_comments_are_replicated) const;
 
-    /// All commands modify settings or comments.
-    bool areNonReplicatedAlterCommands() const;
+    /// All commands modify settings or comments, with the same meaning of `column_comments_are_replicated`.
+    bool areNonReplicatedAlterCommands(bool column_comments_are_replicated) const;
 
     /// All commands modify settings only.
     bool isSettingsAlter() const;
