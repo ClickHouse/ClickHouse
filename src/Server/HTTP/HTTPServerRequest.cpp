@@ -7,6 +7,7 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBuffer.h>
+#include <Server/HTTP/DeadlineReadBuffer.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Server/HTTP/ReadHeaders.h>
 
@@ -14,9 +15,7 @@
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
 
-#include <Common/NetException.h>
 #include <Common/logger_useful.h>
-#include <Common/scope_guard_safe.h>
 
 #if USE_SSL
 #include <Poco/Net/SecureStreamSocketImpl.h>
@@ -28,28 +27,6 @@ static constexpr UInt64 HTTP_MAX_CHUNK_SIZE = 100ULL << 30;
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int SOCKET_TIMEOUT;
-}
-
-namespace
-{
-
-/// Writing to such a socket would start the handshake over, on the much larger body timeouts.
-bool secureHandshakePending([[maybe_unused]] const Poco::Net::SocketImpl * socket)
-{
-#if USE_SSL
-    const auto * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
-    return secure_socket && secure_socket->needHandshake();
-#else
-    return false;
-#endif
-}
-
-}
-
 HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session, const ProfileEvents::Event & read_event)
     : max_uri_size(context->getMaxUriSize())
     , max_fields_number(context->getMaxFields())
@@ -68,33 +45,37 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     auto send_timeout = context->getSendTimeout();
     auto headers_read_timeout = context->getHeadersReadTimeout();
 
-    session.socket().setReceiveTimeout(receive_timeout);
+    /// Use the smaller of headers_read_timeout and receive_timeout during header parsing
+    /// to enforce a total deadline on the entire handshake phase.
+    auto effective_timeout = (headers_read_timeout > Poco::Timespan(0) &&
+                              (receive_timeout <= Poco::Timespan(0) || headers_read_timeout < receive_timeout))
+        ? headers_read_timeout : receive_timeout;
+
+    session.socket().setReceiveTimeout(effective_timeout);
     session.socket().setSendTimeout(send_timeout);
 
     auto socket_in = std::make_unique<ReadBufferFromPocoSocket>(session.socket(), read_event);
     socket = session.socket().impl();
 
+    /// Wrap the socket buffer with a deadline check if configured.
+    /// The deadline is enforced in DeadlineReadBuffer::nextImpl on every buffer refill,
+    /// which protects all parsing (request line, URI, headers) automatically.
+    if (headers_read_timeout > Poco::Timespan(0))
     {
-        /// Bounds the request line, the URI and the headers. Clearing it restores the body timeouts,
-        /// which is also what the error response is written with, so it has to happen while unwinding.
-        /// It can fail there: macOS rejects `setsockopt` on a connection the peer has reset.
-        if (headers_read_timeout > Poco::Timespan(0))
-            socket_in->setHandshakeTimeout(headers_read_timeout.totalMilliseconds());
-        SCOPE_EXIT_SAFE({ socket_in->clearHandshakeTimeout(); });
-
-        try
-        {
-            readRequest(*socket_in);  /// Try parse according to RFC7230
-        }
-        catch (const NetException & e)
-        {
-            if (e.code() != ErrorCodes::SOCKET_TIMEOUT || secureHandshakePending(socket))
-                throw;
-            /// `HTTPServerConnection` answers 400 to this; a `DB` exception escapes its handlers.
-            throw Poco::Net::MessageException("Timeout exceeded while reading HTTP headers");
-        }
+        auto deadline = std::chrono::steady_clock::now()
+            + std::chrono::microseconds(headers_read_timeout.totalMicroseconds());
+        DeadlineReadBuffer deadline_in(*socket_in, deadline);
+        readRequest(deadline_in);  /// Try parse according to RFC7230
+    }
+    else
+    {
+        readRequest(*socket_in);  /// Try parse according to RFC7230
     }
 
+    /// Restore the original receive timeout for body reads.
+    session.socket().setReceiveTimeout(receive_timeout);
+
+    /// Build the body stream from the underlying socket buffer (not the deadline wrapper).
     auto in = std::move(socket_in);
 
     /// If a client crashes, most systems will gracefully terminate the connection with FIN just like it's done on close().
@@ -134,7 +115,21 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
 
 bool HTTPServerRequest::checkPeerConnected() const
 {
-    return socket->connectionOpen();
+    try
+    {
+        char b;
+        if (!socket->receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK))
+            return false;
+    }
+    catch (Poco::TimeoutException &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+    catch (const std::exception &)
+    {
+        return false;
+    }
+
+    return true;
 }
 
 #if USE_SSL
@@ -165,7 +160,7 @@ X509Certificate HTTPServerRequest::peerCertificate() const
 
 void HTTPServerRequest::readRequest(ReadBuffer & in)
 {
-    char ch = 0;
+    char ch;
     std::string method;
     std::string uri;
     std::string version;
@@ -224,7 +219,7 @@ std::string HTTPServerRequest::toStringForLogging() const
         getMethod(),
         clientAddress().toString(),
         get("User-Agent", "(none)"),
-        (hasContentLength() ? fmt::format(", Length: {}", getContentLength()) : ""),
+        (hasContentLength() ? fmt::format(", Length: {}", getContentLength()) : ("")),
         getContentType(),
         getTransferEncoding(),
         get("X-Forwarded-For", "(none)"));
