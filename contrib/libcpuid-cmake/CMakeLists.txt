@@ -31,6 +31,6 @@ set (SRCS
 add_library (_cpuid ${SRCS})
 
 target_include_directories (_cpuid SYSTEM PUBLIC "${LIBRARY_DIR}")
-target_compile_definitions (_cpuid PRIVATE VERSION="v0.7.1")
+target_compile_definitions (_cpuid PRIVATE VERSION="v0.8.2")
 
 add_library(ch_contrib::cpuid ALIAS _cpuid)
