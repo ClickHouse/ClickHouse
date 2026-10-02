@@ -82,7 +82,8 @@ public:
 
     String getSignatureString() const override
     {
-        return "(StringOrFixedString | Array(StringOrFixedString), const String | Array(String), [const String]) -> UInt8";
+        return "(StringOrFixedString | Array(MaybeNullable(StringOrFixedString) | IsNothing), "
+               "const String | Array(String | IsNothing), [const String]) -> UInt8";
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override;
