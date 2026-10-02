@@ -21,6 +21,10 @@ c.jsonl	0
 a.jsonl	9	9	1	consuming	1
 a.jsonl.1	32	32	4	consuming	1
 c.jsonl	16	16	2	consuming	1
+-- a reload keeps the offsets and starts the counters over
+a.jsonl	9	9	0	consuming	1
+a.jsonl.1	32	32	0	consuming	1
+c.jsonl	16	16	0	consuming	1
 -- access
 0
 3

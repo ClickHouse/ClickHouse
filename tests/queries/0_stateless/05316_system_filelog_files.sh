@@ -91,6 +91,11 @@ while true; do
 done
 files
 
+echo '-- a reload keeps the offsets and starts the counters over'
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE file_log"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log"
+files
+
 echo '-- access'
 user="user_${CLICKHOUSE_DATABASE}_filelog"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}"
