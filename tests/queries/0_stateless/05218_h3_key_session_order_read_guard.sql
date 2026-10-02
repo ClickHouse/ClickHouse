@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS t_h3_minmax;
 DROP TABLE IF EXISTS t_h3_set;
 DROP TABLE IF EXISTS t_h3_bloom;
 DROP TABLE IF EXISTS t_h3_geo;
+DROP TABLE IF EXISTS t_h3_lambda;
 
 -- 608009741498580991: latitude 80.007, longitude 9.99. 610315033787760639: latitude -0.0005, longitude 69.99.
 CREATE TABLE t_h3_pk (h UInt64, v UInt32) ENGINE = MergeTree ORDER BY tupleElement(h3ToGeo(h), 1);
@@ -44,6 +45,11 @@ CREATE TABLE t_h3_geo (lat Float64, lon Float64, v UInt32) ENGINE = MergeTree OR
 INSERT INTO t_h3_geo VALUES (80.0, 10.0, 1);
 INSERT INTO t_h3_geo VALUES (0.0, 70.0, 2);
 
+-- The carrier is inside a lambda body, which is not a child node of the key expression.
+CREATE TABLE t_h3_lambda (h UInt64, v UInt32) ENGINE = MergeTree ORDER BY arrayMap(x -> tupleElement(h3ToGeo(x), 1), [h]);
+INSERT INTO t_h3_lambda VALUES (608009741498580991, 1);
+INSERT INTO t_h3_lambda VALUES (610315033787760639, 2);
+
 SELECT '-- baseline session: the key is used and the result is right';
 SELECT h FROM t_h3_pk WHERE tupleElement(h3ToGeo(h), 1) > 50;
 -- Parallel replicas can leave the plan with no local MergeTree read at all (on the
@@ -61,6 +67,7 @@ SELECT h FROM t_h3_minmax WHERE tupleElement(h3ToGeo(h), 1) > 50;
 SELECT h FROM t_h3_set WHERE tupleElement(h3ToGeo(h), 1) > 50 SETTINGS force_data_skipping_indices = 'i_lat', use_query_condition_cache = 0;
 SELECT h FROM t_h3_bloom WHERE tupleElement(h3ToGeo(h), 1) = 80.00712511716989 SETTINGS force_data_skipping_indices = 'i_lat', use_query_condition_cache = 0;
 SELECT v FROM t_h3_geo WHERE geoToH3(lat, lon, 5) = geoToH3(80.0, 10.0, 5);
+SELECT h FROM t_h3_lambda WHERE arrayMap(x -> tupleElement(h3ToGeo(x), 1), [h]) > [50.] SETTINGS force_primary_key = 1, enable_parallel_replicas = 0;
 -- The two counts below only mean anything while in-order reading is enabled: with it off both are 0,
 -- whatever the guard does, so the setting is pinned rather than taken from the session.
 SELECT count() FROM (EXPLAIN SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Read type: InOrder%';
@@ -87,6 +94,7 @@ SELECT h FROM t_h3_set WHERE tupleElement(h3ToGeo(h), 1) > 50 SETTINGS use_query
 SELECT h FROM t_h3_set WHERE tupleElement(h3ToGeo(h), 1) > 50 SETTINGS force_data_skipping_indices = 'i_lat'; -- { serverError INDEX_NOT_USED }
 SELECT h FROM t_h3_bloom WHERE tupleElement(h3ToGeo(h), 1) = 69.99002414925245 SETTINGS use_query_condition_cache = 0;
 SELECT h FROM t_h3_bloom WHERE tupleElement(h3ToGeo(h), 1) = 69.99002414925245 SETTINGS force_data_skipping_indices = 'i_lat'; -- { serverError INDEX_NOT_USED }
+SELECT h FROM t_h3_lambda WHERE arrayMap(x -> tupleElement(h3ToGeo(x), 1), [h]) > [50.];
 SELECT count() FROM (EXPLAIN SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Read type: InOrder%';
 SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k;
 SELECT count() FROM (EXPLAIN SELECT min(tupleElement(h3ToGeo(h), 1)) FROM t_h3_pk SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%_minmax_count_projection%';
@@ -112,3 +120,4 @@ DROP TABLE t_h3_minmax;
 DROP TABLE t_h3_set;
 DROP TABLE t_h3_bloom;
 DROP TABLE t_h3_geo;
+DROP TABLE t_h3_lambda;

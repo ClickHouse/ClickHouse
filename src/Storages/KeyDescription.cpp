@@ -1,6 +1,7 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -98,46 +99,19 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
     if (!context)
         return context;
 
-    /// Values to pin to, taken from the server baseline (global context). Fall back to the built-in
-    /// defaults only when there is no global context (an unusual context that does not persist metadata).
-    bool ext_dt = false;
-    bool keep_null = false;
-    bool geo = false;
-    bool json_null = false;
-    bool least_greatest_legacy = false;
-    bool h3togeo_lon_lat = false;
-    bool lossy_numeric_supertype = false;
-    bool variant_as_common_type = false;
-    UInt64 date_trunc = 0;
-    GeoToH3ArgumentOrder geotoh3_order = GeoToH3ArgumentOrder::LAT_LON;
-    if (context->hasGlobalContext())
-    {
-        const auto & baseline = context->getGlobalContext()->getSettingsRef();
-        ext_dt = baseline[Setting::enable_extended_results_for_datetime_functions];
-        keep_null = baseline[Setting::cast_keep_nullable];
-        geo = baseline[Setting::geo_distance_returns_float64_on_float64_arguments];
-        json_null = baseline[Setting::function_json_value_return_type_allow_nullable];
-        least_greatest_legacy = baseline[Setting::least_greatest_legacy_null_behavior];
-        h3togeo_lon_lat = baseline[Setting::h3togeo_lon_lat_result_order];
-        lossy_numeric_supertype = baseline[Setting::allow_lossy_numeric_supertype];
-        variant_as_common_type = baseline[Setting::use_variant_as_common_type];
-        date_trunc = baseline[Setting::function_date_trunc_return_type_behavior];
-        geotoh3_order = baseline[Setting::geotoh3_argument_order];
-    }
-    else
-    {
-        const Settings default_settings;
-        ext_dt = default_settings[Setting::enable_extended_results_for_datetime_functions];
-        keep_null = default_settings[Setting::cast_keep_nullable];
-        geo = default_settings[Setting::geo_distance_returns_float64_on_float64_arguments];
-        json_null = default_settings[Setting::function_json_value_return_type_allow_nullable];
-        least_greatest_legacy = default_settings[Setting::least_greatest_legacy_null_behavior];
-        h3togeo_lon_lat = default_settings[Setting::h3togeo_lon_lat_result_order];
-        lossy_numeric_supertype = default_settings[Setting::allow_lossy_numeric_supertype];
-        variant_as_common_type = default_settings[Setting::use_variant_as_common_type];
-        date_trunc = default_settings[Setting::function_date_trunc_return_type_behavior];
-        geotoh3_order = default_settings[Setting::geotoh3_argument_order];
-    }
+    /// Values to pin to: the server baseline. getGlobalContext throws LOGICAL_ERROR when there is no global context.
+    const auto global_context = context->getGlobalContext();
+    const auto & baseline = global_context->getSettingsRef();
+    const bool ext_dt = baseline[Setting::enable_extended_results_for_datetime_functions];
+    const bool keep_null = baseline[Setting::cast_keep_nullable];
+    const bool geo = baseline[Setting::geo_distance_returns_float64_on_float64_arguments];
+    const bool json_null = baseline[Setting::function_json_value_return_type_allow_nullable];
+    const bool least_greatest_legacy = baseline[Setting::least_greatest_legacy_null_behavior];
+    const bool h3togeo_lon_lat = baseline[Setting::h3togeo_lon_lat_result_order];
+    const bool lossy_numeric_supertype = baseline[Setting::allow_lossy_numeric_supertype];
+    const bool variant_as_common_type = baseline[Setting::use_variant_as_common_type];
+    const UInt64 date_trunc = baseline[Setting::function_date_trunc_return_type_behavior];
+    const GeoToH3ArgumentOrder geotoh3_order = baseline[Setting::geotoh3_argument_order];
 
     const auto & settings = context->getSettingsRef();
     if (static_cast<bool>(settings[Setting::enable_extended_results_for_datetime_functions]) == ext_dt
@@ -166,10 +140,32 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
     return key_context;
 }
 
+/// Whether the function, or the body of a lambda it stands for, calls one of `names`. A lambda body is a
+/// separate DAG held by its FunctionCapture (FunctionExpression once constant-folded), not a child node.
+static bool callsAnyOf(const IFunctionBase & function, const std::unordered_set<std::string_view> & names)
+{
+    if (names.contains(function.getName()))
+        return true;
+
+    const ActionsDAG * body = nullptr;
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
+        body = &capture->getAcionsDAG();
+    else if (const auto * expression = typeid_cast<const FunctionExpression *>(&function))
+        body = &expression->getAcionsDAG();
+    if (!body)
+        return false;
+
+    auto calls_none = [&](const IFunctionBase & inner) { return !callsAnyOf(inner, names); };
+    for (const auto & node : body->getNodes())
+        if (!allNodeFunctions(node, calls_none))
+            return true;
+    return false;
+}
+
 NameSet getKeySubexpressionsWithSessionDependentValues(const ExpressionActions & key_expr, const ContextPtr & context)
 {
     NameSet result;
-    if (!context || !context->hasGlobalContext())
+    if (!context)
         return result;
 
     /// Hand-maintained, like date_time_parsing_functions in KeyCondition: the functions whose produced
@@ -197,12 +193,12 @@ NameSet getKeySubexpressionsWithSessionDependentValues(const ExpressionActions &
 
     /// Actions are linearized children-first, so one pass propagates the taint from a carrier function
     /// to every subexpression computed from it, up to the key column itself.
+    auto calls_none = [&](const IFunctionBase & function) { return !callsAnyOf(function, deviating_functions); };
     std::unordered_set<const ActionsDAG::Node *> tainted;
     for (const auto & action : key_expr.getActions())
     {
         const auto * node = action.node;
-        bool is_tainted = node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
-            && deviating_functions.contains(node->function_base->getName());
+        bool is_tainted = !allNodeFunctions(*node, calls_none);
         for (const auto * child : node->children)
             is_tainted = is_tainted || tainted.contains(child);
 
