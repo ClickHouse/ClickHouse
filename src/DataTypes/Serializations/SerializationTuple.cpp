@@ -907,7 +907,7 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
             throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of tuple element {}: {}. Expected size: {}", i, const_column_tuple.getColumn(i).size(), expected_size);
     }
 
-    column_tuple.addSize(column_tuple.getColumn(0).size());
+    column_tuple.addSize(expected_size);
 }
 
 size_t SerializationTuple::getPositionByName(const String & name) const
