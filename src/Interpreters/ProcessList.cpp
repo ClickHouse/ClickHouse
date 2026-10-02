@@ -593,7 +593,7 @@ void QueryStatus::ExecutorHolder::cancel()
 {
     std::lock_guard lock(mutex);
     if (executor)
-        executor->cancel();
+        executor->cancel(IProcessor::CancelReason::CancelledByUser);
 }
 
 void QueryStatus::ExecutorHolder::remove()

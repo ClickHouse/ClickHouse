@@ -57,7 +57,7 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
 
     if (pipeline.process_list_element && !pipeline.process_list_element->checkTimeLimitSoft())
     {
-        executor->cancel(PipelineExecutor::ExecutionStatus::CancelledByTimeout);
+        executor->cancel(IProcessor::CancelReason::CancelledByTimeout);
         return false;
     }
 
@@ -97,7 +97,7 @@ void PullingPipelineExecutor::cancel()
 {
     /// Cancel execution if it wasn't finished.
     if (executor)
-        executor->cancel();
+        executor->cancel(IProcessor::CancelReason::CancelledByUser);
 }
 
 Chunk PullingPipelineExecutor::getTotals()
