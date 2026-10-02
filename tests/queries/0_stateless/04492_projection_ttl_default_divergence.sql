@@ -98,3 +98,41 @@ FROM t_proj_ttl_map_nodefault
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
 DROP TABLE t_proj_ttl_map_nodefault;
+
+-- A Tuple wrapper around a Map should use the same type-default bulk path.
+DROP TABLE IF EXISTS t_proj_ttl_tuple_map_nodefault;
+
+CREATE TABLE t_proj_ttl_tuple_map_nodefault
+(
+    d Date,
+    k UInt32,
+    t Tuple(Map(UInt64, FixedString(256)), UInt8) TTL d + INTERVAL 1 DAY,
+    PROJECTION p (SELECT k, t ORDER BY k)
+)
+ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO t_proj_ttl_tuple_map_nodefault
+SELECT '2000-01-01', number, tuple(map(number, CAST('x', 'FixedString(256)')), toUInt8(7))
+FROM numbers(1000);
+
+OPTIMIZE TABLE t_proj_ttl_tuple_map_nodefault FINAL;
+
+SELECT
+    'nodefault tuple map base',
+    countIf(empty(tupleElement(t, 1))),
+    min(tupleElement(t, 2)),
+    max(tupleElement(t, 2)),
+    count()
+FROM t_proj_ttl_tuple_map_nodefault
+SETTINGS optimize_use_projections = 0;
+
+SELECT
+    'nodefault tuple map proj',
+    countIf(empty(tupleElement(t, 1))),
+    min(tupleElement(t, 2)),
+    max(tupleElement(t, 2)),
+    count()
+FROM t_proj_ttl_tuple_map_nodefault
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+DROP TABLE t_proj_ttl_tuple_map_nodefault;

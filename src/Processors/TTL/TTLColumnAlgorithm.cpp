@@ -1,7 +1,5 @@
 #include <Processors/TTL/TTLColumnAlgorithm.h>
 
-#include <DataTypes/IDataType.h>
-
 namespace DB
 {
 
@@ -56,10 +54,10 @@ void TTLColumnAlgorithm::execute(Block & block)
     {
         auto result_column = column_with_type.column->cloneEmpty();
 
-        /// A type-default Map is empty. Reserving it as a regular column also reserves one key and
-        /// one value slot per row through ColumnArray/ColumnTuple, but insertManyDefaults never
-        /// fills those child columns. Keep the existing caller-side reserve for every other case.
-        if (default_expression || !isMap(column_with_type.type))
+        /// insertManyDefaults owns capacity planning for type defaults. Reserving here can recursively
+        /// reserve nested storage that an empty default never fills (for example Array or Map).
+        /// A DDL DEFAULT may materialize data through insertRangeFrom, so keep the reserve for that path.
+        if (default_expression)
             result_column->reserve(block.rows());
 
         auto default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);

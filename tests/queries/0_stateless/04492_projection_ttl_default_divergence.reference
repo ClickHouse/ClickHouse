@@ -8,3 +8,5 @@ nodefault u base	0	0
 nodefault u proj	0	0
 nodefault map base	1000	1000
 nodefault map proj	1000	1000
+nodefault tuple map base	1000	0	0	1000
+nodefault tuple map proj	1000	0	0	1000

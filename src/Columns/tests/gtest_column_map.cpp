@@ -1,5 +1,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 
@@ -73,6 +74,47 @@ TEST(ColumnMap, InsertManyDefaultsDoesNotOverallocateNarrowMaps)
     ASSERT_EQ(map->getNestedColumn().getOffsets().capacity(), rows);
     ASSERT_EQ(map->getNestedData().getColumn(0).capacity(), 0);
     ASSERT_EQ(map->getNestedData().getColumn(1).capacity(), 0);
+}
+
+TEST(ColumnMap, InsertManyDefaultsThroughTupleDoesNotReserveNestedMapData)
+{
+    constexpr size_t rows = 65521;
+
+    MutableColumns columns;
+    columns.push_back(createEmptyMap<ColumnUInt64>());
+    columns.push_back(ColumnUInt8::create());
+    auto tuple = ColumnTuple::create(std::move(columns));
+
+    tuple->insertManyDefaults(rows);
+
+    const auto & map = static_cast<const ColumnMap &>(tuple->getColumn(0));
+    ASSERT_EQ(tuple->size(), rows);
+    ASSERT_EQ(map.getNestedColumn().getOffsets().capacity(), rows);
+    ASSERT_EQ(map.getNestedData().getColumn(0).capacity(), 0);
+    ASSERT_EQ(map.getNestedData().getColumn(1).capacity(), 0);
+    ASSERT_EQ(tuple->getColumn(1).size(), rows);
+}
+
+TEST(ColumnMap, InsertManyDefaultsThroughNullableTupleDoesNotReserveNestedMapData)
+{
+    constexpr size_t rows = 65521;
+
+    MutableColumns columns;
+    columns.push_back(createEmptyMap<ColumnUInt64>());
+    columns.push_back(ColumnUInt8::create());
+    auto tuple = ColumnTuple::create(std::move(columns));
+    auto nullable = ColumnNullable::create(std::move(tuple), ColumnUInt8::create());
+
+    nullable->insertManyDefaults(rows);
+
+    const auto & nested_tuple = static_cast<const ColumnTuple &>(nullable->getNestedColumn());
+    const auto & map = static_cast<const ColumnMap &>(nested_tuple.getColumn(0));
+    ASSERT_EQ(nullable->size(), rows);
+    ASSERT_EQ(map.getNestedColumn().getOffsets().capacity(), rows);
+    ASSERT_EQ(map.getNestedData().getColumn(0).capacity(), 0);
+    ASSERT_EQ(map.getNestedData().getColumn(1).capacity(), 0);
+    ASSERT_EQ(nullable->getNullMapData().size(), rows);
+    ASSERT_EQ(nullable->getNullMapData().back(), 1);
 }
 
 TEST(ColumnMap, InsertManyDefaultsPreservesExistingRows)
