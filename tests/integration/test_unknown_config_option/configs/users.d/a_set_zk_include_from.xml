@@ -1,3 +1,0 @@
-<clickhouse>
-    <include_from from_zk="/clickhouse/users_include_from"/>
-</clickhouse>

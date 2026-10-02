@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <optional>
 #include <Compression/ICompressionCodec.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <IO/ReadSettings.h>
@@ -55,6 +56,10 @@ struct MergeTreeReaderSettings
     bool enable_multiple_prewhere_read_steps = false;
     /// In case of multiple prewhere steps, execute filtering earlier to support short-circuit properly.
     bool force_short_circuit_execution = false;
+    /// In case of multiple prewhere steps, a step may read the columns of later steps over the same storage
+    /// column, so that the column is deserialized once. Only set when reading those columns cannot throw,
+    /// see `ReadFromMergeTree::canReadPrewhereColumnsAhead`.
+    bool read_ahead_prewhere_columns = false;
     /// If true, try to lower size of read buffer according to granule size and compressed block size.
     bool adjust_read_buffer_size = true;
     /// If true, it's allowed to read the whole part without reading marks.
@@ -69,6 +74,12 @@ struct MergeTreeReaderSettings
     bool use_partial_aggregate_cache = false;
     /// Plan-time probe already called `PartialAggregateCache::get` for these reads and missed; skip redundant execution-time `get`.
     bool skip_partial_aggregate_execution_cache_lookup = false;
+    /// Set for a TopK (`ORDER BY ... LIMIT n`) read whose granule drops may depend on the running
+    /// `__topKFilter` threshold: the TopK plan salt (`TopKFilterInfo::condition_hash`) and the
+    /// post-PREWHERE filter hash to fold into the query condition cache key when recording
+    /// PREWHERE-filtered granules, so the entries are only reused under the same TopK plan, part
+    /// set, and threshold-determining predicate. Unset for non-TopK reads.
+    std::optional<UInt64> query_condition_cache_top_k_salt;
     /// Force reading complete granules, even when the readers could read incomplete granules.
     bool force_read_complete_granules = false;
     bool use_deserialization_prefixes_cache = false;
