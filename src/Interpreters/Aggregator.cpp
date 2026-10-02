@@ -2742,12 +2742,6 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     /// the first-seen cells on boundary ties, which is exact for LIMIT semantics: any correct
     /// top set is valid, and the sorter above orders it.
     const size_t count_offset = offsets_of_aggregate_states[params.bucket_top_k_count_index];
-    const auto count_of = [&](const AggregateDataPtr & mapped) -> UInt64
-    {
-        if (is_simple_count)
-            return getCountState(reinterpret_cast<AggregateDataPtr>(&const_cast<AggregateDataPtr &>(mapped)));
-        return *reinterpret_cast<const UInt64 *>(mapped + count_offset);
-    };
     const auto better
         = [ascending = params.bucket_top_k_ascending](UInt64 a, UInt64 b) { return ascending ? a < b : a > b; };
 
@@ -2781,32 +2775,51 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
 
     std::vector<Candidate> top;
     top.reserve(std::min(params.bucket_top_k, data.size()));
-    data.forEachValue(
-        [&](const auto & key, auto & mapped)
+    const auto offer = [&](UInt64 value, const TableKey & key, AggregateDataPtr mapped)
+    {
+        if (top.size() < params.bucket_top_k)
         {
-            if (need_full_key_bytes)
+            top.push_back({value, key, mapped});
+            std::push_heap(top.begin(), top.end(), worse_first);
+        }
+        else if (better(value, top.front().value))
+        {
+            std::pop_heap(top.begin(), top.end(), worse_first);
+            top.back() = {value, key, mapped};
+            std::push_heap(top.begin(), top.end(), worse_first);
+        }
+    };
+    const auto account_key_bytes = [&](const auto & key)
+    {
+        if (!need_full_key_bytes)
+            return;
+        method.insertKeyIntoColumns(key, key_size_columns.raw_key_columns, key_size_key_sizes, &key_size_serialization_settings);
+        for (auto * column : key_size_columns.raw_key_columns)
+        {
+            key_bytes += column->byteSizeAt(column->size() - 1);
+            column->popBack(1);
+        }
+    };
+
+    if (is_simple_count)
+    {
+        /// The count is the cell's own mapped value, so the scan only reads the cells.
+        data.forEachValue(
+            [&](const auto & key, auto & mapped)
             {
-                method.insertKeyIntoColumns(
-                    key, key_size_columns.raw_key_columns, key_size_key_sizes, &key_size_serialization_settings);
-                for (auto * column : key_size_columns.raw_key_columns)
-                {
-                    key_bytes += column->byteSizeAt(column->size() - 1);
-                    column->popBack(1);
-                }
-            }
-            const UInt64 value = count_of(mapped);
-            if (top.size() < params.bucket_top_k)
+                account_key_bytes(key);
+                offer(getCountState(reinterpret_cast<AggregateDataPtr>(&mapped)), key, mapped);
+            });
+    }
+    else
+    {
+        data.forEachValue(
+            [&](const auto & key, auto & mapped)
             {
-                top.push_back({value, key, mapped});
-                std::push_heap(top.begin(), top.end(), worse_first);
-            }
-            else if (better(value, top.front().value))
-            {
-                std::pop_heap(top.begin(), top.end(), worse_first);
-                top.back() = {value, key, mapped};
-                std::push_heap(top.begin(), top.end(), worse_first);
-            }
-        });
+                account_key_bytes(key);
+                offer(*reinterpret_cast<const UInt64 *>(mapped + count_offset), key, mapped);
+            });
+    }
 
     if (full_key_bytes)
         *full_key_bytes = key_bytes;
