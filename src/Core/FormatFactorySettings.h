@@ -1571,7 +1571,7 @@ Suffix after result set (for CustomSeparated format)
 Regular expression (for Regexp format)
 )", 0) \
     DECLARE(EscapingRule, format_regexp_escaping_rule, "Raw", R"(
-Field escaping rule (for Regexp format)
+Specifies how each capture group produced by `format_regexp` is parsed into its target column type. Use `Raw` (default) for unescaped text, `Escaped` for TSV-style escaping, `Quoted` for Values-style quoted fields, `CSV` for CSV fields, or `JSON` for JSON values. This setting applies after the regular expression matches a row; it does not change the regular expression itself.
 )", 0, \
         {"20.10", "Escaped", "Raw", "Use Raw as default escaping rule for Regexp format to male the behaviour more like to what users expect"}) \
     DECLARE(Bool, format_regexp_skip_unmatched, false, R"(
@@ -1858,11 +1858,11 @@ Validate usage of experimental and suspicious types inside nested types like Arr
         {"24.2", false, true, "Validate usage of experimental and suspicious types inside nested types"}) \
     \
     DECLARE(IdentifierQuotingRule, show_create_query_identifier_quoting_rule, IdentifierQuotingRule::WhenNecessary, R"(
-Set the quoting rule for identifiers in SHOW CREATE query
+Controls when identifiers are quoted in `SHOW CREATE` output. `when_necessary` (default) quotes identifiers where required to produce valid, unambiguous SQL; `user_display` quotes identifiers that are SQL keywords; `always` quotes every identifier. This setting controls whether quoting is added; `show_create_query_identifier_quoting_style` controls the quote characters and escaping.
 )", 0, \
         {"24.10", "when_necessary", "when_necessary", "New setting."}) \
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
-Set the quoting style for identifiers in SHOW CREATE query
+Controls how quoted identifiers are written in `SHOW CREATE` output. `Backticks` (default) uses ClickHouse-style backticks, `DoubleQuotes` uses double quotes with ClickHouse escaping, and `BackticksMySQL` uses MySQL-compatible backticks where embedded backticks are doubled. This setting does not control which identifiers are quoted; use `show_create_query_identifier_quoting_rule` for that.
 )", 0, \
         {"24.10", "Backticks", "Backticks", "New setting."}) \
     DECLARE(UInt64, output_format_image_width, 1024, R"(
