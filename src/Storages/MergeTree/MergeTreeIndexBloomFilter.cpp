@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
@@ -602,12 +603,13 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
 
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const String & function_name,
-    const RPNBuilderTreeNode & key_node,
+    const RPNBuilderTreeNode & wrapped_key_node,
     const ConstSetPtr & prepared_set,
     const DataTypePtr & type,
     const ColumnPtr & column,
     RPNElement & out)
 {
+    const auto key_node = unwrapLosslessConversion(wrapped_key_node);
     auto key_node_column_name = key_node.getColumnName();
 
     if (header.has(key_node_column_name))
@@ -615,6 +617,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         size_t row_size = column->size();
         size_t position = header.getPositionByName(key_node_column_name);
         const DataTypePtr & index_type = header.getByPosition(position).type;
+
+        /// A NULL of a set built for `toNullable(key)` does not cast to the key type and matches no stored value.
+        const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
+        if (nullable_column && !index_type->isNullable() && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
+            return false;
+
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
 
         /// An `Array` index holds one hash per element, so a set array is looked up by its elements
@@ -979,12 +987,13 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
 
 bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     const String & function_name,
-    const RPNBuilderTreeNode & key_node,
+    const RPNBuilderTreeNode & wrapped_key_node,
     const DataTypePtr & value_type,
     const Field & value_field,
     RPNElement & out,
     const RPNBuilderTreeNode * parent)
 {
+    const auto key_node = unwrapLosslessConversion(wrapped_key_node);
     auto key_column_name = key_node.getColumnName();
 
     /// `arrayJoin(col) = const` needs an element equal to the constant, same as `has(col, const)`.
@@ -1035,8 +1044,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 if (function_name == "has" || indexOfCanUseBloomFilter(parent))
                 {
                     out.function = RPNElement::FUNCTION_HAS;
-                    const DataTypePtr & nested_type = array_type->getNestedType();
-                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(nested_type);
+                    /// The function coerces the constant by the element type it sees, which may differ in `LowCardinality`.
+                    DataTypePtr nested_type = array_type->getNestedType();
+                    if (const auto * wrapped_array_type = typeid_cast<const DataTypeArray *>(wrapped_key_node.getDAGNode()->result_type.get()))
+                        nested_type = wrapped_array_type->getNestedType();
+
+                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
                     Field converted_field = convertConstantForArrayIndexFunction(value_field, value_type, nested_type, actual_type);
                     if (converted_field.isNull())
                         return false;

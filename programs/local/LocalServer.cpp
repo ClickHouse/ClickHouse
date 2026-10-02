@@ -29,6 +29,7 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DatabaseAtomic.h>
+#include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
@@ -67,7 +68,10 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
@@ -135,6 +139,7 @@ namespace Setting
     extern const SettingsString default_format;
     extern const SettingsSeconds http_receive_timeout;
     extern const SettingsSeconds http_send_timeout;
+    extern const SettingsBool fsync_metadata;
     extern const SettingsBool implicit_select;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
@@ -554,6 +559,43 @@ void deferSystemDatabaseTables(ContextPtr context, IDatabase & system_database)
     attachSystemTableOne(context, system_database);
 }
 
+/// The UUID from `metadata/<name>.sql` if it defines an `Atomic` database, otherwise Nil.
+UUID tryReadAtomicDatabaseUUID(const String & name, ContextPtr context)
+{
+    auto db_disk = context->getDatabaseDisk();
+    auto metadata_file_path = pathToGenericString(DatabaseCatalog::getMetadataFilePath(name));
+    if (!db_disk->existsFile(metadata_file_path))
+        return UUIDHelpers::Nil;
+
+    auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, context, db_disk, metadata_file_path);
+    const auto & create = ast->as<const ASTCreateQuery &>();
+    if (!create.storage || !create.storage->engine || create.storage->engine->name != "Atomic")
+        return UUIDHelpers::Nil;
+    return create.uuid;
+}
+
+/// Records the database like `CREATE DATABASE` does, so that runs with another default database attach it.
+void writeMissingDatabaseMetadataFile(const IDatabase & database, ContextPtr context)
+{
+    auto db_disk = context->getDatabaseDisk();
+    const String database_name = database.getDatabaseName();
+    auto metadata_file_path = pathToGenericString(DatabaseCatalog::getMetadataFilePath(database_name));
+    if (db_disk->existsFile(metadata_file_path))
+        return;
+
+    String statement = fmt::format("ATTACH DATABASE {} UUID '{}'\nENGINE = Atomic\n", TABLE_WITH_UUID_NAME_PLACEHOLDER, toString(database.getUUID()));
+    auto metadata_tmp_file_path = pathToGenericString(DatabaseCatalog::getMetadataTmpFilePath(database_name));
+    db_disk->createDirectories(pathToGenericString(DatabaseCatalog::getMetadataDirPath()));
+    db_disk->removeFileIfExists(metadata_tmp_file_path);
+    writeMetadataFile(
+        db_disk,
+        /*file_path=*/metadata_tmp_file_path,
+        /*content=*/statement,
+        /*fsync_metadata=*/context->getSettingsRef()[Setting::fsync_metadata]);
+    /// Does not replace the metadata of another database with this name.
+    db_disk->moveFile(metadata_tmp_file_path, metadata_file_path);
+}
+
 DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
 {
     auto overlay = std::make_shared<DatabaseOverlay>(name_, context);
@@ -575,6 +617,9 @@ DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPt
             symlink_path = symlink_path.parent_path();
         default_database_uuid = parse<UUID>(pathToGenericString(symlink_path.filename()));
     }
+    /// The file is written on the first run, before any table creates the symlink.
+    else if (UUID uuid_from_metadata_file = tryReadAtomicDatabaseUUID(name_, context); uuid_from_metadata_file != UUIDHelpers::Nil)
+        default_database_uuid = uuid_from_metadata_file;
     else
         default_database_uuid = UUIDHelpers::generateV4();
 
@@ -1840,6 +1885,10 @@ void LocalServer::processConfig()
         /// Lock path directory before read
         fs::create_directories(path);
         status.emplace(pathToGenericString(path / "status"), StatusFile::write_full_info);
+
+        /// With `--only-system-tables` the directory is only inspected, so the default database is not recorded in it.
+        if (!server_default_database.empty() && !getClientConfiguration().has("only-system-tables"))
+            writeMissingDatabaseMetadataFile(*DatabaseCatalog::instance().getDatabase(server_default_database), global_context);
 
         if (fs::exists(path / "metadata"))
         {

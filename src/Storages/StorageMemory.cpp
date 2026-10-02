@@ -1,6 +1,8 @@
 #include <base/pathToString.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -155,7 +157,7 @@ public:
         // append new data to modified storage table and commit
         new_data->blocks.insert(new_data->blocks.end(), new_blocks.begin(), new_blocks.end());
 
-        storage.data.set(std::move(new_data));
+        storage.setData(std::move(new_data));
     }
 
 private:
@@ -240,9 +242,19 @@ SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMet
 }
 
 
+void StorageMemory::setData(std::unique_ptr<BlocksWithCounts> new_data)
+{
+    setCurrentQueryMemoryDriftExpected();
+
+    /// The replaced blocks are dropped inside this scope, unless a reader still holds them.
+    MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+    auto replaced = data.get();
+    data.set(std::move(new_data));
+}
+
 void StorageMemory::drop()
 {
-    data.set(std::make_unique<BlocksWithCounts>());
+    setData(std::make_unique<BlocksWithCounts>());
 }
 
 static inline void updateBlockData(Block & old_block, const Block & new_block)
@@ -404,14 +416,14 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
         new_data->rows += buffer.rows();
         new_data->bytes += buffer.allocatedBytes();
     }
-    data.set(std::move(new_data));
+    setData(std::move(new_data));
 }
 
 
 void StorageMemory::truncate(
     const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
-    data.set(std::make_unique<BlocksWithCounts>());
+    setData(std::make_unique<BlocksWithCounts>());
 }
 
 void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr context, DB::IStorage::AlterLockHolder & /*alter_lock_holder*/, DB::DDLGuardPtr & /*ddl_guard*/)
@@ -458,7 +470,7 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
                 new_data->blocks.erase(new_data->blocks.begin());
             }
 
-            data.set(std::move(new_data));
+            setData(std::move(new_data));
         }
         *memory_settings = std::move(changed_settings);
     }
@@ -698,7 +710,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
     old_and_new_data->rows += new_rows;
 
     /// Finish restoring.
-    data.set(std::move(old_and_new_data));
+    setData(std::move(old_and_new_data));
 }
 
 void StorageMemory::checkAlterIsPossible(const AlterCommands & commands, ContextPtr) const
