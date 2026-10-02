@@ -45,9 +45,12 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/NegativeOffsetStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 
@@ -56,6 +59,7 @@
 #include <Storages/IStorage.h>
 
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -1226,6 +1230,35 @@ QueryPlan decorrelateQueryPlan(
         decorrelated_query_plan.addStep(std::move(result_step));
         return decorrelated_query_plan;
     }
+    if (auto * offset_step = typeid_cast<OffsetStep *>(node->step.get()))
+    {
+        auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
+        auto input_header = decorrelated_query_plan.getCurrentHeader();
+
+        /// A bare `OFFSET M` (without `LIMIT`) becomes `LIMIT <unbounded> OFFSET M BY correlated_columns`,
+        /// which skips the first M rows of each evaluation of the subquery. `LimitByTransform` saturates
+        /// `length + offset`, so the maximal length keeps every row after the offset.
+        Names limit_by_columns;
+        limit_by_columns.reserve(context.correlated_subquery.correlated_column_identifiers.size());
+        for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
+            limit_by_columns.push_back(correlated_column_identifier);
+
+        auto result_step = std::make_unique<LimitByStep>(
+            input_header,
+            std::numeric_limits<UInt64>::max(),
+            offset_step->getOffset(),
+            std::move(limit_by_columns));
+        result_step->setStepDescription("OFFSET BY for decorrelated correlated subquery");
+
+        decorrelated_query_plan.addStep(std::move(result_step));
+        return decorrelated_query_plan;
+    }
+    if (typeid_cast<NegativeOffsetStep *>(node->step.get()))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Correlated subquery decorrelation does not support a negative OFFSET");
+    if (typeid_cast<FractionalOffsetStep *>(node->step.get()))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Correlated subquery decorrelation does not support a fractional OFFSET");
     if (auto * delayed_creating_sets_step = typeid_cast<DelayedCreatingSetsStep *>(node->step.get()))
     {
         /** The sets this step builds are subqueries of their own: they cannot reference a correlated column,
