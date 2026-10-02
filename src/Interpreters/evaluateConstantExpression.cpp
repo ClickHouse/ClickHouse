@@ -635,6 +635,8 @@ namespace
         {
             const ActionsDAG::Node * node;
             ColumnPtr column;
+            /// Owns `null_map` when the elements were cast to a `Nullable` type.
+            ColumnPtr cast_column = nullptr;
             const NullMap * null_map = nullptr;
         };
         std::vector<Component> components;
@@ -654,7 +656,7 @@ namespace
                 column = ColumnTuple::create(std::move(elements));
                 type = std::make_shared<DataTypeTuple>(std::move(types));
             }
-            components.push_back({node, std::move(column), nullptr});
+            components.push_back({node, std::move(column), nullptr, nullptr});
             types = {std::move(type)};
         }
         else if (key->type == ActionsDAG::ActionType::FUNCTION
@@ -670,7 +672,7 @@ namespace
             {
                 if (const auto * component_node = findMatch(key->children[i], matches))
                 {
-                    components.push_back({component_node, elements[i], nullptr});
+                    components.push_back({component_node, elements[i], nullptr, nullptr});
                     component_types.push_back(types[i]);
                 }
             }
@@ -693,10 +695,10 @@ namespace
             if (types[i]->equals(*component.node->result_type))
                 continue;
 
-            auto cast_col = tryCastColumn(component.column, types[i], component.node->result_type);
-            if (!cast_col)
+            component.cast_column = tryCastColumn(component.column, types[i], component.node->result_type);
+            if (!component.cast_column)
                 return {};
-            const auto & col_nullable = assert_cast<const ColumnNullable &>(*cast_col);
+            const auto & col_nullable = assert_cast<const ColumnNullable &>(*component.cast_column);
             component.null_map = &col_nullable.getNullMapData();
             component.column = col_nullable.getNestedColumnPtr();
         }
