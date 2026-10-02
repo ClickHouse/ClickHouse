@@ -224,8 +224,8 @@ do
             AND event_time >= now() - INTERVAL 10 MINUTE"
 done
 
-# An ad-hoc `remote()` destination has no cluster name to put into the rewritten function. A source the
-# user already wrote as `*Cluster` carries one, so it keeps it and the query is still forwarded; only a
+# A destination written as `remote(...)` has no cluster name to put into the rewritten function. A source
+# the user already wrote as `*Cluster` carries one, so it keeps it and the query is still forwarded; only a
 # plain source, which would need a name synthesized, skips the distributed execution. Replacing the
 # carried name with an empty one made the shards reject the forwarded query with CLUSTER_DOESNT_EXIST.
 QUERY_ID_ADHOC="05219_adhoc_${QUERY_ID_SUFFIX}"

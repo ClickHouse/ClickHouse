@@ -1314,9 +1314,10 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     /// Replace `url()` / `s3()` / ... in the forwarded query text with its `*Cluster()` variant, named with
     /// this `Distributed` table's cluster: its shards are the ones that run the forwarded query, and they
     /// take their share of the files from the initiator's task iterator rather than reading all of them.
-    /// A `remote()` / `cluster()` destination has an ad-hoc cluster with no name to put there, so skip the
-    /// distributed execution instead of forwarding a query that every shard would answer with the whole
-    /// source.
+    /// A destination written as a table function gives no name to put there -
+    /// `INSERT INTO FUNCTION remote('127.0.0.{1,2}', db, tbl)` builds its cluster from the address
+    /// expression, which has no name anywhere - so skip the distributed execution instead of forwarding a
+    /// query that every shard would answer with the whole source.
     /// A source the user already wrote as `*Cluster` keeps its own name in that case - see
     /// `IStorageCluster::updateQueryToSendIfNeeded`.
     const auto * source_table_function = extractTableFunctionFromSelectQuery(source_to_send);
