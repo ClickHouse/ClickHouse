@@ -1,3 +1,4 @@
+// Test line for https://github.com/ClickHouse/clickhouse-private/pull/78240, never merged.
 #pragma once
 
 #include <Common/Exception.h>
