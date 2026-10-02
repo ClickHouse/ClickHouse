@@ -1,10 +1,11 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/createExecutor.h>
 #include <Processors/Formats/LazyOutputFormat.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <Interpreters/ProcessList.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -35,7 +36,7 @@ namespace ErrorCodes
 
 struct PullingAsyncPipelineExecutor::Data
 {
-    PipelineExecutorPtr executor;
+    ExecutorPtr executor;
     std::exception_ptr exception;
     LazyOutputFormat * lazy_format = nullptr;
     std::atomic_bool is_finished = false;
@@ -117,8 +118,9 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     if (!data)
     {
         data = std::make_unique<Data>();
-        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+        data->executor = createExecutor(pipeline.processors, pipeline.process_list_element);
         data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
+        data->executor->setStepProfiler(pipeline.getStepProfiler());
         data->lazy_format = lazy_format.get();
 
         auto func = [&, thread_group = CurrentThread::getGroup()]()
@@ -141,14 +143,17 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     data->rethrowExceptionIfHas();
 
     /// Throws when the time limit is exceeded with `timeout_overflow_mode = 'throw'`. With 'break' the partial result
-    /// is returned as a success: the check has cancelled the execution with `CancelledByTimeout`, so the pipeline
-    /// finishes on its own, the chunks that are already in the lazy format are pulled as usual, and the format is
-    /// finalized by the executor - only then is the end of the data reported.
-    data->executor->checkTimeLimit();
+    /// is returned as a success: the execution is cancelled with `CancelledByTimeout`, so the pipeline finishes on
+    /// its own, the chunks that are already in the lazy format are pulled as usual, and the format is finalized by
+    /// the executor - only then is the end of the data reported.
+    if (pipeline.process_list_element && !pipeline.process_list_element->checkTimeLimitSoft())
+    {
+        data->executor->cancel(IProcessor::CancelReason::CancelledByTimeout);
+        pipeline.process_list_element->checkTimeLimit();
+    }
 
-    bool is_execution_finished = lazy_format ? lazy_format->isFinished() : data->is_finished.load();
-
-    if (is_execution_finished)
+    const bool execution_finished = lazy_format ? lazy_format->isFinished() : data->is_finished.load();
+    if (execution_finished)
     {
         /// If lazy format is finished, we don't cancel pipeline but wait for main thread to be finished.
         data->is_finished = true;
@@ -207,7 +212,7 @@ void PullingAsyncPipelineExecutor::cancel()
     cancelWithExceptionHandling([&]()
     {
         if (!data->is_finished && data->executor)
-            data->executor->cancel();
+            data->executor->cancel(IProcessor::CancelReason::CancelledByUser);
     });
 
     /// The result is abandoned: a pipeline broken off by a time limit keeps the chunks queued in the lazy format
