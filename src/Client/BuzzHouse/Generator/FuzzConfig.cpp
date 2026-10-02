@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BUZZHOUSE;
+extern const int BUZZHOUSE_ORACLE;
 extern const int NETWORK_ERROR;
 }
 }
@@ -1427,7 +1428,7 @@ void FuzzConfig::validateClickHouseHealth()
                     }
                 }
                 throw DB::Exception(
-                    DB::ErrorCodes::BUZZHOUSE,
+                    DB::ErrorCodes::BUZZHOUSE_ORACLE,
                     "ClickHouse health check on {}:{}: found {} {}{}",
                     host,
                     port,
@@ -1465,7 +1466,7 @@ void FuzzConfig::comparePerformanceResults(const String & oracle_name, Performan
                            static_cast<double>(peer.metrics.at(key)) * (1 + (static_cast<double>(val.threshold) / 100.0))))
                 {
                     throw DB::Exception(
-                        DB::ErrorCodes::BUZZHOUSE,
+                        DB::ErrorCodes::BUZZHOUSE_ORACLE,
                         "{}: ClickHouse peer server {}: {} was less than the target server: {}",
                         oracle_name,
                         key,
