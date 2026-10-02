@@ -1315,3 +1315,170 @@ def test_identity_partition_decimal_mixed_manifest_encodings_deletes_and_compact
         instance.query(f"SELECT id FROM {table_function} WHERE price < 0 ORDER BY id").strip()
         == ""
     )
+
+
+def decimal_fixed_size(precision):
+    """The number of bytes of the Avro `fixed` of an Iceberg `decimal(precision, S)`."""
+    size = 1
+    while 2 ** (8 * size - 1) <= 10**precision:
+        size += 1
+    return size
+
+
+def manifest_partition_encoding(content, partition_name, column_name):
+    """The `fixed` size of the partition field `partition_name` in the Avro schema of a manifest
+    file and the type of the column `column_name` in the Iceberg schema of its `schema` header."""
+    assert content[:4] == b"Obj\x01"
+    metadata, _ = read_avro_map_of_bytes(content, 4)
+
+    [column_type] = [
+        field["type"]
+        for field in json.loads(metadata["schema"])["fields"]
+        if field["name"] == column_name
+    ]
+
+    def find_fixed_size(node):
+        if isinstance(node, list):
+            for child in node:
+                size = find_fixed_size(child)
+                if size is not None:
+                    return size
+        elif isinstance(node, dict) and node.get("type") == "fixed":
+            return node["size"]
+        return None
+
+    avro_schema = json.loads(metadata["avro.schema"])
+    [data_file] = [field for field in avro_schema["fields"] if field["name"] == "data_file"]
+    [partition] = [field for field in data_file["type"]["fields"] if field["name"] == "partition"]
+    [partition_field] = [
+        field for field in partition["type"]["fields"] if field["name"] == partition_name
+    ]
+    return find_fixed_size(partition_field["type"]), column_type
+
+
+def test_identity_partition_decimal_widened_manifest_compaction(
+    started_cluster_iceberg_no_spark,
+):
+    """`OPTIMIZE TABLE ... MANIFEST` keeps the data files of different schemas in different
+    manifests, each one carrying the schema of its files in its `schema` header. After widening a
+    decimal partition column, the partition value of the manifest of the old schema has to be
+    encoded under the old schema (`decimal(9, 2)`, a 4-byte `fixed`), not under the current one
+    (`decimal(20, 2)`, a 9-byte `fixed`), even though both are read into one carrier."""
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
+
+    identifier = f"{namespace}.t_decimal_widened_compaction"
+    table = catalog.create_table(
+        identifier=identifier,
+        schema=Schema(
+            NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+            NestedField(
+                field_id=2,
+                name="price",
+                field_type=DecimalType(9, 2),
+                required=False,
+            ),
+            NestedField(field_id=3, name="val", field_type=StringType(), required=False),
+        ),
+        location=f"s3://warehouse-rest/{namespace}",
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=2,
+                field_id=1000,
+                transform=IdentityTransform(),
+                name="price",
+            )
+        ),
+    )
+    narrow_arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int64(), nullable=True),
+            pa.field("price", pa.decimal128(9, 2), nullable=True),
+            pa.field("val", pa.string(), nullable=True),
+        ]
+    )
+    # Two appends of one partition per schema, so that compaction has more manifests than it writes.
+    for rows in [
+        [{"id": 1, "price": Decimal("1.50"), "val": "a"}],
+        [{"id": 2, "price": Decimal("1.50"), "val": "b"}],
+    ]:
+        table.append(pa.Table.from_pylist(rows, schema=narrow_arrow_schema))
+
+    with table.update_schema() as update:
+        update.update_column("price", field_type=DecimalType(20, 2))
+
+    table = catalog.load_table(identifier)
+    wide_arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int64(), nullable=True),
+            pa.field("price", pa.decimal128(20, 2), nullable=True),
+            pa.field("val", pa.string(), nullable=True),
+        ]
+    )
+    for rows in [
+        [{"id": 3, "price": Decimal("1.50"), "val": "c"}],
+        [{"id": 4, "price": Decimal("1.50"), "val": "d"}],
+    ]:
+        table.append(pa.Table.from_pylist(rows, schema=wide_arrow_schema))
+
+    create_clickhouse_iceberg_database(instance, CATALOG_NAME)
+    table_expression = f"{CATALOG_NAME}.`{identifier}`"
+
+    expected_rows = "1\t1.50\ta\n2\t1.50\tb\n3\t1.50\tc\n4\t1.50\td"
+    assert (
+        instance.query(
+            f"SELECT id, price, val FROM {table_expression} ORDER BY id",
+            settings={"output_format_decimal_trailing_zeros": 1},
+        ).strip()
+        == expected_rows
+    )
+
+    snapshot_before = catalog.load_table(identifier).current_snapshot().snapshot_id
+    instance.query(
+        f"OPTIMIZE TABLE {table_expression} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 2,
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+    table = catalog.load_table(identifier)
+    assert table.current_snapshot().snapshot_id != snapshot_before
+
+    # Every rewritten manifest encodes its partition value under the schema of its `schema` header.
+    encodings = []
+    manifests = table.current_snapshot().manifests(table.io)
+    assert len(manifests) == 2, [manifest.manifest_path for manifest in manifests]
+    for manifest in manifests:
+        assert manifest.content == ManifestContent.DATA
+        assert manifest.manifest_path.startswith("s3://"), manifest.manifest_path
+        bucket, key = manifest.manifest_path[len("s3://") :].split("/", 1)
+        content = read_minio_object(started_cluster_iceberg_no_spark, bucket, key)
+        fixed_size, column_type = manifest_partition_encoding(content, "price", "price")
+        precision = int(column_type[len("decimal(") :].split(",")[0])
+        assert fixed_size == decimal_fixed_size(precision), (manifest.manifest_path, column_type)
+        encodings.append((column_type, fixed_size))
+    assert sorted(set(encodings)) == [("decimal(20, 2)", 9), ("decimal(9, 2)", 4)], encodings
+
+    assert (
+        instance.query(
+            f"SELECT id, price, val FROM {table_expression} ORDER BY id",
+            settings={"output_format_decimal_trailing_zeros": 1},
+        ).strip()
+        == expected_rows
+    )
+    for move_to_prewhere in [0, 1]:
+        assert (
+            instance.query(
+                f"SELECT id FROM {table_expression} WHERE price = 1.50 ORDER BY id",
+                settings={"optimize_move_to_prewhere": move_to_prewhere},
+            ).strip()
+            == "1\n2\n3\n4"
+        ), move_to_prewhere
+
+    # A reader that decodes each manifest by its own Avro schema sees the same values.
+    assert sorted(
+        (row["id"], row["price"]) for row in table.scan().to_arrow().to_pylist()
+    ) == [(1, Decimal("1.50")), (2, Decimal("1.50")), (3, Decimal("1.50")), (4, Decimal("1.50"))]

@@ -1,4 +1,5 @@
 #include <limits>
+#include <map>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -499,17 +500,19 @@ static bool writeConsolidatedManifestFile(
 
     auto partitions_specs = metadata_object->getArray(f_partition_specs);
 
-    /// After partition evolution each manifest must be rewritten under the spec its source files used; resolve and cache spec info per spec-id.
+    /// After partition evolution each manifest must be rewritten under the spec its source files used, and after schema evolution
+    /// (e.g. widening `decimal(P, S)`) its partition values must be encoded under the schema its source files were written with;
+    /// resolve and cache spec info per (spec-id, schema-id).
     struct ResolvedPartitionSpec
     {
         Poco::JSON::Object::Ptr spec;
         std::vector<String> partition_columns;
         DataTypes partition_types;
     };
-    std::unordered_map<Int32, ResolvedPartitionSpec> resolved_specs;
-    auto resolve_partition_spec = [&](Int32 spec_id) -> const ResolvedPartitionSpec &
+    std::map<std::pair<Int32, Int32>, ResolvedPartitionSpec> resolved_specs;
+    auto resolve_partition_spec = [&](Int32 spec_id, Int32 files_schema_id) -> const ResolvedPartitionSpec &
     {
-        if (auto it = resolved_specs.find(spec_id); it != resolved_specs.end())
+        if (auto it = resolved_specs.find({spec_id, files_schema_id}); it != resolved_specs.end())
             return it->second;
 
         Poco::JSON::Object::Ptr spec;
@@ -541,7 +544,8 @@ static bool writeConsolidatedManifestFile(
             source_ids.push_back(spec_field->getValue<Int32>(Iceberg::f_source_id));
         }
 
-        /// Derive partition value types from a schema that defines every source column the spec references, preferring the current schema then any historical one; register all schemas first so they can be queried by id.
+        /// Derive partition value types from a schema that defines every source column the spec references, preferring the schema
+        /// the source files were written with, then the current one, then any historical one; register all schemas first so they can be queried by id.
         for (UInt32 i = 0; i < schemas->size(); ++i)
             persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(i));
 
@@ -558,14 +562,19 @@ static bool writeConsolidatedManifestFile(
             return block;
         };
 
-        Int32 schema_id_for_spec = static_cast<Int32>(current_schema_id);
+        Int32 schema_id_for_spec = files_schema_id;
         std::optional<Block> spec_sample_block = build_sample_block(schema_id_for_spec);
+        if (!spec_sample_block && files_schema_id != static_cast<Int32>(current_schema_id))
+        {
+            schema_id_for_spec = static_cast<Int32>(current_schema_id);
+            spec_sample_block = build_sample_block(schema_id_for_spec);
+        }
         if (!spec_sample_block)
         {
             for (UInt32 i = 0; i < schemas->size(); ++i)
             {
                 Int32 candidate_id = schemas->getObject(i)->getValue<Int32>(Iceberg::f_schema_id);
-                if (candidate_id == schema_id_for_spec)
+                if (candidate_id == files_schema_id || candidate_id == static_cast<Int32>(current_schema_id))
                     continue;
                 spec_sample_block = build_sample_block(candidate_id);
                 if (spec_sample_block)
@@ -586,7 +595,7 @@ static bool writeConsolidatedManifestFile(
         resolved.partition_types
             = ChunkPartitioner(spec_fields, schema_for_spec->getArray(Iceberg::f_fields), context, shared_sample_block).getResultTypes();
 
-        return resolved_specs.emplace(spec_id, std::move(resolved)).first->second;
+        return resolved_specs.emplace(std::make_pair(spec_id, files_schema_id), std::move(resolved)).first->second;
     };
 
     /// Return the raw metadata schema object for a given schema-id, used as the verbatim Avro `schema` header of a rewritten manifest so its data-file bounds resolve under the same schema the files were written with.
@@ -850,8 +859,8 @@ static bool writeConsolidatedManifestFile(
             consolidated_counts.min_sequence_number = manifest_min_sequence_number;
             existing_entry_counts.push_back(consolidated_counts);
 
-            /// Rewrite this manifest under the partition spec its source files used, not the default.
-            const auto & resolved_spec = resolve_partition_spec(pd.partition_spec_id);
+            /// Rewrite this manifest under the partition spec and the schema its source files used, not the default and the current ones.
+            const auto & resolved_spec = resolve_partition_spec(pd.partition_spec_id, pd.schema_id);
             entry_partition_spec_ids.push_back(pd.partition_spec_id);
 
             /// The manifest's partition tuple must match the resolved spec; a mismatch (corrupt or inconsistently-evolved
