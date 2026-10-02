@@ -9,6 +9,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -26,6 +27,7 @@
 
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Core/SettingsFields.h>
 
@@ -54,7 +56,8 @@ namespace
 
 void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTree *> & steps)
 {
-    if (!node)
+    /// a subquery that only builds a set for `IN` is not the read to estimate
+    if (!node || typeid_cast<const CreatingSetStep *>(node->step.get()))
         return;
 
     if (auto * read_step = dynamic_cast<ReadFromMergeTree *>(node->step.get()))
