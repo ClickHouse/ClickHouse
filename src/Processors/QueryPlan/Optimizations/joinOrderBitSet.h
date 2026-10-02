@@ -23,4 +23,5 @@ double computeSelectivity(
     const BitSet & left,
     const BitSet & right);
 
+
 }

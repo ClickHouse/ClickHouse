@@ -1,0 +1,11 @@
+inner then outer: dpsize
+0	Join_3_Value_0
+1	
+shared predicate: dpsize
+0	Join_3_Value_0
+1	
+2	
+unshared predicate: dpsize
+0	Join_3_Value_0
+1	
+2	
