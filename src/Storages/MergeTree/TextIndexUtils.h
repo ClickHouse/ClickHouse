@@ -227,20 +227,14 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & extension,
     const MergeTreeReaderSettings & reader_settings);
 
-/// Opens the postings substream of a text index with a read buffer sized for the reads it serves. Every reader
-/// of posting lists goes through here: `expected_read_bytes` is the largest amount of contiguous bytes read from
-/// one seek position, a posting list segment (header, payload, block index) for a cursor or for the index
-/// analysis, the whole file for a merge that reads the postings in order. The buffer is at least the 16 KiB of
-/// `MergeTreeIndexReader::patchSettings`, which suits the small random reads of the dictionary lookups, and at
-/// most the regular read buffer size of `reader_settings`, so a postings stream never uses more than a column
-/// stream. A segment then takes one read rather than one per 16 KiB, and the buffer carries the beginning of
-/// the next one.
+/// Opens the postings substream of a text index.
+/// `expected_buffer_size` is the largest contiguous read after a seek.
 std::unique_ptr<MergeTreeReaderStream> makePostingsInputStream(
     const IMergeTreeDataPartInfoForReader & data_part_info,
     const String & stream_name,
     const String & extension,
     const MergeTreeReaderSettings & reader_settings,
-    size_t expected_read_bytes);
+    size_t expected_buffer_size);
 
 /// For a caller with no part, like `makeTextIndexInputStream`: the index merge reads segments from a temporary storage.
 std::unique_ptr<MergeTreeReaderStream> makePostingsInputStream(
@@ -248,12 +242,9 @@ std::unique_ptr<MergeTreeReaderStream> makePostingsInputStream(
     const String & stream_name,
     const String & extension,
     const MergeTreeReaderSettings & reader_settings,
-    size_t expected_read_bytes);
+    size_t expected_buffer_size);
 
-/// Read buffer size for the posting list of `token_info`: the estimated size in bytes of its largest
-/// compressed segment, but at least 16 KiB. Segment sizes follow from consecutive segment offsets; the last
-/// segment ends where the next token's postings begin, which the dictionary entry does not record, so a
-/// single-segment list is estimated from its cardinality and row span. An underestimate only costs a second read.
+/// Estimates the read buffer size for the posting list of a token: the size of its largest compressed segment, but at least 16 KiB.
 size_t estimatePostingListBufferSize(const TokenPostingsInfo & token_info);
 
 }

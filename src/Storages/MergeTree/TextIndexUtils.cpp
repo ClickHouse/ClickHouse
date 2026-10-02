@@ -1267,9 +1267,10 @@ std::unique_ptr<MergeTreeReaderStream> makePostingsInputStream(
     const String & stream_name,
     const String & extension,
     const MergeTreeReaderSettings & reader_settings,
-    size_t expected_read_bytes)
+    size_t expected_buffer_size)
 {
-    return makeTextIndexInputStream(data_part_info, stream_name, extension, makePostingsReaderSettings(reader_settings, expected_read_bytes));
+    auto postings_settings = makePostingsReaderSettings(reader_settings, expected_buffer_size);
+    return makeTextIndexInputStream(data_part_info, stream_name, extension, postings_settings);
 }
 
 std::unique_ptr<MergeTreeReaderStream> makePostingsInputStream(
@@ -1277,10 +1278,10 @@ std::unique_ptr<MergeTreeReaderStream> makePostingsInputStream(
     const String & stream_name,
     const String & extension,
     const MergeTreeReaderSettings & reader_settings,
-    size_t expected_read_bytes)
+    size_t expected_buffer_size)
 {
-    return makeTextIndexInputStream(
-        std::move(data_part_storage), stream_name, extension, makePostingsReaderSettings(reader_settings, expected_read_bytes));
+    auto postings_settings = makePostingsReaderSettings(reader_settings, expected_buffer_size);
+    return makeTextIndexInputStream(std::move(data_part_storage), stream_name, extension, postings_settings);
 }
 
 static std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStreamImpl(

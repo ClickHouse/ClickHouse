@@ -940,11 +940,15 @@ void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings
 
     std::vector<std::pair<std::string_view, TokenPostingsInfoPtr>> tokens_to_read;
     tokens_to_read.reserve(token_infos.size());
+    size_t largest_segment_bytes = 0;
 
     for (const auto & [token, token_info] : token_infos)
     {
         if (token_info->offsets.size() == 1 && analyzer->isTokenNeeded(token) && !analyzer->hasReadPostings(token))
+        {
             tokens_to_read.emplace_back(token, token_info);
+            largest_segment_bytes = std::max(largest_segment_bytes, estimatePostingListBufferSize(*token_info));
+        }
     }
 
     if (tokens_to_read.empty())
@@ -955,11 +959,6 @@ void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings
     {
         return lhs.second->cardinality < rhs.second->cardinality;
     });
-
-    /// Each list is a single segment read whole after a seek, so the buffer of the stream fits the largest of them.
-    size_t largest_segment_bytes = 0;
-    for (const auto & [token, token_info] : tokens_to_read)
-        largest_segment_bytes = std::max(largest_segment_bytes, estimatePostingListBufferSize(*token_info));
 
     const auto postings_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexPostings);
     auto stream = makePostingsInputStream(

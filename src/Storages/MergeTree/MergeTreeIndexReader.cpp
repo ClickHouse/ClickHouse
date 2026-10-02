@@ -28,6 +28,8 @@ static size_t getIndexStreamFileSize(
     return part_storage.existsFile(file_name) ? part_storage.getFileSize(file_name) : 0;
 }
 
+/// An index with a single mark (e.g. a text index, which is built for the whole part, or a vector
+/// similarity index with a large granularity) is read to the end of its file without loading its marks.
 static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     const String & stream_name,
     const String & extension,
@@ -39,6 +41,26 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     MergeTreeReaderSettings settings,
     bool interruptible_marks_read)
 {
+    auto file_size = getIndexStreamFileSize(data_part_info, stream_name, extension);
+
+    if (marks_count == 1)
+    {
+        /// The file is opened by its first read: a granule answering from its caches reads none of its substreams.
+        return std::make_unique<MergeTreeReaderStreamSingleColumnWholePart>(
+            data_part_info->getDataPartStorage(),
+            stream_name,
+            extension,
+            marks_count,
+            /// The reader's own ranges repeat the single mark once per selected data range.
+            MarkRanges{{0, marks_count}},
+            std::move(settings),
+            uncompressed_cache,
+            file_size,
+            /*marks_loader=*/ nullptr,
+            ReadBufferFromFileBase::ProfileCallback{},
+            CLOCK_MONOTONIC_COARSE);
+    }
+
     auto context = data_part_info->getContext();
     auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
 
@@ -61,7 +83,7 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
 
     marks_loader->startAsyncLoad();
 
-    return std::make_unique<MergeTreeReaderStreamSingleColumn>(
+    auto stream = std::make_unique<MergeTreeReaderStreamSingleColumn>(
         data_part_info->getDataPartStorage(),
         stream_name,
         extension,
@@ -69,35 +91,14 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
         all_mark_ranges,
         std::move(settings),
         uncompressed_cache,
-        getIndexStreamFileSize(data_part_info, stream_name, extension),
+        file_size,
         std::move(marks_loader),
         ReadBufferFromFileBase::ProfileCallback{},
         CLOCK_MONOTONIC_COARSE);
-}
 
-/// A text index is written for the whole part and addresses its own data by offsets kept in its
-/// header, so its marks are never read. The other text index readers use makeTextIndexInputStream.
-static std::unique_ptr<MergeTreeReaderStream> makeTextIndexReaderStream(
-    const String & stream_name,
-    const String & extension,
-    const MergeTreeDataPartInfoForReaderPtr & data_part_info,
-    size_t marks_count,
-    UncompressedCache * uncompressed_cache,
-    MergeTreeReaderSettings settings)
-{
-    return std::make_unique<MergeTreeReaderStreamSingleColumnWholePart>(
-        data_part_info->getDataPartStorage(),
-        stream_name,
-        extension,
-        marks_count,
-        /// The reader's own ranges repeat the single text index mark once per selected data range.
-        MarkRanges{{0, marks_count}},
-        std::move(settings),
-        uncompressed_cache,
-        getIndexStreamFileSize(data_part_info, stream_name, extension),
-        /*marks_loader=*/ nullptr,
-        ReadBufferFromFileBase::ProfileCallback{},
-        CLOCK_MONOTONIC_COARSE);
+    stream->adjustRightMark(getLastMark(all_mark_ranges));
+    stream->seekToStart();
+    return stream;
 }
 
 MergeTreeIndexReader::MergeTreeIndexReader(
@@ -132,56 +133,33 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     const auto & checksums = data_part_info->getChecksums();
     auto index_format = index->getDeserializedFormat(*data_part_info, index->getFileName());
     auto index_name = index->getFileName();
-    auto last_mark = getLastMark(all_mark_ranges);
-    const bool is_text_index = index->isTextIndex();
 
-    for (const auto & substream : index_format.substreams)
-    {
-        /// The text index opens its dictionary, postings and positions streams itself during the analysis.
-        if (substream.type != MergeTreeIndexSubstream::Type::Regular)
-            continue;
+    /// The text index opens its dictionary, postings and positions streams itself during the analysis.
+    auto substream_it = std::ranges::find(index_format.substreams, MergeTreeIndexSubstream::Type::Regular, &MergeTreeIndexSubstream::type);
+    if (substream_it == index_format.substreams.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} has no regular substream", index_name);
 
-        auto full_stream_name = index_name + substream.suffix;
-        auto stream_name_opt = DB::IMergeTreeDataPart::getStreamNameOrHash(full_stream_name, substream.extension, checksums);
+    auto full_stream_name = index_name + substream_it->suffix;
+    auto stream_name_opt = DB::IMergeTreeDataPart::getStreamNameOrHash(full_stream_name, substream_it->extension, checksums);
 
-        /// If the stream doesn't exist (neither original nor hashed name), use the full name and
-        /// let the first read of its file report the missing path.
-        auto stream_name = stream_name_opt.value_or(full_stream_name);
-        auto stream_settings = patchSettings(settings, substream.type);
+    /// If the stream doesn't exist (neither original nor hashed name), use the full name and
+    /// let the first read of its file report the missing path.
+    auto stream_name = stream_name_opt.value_or(full_stream_name);
+    auto stream_settings = patchSettings(settings, substream_it->type);
 
-        std::unique_ptr<MergeTreeReaderStream> stream;
-        if (is_text_index)
-        {
-            /// A granule answering from its caches reads none of its substreams: leave each open
-            /// to the first read of that substream.
-            stream = makeTextIndexReaderStream(
-                stream_name,
-                substream.extension,
-                data_part_info,
-                marks_count,
-                uncompressed_cache,
-                std::move(stream_settings));
-        }
-        else
-        {
-            stream = makeIndexReaderStream(
-                stream_name,
-                substream.extension,
-                data_part_info,
-                marks_count,
-                all_mark_ranges,
-                mark_cache,
-                uncompressed_cache,
-                std::move(stream_settings),
-                interruptible_marks_read);
+    auto stream = makeIndexReaderStream(
+        stream_name,
+        substream_it->extension,
+        data_part_info,
+        marks_count,
+        all_mark_ranges,
+        mark_cache,
+        uncompressed_cache,
+        std::move(stream_settings),
+        interruptible_marks_read);
 
-            stream->adjustRightMark(last_mark);
-            stream->seekToStart();
-        }
-
-        streams[substream.type] = stream.get();
-        stream_holders.emplace_back(std::move(stream));
-    }
+    streams[substream_it->type] = stream.get();
+    stream_holders.emplace_back(std::move(stream));
 
     version = index_format.version;
 }

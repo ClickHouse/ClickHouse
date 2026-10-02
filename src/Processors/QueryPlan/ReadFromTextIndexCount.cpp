@@ -133,8 +133,7 @@ UInt64 computeCountForPart(
 
     sparse_index_stream->seekToStart();
 
-    /// The analysis opens the dictionary and postings streams itself; the lists it leaves are read below
-    /// through a stream sized to them.
+    /// The analysis opens the dictionary and postings streams itself
     MergeTreeIndexInputStreams streams;
     streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
 
@@ -192,7 +191,11 @@ UInt64 computeCountForPart(
         largest_segment_bytes);
 
     const PostingBlockReader<CheckCancelledCallback> posting_reader(
-        *postings_stream, state, postings_serialization, granule->getIndexIdForCaches(), check_cancelled);
+        *postings_stream,
+        state,
+        postings_serialization,
+        granule->getIndexIdForCaches(),
+        check_cancelled);
 
     if (resolved.query->getSearchMode() != TextSearchMode::All)
     {

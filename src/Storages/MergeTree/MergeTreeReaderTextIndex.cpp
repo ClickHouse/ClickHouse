@@ -256,8 +256,7 @@ void MergeTreeReaderTextIndex::readGranule()
     sparse_index_stream->seekToStart();
     resetCursors();
 
-    /// The analysis opens the dictionary stream itself. The postings streams are opened per token once
-    /// the analysis has resolved the tokens, see `getPostingsStream`.
+    /// The analysis opens the dictionary and postings streams itself.
     MergeTreeIndexInputStreams streams;
     streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
 
