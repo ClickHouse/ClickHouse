@@ -559,6 +559,8 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
     /// Serve one block; hand the un-served bytes no tier accepted to the memory hold. A cold read whose
     /// writes all land holds nothing.
     const size_t serve_bytes = serve_len(fetched_end);
+    for (auto & c : claimed)
+        c.writer->markServed(ByteRange{pos, serve_bytes});
     const ByteRange unserved{pos + serve_bytes, fetched_end - pos - serve_bytes};
     ChainedBuffers rejected;
     for (const auto & r : cached.subtract(unserved))   /// the un-served bytes minus what a tier accepted

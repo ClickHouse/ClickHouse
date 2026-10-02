@@ -133,7 +133,8 @@ void readSegmentInto(
     ByteRange sub_in_object,
     size_t object_file_offset,
     const ThrottlerPtr & local_throttler,
-    ReaderAnchorCache * anchors)
+    ReaderAnchorCache * anchors,
+    bool track_cache_efficiency)
 {
     const auto state = segment.state();
     if (state != FileSegmentState::DOWNLOADED
@@ -157,6 +158,9 @@ void readSegmentInto(
     preadSegmentNode(
         result, segment, overlap_start, overlap_end - overlap_start,
         object_file_offset, local_throttler, anchors);
+
+    if (track_cache_efficiency)
+        segment.markRead(overlap_start, overlap_end - overlap_start);
 }
 
 }
@@ -166,12 +170,14 @@ DiskCacheReader::DiskCacheReader(
     ByteRange range_in_file,
     size_t object_file_offset_,
     ThrottlerPtr local_throttler_,
-    ReaderAnchorCache * anchors_)
+    ReaderAnchorCache * anchors_,
+    bool track_cache_efficiency_)
     : segment_holder(std::move(segment_holder_))
     , hit_range(range_in_file)
     , object_file_offset(object_file_offset_)
     , local_throttler(std::move(local_throttler_))
     , anchors(anchors_)
+    , track_cache_efficiency(track_cache_efficiency_)
 {
     chassert(segment_holder && segment_holder->size() == 1);
     /// The hit range (file-space) must fall inside this segment's file-space span.
@@ -200,7 +206,7 @@ ChainedBuffers DiskCacheReader::read(ByteRange subrange)
     ByteRange sub_in_object{subrange.offset - object_file_offset, subrange.size};
 
     readSegmentInto(result, segment(), sub_in_object, object_file_offset,
-        local_throttler, anchors);
+        local_throttler, anchors, track_cache_efficiency);
     return result;
 }
 
@@ -313,8 +319,19 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
     /// Serve an already-committed prefix from this buffer's own segment (a fresh pread reader,
     /// unthrottled, unanchored).
     readSegmentInto(result, segment(), sub_in_object, object_file_offset,
-        /*local_throttler=*/nullptr, /*anchors=*/nullptr);
+        /*local_throttler=*/nullptr, /*anchors=*/nullptr, cache_settings.track_cache_efficiency);
     return result;
+}
+
+void DiskCacheWriter::markServed(ByteRange range_in_file)
+{
+    if (!cache_settings.track_cache_efficiency)
+        return;
+    const size_t lo = std::max(range_in_file.offset, aligned_range.offset);
+    const size_t hi = std::min(range_in_file.end(), committed());
+    if (lo >= hi)
+        return;
+    segment().markRead(lo - object_file_offset, hi - lo);
 }
 
 size_t DiskCacheWriter::committed() const
@@ -534,7 +551,7 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
         hit.range = ByteRange{seg_left + object_file_offset, committed_end - seg_left};
         hit.reader = std::make_unique<DiskCacheReader>(
             seg_holder, hit.range, object_file_offset,
-            local_throttler, &reader_anchors);
+            local_throttler, &reader_anchors, cache_settings.track_cache_efficiency);
         out.push_back(std::move(hit));
     };
 
