@@ -152,8 +152,8 @@ struct ArrayAggregateImpl
     }
 
     /// Fast path for fixed-width arrays supported by findExtreme*: reduce each array slice directly
-    /// instead of a per-element compareAt. Native-width types use the vectorized reduction, while
-    /// wide integers and decimals use the existing wide-value kernel.
+    /// instead of a per-element compareAt. Native-width integers, floats, Decimal32/64, and DateTime64
+    /// use the vectorized reduction; wide integers and decimals use the existing wide-value kernel.
     /// The result is bitwise-identical to the generic path: the extreme value is unique up to representation,
     /// and the only value classes with multiple representations (NaN payloads and 0.0/-0.0) are fixed up below
     /// to return the first occurrence, which is what compareAt-based selection returns.
