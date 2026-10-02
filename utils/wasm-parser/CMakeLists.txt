@@ -113,6 +113,7 @@ set (SUPPORT_SOURCES
     "${CH}/base/base/errnoToString.cpp"
     "${CH}/base/base/getPageSize.cpp"
     "${CH}/base/base/itoa.cpp"
+    "${CH}/contrib/abseil-cpp/absl/base/throw_delegate.cc"
     "${CH}/contrib/fmtlib/src/format.cc"
     "${CH}/contrib/zmij/zmij.cc"
     "${CH}/base/poco/Foundation/src/ASCIIEncoding.cpp"
@@ -282,6 +283,22 @@ list (TRANSFORM EXPORTS PREPEND "-Wl,--export=")
 # `-mexec-model=reactor` because the module is a library, not a program: it is initialized once and
 # then called into. Note that `-mllvm -wasm-enable-sjlj` is deliberately absent here - the LTO unit
 # must contain no `setjmp`, and leaving the flag off turns a stray one into a link error.
+#
+# The stack is 384 KiB rather than wasm-ld's default of 64 KiB, and is sized from both ends:
+#
+# * The parser checks the stack only every 8192 levels of depth, so below `MAX_PARSER_DEPTH` the
+#   stack must hold whatever the parser does. That is up to 320 KB (nested `IN (SELECT ...)`), and
+#   at 64 KiB 51 nested parentheses overflowed it: a trap that leaves the instance unusable.
+# * Everything else relies on `checkStackSize`, which reads the real bounds of this stack
+#   (wasi-libc takes them from `__stack_low` and `__stack_high`) and, as on the server, allows half
+#   of it. WebAssembly frames also take the engine's own stack, which the check cannot see, and the
+#   check must fire before that one runs out. The tightest engine stack is a Web Worker in Chrome:
+#   at 512 KiB, deep `CAST` types there end in `RangeError: Maximum call stack size exceeded`.
+#
+# At 384 KiB, every query up to and past the depth limits parses and formats in a Chrome worker
+# without a trap. The AST JSON of a tree deeper than about 35 terms of `+` or 9 nested subqueries
+# comes back as a null "ast" with "Stack size too large" instead. The stack adds nothing to the
+# module, only to the initial size of its memory.
 target_link_options (parser PRIVATE
     -Oz
     -flto
@@ -290,6 +307,7 @@ target_link_options (parser PRIVATE
     -mexec-model=reactor
     -Wl,--no-entry
     -Wl,--strip-all
+    -Wl,-z,stack-size=393216
     ${EXPORTS}
 )
 
