@@ -47,6 +47,17 @@ String doubleQuoteStringPostgreSQL(std::string_view x)
 }
 
 
+String doubleQuoteStringSQLite(std::string_view x)
+{
+    String res(2 + x.size(), '\0');
+    {
+        WriteBufferFromString wb(res);
+        writeDoubleQuotedStringSQLite(x, wb);
+    }
+    return res;
+}
+
+
 String backQuote(std::string_view x)
 {
     String res(2 + x.size(), '\0');
@@ -79,4 +90,13 @@ String backQuoteMySQL(std::string_view x)
     return res;
 }
 
+String backQuoteSQLite(std::string_view x)
+{
+    String res(2 + x.size(), '\0');
+    {
+        WriteBufferFromString wb(res);
+        writeBackQuotedStringSQLite(x, wb);
+    }
+    return res;
+}
 }
