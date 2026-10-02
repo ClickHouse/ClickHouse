@@ -423,6 +423,7 @@ void copyAzureBlobStorageFile(
 
             auto source_uri = block_blob_client_src.GetUrl();
 
+            HTTPConnectionInfoScope connection_info_scope;
             Stopwatch watch;
             auto log_copy = [&](Int32 error_code, const String & error_message)
             {

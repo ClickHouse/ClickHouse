@@ -799,6 +799,7 @@ namespace
                 if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3CopyObject);
 
+                HTTPConnectionInfoScope connection_info_scope;
                 Stopwatch watch;
                 auto outcome = client_ptr->CopyObject(request);
                 auto elapsed = watch.elapsedMicroseconds();
@@ -914,6 +915,7 @@ namespace
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPartCopy);
 
+            HTTPConnectionInfoScope connection_info_scope;
             Stopwatch watch;
             auto outcome = client_ptr->UploadPartCopy(req);
             auto elapsed = watch.elapsedMicroseconds();
