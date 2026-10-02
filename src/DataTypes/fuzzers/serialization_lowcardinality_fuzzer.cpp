@@ -40,7 +40,8 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
 
 /// Auxiliary header bytes at the start of the fuzz input:
 ///   [0]    select inner type: 0 = LowCardinality(String), 1 = LowCardinality(Nullable(UInt64))
-///   [1]    flags: bit 0 = native_format, bit 1 = use_specialized_prefixes
+///   [1]    flags: bit 0 = native_format, bit 1 = use_specialized_prefixes,
+///          bit 2 = read as a `Wide` part with uniform marks (the single-dictionary path)
 ///   [2..9] number of rows to read (uint64_t little-endian, capped at 65536)
 struct AuxiliaryRandomData
 {
@@ -65,6 +66,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         size_t rows = aux->rows % 65536;
         const bool use_native_format = (aux->native_format & 1) != 0;
         const bool use_specialized_prefixes = (aux->native_format & 2) != 0;
+        const bool simulate_wide_part = (aux->native_format & 4) != 0;
 
         DataTypePtr inner_type;
         if (aux->type_selector % 2 == 0)
@@ -90,6 +92,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         settings.native_format = use_native_format;
         settings.format_settings = &format_settings;
         settings.use_specialized_prefixes_and_suffixes_substreams = use_specialized_prefixes;
+
+        /// Mimic `MergeTreeReaderWide`: report uniform marks so that
+        /// `deserializeBinaryBulkStatePrefix` speculatively reads the first dictionary,
+        /// and rewind the stream to the prefix start when it turns out there are more.
+        const size_t prefix_start = in.getPosition();
+        if (simulate_wide_part)
+        {
+            settings.data_part_type = MergeTreeDataPartType::Wide;
+            settings.has_uniform_marks_callback = [](const ISerialization::SubstreamPath &, size_t) { return true; };
+            settings.seek_to_start_callback = [&](const ISerialization::SubstreamPath &) { in.seek(prefix_start, SEEK_SET); };
+        }
 
         ISerialization::DeserializeBinaryBulkStatePtr state;
 
