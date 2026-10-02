@@ -89,7 +89,8 @@ if ! wait_for_dict_upate; then
     exit 1
 fi
 
-# Values for 12 and 13 can be loaded. The value for 14 requires SYSTEM RELOAD DICTIONARIES
+# START replays the blocked SYSTEM RELOAD DICTIONARY as a full reload, so 14 is loaded too,
+# although it is older than UPDATE_LAG and an incremental update would miss it.
 $CLICKHOUSE_CLIENT --query "SELECT '12 (3) -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(12))"
 $CLICKHOUSE_CLIENT --query "SELECT '13 (3) -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(13))"
 $CLICKHOUSE_CLIENT --query "SELECT '14 (3) -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(14))"

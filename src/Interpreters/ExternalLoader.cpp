@@ -700,9 +700,11 @@ public:
     void reloadBlockedObjects()
     {
         std::lock_guard lock{mutex};
+        /// Forced, because a blocked attempt may have been a reload for a changed config:
+        /// a non-forced one would clone the previous version and keep its old config.
         for (auto & [name, info] : infos)
             if (info.blocked)
-                startLoading(info);
+                startLoading(info, /* forced_to_reload = */ true);
     }
 
     /// Starts reloading all the object which update time is earlier than now.
