@@ -13,6 +13,11 @@ SET max_rows_to_read = 0;
 -- Pin the plain pools by default (the prefetched and parallel-replicas pools are
 -- enabled explicitly in dedicated queries below).
 SET enable_parallel_replicas = 0;
+-- The parallel-replicas arms below measure where the skip index is applied (in the read pools).
+-- A positive `parallel_replicas_min_number_of_rows_per_replica` makes the planner estimate the rows
+-- to read while building the plan, and that estimate applies the skip index statically, so the
+-- read pools have nothing left to drop and the refiner assertions would not hold.
+SET parallel_replicas_min_number_of_rows_per_replica = 0;
 SET allow_prefetched_read_pool_for_local_filesystem = 0, allow_prefetched_read_pool_for_remote_filesystem = 0;
 
 DROP TABLE IF EXISTS t_skip_idx_pools;
