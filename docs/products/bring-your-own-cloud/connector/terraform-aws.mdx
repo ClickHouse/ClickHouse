@@ -46,7 +46,7 @@ All four roots emit the same `clicklink` output. The hand-off to `clicklink clct
 
 ### `production` {#production}
 
-The VPC spans three zones (`availability_zone_count`, 2 to 4) with a private `/19` and a public `/21` per zone, one NAT gateway per zone, an S3 gateway endpoint, interface endpoints for ECR, STS, EC2, CloudWatch Logs, SSM, SQS, KMS, and ELB, and VPC flow logs. The EKS cluster has a private API endpoint, access-entries authentication, all control-plane log types in a log group the root owns, and secrets encrypted with a customer-managed KMS key. The cluster gets the managed addons `vpc-cni`, `kube-proxy`, `coredns`, and `aws-ebs-csi-driver`, and one untainted system node group labeled `clickhouseGroup=system` (two to four `m7g.large` nodes by default). The root also creates Karpenter IAM with an interruption queue and `karpenter.sh/discovery` tags, IRSA roles for the AWS Load Balancer controller and for the connector's executor, and KMS keys for EBS volumes and for the object storage buckets.
+The VPC spans three zones (`availability_zone_count`, 2 to 4) with a private `/19` and a public `/21` per zone, one NAT gateway per zone, an S3 gateway endpoint, interface endpoints for ECR, STS, EKS, EC2, CloudWatch Logs, SSM, SQS, KMS, and ELB, and VPC flow logs. The EKS cluster has a private API endpoint, access-entries authentication, all control-plane log types in a log group the root owns, and secrets encrypted with a customer-managed KMS key. The cluster gets the managed addons `vpc-cni`, `kube-proxy`, `coredns`, and `aws-ebs-csi-driver`, and one untainted system node group labeled `clickhouseGroup=system` (two to four `m7g.large` nodes by default). The root also creates Karpenter IAM with an interruption queue and `karpenter.sh/discovery` tags, IRSA roles for the AWS Load Balancer controller and for the connector's executor, and KMS keys for EBS volumes and for the object storage buckets.
 
 ### `existing-vpc` and `existing-eks` {#existing-infrastructure}
 
@@ -55,7 +55,7 @@ Neither root changes what it did not create: route tables, NAT gateways, endpoin
 For `existing-vpc`, the VPC must already provide:
 
 - DNS support and DNS hostnames enabled.
-- Two to four private subnets in at least two availability zones, with `map_public_ip_on_launch` off, routing to a NAT gateway or to interface endpoints for ECR, STS, EC2, CloudWatch Logs, SSM, SQS, KMS, and ELB. Add an S3 gateway endpoint; without it object storage traffic crosses the NAT gateways.
+- Two to four private subnets in at least two availability zones, with `map_public_ip_on_launch` off, routing to a NAT gateway or to interface endpoints for ECR, STS, EKS, EC2, CloudWatch Logs, SSM, SQS, KMS, and ELB. Add an S3 gateway endpoint; without it object storage traffic crosses the NAT gateways.
 - Public subnets only if you want internet-facing load balancers. Leave `public_subnet_ids` empty when the VPC has no public tier.
 
 For `existing-eks`, the cluster must already have:

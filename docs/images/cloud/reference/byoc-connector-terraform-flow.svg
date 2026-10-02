@@ -75,10 +75,12 @@
 
   <!-- init -->
   <rect x="320" y="390" width="240" height="130" rx="10" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.5"/>
-  <text x="440" y="422" text-anchor="middle" font-size="11" fill="#7d7d7d">You run</text>
-  <text x="440" y="448" text-anchor="middle" font-size="13.5" font-weight="600" font-family="'SF Mono', Menlo, Consolas, monospace" fill="#7d7d7d">clicklink clctl init</text>
-  <text x="440" y="470" text-anchor="middle" font-size="13.5" font-weight="600" font-family="'SF Mono', Menlo, Consolas, monospace" fill="#7d7d7d">--from-terraform</text>
-  <text x="440" y="496" text-anchor="middle" font-size="11" fill="#7d7d7d">cluster identity from the file</text>
+  <text x="440" y="414" text-anchor="middle" font-size="11" fill="#7d7d7d">You run</text>
+  <text x="440" y="438" text-anchor="middle" font-size="13.5" font-weight="600" font-family="'SF Mono', Menlo, Consolas, monospace" fill="#7d7d7d">clicklink clctl init</text>
+  <text x="440" y="458" text-anchor="middle" font-size="13.5" font-weight="600" font-family="'SF Mono', Menlo, Consolas, monospace" fill="#7d7d7d">--from-terraform</text>
+  <text x="440" y="478" text-anchor="middle" font-size="13.5" font-weight="600" font-family="'SF Mono', Menlo, Consolas, monospace" fill="#7d7d7d">--platform-bundle</text>
+  <text x="440" y="498" text-anchor="middle" font-size="11" fill="#7d7d7d">Helm: init installs the bundle</text>
+  <text x="440" y="512" text-anchor="middle" font-size="11" fill="#7d7d7d">VM: then platform approve --bundle</text>
 
   <line x1="560" y1="455" x2="664" y2="455" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
   <text x="600" y="438" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">install</text>
