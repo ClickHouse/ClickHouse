@@ -31,6 +31,7 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
             {"MultiPartUploadComplete", static_cast<Int8>(EventType::MultiPartUploadComplete)},
             {"MultiPartUploadAbort", static_cast<Int8>(EventType::MultiPartUploadAbort)},
             {"Read", static_cast<Int8>(EventType::Read)},
+            {"Copy", static_cast<Int8>(EventType::Copy)},
         });
 
     return ColumnsDescription
@@ -42,7 +43,7 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
         {"event_time", std::make_shared<DataTypeDateTime>(), "Time of the event."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Time of the event with microseconds precision."},
 
-        {"event_type", event_enum_type, "Type of the event. Possible values: 'Upload', 'Delete', 'MultiPartUploadCreate', 'MultiPartUploadWrite', 'MultiPartUploadComplete', 'MultiPartUploadAbort', 'Read'"},
+        {"event_type", event_enum_type, "Type of the event. Possible values: 'Upload', 'Delete', 'MultiPartUploadCreate', 'MultiPartUploadWrite', 'MultiPartUploadComplete', 'MultiPartUploadAbort', 'Read', 'Copy'"},
 
         {"query_id", std::make_shared<DataTypeString>(), "Identifier of the query associated with the event, if any."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Identifier of the thread performing the operation."},
@@ -52,7 +53,9 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
         {"bucket", std::make_shared<DataTypeString>(), "Name of the bucket."},
         {"remote_path", std::make_shared<DataTypeString>(), "Path to the remote resource."},
         {"local_path", std::make_shared<DataTypeString>(), "Path to the metadata file on the local system, which references the remote resource."},
-        {"data_size", std::make_shared<DataTypeUInt64>(), "Size of the data involved in the upload event."},
+        {"source_bucket", std::make_shared<DataTypeString>(), "Name of the bucket the object was copied from, for the 'Copy' event. Empty for other events."},
+        {"source_remote_path", std::make_shared<DataTypeString>(), "Path to the object the data was copied from, for the 'Copy' event. Empty for other events."},
+        {"data_size", std::make_shared<DataTypeUInt64>(), "Size of the data involved in the operation."},
         {"elapsed_microseconds", std::make_shared<DataTypeUInt64>(), "Elapsed time for the operation, in microseconds."},
 
         {"connection_id", std::make_shared<DataTypeUInt64>(), "Identifier of the HTTP connection that carried the operation, unique within the server process. Group by this to follow one connection: the OS recycles ports and socket inodes as soon as a socket closes, so those cannot tell consecutive connections apart. 0 if no single HTTP request can be attributed to this row: the operation used no HTTP connection; it used more than one - a retried write is logged as a single row whose elapsed time covers all of its attempts, and no single connection describes it; or it shared one request with other rows - a batched delete writes one `Delete` row per object and attributes the connection to the first of them only. All `connection_*` columns are meaningful only when `connection_id` is not 0; otherwise they are all 0."},
@@ -86,6 +89,8 @@ void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(bucket);
     columns[i++]->insert(remote_path);
     columns[i++]->insert(local_path);
+    columns[i++]->insert(source_bucket);
+    columns[i++]->insert(source_remote_path);
     columns[i++]->insert(data_size);
     columns[i++]->insert(elapsed_microseconds);
     columns[i++]->insert(connection_id);

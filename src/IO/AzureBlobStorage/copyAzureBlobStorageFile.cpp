@@ -12,6 +12,7 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromVector.h>
+#include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Common/getRandomASCIIString.h>
@@ -188,7 +189,7 @@ namespace
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                error_code = static_cast<Int32>(e.StatusCode);
+                error_code = getAzureErrorCodeForLog(e);
                 error_message = e.Message;
                 if (blob_storage_log)
                     blob_storage_log->addEvent(
@@ -202,6 +203,17 @@ namespace
                         error_message);
                 throw;
             }
+
+            if (blob_storage_log)
+                blob_storage_log->addEvent(
+                    BlobStorageLogElement::EventType::Upload,
+                    /* bucket */ dest_container_for_logging,
+                    /* remote_path */ dest_blob,
+                    /* local_path */ {},
+                    /* data_size */ total_size,
+                    watch.elapsedMicroseconds(),
+                    /* error_code */ 0,
+                    /* error_message */ {});
         }
 
         void completeMultipartUpload()
@@ -221,7 +233,7 @@ namespace
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                error_code = static_cast<Int32>(e.StatusCode);
+                error_code = getAzureErrorCodeForLog(e);
                 error_message = e.Message;
                 if (blob_storage_log)
                     blob_storage_log->addEvent(
@@ -328,7 +340,7 @@ namespace
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                error_code = static_cast<Int32>(e.StatusCode);
+                error_code = getAzureErrorCodeForLog(e);
                 error_message = e.Message;
                 if (blob_storage_log)
                     blob_storage_log->addEvent(
@@ -411,59 +423,82 @@ void copyAzureBlobStorageFile(
 
             auto source_uri = block_blob_client_src.GetUrl();
 
-            if (size < settings->max_single_part_copy_size)
+            Stopwatch watch;
+            auto log_copy = [&](Int32 error_code, const String & error_message)
             {
-                Azure::Storage::Blobs::CopyBlobFromUriOptions copy_options;
-                if (object_to_attributes.has_value())
-                {
-                    for (const auto & [key, value] : *object_to_attributes)
-                        copy_options.Metadata[key] = value;
-                }
+                if (blob_storage_log)
+                    blob_storage_log->addCopyEvent(
+                        src_container_for_logging, src_blob, dest_container_for_logging, dest_blob, size,
+                        watch.elapsedMicroseconds(), error_code, error_message);
+            };
 
-                LOG_TRACE(log, "Copy blob sync {} -> {}", src_blob, dest_blob);
-                block_blob_client_dest.CopyFromUri(source_uri, copy_options);
-            }
-            else
+            try
             {
-                Azure::Storage::Blobs::StartBlobCopyFromUriOptions copy_options;
-                if (object_to_attributes.has_value())
+                if (size < settings->max_single_part_copy_size)
                 {
-                    for (const auto & [key, value] : *object_to_attributes)
-                        copy_options.Metadata[key] = value;
-                }
+                    Azure::Storage::Blobs::CopyBlobFromUriOptions copy_options;
+                    if (object_to_attributes.has_value())
+                    {
+                        for (const auto & [key, value] : *object_to_attributes)
+                            copy_options.Metadata[key] = value;
+                    }
 
-                Azure::Storage::Blobs::StartBlobCopyOperation operation = block_blob_client_dest.StartCopyFromUri(source_uri, copy_options);
-
-                auto copy_response = operation.PollUntilDone(std::chrono::milliseconds(100));
-                auto properties_model = copy_response.Value;
-
-                auto copy_status = properties_model.CopyStatus;
-                auto copy_status_description = properties_model.CopyStatusDescription;
-
-                /// `CopySource` and `CopyStatusDescription` are optional in the properties of a blob:
-                /// the SDK models them as `Nullable`, and `Nullable::Value()` of an empty one aborts the
-                /// process in a release build (`AZURE_ASSERT_MSG` expands to a bare `std::abort` under
-                /// `NDEBUG`). The properties polled here come from the remote endpoint, which is under no
-                /// obligation to send either header, so nothing below dereferences them unchecked.
-                if (copy_status.HasValue() && copy_status.Value() == Azure::Storage::Blobs::Models::CopyStatus::Success)
-                {
-                    LOG_TRACE(log, "Copy of {} to {} finished", src_blob, dest_blob);
+                    LOG_TRACE(log, "Copy blob sync {} -> {}", src_blob, dest_blob);
+                    block_blob_client_dest.CopyFromUri(source_uri, copy_options);
                 }
                 else
                 {
-                    if (copy_status.HasValue())
-                        throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} failed with status {} description {} (operation is done {})",
-                                        src_blob, dest_blob, copy_status.Value().ToString(),
-                                        copy_status_description.HasValue() ? copy_status_description.Value() : String("<none>"),
-                                        operation.IsDone());
-                    throw Exception(
-                        ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
-                        "Copy from {} to {} didn't complete with success status (operation is done {})",
-                        src_blob,
-                        dest_blob,
-                        operation.IsDone());
+                    Azure::Storage::Blobs::StartBlobCopyFromUriOptions copy_options;
+                    if (object_to_attributes.has_value())
+                    {
+                        for (const auto & [key, value] : *object_to_attributes)
+                            copy_options.Metadata[key] = value;
+                    }
+
+                    Azure::Storage::Blobs::StartBlobCopyOperation operation = block_blob_client_dest.StartCopyFromUri(source_uri, copy_options);
+
+                    auto copy_response = operation.PollUntilDone(std::chrono::milliseconds(100));
+                    auto properties_model = copy_response.Value;
+
+                    auto copy_status = properties_model.CopyStatus;
+                    auto copy_status_description = properties_model.CopyStatusDescription;
+
+                    /// `CopySource` and `CopyStatusDescription` are optional in the properties of a blob:
+                    /// the SDK models them as `Nullable`, and `Nullable::Value()` of an empty one aborts the
+                    /// process in a release build (`AZURE_ASSERT_MSG` expands to a bare `std::abort` under
+                    /// `NDEBUG`). The properties polled here come from the remote endpoint, which is under no
+                    /// obligation to send either header, so nothing below dereferences them unchecked.
+                    if (copy_status.HasValue() && copy_status.Value() == Azure::Storage::Blobs::Models::CopyStatus::Success)
+                    {
+                        LOG_TRACE(log, "Copy of {} to {} finished", src_blob, dest_blob);
+                    }
+                    else
+                    {
+                        if (copy_status.HasValue())
+                            throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} failed with status {} description {} (operation is done {})",
+                                            src_blob, dest_blob, copy_status.Value().ToString(),
+                                            copy_status_description.HasValue() ? copy_status_description.Value() : String("<none>"),
+                                            operation.IsDone());
+                        throw Exception(
+                            ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                            "Copy from {} to {} didn't complete with success status (operation is done {})",
+                            src_blob,
+                            dest_blob,
+                            operation.IsDone());
+                    }
                 }
             }
+            catch (const Azure::Core::RequestFailedException & e)
+            {
+                log_copy(getAzureErrorCodeForLog(e), e.Message);
+                throw;
+            }
+            catch (...)
+            {
+                log_copy(static_cast<Int32>(getCurrentExceptionCode()), getCurrentExceptionMessage(false));
+                throw;
+            }
+            log_copy(0, {});
             is_native_copy_done = true;
         }
         catch (const Azure::Storage::StorageException & e)
