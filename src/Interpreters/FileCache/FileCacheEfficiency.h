@@ -51,6 +51,9 @@ public:
     void shiftTimeForTesting(std::chrono::milliseconds shift) { time_shift_for_testing_ms += shift.count(); }
 
 private:
+    /// Lazy: the first `currentWindow` or `getSnapshot` after the window ends freezes it, so a size
+    /// change before that still counts in it. The asynchronous metrics call `getSnapshot` on every
+    /// update, which bounds the lag.
     void rotateIfNeeded(Window now_window) TSA_REQUIRES(mutex);
 
     const UInt64 window_sec;
