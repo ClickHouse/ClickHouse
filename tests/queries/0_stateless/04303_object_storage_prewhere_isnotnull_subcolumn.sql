@@ -21,11 +21,11 @@ VALUES ('X', 1.5, 'baz'), ('Y', NULL, 'qux'), ('X', NULL, 'skip');
 -- All triggers are pinned so random-settings variants still reproduce the bug on unfixed builds:
 --   * `enable_analyzer = 1` / `optimize_functions_to_subcolumns = 1`: the `isNotNull(foo)` ->
 --     `not(foo.null)` rewrite runs only in the analyzer;
---   * `query_plan_enable_optimizations = 1` & `query_plan_optimize_prewhere = 1`: the analyzer
+--   * `query_plan_enable_optimizations = 1` & `optimize_move_to_prewhere = 1`: the analyzer
 --     `PREWHERE` push-down is gated on both (`optimize_prewhere = the two &&'d`);
 --   * `input_format_parquet_use_native_reader_v3 = 1`: the V3 reader that cannot supply `foo.null`.
 SELECT bar FROM t_04303
 WHERE key = 'X' AND foo IS NOT NULL
-SETTINGS input_format_parquet_use_native_reader_v3 = 1, optimize_move_to_prewhere = 1, optimize_functions_to_subcolumns = 1, enable_analyzer = 1, query_plan_enable_optimizations = 1, query_plan_optimize_prewhere = 1;
+SETTINGS input_format_parquet_use_native_reader_v3 = 1, optimize_move_to_prewhere = 1, optimize_functions_to_subcolumns = 1, enable_analyzer = 1, query_plan_enable_optimizations = 1;
 
 DROP TABLE t_04303;
