@@ -1070,7 +1070,7 @@ void resolveRowStoreGatherNode(
 {
     using enum GatherNode::Kind;
 
-    const char * const field = row_store.getRowAt(0) + access.field_offset;
+    const char * const field = row_store.size() ? row_store.getRowAt(0) + access.field_offset : nullptr;
     /// A nullable field spends its first byte on the null flag and the rest on the value.
     const size_t value_size = access.is_nullable ? access.field_size - 1 : access.field_size;
 
@@ -1120,7 +1120,7 @@ void resolveRowStoreGatherNode(
 
     node.data_by_block[block_no] = field;
     if (access.is_nullable)
-        node.children[0].data_by_block[block_no] = field + 1;
+        node.children[0].data_by_block[block_no] = field ? field + 1 : nullptr;
 }
 
 void gatherJoinOutputColumns(
