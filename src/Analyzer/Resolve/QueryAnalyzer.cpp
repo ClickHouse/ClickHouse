@@ -7353,6 +7353,8 @@ void QueryAnalyzer::applyReplaceTransformersToUnresolvedClauses(QueryNode & quer
             rewrite_clause(query_node_typed.getOrderByNode());
         if (query_node_typed.hasLimitBy())
             rewrite_clause(query_node_typed.getLimitByNode());
+        rewrite_clause(query_node_typed.getLimitAfter());
+        rewrite_clause(query_node_typed.getLimitUntil());
         /// Named WINDOW definitions (e.g. `WINDOW w AS (ORDER BY col)`) are resolved by
         /// resolveWindowNodeList after this helper runs, so their `col` references are still
         /// unresolved identifiers here and must be rewritten too. Without this the deferred path
