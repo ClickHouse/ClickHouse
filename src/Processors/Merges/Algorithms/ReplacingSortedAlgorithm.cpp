@@ -54,13 +54,13 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     if (!version_column.empty())
         version_column_number = header_->getPositionByName(version_column);
 
-    /// With a version or an is_deleted column every row of a run must be examined, and row
-    /// sources for a vertical merge must be recorded per row. Without them the only effect of
-    /// processing a row is replacing `selected_row` with it, so runs can be fast-forwarded.
+    /// With a version or an is_deleted column every row of a run must be examined. Without them
+    /// the only effect of processing a row is replacing `selected_row` with it, so runs can be
+    /// fast-forwarded.
     /// In the reverse reading order the first row of a run within a source wins instead of the
     /// last one, so the fast-forward to the last row of the run does not apply either.
     can_skip_to_run_end = version_column_number == -1 && is_deleted_column_number == -1
-        && out_row_sources_buf == nullptr && !enable_vertical_final && !read_in_reverse;
+        && !enable_vertical_final && !read_in_reverse;
     uses_runs_of_equal_keys = can_skip_to_run_end;
 }
 
@@ -322,6 +322,8 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
                 if (run_end > run_begin + 1)
                 {
                     /// Jump to the last row of the run; the loop processes it as usual.
+                    if (out_row_sources_buf)
+                        current_row_sources.resize_fill(current_row_sources.size() + (run_end - run_begin - 2), RowSourcePart(current->order, /*skip_flag=*/ true));
                     queue.next(run_end - 1 - run_begin);
                     continue;
                 }
