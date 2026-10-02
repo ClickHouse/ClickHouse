@@ -2338,6 +2338,10 @@ bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_
     if (!boost::iequals(storage->format_name, "Parquet"))
         return false;
 
+    /// The values of a Hive partition column come from the path, even when the file is read for it.
+    if (info.hive_partition_columns_to_read_from_file_path.contains(sort_column.name))
+        return false;
+
     /// The output header of this step is broader than what the format reads: `prepareReadingFromFormat`
     /// appends Hive partition columns (taken from the file path) and virtual columns (`_path`,
     /// `_file`, ...) after the format has produced its chunk, while the Parquet reader is built on

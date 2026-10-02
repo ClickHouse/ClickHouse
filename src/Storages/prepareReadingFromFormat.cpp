@@ -101,7 +101,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
         }
 
         /// If only virtual or hive partition columns were requested, just read the smallest column.
-        /// Hive partition columns are never read from the data file (see below), so prefer any other column.
+        /// Prefer a non-partition column: partition columns are dropped from the format header below.
         if (columns_to_read.empty())
         {
             NamesAndTypesList candidates;
@@ -127,6 +127,11 @@ ReadFromFormatInfo prepareReadingFromFormat(
         if (!hive_parameters.hive_partition_columns_to_read_from_file_path_map.contains(column.name))
             info.format_header.insert(ColumnWithTypeAndName{column.type, column.name});
     }
+
+    /// A structure of only hive partition columns: read them, an empty header yields no rows.
+    if (info.format_header.columns() == 0)
+        for (const auto & column : info.columns_description)
+            info.format_header.insert(ColumnWithTypeAndName{column.type, column.name});
 
     info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
 
