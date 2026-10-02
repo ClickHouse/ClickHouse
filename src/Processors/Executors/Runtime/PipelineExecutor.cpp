@@ -14,6 +14,7 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/logger_useful.h>
+#include <Processors/Executors/Runtime/ExecutionThreadContext.h>
 #include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/Executors/Runtime/ExecutingGraph.h>
 #include <QueryPipeline/printPipeline.h>
@@ -109,9 +110,8 @@ struct WorkloadResources
 };
 
 
-PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, const StepWallClockRegistry * step_wall_clock_registry_)
-    : step_wall_clock_registry(step_wall_clock_registry_)
-    , process_list_element(std::move(elem))
+PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem)
+    : process_list_element(std::move(elem))
 {
 
     if (process_list_element)
@@ -153,26 +153,16 @@ PipelineExecutor::~PipelineExecutor()
         process_list_element->removePipelineExecutor(this);
 }
 
-static IProcessor::CancelReason toCancelReason(PipelineExecutor::ExecutionStatus status)
+void PipelineExecutor::cancel(IProcessor::CancelReason reason)
 {
-    switch (status)
-    {
-        case PipelineExecutor::ExecutionStatus::CancelledByUser:    return IProcessor::CancelReason::CancelledByUser;
-        case PipelineExecutor::ExecutionStatus::CancelledByTimeout: return IProcessor::CancelReason::CancelledByTimeout;
-        case PipelineExecutor::ExecutionStatus::Exception:          return IProcessor::CancelReason::Exception;
-        default:                                                    return IProcessor::CancelReason::Unknown;
-    }
-}
+    if (reason == IProcessor::CancelReason::NotCancelled)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline executor cannot be cancelled without a reason");
 
-void PipelineExecutor::cancel(ExecutionStatus reason)
-{
-    /// It is allowed to cancel not started query by user.
-    if (reason == ExecutionStatus::CancelledByUser)
-        tryUpdateExecutionStatus(ExecutionStatus::NotStarted, reason);
-
-    tryUpdateExecutionStatus(ExecutionStatus::Executing, reason);
+    /// The first reason wins.
+    auto expected = IProcessor::CancelReason::NotCancelled;
+    cancel_reason.compare_exchange_strong(expected, reason);
     finish();
-    graph->cancel(toCancelReason(reason));
+    graph->cancel(reason);
 }
 
 void PipelineExecutor::cancelReading()
@@ -189,14 +179,11 @@ void PipelineExecutor::finish()
     tasks.finish();
 }
 
-bool PipelineExecutor::tryUpdateExecutionStatus(ExecutionStatus expected, ExecutionStatus desired)
-{
-    return execution_status.compare_exchange_strong(expected, desired);
-}
-
 void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
 {
-    checkTimeLimit();
+    if (process_list_element && !process_list_element->checkTimeLimit())
+        cancel(IProcessor::CancelReason::CancelledByTimeout);
+
     num_threads = std::max<size_t>(num_threads, 1);
 
     OpenTelemetry::SpanHolder span("PipelineExecutor::execute()");
@@ -248,36 +235,14 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
     return false;
 }
 
-bool PipelineExecutor::checkTimeLimitSoft()
-{
-    if (process_list_element)
-    {
-        bool continuing = process_list_element->checkTimeLimitSoft();
-
-        // We call cancel here so that all processors are notified and tasks waken up
-        // so that the "break" is faster and doesn't wait for long events
-        if (!continuing)
-            cancel(ExecutionStatus::CancelledByTimeout);
-
-        return continuing;
-    }
-
-    return true;
-}
-
-bool PipelineExecutor::checkTimeLimit()
-{
-    bool continuing = checkTimeLimitSoft();
-
-    if (!continuing)
-        process_list_element->checkTimeLimit(); // Will throw if needed
-
-    return continuing;
-}
-
 void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
 {
     read_progress_callback = std::move(callback);
+}
+
+void PipelineExecutor::setStepProfiler(StepProfilerPtr step_profiler_)
+{
+    step_profiler = std::move(step_profiler_);
 }
 
 void PipelineExecutor::finalizeExecution()
@@ -289,10 +254,13 @@ void PipelineExecutor::finalizeExecution()
         cpu_slots.reset();
     }
 
-    checkTimeLimit();
+    for (size_t thread_num = 0; thread_num < tasks.getNumThreads(); ++thread_num)
+        tasks.getThreadContext(thread_num).flushWorkIntervals();
 
-    auto status = execution_status.load();
-    if (status == ExecutionStatus::CancelledByTimeout || status == ExecutionStatus::CancelledByUser)
+    if (process_list_element)
+        process_list_element->checkTimeLimit();
+
+    if (cancel_reason.load() != IProcessor::CancelReason::NotCancelled)
         return;
 
     if (!graph->isAllFinished())
@@ -354,13 +322,16 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
         while (!tasks.isFinished() && context.hasTask() && !yield)
         {
             if (!context.executeTask())
-                cancel(ExecutionStatus::Exception);
+                cancel(IProcessor::CancelReason::Exception);
 
             if (tasks.isFinished())
                 break;
 
-            if (!checkTimeLimitSoft())
+            if (process_list_element && !process_list_element->checkTimeLimitSoft())
+            {
+                cancel(IProcessor::CancelReason::CancelledByTimeout);
                 break;
+            }
 
 #ifndef NDEBUG
             Stopwatch processing_time_watch;
@@ -381,7 +352,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 catch (...)
                 {
                     context.setException(std::current_exception());
-                    cancel(ExecutionStatus::Exception);
+                    cancel(IProcessor::CancelReason::Exception);
                 }
 
                 /// Push other tasks to global queue.
@@ -434,7 +405,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 {
                     /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
                     /// We should cancel execution properly before rethrow.
-                    cancel(ExecutionStatus::Exception);
+                    cancel(IProcessor::CancelReason::Exception);
                     throw;
                 }
                 break;
@@ -458,7 +429,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 {
                     /// renewCPULease() can throw an exception, for example RESOURCE_ACCESS_DENIED.
                     /// We should cancel execution properly before rethrow.
-                    cancel(ExecutionStatus::Exception);
+                    cancel(IProcessor::CancelReason::Exception);
                     throw;
                 }
             }
@@ -474,7 +445,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 {
                     /// syncMemory() can throw an exception, for example MEMORY_RESERVATION_KILLED.
                     /// We should cancel execution properly before rethrow.
-                    cancel(ExecutionStatus::Exception);
+                    cancel(IProcessor::CancelReason::Exception);
                     throw;
                 }
             }
@@ -594,7 +565,6 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
 void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_control)
 {
     is_execution_initialized = true;
-    tryUpdateExecutionStatus(ExecutionStatus::NotStarted, ExecutionStatus::Executing);
 
     /// Capture the ceiling so the upscaling block can cap `setMax` at this value.
     max_pipeline_threads = num_threads;
@@ -618,7 +588,8 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// use_threads should reflect number of thread spawned and can grow with tasks.upscale(...).
     /// Starting from 1 instead of 0 is to tackle the single thread scenario, where no upscale() will
     /// be invoked but actually 1 thread used.
-    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, step_wall_clock_registry, read_progress_callback.get());
+
+    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, read_progress_callback.get(), step_profiler.get());
     const size_t initial_parallel = tasks.fill(queue, async_queue);
 
     /// Initial queued parallelism never routes through `pushTasks`, so size setMax here to
@@ -709,7 +680,7 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
 
-        cancel(ExecutionStatus::Exception);
+        cancel(IProcessor::CancelReason::Exception);
         if (pool)
             pool->wait();
 
