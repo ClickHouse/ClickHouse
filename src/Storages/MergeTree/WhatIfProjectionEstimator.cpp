@@ -642,7 +642,7 @@ bool tryEstimateProjection(
     const ConditionTemplate<KeyCondition>::Ptr & part_offset_condition,
     const ConditionTemplate<KeyCondition>::Ptr & total_offset_condition,
     SortOrderHelp sort_help,
-    bool has_filter,
+    bool nothing_to_serve,
     std::string_view relaxing_setting,
     ReadFromMergeTree * read_step,
     const RangesInDataParts & baseline_parts,
@@ -844,7 +844,6 @@ bool tryEstimateProjection(
     }
 
     /// with `relaxing_setting` the optimizer takes any usable projection
-    const bool nothing_to_serve = !has_filter && sort_help != SortOrderHelp::Helps;
     if (!relaxing_setting.empty() && (result.verdict != "chosen" || nothing_to_serve))
     {
         String cost;
@@ -1080,8 +1079,10 @@ WhatIfCandidateResult evaluateProjection(
     const std::string_view relaxing_setting = !read_settings[Setting::prefer_optimize_projection] ? ""
         : force_requested ? "force_optimize_projection" : "prefer_optimize_projection";
 
-    /// same gate as the optimizer: needs a filter or a useful sort order
-    if (!filter_dag && sort_help != SortOrderHelp::Helps && relaxing_setting.empty())
+    /// same gate as the optimizer: a filter, or an `ORDER BY` with reading in order on, served or not
+    const bool nothing_to_serve
+        = !filter_dag && (sort_help == SortOrderHelp::NoOrderBy || sort_help == SortOrderHelp::ReadInOrderDisabled);
+    if (nothing_to_serve && relaxing_setting.empty())
     {
         result.not_applicable_reason = fmt::format("Query has no filter predicate, and {}", describe(sort_help));
         return result;
@@ -1093,7 +1094,7 @@ WhatIfCandidateResult evaluateProjection(
     {
         if (tryEstimateProjection(
                 result, *projection, key_condition ? &*key_condition : nullptr, part_offset_condition, total_offset_condition,
-                sort_help, filter_dag != nullptr, relaxing_setting, read_step, baseline_parts, analysis.selected_marks,
+                sort_help, nothing_to_serve, relaxing_setting, read_step, baseline_parts, analysis.selected_marks,
                 settings.projection_scan_budget_rows, context))
             return result;
         result.empirical_status = WhatIfCandidateResult::Unsupported;
