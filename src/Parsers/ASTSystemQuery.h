@@ -155,6 +155,7 @@ public:
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
+        RESET_FILELOG,
         STOP_ALL_BACKGROUND,
         START_ALL_BACKGROUND,
         PAUSE_ALL_BACKGROUND,
@@ -214,6 +215,11 @@ public:
     String schema_cache_format;
 
     String queue_path;
+
+    /// SYSTEM RESET FILELOG ... FILE 'name' [OFFSET n | TO END]
+    std::optional<String> filelog_file;
+    std::optional<UInt64> filelog_offset;
+    bool filelog_to_end = false;
 
     String fail_point_name;
 

@@ -359,10 +359,10 @@ void StorageFileLog::serialize() const
         serialize(inode, meta);
 }
 
-void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
+void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta, bool allow_lower_offset) const
 {
     auto full_path = getFullMetaPath(file_meta.file_name);
-    if (disk->existsFile(full_path))
+    if (!allow_lower_offset && disk->existsFile(full_path))
     {
         checkOffsetIsValid(file_meta.file_name, file_meta.last_writen_position);
     }
@@ -1016,7 +1016,7 @@ The `FileLog` engine records the offset it has consumed for a chunk before the i
 
 A loss of the OS page cache can additionally discard data that had already been written to the target table; examples are a device-level power loss and an unclean host or kernel reset. The metadata files holding the offsets are themselves written without an fsync of the file or of its directory, so they carry no durability guarantee of their own either.
 
-Unlike the message-broker engines, `FileLog` cannot be protected against this by making the target durable first. Because the offset is recorded from inside the reading pipeline, before the insert it belongs to has finished, setting `fsync_after_insert = 1` on the target `MergeTree` tables does not establish the inserted part as durable before the offset advances. Treat `FileLog` consumption as best-effort tailing of local files: where no rows may be lost, keep the source log files until the consumed data has been verified in the target, so that consumption can be repeated. Dropping and recreating the table discards the recorded offsets and re-reads the files from the beginning.
+Unlike the message-broker engines, `FileLog` cannot be protected against this by making the target durable first. Because the offset is recorded from inside the reading pipeline, before the insert it belongs to has finished, setting `fsync_after_insert = 1` on the target `MergeTree` tables does not establish the inserted part as durable before the offset advances. Treat `FileLog` consumption as best-effort tailing of local files: where no rows may be lost, keep the source log files until the consumed data has been verified in the target, so that consumption can be repeated. [SYSTEM RESET FILELOG](/reference/statements/system#reset-filelog), or dropping and recreating the table, discards the recorded offsets and re-reads the files from the beginning.
 )DOCS_MD",
             .syntax = "ENGINE = FileLog('path_to_logs', 'format') SETTINGS ...",
             .related = {"Kafka", "RabbitMQ", "NATS"}});
@@ -1202,6 +1202,52 @@ bool StorageFileLog::updateFileInfos()
     chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
     return events.empty() || file_infos.file_names.empty();
+}
+
+void StorageFileLog::resetReadPosition(const std::optional<String> & file_name, std::optional<UInt64> offset)
+{
+    {
+        std::lock_guard lock(file_infos_mutex);
+        /// The sources of a direct SELECT use `file_infos` without the mutex.
+        if (running_streams)
+            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot reset table {} while a SELECT query reads from it", getStorageID().getNameForLogs());
+
+        updateFileInfos();
+
+        auto set_read_position = [&](const String & name, FileContext & file_ctx, UInt64 new_offset)
+        {
+            auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
+            FileMeta new_meta = meta;
+            new_meta.last_writen_position = new_offset;
+            serialize(file_ctx.inode, new_meta, /* allow_lower_offset = */ true);
+            meta = std::move(new_meta);
+            file_ctx.status = FileStatus::UPDATED;
+            LOG_INFO(log, "File {} will be read from offset {}", name, new_offset);
+        };
+
+        if (!file_name)
+        {
+            chassert(offset == 0);
+            for (const auto & name : file_infos.file_names)
+                set_read_position(name, findInMap(file_infos.context_by_name, name), 0);
+        }
+        else
+        {
+            auto it = file_infos.context_by_name.find(*file_name);
+            if (it == file_infos.context_by_name.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} does not read a file named '{}'", getStorageID().getNameForLogs(), *file_name);
+            auto size = tryGetSizeFromFilePath(getFullDataPath(*file_name));
+            if (!size)
+                throw Exception(ErrorCodes::CANNOT_STAT, "Cannot get the size of file {}", getFullDataPath(*file_name));
+            if (offset && *offset > *size)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Offset {} is beyond the end of file {} ({} bytes)", *offset, *file_name, *size);
+            set_read_position(*file_name, it->second, offset.value_or(*size));
+        }
+    }
+    /// The background task may be waiting for a directory event or sleeping until its next poll.
+    wakeUp();
+    if (task)
+        task->holder->schedule();
 }
 
 }

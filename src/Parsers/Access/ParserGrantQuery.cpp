@@ -525,6 +525,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SYSTEM REPLICATION QUEUES`
     - `SYSTEM REPLICA READINESS`
     - `SYSTEM RESET DDL WORKER`
+    - `SYSTEM RESET FILELOG`
     - `SYSTEM RESTART DISK`
     - `SYSTEM RESTART REPLICA`
     - `SYSTEM RESTORE REPLICA`
