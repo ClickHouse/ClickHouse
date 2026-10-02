@@ -20,12 +20,16 @@ namespace
 {
     /// Keys of a dictionary source whose value must not be shown. Besides the password, this covers
     /// the TLS credentials that are given as the contents of a certificate or a key file (a path is
-    /// not accepted from a `CREATE DICTIONARY` query in the first place).
+    /// not accepted from a `CREATE DICTIONARY` query in the first place), and the custom HTTP headers
+    /// of the `HTTP` source, whose values often carry API tokens. The headers are hidden as a whole,
+    /// names included: the query is logged before the dictionary source validates its structure,
+    /// so a malformed definition must not leak either.
     bool isSecretKey(const String & key)
     {
         return key == "password"
             || key == "ssl_ca_pem" || key == "ssl_cert_pem" || key == "ssl_key_pem"
-            || key == "sslrootcert_pem" || key == "sslcert_pem" || key == "sslkey_pem";
+            || key == "sslrootcert_pem" || key == "sslcert_pem" || key == "sslkey_pem"
+            || key == "headers" || key == "header";
     }
 }
 
@@ -56,7 +60,9 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
 
-    first = r.getString("first");
+    /// The SQL parser lower-cases the key (see `ParserKeyValuePair`), and the checks for secret keys in
+    /// `formatImpl` and `hasSecretParts` rely on it, so canonicalize it the same way here.
+    first = Poco::toLower(r.getString("first"));
     if (first.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'first' in ASTPair during AST JSON deserialization");
 
@@ -65,6 +71,17 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
     auto child = r.readChild("second");
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'second' in ASTPair during AST JSON deserialization");
+
+    /// `ParserKeyValuePair` puts the value in brackets exactly when it is a list of pairs.
+    const auto * list = child->as<ASTExpressionList>();
+    if (second_with_brackets != (list != nullptr))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'second_with_brackets' of ASTPair must be set exactly when 'second' is a list during AST JSON deserialization");
+    if (list)
+        for (const auto & element : list->children)
+            if (!element || !element->as<ASTPair>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'second' of ASTPair must contain only key-value pairs during AST JSON deserialization");
     set(second, child);
 }
 
