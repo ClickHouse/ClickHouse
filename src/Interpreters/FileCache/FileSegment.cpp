@@ -1416,6 +1416,7 @@ FileSegmentEfficiencyInfo FileSegment::getEfficiencyInfo(const FileSegmentGuard:
     {
         info.last_hit_windows_ago = live_window - last_hit_window;
         info.last_hit_active_bytes = hit_in_live_window ? previous_active_bytes : getActiveBytesUnlocked();
+        info.last_hit_passive_bytes = downloaded - std::min<size_t>(info.last_hit_active_bytes, downloaded);
     }
     return info;
 }
