@@ -44,6 +44,8 @@ SELECT count() FROM (SELECT n.c FROM t_nested ARRAY JOIN n);
 SELECT count() FROM (SELECT c FROM (SELECT n.a AS a, n.c AS c FROM t_nested ARRAY JOIN n));
 CREATE VIEW v_nested AS SELECT n.a AS a, n.c AS c FROM t_nested ARRAY JOIN n;
 SELECT count() FROM (SELECT c FROM v_nested LIMIT 100000);
+SELECT count() FROM (SELECT c FROM view(SELECT n.a AS a, n.c AS c FROM t_nested ARRAY JOIN n) LIMIT 100000);
+SELECT count() FROM (SELECT id FROM t_smallest WHERE id = 0 UNION ALL SELECT c FROM v_nested) SETTINGS query_plan_remove_unused_columns = 0;
 SELECT count() FROM (SELECT toString(number) AS s, number FROM t_num ORDER BY number WITH FILL FROM 0 TO 10) SETTINGS query_plan_remove_unused_columns = 0;
 SELECT count() FROM (SELECT [number] AS s, number AS n FROM t_num ORDER BY n WITH FILL FROM 0 TO 10 INTERPOLATE (s AS arrayConcat(s, [1]))) SETTINGS query_plan_remove_unused_columns = 0;
 SELECT count() FROM (SELECT [id] AS a, id FROM t_smallest ORDER BY id WITH FILL FROM 0 TO 300 INTERPOLATE (a AS arrayConcat(a, [1])))
