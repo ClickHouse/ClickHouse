@@ -45,10 +45,12 @@ void Peers::advancePeerGroupBounds(const SlidingBlocks & blocks, const Partition
     peers_bounds.fully_visible = peers_bounds.end.location < partition.end || partition.fully_visible;
 }
 
-void Peers::advanceCurrentRow(const SlidingBlocks & blocks)
+void Peers::advanceCurrentRow(const SlidingBlocks & blocks, const PartitionBounds & partition)
 {
     current_row.location = blocks.next(current_row.location);
     current_row.row_index_in_partition += 1;
+    if (current_row.location < partition.end)
+        advancePeerGroupBounds(blocks, partition);
 }
 
 const RowPoint & Peers::current() const

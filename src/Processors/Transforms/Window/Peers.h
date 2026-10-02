@@ -19,7 +19,7 @@ class Peers
 public:
     void enterPartition(const SlidingBlocks & blocks, const PartitionBounds & partition);
     void advancePeerGroupBounds(const SlidingBlocks & blocks, const PartitionBounds & partition);
-    void advanceCurrentRow(const SlidingBlocks & blocks);
+    void advanceCurrentRow(const SlidingBlocks & blocks, const PartitionBounds & partition);
 
     const RowPoint & current() const;
     const PeersBounds & bounds() const;

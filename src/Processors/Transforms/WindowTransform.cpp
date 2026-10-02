@@ -69,12 +69,12 @@ void checkInvariants(
 
     chassert(partition.start <= peer_group.start.location);
     chassert(peer_group.start.location <= current.location);
-    chassert(current.location < partition.end);
+    chassert(current.location <= partition.end);
     chassert(peer_group.start.peer_group_index_in_partition == current.peer_group_index_in_partition);
     chassert(current.peer_group_index_in_partition <= current.row_index_in_partition);
     if (peer_group.fully_visible)
     {
-        chassert(current.location < peer_group.end.location);
+        chassert(current.location < peer_group.end.location || current.location == partition.end);
         chassert(peer_group.end.location <= partition.end);
     }
 
@@ -326,11 +326,12 @@ void WindowTransform::computeReadyRows()
         // which is precisely the definition of the known end of the partition.
         while (peers.current().location < partition_end)
         {
+            peers.advancePeerGroupBounds(blocks, partition.bounds());
             checkInvariants(blocks, next_output_block_number, partition.bounds(), peers, frame.bounds(), prev_frame);
 
-            // We now know that the current row is valid, so its peer group and frame can be found.
-            peers.advancePeerGroupBounds(blocks, partition.bounds());
             frame.advance(blocks, peers.current(), partition.bounds());
+            checkInvariants(blocks, next_output_block_number, partition.bounds(), peers, frame.bounds(), prev_frame);
+
             if (!frame.bounds().fully_visible)
             {
                 // Wait for more input data to find the frame.
@@ -338,10 +339,6 @@ void WindowTransform::computeReadyRows()
                 chassert(!partition.bounds().fully_visible);
                 return;
             }
-
-            // The frame can be empty sometimes, e.g. the boundaries coincide
-            // or the start is after the partition end.
-            checkInvariants(blocks, next_output_block_number, partition.bounds(), peers, frame.bounds(), prev_frame);
 
             // Now that we know the new frame boundaries, update the aggregation
             // states. Theoretically we could do this simultaneously with moving
@@ -373,9 +370,8 @@ void WindowTransform::computeReadyRows()
             prev_frame = frame.bounds();
 
             // Move to the next row. The frame will have to be recalculated.
-            // The peer group start is updated at the beginning of the loop,
-            // because the current row might now be past-the-end.
-            peers.advanceCurrentRow(blocks);
+            peers.advanceCurrentRow(blocks, partition.bounds());
+            checkInvariants(blocks, next_output_block_number, partition.bounds(), peers, frame.bounds(), prev_frame);
         }
 
         if (input_is_finished)
