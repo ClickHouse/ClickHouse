@@ -53,6 +53,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
+#include <Common/ThreadStatus.h>
 #include <Common/thread_local_rng.h>
 #include <base/sleep.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -122,6 +123,7 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -1389,6 +1391,15 @@ static std::unordered_map<String, size_t> getStreamCounts(
             continue;
         }
 
+        /// Only a column the part physically holds has streams to count. The name of an absent
+        /// column must not be looked up in the part's serializations: a column named like a
+        /// subcolumn of another column (`a.size0` next to an `Array` column `a`) resolves to that
+        /// subcolumn's serialization, and the streams enumerated from it are the other column's.
+        /// Counting them here would mark the array's offsets as rewritten by the mutation and
+        /// skip hardlinking them, leaving the new part without them.
+        if (!data_part->getColumns().contains(column_name))
+            continue;
+
         if (auto serialization = data_part->tryGetSerialization(column_name))
         {
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
@@ -1521,6 +1532,21 @@ static NameToNameVector collectFilesForRenames(
     NameToNameVector rename_vector;
     NameSet collected_names;
 
+    /// The serialization of a column the source part physically holds, or nothing when the part does
+    /// not hold it. The name must not be looked up in the part's serializations in the latter case: a
+    /// column named like a subcolumn of another column (`a.size0` next to an `Array` column `a`)
+    /// resolves to that subcolumn's serialization when the column itself is not stored in the part
+    /// (it is there only as a missing-column marker), and the streams enumerated from it are the
+    /// other column's - removing or renaming them would take the array's offsets away and leave the
+    /// part unreadable.
+    const auto & source_part_columns = source_part->getColumns();
+    auto try_get_serialization_of_stored_column = [&](const String & column_name) -> SerializationPtr
+    {
+        if (!source_part_columns.contains(column_name))
+            return nullptr;
+        return source_part->tryGetSerialization(column_name);
+    };
+
     auto add_rename = [&rename_vector, &collected_names] (const std::string & file_rename_from, const std::string & file_rename_to)
     {
         if (collected_names.emplace(file_rename_from).second)
@@ -1623,7 +1649,7 @@ static NameToNameVector collectFilesForRenames(
                     }
                 };
 
-                if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                if (auto serialization = try_get_serialization_of_stored_column(command.column_name))
                     serialization->enumerateStreams(callback);
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
@@ -1686,7 +1712,7 @@ static NameToNameVector collectFilesForRenames(
                         }
                     };
 
-                    if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                    if (auto serialization = try_get_serialization_of_stored_column(command.column_name))
                         serialization->enumerateStreams(callback);
                 }
             }
@@ -2085,6 +2111,13 @@ struct MutationContext
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<MergeTreeIndexPtr> text_indices_to_recalc;
     std::set<MergeTreeIndexPtr> indices_to_drop;
+    /// The expressions of `indices_to_recalc` and `text_indices_to_recalc`, materialized into the
+    /// block so that the writer reuses them instead of evaluating them itself. Held here rather
+    /// than appended where they are collected, because they have to be evaluated on the block the
+    /// TTL has already worked on - a column TTL resets its column, and a `MATERIALIZED` column
+    /// derived from it is recomputed, so an expression evaluated before that describes the old
+    /// values while the part stores the new ones.
+    ASTPtr indices_recalc_expr_list;
     /// True iff at least one index that currently lives inside the source part's skp_idx.packed
     /// is being recomputed or dropped. When set, the mutation rebuilds the archive (writer side)
     /// and stops hardlinking the source's archive (see collectFilesToSkip).
@@ -2696,6 +2729,23 @@ static bool hasAnyIndexFileOnDisk(
     }
 
     return false;
+}
+
+/// Materializes the skip index expressions collected for this mutation into the block. Must run
+/// after the TTL transforms: the writer reuses whatever expression column it finds in the block, so
+/// evaluating it earlier writes an index that describes the pre-TTL values of a column the TTL reset
+/// or of a `MATERIALIZED` column recomputed from one - the index then prunes granules that do match.
+static void addIndicesRecalculationTransform(QueryPipelineBuilder & builder, const MutationContextPtr & ctx)
+{
+    if (!ctx->indices_recalc_expr_list)
+        return;
+
+    auto syntax_result
+        = TreeRewriter(ctx->context).analyze(ctx->indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
+    auto expression = ExpressionAnalyzer(ctx->indices_recalc_expr_list, syntax_result, ctx->context).getActions(false);
+
+    builder.addTransform(std::make_shared<ExpressionTransform>(builder.getSharedHeader(), expression));
+    builder.addTransform(std::make_shared<MaterializingTransform>(builder.getSharedHeader()));
 }
 
 class MutateAllPartColumnsTask : public IExecutableTask
@@ -3453,6 +3503,8 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
+            addIndicesRecalculationTransform(*builder, ctx);
+
             /// Some columns may be present in the interpreter output only for
             /// projection/index recalculation (e.g. CLEAR COLUMN provides a default
             /// value so that dependent projections are rebuilt correctly). Such columns
@@ -3746,6 +3798,22 @@ MutateTask::MutateTask(
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
+
+    /// Lets the worker threads of long single-block steps (e.g. vector similarity index build) stop on cancellation.
+    /// Same condition as `checkOperationIsNotCanceled`.
+    auto mutation_cancelled = [merges_blocker = ctx->merges_blocker,
+        partition_id = ctx->future_part->part_info.getPartitionId(),
+        mutate_entry = ctx->mutate_entry]
+    {
+        return merges_blocker->isCancelledForPartition(partition_id) || (*mutate_entry)->is_cancelled;
+    };
+    (*ctx->mutate_entry)->thread_group->setQueryCancellationPredicates(
+        mutation_cancelled,
+        [mutation_cancelled]
+        {
+            if (mutation_cancelled())
+                throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+        });
 }
 
 
@@ -4161,17 +4229,12 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
     if ((!ctx->indices_to_recalc.empty() || !ctx->text_indices_to_recalc.empty()) && builder.initialized())
     {
-        auto indices_recalc_syntax
-            = TreeRewriter(ctx->context).analyze(indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
-        auto indices_recalc_expr = ExpressionAnalyzer(indices_recalc_expr_list, indices_recalc_syntax, ctx->context).getActions(false);
-
         /// We can update only one column, but some skip idx expression may depend on several
         /// columns (c1 + c2 * c3). It works because this stream was created with help of
         /// MutationsInterpreter which knows about skip indices and stream 'in' already has
         /// all required columns.
         /// TODO move this logic to single place.
-        builder.addTransform(std::make_shared<ExpressionTransform>(builder.getSharedHeader(), indices_recalc_expr));
-        builder.addTransform(std::make_shared<MaterializingTransform>(builder.getSharedHeader()));
+        ctx->indices_recalc_expr_list = indices_recalc_expr_list;
     }
 }
 }
@@ -4459,6 +4522,13 @@ bool MutateTask::prepare()
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, rewrites_all_columns);
+
+    /// A part cannot be left with no columns: it could not be loaded or read.
+    if (new_columns.empty())
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+            "Cannot mutate part {}: none of its columns ({}) would remain, because the table does not have them "
+            "or the mutation removes them. Empty parts are not allowed",
+            ctx->source_part->name, fmt::join(ctx->source_part->getColumns().getNames(), ", "));
 
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());
     if (!new_columns_substreams.empty())
