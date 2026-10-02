@@ -1973,24 +1973,17 @@ value: 993
 
 ### Compaction {#iceberg-writes-compaction}
 
-ClickHouse supports compaction iceberg table. Currently, it can merge position delete files into data files while updating metadata. Previous snapshot IDs and timestamps remain unchanged, so the time-travel feature can still be used with the same values.
+Data compaction (merging position delete files into data files) is not implemented in the open-source build: `OPTIMIZE TABLE` on an Iceberg table reports `NOT_IMPLEMENTED` there. It does not publish the rewritten generation atomically, so which generation a reader resolves is undefined.
 
-How to use it:
+Manifest compaction consolidates a table's manifest files. It requires Iceberg format version 2: version 1 and version 3 tables are rejected. An encrypted table whose data files carry per-file `key_metadata` is rejected too when its manifests need rewriting.
 
 ```sql
 SET allow_experimental_iceberg_compaction = 1
 
-OPTIMIZE TABLE iceberg_writes_example;
-
-SELECT *
-FROM iceberg_writes_example
-FORMAT VERTICAL;
-
-Row 1:
-──────
-x: Ivanov
-y: 993
+OPTIMIZE TABLE iceberg_writes_example MANIFEST;
 ```
+
+To reclaim files, use [`expire_snapshots`](#iceberg-expire-snapshots). It requires format version 2, and rejects tables backed by a transactional catalog.
 
 ### Expire Snapshots {#iceberg-expire-snapshots}
 
@@ -2112,6 +2105,7 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 
 <Note>
 - Only Iceberg format version 2 tables are supported (v1 snapshots do not guarantee `manifest-list`, which is required to safely identify files for cleanup)
+- Tables backed by a transactional catalog are rejected with `NOT_IMPLEMENTED`
 - The current snapshot is always preserved, even if it is older than the specified timestamp
 - Requires the `allow_insert_into_iceberg` setting to be enabled
 - Requires the `allow_experimental_expire_snapshots` setting to be enabled
@@ -2273,6 +2267,12 @@ For `paimonS3`, an optional `extra_credentials` parameter can be used to pass a 
 ### Returned value {#returned-value}
 
 A table with the specified structure for reading data in the specified Paimon table.
+
+## Limitations {#limitations}
+
+Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
+snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
+declares `primary-key` therefore throws.
 
 ## Defining a named collection {#defining-a-named-collection}
 

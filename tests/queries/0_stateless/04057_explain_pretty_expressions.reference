@@ -122,13 +122,15 @@ ReadFromMergeTree (default.t1)
 Output: count()
 
 Aggregating
-│  Keys: arrayJoin(array(a, a + 1, a + 2))
+│  Keys: array(a, a + 1, a + 2)
 │  Aggregates: count()
 │  Skip merging: 0
-└──ReadFromMergeTree (default.t1)
-      Read type: Default
-      Parts: 1 | Granules: 1
-      Output: a
+└──ArrayJoin (ARRAY JOIN)
+   │  ARRAY JOIN array(a, a + 1, a + 2)
+   └──ReadFromMergeTree (default.t1)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: a
 --- DateTime constant ---
 Output: a, b, c, d, dt
 
