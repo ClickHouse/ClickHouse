@@ -6,10 +6,9 @@ reason: 1 mark would be read instead of 3 from the base table
 status: applicable
 verdict: chosen (forced)
 reason: `force_optimize_projection = 1` overrides the cost; the projection reads 2 marks instead of 1 from the base table
--- IN subquery without PREWHERE, the set has its own plan step
+-- IN subquery without PREWHERE, the set has its own plan step, and the statement does not fail
 status: applicable
 verdict: chosen (forced)
-reason: `force_optimize_projection = 1` overrides the cost; the projection reads 2 marks instead of 1 from the base table
 -- force_optimize_projection in the subquery only, the cost decides the outer read
 status: applicable
 verdict: not chosen
