@@ -292,6 +292,12 @@ bool StorageBuffer::isRemote() const
     return destination && destination->isRemote();
 }
 
+bool StorageBuffer::readRequiresAnalyzedQuery() const
+{
+    auto destination = getDestinationTable();
+    return destination && destination->readRequiresAnalyzedQuery();
+}
+
 void StorageBuffer::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -1624,6 +1630,7 @@ void registerStorageBuffer(StorageFactory & factory)
 
             auto destination_metadata = destination->getInMemoryMetadataPtr(structure_context, false);
             columns = destination_metadata->getColumns();
+            columns.clearColumnTTLs();
         }
 
         return std::make_shared<StorageBuffer>(
