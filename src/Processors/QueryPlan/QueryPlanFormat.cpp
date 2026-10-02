@@ -2,6 +2,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/HiddenSecret.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
@@ -203,7 +204,7 @@ namespace QueryPlanFormat
             /// placeholder but which was reached without the flag (e.g. an aliased column keeps its own
             /// name, so the flag is what catches it there).
             if (node->is_masked_secret)
-                return "[HIDDEN]";
+                return String(HIDDEN_SECRET);
             if (node->result_name.contains("[HIDDEN"))
                 return node->result_name;
 
@@ -322,7 +323,7 @@ namespace QueryPlanFormat
         /// column, not only a COLUMN node) must render as `[HIDDEN]` regardless of its node type,
         /// before we dispatch into formatting its value or its child expression.
         if (node->is_masked_secret)
-            return "[HIDDEN]";
+            return String(HIDDEN_SECRET);
 
         switch (node->type)
         {

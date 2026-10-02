@@ -811,6 +811,7 @@ void registerStorageMemory(StorageFactory & factory)
 
         return std::make_shared<StorageMemory>(args.table_id, args.columns, args.constraints, args.comment, settings);
     },
+    SecretArgumentsSpec{},
     {
         .supports_settings = true,
         .supports_parallel_insert = true,

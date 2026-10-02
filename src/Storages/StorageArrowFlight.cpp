@@ -358,6 +358,8 @@ void registerStorageArrowFlight(StorageFactory & factory)
                 args.constraints,
                 args.getLocalContext());
         },
+        /// ArrowFlight('host:port', 'dataset', 'username', 'password')
+        SecretArgumentsSpec{.positional_secret_slots = {3}, .secret_keys = {"password"}},
         {
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::ARROW_FLIGHT,

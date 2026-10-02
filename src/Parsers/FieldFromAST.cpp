@@ -3,6 +3,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/isDiskFunction.h>
+#include <Common/HiddenSecret.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 
@@ -84,7 +85,7 @@ public:
 
                 const std::string & key = key_identifier->name();
                 if (is_secret_arg(key))
-                    function_args[1] = make_intrusive<ASTLiteral>("[HIDDEN]");
+                    function_args[1] = make_intrusive<ASTLiteral>(String(HIDDEN_SECRET));
             }
         }
     }

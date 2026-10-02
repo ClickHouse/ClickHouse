@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Common/IFactoryWithAliases.h>
 #include <Common/NamePrompter.h>
@@ -22,6 +23,7 @@ struct TableFunctionFactoryData
 {
     TableFunctionCreator creator;
     FunctionDocumentation documentation;
+    SecretArgumentsSpec secret_arguments;
     TableFunctionProperties properties;
 
     TableFunctionFactoryData() = default;
@@ -30,8 +32,11 @@ struct TableFunctionFactoryData
 
     template <typename Creator>
         requires (!std::is_same_v<Creator, TableFunctionFactoryData>)
-    TableFunctionFactoryData(Creator creator_, FunctionDocumentation documentation_, TableFunctionProperties properties_ = {}) /// NOLINT
-        : creator(std::forward<Creator>(creator_)), documentation(std::move(documentation_)), properties(std::move(properties_))
+    TableFunctionFactoryData(Creator creator_, FunctionDocumentation documentation_, SecretArgumentsSpec secret_arguments_, TableFunctionProperties properties_ = {}) /// NOLINT
+        : creator(std::forward<Creator>(creator_))
+        , documentation(std::move(documentation_))
+        , secret_arguments(std::move(secret_arguments_))
+        , properties(std::move(properties_))
     {
     }
 };
@@ -49,11 +54,15 @@ public:
     void registerFunction(const std::string & name, Value value, Case case_sensitiveness = Case::Sensitive);
 
     template <typename Function>
-    void registerFunction(FunctionDocumentation documentation, TableFunctionProperties properties = {}, Case case_sensitiveness = Case::Sensitive)
+    void registerFunction(
+        FunctionDocumentation documentation,
+        SecretArgumentsSpec secret_arguments,
+        TableFunctionProperties properties = {},
+        Case case_sensitiveness = Case::Sensitive)
     {
         auto creator = []() -> TableFunctionPtr { return std::make_shared<Function>(); };
         registerFunction(Function::name,
-                         TableFunctionFactoryData(std::move(creator), std::move(documentation), {std::move(properties)}) ,
+                         TableFunctionFactoryData(std::move(creator), std::move(documentation), std::move(secret_arguments), {std::move(properties)}),
                          case_sensitiveness);
     }
 
@@ -65,11 +74,14 @@ public:
 
     std::optional<FunctionDocumentation> tryGetDocumentation(const String & name) const;
     std::optional<TableFunctionProperties> tryGetProperties(const String & name) const;
+    const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & name) const;
 
     bool isTableFunctionName(const std::string & name) const;
 
-private:
     using TableFunctions = std::unordered_map<std::string, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    const TableFunctions & getAllTableFunctions() const { return table_functions; }
+
+private:
 
     const TableFunctions & getMap() const override { return table_functions; }
 

@@ -94,6 +94,9 @@
 
 #include <TableFunctions/TableFunctionView.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/KnownObjectNames.h>
+#include <Core/QualifiedTableName.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Storages/Distributed/parseRemoteFunctionArguments.h>
 
 #include <Storages/buildQueryTreeForShard.h>
@@ -2142,6 +2145,114 @@ static void finalizeDistributedSettings(DistributedSettings & distributed_settin
             = context->getSettingsRef()[Setting::distributed_background_insert_max_sleep_time_ms];
 }
 
+namespace
+{
+
+bool tryGetDatabaseNameOrQualifiedTableName(
+    const FunctionSecretArgumentsFinder & finder,
+    size_t arg_idx,
+    std::optional<String> & res_database,
+    std::optional<QualifiedTableName> & res_qualified_table_name)
+{
+    res_database.reset();
+    res_qualified_table_name.reset();
+
+    String str;
+    if (!finder.tryGetStringFromArgument(arg_idx, &str, /* allow_identifier= */ true))
+        return false;
+
+    if (str.empty())
+    {
+        res_database = "";
+        return true;
+    }
+
+    auto qualified_table_name = QualifiedTableName::tryParseFromString(str);
+    if (!qualified_table_name)
+        return false;
+
+    if (qualified_table_name->database.empty())
+        res_database = std::move(qualified_table_name->table);
+    else
+        res_qualified_table_name = std::move(qualified_table_name);
+    return true;
+}
+
+void findRemoteFunctionSecretArguments(FunctionSecretArgumentsFinder & finder)
+{
+    /// We're going to replace 'password' with '[HIDDEN'] for the following signatures:
+    /// remote('addresses_expr', db.table, 'user' [, 'password'] [, sharding_key])
+    /// remote('addresses_expr', 'db', 'table', 'user' [, 'password'] [, sharding_key])
+    /// remote('addresses_expr', table_function(), 'user' [, 'password'] [, sharding_key])
+
+    /// But we should check the number of arguments first because we don't need to do any replacements in case of
+    /// remote('addresses_expr', db.table)
+    if (finder.function->arguments->size() < 3)
+        return;
+
+    size_t arg_num = 1;
+
+    /// Skip 1 or 2 arguments with table_function() or db.table or 'db', 'table'.
+    auto table_function = finder.function->arguments->at(arg_num)->getFunction();
+    if (table_function && KnownTableFunctionNames::instance().exists(table_function->name()))
+    {
+        ++arg_num;
+    }
+    else
+    {
+        std::optional<String> database;
+        std::optional<QualifiedTableName> qualified_table_name;
+        if (!tryGetDatabaseNameOrQualifiedTableName(finder, arg_num, database, qualified_table_name))
+        {
+            /// We couldn't evaluate the argument so we don't know whether it is 'db.table' or just 'db'.
+            /// Hence we can't figure out whether we should skip one argument 'user' or two arguments 'table', 'user'
+            /// before the argument 'password'. So it's safer to wipe two arguments just in case.
+            /// The last argument can be also a `sharding_key`, so we need to check that argument is a literal string
+            /// before wiping it (because the `password` argument is always a literal string).
+            if (finder.tryGetStringFromArgument(arg_num + 2, nullptr, /* allow_identifier= */ false))
+            {
+                /// Wipe either `password` or `user`.
+                finder.markSecretArgument(arg_num + 2);
+            }
+            if (finder.tryGetStringFromArgument(arg_num + 3, nullptr, /* allow_identifier= */ false))
+            {
+                /// Wipe either `password` or `sharding_key`.
+                finder.markSecretArgument(arg_num + 3);
+            }
+            return;
+        }
+
+        /// Skip the current argument (which is either a database name or a qualified table name).
+        ++arg_num;
+        if (database)
+        {
+            /// Skip the 'table' argument if the previous argument was a database name.
+            ++arg_num;
+        }
+    }
+
+    /// Skip username.
+    ++arg_num;
+
+    /// Do our replacement:
+    /// remote('addresses_expr', db.table, 'user', 'password', ...) -> remote('addresses_expr', db.table, 'user', '[HIDDEN]', ...)
+    /// The last argument can be also a `sharding_key`, so we need to check that argument is a literal string
+    /// before wiping it (because the `password` argument is always a literal string).
+    bool can_be_password = finder.tryGetStringFromArgument(arg_num, nullptr, /* allow_identifier= */ false);
+    if (can_be_password)
+        finder.markSecretArgument(arg_num);
+}
+
+}
+
+SecretArgumentsSpec remoteSecretArguments()
+{
+    /// remote(named_collection, ..., password = 'password', ...), and a `password` written before the
+    /// positionals. An identifier is also a cluster name when no such collection exists, and that form
+    /// keeps the password in a positional slot, so the walk in `custom` has to run for it too.
+    return {.secret_keys = {"password"}, .custom = findRemoteFunctionSecretArguments};
+}
+
 void registerStorageDistributed(StorageFactory & factory);
 void registerStorageDistributed(StorageFactory & factory)
 {
@@ -2234,6 +2345,7 @@ void registerStorageDistributed(StorageFactory & factory)
             args.mode,
             isFreshTableDefinition(args.mode, args.query.attach_short_syntax));
     },
+    SecretArgumentsSpec{},
     {
         .supports_settings = true,
         .supports_parallel_insert = true,
@@ -2718,7 +2830,7 @@ The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`
     factory.registerStorage("Remote", [create](const StorageFactory::Arguments & args)
     {
         return create(args, /* secure = */ false);
-    }, features,
+    }, remoteSecretArguments(), features,
     Documentation{
         .description = common_description + R"DOCS_MD(
 `Remote` connects over the plain TCP port (`tcp_port`, `9000` by default) when the port is omitted.
@@ -2729,7 +2841,7 @@ The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`
     factory.registerStorage("RemoteSecure", [create](const StorageFactory::Arguments & args)
     {
         return create(args, /* secure = */ true);
-    }, features,
+    }, remoteSecretArguments(), features,
     Documentation{
         .description = common_description + R"DOCS_MD(
 `RemoteSecure` connects over a secure TLS connection using the secure TCP port (`tcp_port_secure`, `9440` by default) when the port is omitted.

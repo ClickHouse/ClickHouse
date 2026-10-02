@@ -254,8 +254,8 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
             AccessTypeObjects::Source::DISK, "", backupSourceAccessFlagsForWriterUnlock(open_mode)};
     };
 
-    factory.registerBackupEngine("File", creator_fn, getLocalDestinationIdentity, file_source_access_fn);
-    factory.registerBackupEngine("Disk", creator_fn, getLocalDestinationIdentity, disk_source_access_fn);
+    factory.registerBackupEngine("File", creator_fn, getLocalDestinationIdentity, file_source_access_fn, credentialFreeBackupSecretArguments(1));
+    factory.registerBackupEngine("Disk", creator_fn, getLocalDestinationIdentity, disk_source_access_fn, credentialFreeBackupSecretArguments(2));
 }
 
 }

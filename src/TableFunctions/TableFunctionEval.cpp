@@ -217,7 +217,7 @@ void registerTableFunctionEval(TableFunctionFactory & factory)
         {
             .description = R"(Evaluates a constant expression to a query string and executes the resulting `SELECT` query.)",
             .category = FunctionDocumentation::Category::TableFunction,
-        },
+        }, SecretArgumentsSpec{},
         {.allow_readonly = true});
 }
 

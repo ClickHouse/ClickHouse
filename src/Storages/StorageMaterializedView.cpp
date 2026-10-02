@@ -1263,6 +1263,7 @@ void registerStorageMaterializedView(StorageFactory & factory)
             args.table_id, args.getLocalContext(), args.query,
             args.columns, args.mode, args.comment, args.is_restore_from_backup);
     },
+    SecretArgumentsSpec{},
     {},
     Documentation{
         .description = "Stores the result of a `SELECT` query and keeps it up to date. "

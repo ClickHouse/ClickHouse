@@ -420,7 +420,7 @@ void registerDatabaseURL(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseURL>(args.database_name, base_url, args.context);
     };
-    factory.registerDatabase("URL", create_fn, {
+    factory.registerDatabase("URL", create_fn, urlSecretArguments(0), {
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::URL,

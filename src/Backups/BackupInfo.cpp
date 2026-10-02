@@ -156,7 +156,7 @@ namespace
     /// reopen its base with the stored locator alone, and a trust policy may pin the session name through
     /// `sts:RoleSessionName`, so dropping it would break such restores (see #116223). This deliberately
     /// differs from the logged query text, where `role_session_name` is masked and only `role_arn` stays
-    /// visible (`FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey`): the metadata file lives
+    /// visible (`isNonSecretExtraCredentialsKey`): the metadata file lives
     /// in the user's own backup bucket, next to the data it protects. `external_id` is the shared secret
     /// of the triple and is dropped, as is anything unclassifiable.
     bool isBaseBackupRoleIdentifierKey(std::string_view key)

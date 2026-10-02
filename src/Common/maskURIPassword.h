@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/HiddenSecret.h>
+
 #include <array>
 #include <string>
 #include <string_view>
@@ -26,7 +28,7 @@ inline bool maskConnectionStringKey(std::string & str, std::string_view key_with
     if (value_end == std::string::npos)
         value_end = str.length();
 
-    str.replace(value_begin, value_end - value_begin, "[HIDDEN]");
+    str.replace(value_begin, value_end - value_begin, HIDDEN_SECRET);
     return true;
 }
 
@@ -66,7 +68,7 @@ inline bool maskURIPassword(std::string * uri)
         if (password_end == std::string::npos)
             continue;
 
-        uri->replace(password_begin, password_end - password_begin, "[HIDDEN]");
+        uri->replace(password_begin, password_end - password_begin, HIDDEN_SECRET);
         return true;
     }
 
@@ -121,7 +123,7 @@ inline bool maskURIUserinfo(std::string & url)
     if (at_sign == std::string::npos || at_sign < authority_begin || at_sign >= authority_end || at_sign == authority_begin)
         return false;
 
-    url.replace(authority_begin, at_sign - authority_begin, "[HIDDEN]");
+    url.replace(authority_begin, at_sign - authority_begin, HIDDEN_SECRET);
     return true;
 }
 
@@ -162,8 +164,6 @@ inline bool maskPresignedURLParameters(std::string & url)
         return false;
     };
 
-    static constexpr std::string_view REPLACEMENT = "[HIDDEN]";
-
     /// Built in one pass rather than replacing in place: a replacement of a different length shifts
     /// the rest of the string, which is quadratic in the number of masked parameters. A setting value
     /// reaches this from the logging path and its length is chosen by whoever set the setting.
@@ -198,7 +198,7 @@ inline bool maskPresignedURLParameters(std::string & url)
             value_end = url.length();
 
         result.append(url, copied, value_begin - copied);
-        result.append(REPLACEMENT);
+        result.append(HIDDEN_SECRET);
         copied = value_end;
 
         /// Continue after the value, not inside it.

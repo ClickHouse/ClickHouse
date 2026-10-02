@@ -123,7 +123,7 @@ Character `|` inside patterns is used to specify failover addresses. They are it
 
 -   [HDFS engine](/reference/engines/table-engines/integrations/hdfs)
 -   [URL table function](/reference/engines/table-engines/special/url)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, urlSecretArguments(1));
 }
 
 }

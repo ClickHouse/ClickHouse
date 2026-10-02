@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the fast test build has no NATS, whose settings it then does not mask
 
 # Masking a setting value must never throw. `nats_url`, `rabbitmq_address` and
 # `after_processing_move_connection_string` hold a URL or a connection string whose credential is

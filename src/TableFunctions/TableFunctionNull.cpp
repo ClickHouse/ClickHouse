@@ -123,7 +123,7 @@ DROP TABLE IF EXISTS t;
 ## Related {#related}
 
 - [Null table engine](/reference/engines/table-engines/special/null)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
 }
 
 }

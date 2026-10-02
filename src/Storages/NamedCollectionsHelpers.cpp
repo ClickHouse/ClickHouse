@@ -1,4 +1,5 @@
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Access/ContextAccess.h>
 #include <Core/Settings.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -291,6 +292,25 @@ HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collecti
     for (const auto & key : keys)
         headers.emplace_back(collection.get<String>(key + ".name"), collection.get<String>(key + ".value"));
     return headers;
+}
+
+SecretArgumentsSpec mysqlPostgreSQLSecretArguments(size_t password_slot)
+{
+    return {
+        .positional_secret_slots = {password_slot},
+        .secret_keys = {"password", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"},
+        /// A first identifier is a named collection or an identifier host (`mysql(localhost, ...)`). Too few
+        /// arguments to reach the password slot make it no valid explicit form, so the extra positionals are
+        /// invalid overrides of a collection (`MySQL(creds, 'password')`), logged before validation: hide them.
+        .custom = [password_slot](FunctionSecretArgumentsFinder & finder)
+        {
+            if (!finder.isNamedCollectionName(0) || finder.function->arguments->size() > password_slot)
+                return;
+            for (const size_t index : finder.classifyPositionalArguments())
+                if (index != 0)
+                    finder.markSecretArgument(index);
+        },
+    };
 }
 
 }

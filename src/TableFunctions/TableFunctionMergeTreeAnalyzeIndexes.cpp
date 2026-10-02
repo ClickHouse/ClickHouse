@@ -412,7 +412,7 @@ void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory
             .description = "Internal function for index analysis",
             .syntax = "mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, predicate[, ['part1', 'part2']])",
             .category = FunctionDocumentation::Category::TableFunction
-        },
+        }, SecretArgumentsSpec{},
         {.allow_readonly = true}
     });
 
@@ -422,7 +422,7 @@ void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory
             .description = "Internal function for index analysis",
             .syntax = "mergeTreeAnalyzeIndexesUUID('table_uuid', predicate[, ['part1', 'part2']])",
             .category = FunctionDocumentation::Category::TableFunction
-        },
+        }, SecretArgumentsSpec{},
         {.allow_readonly = true}
     });
 }

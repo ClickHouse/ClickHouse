@@ -1578,6 +1578,7 @@ void registerStorageBuffer(StorageFactory & factory)
             destination_id,
             static_cast<bool>(args.getLocalContext()->getSettingsRef()[Setting::insert_allow_materialized_columns]));
     },
+    SecretArgumentsSpec{},
     {
         .supports_parallel_insert = true,
         .supports_schema_inference = true,

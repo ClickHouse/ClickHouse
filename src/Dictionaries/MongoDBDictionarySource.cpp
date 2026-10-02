@@ -2,6 +2,7 @@
 
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Common/Exception.h>
+#include <Common/maskURIPassword.h>
 
 #if USE_MONGODB
 #include <Dictionaries/MongoDBDictionarySource.h>
@@ -120,7 +121,11 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
     };
     #endif
 
-    factory.registerSource("mongodb", create_dictionary_source, Documentation{
+    factory.registerSource("mongodb", create_dictionary_source,
+        SecretArgumentsSpec{
+            .secret_keys = {"password"},
+            .partial = {{"uri", [](String & value) { return maskURIPassword(&value); }}}},
+        Documentation{
         .description = R"DOCS_MD(
 # MongoDB dictionary source
 
@@ -288,7 +293,10 @@ BlockIO MongoDBDictionarySource::loadKeys(const Columns & key_columns, const Vec
 
 std::string MongoDBDictionarySource::toString() const
 {
-    return fmt::format("MongoDB: {}", configuration->uri->to_string());
+    /// Shown in `system.dictionaries` and in the logs.
+    String uri = configuration->uri->to_string();
+    maskURIPassword(&uri);
+    return fmt::format("MongoDB: {}", uri);
 }
 #endif
 

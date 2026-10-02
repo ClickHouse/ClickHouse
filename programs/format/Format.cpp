@@ -40,6 +40,7 @@
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Interpreters/SecretArgumentsRegistry.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 #include <boost/algorithm/string/split.hpp>
@@ -172,6 +173,17 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             readStringUntilEOF(query, in);
         }
 
+        /// The obfuscator needs every known name, and hiding secrets needs the engines, which declare them.
+        registerInterpreters();
+        registerFunctions();
+        registerAggregateFunctions();
+        registerTableFunctions();
+        registerDatabases();
+        registerStorages();
+        registerFormats();
+        registerDictionaries();
+        setSecretArgumentsFinder(&SecretArgumentsRegistry::instance());
+
         if (obfuscate)
         {
             WordMap obfuscated_words_map;
@@ -182,15 +194,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             {
                 hash_func.update(options["seed"].as<std::string>());
             }
-
-            registerInterpreters();
-            registerFunctions();
-            registerAggregateFunctions();
-            registerTableFunctions();
-            registerDatabases();
-            registerStorages();
-            registerFormats();
-            registerDictionaries();
 
             std::unordered_set<std::string> additional_names;
 

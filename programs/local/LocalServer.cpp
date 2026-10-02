@@ -73,6 +73,7 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Interpreters/SecretArgumentsRegistry.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -1281,6 +1282,7 @@ try
     registerDatabases();
     registerStorages();
     registerDictionaries();
+    setSecretArgumentsFinder(&SecretArgumentsRegistry::instance());
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
     QueryPlanStepRegistry::registerPlanSteps();

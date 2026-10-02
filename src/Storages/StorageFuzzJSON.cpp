@@ -749,6 +749,7 @@ void registerStorageFuzzJSON(StorageFactory & factory)
 
             return std::make_shared<StorageFuzzJSON>(args.table_id, args.columns, args.comment, configuration);
         },
+        SecretArgumentsSpec{},
         {},
         Documentation{
             .description = "Generates random JSON strings by mutating a supplied JSON template. Useful for producing fuzzed JSON input for testing. The table must consist solely of columns of type `String`.",
