@@ -278,6 +278,17 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                         "codec, or in any other context where the column data type is unknown",
                         codec_family_name);
 
+                /// Generic compressors, encryption, and the literal NONE codec work on arbitrary
+                /// byte streams. Do not use isNone(): Quantized also reports it, but its side
+                /// stream requires a vector column.
+                /// Every other codec interprets or transforms typed values, so an unavailable
+                /// projection cannot admit it until the output type has been established. This
+                /// includes future special codecs without an error-prone name-based list.
+                if (reject_type_sensitive_without_column_type && !column_type
+                    && !result_codec->isGenericCompression() && !result_codec->isEncryption() && codec_family_name != "NONE")
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot validate codec {} without a column type", codec_family_name);
+
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDescription());
             }
 

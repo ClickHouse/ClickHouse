@@ -230,7 +230,7 @@ def test_restore_codec_projection_with_missing_dictionary(started_cluster):
         f"AS codec_restore_missing_dict.suspicious_restored FROM Disk('backups', '{suspicious_backup}')"
     )
     error = node.query_and_get_error(restore_suspicious)
-    assert "without a column type" in error, error
+    assert "non-floating-point" in error, error
     assert (
         node.query(
             "EXISTS TABLE codec_restore_missing_dict.suspicious_restored"
@@ -316,6 +316,85 @@ def test_restore_unavailable_projection_rejects_lossy_codec(started_cluster, pro
     )
     assert "lossy" in error.lower(), error
     assert node.query("EXISTS TABLE codec_restore_lossy.restored").strip() == "0"
+
+
+@pytest.mark.parametrize(
+    ("projection_column", "select_expression", "codec", "declared_type"),
+    [
+        ("x", "x", "T64", ""),
+        ("`toFloat64(k)`", "toFloat64(k)", "T64", ""),
+        ("`toFloat64(k)`", "toFloat64(k)", "Delta", ""),
+        ("`toFloat64(k)`", "toFloat64(k)", "GCD", ""),
+        ("`toFloat64(k)`", "toFloat64(k)", "Quantized('int8', 8)", ""),
+        ("`toFloat64(k)`", "toFloat64(k)", "LZ4", ""),
+        ("`toFloat64(k)`", "toFloat64(k)", "T64", "UInt64"),
+    ],
+)
+def test_restore_unavailable_projection_validates_codec_output_type(
+    started_cluster, projection_column, select_expression, codec, declared_type
+):
+    node.query("DROP DATABASE IF EXISTS codec_restore_untyped SYNC")
+    node.query("CREATE DATABASE codec_restore_untyped")
+    node.query(
+        "CREATE TABLE codec_restore_untyped.lookup_source "
+        "(id UInt64, value UInt64) ENGINE = Memory"
+    )
+    node.query(
+        "CREATE DICTIONARY codec_restore_untyped.lookup "
+        "(id UInt64, value UInt64 DEFAULT 0) PRIMARY KEY id "
+        "SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() "
+        "DB 'codec_restore_untyped' TABLE 'lookup_source')) "
+        "LAYOUT(FLAT()) LIFETIME(0)"
+    )
+    lookup = "dictGet('codec_restore_untyped.lookup', 'value', k)"
+    node.query(
+        "CREATE TABLE codec_restore_untyped.source "
+        f"(k UInt64, x String, PROJECTION pp ({projection_column} CODEC(LZ4)) AS "
+        f"(SELECT {select_expression}, {lookup} AS d "
+        f"GROUP BY {select_expression}, {lookup})) "
+        "ENGINE = MergeTree ORDER BY k"
+    )
+
+    # Start with valid metadata, then substitute a codec to exercise restore admission.
+    metadata_path = node.query(
+        "SELECT metadata_path FROM system.tables "
+        "WHERE database = 'codec_restore_untyped' AND name = 'source'"
+    ).strip()
+    node.query("DETACH TABLE codec_restore_untyped.source")
+    metadata = read_metadata(node, metadata_path)
+    assert "CODEC(LZ4)" in metadata, metadata
+    replacement = f"{declared_type} CODEC({codec})" if declared_type else f"CODEC({codec})"
+    write_metadata(node, metadata_path, metadata.replace("CODEC(LZ4)", replacement))
+    node.query(
+        "DROP DICTIONARY codec_restore_untyped.lookup SETTINGS check_table_dependencies = 0"
+    )
+    node.restart_clickhouse()
+    assert node.query(
+        "SELECT count() FROM system.projections "
+        "WHERE database = 'codec_restore_untyped' AND table = 'source'"
+    ).strip() == "0"
+
+    backup = f"unavailable_projection_untyped_{uuid.uuid4().hex}"
+    node.query(f"BACKUP TABLE codec_restore_untyped.source TO Disk('backups', '{backup}')")
+    restore_query = (
+        "RESTORE TABLE codec_restore_untyped.source AS codec_restore_untyped.restored "
+        f"FROM Disk('backups', '{backup}')"
+    )
+    if codec == "LZ4":
+        node.query(restore_query)
+        assert "CODEC(LZ4)" in node.query(
+            "SHOW CREATE TABLE codec_restore_untyped.restored"
+        )
+    else:
+        settings = {"enable_quantized_codec": 1} if codec.startswith("Quantized") else {}
+        error = node.query_and_get_error(restore_query, settings=settings)
+        if declared_type:
+            assert "cannot verify" in error.lower(), error
+        else:
+            assert codec.split("(")[0] in error, error
+        if projection_column != "x" and not declared_type:
+            assert "without a column type" in error, error
+        assert node.query("EXISTS TABLE codec_restore_untyped.restored").strip() == "0"
 
 
 @pytest.mark.parametrize("part_offset_expression", ["_part_offset", "_part_offset AS parent_offset"])

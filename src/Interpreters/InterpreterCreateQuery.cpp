@@ -42,10 +42,12 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTProjectionDeclaration.h>
+#include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -215,6 +217,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int FAULT_INJECTED;
+    extern const int TYPE_MISMATCH;
 }
 
 namespace fs = std::filesystem;
@@ -907,6 +910,36 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
 }
 
+/// Full projection analysis may fail on a missing dictionary even when a declared output is
+/// simply a parent column. Prove that output's type from the syntax alone; reject ambiguous
+/// aliases and computed expressions instead of guessing their type.
+DataTypePtr tryGetDirectProjectionOutputType(
+    const ASTProjectionDeclaration & declaration, const String & output_name, const ColumnsDescription & parent_columns)
+{
+    const auto * query = declaration.query ? declaration.query->as<ASTProjectionSelectQuery>() : nullptr;
+    if (!query || query->with())
+        return {};
+
+    const auto * select = query->select() ? query->select()->as<ASTExpressionList>() : nullptr;
+    if (!select)
+        return {};
+
+    const ASTIdentifier * direct_output = nullptr;
+    size_t matching_outputs = 0;
+    for (const auto & output : select->children)
+    {
+        if (output->getAliasOrColumnName() != output_name)
+            continue;
+        ++matching_outputs;
+        direct_output = output->as<ASTIdentifier>();
+    }
+
+    if (matching_outputs != 1 || !direct_output)
+        return {};
+    const auto * parent_column = parent_columns.tryGet(direct_output->name());
+    return parent_column ? parent_column->type : DataTypePtr{};
+}
+
 }
 
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
@@ -1027,8 +1060,22 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                                 {
                                     const auto type_ast = column->getType();
                                     const auto declared_type = type_ast ? DataTypeFactory::instance().get(type_ast) : DataTypePtr{};
+                                    const auto direct_type = tryGetDirectProjectionOutputType(
+                                        declaration, column->name, properties.columns);
+                                    if (declared_type && !direct_type)
+                                        throw Exception(
+                                            ErrorCodes::BAD_ARGUMENTS,
+                                            "Cannot verify declared type {} of column {} in unavailable projection {} "
+                                            "without analyzing its SELECT output",
+                                            declared_type->getName(), backQuote(column->name), backQuote(declaration.name));
+                                    if (declared_type && direct_type && declared_type->getName() != direct_type->getName())
+                                        throw Exception(
+                                            ErrorCodes::TYPE_MISMATCH,
+                                            "Column {} in projection {} is declared with type {}, but its direct SELECT output has type {}",
+                                            backQuote(column->name), backQuote(declaration.name),
+                                            declared_type->getName(), direct_type->getName());
                                     ProjectionDescription::validateDeclaredColumnCodec(
-                                        column->getCodec(), declared_type, CodecValidationSettings(
+                                        column->getCodec(), direct_type, CodecValidationSettings(
                                             getContext()->getSettingsRef(), /*reject_type_sensitive_without_column_type=*/ true),
                                         column->name, declaration.name);
                                 }
