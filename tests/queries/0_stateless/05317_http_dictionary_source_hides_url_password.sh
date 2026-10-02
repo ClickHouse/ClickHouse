@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The source of an `HTTP` dictionary is shown in `system.dictionaries` without the password of its url.
 user="user_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user}"
-$CLICKHOUSE_CLIENT -q "CREATE USER ${user} IDENTIFIED BY 'plain_dictionary_password'"
+$CLICKHOUSE_CLIENT -q "CREATE USER ${user} IDENTIFIED WITH plaintext_password BY 'plain_dictionary_password'"
 
 url="http://${user}:plain_dictionary_password@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number,toString(number)+FROM+numbers(2)+FORMAT+TabSeparated"
 $CLICKHOUSE_CLIENT -q "CREATE DICTIONARY dict_http (key UInt64, value String) PRIMARY KEY key SOURCE(HTTP(URL '${url}' FORMAT 'TabSeparated')) LIFETIME(0) LAYOUT(FLAT())"
