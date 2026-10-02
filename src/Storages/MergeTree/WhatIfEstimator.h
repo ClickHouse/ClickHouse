@@ -7,8 +7,7 @@
 namespace DB
 {
 
-/// Estimates the benefit of hypothetical skip indexes over the baseline
-/// (after PK + partition + existing index pruning). Used by EXPLAIN WHATIF
-WhatIfResult estimateHypotheticalIndexes(const ASTPtr & select_query, ContextPtr context, const ASTPtr & explain_settings);
+/// estimates the hypothetical indexes and projections of the session against the baseline read, for `EXPLAIN WHATIF`
+WhatIfResult estimateHypotheticalObjects(const ASTPtr & select_query, ContextPtr context, const ASTPtr & explain_settings);
 
 }

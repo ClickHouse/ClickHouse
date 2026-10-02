@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/WhatIfIndexEstimator.h>
+#include <Storages/MergeTree/WhatIfEstimator.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
@@ -343,7 +343,7 @@ WhatIfCandidateResult evaluateIndex(
 }
 
 
-WhatIfResult estimateHypotheticalIndexes(
+WhatIfResult estimateHypotheticalObjects(
     const ASTPtr & select_query, ContextPtr context, const ASTPtr & explain_settings)
 {
     auto settings = WhatIfSettings::fromAST(explain_settings);
