@@ -13,12 +13,14 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Processors/QueryPlan/BlockNestedLoopJoinStep.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
 #include <fmt/ranges.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/MergeJoin.h>
+#include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/FullSortingMergeJoin.h>
@@ -562,6 +564,20 @@ bool JoinSettings::canSpillToTemporaryFiles(const JoinOperator & join_operator) 
     /// exceeded — but only when the join shape admits a `ConstantJoin`: a join keyed by a genuine equality
     /// never reaches it, so for such a join the size limits alone cannot cause a spill.
     if (join_operator.canBecomeConstantJoin() && (max_rows_in_join != 0 || max_bytes_in_join != 0))
+        return true;
+
+    /// The block nested loop join is not selected through the algorithm list either: it is the last resort
+    /// for a join whose `ON` condition yields no keys (`JoinStepLogical.cpp`), which is the same keyless
+    /// shape `canBecomeConstantJoin` describes, unless the join is converted to `CROSS` instead (an `ALL
+    /// INNER` join with `hash` enabled). It streams its build side to disk under memory pressure even
+    /// without an external-join threshold.
+    const bool can_convert_to_cross = isInner(join_operator.kind) && join_operator.strictness == JoinStrictness::All
+        && TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH);
+    if (allow_block_nested_loop_join
+        && !isCrossOrComma(join_operator.kind) && !isPaste(join_operator.kind)
+        && join_operator.canBecomeConstantJoin()
+        && !can_convert_to_cross
+        && BlockNestedLoopJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness))
         return true;
 
     /// Both spilling implementations accept only some kind/strictness pairs, and both require the

@@ -1647,6 +1647,7 @@ static void constructBlockNestedLoopJoinStep(
         .max_bytes_in_memory = join_settings.getEffectiveMaxBytesBeforeExternalJoin(),
         .tmp_data = std::move(tmp_data),
         .temporary_files_codec = join_settings.temporary_files_codec,
+        .spill_codec_authorized = join_settings.spill_codec_authorized,
         .temporary_files_buffer_size = join_settings.temporary_files_buffer_size,
     };
 

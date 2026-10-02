@@ -108,6 +108,8 @@ struct BlockNestedLoopStoreSettings
     /// How the spilled blocks are written, from `temporary_files_codec` and the buffer size the
     /// other joins use for theirs.
     String temporary_files_codec;
+    /// Whether the session authorized `temporary_files_codec` (see `spillCodecAuthorizedBySession`).
+    bool spill_codec_authorized = false;
     UInt64 temporary_files_buffer_size = 0;
 };
 
