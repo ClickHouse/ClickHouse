@@ -380,6 +380,12 @@ void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) 
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 
     hash_state.update(getNullsAction());
+
+    /// The function composition operator `f | g` and an ordinary call to a function of the same
+    /// name are different expressions, see the formatting of `__compose` below.
+    if (name == "__compose"sv)
+        hash_state.update(isOperator());
+
     if (isWindowFunction())
     {
         hash_state.update(window_name.size());
