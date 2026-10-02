@@ -331,7 +331,7 @@ public:
     void registerAppendSupportChecker(const String & name, AppendSupportChecker append_support_checker);
 
     /// If format always doesn't support append, you can use this method instead of
-    /// registerAppendSupportChecker with append_support_checker that always returns true.
+    /// registerAppendSupportChecker with append_support_checker that always returns false.
     void markFormatHasNoAppendSupport(const String & name);
 
     bool checkIfFormatSupportAppend(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
@@ -378,6 +378,11 @@ public:
     bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
     bool checkIfOutputFormatIsTTYFriendly(const String & name) const;
     bool checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings, const Block & header) const;
+    /// Whether reading `name` will seek instead of consuming the input from the start. A
+    /// random-access format reads its footer at the tail first, but only while it is allowed to
+    /// seek: with `input_format_allow_seeks = 0` it reads sequentially from the start instead.
+    bool checkIfFormatIsRandomAccessInput(
+        const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
     bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;
 
