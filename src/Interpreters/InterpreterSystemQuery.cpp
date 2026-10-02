@@ -3089,6 +3089,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_REPLICA:
         case Type::DROP_DATABASE_REPLICA:
         {
+            /// For the whole-server form (no database and no table) this requires the global privilege.
+            /// This is intentional: the initiator does not know which databases exist on the other hosts of the cluster,
+            /// so it cannot narrow the check to the affected databases as `checkAccessForDropWholeReplica` does locally.
             required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase(), query.getTable());
             break;
         }
