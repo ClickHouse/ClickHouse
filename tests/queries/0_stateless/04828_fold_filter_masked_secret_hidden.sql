@@ -7,27 +7,27 @@ SET enable_analyzer = 1;
 -- node. When a folded constant is a masked secret (here: the `encrypt` key reused in the WHERE
 -- through an alias), the rebuilt node must keep `is_masked_secret`, so plan dumps render it as
 -- [HIDDEN]. The `cond` alias keeps the filter column name free of the [HIDDEN...] placeholder,
--- so only the flag hides the value.
+-- so only the flag hides the value. It folds to 0: an always-true filter leaves the plan.
 SELECT 'masked secret filter stays hidden', countIf(explain LIKE '%Filter column: [HIDDEN]%')
 FROM (EXPLAIN PLAN actions = 1
-    WITH '1234567890123456' AS key, materialize(key) = '1234567890123456' AS cond
+    WITH '1234567890123456' AS key, materialize(key) != '1234567890123456' AS cond
     SELECT encrypt('aes-128-ecb', 'v', key) FROM numbers(1) WHERE cond);
-SELECT 'folded value not printed', countIf(explain LIKE '%Filter column: 1%')
+SELECT 'folded value not printed', countIf(explain LIKE '%Filter column: 0%')
 FROM (EXPLAIN PLAN actions = 1
-    WITH '1234567890123456' AS key, materialize(key) = '1234567890123456' AS cond
+    WITH '1234567890123456' AS key, materialize(key) != '1234567890123456' AS cond
     SELECT encrypt('aes-128-ecb', 'v', key) FROM numbers(1) WHERE cond);
 
--- The DAG the filter is merged into can already hold an ordinary `Const(UInt8) 1` output (here:
--- `1 AS plain`). Constant deduplication must not collapse the masked folded constant onto that
+-- The DAG the filter is merged into can already hold an ordinary `Const(UInt8) 0` output (here:
+-- `0 AS plain`). Constant deduplication must not collapse the masked folded constant onto that
 -- plain one, otherwise the filter renders the value instead of [HIDDEN].
 SELECT 'masked secret survives constant dedup', countIf(explain LIKE '%Filter column: [HIDDEN]%')
 FROM (EXPLAIN PLAN actions = 1
-    WITH '1234567890123456' AS key, materialize(key) = '1234567890123456' AS cond
-    SELECT 1 AS plain, encrypt('aes-128-ecb', 'v', key) FROM numbers(1) WHERE cond);
-SELECT 'folded value not printed with a plain const around', countIf(explain LIKE '%Filter column: 1%')
+    WITH '1234567890123456' AS key, materialize(key) != '1234567890123456' AS cond
+    SELECT 0 AS plain, encrypt('aes-128-ecb', 'v', key) FROM numbers(1) WHERE cond);
+SELECT 'folded value not printed with a plain const around', countIf(explain LIKE '%Filter column: 0%')
 FROM (EXPLAIN PLAN actions = 1
-    WITH '1234567890123456' AS key, materialize(key) = '1234567890123456' AS cond
-    SELECT 1 AS plain, encrypt('aes-128-ecb', 'v', key) FROM numbers(1) WHERE cond);
+    WITH '1234567890123456' AS key, materialize(key) != '1234567890123456' AS cond
+    SELECT 0 AS plain, encrypt('aes-128-ecb', 'v', key) FROM numbers(1) WHERE cond);
 
 -- the fold itself still happens and the filter passes
 SELECT count() FROM (

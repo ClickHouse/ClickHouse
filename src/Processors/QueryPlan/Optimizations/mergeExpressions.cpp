@@ -3,6 +3,8 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/FilterDescription.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -166,6 +168,29 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
     }
 
     return 0;
+}
+
+/// an always-true `FilterStep` is never pushed over a join and splits the join graph (TPC-DS `query_11`)
+size_t tryReplaceAlwaysTrueFilter(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &)
+{
+    auto * filter = typeid_cast<FilterStep *>(node->step.get());
+    if (!filter || !filter->removesFilterColumn())
+        return 0;
+
+    auto & dag = filter->getExpression();
+    const auto & filter_column_name = filter->getFilterColumnName();
+    const auto & filter_node = dag.findInOutputs(filter_column_name);
+    if (filter_node.type != ActionsDAG::ActionType::COLUMN || !ConstantFilterDescription(*filter_node.column).always_true)
+        return 0;
+
+    dag.removeUnusedResult(filter_column_name);
+    dag.removeUnusedActions(false, false);
+    auto expression = std::make_unique<ExpressionStep>(filter->getInputHeaders().front(), std::move(dag));
+    expression->setStepDescription(*filter);
+    if (filter->isInputRemovalPrevented())
+        expression->setPreventInputRemoval();
+    node->step = std::move(expression);
+    return 1;
 }
 
 }
