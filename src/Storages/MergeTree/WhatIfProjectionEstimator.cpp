@@ -859,7 +859,7 @@ bool tryEstimateProjection(
     }
     widenForSamples(built.samples, outcome, marks_low, marks_high);
 
-    result.estimated_marks = *outcome.marks;
+    result.estimated_marks = outcome.marks;
     result.estimated_rows = outcome.rows;
     result.estimated_marks_low = marks_low;
     result.estimated_marks_high = marks_high;
