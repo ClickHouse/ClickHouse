@@ -31,8 +31,11 @@ permissions:
   pull-requests: read
   statuses: write
 
+# Key on the head commit, which both event payloads carry, so a label event
+# and a `PR` workflow completion for the same head never reconcile at once
+# (otherwise both could see no active run and dispatch duplicate reruns).
 concurrency:
-  group: rerun-on-review-threads-${{ github.event.pull_request.number || github.event.workflow_run.head_sha || github.run_id }}
+  group: rerun-on-review-threads-${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.run_id }}
   cancel-in-progress: false
 
 jobs:
