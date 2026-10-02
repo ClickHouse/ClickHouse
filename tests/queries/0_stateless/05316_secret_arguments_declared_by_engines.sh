@@ -31,6 +31,10 @@ CREATE TABLE test_kafka (key UInt64) ENGINE = Kafka(kafka_sasl_password = 'plain
 CREATE TABLE test_kafka_settings (key UInt64) ENGINE = Kafka SETTINGS kafka_sasl_password = 'plain_settings_password'
 ALTER TABLE test_kafka MODIFY SETTING kafka_sasl_password = 'plain_password'
 CREATE TABLE test_mysql (key UInt64) ENGINE = MySQL('host:3306', 'db', 'table', 'user', 'plain_password')
+CREATE TABLE test_mysql (key UInt64) ENGINE = MySQL(mysql_creds, 'plain_password')
+SELECT * FROM mysql(localhost, 'db', 'table', 'user', 'plain_password')
+CREATE TABLE test_url (key UInt64) ENGINE = URL(url_creds, 'https://user:plain_password@example.com/data')
+CREATE TABLE test_delta_lake_local (key UInt64) ENGINE = DeltaLakeLocal('/tmp/delta') SETTINGS auth_header = 'plain_auth_header'
 CREATE TABLE test_unknown (key UInt64) ENGINE = NoSuchEngine('plain_password')
 CREATE DATABASE test_mysql ENGINE = MySQL('host:3306', 'db', 'user', 'plain_password')
 SELECT * FROM mysql('host:3306', 'db', 'table', 'user', 'plain_password')
