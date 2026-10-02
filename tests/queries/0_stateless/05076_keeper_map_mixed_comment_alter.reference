@@ -1,0 +1,12 @@
+-- Single comment command type:
+local:	['col-1']
+keeper:	['col-1']
+-- Two different comment command types in one ALTER:
+local:	['col-2','tbl-2']
+keeper:	['col-2','tbl-2']
+-- Comment-only MODIFY COLUMN:
+local:	['col-3','tbl-2']
+keeper:	['col-3','tbl-2']
+-- MODIFY/RESET SETTING are still refused, and change nothing:
+local:	['col-3','tbl-2']
+keeper:	['col-3','tbl-2']

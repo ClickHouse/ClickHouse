@@ -2,6 +2,7 @@
   "directory": "none",
   "group": "Paramètres du serveur",
   "pages": [
+    "fr/reference/settings/server-settings/settings",
     "fr/reference/settings/server-settings/settings/access-control",
     "fr/reference/settings/server-settings/settings/aggregate-function",
     "fr/reference/settings/server-settings/settings/allow",
@@ -100,6 +101,7 @@
     "fr/reference/settings/server-settings/settings/query",
     "fr/reference/settings/server-settings/settings/query-cache-max",
     "fr/reference/settings/server-settings/settings/query-condition",
+    "fr/reference/settings/server-settings/settings/reader-executor",
     "fr/reference/settings/server-settings/settings/remote",
     "fr/reference/settings/server-settings/settings/replicated-fetches",
     "fr/reference/settings/server-settings/settings/s3",
@@ -132,6 +134,5 @@
     "fr/reference/settings/server-settings/settings/workload",
     "fr/reference/settings/server-settings/settings/zookeeper",
     "fr/reference/settings/server-settings/settings/other"
-  ],
-  "root": "fr/reference/settings/server-settings/settings"
+  ]
 }

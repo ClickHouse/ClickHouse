@@ -16,8 +16,8 @@ If you prefer to use an existing VPC to deploy ClickHouse BYOC instead of having
 <Steps>
 <Step title="Configure your existing VPC" id="configure-existing-vpc">
 1. Tag the VPC with `clickhouse-byoc="true"`.
-2. Allocate at least 3 private subnets across 3 different availability zones for ClickHouse Cloud to use.
-3. Ensure each subnet has a minimum CIDR range of `/23` (e.g., 10.0.0.0/23) to provide sufficient IP addresses for the ClickHouse deployment.
+2. Allocate exactly 3 private subnets across 3 different availability zones for ClickHouse Cloud to use.
+3. Ensure each subnet has a minimum CIDR range of `/25` (e.g., 10.0.0.0/25). A `/25` supports roughly 10 ClickHouse server nodes per availability zone; `/24` is recommended for most deployments, and larger subnets for deployments you expect to grow. Pod IP addresses are allocated from the subnet itself, so every replica consumes subnet addresses.
 4. Add the tag `kubernetes.io/role/internal-elb=1` and `clickhouse-byoc="true"` to each subnet to enable proper load balancer configuration.
 
 <Image img="/images/cloud/reference/byoc-subnet-1.webp" size="lg" alt="BYOC VPC Subnet" />
@@ -31,7 +31,12 @@ If your VPC doesn't already have an S3 Gateway Endpoint configured, you'll need 
 </Step>
 <Step title="Ensure network connectivity" id="ensure-network-connectivity">
 **Outbound Internet Access**
-Your VPC must permit at least outbound internet access so that ClickHouse BYOC components can communicate with the Tailscale control plane. Tailscale is used to provide secure, zero-trust networking for private management operations. Initial registration and setup with Tailscale require public internet connectivity, which can be achieved either directly or via a NAT gateway. This connectivity is required to maintain both the privacy and security of your BYOC deployment.
+Your VPC must permit at least outbound internet access, either directly or via a NAT gateway. Two things depend on it:
+
+- **Tailscale.** ClickHouse BYOC components register with the Tailscale control plane, which provides secure, zero-trust networking for private management operations without requiring inbound public access. Initial registration and setup require public internet connectivity.
+- **Container images.** Some images the deployment runs are not mirrored into the BYOC registry, including community images, and are pulled from their upstream registries.
+
+A VPC with no outbound path will not finish provisioning. There is no single published endpoint list; if your network policy requires an explicit inventory, contact support to review your setup.
 
 **DNS Resolution**
 Ensure your VPC has working DNS resolution and doesn't block, interfere with, or overwrite standard DNS names. ClickHouse BYOC relies on DNS to resolve Tailscale control servers and ClickHouse service endpoints. If DNS is unavailable or misconfigured, BYOC services may fail to connect or operate properly.
@@ -72,6 +77,9 @@ The module was previously distributed as a tarball at `https://s3.us-east-2.amaz
 </Note>
 </Step>
 <Step title="Set up BYOC infrastructure" id="set-up-byoc-infrastructure">
+<Note>
+When you click **Set up Infrastructure**, ClickHouse Cloud automatically runs [pre-flight validation](/products/bring-your-own-cloud/onboarding/standard#preflight-validation) before provisioning. If your customized VPC or account doesn't meet the requirements, setup is halted with the specific issues to fix.
+</Note>
 In the ClickHouse Cloud console, configure the following when setting up new infrastructure:
 
 1. Under **VPC configuration**, select **Use existing VPC**.
@@ -87,6 +95,15 @@ New region setup can take up to 40 minutes.
 </Note>
 </Step>
 </Steps>
+
+### Shared subnets from another account (AWS RAM) {#shared-subnets-ram}
+
+You can run BYOC in a spoke account on subnets shared from a hub account with [AWS Resource Access Manager (RAM)](https://docs.aws.amazon.com/ram/latest/userguide/what-is.html), which lets you keep networking centralized. The setup is the same as above, with two differences that follow from how RAM shares behave:
+
+- **Apply the tags from the spoke account.** RAM-shared resources have a per-account tag view, so tags applied in the hub account are not visible to the spoke. Apply `clickhouse-byoc="true"` to the VPC, and `kubernetes.io/role/internal-elb=1` together with `clickhouse-byoc="true"` to each shared subnet, **from the spoke account**. Without this, pre-flight validation reports missing tags and provisioning fails.
+- **Routing stays with the hub account.** Route tables for shared subnets remain owned by the hub account, which is therefore responsible for NAT and egress routing, and for the S3 gateway endpoint since that is a VPC-level resource. Confirm the shared subnets still satisfy the outbound connectivity requirement above.
+
+Everything else is unchanged: three private subnets across three availability zones, a minimum `/25` CIDR per subnet, and the `ClickHouseManagementRole` setup in the spoke account where the BYOC infrastructure runs.
 
 ## Customer-managed IAM roles {#customer-managed-iam-roles}
 

@@ -24,7 +24,7 @@ JupySQL을 사용해 ClickHouse에서 쿼리를 실행합니다.
 JupySQL과 ClickHouse의 통합은 clickhouse&#95;sqlalchemy 라이브러리를 통해 가능합니다. 이 라이브러리를 사용하면 두 시스템이 쉽게 통신할 수 있으며, ClickHouse에 연결하고 SQL 방언을 지정할 수 있습니다. 연결이 완료되면 ClickHouse 네이티브 UI에서 직접 SQL 쿼리를 실행하거나 Jupyter 노트북에서 바로 실행할 수 있습니다.
 
 ```python
-# 필수 패키지 설치
+# Install required packages
 %pip install --quiet jupysql clickhouse_sqlalchemy
 ```
 
@@ -34,7 +34,7 @@ JupySQL과 ClickHouse의 통합은 clickhouse&#95;sqlalchemy 라이브러리를 
 import pandas as pd
 from sklearn_evaluation import plot
 
-# SQL 셀을 생성하기 위해 jupysql Jupyter 확장 기능을 가져옵니다
+# Import jupysql Jupyter extension to create SQL cells
 %load_ext sql
 %config SqlMagic.autocommit=False
 ```

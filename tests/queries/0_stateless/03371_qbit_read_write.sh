@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 
-# ========== Test Clickhouse Local ==========
+# ========== Test ClickHouse Local ==========
 $CLICKHOUSE_LOCAL --query "SELECT '==========LOCAL===========';"
 
 $CLICKHOUSE_LOCAL --query "
@@ -34,7 +34,7 @@ $CLICKHOUSE_LOCAL --query "
 "
 
 
-# ========== Test Clickhouse Client ==========
+# ========== Test ClickHouse Client ==========
 $CLICKHOUSE_LOCAL --query "SELECT '==========CLIENT===========';"
 
 # [de]serializeText(const IColumn & column...)
