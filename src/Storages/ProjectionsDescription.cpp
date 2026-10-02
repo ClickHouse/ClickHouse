@@ -305,6 +305,9 @@ void collectProjectionColumnNames(const QueryTreeNodePtr & node, const PlannerCo
 /** The `ORDER BY` expression of a projection is appended to its `SELECT` list
   * (see `ASTProjectionSelectQuery::cloneToASTSelect`), so the list of the projection columns may
   * contain the same expression twice, while a projection stores every column only once.
+  *
+  * Aliases are ignored, because the projection metadata is built with `ignoreAlias`: the columns
+  * `a AS x` and `a AS y` are both stored as the single column `a`.
   */
 void removeDuplicateProjectionColumns(QueryTreeNodePtr & query_tree)
 {
@@ -842,6 +845,12 @@ Block ProjectionDescription::calculateByQuery(
     /// Setting `enable_positional_arguments_for_projections` may enable positional arguments for projections.
     /// It is needed for compatibility with existing projections that use positional arguments to allow successful cluster upgrade.
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
+    /// The Analyzer does not resolve positional arguments in a `SECONDARY_QUERY` or in a context
+    /// where the initiator has already resolved them, because it expects that to be done by the
+    /// initiator. A projection query is never resolved by the initiator, and the data may come
+    /// from a remote `INSERT`, so the projection query is always analyzed as an initial one.
+    mut_context->setQueryKindInitial();
+    mut_context->setPositionalArgumentsAlreadyResolved(false);
 
     ASTPtr query_ast_copy = nullptr;
 
