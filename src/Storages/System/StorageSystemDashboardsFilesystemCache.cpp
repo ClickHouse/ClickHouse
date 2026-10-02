@@ -185,6 +185,23 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
         },
         {
             { "dashboard", "Filesystem cache" },
+            { "title", "Cache reuse in the last efficiency window (bytes)" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+    avgIf(value, metric = 'FilesystemCacheActiveBytes') AS Active,
+    avgIf(value, metric = 'FilesystemCachePassiveBytes') AS Passive,
+    avgIf(value, metric = 'FilesystemCacheIdleBytes') AS Idle
+FROM merge('system', '^asynchronous_metric_log')
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+    AND metric IN ('FilesystemCacheActiveBytes', 'FilesystemCachePassiveBytes', 'FilesystemCacheIdleBytes')
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Filesystem cache" },
             { "title", "Cache elements" },
             { "query", trim(R"EOQ(
 WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
@@ -304,7 +321,8 @@ WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
     toDateTimeOrDefault({to:String}, '', now()) AS to
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
     avg(ProfileEvent_FilesystemCacheEvictedBytes) AS Evicted,
-    avg(ProfileEvent_FilesystemCacheBackgroundEvictedBytes) AS BackgroundEvicted
+    avg(ProfileEvent_FilesystemCacheBackgroundEvictedBytes) AS BackgroundEvicted,
+    avg(ProfileEvent_FilesystemCacheEvictedNoHitBytes) AS EvictedNoHit
 FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t
