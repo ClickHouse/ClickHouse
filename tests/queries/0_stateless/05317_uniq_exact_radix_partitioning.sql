@@ -110,6 +110,13 @@ SELECT 'empty', uniqExact(n) FROM t_radix_uniq WHERE n > 1e9 SETTINGS optimize_u
 SELECT 'empty', uniqExact(n) FROM t_radix_uniq WHERE n > 1e9 SETTINGS optimize_uniq_exact_radix_partitioning = 0;
 SELECT 'empty result for empty set', uniqExact(n) FROM t_radix_uniq WHERE n > 1e9 SETTINGS optimize_uniq_exact_radix_partitioning = 1, empty_result_for_aggregation_by_empty_set = 1;
 SELECT 'empty result for empty set', uniqExact(n) FROM t_radix_uniq WHERE n > 1e9 SETTINGS optimize_uniq_exact_radix_partitioning = 0, empty_result_for_aggregation_by_empty_set = 1;
+-- `aggregate_functions_null_for_empty` does not add `OrNull` to `uniqExact`, because it returns 0 for an empty set.
+SELECT 'null for empty, empty', uniqExact(i64), count(DISTINCT i64) FROM t_radix_uniq WHERE n > 1e9 SETTINGS optimize_uniq_exact_radix_partitioning = 1, aggregate_functions_null_for_empty = 1;
+SELECT 'null for empty, empty', uniqExact(i64), count(DISTINCT i64) FROM t_radix_uniq WHERE n > 1e9 SETTINGS optimize_uniq_exact_radix_partitioning = 0, aggregate_functions_null_for_empty = 1;
+SELECT 'null for empty, type', toTypeName(uniqExact(i64)) FROM t_radix_uniq WHERE n > 1e9 SETTINGS optimize_uniq_exact_radix_partitioning = 1, aggregate_functions_null_for_empty = 1;
+SELECT 'null for empty, type', toTypeName(uniqExact(i64)) FROM t_radix_uniq WHERE n > 1e9 SETTINGS optimize_uniq_exact_radix_partitioning = 0, aggregate_functions_null_for_empty = 1;
+SELECT 'null for empty', uniqExact(i64) FROM t_radix_uniq SETTINGS optimize_uniq_exact_radix_partitioning = 1, aggregate_functions_null_for_empty = 1;
+SELECT 'null for empty', uniqExact(i64) FROM t_radix_uniq SETTINGS optimize_uniq_exact_radix_partitioning = 0, aggregate_functions_null_for_empty = 1;
 SELECT 'only NULLs', uniqExact(ni) FROM t_radix_uniq WHERE n % 4 = 0 SETTINGS optimize_uniq_exact_radix_partitioning = 1, empty_result_for_aggregation_by_empty_set = 1;
 SELECT 'only NULLs', uniqExact(ni) FROM t_radix_uniq WHERE n % 4 = 0 SETTINGS optimize_uniq_exact_radix_partitioning = 0, empty_result_for_aggregation_by_empty_set = 1;
 SELECT 'totals', uniqExact(i64) FROM t_radix_uniq WITH TOTALS SETTINGS optimize_uniq_exact_radix_partitioning = 1;
@@ -122,6 +129,7 @@ SELECT 'distributed', uniqExact(i64) FROM remote('127.0.0.{1,2}', currentDatabas
 SET enable_parallel_replicas = 0, count_distinct_optimization = 0, optimize_uniq_exact_radix_partitioning = 1;
 
 SELECT 'used', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(i64) FROM t_radix_uniq) WHERE explain LIKE '%RadixUniqExact%';
+SELECT 'used with null for empty', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(i64) FROM t_radix_uniq SETTINGS aggregate_functions_null_for_empty = 1) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'used for Nullable', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(ns) FROM t_radix_uniq) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'disabled', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(i64) FROM t_radix_uniq SETTINGS optimize_uniq_exact_radix_partitioning = 0) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'LowCardinality', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(lc) FROM t_radix_uniq) WHERE explain LIKE '%RadixUniqExact%';

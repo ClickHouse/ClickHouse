@@ -52,6 +52,12 @@ repeated String	200000
 repeated String	200000
 empty	0
 empty	0
+null for empty, empty	0	0
+null for empty, empty	0	0
+null for empty, type	UInt64
+null for empty, type	UInt64
+null for empty	299609
+null for empty	299609
 only NULLs	0
 only NULLs	0
 totals	299609
@@ -63,6 +69,7 @@ totals	299609
 distributed	299609
 distributed	299609
 used	1
+used with null for empty	1
 used for Nullable	1
 disabled	0
 LowCardinality	0
