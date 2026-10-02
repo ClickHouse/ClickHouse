@@ -8,9 +8,17 @@ OK: plain dump without --dump-schema-dir still succeeds (no table-level cycle)
 --- combined with --file/--structure is rejected ---
 OK: non-zero exit code
 BAD_ARGUMENTS
---- merge()/loop() with a computed (non-literal) argument fails clearly instead of silently dropping the dependency ---
+--- merge()/loop() with constant-expression arguments name their local source ---
+OK: folded source dumped before aaa_merge_folded
+OK: folded source dumped before aab_loop_folded
+OK: folded source dumped before aac_merge_identifier
+--- a merge() argument that reads the server is refused instead of silently dropping the dependency ---
 OK: non-zero exit code
 NOT_IMPLEMENTED
+--- a one-argument merge() stored by an older server names its local source ---
+stored one-argument merge(): 1
+OK: one-argument merge() source dumped before its reader
+one-argument merge() reader, bad-select gate emitted: 0
 --- a qualified cross-database dictionary() reference keeps its real dependency ---
 OK: dump succeeded
 OK: qualified dictionary() dependency ordered before its reader

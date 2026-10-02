@@ -63,20 +63,72 @@ rc=$?
 grep -o -m1 'BAD_ARGUMENTS' "$ERR_FILE"
 rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_data.csv"
 
-echo '--- merge()/loop() with a computed (non-literal) argument fails clearly instead of silently dropping the dependency ---'
+echo '--- merge()/loop() with constant-expression arguments name their local source ---'
+# Each view reads its source only through folded merge()/loop() arguments.
 CONSTEXPR_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_constexpr"
+CONSTEXPR_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_constexpr.sql"
 rm -rf "$CONSTEXPR_PATH"
 $CLICKHOUSE_LOCAL --path "$CONSTEXPR_PATH" --multiquery --query "
 CREATE DATABASE ${DB};
 CREATE TABLE ${DB}.zzz_source (id UInt64) ENGINE = MergeTree ORDER BY id;
-CREATE MATERIALIZED VIEW ${DB}.aaa_mv (id UInt64) ENGINE = MergeTree ORDER BY id AS
-    SELECT s.id FROM ${DB}.zzz_source AS s LEFT JOIN merge(concat('${DB}', ''), '^zzz_source\$') AS m ON s.id = m.id;
+CREATE VIEW ${DB}.aaa_merge_folded AS SELECT * FROM merge(concat('${DB}', ''), concat('^zzz_source', '\$'));
+CREATE VIEW ${DB}.aab_loop_folded AS SELECT * FROM loop(concat('${DB}', ''), concat('zzz_source', ''));
+CREATE VIEW ${DB}.aac_merge_identifier AS SELECT * FROM merge(${DB}, '^zzz_source\$');
+"
+if $CLICKHOUSE_LOCAL --path "$CONSTEXPR_PATH" --dump-schema="${DB}" > "$CONSTEXPR_DUMP_FILE" 2>"$ERR_FILE"; then
+    SRC_LINE=$(grep -n "CREATE TABLE ${DB}\.zzz_source " "$CONSTEXPR_DUMP_FILE" | head -1 | cut -d: -f1)
+    for reader in aaa_merge_folded aab_loop_folded aac_merge_identifier; do
+        READER_LINE=$(grep -n "CREATE VIEW ${DB}\.${reader} " "$CONSTEXPR_DUMP_FILE" | head -1 | cut -d: -f1)
+        if [ -n "$SRC_LINE" ] && [ -n "$READER_LINE" ] && [ "$SRC_LINE" -lt "$READER_LINE" ]; then
+            echo "OK: folded source dumped before ${reader}"
+        else
+            echo "FAIL: folded source of ${reader} missing or misordered (src=$SRC_LINE reader=$READER_LINE)"
+        fi
+    done
+else
+    echo "FAIL: dump rejected: $(cat "$ERR_FILE")"
+fi
+rm -rf "$CONSTEXPR_PATH" "$CONSTEXPR_DUMP_FILE"
+
+echo '--- a merge() argument that reads the server is refused instead of silently dropping the dependency ---'
+$CLICKHOUSE_LOCAL --path "$CONSTEXPR_PATH" --multiquery --query "
+CREATE DATABASE ${DB};
+CREATE TABLE ${DB}.zzz_source (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE VIEW ${DB}.aaa_merge_server AS SELECT * FROM merge('${DB}', concat('^zzz_source', substring(hostName(), 1, 0), '\$'));
 "
 $CLICKHOUSE_LOCAL --path "$CONSTEXPR_PATH" --dump-schema="${DB}" > /dev/null 2>"$ERR_FILE"
 rc=$?
 [[ $rc -ne 0 ]] && echo 'OK: non-zero exit code' || echo 'FAIL: expected non-zero exit code'
 grep -o -m1 'NOT_IMPLEMENTED' "$ERR_FILE"
 rm -rf "$CONSTEXPR_PATH"
+
+echo '--- a one-argument merge() stored by an older server names its local source ---'
+# A current server stores merge('re') as merge('<db>', 're'), so the metadata file is edited to the older form.
+ONE_ARG_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_one_arg"
+ONE_ARG_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_one_arg.sql"
+rm -rf "$ONE_ARG_PATH"
+$CLICKHOUSE_LOCAL --path "$ONE_ARG_PATH" --multiquery --query "
+CREATE DATABASE ${DB};
+CREATE TABLE ${DB}.zzz_source (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE MATERIALIZED VIEW ${DB}.aaa_mv (id UInt64) ENGINE = Memory AS
+    SELECT dummy::UInt64 AS id FROM system.one LEFT JOIN merge('${DB}', '^zzz_source\$') AS m ON dummy::UInt64 = m.id;
+"
+ONE_ARG_SQL="$ONE_ARG_PATH/metadata/${DB}/aaa_mv.sql"
+sed "s/merge('${DB}', /merge(/" "$ONE_ARG_SQL" > "$ONE_ARG_SQL.tmp" && mv "$ONE_ARG_SQL.tmp" "$ONE_ARG_SQL"
+echo "stored one-argument merge(): $(grep -c "merge('^zzz_source" "$ONE_ARG_SQL")"
+if $CLICKHOUSE_LOCAL --path "$ONE_ARG_PATH" --dump-schema="${DB}" > "$ONE_ARG_DUMP_FILE" 2>"$ERR_FILE"; then
+    SRC_LINE=$(grep -n "CREATE TABLE ${DB}\.zzz_source " "$ONE_ARG_DUMP_FILE" | head -1 | cut -d: -f1)
+    READER_LINE=$(grep -n "CREATE MATERIALIZED VIEW ${DB}\.aaa_mv " "$ONE_ARG_DUMP_FILE" | head -1 | cut -d: -f1)
+    if [ -n "$SRC_LINE" ] && [ -n "$READER_LINE" ] && [ "$SRC_LINE" -lt "$READER_LINE" ]; then
+        echo 'OK: one-argument merge() source dumped before its reader'
+    else
+        echo "FAIL: one-argument merge() dependency missing or misordered (src=$SRC_LINE reader=$READER_LINE)"
+    fi
+    echo "one-argument merge() reader, bad-select gate emitted: $(grep -c '^SET allow_materialized_view_with_bad_select = 1;' "$ONE_ARG_DUMP_FILE")"
+else
+    echo "FAIL: dump rejected: $(cat "$ERR_FILE")"
+fi
+rm -rf "$ONE_ARG_PATH" "$ONE_ARG_DUMP_FILE"
 
 echo '--- a qualified cross-database dictionary() reference keeps its real dependency ---'
 # The same shape as the refusals below, but qualified: the dump keeps the ${DB2} edge and orders

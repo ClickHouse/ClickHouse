@@ -58,6 +58,7 @@ CREATE MATERIALIZED VIEW ${DB}.mv_static (x Int64) ENGINE = Memory AS SELECT x F
 CREATE MATERIALIZED VIEW ${DB}.mv_folded (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT number FROM numbers(1 + 1)) AND x IN (SELECT x FROM values('x Int64', 1 + 1));
 CREATE MATERIALIZED VIEW ${DB}.mv_more (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT toInt64(zero) FROM zeros() LIMIT 1) AND x IN (SELECT x FROM loop(${DB}.src) LIMIT 1) AND x IN (SELECT x FROM generateRandom('x Int64', 1, 10, 2, SETTINGS null_ratio = 0.5) LIMIT 1)
     AND x IN (SELECT toInt64(prime) FROM primes(3)) AND x IN (SELECT toInt64(generate_series) FROM generateSeries(1, 3));
+CREATE MATERIALIZED VIEW ${DB}.mv_trace (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT toInt64(duration_us) FROM traceView('00000000-0000-0000-0000-000000000000'));
 "
 echo "healthy views, bad-select gate emitted: $(grep -c "$BADSEL_RE" "$DUMP_FILE")"
 echo "healthy views, GROUP BY and ORDER BY gates emitted: $(grep -cE '^SET allow_suspicious_types_in_(group|order)_by = 1;' "$DUMP_FILE")"
@@ -140,6 +141,7 @@ CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_static (x Int64) ENGINE = Memory AS
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_folded (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT number FROM numbers(1 + 1)) AND x IN (SELECT x FROM values('x Int64', 1 + 1));
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_more (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT toInt64(zero) FROM zeros() LIMIT 1) AND x IN (SELECT x FROM loop(${CONSTRAINT_DB}.src) LIMIT 1) AND x IN (SELECT x FROM generateRandom('x Int64', 1, 10, 2, SETTINGS null_ratio = 0.5) LIMIT 1)
     AND x IN (SELECT toInt64(prime) FROM primes(3)) AND x IN (SELECT toInt64(generate_series) FROM generateSeries(1, 3));
+CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_trace (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT toInt64(duration_us) FROM traceView('00000000-0000-0000-0000-000000000000'));
 "
 $CLICKHOUSE_LOCAL --path "$LOCAL_PATH" --dump-schema="$CONSTRAINT_DB" > "$DUMP_FILE" 2>"$ERR_FILE"
 rm -rf "$LOCAL_PATH"
@@ -229,6 +231,20 @@ CREATE VIEW ${DB}.v_param AS SELECT neighbor(x, 1) AS n FROM ${DB}.mt WHERE x > 
 echo "plain views, function gates emitted: $(grep -cE '^SET (allow_fuzz_query_functions|allow_deprecated_error_prone_window_functions|allow_hyperscan) = 1;' "$DUMP_FILE")"
 echo "plain views, analyzer gates emitted: $(grep -cE '^SET (allow_suspicious_types_in_group_by|allow_suspicious_types_in_order_by|allow_experimental_correlated_subqueries) = 1;' "$DUMP_FILE")"
 replay_local 'plain views' '%'
+# A projection's GROUP BY and ORDER BY keys can never be Variant or Dynamic, so only a window in it reads a gate.
+make_dump "
+CREATE TABLE ${DB}.proj (k UInt64, x UInt64, PROJECTION p_order (SELECT k, x ORDER BY x), PROJECTION p_group (SELECT x, count() GROUP BY x),
+    PROJECTION p_sub (SELECT k, x WHERE x IN (SELECT 1) ORDER BY k)) ENGINE = MergeTree ORDER BY k;
+"
+echo "plain projections, analyzer gates emitted: $(grep -cE '^SET (allow_suspicious_types_in_group_by|allow_suspicious_types_in_order_by|allow_experimental_correlated_subqueries|allow_correlated_subqueries) = 1;' "$DUMP_FILE")"
+replay_local 'plain projections' 'proj'
+make_dump "
+CREATE TABLE ${DB}.proj_window (k UInt64, x UInt64, v Variant(UInt64, String)) ENGINE = MergeTree ORDER BY k;
+SET allow_suspicious_types_in_group_by = 1;
+ALTER TABLE ${DB}.proj_window ADD PROJECTION p (SELECT k, sum(x) OVER (PARTITION BY v) ORDER BY k);
+"
+echo "projection window over a Variant, GROUP BY gate emitted: $(grep -c '^SET allow_suspicious_types_in_group_by = 1;' "$DUMP_FILE")"
+echo "projection window over a Variant, ORDER BY gate emitted: $(grep -c '^SET allow_suspicious_types_in_order_by = 1;' "$DUMP_FILE")"
 make_dump "
 CREATE TABLE ${DB}.src (s String) ENGINE = MergeTree ORDER BY tuple();
 CREATE MATERIALIZED VIEW ${DB}.mv_table_function (s String) ENGINE = Memory AS SELECT s FROM ${DB}.src WHERE s IN (SELECT query FROM fuzzQuery('SELECT 1') LIMIT 1);

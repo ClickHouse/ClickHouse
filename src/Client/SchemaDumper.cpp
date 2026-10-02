@@ -36,6 +36,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -906,13 +907,32 @@ std::optional<std::pair<String, String>> tryGetQualifiedNameFromFunctionArgument
     return std::nullopt;
 }
 
-/// Reads a `merge`/`loop` argument as a string literal, or unwraps a `REGEXP('...')` wrapper (the
+/// Folds a `merge`/`loop` name argument like their parsers do, except one that reads the session or the server,
+/// which the dump does not share.
+std::optional<String> tryFoldNameArgument(const ASTPtr & arg, const ContextPtr & context)
+{
+    if (const auto * identifier = arg->as<ASTIdentifier>())
+        return identifier->name();
+    if (dependsOnUnstoredContext(*arg, context))
+        return std::nullopt;
+    try
+    {
+        auto evaluated = evaluateConstantExpressionAsLiteral(arg->clone(), context);
+        if (const auto * literal = evaluated->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+            return literal->value.safeGet<String>();
+    }
+    catch (const Exception &) // NOLINT(bugprone-empty-catch)
+    {
+        /// Not a constant name: the caller refuses it or treats it as unknown.
+    }
+    return std::nullopt;
+}
+
+/// Reads a `merge` argument like `tryFoldNameArgument`, or unwraps a `REGEXP('...')` wrapper (the
 /// syntax `TableFunctionMerge` accepts for a database-name regexp) into its own literal.
-std::optional<String> tryGetStringLiteralOrRegexpWrapper(const ASTPtr & arg, bool & is_regexp)
+std::optional<String> tryFoldMergeArgument(const ASTPtr & arg, bool & is_regexp, const ContextPtr & context)
 {
     is_regexp = false;
-    if (const auto * literal = arg->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
-        return literal->value.safeGet<String>();
     if (const auto * function = arg->as<ASTFunction>(); function && equalsCaseInsensitive(function->name, "REGEXP") && function->arguments
         && function->arguments->children.size() == 1)
     {
@@ -922,7 +942,7 @@ std::optional<String> tryGetStringLiteralOrRegexpWrapper(const ASTPtr & arg, boo
             return inner->value.safeGet<String>();
         }
     }
-    return std::nullopt;
+    return tryFoldNameArgument(arg, context);
 }
 
 /// What a reference can bind to: `dictGet`/`dictionary()` name a dictionary and `joinGet` a Join
@@ -962,17 +982,20 @@ void collectMergeAndLoopReferences(
     const std::set<String> & undumped_databases,
     const std::map<String, std::map<String, String>> & undumped_tables_by_db,
     const String & owning_database,
+    const ContextPtr & context,
     std::vector<TableReference> & out)
 {
     if (const auto * function = node.as<ASTFunction>(); function && function->arguments)
     {
         const auto & args = function->arguments->children;
-        if (equalsCaseInsensitive(function->name, "merge") && args.size() == 2)
+        if (equalsCaseInsensitive(function->name, "merge") && (args.size() == 1 || args.size() == 2))
         {
+            /// Older servers store `merge('re')` as written; it reads the current database, like `merge('', 're')`.
             bool database_is_regexp = false;
-            std::optional<String> database_pattern = tryGetStringLiteralOrRegexpWrapper(args[0], database_is_regexp);
+            std::optional<String> database_pattern
+                = args.size() == 1 ? std::optional<String>(String{}) : tryFoldMergeArgument(args[0], database_is_regexp, context);
             bool table_is_regexp = false;
-            std::optional<String> table_pattern = tryGetStringLiteralOrRegexpWrapper(args[1], table_is_regexp);
+            std::optional<String> table_pattern = tryFoldMergeArgument(args.back(), table_is_regexp, context);
 
             if (database_pattern && table_pattern)
             {
@@ -1075,11 +1098,10 @@ void collectMergeAndLoopReferences(
             }
             else
             {
-                /// The server evaluates arbitrary constant expressions here (e.g. concat('d', '')); treating
-                /// what this walker can't recognize as dependency-free risks an unreplayable ordering.
+                /// Treating an argument this walker cannot fold as dependency-free risks an unreplayable ordering.
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Cannot statically resolve the database/table arguments of {} for --dump-schema: "
-                    "only string literals and REGEXP('...') are supported, not arbitrary expressions",
+                    "only constant expressions that read neither the session nor the server are supported",
                     function->formatForErrorMessage());
             }
         }
@@ -1103,24 +1125,15 @@ void collectMergeAndLoopReferences(
         else if (equalsCaseInsensitive(function->name, "loop") && args.size() == 2)
         {
             /// loop(database, table): two separate plain arguments, not one qualified "db.table" name.
-            auto read_plain_name = [](const ASTPtr & arg) -> std::optional<String>
-            {
-                if (const auto * literal = arg->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
-                    return literal->value.safeGet<String>();
-                if (const auto * identifier = arg->as<ASTIdentifier>())
-                    return identifier->name();
-                return std::nullopt;
-            };
-            auto database = read_plain_name(args[0]);
-            auto table = read_plain_name(args[1]);
+            auto database = tryFoldNameArgument(args[0], context);
+            auto table = tryFoldNameArgument(args[1], context);
             if (database && table)
                 out.push_back({*database, *table});
             else
-                /// Same reasoning as the merge() case above: a computed database/table name here is
-                /// resolvable in principle but not by this walker, so refuse rather than mis-order.
+                /// Same reasoning as the merge() case above.
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Cannot statically resolve the database/table arguments of {} for --dump-schema: "
-                    "only string literals and identifiers are supported, not arbitrary expressions",
+                    "only constant expressions that read neither the session nor the server are supported",
                     function->formatForErrorMessage());
         }
     }
@@ -1896,7 +1909,8 @@ std::vector<TableInfo> resolveTables(
             if (const auto * table_id = node.as<ASTTableIdentifier>(); table_id && !table_id->getDatabaseName().empty())
                 references.push_back({table_id->getDatabaseName(), table_id->shortName()});
             collectFunctionArgumentReferences(node, clusters, references);
-            collectMergeAndLoopReferences(node, all_table_names_by_db, undumped_databases, undumped_tables_by_db, row.database, references);
+            collectMergeAndLoopReferences(
+                node, all_table_names_by_db, undumped_databases, undumped_tables_by_db, row.database, clusters.context, references);
         });
         for (const auto & candidate : references)
             add_dependency(candidate);
@@ -2826,33 +2840,56 @@ ReplayGateNeeds collectReplayGateNeeds(
             needs.analyzer_order_by |= carriers.order_by;
             needs.analyzer_subquery |= carriers.subquery;
         };
+        /// Asks the source server which gates `select_query` really reads; without a query or an answer, the clauses decide.
+        const auto add_gates_read = [&](const AnalyzerCarriers & carriers, const String & select_query)
+        {
+            const SettingsChanges all_on = {{"allow_suspicious_types_in_group_by", Field(true)},
+                {"allow_suspicious_types_in_order_by", Field(true)}, {"allow_experimental_correlated_subqueries", Field(true)}};
+            if (select_query.empty() || !analyzes_on_source(select_query, all_on))
+            {
+                add_carriers(carriers);
+                return;
+            }
+            const auto fails_without = [&](const String & gate)
+            {
+                SettingsChanges changes = all_on;
+                changes.setSetting(gate, Field(false));
+                return !analyzes_on_source(select_query, changes);
+            };
+            needs.analyzer_group_by |= carriers.group_by && fails_without("allow_suspicious_types_in_group_by");
+            needs.analyzer_order_by |= carriers.order_by && fails_without("allow_suspicious_types_in_order_by");
+            needs.analyzer_subquery |= carriers.subquery && fails_without("allow_experimental_correlated_subqueries");
+        };
+        const auto has_carrier = [](const AnalyzerCarriers & carriers)
+        {
+            return carriers.group_by || carriers.order_by || carriers.subquery;
+        };
         if (create->select && !plain_view)
         {
             const AnalyzerCarriers carriers = scan_analyzed(*create->select);
-            /// The source server analyzes a materialized view's SELECT the way replay does, so it says which gate the
-            /// clauses really read. A SELECT that may analyze differently there (current database, remote data) is not asked.
-            const bool ask_source = create->is_materialized_view && analyzes_on_source
-                && (carriers.group_by || carriers.order_by || carriers.subquery) && analyzesOnlyLocally(*create->select, context);
-            const String select_query = ask_source ? create->select->formatWithSecretsOneLine() : "";
-            const SettingsChanges all_on = {{"allow_suspicious_types_in_group_by", Field(true)},
-                {"allow_suspicious_types_in_order_by", Field(true)}, {"allow_experimental_correlated_subqueries", Field(true)}};
-            if (ask_source && analyzes_on_source(select_query, all_on))
-            {
-                const auto fails_without = [&](const String & gate)
-                {
-                    SettingsChanges changes = all_on;
-                    changes.setSetting(gate, Field(false));
-                    return !analyzes_on_source(select_query, changes);
-                };
-                needs.analyzer_group_by |= carriers.group_by && fails_without("allow_suspicious_types_in_group_by");
-                needs.analyzer_order_by |= carriers.order_by && fails_without("allow_suspicious_types_in_order_by");
-                needs.analyzer_subquery |= carriers.subquery && fails_without("allow_experimental_correlated_subqueries");
-            }
-            else
-                add_carriers(carriers);
+            /// A SELECT that may analyze differently on the source (current database, remote data) is not asked.
+            const bool ask_source = create->is_materialized_view && analyzes_on_source && has_carrier(carriers)
+                && analyzesOnlyLocally(*create->select, context);
+            add_gates_read(carriers, ask_source ? create->select->formatWithSecretsOneLine() : "");
         }
         if (create->columns_list && create->columns_list->projections)
-            add_carriers(scan_analyzed(*create->columns_list->projections));
+            for (const auto & child : create->columns_list->projections->children)
+            {
+                const auto * declaration = child->as<ASTProjectionDeclaration>();
+                const auto * projection = declaration && declaration->query ? declaration->query->as<ASTProjectionSelectQuery>() : nullptr;
+                const AnalyzerCarriers carriers = scan_analyzed(*child);
+                /// A projection is analyzed as this SELECT over its table's columns, which the source table has too.
+                String select_query;
+                if (projection && analyzes_on_source && has_carrier(carriers) && !create->getDatabase().empty()
+                    && !create->getTable().empty())
+                {
+                    ASTPtr select = projection->cloneToASTSelect();
+                    select->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
+                    select->as<ASTSelectQuery &>().replaceDatabaseAndTable(create->getDatabase(), create->getTable());
+                    select_query = select->formatWithSecretsOneLine();
+                }
+                add_gates_read(carriers, select_query);
+            }
 
         /// `registerStorageMergeTree` re-enters its check only for an engine that kept its arguments.
         if (create->getTable().empty())
@@ -3249,12 +3286,12 @@ std::set<String> insertableColumnNames(const ASTCreateQuery & create)
     return names;
 }
 
-/// A table function the server builds from a literal structure without reading the source, by its own `hasStaticStructure`.
+/// A table function the server builds from a literal or fixed structure without reading the source, by its own `hasStaticStructure`.
 /// Data lakes read their metadata even then, and `file`/`url` must not reach a per-server `user_files_path` check.
 bool tableFunctionHasStaticStructure(const ASTFunction & function, const ContextPtr & context)
 {
     static const std::set<std::string_view> names
-        = {"url", "file", "s3", "gcs", "oss", "cosn", "azureBlobStorage", "hdfs", "input", "executable", "hive", "filesystem"};
+        = {"url", "file", "s3", "gcs", "oss", "cosn", "azureBlobStorage", "hdfs", "input", "executable", "hive", "filesystem", "traceView"};
     /// A stored definition keeps the spelling it was written with, such as `URL(...)`.
     const bool known = std::ranges::any_of(names, [&](std::string_view name) { return equalsCaseInsensitive(function.name, name); });
     if (!known || !function.arguments)
@@ -3383,24 +3420,22 @@ bool tableFunctionAlwaysAnalyzes(
         std::optional<std::pair<String, String>> table;
         if (arguments.size() == 1)
             table = tryGetQualifiedNameFromFunctionArgument(*function, 0);
-        else if (const auto * database = arguments[0]->as<ASTIdentifier>(), * name = arguments[1]->as<ASTIdentifier>(); database && name)
-            table = std::pair(database->name(), name->name());
-        else if (const auto * database_literal = arguments[0]->as<ASTLiteral>(), * name_literal = arguments[1]->as<ASTLiteral>();
-                 database_literal && name_literal && database_literal->value.getType() == Field::Types::String
-                 && name_literal->value.getType() == Field::Types::String)
-            table = std::pair(database_literal->value.safeGet<String>(), name_literal->value.safeGet<String>());
+        else if (auto database = tryFoldNameArgument(arguments[0], context), name = tryFoldNameArgument(arguments[1], context);
+                 database && name)
+            table = std::pair(*database, *name);
         if (!table)
             return false;
         if (table->first.empty())
             table->first = owner.database;
         return *table != std::pair(owner.database, owner.name) && emitted_tables.contains(*table);
     }
-    if (equalsCaseInsensitive(function->name, "merge") && arguments.size() == 2)
+    if (equalsCaseInsensitive(function->name, "merge") && (arguments.size() == 1 || arguments.size() == 2))
     {
         bool database_is_regexp = false;
         bool table_is_regexp = false;
-        const auto database = tryGetStringLiteralOrRegexpWrapper(arguments[0], database_is_regexp);
-        const auto table = tryGetStringLiteralOrRegexpWrapper(arguments[1], table_is_regexp);
+        const auto database = arguments.size() == 1 ? std::optional<String>(String{})
+                                                    : tryFoldMergeArgument(arguments[0], database_is_regexp, context);
+        const auto table = tryFoldMergeArgument(arguments.back(), table_is_regexp, context);
         if (!database || !table)
             return false;
         try
