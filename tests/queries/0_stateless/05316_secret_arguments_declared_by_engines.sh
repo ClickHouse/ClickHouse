@@ -40,4 +40,6 @@ SELECT encrypt('aes-256-ofb', 'plain_text', 'plain_key'), hmac('sha256', 'messag
 BACKUP TABLE t TO S3('http://bucket.s3.amazonaws.com/backup', 'access_key_id', 'plain_secret_key')
 CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(CLICKHOUSE(HOST 'localhost' USER 'user' PASSWORD 'plain_password' TABLE 't')) LIFETIME(0) LAYOUT(FLAT())
 CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(MONGODB(URI 'mongodb://user:plain_password@localhost:27017/db' COLLECTION 'c')) LIFETIME(0) LAYOUT(FLAT())
+CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(ODBC(CONNECTION_STRING 'DSN=mydb;UID=user;PWD=plain_password' TABLE 't')) LIFETIME(0) LAYOUT(FLAT())
+CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(YTSAURUS(HTTP_PROXY_URLS 'http://localhost:8000' CYPRESS_PATH '//tmp/t' OAUTH_TOKEN 'plain_token')) LIFETIME(0) LAYOUT(FLAT())
 EOF
