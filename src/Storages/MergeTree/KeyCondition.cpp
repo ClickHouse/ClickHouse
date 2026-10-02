@@ -6643,6 +6643,38 @@ bool KeyCondition::mayReadNullKeyValue(
     return false;
 }
 
+bool KeyCondition::fieldHasNullInside(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Null:
+            return !field.isPositiveInfinity() && !field.isNegativeInfinity();
+        case Field::Types::Tuple:
+        {
+            for (const auto & element : field.safeGet<Tuple>())
+                if (fieldHasNullInside(element))
+                    return true;
+            return false;
+        }
+        case Field::Types::Array:
+        {
+            for (const auto & element : field.safeGet<Array>())
+                if (fieldHasNullInside(element))
+                    return true;
+            return false;
+        }
+        case Field::Types::Map:
+        {
+            for (const auto & element : field.safeGet<Map>())
+                if (fieldHasNullInside(element))
+                    return true;
+            return false;
+        }
+        default:
+            return false;
+    }
+}
+
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
@@ -6686,12 +6718,25 @@ BoolMask KeyCondition::checkInHyperrectangle(
             const Range * key_range_ptr = &hyperrectangle[key_column];
             std::optional<Range> key_range_storage;
 
+            /// A NULL nested in a `Tuple` key value is stored above every value of its element, while
+            /// `Field` order puts it below them, so the upper bound comes out in `Field` order below
+            /// rows the key stores under it: `(2, 3)` is above `(2, NULL)`. The upper bound is widened to
+            /// `+inf`, which claims nothing about the column. A lower bound holding such a NULL only
+            /// comes out lower and needs no widening.
+            const bool upper_bound_widened = fieldHasNullInside(key_range_ptr->right);
+            if (unlikely(upper_bound_widened))
+            {
+                key_range_storage = *key_range_ptr;
+                key_range_storage->right = POSITIVE_INFINITY;
+                key_range_storage->right_included = true;
+                key_range_ptr = &*key_range_storage;
+            }
+
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             if (!element.monotonic_functions_chain.empty())
             {
-                key_range_storage = hyperrectangle[key_column];
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    *key_range_storage,
+                    *key_range_ptr,
                     element.monotonic_functions_chain,
                     data_types[key_column],
                     single_point
@@ -6723,7 +6768,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 intersects = false;
                 contains = false;
             }
-            else if (unlikely(key_range.right.isNaN()))
+            else if (unlikely(key_range.right.isNaN() || upper_bound_widened))
             {
                 contains = false;
             }
@@ -7129,10 +7174,19 @@ BoolMask KeyCondition::checkInHyperrectangle(
             }
             else
             {
+                /// The upper bound is widened when it holds a nested NULL, as in the overload above.
+                Range sparse_key_range = sparse_hyperrectangle[sparse_pos];
+                const bool upper_bound_widened = fieldHasNullInside(sparse_key_range.right);
+                if (unlikely(upper_bound_widened))
+                {
+                    sparse_key_range.right = POSITIVE_INFINITY;
+                    sparse_key_range.right_included = true;
+                }
+
                 /// The column may be wrapped in a chain of possibly monotonic functions; for an empty chain
                 /// the helper returns the range unchanged.
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    sparse_hyperrectangle[sparse_pos],
+                    std::move(sparse_key_range),
                     element.monotonic_functions_chain,
                     sparse_data_types[sparse_pos],
                     single_point);
@@ -7161,7 +7215,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                         intersects = false;
                         contains = false;
                     }
-                    else if (unlikely(key_range.right.isNaN()))
+                    else if (unlikely(key_range.right.isNaN() || upper_bound_widened))
                     {
                         contains = false;
                     }
