@@ -1116,7 +1116,8 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
     const AdaptiveRecordRanges & ranges,
     const bool * alive_bins,
     PaddedPODArray<AggregateDataPtr> & places,
-    RowStorePointers & records) const
+    RowStorePointers & records,
+    bool count_only) const
 {
     using Key = typename Method::Key;
 
@@ -1261,6 +1262,52 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
     {
         const auto & argument_layout = *adaptive_argument_layout;
 
+        /// The same record shapes the producers chose (see `appendDelayedRecords`).
+        bool fixed_stride = false;
+        if constexpr (!adaptive_key_stages_bytes<Key>)
+            fixed_stride = argument_layout.variable_fields.empty();
+
+        const auto key_of = [&](const char * record) ALWAYS_INLINE
+        {
+            return std::pair{record + StagedArgumentRecord::header_bytes + argument_layout.fixed_bytes, StagedArgumentRecord::keySize(record)};
+        };
+
+        if (count_only)
+        {
+            const auto count = [&](const char * record, const char * key_pos, size_t key_size) ALWAYS_INLINE
+            {
+                typename Table::LookupResult it;
+                bool inserted = false;
+                emplaceStagedKey<Key>(table, key_pos, key_size, unalignedLoad<UInt64>(record), it, inserted);
+                if (inserted)
+                    getInlineCountState(it->getMapped()) = 1;
+                else
+                    ++getInlineCountState(it->getMapped());
+            };
+            if (fixed_stride)
+            {
+                using Record = StagedFixedArgumentRecord<Key>;
+                const size_t bytes = Record::bytes(argument_layout.fixed_bytes);
+                walk(
+                    [bytes](const char *) ALWAYS_INLINE { return bytes; },
+                    [](const char * record) ALWAYS_INLINE { return std::pair{record + Record::key_offset, sizeof(Key)}; },
+                    [&](const char * record) ALWAYS_INLINE { count(record, record + Record::key_offset, sizeof(Key)); });
+            }
+            else
+            {
+                walk(
+                    [](const char * record) ALWAYS_INLINE { return StagedArgumentRecord::bytes(record); },
+                    key_of,
+                    [&](const char * record) ALWAYS_INLINE
+                    {
+                        const auto [key_pos, key_size] = key_of(record);
+                        count(record, key_pos, key_size);
+                    });
+            }
+            /// The records were counted, not drained into states.
+            return skipped;
+        }
+
         bool use_compiled_functions = false;
 #if USE_EMBEDDED_COMPILER
         use_compiled_functions = compiled_aggregate_functions_holder != nullptr;
@@ -1284,16 +1331,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
             records.ptrs.push_back(record);
         };
 
-        /// The same record shapes the producers chose (see `appendDelayedRecords`).
-        bool fixed_stride = false;
-        if constexpr (!adaptive_key_stages_bytes<Key>)
-            fixed_stride = argument_layout.variable_fields.empty();
-
         size_t fixed_arguments_offset = StagedArgumentRecord::header_bytes;
-        const auto key_of = [&](const char * record) ALWAYS_INLINE
-        {
-            return std::pair{record + StagedArgumentRecord::header_bytes + argument_layout.fixed_bytes, StagedArgumentRecord::keySize(record)};
-        };
         if (fixed_stride)
         {
             using Record = StagedFixedArgumentRecord<Key>;
