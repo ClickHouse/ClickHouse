@@ -308,7 +308,7 @@ void StorageFileLog::loadFiles()
         {
             const String glob = absolute_path.filename();
             const auto directory = absolute_path.parent_path();
-            if (containsGlobs(directory.string()))
+            if (containsGlobs(directory.string()) && !std::filesystem::is_directory(directory))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Globs are supported only in the file name of the path {}", absolute_path.c_str());
             if (!containsGlobs(glob))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The path {} neither a regular file, nor a directory", absolute_path.c_str());

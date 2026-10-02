@@ -6,6 +6,7 @@
 # A file renamed from a matching name before the table read it is read, also after a second rename, and a rotation chain renamed while detached keeps its offsets.
 # An unread file never becomes read by passing through a read name, and a read file renamed over a new file keeps its offset.
 # A hard link to a read file under a name the glob excludes is not read again.
+# An existing directory whose name has glob characters is taken literally.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,8 +14,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}
 outside=${dir}_outside
-rm -rf "${dir:?}" "${outside:?}"
-mkdir -p "$dir" "$outside"
+braces="${dir}_{old}"
+rm -rf "${dir:?}" "${outside:?}" "${braces:?}"
+mkdir -p "$dir" "$outside" "$braces"
 
 printf '1\n2\n' > "$dir/app.log"
 printf '100\n' > "$dir/notes.txt"
@@ -146,9 +148,16 @@ mv "$dir/alias.log" "$dir/alias.bak"
 printf '33\n' >> "$dir/app.log"
 read_rows "matching hard link renamed"
 
+echo "-- directory name with glob characters"
+printf '1\n' > "$braces/a.log"
+printf '2\n' > "$braces/a.log.1.gz"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE file_log_braces (v UInt64) ENGINE = FileLog('$braces/*.log', 'TSV') SETTINGS max_threads = 1, poll_timeout_ms = 100"
+$CLICKHOUSE_CLIENT -q "SELECT _filename, v FROM file_log_braces SETTINGS stream_like_engine_allow_direct_select = 1 FORMAT TSV"
+$CLICKHOUSE_CLIENT -q "DROP TABLE file_log_braces"
+
 echo "-- errors"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE file_log_bad (v UInt64) ENGINE = FileLog('$dir/*/app.log', 'TSV')" 2>&1 | grep -q 'Globs are supported only in the file name of the path' && echo OK || echo FAIL
 $CLICKHOUSE_CLIENT -q "CREATE TABLE file_log_bad (v UInt64) ENGINE = FileLog('${dir}_missing/*.log', 'TSV')" 2>&1 | grep -q '_missing of the path .* does not exist' && echo OK || echo FAIL
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE file_log"
-rm -rf "${dir:?}" "${outside:?}"
+rm -rf "${dir:?}" "${outside:?}" "${braces:?}"
