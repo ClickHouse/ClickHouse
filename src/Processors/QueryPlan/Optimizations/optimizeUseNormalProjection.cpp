@@ -317,6 +317,9 @@ static void recordHypotheticalOutcome(
         outcome.chosen = &candidate == best_candidate;
         if (!candidate.stat->description.empty())
             outcome.reason = candidate.stat->description;
+        if (candidate.merge_tree_projection_select_result_ptr)
+            for (const auto & part : candidate.merge_tree_projection_select_result_ptr->parts_with_ranges)
+                outcome.ranges[part.parent_part->name] = part.ranges;
     }
     outcome.forced = outcome.forced && outcome.chosen;
 }

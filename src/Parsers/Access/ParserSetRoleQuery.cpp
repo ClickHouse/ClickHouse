@@ -3,8 +3,6 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ParserRolesOrUsersSet.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -85,14 +83,12 @@ bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     return true;
 }
-}
 
-namespace DB
+std::map<String, Documentation> ParserSetRoleQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementSetRole(StatementFactory & factory)
-{
-    factory.registerStatement("SET ROLE",
+    documentation["SET ROLE"] =
     {
         .description = R"DOCS_MD(
 Activates roles for the current user.
@@ -142,7 +138,9 @@ SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
 SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
 )",
         .related = {"CREATE ROLE", "GRANT", "SET", "SHOW"},
-    });
+    };
+
+    return documentation;
 }
 
 }

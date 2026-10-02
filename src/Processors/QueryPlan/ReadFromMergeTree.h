@@ -103,9 +103,7 @@ struct TopKFilterInfo
     /// by the TopK parameters and don't bleed across plans with different LIMIT, sort key, etc.
     UInt64 condition_hash = 0;
 
-    /// Set while the dynamic `__topKFilter` prewhere condition is still to be installed. It belongs
-    /// here, not in `ReadFromMergeTree`, because a plan is cloned between the pass that sets it and
-    /// the pass that installs, and the copies rebuild this struct field by field.
+    /// `tryOptimizeTopK` requested the `__topKFilter` PREWHERE condition and `installTopKDynamicFilter` has not run yet.
     bool dynamic_filter_pending = false;
 };
 

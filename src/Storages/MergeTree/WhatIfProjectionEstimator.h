@@ -21,7 +21,7 @@ struct HypotheticalProjections;
 /// plans the query again so that the optimizer weighs these hypothetical projections and records their results
 using WeighHypotheticalProjections = std::function<void(const std::shared_ptr<HypotheticalProjections> &)>;
 
-/// the stored definition re-checked against the current table, empty with reason set when it no longer fits
+/// re-validate a stored definition, empty with a reason if it no longer fits
 std::optional<ProjectionDescription> refreshHypotheticalProjection(
     const ProjectionDescription & stored,
     const MergeTreeData & data,
@@ -29,13 +29,15 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
     const ContextPtr & context,
     String & reason);
 
-/// mirrors evaluateIndex, an unusable candidate becomes not_applicable with a reason
+/// like evaluateIndex, for a hypothetical projection
+/// `force_requested` makes the verdict name `force_optimize_projection`, which the statement plans as `prefer_optimize_projection`
 WhatIfCandidateResult evaluateProjection(
     const ProjectionDescription & stored_projection,
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & baseline_parts,
     const WhatIfSettings & settings,
+    bool force_requested,
     const WeighHypotheticalProjections & weigh,
     ContextPtr context);
 

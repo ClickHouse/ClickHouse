@@ -140,6 +140,7 @@ Supported values:
 - `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
 - `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
+- `logsql` — LogsQL, the log query language of VictoriaLogs, translated into `SELECT` queries over the logs table configured by the `logsql_database` and `logsql_table` settings. Requires the experimental setting `allow_experimental_logsql_dialect`.
 - `trino` — Trino SQL: translates Trino syntax (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) and maps Trino function names to their ClickHouse equivalents. Requires the experimental setting `enable_trino_dialect`.
 )", 0)\
     DECLARE(UInt64, min_compress_block_size, 65536, R"(
@@ -2857,7 +2858,7 @@ Use client timezone for interpreting DateTime string values, instead of adopting
 )", 0) \
     \
     DECLARE(Bool, send_profile_events, true, R"(
-Enables or disables sending of [ProfileEvents](/resources/develop-contribute/native-protocol/server#profile-events) packets to the client.
+Enables or disables sending of [ProfileEvents](/resources/develop-contribute/native-protocol/protocol#profileevents) packets to the client.
 
 This can be disabled to reduce network traffic for clients that do not require profile events.
 
@@ -3695,7 +3696,9 @@ Possible values:
 - `break`: stop executing the query and return the partial result.
 )", 0) \
     DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, R"(
-Prefer maximum block bytes for external sort, reduce the memory usage during merging.
+Preferred block size in bytes for spill files used by external `ORDER BY` and `DISTINCT`. Smaller blocks reduce memory usage when merging spill files.
+
+The block size is estimated from average row size, so blocks with unusually large rows can exceed this target. Set to `0` to size blocks by the row limit only.
 )", 0, \
         {"24.5", 0, DEFAULT_BLOCK_SIZE * 256, "Prefer maximum block bytes for external sort, reduce the memory usage during merging."}) \
     DECLARE(UInt64, max_bytes_before_external_sort, 0, R"(
@@ -5034,6 +5037,12 @@ Formatter '%e' in function 'formatDateTime' prints single-digit days with a lead
 If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
 )", 0, \
         {"24.12", true, false, "New setting"}) \
+    DECLARE(Bool, array_count_legacy_uint32_result, false, R"(
+If enabled, function `arrayCount` returns `UInt32` as before version 26.10, instead of `UInt64`. The `UInt32` result silently wraps around for arrays with more than `4294967295` matching elements. The setting also restores the pre-26.10 constness of the result: a predicate folding to a constant false then produces a constant result column even for a non-constant array.
+
+During a rolling upgrade, enable it on the upgraded servers for the users under which distributed queries execute on them, to keep distributed queries initiated by not-yet-upgraded servers fully unchanged (an old initiator does not forward this setting, so type-sensitive expressions evaluated locally on upgraded shards would otherwise observe `UInt64`), and remove it after the upgrade is complete. Which user a shard-side query runs under depends on the cluster configuration: with an interserver `secret` configured, it is the initiator's current user; otherwise it is the user from the cluster definition or from the `remote` table function (`default` unless specified). The simplest robust approach is to enable the setting for all users of the upgraded servers.
+)", 0, \
+        {"26.10", true, false, "`arrayCount` now returns `UInt64` instead of `UInt32`, so that the result is exact for arrays with more than `4294967295` matching elements. Set this setting to `true` to return `UInt32` as before."}) \
     DECLARE(Bool, h3togeo_lon_lat_result_order, false, R"(
 Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
 )", 0, \
@@ -5775,20 +5784,6 @@ This is local insert-path atomicity: the exclusive lock only serializes with ins
 This requires the source table to support reading a pinned point-in-time snapshot (the `MergeTree` family and `Memory`). For any other source (a view, `Distributed`, `Merge`, the `Log` family, or a table not in an `Atomic` database) the population falls back to the legacy, non-atomic behavior (recorded in the server log): existing data is read with a separate, non-coordinated snapshot, so rows inserted during the population can be missed or duplicated. Set this setting to `false` to force the legacy behavior for all sources. Applies to plain `CREATE MATERIALIZED VIEW` only; `CREATE OR REPLACE` / `REPLACE` always use the legacy non-atomic population, and so does a view created in a `Replicated` database (where `POPULATE` requires `database_replicated_allow_heavy_create`), because a failed population could not be rolled back consistently on all replicas there.
 )", 0, \
         {"26.8", false, true, "New setting that makes plain `CREATE MATERIALIZED VIEW ... POPULATE` locally atomic: existing data is snapshotted and the view is subscribed to new inserts together, under a brief exclusive lock on the source, so rows inserted through the same server are neither missed nor duplicated. The guarantee covers the local insert path only - inserts arriving on another replica or through a distributed write are outside the cut - and it requires a source that can provide a pinned snapshot (the `MergeTree` family and `Memory`); other sources, as well as `CREATE OR REPLACE` / `REPLACE`, keep the legacy non-atomic population. Set to `false` for the legacy non-atomic behavior everywhere."}) \
-    DECLARE(Bool, use_compact_format_in_distributed_parts_names, true, R"(
-Uses compact format for storing blocks for background (`distributed_foreground_insert`) INSERT into tables with `Distributed` engine.
-
-Possible values:
-
-- 0 — Uses `user[:password]@host:port#default_database` directory format.
-- 1 — Uses `[shard{shard_index}[_replica{replica_index}]]` directory format.
-
-<Note>
-- with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for background INSERT.
-- with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
-</Note>
-)", 0, \
-        {"21.1", false, true, "Use compact format for async INSERT into Distributed tables by default"}) \
     DECLARE(Bool, validate_polygons, true, R"(
 Enables or disables throwing an exception in the [pointInPolygon](/reference/functions/regular-functions/geo/coordinates#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
 
@@ -6586,6 +6581,7 @@ Default value for Iceberg table property `history.expire.max-ref-age-ms` used by
 )", 0, \
         {"26.3", 9223372036854775807, 9223372036854775807, "New setting."}) \
     DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 384_MiB, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Data files smaller than this are selected for compaction.
 
 The default is `0.75` of the documented default of the Iceberg table property `write.target-file-size-bytes`
@@ -6595,6 +6591,7 @@ see https://iceberg.apache.org/docs/1.5.2/configuration/.
         {"26.9", 10 * 1024 * 1024, 384 * 1024 * 1024, "Aligned with how the Iceberg `rewrite_data_files` procedure derives `min-file-size-bytes`: 0.75 of the target file size (512 MiB). Compaction now selects files below 384 MiB instead of below 10 MiB."}, \
         {"26.5", 10_MiB, 10_MiB, "New setting"}) \
     DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 512_MiB * 9 / 5, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Data files larger than this are selected for compaction.
 
 The default is `1.8` of the documented default of the Iceberg table property `write.target-file-size-bytes`
@@ -6604,6 +6601,7 @@ see https://iceberg.apache.org/docs/1.5.2/configuration/.
         {"26.9", 10ULL * 1024 * 1024 * 1024, 512ULL * 1024 * 1024 * 9 / 5, "Aligned with how the Iceberg `rewrite_data_files` procedure derives `max-file-size-bytes`: 1.8 of the target file size (512 MiB)."}, \
         {"26.5", 10_GiB, 10_GiB, "New setting"}) \
     DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Threshold for compaction data files in iceberg.
 )", 0, \
         {"26.5", 1000, 1000, "New setting"}) \
@@ -6660,14 +6658,17 @@ Possible values:
 )", 0, \
         {"26.3", false, true, "Enables cache of parquet file metadata."}) \
     DECLARE(Seconds, iceberg_compaction_delay_bias, 60 * 60 * 3, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Minimum time of delay between 2 background compaction operations.
 )", 0, \
         {"26.5", 60 * 60 * 3, 60 * 60 * 3, "New setting"}) \
     DECLARE(Seconds, iceberg_compaction_data_cleanup, 60 * 60 * 3, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 The time after which the data will be deleted.
 )", 0, \
         {"26.5", 60 * 60 * 3, 60 * 60 * 3, "New setting"}) \
     DECLARE(UInt64, iceberg_compaction_commit_batch_size, 100, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Number of merged data files that background Iceberg compaction accumulates before publishing them in a new snapshot.
 
 Compaction results are published in any case once there are no candidates left to compact, so this setting only bounds
@@ -6876,6 +6877,10 @@ For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, c
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0, \
         {"26.4", false, true, "Enable arrayExists to has rewrite optimization by default, now that type compatibility is checked before rewriting."}) \
+    DECLARE(Bool, optimize_rewrite_array_filter_length_to_array_count, true, R"(
+Rewrite `length(arrayFilter(func, arr))` to `arrayCount(func, arr)`. `arrayFilter` builds an array of the matching elements only for `length` to throw it away, while `arrayCount` just counts them.
+)", 0, \
+        {"26.10", false, true, "New setting to rewrite `length(arrayFilter(func, arr))` into `arrayCount(func, arr)`, which does not build the filtered array."}) \
     DECLARE(Bool, optimize_rewrite_has_to_in, true, R"(
 Rewrite `has` functions to `IN` when the first argument is a constant array. For example, `has([1, 2, 3], x)` can be rewritten to `x IN [1, 2, 3]` for better performance with constant arrays
 )", 0, \
@@ -7398,6 +7403,10 @@ This is an expert-level setting which should only be used for debugging by devel
 )", 0, \
         {"26.10", false, true, "Enable query_plan_lower_array_join_function by default."}, \
         {"26.9", false, false, "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."}) \
+    DECLARE(Bool, legacy_array_join_function_nondeterministic_evaluation, false, R"(
+How non-deterministic and block-dependent functions next to the `arrayJoin` function are evaluated. By default `rand()` gives a different value on every output row and `runningDifference` or `neighbor` see the blocks of the expansion, like with the `ARRAY JOIN` clause. Enable to get the behavior of older versions.
+)", 0, \
+        {"26.10", true, false, "Non-deterministic and block-dependent functions next to the `arrayJoin` function are evaluated like with the `ARRAY JOIN` clause."}) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
@@ -7411,6 +7420,22 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_filter_push_down_below_limit_by, true, R"(
+Toggles pushing filters on `LIMIT BY` key columns below the `LIMIT BY` step.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+It is read independently of [query_plan_filter_push_down](#query_plan_filter_push_down): the push-down pass also runs, with that setting off, once a `JOIN` runtime filter has been added.
+
+<Note>
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+</Note>
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0, \
+        {"26.10", true, true, "New setting to control pushing a filter on the `LIMIT BY` key columns below the `LIMIT BY` step. Set it to false to keep the filter above the `LIMIT BY`."}, \
+        {"26.8", false, true, "New setting to control pushing a filter on the `LIMIT BY` key columns below the `LIMIT BY` step. Set it to false to keep the filter above the `LIMIT BY`."}) \
     DECLARE(Bool, query_plan_propagate_predicate_across_join, true, R"(
 Toggles a query-plan-level optimization which copies filter conjuncts from one side of an
 equi-join onto the other side via equi-key substitution, so that primary-key/index pruning
@@ -7443,6 +7468,10 @@ Possible values:
 Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filters default values
 )", 0, \
         {"24.4", false, true, "Allow to convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values"}) \
+    DECLARE(Bool, query_plan_convert_outer_join_to_inner_join_transitively, true, R"(
+Extend `query_plan_convert_outer_join_to_inner_join` to consider a filter further up the plan and conditions of an enclosing `JOIN`. Only has an effect when `query_plan_convert_outer_join_to_inner_join` is enabled.
+)", 0, \
+        {"26.10", false, true, "New setting to extend `query_plan_convert_outer_join_to_inner_join` to consider a filter further up the plan and conditions of an enclosing `JOIN`. Only has an effect when `query_plan_convert_outer_join_to_inner_join` is enabled."}) \
     DECLARE(Bool, query_plan_short_circuit_constant_false_join, true, R"(
 Short-circuit a `JOIN` whose `ON` condition folds to a constant false by replacing each input side that cannot contribute a row (both sides for `INNER`/`CROSS`/`SEMI`, the non-preserved side for `LEFT`/`RIGHT`) with an empty source, so the non-contributing side is not read. Applies to non-distributed plans.
 )", 0, \
@@ -7463,10 +7492,6 @@ Allow to merge expressions into JOIN step during join reordering optimization.
 Allow to convert `JOIN` to subquery with `IN` if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
 )", 0, \
         {"25.4", false, false, "New setting"}) \
-    DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
-Allow to push down filter to PREWHERE expression for supported storages
-)", 0, \
-        {"24.2", true, true, "Allow to push down filter to PREWHERE expression for supported storages"}) \
     DECLARE(Bool, optimize_prewhere_after_pushdown, false, R"(
 Run a second `PREWHERE` promotion pass after later query plan optimizations may have
 deposited additional filters above a `MergeTree` read step (e.g. predicate pushdown through
@@ -7514,35 +7539,8 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_read_in_order, true, R"(
-Toggles the read in-order optimization query-plan-level optimization.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-<Note>
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-</Note>
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
     DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0, \
         {"25.12", false, true, "New setting"}) \
-    DECLARE(Bool, query_plan_aggregation_in_order, true, R"(
-Toggles the aggregation in-order query-plan-level optimization.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-<Note>
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-</Note>
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0, \
-        {"22.12", 0, 1, "Enable some refactoring around query plan"}) \
     DECLARE(Bool, query_plan_remove_redundant_sorting, true, R"(
 Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
@@ -9240,7 +9238,7 @@ Index analysis done only on replica-coordinator and skipped on other replicas. E
         {"24.12", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, \
         {"24.10", false, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}) \
     DECLARE(Bool, parallel_replicas_support_projection, true, R"(
-Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive.
+Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan.
 )", 0, \
         {"25.8", false, true, "New setting. Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive."}) \
     DECLARE(Milliseconds, parallel_replicas_connect_timeout_ms, 300, R"(
@@ -9322,7 +9320,7 @@ The analyzer is the query analysis and planning infrastructure that has been the
         {"24.8", 1, 1, "Added the alias `enable_analyzer`."}, \
         {"24.3", false, true, "Enable analyzer and planner by default."}) \
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
-Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`). Aliases defined on subexpressions inside the SELECT list are also considered (for example, in `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` the join is performed by `t1.a + 1 = t2.b`). When the matching alias is defined on a subexpression inside the SELECT list rather than as a top-level alias, parallel replicas are disabled for the query. For queries sent to remote servers (`Distributed` tables, the `remote` table function), such a query is rejected with an exception only when the identifier cannot be resolved on the remote server at all; if the alias shadows a real column of the left table, the remote server joins by that column instead, so the results may differ from local execution.
+Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`). Aliases defined elsewhere in the query are also considered: in the `WITH` clause, on subexpressions inside the SELECT list, or in other clauses (for example, in `WITH a + 1 AS b SELECT count() FROM t1 JOIN t2 USING (b)` and in `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` the join is performed by `t1.a + 1 = t2.b`). When the matching alias is not a top-level alias of the SELECT list, parallel replicas are disabled for the query. For queries sent to remote servers (`Distributed` tables, the `remote` table function), such a query is rejected with an exception only when the identifier cannot be resolved on the remote server at all; if the alias shadows a real column of the left table, the remote server joins by that column instead, so the results may differ from local execution.
 )", 0, \
         {"24.3", false, false, "Force to resolve identifier in JOIN USING from projection"}) \
     DECLARE(Bool, analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested, true, R"(
@@ -9643,6 +9641,7 @@ resulting file, and that `iceberg_insert_max_rows_in_data_file` caps the file in
         {"26.9", 1024 * 1024 * 1024, 512 * 1024 * 1024, "Aligned with the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB), see https://iceberg.apache.org/docs/1.5.2/configuration/."}, \
         {"25.9", 1_GiB, 1_GiB, "New setting."}) \
     DECLARE(UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max(), R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Max rows of an iceberg parquet data file produced by compaction. Defaults to the maximum, so the size limit
 `iceberg_compaction_max_bytes_in_data_file` alone decides how much data goes into an output file, the same way
 Iceberg has no row-count counterpart of `write.target-file-size-bytes`.
@@ -9650,6 +9649,7 @@ Iceberg has no row-count counterpart of `write.target-file-size-bytes`.
         {"26.9", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."}, \
         {"26.7", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."}) \
     DECLARE(UInt64, iceberg_compaction_max_bytes_in_data_file, 512_MiB, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Max bytes of an iceberg parquet data file produced by compaction.
 
 The default mirrors the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB),
@@ -9756,6 +9756,17 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"25.12", false, true, "New setting. Add optimization to remove unused columns in query plan."}) \
+    DECLARE(Bool, kill_throw_if_noop, false, R"(
+Controls whether [`KILL QUERY`](/sql-reference/statements/kill#kill-query) and [`KILL MUTATION`](/sql-reference/statements/kill#kill-mutation) throw an exception when their `WHERE` clauses match no rows.
+
+If set to true, `KILL QUERY` throws when there are no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when no rows match in `system.mutations`. By default, an empty match returns without an exception. `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
+
+Possible values:
+
+- 1 — Throw an exception.
+- 0 — Do not throw an exception.
+)", 0, \
+        {"26.10", false, false, "New setting"}) \
     DECLARE(Bool, jemalloc_enable_profiler, false, R"(
 Enable jemalloc profiler for the query. Jemalloc will sample allocations and all deallocations for sampled allocations.
 Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.
@@ -9894,7 +9905,8 @@ Enables lazy type hints for the [JSON](/reference/data-types/newjson) type.
 With this setting enabled, `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeName)` that only adds or changes
 type hints is a metadata-only operation: the type hints are applied at query time for existing parts and
 materialized during inserts and background merges instead of rewriting the historical data.
-)", BETA, allow_experimental_json_lazy_type_hints, \
+)", 0, allow_experimental_json_lazy_type_hints, \
+        {"26.10", false, false, "Lazy `JSON` type hints are now GA. This also applies to the alias `allow_experimental_json_lazy_type_hints`."}, \
         {"26.9", false, false, "Lazy JSON type hints are now Beta. An alias for setting 'allow_experimental_json_lazy_type_hints'."}, \
         {"26.3", false, false, "New experimental setting for lazy JSON type hints. At the time the setting was named `allow_experimental_json_lazy_type_hints`, which is now an alias of it."}) \
     DECLARE(Bool, enable_hash_join_row_store, true, R"(
@@ -10238,6 +10250,48 @@ SET dialect = 'clickhouse_json';
 Source SQL dialect for the polyglot transpiler (e.g. 'sqlite', 'mysql', 'postgresql', 'snowflake', 'duckdb').
 )", EXPERIMENTAL, \
         {"26.3", "", "", "New setting to specify the source SQL dialect for the polyglot transpiler."}) \
+    DECLARE(Bool, allow_experimental_logsql_dialect, false, R"(
+Enable LogsQL - the log query language of VictoriaLogs. Queries in this dialect are translated into SELECT queries over the table specified by the `logsql_table` setting.
+
+Usage:
+```sql
+SET allow_experimental_logsql_dialect = 1;
+SET logsql_table = 'logs';
+SET dialect = 'logsql';
+
+_time:1h error | stats by (host) count()
+```
+
+A complete standalone `SET` query is still parsed as plain SQL so that the dialect can
+be switched back; a LogsQL query merely starting with the word `set` keeps its meaning.
+The `logsql_time_column` and `logsql_message_column` settings configure the columns
+referred to by the `_time` field and by the default (message) field.
+
+Unlike VictoriaLogs, which stores every field as a string, the translated queries run
+over the existing table schema. The key contract deviations that follow from this:
+- Text filters (words, phrases, prefixes, regexps) expect `String`-backed columns and do not convert numeric columns to text.
+- Numeric comparison filters compare numeric columns natively (exactly for integer and decimal values, as long as the compared literal fits `Int128` or `Decimal256(38)`; a wider value, e.g. an integer above 1e38 in a `UInt256` field, is compared with `Float64` precision, and so are the integral bucket steps of `stats by (<field>:<step>)`). For `String` columns, only plain numeric text is parsed per row; values in the LogsQL number grammar (e.g. `10KiB`, `1h30m`) are not parsed per row.
+- The numeric stats functions (`sum`, `avg`, `median`, `quantile`, `stddev`, `rate_sum`) parse the numeric value of every field, skipping the values that are not numbers, like VictoriaLogs. The values are `Float64`, so a numeric column is aggregated with `Float64` precision and not exactly.
+- The `math` pipe requires numeric operand columns; `String` columns are not coerced.
+- Query results are returned with the types of the underlying columns, not as strings.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to enable the LogsQL dialect (the log query language of VictoriaLogs)."}) \
+    DECLARE(String, logsql_database, "", R"(
+Specifies the database with the logs table used by the 'logsql' dialect. Empty string means the current database.
+)", EXPERIMENTAL, \
+        {"26.10", "", "", "New setting to specify the database with the logs table used by the 'logsql' dialect."}) \
+    DECLARE(String, logsql_table, "", R"(
+Specifies the name of the logs table used by the 'logsql' dialect.
+)", EXPERIMENTAL, \
+        {"26.10", "", "", "New setting to specify the logs table used by the 'logsql' dialect."}) \
+    DECLARE(String, logsql_time_column, "_time", R"(
+Specifies the name of the column referred to by the `_time` field in the 'logsql' dialect.
+)", EXPERIMENTAL, \
+        {"26.10", "_time", "_time", "New setting to specify the column referred to by the `_time` field in the 'logsql' dialect."}) \
+    DECLARE(String, logsql_message_column, "_msg", R"(
+Specifies the name of the column referred to by the `_msg` field (the default field of LogsQL filters) in the 'logsql' dialect.
+)", EXPERIMENTAL, \
+        {"26.10", "_msg", "_msg", "New setting to specify the column referred to by the `_msg` field in the 'logsql' dialect."}) \
     DECLARE(Bool, enable_trino_dialect, false, R"(
 Enable the `trino` value of the `dialect` setting.
 
@@ -10272,11 +10326,13 @@ Allow to execute `insert` queries into iceberg.
         {"26.2", false, false, "Insert into iceberg was moved to Beta. This also applies to the alias `allow_experimental_insert_into_iceberg`."}, \
         {"25.7", false, false, "New setting."}) \
     DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
+Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Allow to clean up old data files during Iceberg compaction.
 )", EXPERIMENTAL, \
         {"26.5", false, false, "New setting"}) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
+In open-source builds only `OPTIMIZE TABLE ... MANIFEST` is supported; data compaction (`OPTIMIZE TABLE` without `MANIFEST`) reports `NOT_IMPLEMENTED`.
 )", EXPERIMENTAL, \
         {"25.8", 0, 0, "New setting"}) \
     DECLARE(UInt64, iceberg_manifest_min_count_to_compact, 100, R"(
@@ -10797,6 +10853,14 @@ Enable experimental table function `eval`.
         {"26.5", true, true, "Obsolete setting, the logical join step is now always used."}, \
         {"25.2", false, true, "Enable new step"}, \
         {"25.1", false, false, "New join step, internal change"}) \
+    MAKE_OBSOLETE(M, Bool, query_plan_read_in_order, true, \
+        {"26.10", true, true, "Obsolete setting: the read-in-order optimization is now always applied at the query plan level, and the legacy interpreter-level implementation (`ReadInOrderOptimizer`) was removed. Use `optimize_read_in_order` to toggle the optimization."}) \
+    MAKE_OBSOLETE(M, Bool, query_plan_optimize_prewhere, true, \
+        {"26.10", true, true, "Obsolete setting: moving conditions from `WHERE` to `PREWHERE` is now always done at the query plan level, and the legacy AST-based implementation in `InterpreterSelectQuery` was removed. Use `optimize_move_to_prewhere` to toggle the optimization."}, \
+        {"24.2", true, true, "Allow to push down filter to PREWHERE expression for supported storages"}) \
+    MAKE_OBSOLETE(M, Bool, query_plan_aggregation_in_order, true, \
+        {"26.10", true, true, "Obsolete setting: the aggregation-in-order optimization is now always applied at the query plan level, and the legacy interpreter-level implementation was removed. Use `optimize_aggregation_in_order` to toggle the optimization."}, \
+        {"22.12", 0, 1, "Enable some refactoring around query plan"}) \
     MAKE_OBSOLETE(M, Bool, parallel_replicas_insert_select_local_pipeline, true, \
         {"26.10", true, true, "Obsolete setting: whether the initiator runs the local pipeline of a distributed `INSERT SELECT` is decided by `parallel_replicas_local_plan` and `parallel_replicas_prefer_local_replica` alone, and it is still skipped when `max_execution_time_leaf` imposes a different timeout contract. Set `parallel_replicas_local_plan = 0` to leave all the reading to the remote replicas."}, \
         {"25.5", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}, \
@@ -10807,7 +10871,10 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Float, text_index_lazy_intersection_density_threshold, 0.2f, \
         {"26.7", 0.2, 0.2, "Renamed from `text_index_density_threshold` (kept as an alias); selects the posting list intersection algorithm in lazy posting list apply mode."}) \
     MAKE_OBSOLETE(M, Float, text_index_density_threshold, 0.2f, \
-        {"26.6", 0.2, 0.2, "New setting for lazy posting list density threshold"})
+        {"26.6", 0.2, 0.2, "New setting for lazy posting list density threshold"}) \
+    MAKE_OBSOLETE(M, Bool, use_compact_format_in_distributed_parts_names, true, \
+        {"26.10", true, true, "Obsolete setting. The non-compact directory format for the async `INSERT` queue of a `Distributed` table has been removed. The setting was 1 by default since version 21.1. Switch to `1` and let the queue drain before upgrading."}, \
+        {"21.1", false, true, "Use compact format for async INSERT into Distributed tables by default"})
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Storages/ProjectionsDescription.h>
 
 #include <optional>
@@ -32,6 +33,8 @@ struct HypotheticalProjections
         /// the query has no filter and no ORDER BY that a projection can serve
         bool nothing_to_serve = false;
         String reason;
+        /// parent part name -> the granules that the projection read takes from the projection part
+        std::unordered_map<String, MarkRanges> ranges;
     };
     Outcome outcome;
 
