@@ -1537,6 +1537,31 @@ def test_drop_table_in_multi_level_namespace(started_cluster):
     assert catalog.list_tables(namespace) == []
 
 
+def test_create_table_order_by(started_cluster):
+    # `ORDER BY` must reach the catalog as the table's write order.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_order_by_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"""
+CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (id Int64, name String)
+ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
+ORDER BY (id, name)
+        """,
+        settings={"allow_database_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+
+    sort_fields = catalog.load_table(f"{root_namespace}.{table_name}").sort_order().fields
+    assert [field.source_id for field in sort_fields] == [1, 2], sort_fields
+    assert all(isinstance(field.transform, IdentityTransform) for field in sort_fields), sort_fields
+
+
 def test_table_with_slash(started_cluster):
     node = started_cluster.instances["node1"]
 
