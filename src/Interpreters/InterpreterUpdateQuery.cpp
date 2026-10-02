@@ -158,11 +158,11 @@ BlockIO InterpreterUpdateQuery::execute()
 
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
-        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database)
+        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
         {
             const auto & captured_update = captured_query_ptr->as<const ASTUpdateQuery &>();
             const auto default_database = captured_update.getDatabase().empty() ? cluster_default_database : captured_update.getDatabase();
-            checkNoRowPolicyForSetOperands(captured_query_ptr, default_database, context, /* throw_if_unresolved = */ true);
+            checkNoRowPolicyForSetOperands(captured_query_ptr, default_database, context, throw_if_unresolved);
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
@@ -191,7 +191,7 @@ BlockIO InterpreterUpdateQuery::execute()
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = true}, std::move(guard));
     }
 
     /// Expand CTEs before filling the default database, otherwise a CTE alias is qualified as if it
