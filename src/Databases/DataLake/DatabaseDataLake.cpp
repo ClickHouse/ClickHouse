@@ -758,9 +758,10 @@ DatabaseDataLake::TableEngineArgs DatabaseDataLake::buildTableEngineArgs(
             result.storage_type = table_metadata.getStorageType();
     }
 
+    /// Only one arg means the user gave no credentials in CREATE DATABASE. Find them elsewhere.
     if (result.args.size() == 1)
     {
-        std::array<DatabaseDataLakeCatalogType, 3> vended_credentials_catalogs = {DatabaseDataLakeCatalogType::ICEBERG_ONELAKE, DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE, DatabaseDataLakeCatalogType::PAIMON_REST};
+        std::array<DatabaseDataLakeCatalogType, 3> catalogs_not_passing_credentials_in_args = {DatabaseDataLakeCatalogType::ICEBERG_ONELAKE, DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE, DatabaseDataLakeCatalogType::PAIMON_REST};
 
         std::shared_ptr<DataLake::IStorageCredentials> static_credentials;
         if (!catalogManagesProviderChain(catalog))
@@ -786,7 +787,7 @@ DatabaseDataLake::TableEngineArgs DatabaseDataLake::buildTableEngineArgs(
             static_credentials->addCredentialsToEngineArgs(result.args);
             result.static_credentials_applied = true;
         }
-        else if (!lightweight && table_metadata.requiresCredentials() && std::find(vended_credentials_catalogs.begin(), vended_credentials_catalogs.end(), catalog.getCatalogType()) == vended_credentials_catalogs.end())
+        else if (!lightweight && table_metadata.requiresCredentials() && std::find(catalogs_not_passing_credentials_in_args.begin(), catalogs_not_passing_credentials_in_args.end(), catalog.getCatalogType()) == catalogs_not_passing_credentials_in_args.end())
         {
             throw Exception(
                ErrorCodes::BAD_ARGUMENTS,
@@ -897,24 +898,8 @@ Exception DatabaseDataLake::cannotTellNewTableLocation(const String & name) cons
         backQuoteIfNeed(getDatabaseName()), name);
 }
 
-String DatabaseDataLake::getDefaultTableEngineName(const String & name) const
+static std::optional<String> chooseTableEngineName(DataLake::DataLakeTableFormat table_format, DatabaseDataLakeStorageType storage_type)
 {
-    const auto settings_version = database_settings.get();
-    const DatabaseDataLakeSettings & settings = *settings_version;
-
-    auto catalog = getCatalog();
-
-    auto table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
-    const auto catalog_storage_type = catalog->getStorageType();
-    if (!table_metadata && !catalog_storage_type && catalog->createNamespaceIfNotExists(DataLake::parseTableName(name).first, /* location */ ""))
-        table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
-
-    if (!table_metadata && !catalog_storage_type)
-        throw cannotTellNewTableLocation(name);
-
-    const auto table_format = table_metadata ? catalog->getTableFormat(*table_metadata) : catalog->getTableFormat(DataLake::TableMetadata());
-    const auto storage_type = table_metadata ? table_metadata->getStorageType() : *catalog_storage_type;
-
     if (table_format == DataLake::DataLakeTableFormat::ICEBERG)
     {
         switch (storage_type)
@@ -946,7 +931,48 @@ String DatabaseDataLake::getDefaultTableEngineName(const String & name) const
                 break;
         }
     }
+    return std::nullopt;
+}
 
+String DatabaseDataLake::getDefaultTableEngineName(const String & name) const
+{
+    const auto settings_version = database_settings.get();
+    const DatabaseDataLakeSettings & settings = *settings_version;
+
+    auto catalog = getCatalog();
+    const auto namespace_name = DataLake::parseTableName(name).first;
+
+    auto table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
+    const auto catalog_storage_type = catalog->getStorageType();
+    bool namespace_created = false;
+    if (!table_metadata && !catalog_storage_type)
+    {
+        namespace_created = catalog->createNamespaceIfNotExists(namespace_name, /* location */ "");
+        if (namespace_created)
+            table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
+    }
+
+    auto drop_created_namespace = [&]
+    {
+        if (!namespace_created)
+            return;
+        LOG_DEBUG(log, "Dropping namespace {} created for table {} that cannot be created", namespace_name, name);
+        catalog->dropNamespace(namespace_name);
+    };
+
+    if (!table_metadata && !catalog_storage_type)
+    {
+        drop_created_namespace();
+        throw cannotTellNewTableLocation(name);
+    }
+
+    const auto table_format = table_metadata ? catalog->getTableFormat(*table_metadata) : catalog->getTableFormat(DataLake::TableMetadata());
+    const auto storage_type = table_metadata ? table_metadata->getStorageType() : *catalog_storage_type;
+
+    if (auto engine_name = chooseTableEngineName(table_format, storage_type))
+        return *engine_name;
+
+    drop_created_namespace();
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Cannot choose a table engine for table {} in database {}: its catalog creates {} tables in {}. "
