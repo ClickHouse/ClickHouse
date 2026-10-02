@@ -5,8 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # A LowCardinality dictionary of a floating-point type can hold entries whose bit patterns differ
-# while their values compare equal. clickhouse-local keeps such a dictionary as parsed, which is
-# why these cases are exercised here rather than through a server connection.
+# while their values compare equal.
 run() {
     $CLICKHOUSE_LOCAL --allow_suspicious_low_cardinality_types 1 --query "$1" < /dev/null
 }

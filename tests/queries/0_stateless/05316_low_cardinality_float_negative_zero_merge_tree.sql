@@ -24,6 +24,12 @@ INSERT INTO t_lc_neg_zero_f32 VALUES (-0.0);
 SELECT hex(reinterpretAsUInt32(toFloat32(x))) FROM t_lc_neg_zero_f32;
 DROP TABLE t_lc_neg_zero_f32;
 
+DROP TABLE IF EXISTS t_lc_neg_zero_bf16;
+CREATE TABLE t_lc_neg_zero_bf16 (x LowCardinality(BFloat16)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_lc_neg_zero_bf16 VALUES (-0.0);
+SELECT hex(reinterpretAsUInt32(toFloat32(x))) FROM t_lc_neg_zero_bf16;
+DROP TABLE t_lc_neg_zero_bf16;
+
 DROP TABLE IF EXISTS t_lc_neg_zero_map;
 CREATE TABLE t_lc_neg_zero_map (c0 Map(LowCardinality(Float64), UInt8)) ENGINE = MergeTree ORDER BY murmurHash3_64(c0);
 INSERT INTO t_lc_neg_zero_map VALUES (map(-0.0, 1)), (map(4.0, 2));

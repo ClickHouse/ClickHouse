@@ -1,14 +1,13 @@
--- A LowCardinality(Float) dictionary is not canonicalized: depending on the insert path, -0.0 can end up as
--- a dictionary entry of its own next to +0.0, or be folded onto the +0.0 entry. Yet -0.0 compares equal to
+-- A LowCardinality(Float) dictionary is not canonicalized: -0.0 is kept as a dictionary entry of its own
+-- next to +0.0. Yet -0.0 compares equal to
 -- +0.0, so the two variants of DISTINCT and LIMIT BY would disagree with each other if the in-order variant
 -- grouped such a key by comparison: it would merge the two zeros into a single group, while the hash variant
 -- and GROUP BY keep them apart. A LowCardinality float key therefore stops the sort prefix, and DISTINCT and
 -- LIMIT BY group it by hash, in agreement with GROUP BY.
 --
--- These queries assert that agreement. Whether -0.0 survives into the dictionary as a separate entry depends
--- on the insert path (and, for inline VALUES, on which side of the connection parses them), so the group
--- counts themselves are not stable across settings; the equality of the two counts is. The reference for
--- every comparison is GROUP BY with in-order aggregation turned off, which always groups by hash.
+-- These queries assert that agreement: only the equality of the two counts is checked, not the counts
+-- themselves. The reference for every comparison is GROUP BY with in-order aggregation turned off, which
+-- always groups by hash.
 
 SET allow_suspicious_low_cardinality_types = 1;
 
