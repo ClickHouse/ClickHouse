@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/TokenSearchArgumentTypes.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
@@ -87,48 +88,6 @@ TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & argumen
             ++pos;
     }
     return search_tokens;
-}
-
-/// Function input accepts string, fixed string, array of string or array of fixed strings.
-bool isStringOrFixedStringOrArrayOfStringOrFixedString(const IDataType & type)
-{
-    const IDataType * nested_type = &type;
-
-    /// Unwrap an optional top-level Nullable.
-    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(nested_type))
-        nested_type = nullable->getNestedType().get();
-
-    if (isStringOrFixedString(*nested_type))
-        return true;
-
-    if (const auto * array_type = checkAndGetDataType<DataTypeArray>(nested_type))
-    {
-        const IDataType * element_type = array_type->getNestedType().get();
-
-        /// Array elements may also be Nullable(String) or Nullable(FixedString).
-        if (const auto * nullable_elem = typeid_cast<const DataTypeNullable *>(element_type))
-            element_type = nullable_elem->getNestedType().get();
-
-        return isStringOrFixedString(*element_type);
-    }
-
-    return false;
-}
-
-/// Functions accept needles string (will be tokenized) or array of string needles/tokens (used as-is)
-/// Also accepts Array(Nothing) which is the type of Array([])
-bool isStringOrArrayOfStringType(const IDataType & type)
-{
-    if (isString(type))
-        return true;
-
-    if (const auto * array_type = checkAndGetDataType<DataTypeArray>(&type); array_type)
-    {
-        const DataTypePtr & nested_type = array_type->getNestedType();
-        return isString(nested_type) || isNothing(nested_type);
-    }
-
-    return false;
 }
 }
 
@@ -391,6 +350,9 @@ void executeStringOrArray(
             executeArray<HasTokensTraits>(col_input_array, *input_string, null_map, col_result, tokenizer, tokens);
         else if (const auto * input_fixedstring = checkAndGetColumn<ColumnFixedString>(actual_data))
             executeArray<HasTokensTraits>(col_input_array, *input_fixedstring, null_map, col_result, tokenizer, tokens);
+        else
+            /// `Array(Nothing)`, the type of `[]`: rows without tokens.
+            col_result.assign(input_rows_count, UInt8(0));
     }
 }
 
@@ -439,10 +401,10 @@ REGISTER_FUNCTION(HasAnyTokens)
     FunctionDocumentation::Description description_hasAnyTokens = R"(
 Returns 1, if at least one token in the `needle` string or array matches the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
 
-:::note
+<Note>
 Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
-:::
+</Note>
 
 Prior to searching, the function tokenizes
 - the `input` argument (always), and
@@ -456,11 +418,11 @@ If the text index has a [postprocessor](/reference/engines/table-engines/mergetr
 Duplicate tokens are ignored.
 For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 
-:::note
+<Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasAnyTokens` applies it to `input` and, when `needles` is a [String](/reference/data-types/string), to `needles` before tokenization. When `needles` is an [Array(String)](/reference/data-types/array), its elements are passed through as-is and the preprocessor is not applied to them.
 The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
 This inconsistency is tolerated to improve the usability of full-text search.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_hasAnyTokens = R"(
 hasAnyTokens(input, needles[, tokenizer])
@@ -661,10 +623,10 @@ REGISTER_FUNCTION(HasAllTokens)
     FunctionDocumentation::Description description_hasAllTokens = R"(
 Like [`hasAnyTokens`](#hasAnyTokens), but returns 1, if all tokens in the `needle` string or array match the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
 
-:::note
+<Note>
 Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
-:::
+</Note>
 
 Prior to searching, the function tokenizes
 - the `input` argument (always), and
@@ -678,11 +640,11 @@ If the text index has a [postprocessor](/reference/engines/table-engines/mergetr
 Duplicate tokens are ignored.
 For example, needles = ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 
-:::note
+<Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasAllTokens` applies it to `input` and, when `needles` is a [String](/reference/data-types/string), to `needles` before tokenization. When `needles` is an [Array(String)](/reference/data-types/array), its elements are passed through as-is and the preprocessor is not applied to them.
 The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
 This inconsistency is tolerated to improve the usability of full-text search.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_hasAllTokens = R"(
 hasAllTokens(input, needles[, tokenizer])

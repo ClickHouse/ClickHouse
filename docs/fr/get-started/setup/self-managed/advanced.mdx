@@ -8,20 +8,18 @@ hide_title: false
 doc_type: 'guide'
 ---
 
-<div id="compile-from-source">
-  ## Compiler depuis le code source
-</div>
+## Compiler depuis le code source {#compile-from-source}
 
 Pour compiler manuellement ClickHouse, suivez les instructions pour [Linux](/fr/resources/develop-contribute/build/build) ou [macOS](/fr/resources/develop-contribute/build/build-osx).
 
 Vous pouvez compiler et installer les paquets, ou utiliser les programmes sans installer de paquets.
 
-```xml
+```text
 Client: <build_directory>/programs/clickhouse-client
 Server: <build_directory>/programs/clickhouse-server
 ```
 
-Vous devrez créer manuellement les dossiers de données et de métadonnées, puis exécuter `chown` dessus pour l’utilisateur souhaité. Leurs chemins peuvent être modifiés dans la config du server (src/programs/server/config.xml) ; par défaut, ils sont les suivants :
+Vous devrez créer manuellement les dossiers de données et de métadonnées, puis exécuter `chown` dessus pour l’utilisateur souhaité. Leurs chemins peuvent être modifiés dans la config du server (src/programs/server/config.xml) ; par défaut, ils sont les suivants :
 
 ```bash
 /var/lib/clickhouse/data/default/

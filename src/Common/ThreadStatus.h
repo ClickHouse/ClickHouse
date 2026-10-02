@@ -5,6 +5,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/IThrottler.h>
 #include <Common/Logger_fwd.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemoryThreadState.h>
 #include <Common/ProfileEvents.h>
@@ -100,6 +101,9 @@ public:
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
+    /// This query's memory-pressure monitor; its parent is repointed to the user monitor at query start.
+    MemoryPressureMonitor memory_pressure_monitor{memory_tracker, getGlobalMemoryPressureMonitor()};
+
     struct SharedData
     {
         InternalProfileEventsQueueWeakPtr profile_queue_ptr;
@@ -125,6 +129,9 @@ public:
         std::lock_guard lock(mutex);
         return shared_data;
     }
+
+    /// Must be called before any thread attaches to the group: threads copy the predicates on attach.
+    void setQueryCancellationPredicates(QueryIsCanceledPredicate is_canceled, ThrowIfQueryCanceledPredicate throw_if_canceled);
 
     /// Mutation shared data
     void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level);
