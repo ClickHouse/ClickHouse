@@ -38,12 +38,14 @@ namespace Setting
 {
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsBool kill_throw_if_noop;
 }
 
 namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
+    extern const int NOTHING_TO_KILL;
 }
 
 
@@ -323,7 +325,9 @@ public:
 BlockIO InterpreterKillQueryQuery::execute()
 {
     const auto & query = query_ptr->as<ASTKillQueryQuery &>();
-
+    /// `KILL ... TEST` is a dry run: it returns the preview (possibly empty) instead of throwing.
+    const bool throw_if_noop
+        = getContext()->getSettingsRef()[Setting::kill_throw_if_noop] && !getContext()->isDDLOrOnClusterInternal() && !query.test;
     if (!query.cluster.empty())
     {
         DDLQueryOnClusterParams params;
@@ -351,12 +355,18 @@ BlockIO InterpreterKillQueryQuery::execute()
             ? std::move(own_block)
             : getSelectResult("query_id, user, query", "system.processes");
         if (processes_block.empty())
+        {
+            if (throw_if_noop)
+                throw Exception(ErrorCodes::NOTHING_TO_KILL, "No query to kill");
             return res_io;
+        }
 
         ProcessList & process_list = getContext()->getProcessList();
         QueryDescriptors queries_to_stop = reduced
             ? selfKillDescriptors(processes_block, *self_kill)
             : extractQueriesExceptMeAndCheckAccess(processes_block, getContext());
+        if (queries_to_stop.empty() && throw_if_noop)
+            throw Exception(ErrorCodes::NOTHING_TO_KILL, "No query to kill");
 
         auto header = processes_block.cloneEmpty();
         header.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});
@@ -390,7 +400,11 @@ BlockIO InterpreterKillQueryQuery::execute()
     {
         Block mutations_block = getSelectResult("database, table, mutation_id, command", "system.mutations");
         if (mutations_block.empty())
+        {
+            if (throw_if_noop)
+                throw Exception(ErrorCodes::NOTHING_TO_KILL, "No mutation to kill");
             return res_io;
+        }
 
         const ColumnString & database_col = typeid_cast<const ColumnString &>(*mutations_block.getByName("database").column);
         const ColumnString & table_col = typeid_cast<const ColumnString &>(*mutations_block.getByName("table").column);
@@ -569,7 +583,14 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     String select_query = "SELECT " + columns + " FROM " + table;
     auto & where_expression = query_ptr->as<ASTKillQueryQuery>()->where_expression;
     if (where_expression)
-        select_query += " WHERE " + where_expression->formatWithSecretsOneLine();
+        select_query += " WHERE (" + where_expression->formatWithSecretsOneLine() + ")";
+
+    /// This internal SELECT itself shows up in `system.processes` (under the fresh query id set below, not the
+    /// outer `KILL`'s), so a broad predicate like `WHERE user = currentUser()` would otherwise match it too and
+    /// the `KILL` would try to cancel the very read that is producing its own kill list. The outer `KILL`
+    /// statement's row is excluded separately, by `extractQueriesExceptMeAndCheckAccess` / `ownRunningQueryBlock`.
+    if (table == "system.processes")
+        select_query += where_expression ? " AND query_id != currentQueryID()" : " WHERE query_id != currentQueryID()";
 
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
@@ -611,17 +632,31 @@ AccessRightsElements InterpreterKillQueryQuery::getRequiredAccessForDDLOnCluster
 {
     const auto & query = query_ptr->as<ASTKillQueryQuery &>();
     AccessRightsElements required_access;
-    if (query.type == ASTKillQueryQuery::Type::Query)
-        required_access.emplace_back(AccessType::KILL_QUERY);
-    else if (query.type == ASTKillQueryQuery::Type::Mutation)
-        required_access.emplace_back(
-                AccessType::ALTER_UPDATE
-                | AccessType::ALTER_DELETE
-                | AccessType::ALTER_MATERIALIZE_INDEX
-                | AccessType::ALTER_MATERIALIZE_COLUMN
-                | AccessType::ALTER_MATERIALIZE_TTL
-                | AccessType::ALTER_REWRITE_PARTS
-            );
+    /// This switch has no `default:`, so a new Type has to be mapped here to compile.
+    switch (query.type)
+    {
+        case ASTKillQueryQuery::Type::Query:
+            required_access.emplace_back(AccessType::KILL_QUERY);
+            break;
+        case ASTKillQueryQuery::Type::Mutation:
+            required_access.emplace_back(
+                    AccessType::ALTER_UPDATE
+                    | AccessType::ALTER_DELETE
+                    | AccessType::ALTER_MATERIALIZE_INDEX
+                    | AccessType::ALTER_MATERIALIZE_COLUMN
+                    | AccessType::ALTER_MATERIALIZE_TTL
+                    | AccessType::ALTER_REWRITE_PARTS
+                );
+            break;
+        case ASTKillQueryQuery::Type::PartMoveToShard:
+            required_access.emplace_back(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "part_moves_between_shards");
+            required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION | AccessType::MOVE_PARTITION_BETWEEN_SHARDS);
+            break;
+        case ASTKillQueryQuery::Type::Transaction:
+            required_access.emplace_back(AccessType::KILL_TRANSACTION);
+            required_access.emplace_back(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "transactions");
+            break;
+    }
     return required_access;
 }
 
