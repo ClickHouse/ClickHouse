@@ -30,14 +30,12 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
     String & reason);
 
 /// like evaluateIndex, for a hypothetical projection
-/// `force_requested` names `force_optimize_projection` in the verdict
 WhatIfCandidateResult evaluateProjection(
     const ProjectionDescription & stored_projection,
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & baseline_parts,
     const WhatIfSettings & settings,
-    bool force_requested,
     const WeighHypotheticalProjection & weigh,
     ContextPtr context);
 

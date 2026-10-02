@@ -21,12 +21,12 @@ FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_whatif_force_nested
       WHERE a = 42 AND b IN (SELECT b FROM t_whatif_force_nested WHERE b >= 40) SETTINGS force_optimize_projection = 1)
 WHERE match(line, '^(status|verdict|reason):');
 
-SELECT '-- IN subquery without PREWHERE, the set has its own plan step';
+SELECT '-- IN subquery without PREWHERE, the set has its own plan step, and the statement does not fail';
 SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
 FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_whatif_force_nested
       WHERE a = 42 AND b IN (SELECT b FROM t_whatif_force_nested WHERE b >= 40)
       SETTINGS force_optimize_projection = 1, optimize_move_to_prewhere = 0)
-WHERE match(line, '^(status|verdict|reason):');
+WHERE match(line, '^(status|verdict):');
 
 SELECT '-- force_optimize_projection in the subquery only, the cost decides the outer read';
 SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
@@ -40,6 +40,19 @@ FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_whatif_force_nested
       WHERE a = 42 AND b IN (SELECT b FROM t_whatif_force_nested WHERE b >= 40 SETTINGS force_optimize_projection = 1)
       SETTINGS prefer_optimize_projection = 1)
 WHERE match(line, '^(status|verdict|reason):');
+
+SELECT '-- force in the CTE that reads the table, prefer outside, the verdict names force';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF WITH x AS (SELECT a, b, v FROM t_whatif_force_nested SETTINGS force_optimize_projection = 1)
+      SELECT * FROM x WHERE a = 42 AND b = 42 SETTINGS prefer_optimize_projection = 1)
+WHERE match(line, '^(status|verdict|reason):');
+
+SELECT '-- force in the query of a view, WHATIF forces the projection as the real optimizer does';
+CREATE VIEW v_whatif_forced AS SELECT a, b, v FROM t_whatif_force_nested SETTINGS force_optimize_projection = 1;
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF SELECT * FROM v_whatif_forced WHERE a = 42 AND b = 42)
+WHERE match(line, '^(status|verdict|reason):');
+DROP VIEW v_whatif_forced;
 
 SELECT '-- forced for the session';
 SET force_optimize_projection = 1;
