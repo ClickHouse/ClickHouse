@@ -95,8 +95,18 @@ bool SecretArgumentsRegistry::maskDictionarySourceValue(const String & key, Stri
             value = HIDDEN_SECRET_LITERAL;
             return true;
         }
-        if (auto it = spec.partial.find(key); it != spec.partial.end() && it->second(value))
-            return true;
+        if (auto it = spec.partial.find(key); it != spec.partial.end())
+        {
+            /// A value that is no string literal (an identifier, or an expression such as `concat(...)`) can carry
+            /// the secret in pieces the masker cannot read: hide it whole.
+            if (value.size() < 2 || value.front() != '\'' || value.back() != '\'')
+            {
+                value = HIDDEN_SECRET_LITERAL;
+                return true;
+            }
+            if (it->second(value))
+                return true;
+        }
     }
     return false;
 }

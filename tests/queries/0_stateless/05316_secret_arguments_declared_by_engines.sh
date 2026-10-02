@@ -55,6 +55,8 @@ CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(MO
 CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(ODBC(CONNECTION_STRING 'DSN=mydb;UID=user;PWD=plain_password' TABLE 't')) LIFETIME(0) LAYOUT(FLAT())
 CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(HTTP(URL 'http://user:plain_password@localhost/data' FORMAT 'TSV')) LIFETIME(0) LAYOUT(FLAT())
 CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(HTTP(URL 'https://localhost/data?format=tsv&access_token=plain_token' FORMAT 'TSV')) LIFETIME(0) LAYOUT(FLAT())
+CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(HTTP(URL format('http://user:{}@localhost/data', 'plain_password') FORMAT 'TSV')) LIFETIME(0) LAYOUT(FLAT())
+CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(MONGODB(URI format('mongodb://user:{}@localhost/db', 'plain_password') COLLECTION 'c')) LIFETIME(0) LAYOUT(FLAT())
 CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(YTSAURUS(HTTP_PROXY_URLS 'http://localhost:8000' CYPRESS_PATH '//tmp/t' OAUTH_TOKEN 'plain_token')) LIFETIME(0) LAYOUT(FLAT())
 EOF
 
