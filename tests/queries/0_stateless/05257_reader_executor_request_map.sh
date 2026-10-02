@@ -16,11 +16,14 @@ function range_counts()
         -q "$1" 2>&1 >/dev/null | grep -o 'Request map of [^ ]*: [0-9]* bytes in [0-9]* ranges' | grep -o '[0-9]* ranges$' | sort -u
 }
 
+# In ClickHouse Cloud a compact part keeps up to `compact_parts_max_granules_to_buffer` granules of each column together,
+# and the map of a reader of all columns covers the whole group, so the two key ranges of `t_compact` would merge.
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_wide (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
     SETTINGS index_granularity = 1024, index_granularity_bytes = '10Mi', ratio_of_defaults_for_sparse_serialization = 1, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
     CREATE TABLE t_compact (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
-    SETTINGS index_granularity = 1024, index_granularity_bytes = '10Mi', ratio_of_defaults_for_sparse_serialization = 1, min_bytes_for_wide_part = '1G', min_bytes_for_full_part_storage = 0;
+    SETTINGS index_granularity = 1024, index_granularity_bytes = '10Mi', ratio_of_defaults_for_sparse_serialization = 1, min_bytes_for_wide_part = '1G', min_bytes_for_full_part_storage = 0,
+        compact_parts_max_granules_to_buffer = 1;
     CREATE TABLE t_packed (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
     SETTINGS index_granularity = 1024, index_granularity_bytes = '10Mi', ratio_of_defaults_for_sparse_serialization = 1, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = '1G';
 "
