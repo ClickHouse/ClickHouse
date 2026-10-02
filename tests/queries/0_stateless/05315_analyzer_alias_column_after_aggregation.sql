@@ -99,3 +99,24 @@ SELECT k, k_shard_alias FROM remote('127.0.0.{1,2}', currentDatabase(), t) GROUP
 SELECT k, upper_k, sum(v) FROM t GROUP BY k WITH ROLLUP SETTINGS group_by_use_nulls = 1; -- { serverError NOT_AN_AGGREGATE }
 
 DROP TABLE t;
+
+-- Aliases inside ALIAS definitions must not get into the query sent to the shards.
+DROP TABLE IF EXISTS t_inner_alias_dist;
+DROP TABLE IF EXISTS t_inner_alias;
+
+CREATE TABLE t_inner_alias
+(
+    n UInt64,
+    a_x UInt64 ALIAS (n + 1 AS x) + 0,
+    b_x UInt64 ALIAS (n + 2 AS x) + 0
+) ENGINE = MergeTree ORDER BY n;
+
+CREATE TABLE t_inner_alias_dist AS t_inner_alias ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), t_inner_alias);
+
+INSERT INTO t_inner_alias VALUES (1), (2), (3);
+
+SELECT '-- aliases inside ALIAS definitions';
+SELECT n, a_x, b_x, count() AS x FROM t_inner_alias_dist GROUP BY n HAVING a_x > 2 AND b_x > 3 ORDER BY x, n;
+
+DROP TABLE t_inner_alias_dist;
+DROP TABLE t_inner_alias;

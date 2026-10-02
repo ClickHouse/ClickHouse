@@ -80,3 +80,6 @@ a	2
 b	2
 bb	2
 -- errors
+-- aliases inside ALIAS definitions
+2	3	4	2
+3	4	5	2

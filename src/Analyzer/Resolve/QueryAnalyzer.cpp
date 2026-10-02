@@ -7001,6 +7001,9 @@ public:
         while (isTableAliasColumn(node) && !isGroupByKey(node) && isComputableAfterAggregation(node))
         {
             auto expression = node->as<ColumnNode &>().getExpression()->clone();
+            /// Aliases from the table definition, like `x` in `a ALIAS (k + 1 AS x)`, are not a part of the query
+            /// and would conflict with each other or with the aliases of the query when it is sent to remote servers.
+            removeAliasesRecursive(expression);
             node = std::move(expression);
         }
     }
