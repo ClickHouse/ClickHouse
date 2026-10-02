@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-shared-merge-tree
+# Tags: no-parallel, no-shared-merge-tree, no-fasttest
 # no-parallel: uses a server-wide failpoint, so a dry run of another test could consume the pause.
 # no-shared-merge-tree: SMT coordinates merges differently; the race is exercised on plain `MergeTree`.
 
