@@ -26,6 +26,7 @@
 namespace DB::ErrorCodes
 {
     extern const int AZURE_OBJECT_CHANGED_DURING_READ;
+    extern const int UNEXPECTED_END_OF_FILE;
 }
 
 namespace
@@ -262,14 +263,19 @@ TEST(AzureReadUntilPosition, ExactRangeResponse)
 }
 
 /// An endpoint that returns less than the requested range must not make the reader report bytes it
-/// never received.
+/// never received, and the read must not end silently at the end of the short response either: the
+/// right bound is taken as the length of the data, so a read that cannot reach it fails.
 TEST(AzureReadUntilPosition, ShortRangeResponse)
 {
-    std::string data;
-    ASSERT_NO_THROW(data = readWithRightBound(/* response_size */ 40, /* read_until_position */ 100, /* buffer_size */ 64));
-
-    ASSERT_EQ(data.size(), static_cast<size_t>(40));
-    assertCountsUpFromZero(data);
+    try
+    {
+        readWithRightBound(/* response_size */ 40, /* read_until_position */ 100, /* buffer_size */ 64);
+        FAIL() << "a read that ended before the right bound succeeded";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::UNEXPECTED_END_OF_FILE) << e.message();
+    }
 }
 
 namespace
