@@ -68,6 +68,10 @@ namespace
         select_ast->children.push_back(select_ast->list_of_selects);
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false);
+        /// Like the body of a `View` (see `StorageView::readImpl`), the synthetic query reads the inner
+        /// storage for the plan that reads `loop`, so keep the "this fragment stays in-process" fact of
+        /// a local fragment of a distributed query for its subqueries.
+        options.inside_local_plan_for_distributed_query = query_info.inside_local_plan_for_distributed_query;
 
         InterpreterSelectQueryAnalyzer interpreter(select_ast, context, options, column_names);
         if (query_info.storage_limits)
