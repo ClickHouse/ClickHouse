@@ -947,7 +947,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
     /// When we applied static credentials from database settings, they are authoritative:
-    /// do not let a catalog-vended refresh callback (e.g. Unity/REST `requestReadCredentials`)
+    /// do not let a catalog-vended refresh callback (e.g. Unity/REST `requestCredentials`)
     /// silently re-fetch credentials and override them. The same holds when the user disabled
     /// `vended_credentials` and no static credentials were applied (e.g. relying on default or
     /// environment S3 auth): the object storage layer invokes the refresh callback after an
