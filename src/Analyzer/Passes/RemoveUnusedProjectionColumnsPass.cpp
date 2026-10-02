@@ -8,10 +8,14 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Analyzer/traverseQueryTree.h>
+
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -91,8 +95,14 @@ void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, s
     }
 }
 
+bool isLocalPhysicalTable(const StoragePtr & storage)
+{
+    return storage->isMergeTree() || storage->getName() == "Memory";
+}
+
 /// EXCEPT and INTERSECT compare the kept column, the next step of a recursive CTE reads it, INTERPOLATE refers to it
-/// by name, and it decides which ARRAY JOIN arrays are kept, whose sizes may differ
+/// by name, and it decides which ARRAY JOIN arrays are kept, whose sizes may differ. Other storages than MergeTree
+/// and Memory, such as a view or a remote table, may hide such an ARRAY JOIN.
 bool canReplaceKeptColumnWithConstant(const QueryTreeNodePtr & query_or_union_node)
 {
     auto * union_node = query_or_union_node->as<UnionNode>();
@@ -101,8 +111,20 @@ bool canReplaceKeptColumnWithConstant(const QueryTreeNodePtr & query_or_union_no
         const auto & query_node = query_or_union_node->as<QueryNode &>();
         auto table_expressions = extractTableExpressions(query_node.getJoinTreeNodeTyped(), true /* add_array_join */, true /* recursive */);
         return !query_node.hasInterpolate()
-            && std::none_of(table_expressions.begin(), table_expressions.end(),
-                [](const auto & node) { return node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN; });
+            && std::all_of(table_expressions.begin(), table_expressions.end(), [](const auto & node)
+            {
+                switch (node->getNodeType())
+                {
+                    case QueryTreeNodeType::ARRAY_JOIN:
+                        return false;
+                    case QueryTreeNodeType::TABLE:
+                        return isLocalPhysicalTable(node->template as<TableNode &>().getStorage());
+                    case QueryTreeNodeType::TABLE_FUNCTION:
+                        return isLocalPhysicalTable(node->template as<TableFunctionNode &>().getStorage());
+                    default:
+                        return true;
+                }
+            });
     }
 
     const auto & queries = union_node->getQueries().getNodes();
