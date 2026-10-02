@@ -202,6 +202,13 @@ UInt64 ThreadGroup::getGroupElapsedMs() const
     return elapsed_group_ms;
 }
 
+void ThreadGroup::setQueryCancellationPredicates(QueryIsCanceledPredicate is_canceled, ThrowIfQueryCanceledPredicate throw_if_canceled)
+{
+    std::lock_guard lock(mutex);
+    shared_data.query_is_canceled_predicate = std::move(is_canceled);
+    shared_data.throw_if_query_canceled_predicate = std::move(throw_if_canceled);
+}
+
 void ThreadGroup::linkThread(UInt64 thread_id)
 {
     std::lock_guard lock(mutex);
@@ -392,8 +399,10 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
     thread_group = thread_group_;
     try
     {
-        performance_counters.setParent(&thread_group->performance_counters);
+        /// Reparenting the memory tracker flushes the untracked balance the thread carried in, so the
+        /// counters must be reparented after it, or those bytes are reported as this group's.
         memory_tracker.setParent(&thread_group->memory_tracker);
+        performance_counters.setParent(&thread_group->performance_counters);
 
         query_context = thread_group->query_context;
         global_context = thread_group->global_context;
