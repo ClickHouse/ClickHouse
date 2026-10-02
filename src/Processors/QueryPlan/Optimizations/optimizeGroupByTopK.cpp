@@ -90,13 +90,16 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     const AggregatingStep & aggregating_step,
     size_t limit,
     size_t num_key_columns,
-    int direction,
-    int nulls_direction,
+    const std::vector<int> & directions,
+    const std::vector<int> & nulls_directions,
     const Optimization::ExtraSettings & settings,
     QueryPlan::Nodes & nodes)
 {
     if (!settings.enable_group_by_top_k_dynamic_filtering)
         return nullptr;
+
+    const int direction = directions.front();
+    const int nulls_direction = nulls_directions.front();
 
     if (aggregating_node->children.size() != 1)
         return nullptr;
@@ -239,6 +242,10 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
 
     /// Salts the query condition cache key the way `tryOptimizeTopK` does, with an extra mark so that a
     /// `GROUP BY key LIMIT n` read never shares entries with an `ORDER BY key LIMIT n` read over the same table.
+    /// Unlike `ORDER BY`, the boundary on the first key column depends on every grouping key: the heap ranks
+    /// groups, and the number of groups per value of the first key depends on the other keys (`GROUP BY a, b`
+    /// and `GROUP BY a, c` reach different boundaries on `a` over the same rows). So the salt includes all the
+    /// grouping keys with their types and the order of every ranked key, not only the first one.
     SipHash hash;
     hash.update(std::string_view("group_by_top_k"));
     hash.update(info.column_name);
@@ -246,8 +253,22 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     hash.update(type_name);
     hash.update(info.num_sort_columns);
     hash.update(info.limit_n);
-    hash.update(info.direction);
-    hash.update(nulls_direction);
+
+    const auto & aggregation_keys = aggregating_step.getParams().keys;
+    const auto & aggregation_input_header = *aggregating_step.getInputHeaders().front();
+    hash.update(aggregation_keys.size());
+    for (const auto & aggregation_key : aggregation_keys)
+    {
+        hash.update(aggregation_key);
+        hash.update(aggregation_input_header.getByName(aggregation_key).type->getName());
+    }
+
+    hash.update(directions.size());
+    for (size_t i = 0; i < directions.size(); ++i)
+    {
+        hash.update(directions[i]);
+        hash.update(nulls_directions[i]);
+    }
     info.condition_hash = hash.get64();
 
     read_step->setTopKColumn(info);
@@ -289,8 +310,8 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
                 *aggregating_step,
                 params.top_k->k,
                 params.top_k->key_columns,
-                params.top_k->directions.front(),
-                params.top_k->nulls_directions.front(),
+                params.top_k->directions,
+                params.top_k->nulls_directions,
                 settings,
                 nodes);
             if (threshold_tracker)
@@ -449,8 +470,8 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
         *aggregating_step,
         limit,
         num_key_columns,
-        top_k_params.directions.front(),
-        top_k_params.nulls_directions.front(),
+        top_k_params.directions,
+        top_k_params.nulls_directions,
         settings,
         nodes);
 
