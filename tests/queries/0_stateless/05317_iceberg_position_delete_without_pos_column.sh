@@ -20,6 +20,7 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE}
 
 find "${TABLE_PATH}data" -name '*-deletes.parquet' | wc -l
 DELETE_FILE=$(find "${TABLE_PATH}data" -name '*-deletes.parquet')
+DELETE_FILE_NAME=$(basename "${DELETE_FILE}")
 
 # The delete file is applied before it is corrupted.
 for roaring in 0 1; do
@@ -45,7 +46,8 @@ EOF
 select_error()
 {
     ${CLICKHOUSE_CLIENT} --use_roaring_bitmap_iceberg_positional_deletes="$1" --query "SELECT count(), sum(id) FROM ${TABLE}" 2>&1 \
-        | grep -m1 -o -e "has no column '[a-z_]*'" -e "(ICEBERG_SPECIFICATION_VIOLATION)" | paste -sd ' ' -
+        | sed "s|[^ ]*${DELETE_FILE_NAME}|<delete file>|" \
+        | grep -m1 -o -e "Position delete file <delete file> has no column '[a-z_]*'" -e "(ICEBERG_SPECIFICATION_VIOLATION)" | paste -sd ' ' -
 }
 
 rename_column pos pox
@@ -56,7 +58,9 @@ done
 
 rename_column pox pos
 rename_column file_path file_patx
-echo "file_path:"
-select_error 0
+for roaring in 0 1; do
+    echo "file_path roaring=${roaring}:"
+    select_error ${roaring}
+done
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"
