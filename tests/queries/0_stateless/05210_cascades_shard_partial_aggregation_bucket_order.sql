@@ -15,21 +15,23 @@ SET max_rows_to_group_by = 0;
 
 DROP TABLE IF EXISTS t_cascades_bucket_order;
 CREATE TABLE t_cascades_bucket_order (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS index_granularity = 256, auto_statistics_types = '';
-INSERT INTO t_cascades_bucket_order SELECT number % 50000, number FROM numbers(200000);
+    SETTINGS index_granularity = 256, auto_statistics_types = 'uniq';
+INSERT INTO t_cascades_bucket_order SELECT number % 2000, number FROM numbers(200000);
 
 SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 1;
 SET distributed_plan_execute_locally = 1;
 -- Two planning nodes, so the shard has a multi-node partial aggregation to choose from.
 SET distributed_plan_workers_num = 2;
--- No statistics, so the plan does not depend on an estimated group count.
-SET use_statistics = 0;
+-- The column statistics give the real group count, 2000 for 200000 rows, so splitting the shard's
+-- aggregation over the nodes is clearly cheaper than keeping it on one node. Without statistics the
+-- optimizer estimates a tenth of the rows as groups and keeps the aggregation on one node.
+SET use_statistics = 1;
 -- A shard plan otherwise carries `BlocksMarshallingStep`, which cannot run on a worker, and a plan
 -- holding it is executed with its exchanges turned into no-ops instead of being distributed.
 SET enable_parallel_blocks_marshalling = 0;
 -- Two-level aggregation states in every producer, so the merge consumes several buckets per input.
-SET group_by_two_level_threshold = 10000;
+SET group_by_two_level_threshold = 1000;
 SET group_by_two_level_threshold_bytes = 1;
 -- Enough to flush a producer's two-level states in parallel. The producers the merge interleaves
 -- come from `distributed_plan_workers_num`, so a larger value here only multiplies the flaky
