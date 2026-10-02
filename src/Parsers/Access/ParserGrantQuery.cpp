@@ -8,8 +8,6 @@
 #include <Parsers/Access/parseAccessRightsElements.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -213,14 +211,12 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     return true;
 }
-}
 
-namespace DB
+std::map<String, Documentation> ParserGrantQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementGrant(StatementFactory & factory)
-{
-    factory.registerStatement("GRANT",
+    documentation["GRANT"] =
     {
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -1038,9 +1034,9 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
 )",
         .related = {"REVOKE", "CHECK GRANT", "CREATE USER", "CREATE ROLE", "SET ROLE", "SHOW"},
-    });
+    };
 
-    factory.registerStatement("REVOKE",
+    documentation["REVOKE"] =
     {
         .description = R"DOCS_MD(
 Revokes privileges from users or roles.
@@ -1090,7 +1086,9 @@ REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.t
 REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
 )",
         .related = {"GRANT", "CHECK GRANT", "SHOW"},
-    });
+    };
+
+    return documentation;
 }
 
 }

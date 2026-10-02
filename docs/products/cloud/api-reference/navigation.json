@@ -32,6 +32,7 @@
       {
         "group": "User management",
         "pages": [
+          "products/cloud/api-reference/user-management/whoami-get",
           "GET /v1/organizations/{organizationId}/members",
           "GET /v1/organizations/{organizationId}/members/{userId}",
           "PATCH /v1/organizations/{organizationId}/members/{userId}",
@@ -244,6 +245,7 @@
       "products/cloud/api-reference/postgres/postgres-instance-config-post",
       "products/cloud/api-reference/postgres/postgres-instance-config-patch",
       "products/cloud/api-reference/postgres/postgres-instance-metrics-get",
+      "products/cloud/api-reference/postgres/postgres-service-backup-get-list",
       "products/cloud/api-reference/postgres/slow-query-patterns-get-list",
       "products/cloud/api-reference/postgres/slow-query-pattern-get",
       "products/cloud/api-reference/postgres/postgres-logs-get-list"

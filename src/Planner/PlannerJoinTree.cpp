@@ -1227,6 +1227,12 @@ void pushOrderByIntoView(
     if (storage->getStorageID().database_name == "_table_function")
         return;
 
+    /// A sealed view hides rows from the outer query. The pushed-down `ORDER BY ... LIMIT` would run
+    /// below that boundary, so the amount of data read would depend on the rows the view hides.
+    if (const auto * view = typeid_cast<const StorageView *>(storage.get());
+        view && view->isSealed(*storage_snapshot->metadata, query_context))
+        return;
+
     /// `SAMPLE` / `FINAL` applied to the view in the outer query (e.g.
     /// `SELECT id FROM v FINAL ORDER BY ts DESC LIMIT 10`) select which rows the
     /// view exposes: `SAMPLE` restricts it to a pseudo-random subset and `FINAL`
@@ -2198,14 +2204,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     auto underlying_dist = view->tryGetUnderlyingDistributed(storage_snapshot, query_context);
                     if (underlying_dist)
                     {
-                        /// For `SQL SECURITY NONE`, the inner query normally executes with a no-user
-                        /// (global) context via `getSQLSecurityOverriddenContext`, so caller-specific
-                        /// row policies do not apply to the underlying distributed table. Use that
-                        /// same context here to match `StorageView::readImpl`, which uses the override
-                        /// for both the inner interpreter and the inner storage read. (`DEFINER` views
-                        /// are rejected by `tryGetUnderlyingDistributed` outright.)
-                        if (view_sql_security && *view_sql_security == SQLSecurityType::NONE)
-                            inner_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
+                        /// Only an `INVOKER` view gets here: a `DEFINER` or `NONE` view is sealed and
+                        /// `tryGetUnderlyingDistributed` rejects it, so the pushdown runs as the invoker.
 
                         /// Suppress the pushdown when it would move an expression from the coordinator
                         /// onto the shards that is unsafe to evaluate per-shard:
