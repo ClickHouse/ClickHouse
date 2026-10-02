@@ -35,6 +35,7 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationMergeUnits;
     extern const Event AdaptiveAggregationPrunedUnits;
     extern const Event AdaptiveAggregationPrunedRecords;
+    extern const Event AdaptiveAggregationCountFirstUnits;
 }
 
 namespace DB
@@ -302,6 +303,41 @@ namespace
         static size_t keySize(const char * record) { return unalignedLoad<UInt32>(record + 12); }
     };
 
+    /// Calls `callback(record, bytes, key_pos, key_size)` for every general record of `ranges`, in the record shape the
+    /// producers chose for `Key` and the argument layout (see `Aggregator::appendDelayedRecords`).
+    template <typename Key, typename Callback>
+    void forEachArgumentRecord(const DB::AdaptiveArgumentLayout & argument_layout, const DB::AdaptiveRecordRanges & ranges, Callback && callback)
+    {
+        bool fixed_stride = false;
+        if constexpr (!adaptive_key_stages_bytes<Key>)
+            fixed_stride = argument_layout.variable_fields.empty();
+
+        if (fixed_stride)
+        {
+            using Record = StagedFixedArgumentRecord<Key>;
+            const size_t bytes = Record::bytes(argument_layout.fixed_bytes);
+            for (const auto & range : ranges)
+                for (const char * record = range.data(); record < range.data() + range.size(); record += bytes)
+                    callback(record, bytes, record + Record::key_offset, sizeof(Key));
+        }
+        else
+        {
+            for (const auto & range : ranges)
+            {
+                for (const char * record = range.data(); record < range.data() + range.size();)
+                {
+                    const size_t bytes = StagedArgumentRecord::bytes(record);
+                    callback(
+                        record,
+                        bytes,
+                        record + StagedArgumentRecord::header_bytes + argument_layout.fixed_bytes,
+                        StagedArgumentRecord::keySize(record));
+                    record += bytes;
+                }
+            }
+        }
+    }
+
     /// Visits every cell of a map table with its key as the table stores it, its mapped value and its hash: from the
     /// iterator, which reads a saved hash instead of rehashing, where the table has one, and through `forEachValue`
     /// for the string table, whose sub-maps share no iterator.
@@ -316,6 +352,23 @@ namespace
         else
         {
             table.forEachValue([&](const auto & key, auto & mapped) { callback(key, mapped, table.hash(key)); });
+        }
+    }
+
+    /// Visits every cell of a map table like `forEachMappedCellWithHash`, but hands out a callable that returns the
+    /// cell's hash, valid during the call, for a caller that needs the hashes of a few cells: a table without saved
+    /// hashes rehashes the key.
+    template <typename Table, typename Callback>
+    void forEachMappedCellWithHashOnDemand(Table & table, Callback && callback)
+    {
+        if constexpr (requires { table.begin(); })
+        {
+            for (auto it = table.begin(), end = table.end(); it != end; ++it)
+                callback(it->getMapped(), [&it] { return it.getHash(); });
+        }
+        else
+        {
+            table.forEachValue([&](const auto & key, auto & mapped) { callback(mapped, [&] { return table.hash(key); }); });
         }
     }
 
@@ -1577,6 +1630,18 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     const size_t bins_per_unit = adaptive_count_bins_per_bucket / units;
     size_t pruned_records = 0;
 
+    /// A top-K by a count among other aggregates keeps only each unit's best groups by the count in the final
+    /// conversion, so the other aggregate states of the rest of the groups would be built for nothing: a count-first
+    /// unit counts its groups first and builds the states of its best groups only (see below). A merge that collects
+    /// the statistics needs every group converted.
+    const bool count_first = MapAggregationMethod<Method> && final && params.bucket_top_k && bucket_top_k_ranks_by_count_state
+        && !is_simple_count && !updater;
+    const size_t rank_offset = count_first ? offsets_of_aggregate_states[params.bucket_top_k_rank_index] : 0;
+    const auto better = [ascending = params.bucket_top_k_ascending](UInt64 a, UInt64 b) { return ascending ? a < b : a > b; };
+    /// The table of a count-first unit's best groups, which takes the bucket's slot for the conversion while the slot's
+    /// table, grown by the counting, waits for the next unit.
+    Table best_groups_table;
+
     /// A source cell whose group cannot reach the top goes with its states.
     const auto discard_cell = [&](SourceCell & cell)
     {
@@ -1641,65 +1706,195 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         if constexpr (!requires { table.emptyStringSlot(); })
             table.reserve((unit_records + cells.size()) * alive_count / bins_per_unit);
 
-        /// The sources' cells first: a key a source holds is adopted with its state, so the records of that key
-        /// update the adopted state instead of creating one.
-        if constexpr (MapAggregationMethod<Method>)
+        /// The groups of the unit, which a count-first unit does not keep in its table.
+        size_t unit_groups = 0;
+        if (count_first)
         {
-            places.clear();
-            source_places.clear();
-            for (auto & cell : cells)
+            if constexpr (MapAggregationMethod<Method>)
             {
-                if (alive_bins && !alive_bins[bucketCountBin(cell.hash)])
+                using Key = typename Method::Key;
+
+                /// The first pass counts the groups in the table, each count kept in the mapped value as a lone
+                /// `count()` keeps it: a source cell adds its count state, a record one row.
+                for (const auto & cell : cells)
                 {
-                    discard_cell(cell);
-                    continue;
-                }
-                typename Table::LookupResult it;
-                bool inserted = false;
-                table.emplace(cell.key, it, inserted, cell.hash);
-                AggregateDataPtr & source_place = *cell.mapped;
-                if (is_simple_count)
-                {
+                    if (alive_bins && !alive_bins[bucketCountBin(cell.hash)])
+                        continue;
+                    typename Table::LookupResult it;
+                    bool inserted = false;
+                    table.emplace(cell.key, it, inserted, cell.hash);
+                    const UInt64 count = getCountState(*cell.mapped + rank_offset);
                     if (inserted)
-                        getInlineCountState(it->getMapped()) = getInlineCountState(source_place);
+                        getInlineCountState(it->getMapped()) = count;
                     else
-                        getInlineCountState(it->getMapped()) += getInlineCountState(source_place);
+                        getInlineCountState(it->getMapped()) += count;
                 }
-                else if (inserted)
+                for (size_t partition = unit_first_partition; partition < unit_first_partition + partitions_per_unit; ++partition)
                 {
-                    it->getMapped() = source_place;
+                    collectPartitionRecords(session, spilled, partition, partition - first_partition, scratch.ranges);
+                    pruned_records += drainAdaptivePartition<Method>(
+                        table, arena, scratch.ranges, alive_bins, places, scratch.records, /*count_only=*/true);
                 }
-                else
+                unit_groups = table.size();
+
+                /// The unit's best groups by their counts, which are exact: the unit holds every record and source cell
+                /// of its keys. With the pruning, a group counted below the threshold cannot reach the top. Only the
+                /// cells that enter the heap are hashed.
+                const UInt64 threshold = pruning ? pruning->threshold.load(std::memory_order_relaxed) : 0;
+                auto & best = scratch.best_counts_and_hashes;
+                best.clear();
+                const auto worse_first = [&](const auto & lhs, const auto & rhs) { return better(lhs.first, rhs.first); };
+                forEachMappedCellWithHashOnDemand(
+                    table,
+                    [&](AggregateDataPtr & mapped, const auto & hash_of)
+                    {
+                        const UInt64 count = getInlineCountState(mapped);
+                        if (count < threshold)
+                            return;
+                        if (best.size() < params.bucket_top_k)
+                        {
+                            best.emplace_back(count, hash_of());
+                            std::push_heap(best.begin(), best.end(), worse_first);
+                        }
+                        else if (better(count, best.front().first))
+                        {
+                            std::pop_heap(best.begin(), best.end(), worse_first);
+                            best.back() = {count, hash_of()};
+                            std::push_heap(best.begin(), best.end(), worse_first);
+                        }
+                    });
+                auto & best_hashes = scratch.best_hashes;
+                best_hashes.clear();
+                for (const auto & [count, hash] : best)
+                    best_hashes.push_back(hash);
+                std::sort(best_hashes.begin(), best_hashes.end());
+                /// By hash: a group that shares the hash of a best one is merged completely as well, and the conversion
+                /// ranks it by its count with the others. The second pass tests every record, so a bitset on 12 hash bits
+                /// answers for nearly all of them with one predictable branch, before the search that would mispredict
+                /// on random hashes.
+                std::array<UInt64, 64> best_filter{};
+                for (const UInt64 hash : best_hashes)
+                    best_filter[(hash >> 6) & 63] |= UInt64{1} << (hash & 63);
+                const auto is_best = [&](UInt64 hash)
                 {
-                    places.push_back(it->getMapped());
-                    source_places.push_back(source_place);
+                    return ((best_filter[(hash >> 6) & 63] >> (hash & 63)) & 1)
+                        && std::binary_search(best_hashes.begin(), best_hashes.end(), hash);
+                };
+
+                /// The second pass builds the states of the best groups, in the table that takes the bucket's slot for the
+                /// conversion: their source cells are adopted or merged and their records drained as in the ordinary
+                /// merge, and the other source cells go with their states.
+                table.clear();
+                std::swap(table, best_groups_table);
+                places.clear();
+                source_places.clear();
+                for (auto & cell : cells)
+                {
+                    if (!is_best(cell.hash))
+                    {
+                        discard_cell(cell);
+                        continue;
+                    }
+                    typename Table::LookupResult it;
+                    bool inserted = false;
+                    table.emplace(cell.key, it, inserted, cell.hash);
+                    AggregateDataPtr & source_place = *cell.mapped;
+                    if (inserted)
+                    {
+                        it->getMapped() = source_place;
+                    }
+                    else
+                    {
+                        places.push_back(it->getMapped());
+                        source_places.push_back(source_place);
+                    }
+                    source_place = nullptr;
                 }
-                source_place = nullptr;
+                for (size_t i = 0; i < params.aggregates_size; ++i)
+                    aggregate_functions[i]->mergeAndDestroyBatch(
+                        places.data(), source_places.data(), places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
+                for (size_t partition = unit_first_partition; partition < unit_first_partition + partitions_per_unit; ++partition)
+                {
+                    collectPartitionRecords(session, spilled, partition, partition - first_partition, scratch.ranges);
+                    auto & best_records = scratch.best_records;
+                    best_records.clear();
+                    forEachArgumentRecord<Key>(
+                        *adaptive_argument_layout,
+                        scratch.ranges,
+                        [&](const char * record, size_t bytes, const char *, size_t)
+                        {
+                            if (is_best(unalignedLoad<UInt64>(record)))
+                                best_records.emplace_back(record, bytes);
+                        });
+                    if (!best_records.empty())
+                        drainAdaptivePartition<Method>(table, arena, best_records, /*alive_bins=*/nullptr, places, scratch.records);
+                }
+                ProfileEvents::increment(ProfileEvents::AdaptiveAggregationCountFirstUnits);
             }
-            for (size_t i = 0; i < params.aggregates_size; ++i)
-                aggregate_functions[i]->mergeAndDestroyBatch(
-                    places.data(), source_places.data(), places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
         }
         else
         {
-            for (const auto & cell : cells)
+            /// The sources' cells first: a key a source holds is adopted with its state, so the records of that key
+            /// update the adopted state instead of creating one.
+            if constexpr (MapAggregationMethod<Method>)
             {
-                if (alive_bins && !alive_bins[bucketCountBin(cell.hash)])
-                    continue;
-                typename Table::LookupResult it;
-                bool inserted = false;
-                table.emplace(cell.key, it, inserted, cell.hash);
+                places.clear();
+                source_places.clear();
+                for (auto & cell : cells)
+                {
+                    if (alive_bins && !alive_bins[bucketCountBin(cell.hash)])
+                    {
+                        discard_cell(cell);
+                        continue;
+                    }
+                    typename Table::LookupResult it;
+                    bool inserted = false;
+                    table.emplace(cell.key, it, inserted, cell.hash);
+                    AggregateDataPtr & source_place = *cell.mapped;
+                    if (is_simple_count)
+                    {
+                        if (inserted)
+                            getInlineCountState(it->getMapped()) = getInlineCountState(source_place);
+                        else
+                            getInlineCountState(it->getMapped()) += getInlineCountState(source_place);
+                    }
+                    else if (inserted)
+                    {
+                        it->getMapped() = source_place;
+                    }
+                    else
+                    {
+                        places.push_back(it->getMapped());
+                        source_places.push_back(source_place);
+                    }
+                    source_place = nullptr;
+                }
+                for (size_t i = 0; i < params.aggregates_size; ++i)
+                    aggregate_functions[i]->mergeAndDestroyBatch(
+                        places.data(), source_places.data(), places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
             }
-        }
+            else
+            {
+                for (const auto & cell : cells)
+                {
+                    if (alive_bins && !alive_bins[bucketCountBin(cell.hash)])
+                        continue;
+                    typename Table::LookupResult it;
+                    bool inserted = false;
+                    table.emplace(cell.key, it, inserted, cell.hash);
+                }
+            }
 
-        for (size_t partition = unit_first_partition; partition < unit_first_partition + partitions_per_unit; ++partition)
-        {
-            collectPartitionRecords(session, spilled, partition, partition - first_partition, scratch.ranges);
-            pruned_records += drainAdaptivePartition<Method>(table, arena, scratch.ranges, alive_bins, places, scratch.records);
+            for (size_t partition = unit_first_partition; partition < unit_first_partition + partitions_per_unit; ++partition)
+            {
+                collectPartitionRecords(session, spilled, partition, partition - first_partition, scratch.ranges);
+                pruned_records += drainAdaptivePartition<Method>(table, arena, scratch.ranges, alive_bins, places, scratch.records);
+            }
+            unit_groups = table.size();
         }
 
         if (full_group_count)
-            *full_group_count += table.size();
+            *full_group_count += unit_groups;
         if (updater)
             updater->recordAggregationStateSizes(dest, bucket);
 
@@ -1707,6 +1902,8 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         /// truncated chunk carries only the kept groups.
         UInt64 topk_full_key_bytes = 0;
         auto chunk = convertOneBucketToChunk(dest, arena, final, bucket, updater ? &topk_full_key_bytes : nullptr, /*keep_table_buffer=*/true);
+        if (count_first)
+            std::swap(table, best_groups_table);
         if (updater)
         {
             if (topk_full_key_bytes)
