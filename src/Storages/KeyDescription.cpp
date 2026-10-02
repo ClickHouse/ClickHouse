@@ -12,6 +12,7 @@
 #include <Common/quoteString.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -268,6 +269,10 @@ void KeyDescription::checkNoAlias(const IAST * definition_ast, std::string_view 
 
     if (const String alias = definition_ast->tryGetAlias(); !alias.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias '{}' is not allowed in {}", alias, clause);
+
+    /// Aliases inside a subquery are local to it.
+    if (definition_ast->as<ASTSubquery>())
+        return;
 
     for (const auto & child : definition_ast->children)
         checkNoAlias(child.get(), clause);

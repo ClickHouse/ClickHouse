@@ -3,6 +3,7 @@
 
 DROP TABLE IF EXISTS t_key_alias;
 DROP TABLE IF EXISTS t_sample_alias;
+DROP TABLE IF EXISTS t_ttl_subquery;
 DROP TABLE IF EXISTS mv_key_alias;
 DROP TABLE IF EXISTS t_src;
 
@@ -18,6 +19,7 @@ CREATE TABLE t_key_alias (c0 Int64, d Date) ENGINE = MergeTree ORDER BY c0 TTL d
 CREATE TABLE t_key_alias (c0 Int64, c1 Int64, d Date) ENGINE = MergeTree ORDER BY c0 TTL d + INTERVAL 1 DAY GROUP BY c0 AS x SET c1 = max(c1); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_key_alias (c0 Int64, c1 Int64, d Date) ENGINE = MergeTree ORDER BY c0 TTL d + INTERVAL 1 DAY GROUP BY c0 SET c1 = max(c1 AS m); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_key_alias (c0 Int64, d Date) ENGINE = MergeTree ORDER BY c0 TTL d + INTERVAL 1 DAY RECOMPRESS CODEC(ZSTD(1 AS l)); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_key_alias (c0 Int64, d Date) ENGINE = MergeTree ORDER BY c0 TTL d + INTERVAL 1 DAY WHERE c0 < ((SELECT 1) AS s); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_key_alias (c0 Int64, c1 Int64, INDEX i (c1 AS a) TYPE minmax) ENGINE = MergeTree ORDER BY c0; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_key_alias (c0 Int64, c1 Int64, INDEX i (c1 * 1000 AS c0) TYPE minmax) ENGINE = MergeTree ORDER BY c0; -- { serverError BAD_ARGUMENTS }
 
@@ -43,10 +45,13 @@ CREATE HYPOTHETICAL INDEX h ON t_key_alias (c1 AS a) TYPE minmax; -- { serverErr
 ALTER TABLE t_key_alias ADD COLUMN c2 Int64, MODIFY ORDER BY (c0, c1, c2);
 SELECT sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_key_alias';
 
--- SAMPLE BY is not checked.
+-- SAMPLE BY is not checked, and neither is an alias inside a subquery.
 CREATE TABLE t_sample_alias (c0 UInt64) ENGINE = MergeTree ORDER BY c0 SAMPLE BY (c0 AS s);
-SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't_sample_alias';
+CREATE TABLE t_ttl_subquery (c0 Int64, d Date) ENGINE = MergeTree ORDER BY c0
+TTL d + INTERVAL 1 DAY WHERE c0 < (SELECT count() AS n FROM {CLICKHOUSE_DATABASE:Identifier}.t_src AS s WHERE s.x > 0);
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name IN ('t_sample_alias', 't_ttl_subquery');
 
+DROP TABLE t_ttl_subquery;
 DROP TABLE t_sample_alias;
 DROP TABLE t_key_alias;
 DROP TABLE t_src;
