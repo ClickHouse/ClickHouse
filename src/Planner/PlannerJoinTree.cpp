@@ -1120,16 +1120,22 @@ bool lateralSubqueryHasVolatileHiddenFilter(const QueryTreeNodePtr & node, const
     if (!node)
         return false;
 
+    /// Mirror the read-planning path, which attaches both kinds of hidden filters to table functions too,
+    /// and matches `additional_table_filters` by the original alias of the table expression.
+    StoragePtr storage;
     if (const auto * table_node = node->as<TableNode>())
-    {
-        const auto & storage = table_node->getStorage();
+        storage = table_node->getStorage();
+    else if (const auto * table_function_node = node->as<TableFunctionNode>())
+        storage = table_function_node->getStorage();
 
+    if (storage)
+    {
         if (auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, query_context);
             row_policy_filter && astContainsFunctionVolatileInScopeOfQuery(row_policy_filter->expression, query_context))
             return true;
 
         SelectQueryInfo additional_filter_query_info;
-        parseAdditionalFilterAstIfNeeded(storage, table_node->getAlias(), additional_filter_query_info, query_context);
+        parseAdditionalFilterAstIfNeeded(storage, node->getOriginalAlias(), additional_filter_query_info, query_context);
         if (astContainsFunctionVolatileInScopeOfQuery(additional_filter_query_info.additional_filter_ast, query_context))
             return true;
     }
