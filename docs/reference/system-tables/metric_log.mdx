@@ -446,6 +446,8 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ExternalJoinUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Amount of data (uncompressed, before compression) written for JOIN in external memory.
 - `ProfileEvent_ExternalDistinctWritePart` ([UInt64](/reference/data-types/int-uint)) — Number of times a temporary file was written to disk for DISTINCT in external memory.
 - `ProfileEvent_ExternalDistinctMerge` ([UInt64](/reference/data-types/int-uint)) — Number of times temporary files were merged for DISTINCT in external memory.
+- `ProfileEvent_ExternalDistinctTailSpilledRows` ([UInt64](/reference/data-types/int-uint)) — Number of buffered rows selected for spilling before the final external DISTINCT merge.
+- `ProfileEvent_ExternalDistinctTailKeptRows` ([UInt64](/reference/data-types/int-uint)) — Number of buffered rows retained in memory for the final external DISTINCT merge.
 - `ProfileEvent_ExternalDistinctCompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of compressed bytes written for DISTINCT in external memory.
 - `ProfileEvent_ExternalDistinctUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Amount of data (uncompressed, before compression) written for DISTINCT in external memory.
 - `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/reference/data-types/int-uint)) — Number of skipped files during Iceberg partition pruning
@@ -499,7 +501,6 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_DistributedIndexAnalysisScheduledReplicas` ([UInt64](/reference/data-types/int-uint)) — Number of replicas (local replica will be accounted once) to which distributed index analysis has been scheduled
 - `ProfileEvent_DistributedIndexAnalysisReplicaUnavailable` ([UInt64](/reference/data-types/int-uint)) — Number of times distributed index analysis failed on one of replicas without fallback (failed during connect)
 - `ProfileEvent_DistributedIndexAnalysisReplicaFallback` ([UInt64](/reference/data-types/int-uint)) — Number of times distributed index analysis failed on one of replicas with fallback to local replica
-- `ProfileEvent_DistributedIndexAnalysisParts` ([UInt64](/reference/data-types/int-uint)) — Number of parts send for distributed index analysis
 - `ProfileEvent_DistributedIndexAnalysisMissingParts` ([UInt64](/reference/data-types/int-uint)) — Number of missing parts during distributed index analysis that will be resolved locally
 - `ProfileEvent_WaitMarksLoadMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent loading marks
 - `ProfileEvent_BackgroundLoadingMarksTasks` ([UInt64](/reference/data-types/int-uint)) — Number of background tasks for loading marks
@@ -700,7 +701,6 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ParallelReplicasStealingLeftoversMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent collecting orphaned segments
 - `ProfileEvent_ParallelReplicasCollectingOwnedSegmentsMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent collecting segments meant by hash
 - `ProfileEvent_ParallelReplicasNumRequests` ([UInt64](/reference/data-types/int-uint)) — Number of requests to the initiator.
-- `ProfileEvent_ParallelReplicasDeniedRequests` ([UInt64](/reference/data-types/int-uint)) — Number of completely denied requests to the initiator
 - `ProfileEvent_CacheWarmerBytesDownloaded` ([UInt64](/reference/data-types/int-uint)) — Amount of data fetched into filesystem cache by dedicated background threads.
 - `ProfileEvent_CacheWarmerDataPartsDownloaded` ([UInt64](/reference/data-types/int-uint)) — Number of data parts that were fully fetched by CacheWarmer.
 - `ProfileEvent_IgnoredColdParts` ([UInt64](/reference/data-types/int-uint)) — See setting ignore_cold_parts_seconds. Number of times read queries ignored very new parts that weren't pulled into cache by CacheWarmer yet.
@@ -848,7 +848,6 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_CachedReadBufferReadFromSourceBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes read from filesystem cache source (from remote fs, etc)
 - `ProfileEvent_CachedReadBufferPredownloadedFromSourceBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes read from filesystem cache source for predownload (from remote fs, etc)
 - `ProfileEvent_CachedReadBufferReadFromCacheBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes read from filesystem cache
-- `ProfileEvent_CachedReadBufferPredownloadedBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes read from filesystem cache source. Cache segments are read from left to right as a whole, it might be that we need to predownload some part of the segment irrelevant for the current task just to get to the needed data
 - `ProfileEvent_CachedReadBufferCacheWriteBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes written from source (remote fs, etc) to filesystem cache
 - `ProfileEvent_CachedReadBufferCacheWriteMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent writing data into filesystem cache
 - `ProfileEvent_CachedReadBufferCacheWriteStopped` ([UInt64](/reference/data-types/int-uint)) — Number of times writing a file segment into the filesystem cache was stopped mid-download (space reservation or the cache write failed), after which the read continues bypassing the cache
@@ -896,7 +895,6 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_FileSegmentLockMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Lock file segment time
 - `ProfileEvent_FileSegmentWriteMicroseconds` ([UInt64](/reference/data-types/int-uint)) — File segment write() time
 - `ProfileEvent_FileSegmentIncreasePriorityMicroseconds` ([UInt64](/reference/data-types/int-uint)) — File segment increase priority time
-- `ProfileEvent_FileSegmentRemoveMicroseconds` ([UInt64](/reference/data-types/int-uint)) — File segment remove() time
 - `ProfileEvent_FileSegmentHolderCompleteMicroseconds` ([UInt64](/reference/data-types/int-uint)) — File segments holder complete() time
 - `ProfileEvent_FileSegmentFailToIncreasePriority` ([UInt64](/reference/data-types/int-uint)) — Number of times the priority was not increased due to a high contention on the cache lock
 - `ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfLockContention` ([UInt64](/reference/data-types/int-uint)) — Number of times space reservation was skipped due to a high contention on the cache lock
@@ -944,7 +942,6 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_SynchronousReadWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent in waiting for synchronous reads in asynchronous local read.
 - `ProfileEvent_AsynchronousRemoteReadWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent in waiting for asynchronous remote reads.
 - `ProfileEvent_SynchronousRemoteReadWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent in waiting for synchronous remote reads.
-- `ProfileEvent_ExternalDataSourceLocalCacheReadBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes read from local cache buffer in RemoteReadBufferCache
 - `ProfileEvent_MainConfigLoads` ([UInt64](/reference/data-types/int-uint)) — Number of times the main configuration was reloaded.
 - `ProfileEvent_AggregationPreallocatedElementsInHashTables` ([UInt64](/reference/data-types/int-uint)) — How many elements were preallocated in hash tables for aggregation.
 - `ProfileEvent_AdaptiveAggregationLocalFreezes` ([UInt64](/reference/data-types/int-uint)) — How many local hash tables the adaptive aggregation froze at the freeze threshold.
@@ -1110,9 +1107,6 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_OverflowBreak` ([UInt64](/reference/data-types/int-uint)) — Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.
 - `ProfileEvent_OverflowThrow` ([UInt64](/reference/data-types/int-uint)) — Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.
 - `ProfileEvent_OverflowAny` ([UInt64](/reference/data-types/int-uint)) — Number of times approximate GROUP BY was in effect: when aggregation was performed only on top of first 'max_rows_to_group_by' unique keys and other keys were ignored due to 'group_by_overflow_mode' = 'any'.
-- `ProfileEvent_S3QueueSetFileProcessingMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent to set file as processing
-- `ProfileEvent_S3QueueSetFileProcessedMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent to set file as processed
-- `ProfileEvent_S3QueueSetFileFailedMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent to set file as failed
 - `ProfileEvent_ObjectStorageQueueFailedFiles` ([UInt64](/reference/data-types/int-uint)) — Number of files which failed to be processed
 - `ProfileEvent_ObjectStorageQueueProcessedFiles` ([UInt64](/reference/data-types/int-uint)) — Number of files which were processed
 - `ProfileEvent_ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent to set file as failed
@@ -1533,7 +1527,6 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_WasmGuestExecuteMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent executing WebAssembly code
 - `ProfileEvent_WasmTotalExecuteMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent executing WebAssembly code
 - `ProfileEvent_WasmModuleInstatiate` ([UInt64](/reference/data-types/int-uint)) — Number of WebAssembly compartments created
-- `ProfileEvent_WasmMemoryAllocated` ([UInt64](/reference/data-types/int-uint)) — Total memory allocated for WebAssembly compartments
 - `ProfileEvent_ExecutableUserDefinedFunctionInvocations` ([UInt64](/reference/data-types/int-uint)) — Number of executable and executable_pool user-defined function invocations.
 - `ProfileEvent_ExecutableUserDefinedFunctionElapsedMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Wall clock time spent executing executable and executable_pool user-defined functions, in microseconds.
 - `ProfileEvent_ExecutableUserDefinedFunctionUserTimeMicroseconds` ([UInt64](/reference/data-types/int-uint)) — User mode CPU time consumed by executable and executable_pool user-defined function child processes, in microseconds.
@@ -1560,6 +1553,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_IndexGenericExclusionSearchAlgorithm` ([UInt64](/reference/data-types/int-uint)) — Number of times the generic exclusion search algorithm is used over the index marks
 - `ProfileEvent_IndexGenericExclusionSearchStepLimitReached` ([UInt64](/reference/data-types/int-uint)) — Number of times the generic exclusion search over the index marks reached merge_tree_generic_exclusion_search_max_steps and accepted the remaining mark ranges without further splitting
 - `ProfileEvent_ParallelReplicasQueryCount` ([UInt64](/reference/data-types/int-uint)) — Number of (sub)queries executed using parallel replicas during a query execution
+- `ProfileEvent_AutomaticParallelReplicasProbePlansBuilt` ([UInt64](/reference/data-types/int-uint)) — Number of times automatic parallel replicas built a candidate plan with parallel replicas to compare against the single-node plan. Not every such plan is used: it is built to be costed, and is discarded when the single-node plan wins
 - `ProfileEvent_DistributedConnectionReconnectCount` ([UInt64](/reference/data-types/int-uint)) — Number of reconnects to other servers done during distributed query execution. It can happen when a stale connection has been acquired from connection pool
 - `ProfileEvent_DistributedConnectionConnectCount` ([UInt64](/reference/data-types/int-uint)) — Number of connects to other servers done during distributed query execution. Happens when new connection is established instead of using existing from pool.
 - `ProfileEvent_RefreshableViewRefreshSuccess` ([UInt64](/reference/data-types/int-uint)) — How many times refreshable materialized views refreshed

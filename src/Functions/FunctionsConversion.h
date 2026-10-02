@@ -2206,6 +2206,8 @@ struct ConvertImpl
             || std::is_same_v<FromDataType, DataTypeFloat32>
             || std::is_same_v<FromDataType, DataTypeFloat64>
             || std::is_same_v<FromDataType, DataTypeBFloat16>
+            || std::is_same_v<FromDataType, DataTypeEnum8>
+            || std::is_same_v<FromDataType, DataTypeEnum16>
             ) && std::is_same_v<ToDataType, DataTypeDate>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransformFromSecondsOrDays<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
@@ -2252,10 +2254,13 @@ struct ConvertImpl
         /// convenience, Float32, Float64, BFloat16) to DateTime. Without the wide integers here the
         /// conversion would fall through to the generic numeric path, which narrows to `UInt32` modulo
         /// 2^32 instead of saturating - and the monotonicity `toDateTime` claims would not hold.
+        /// `Enum8`/`Enum16` are stored as `Int8`/`Int16`, so they take the same saturating transform.
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeInt8>
                 || std::is_same_v<FromDataType, DataTypeInt16>
-                || std::is_same_v<FromDataType, DataTypeInt32>)
+                || std::is_same_v<FromDataType, DataTypeInt32>
+                || std::is_same_v<FromDataType, DataTypeEnum8>
+                || std::is_same_v<FromDataType, DataTypeEnum16>)
             && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformSigned<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
@@ -3552,6 +3557,8 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    /// A NULL input converts to NULL only when the target is Nullable.
+    bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
@@ -3686,8 +3693,32 @@ public:
 
                 ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(arguments);
                 auto temporary_result_type = removeNullable(result_type);
-                ColumnPtr res = executeInternal(temporary_columns, temporary_result_type, input_rows_count, /*to_nullable=*/ true);
 
+                /// The string behind a NULL row is arbitrary, and parsing it to DateTime64 or Time64 may throw.
+                WhichDataType which_result(temporary_result_type);
+                if (result_null_map && (which_result.isDateTime64() || which_result.isTime64())
+                    && isStringOrFixedString(removeNullable(arguments[0].type)))
+                {
+                    const auto & null_map_data = assert_cast<const ColumnUInt8 &>(*result_null_map).getData();
+                    size_t rows_without_nulls = input_rows_count - countBytesInFilter(null_map_data.data(), 0, input_rows_count);
+                    if (rows_without_nulls == 0)
+                        return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
+
+                    if (rows_without_nulls < input_rows_count)
+                    {
+                        IColumn::Filter filter_mask(input_rows_count);
+                        for (size_t i = 0; i < input_rows_count; ++i)
+                            filter_mask[i] = !null_map_data[i];
+                        for (auto & column : temporary_columns)
+                            column.column = column.column->filter(filter_mask, rows_without_nulls);
+
+                        auto res = IColumn::mutate(executeInternal(temporary_columns, temporary_result_type, rows_without_nulls, /*to_nullable=*/ true));
+                        res->expand(filter_mask, /*inverted=*/ false);
+                        return wrapInNullable(std::move(res), std::move(result_null_map));
+                    }
+                }
+
+                ColumnPtr res = executeInternal(temporary_columns, temporary_result_type, input_rows_count, /*to_nullable=*/ true);
                 return wrapInNullable(res, std::move(result_null_map));
             }
             else
@@ -5314,6 +5345,9 @@ protected:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    /// A NULL input converts to NULL only when the target is Nullable; otherwise the conversion
+    /// throws rather than returning a NULL, so it must not be treated as propagating.
+    bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
     /// CAST(Nothing, T) -> T
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
