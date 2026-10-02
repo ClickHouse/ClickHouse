@@ -4,8 +4,6 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
 
-#include <limits>
-
 
 namespace DB
 {
@@ -197,7 +195,7 @@ struct LowCardinalityKeyGetterForJoin
 };
 
 template <typename BaseMethod, typename Mapped>
-struct ConsecutiveKeyGetterForJoin
+struct ConsecutiveKey64GetterForJoin
 {
     using EmplaceResult = typename BaseMethod::EmplaceResult;
     using FindResult = typename BaseMethod::FindResult;
@@ -209,43 +207,31 @@ struct ConsecutiveKeyGetterForJoin
     static_assert(FindResult::has_offset);
     static_assert(!std::is_same_v<Mapped, void>);
 
-    enum class CacheState
-    {
-        Disabled,
-        Sampling,
-        Enabled,
-    };
-
-    static constexpr size_t probe_cache_sample_size = 8;
-    static constexpr size_t probe_cache_min_equal_rows = probe_cache_sample_size - 1;
-
     BaseMethod base;
-    ColumnsHashing::FixedSizeKeySlices key_slices;
-
-    static constexpr size_t no_last_row = std::numeric_limits<size_t>::max();
-    size_t last_row = no_last_row;
+    UInt64 cached_key = 0;
     Mapped * cached_mapped = nullptr;
     size_t cached_offset = 0;
     bool cached_found = false;
-    CacheState cache_state = CacheState::Disabled;
-    size_t sample_rows = 0;
-    size_t sample_equal_rows = 0;
+    bool cache_enabled = false;
+    bool has_cached_key = false;
 
-    ConsecutiveKeyGetterForJoin(
+    ConsecutiveKey64GetterForJoin(
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
         const ColumnsHashing::HashMethodContextPtr & context)
-        : base(key_columns, key_sizes, context), key_slices(key_columns)
+        : base(key_columns, key_sizes, context)
     {
-        cache_state = key_slices.isUsable() ? CacheState::Sampling : CacheState::Disabled;
     }
 
-    ALWAYS_INLINE void recordSample(bool equal)
+    ALWAYS_INLINE void setConsecutiveProbeCacheEnabled(bool enabled)
     {
-        ++sample_rows;
-        sample_equal_rows += equal;
-        if (sample_rows == probe_cache_sample_size)
-            cache_state = sample_equal_rows >= probe_cache_min_equal_rows ? CacheState::Enabled : CacheState::Disabled;
+        cache_enabled = enabled;
+        has_cached_key = false;
+    }
+
+    ALWAYS_INLINE bool probeKeysEqual(size_t lhs, size_t rhs, Arena & pool) const
+    {
+        return base.getKeyHolder(lhs, pool) == base.getKeyHolder(rhs, pool);
     }
 
     ALWAYS_INLINE auto getKeyHolder(size_t row, Arena & pool) const
@@ -268,25 +254,24 @@ struct ConsecutiveKeyGetterForJoin
     template <typename Data>
     ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
     {
-        if (cache_state == CacheState::Disabled)
+        if (!cache_enabled)
             return base.findKey(data, row, pool);
 
-        if (last_row != no_last_row && key_slices.rowsEqual(row, last_row))
-        {
-            if (cache_state == CacheState::Sampling)
-                recordSample(true);
+        const UInt64 key_value = base.getKeyHolder(row, pool);
+        if (has_cached_key && key_value == cached_key)
             return FindResult(cached_mapped, cached_found, cached_offset);
-        }
 
-        auto result = base.findKey(data, row, pool);
-        last_row = row;
-        cached_found = result.isFound();
-        cached_mapped = cached_found ? &result.getMapped() : nullptr;
-        cached_offset = cached_found ? result.getOffset() : 0;
+        auto it = data.find(key_value);
+        const bool found = it;
+        const size_t offset = found ? data.offsetInternal(it) : 0;
 
-        if (cache_state == CacheState::Sampling)
-            recordSample(false);
-        return result;
+        cached_key = key_value;
+        cached_found = found;
+        cached_mapped = found ? &it->getMapped() : nullptr;
+        cached_offset = offset;
+        has_cached_key = true;
+
+        return FindResult(cached_mapped, cached_found, cached_offset);
     }
 };
 
@@ -299,7 +284,7 @@ struct ProbeKeyGetterForJoin
 template <typename BaseMethod, typename Mapped>
 struct ProbeKeyGetterForJoin<true, BaseMethod, Mapped>
 {
-    using Type = ConsecutiveKeyGetterForJoin<BaseMethod, Mapped>;
+    using Type = ConsecutiveKey64GetterForJoin<BaseMethod, Mapped>;
 };
 
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key8, Value, Mapped>
@@ -427,19 +412,7 @@ struct KeyGetterForType
     using Type = typename KeyGetterForTypeImpl<type, Value, Mapped>::Type;
 
     static constexpr bool use_consecutive_probe_cache
-        = (type == HashJoin::Type::key32
-        || type == HashJoin::Type::key64
-        || type == HashJoin::Type::keys32
-        || type == HashJoin::Type::keys64
-        || type == HashJoin::Type::keys128
-        || type == HashJoin::Type::keys256
-        || type == HashJoin::Type::two_level_key32
-        || type == HashJoin::Type::two_level_key64
-        || type == HashJoin::Type::two_level_keys32
-        || type == HashJoin::Type::two_level_keys64
-        || type == HashJoin::Type::two_level_keys128
-        || type == HashJoin::Type::two_level_keys256)
-        && !std::is_void_v<Mapped>;
+        = type == HashJoin::Type::key64 && !std::is_void_v<Mapped>;
 
     using ProbeType = typename ProbeKeyGetterForJoin<use_consecutive_probe_cache, Type, Mapped>::Type;
 };
