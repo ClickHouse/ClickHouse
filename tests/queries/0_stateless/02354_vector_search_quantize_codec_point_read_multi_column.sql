@@ -13,12 +13,12 @@ DROP TABLE IF EXISTS quantize_pr_mc_unaligned;
 CREATE TABLE quantize_pr_mc_aligned
 (
     id UInt32,
-    vec Array(Float32) CODEC(Quantized('int8', 64)) SETTINGS (max_compress_block_size = 256),
+    vec Array(Float32) CODEC(Quantized('int8', 64)),
     payload String,
-    vec2 Array(Float32) CODEC(Quantized('int8', 64)) SETTINGS (max_compress_block_size = 256)
+    vec2 Array(Float32) CODEC(Quantized('int8', 64))
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 512, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS index_granularity = 512, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, quantized_vector_one_block_per_row = 1;
 
 CREATE TABLE quantize_pr_mc_unaligned
 (
@@ -65,11 +65,11 @@ DROP TABLE IF EXISTS quantize_pr_mc_wide_granule;
 CREATE TABLE quantize_pr_mc_wide_granule
 (
     id UInt32,
-    vec Array(Float32) CODEC(Quantized('int8', 64)) SETTINGS (max_compress_block_size = 256),
+    vec Array(Float32) CODEC(Quantized('int8', 64)),
     payload String
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, quantized_vector_one_block_per_row = 1;
 
 INSERT INTO quantize_pr_mc_wide_granule
 SELECT
@@ -103,11 +103,11 @@ DROP TABLE IF EXISTS quantize_pr_mc_dropped;
 CREATE TABLE quantize_pr_mc_dropped
 (
     id UInt32,
-    vec Array(Float32) CODEC(Quantized('int8', 64)) SETTINGS (max_compress_block_size = 256),
+    vec Array(Float32) CODEC(Quantized('int8', 64)),
     payload String
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 512, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS index_granularity = 512, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, quantized_vector_one_block_per_row = 1;
 
 SYSTEM STOP MERGES quantize_pr_mc_dropped;
 
@@ -133,10 +133,10 @@ DROP TABLE IF EXISTS quantize_pr_mc_added;
 CREATE TABLE quantize_pr_mc_added
 (
     id UInt32,
-    vec Array(Float32) CODEC(Quantized('int8', 64)) SETTINGS (max_compress_block_size = 256)
+    vec Array(Float32) CODEC(Quantized('int8', 64))
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 512, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS index_granularity = 512, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, quantized_vector_one_block_per_row = 1;
 
 INSERT INTO quantize_pr_mc_added
 SELECT number, arrayMap(j -> toFloat32(number / 1000.0 + (sipHash64(number, j) % 100) / 1000.0), range(64))

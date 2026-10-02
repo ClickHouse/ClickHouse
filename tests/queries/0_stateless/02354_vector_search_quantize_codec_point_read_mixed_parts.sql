@@ -14,10 +14,10 @@ CREATE TABLE quantize_pr_mixed_aligned
 (
     id UInt32,
     payload String,
-    vec Array(Float32) CODEC(Quantized('int8', 64)) SETTINGS (max_compress_block_size = 256)
+    vec Array(Float32) CODEC(Quantized('int8', 64))
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 512, min_bytes_for_wide_part = 100000, min_rows_for_wide_part = 1000;
+SETTINGS index_granularity = 512, min_bytes_for_wide_part = 100000, min_rows_for_wide_part = 1000, quantized_vector_one_block_per_row = 1;
 
 CREATE TABLE quantize_pr_mixed_unaligned
 (

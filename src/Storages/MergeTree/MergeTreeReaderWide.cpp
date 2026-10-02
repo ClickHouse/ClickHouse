@@ -18,6 +18,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionCodecQuantized.h>
 #include <Compression/CompressionInfo.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <IO/ReadBufferFromMemory.h>
 
@@ -27,6 +28,11 @@ namespace DB
 namespace
 {
     constexpr auto DATA_FILE_EXTENSION = ".bin";
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool quantized_vector_one_block_per_row;
 }
 
 namespace ErrorCodes
@@ -808,6 +814,8 @@ void MergeTreeReaderWide::prepareLazyMaterialization(const PaddedPODArray<UInt64
 {
     lazy_rows = rows;
     fixed_size_lazy_reads.clear();
+    if (!(*storage_settings)[MergeTreeSetting::quantized_vector_one_block_per_row])
+        return;
     const auto & checksums = data_part_info_for_read->getChecksums();
     const ISerialization::SubstreamPath elements_substream = SerializationQuantizedVector::vectorElementsSubstreamPath();
 

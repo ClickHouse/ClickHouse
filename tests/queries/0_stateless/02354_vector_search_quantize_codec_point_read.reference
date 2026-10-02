@@ -1,4 +1,5 @@
 int8_wide_parts	1
+int8_layouts_differ	1
 int8_aligned_eq_unaligned	1
 int8_nearest_is_self	1
 bf16_wide_parts	1

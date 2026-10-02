@@ -26,6 +26,11 @@
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool quantized_vector_one_block_per_row;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -245,7 +250,8 @@ void MergeTreeDataPartWriterWide::addStreams(
         max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
 
         /// Special handling for Quantized vector columns: one full-precision vector per compressed block.
-        if (SerializationQuantizedVector::isVectorElementsSubstream(substream_path))
+        if ((*storage_settings)[MergeTreeSetting::quantized_vector_one_block_per_row]
+            && SerializationQuantizedVector::isVectorElementsSubstream(substream_path))
         {
             if (auto quantized_params = tryExtractQuantizedCodecParams(effective_codec_desc))
             {

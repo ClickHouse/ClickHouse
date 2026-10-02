@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
--- Point-read rescore for `Quantized`-codec vector search: a per-column `max_compress_block_size` of one vector's bytes
--- stores one vector per block. Checks the aligned (point-read) path returns exactly what the unaligned path returns.
+-- Point-read rescore for `Quantized`-codec vector search: `quantized_vector_one_block_per_row` stores one vector per
+-- compressed block. Checks the aligned (point-read) path returns exactly what the unaligned path returns.
 
 SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
@@ -19,10 +19,10 @@ DROP TABLE IF EXISTS quantize_pr_pq_unaligned;
 CREATE TABLE quantize_pr_int8_aligned
 (
     id UInt32,
-    vec Array(Float32) CODEC(Quantized('int8', 64)) SETTINGS (max_compress_block_size = 256)
+    vec Array(Float32) CODEC(Quantized('int8', 64))
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 512, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS index_granularity = 512, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, quantized_vector_one_block_per_row = 1;
 
 CREATE TABLE quantize_pr_int8_unaligned
 (
@@ -41,6 +41,13 @@ INSERT INTO quantize_pr_int8_unaligned SELECT * FROM quantize_pr_int8_aligned;
 SELECT 'int8_wide_parts',
     (SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 'quantize_pr_int8_aligned' AND active) = 'Wide';
 
+-- The setting must actually change the layout, or the comparisons below would be two identical tables.
+SELECT 'int8_layouts_differ',
+    (SELECT sum(column_bytes_on_disk) FROM system.parts_columns
+     WHERE database = currentDatabase() AND table = 'quantize_pr_int8_aligned' AND active AND column = 'vec')
+ != (SELECT sum(column_bytes_on_disk) FROM system.parts_columns
+     WHERE database = currentDatabase() AND table = 'quantize_pr_int8_unaligned' AND active AND column = 'vec');
+
 -- Point-read (aligned) vs granule-read (unaligned) two-stage search return the identical top-k.
 WITH (SELECT vec FROM quantize_pr_int8_aligned WHERE id = 2500) AS ref
 SELECT 'int8_aligned_eq_unaligned',
@@ -57,10 +64,10 @@ SELECT 'int8_nearest_is_self',
 CREATE TABLE quantize_pr_bf16_aligned
 (
     id UInt32,
-    vec Array(BFloat16) CODEC(Quantized('int8', 64)) SETTINGS (max_compress_block_size = 128)
+    vec Array(BFloat16) CODEC(Quantized('int8', 64))
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 512, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS index_granularity = 512, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, quantized_vector_one_block_per_row = 1;
 
 CREATE TABLE quantize_pr_bf16_unaligned
 (
@@ -87,15 +94,15 @@ WITH (SELECT vec FROM quantize_pr_bf16_aligned WHERE id = 2500) AS ref
 SELECT 'bf16_nearest_is_self',
     (SELECT id FROM quantize_pr_bf16_aligned ORDER BY L2Distance(vec, ref) ASC LIMIT 1 SETTINGS vector_search_index_fetch_multiplier = 100) = 2500;
 
--- --- Trained product codec: the per-column setting must NOT re-block the single-value 65536-byte codebook. ---
+-- --- Trained product codec: the setting must NOT re-block the single-value 65536-byte codebook. ---
 
 CREATE TABLE quantize_pr_pq_aligned
 (
     id UInt32,
-    vec Array(Float32) CODEC(Quantized('product', 64, 8, 8)) SETTINGS (max_compress_block_size = 256)
+    vec Array(Float32) CODEC(Quantized('product', 64, 8, 8))
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 512, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS index_granularity = 512, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, quantized_vector_one_block_per_row = 1;
 
 CREATE TABLE quantize_pr_pq_unaligned
 (
