@@ -1139,7 +1139,12 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
         /// the read returns (for example, a definer's read limits): a settings-profile update of the
         /// definer must invalidate consistency users the same way it does for `StorageView`. Purely
         /// operational settings are left out: a definer's profile carries them without changing a row.
-        updateHashWithRowAffectingSettings(hash, effective_context->getSettingsRef());
+        /// The read is pushed straight into the target storage, which does not apply the
+        /// `additional_table_filters` entries keyed by the target table, so only the entries keyed by
+        /// the names of the materialized view itself can apply (see `collectNamesMatchableByAdditionalTableFilters`).
+        const auto & storage_id = getStorageID();
+        const NameSet additional_table_filters_matchable_names{storage_id.getTableName(), storage_id.getFullNameNotQuoted()};
+        updateHashWithRowAffectingSettings(hash, effective_context->getSettingsRef(), &additional_table_filters_matchable_names);
         hash.update(*target_hash);
         return hash.get128();
     }

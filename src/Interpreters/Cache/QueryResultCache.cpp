@@ -543,16 +543,22 @@ static bool collectTableNamesMatchableByAdditionalTableFilters(const StorageID &
     names.insert(storage_id.getTableName());
     names.insert(storage_id.getFullNameNotQuoted());
 
-    /// The filters propagate into everything the read runs with the same settings: the query behind a
-    /// view, the target of a materialized view.
+    /// The filters propagate only into the query behind a view whose body runs with the caller's settings:
+    /// an `INVOKER` or legacy view. `getSQLSecurityOverriddenContext` removes the caller's
+    /// `additional_table_filters` for a `DEFINER` / `NONE` body, so the tables it reads cannot match an
+    /// entry (the definer's own filters are accounted for by `StorageView::getModificationHash`).
     if (typeid_cast<const StorageView *>(storage.get()))
     {
         auto metadata = storage->getInMemoryMetadataPtr(context, false);
+        if (metadata->sql_security_type && *metadata->sql_security_type != SQLSecurityType::INVOKER)
+            return true;
         const auto & inner_query = metadata->getSelectQuery().inner_query;
         return inner_query && collectNamesMatchableByAdditionalTableFiltersImpl(inner_query->clone(), context, names, depth + 1);
     }
-    if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
-        return collectTableNamesMatchableByAdditionalTableFilters(materialized_view->getTargetTableId(), context, names, depth + 1);
+    /// A read of a materialized view is pushed straight into the target storage, which does not apply
+    /// the filters keyed by the target table, so only the names of the materialized view itself can match.
+    if (typeid_cast<const StorageMaterializedView *>(storage.get()))
+        return true;
 
     /// Storages known to read no other table. Anything else (`Merge`, `Distributed`, `Buffer`, ...) may
     /// read tables that are not named here, locally or on another server, so the set is unknown.
