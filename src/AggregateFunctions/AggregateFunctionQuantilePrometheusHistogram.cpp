@@ -251,6 +251,7 @@ struct QuantilePrometheusHistogramArrayData
         PODArray<CumulativeHistogramValue> values;
         PODArray<UInt8> present;
         PODArray<SparseValue, 0> sparse_values;
+        size_t value_count = 0;
         bool dense = false;
 
         void resize(size_t size)
@@ -262,17 +263,6 @@ struct QuantilePrometheusHistogramArrayData
             }
         }
 
-        bool contains(size_t index) const
-        {
-            if (dense)
-                return index < present.size() && present[index] != 0;
-
-            const UInt32 index_uint32 = static_cast<UInt32>(index);
-            auto it = std::lower_bound(sparse_values.begin(), sparse_values.end(), index_uint32,
-                [](const SparseValue & lhs, UInt32 rhs) { return lhs.index < rhs; });
-            return it != sparse_values.end() && it->index == index_uint32;
-        }
-
         bool add(size_t index, CumulativeHistogramValue value, size_t target_grid_size)
         {
             if (dense)
@@ -280,6 +270,7 @@ struct QuantilePrometheusHistogramArrayData
                 const bool is_new = !present[index];
                 values[index] += value;
                 present[index] = 1;
+                value_count += is_new;
                 return is_new;
             }
 
@@ -298,14 +289,14 @@ struct QuantilePrometheusHistogramArrayData
                     it->value += value;
                     return false;
                 }
-                else
-                {
-                    sparse_values.emplace_back(SparseValue{index_uint32, value});
-                    for (size_t i = sparse_values.size() - 1; i > position; --i)
-                        sparse_values[i] = sparse_values[i - 1];
-                    sparse_values[position] = SparseValue{index_uint32, value};
-                }
+
+                sparse_values.emplace_back(SparseValue{index_uint32, value});
+                for (size_t i = sparse_values.size() - 1; i > position; --i)
+                    sparse_values[i] = sparse_values[i - 1];
+                sparse_values[position] = SparseValue{index_uint32, value};
             }
+
+            ++value_count;
 
             /// A sparse entry is larger than a dense value plus its presence byte. Promote once
             /// around half occupancy to avoid sparse representation overhead.
@@ -318,7 +309,42 @@ struct QuantilePrometheusHistogramArrayData
         size_t countNewValues(const Bucket & rhs, size_t rhs_grid_size) const
         {
             size_t result = 0;
-            rhs.forEach(rhs_grid_size, [this, &result](size_t index, CumulativeHistogramValue) { result += !contains(index); });
+
+            if (rhs.dense)
+            {
+                size_t lhs_sparse_index = 0;
+                for (size_t index = 0; index < rhs_grid_size; ++index)
+                {
+                    if (!rhs.present[index])
+                        continue;
+
+                    if (dense)
+                    {
+                        result += index >= present.size() || !present[index];
+                        continue;
+                    }
+
+                    while (lhs_sparse_index < sparse_values.size() && sparse_values[lhs_sparse_index].index < index)
+                        ++lhs_sparse_index;
+                    result += lhs_sparse_index == sparse_values.size() || sparse_values[lhs_sparse_index].index != index;
+                }
+                return result;
+            }
+
+            if (dense)
+            {
+                for (const auto & rhs_value : rhs.sparse_values)
+                    result += rhs_value.index >= present.size() || !present[rhs_value.index];
+                return result;
+            }
+
+            size_t lhs_index = 0;
+            for (const auto & rhs_value : rhs.sparse_values)
+            {
+                while (lhs_index < sparse_values.size() && sparse_values[lhs_index].index < rhs_value.index)
+                    ++lhs_index;
+                result += lhs_index == sparse_values.size() || sparse_values[lhs_index].index != rhs_value.index;
+            }
             return result;
         }
 
@@ -327,14 +353,21 @@ struct QuantilePrometheusHistogramArrayData
             if (dense)
             {
                 size_t result = 0;
-                rhs.forEach(rhs_grid_size, [this, target_grid_size, &result](size_t index, CumulativeHistogramValue value) { result += add(index, value, target_grid_size); });
+                rhs.forEach(rhs_grid_size, [this, target_grid_size, &result](size_t index, CumulativeHistogramValue value)
+                {
+                    result += add(index, value, target_grid_size);
+                });
                 return result;
             }
 
             if (rhs.dense)
             {
+                promoteToDense(target_grid_size);
                 size_t result = 0;
-                rhs.forEach(rhs_grid_size, [this, target_grid_size, &result](size_t index, CumulativeHistogramValue value) { result += add(index, value, target_grid_size); });
+                rhs.forEach(rhs_grid_size, [this, target_grid_size, &result](size_t index, CumulativeHistogramValue value)
+                {
+                    result += add(index, value, target_grid_size);
+                });
                 return result;
             }
 
@@ -369,11 +402,11 @@ struct QuantilePrometheusHistogramArrayData
             }
 
             sparse_values.swap(merged);
-            const size_t new_size = sparse_values.size();
-            if (new_size >= (target_grid_size + 1) / 2)
+            value_count = sparse_values.size();
+            if (value_count >= (target_grid_size + 1) / 2)
                 promoteToDense(target_grid_size);
 
-            return new_size - old_size;
+            return value_count - old_size;
         }
 
         template <typename Func>
@@ -394,6 +427,11 @@ struct QuantilePrometheusHistogramArrayData
             }
         }
 
+        size_t numValues() const
+        {
+            return value_count;
+        }
+
     private:
         void promoteToDense(size_t grid_size_)
         {
@@ -411,18 +449,6 @@ struct QuantilePrometheusHistogramArrayData
             PODArray<SparseValue, 0> empty;
             sparse_values.swap(empty);
             dense = true;
-        }
-
-    public:
-        size_t numValues() const
-        {
-            if (!dense)
-                return sparse_values.size();
-
-            size_t result = 0;
-            for (UInt8 value : present)
-                result += value != 0;
-            return result;
         }
     };
 

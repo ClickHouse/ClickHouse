@@ -37,3 +37,22 @@ SELECT
     quantilePrometheusHistogramArrayMerge(toDecimal64('0.25', 2))(decimal_state)
 FROM histogram_grid_typed_states;
 DROP TABLE histogram_grid_typed_states;
+
+-- Nullable top-level arguments use the Null adapter. The quantile level only affects
+-- finalization, so states produced at different levels must remain merge-compatible.
+SELECT length(quantilePrometheusHistogramArrayMerge(0.9)(state))
+FROM
+(
+    SELECT quantilePrometheusHistogramArrayState(0.5)(
+        CAST(pair.1 AS Nullable(Float64)), [pair.2]) AS state
+    FROM (SELECT arrayJoin([(1., 1.), (inf, 2.)]) AS pair)
+);
+
+-- Exercise normalized state typing too, not only the direct -Merge compatibility path.
+SELECT uniqExact(toTypeName(state))
+FROM
+(
+    SELECT quantilePrometheusHistogramArrayState(0.5)(CAST(1. AS Nullable(Float64)), [1.]) AS state
+    UNION ALL
+    SELECT quantilePrometheusHistogramArrayState(0.9)(CAST(1. AS Nullable(Float64)), [1.]) AS state
+);
