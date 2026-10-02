@@ -318,15 +318,17 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
                     getDataPartStorage().getRelativePath(),
                     std::string(fs::path(getDataPartStorage().getFullPath()) / mrk_file_name));
 
-            /// The size of compressed marks does not follow from the number of marks.
-            UInt64 expected_file_size = index_granularity_info.getMarkSizeInBytes(getColumns().size()) * index_granularity->getMarksCount();
-            if (!index_granularity_info.mark_type.compressed && expected_file_size != file_size)
+            /// The size of compressed marks does not follow from the number of marks, so check their
+            /// decompressed size instead.
+            UInt64 marks_payload_size = index_granularity_info.mark_type.compressed ? readFile(mrk_file_name)->ignoreAll() : file_size;
+            UInt64 expected_payload_size = index_granularity_info.getMarkSizeInBytes(getColumns().size()) * index_granularity->getMarksCount();
+            if (expected_payload_size != marks_payload_size)
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
-                    "Part {} is broken: bad size of marks file '{}': {}, must be: {}",
+                    "Part {} is broken: bad size of marks in file '{}': {}, must be: {}",
                     getDataPartStorage().getRelativePath(),
                     std::string(fs::path(getDataPartStorage().getFullPath()) / mrk_file_name),
-                    file_size, expected_file_size);
+                    marks_payload_size, expected_payload_size);
         }
     }
 }

@@ -15,12 +15,13 @@ WORKING_DIR="${CLICKHOUSE_TMP}/05214_broken_projection_does_not_skip_part_check"
 create_table()
 {
     local min_bytes_for_wide_part=${1:-1000000000}
+    local extra_settings=${2:-}
     rm -rf "${WORKING_DIR}"
     mkdir -p "${WORKING_DIR}"
     ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --multiquery -q "
         CREATE TABLE t (id UInt64, v UInt64, PROJECTION p (SELECT v, count() GROUP BY v))
         ENGINE = MergeTree ORDER BY id
-        SETTINGS min_bytes_for_wide_part = ${min_bytes_for_wide_part}, min_rows_for_wide_part = 1000000000, compress_marks = 1;
+        SETTINGS min_bytes_for_wide_part = ${min_bytes_for_wide_part}, min_rows_for_wide_part = ${min_bytes_for_wide_part}, compress_marks = 1${extra_settings};
 
         INSERT INTO t SELECT number, number % 10 FROM numbers(5000);
         SELECT 'inserted', count() FROM t;
@@ -66,5 +67,47 @@ report 'projection only, no checksums'
 create_table 0
 find "${WORKING_DIR}" -name 'checksums.txt' -not -path '*.proj*' -delete
 report 'wide, no checksums'
+
+# A compressed marks file cut by a crash right after one of its compressed blocks still decompresses,
+# only to fewer marks, and the regenerated checksums bless it too. The marks are small, so that each
+# marks file consists of several compressed blocks.
+truncate_to_first_block()
+{
+    local file
+    for file in "$@"
+    do
+        local compressed_size
+        compressed_size=$(od -An -t u4 -j 17 -N 4 "${file}" | tr -d ' ')
+        truncate -s $((16 + compressed_size)) "${file}"
+    done
+}
+
+small_marks_settings=", index_granularity = 100, marks_compress_block_size = 256"
+
+# The marks of the column that the part's granularity is loaded from: they cover fewer rows than the part has.
+create_table 0 "${small_marks_settings}"
+truncate_to_first_block $(find "${WORKING_DIR}" -name 'id.cmrk*' -not -path '*.proj*')
+find "${WORKING_DIR}" -name 'checksums.txt' -not -path '*.proj*' -delete
+report 'wide, torn first column, no checksums'
+
+# The marks of another column: they have fewer marks than the part's granularity.
+create_table 0 "${small_marks_settings}"
+truncate_to_first_block $(find "${WORKING_DIR}" -name 'v.cmrk*' -not -path '*.proj*')
+find "${WORKING_DIR}" -name 'checksums.txt' -not -path '*.proj*' -delete
+report 'wide, torn second column, no checksums'
+
+create_table 1000000000 "${small_marks_settings}"
+truncate_to_first_block $(find "${WORKING_DIR}" -name 'data.cmrk*' -not -path '*.proj*')
+find "${WORKING_DIR}" -name 'checksums.txt' -not -path '*.proj*' -delete
+report 'compact, torn, no checksums'
+
+# Intact marks of several compressed blocks are not mistaken for torn ones.
+create_table 0 "${small_marks_settings}"
+find "${WORKING_DIR}" -name 'checksums.txt' -not -path '*.proj*' -delete
+report 'wide, several blocks, no checksums'
+
+create_table 1000000000 "${small_marks_settings}"
+find "${WORKING_DIR}" -name 'checksums.txt' -not -path '*.proj*' -delete
+report 'compact, several blocks, no checksums'
 
 rm -rf "${WORKING_DIR}"
