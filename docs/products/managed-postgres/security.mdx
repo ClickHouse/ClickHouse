@@ -121,22 +121,38 @@ GCP Private Service Connect support is available but requires manual configurati
 
 ### Requesting GCP Private Service Connect setup {#requesting-gcp-private-service-connect}
 
+Access is granted per Private Service Connect endpoint, not per GCP project. Only the specific endpoint you create and report to ClickHouse support is accepted, so the setup takes two rounds with support.
+
 To enable GCP Private Service Connect for your ClickHouse Managed Postgres instance:
 
 1. **Contact ClickHouse support** by creating a support ticket
 2. **Provide the following information**:
    - Your ClickHouse organization ID
    - ID/hostname of postgres service
-   - GCP project IDs which you'd like to connect the Private Service Connect endpoint from
 
 3. **ClickHouse support will**:
    - Provision the Private Service Connect service attachment on the ClickHouse Managed Postgres side
    - Provide you with the service attachment ID which you can use to create an endpoint.
 
-4. **Setup your GCP Private Service Connect**:
-   - Create the Private Service Connect endpoint in your VPC, in the same region as the Postgres service and from one of the GCP projects you provided, using the service attachment ID provided by the ClickHouse support.
+4. **Create your Private Service Connect endpoint**:
+   - Create the Private Service Connect endpoint in your VPC, in the same region as the Postgres service, using the service attachment ID provided by ClickHouse support. Private Service Connect endpoints are regional, so cross-region connections are not supported.
+   - The connection will show as "Pending" in the GCP console. This is expected until ClickHouse support accepts it.
+   - Find the **PSC connection ID** of the endpoint. It is shown on the endpoint in the GCP console, or you can run:
+
+     ```bash
+     gcloud compute forwarding-rules describe <endpoint-name> --region <region> --format='value(pscConnectionId)'
+     ```
+
+   - Send the PSC connection ID to ClickHouse support in the same support ticket.
+
+5. **ClickHouse support will**:
+   - Add your endpoint to the allow list of the service attachment. The connection then moves from "Pending" to "Accepted".
+
+6. **Connect to your ClickHouse Managed Postgres instance**:
    - Once your endpoint is in an "Accepted" state, you can connect to it using the endpoint IP on port `5432` (direct) or `6432` (pooler).
    - The endpoint IP has no DNS name matching the Postgres hostname, so use `sslmode=require`, or add a private Cloud DNS record mapping the Postgres hostname to the endpoint IP to use `sslmode=verify-full`.
+
+To connect an additional endpoint to the same instance, for example from another VPC or after recreating an endpoint, repeat steps 4 and 5: create the endpoint against the same service attachment ID and send its PSC connection ID to ClickHouse support. To remove an endpoint's access, ask ClickHouse support to remove it from the allow list.
 
 ## Backup retention {#backup-retention}
 
