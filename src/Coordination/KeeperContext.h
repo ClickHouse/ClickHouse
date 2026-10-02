@@ -125,7 +125,6 @@ public:
 
     bool isOperationSupported(Coordination::OpNum operation) const;
     bool isS3ExperimentalChangelog() const;
-    Int64 getS3FlushInterval() const;
     DiskPtr getS3LogDisk() const;
 
     bool shouldLogRequests() const;
@@ -166,7 +165,6 @@ private:
     bool digest_enabled_on_commit{false};
     bool remove_orphaned_nodes_on_startup{false};
     bool s3_experimental_changelog{false};
-    Int64 s3_flush_interval{500};
     std::string s3_log_disk_name;
 
     std::shared_ptr<DiskSelector> disk_selector;

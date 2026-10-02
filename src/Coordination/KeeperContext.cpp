@@ -128,7 +128,6 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     initializeDisks(config);
 
     s3_experimental_changelog = config.getBool("keeper_server.coordination_settings.s3_experimental_changelog", false);
-    s3_flush_interval = config.getUInt64("keeper_server.coordination_settings.s3_flush_interval", 500);
     s3_log_disk_name = config.getString("keeper_server.coordination_settings.s3_log_disk", "");
 
     if (config.has("keeper_server.precommit_sleep_ms_for_testing"))
@@ -143,11 +142,6 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
 bool KeeperContext::isS3ExperimentalChangelog() const
 {
     return s3_experimental_changelog;
-}
-
-Int64 KeeperContext::getS3FlushInterval() const
-{
-    return s3_flush_interval;
 }
 
 DiskPtr KeeperContext::getS3LogDisk() const
