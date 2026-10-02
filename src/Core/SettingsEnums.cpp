@@ -223,6 +223,7 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
      {"promql", Dialect::promql},
      {"polyglot", Dialect::polyglot},
      {"clickhouse_json", Dialect::clickhouse_json},
+     {"logsql", Dialect::logsql},
      {"trino", Dialect::trino}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
@@ -258,6 +259,11 @@ IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS
 IMPLEMENT_SETTING_ENUM(UniqueKeyProbeImplementation, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", UniqueKeyProbeImplementation::Auto},
      {"simple", UniqueKeyProbeImplementation::Simple}})
+
+IMPLEMENT_SETTING_ENUM(UniqueKeyConflictAction, ErrorCodes::BAD_ARGUMENTS,
+    {{"overwrite", UniqueKeyConflictAction::Overwrite},
+     {"ignore", UniqueKeyConflictAction::Ignore},
+     {"abort", UniqueKeyConflictAction::Abort}})
 
 IMPLEMENT_SETTING_ENUM(AlterColumnSecondaryIndexMode, ErrorCodes::BAD_ARGUMENTS,
     {{"throw", AlterColumnSecondaryIndexMode::THROW},
@@ -371,6 +377,15 @@ IMPLEMENT_SETTING_ENUM(
     {{"key_values", AsynchronousMetricsKeyValuesMode::KeyValues},
      {"legacy_names", AsynchronousMetricsKeyValuesMode::LegacyNames},
      {"both", AsynchronousMetricsKeyValuesMode::Both}})
+
+IMPLEMENT_SETTING_ENUM(
+    SeccompMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"disabled", SeccompMode::Disabled},
+     {"log", SeccompMode::Log},
+     {"errno", SeccompMode::Errno},
+     {"trap", SeccompMode::Trap},
+     {"kill", SeccompMode::Kill}})
 
 IMPLEMENT_SETTING_ENUM(
     IdentifierQuotingStyle,

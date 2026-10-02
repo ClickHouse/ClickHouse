@@ -93,6 +93,7 @@ public:
     JoinOperator & getJoinOperator() { return join_operator; }
 
     const ActionsDAG & getActionsDAG() const { return *expression_actions.getActionsDAG(); }
+    const JoinExpressionActions & getExpressionActions() const { return expression_actions; }
 
     std::vector<JoinActionRef> getInputActions() const;
     std::vector<JoinActionRef> getOutputActions() const;
@@ -326,7 +327,7 @@ public:
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override;
     String getName() const override { return "JoinStepLogicalLookup"; }
 
-    QueryPlanRawPtrs getChildPlans() override;
+    QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
 
     PreparedJoinStorage & getPreparedJoinStorage() { return prepared_join_storage; }
 
