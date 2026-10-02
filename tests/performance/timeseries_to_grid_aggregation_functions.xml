@@ -56,6 +56,16 @@
         FROM numbers_mt(400 * 10000)
     </fill_query>
 
+    <!-- Merge to one part. The fill above lands in 4 parts that each span every id, and which
+         timestamps go to which part is an insert-scheduling draw, so the two compared servers would
+         otherwise read the same rows in a different order and at a different cost. -->
+    <fill_query>OPTIMIZE TABLE ts_grid FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+    <fill_query>
+        SELECT throwIf(count() != 1, 'timeseries_to_grid_aggregation_functions: expected 1 active part in ts_grid; the layout pin is not in effect')
+        FROM system.parts
+        WHERE database = currentDatabase() AND table = 'ts_grid' AND active
+    </fill_query>
+
     <!-- Sparse counterpart: ~1 sample per 100s (10x fewer) while step stays 10, so only ~1 in 10 buckets is
          populated -> density ~0.1 < BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN=0.4 -> exercises the collect-and-sort
          bucket iteration in doInsertResultInto (the dense fill above always range-scans). 400 series, 1000
@@ -80,7 +90,8 @@
     </fill_query>
 
     <!-- step = 10 over [0, 100000] -> 10001 grid points, ~1 populated bucket per step, window/10 buckets per window. -->
-    <query>SELECT id, timeSeriesResampleToGridWithStaleness(0, 100000, 10, {window})(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesLastToGrid(0, 100000, 10, {window})(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesFirstToGrid(0, 100000, 10, {window})(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>
     <query>SELECT id, timeSeriesInstantRateToGrid(0, 100000, 10, {window})(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>
     <query>SELECT id, timeSeriesInstantDeltaToGrid(0, 100000, 10, {window})(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>
     <query>SELECT id, timeSeriesChangesToGrid(0, 100000, 10, {window})(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>
@@ -93,7 +104,7 @@
     <!-- Sort-path coverage on the sparse table, at a single fixed window=1000 (buckets_per_window=100 >=
          BPW_TO_FORCE_TWO_STACKS=12, so the regression functions force two-stacks): the cheapest function (resample)
          plus the two regression functions. The literal window (no {window}) means each runs once, not per sweep. -->
-    <query>SELECT id, timeSeriesResampleToGridWithStaleness(0, 100000, 10, 1000)(timestamp, value) FROM ts_grid_sparse GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesLastToGrid(0, 100000, 10, 1000)(timestamp, value) FROM ts_grid_sparse GROUP BY id FORMAT Null</query>
     <query>SELECT id, timeSeriesDerivToGrid(0, 100000, 10, 1000)(timestamp, value) FROM ts_grid_sparse GROUP BY id FORMAT Null</query>
     <query>SELECT id, timeSeriesPredictLinearToGrid(0, 100000, 10, 1000, 60)(timestamp, value) FROM ts_grid_sparse GROUP BY id FORMAT Null</query>
 

@@ -232,7 +232,7 @@ try
 
     warnIfCgroupGroupOOMKill(log);
 
-    Epoll epoll;
+    Epoll epoll{EpollNesting::Leaf};
     epoll.add(shutdown_fd.fd, EPOLLIN);
 
     const uint64_t initial_backoff_milliseconds = config.initial_backoff_seconds * 1000;
