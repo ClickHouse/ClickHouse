@@ -23,42 +23,44 @@ CREATE TABLE bnl_bs_build (y UInt64, t String) ENGINE = MergeTree ORDER BY y;
 INSERT INTO bnl_bs_probe SELECT number, repeat('a', 1000) FROM numbers(500);
 INSERT INTO bnl_bs_build SELECT number, repeat('b', 1000) FROM numbers(500);
 
+-- `ignore` keeps the joined columns in the measured blocks: a column nothing reads is not read.
+
 -- Neither limit set: the whole result of a probe chunk goes out in as few blocks as `max_block_size`
 -- allows, so the blocks are far larger than either limit below would let them be.
 SELECT 'matched, unlimited', max(bs) > 10000
-FROM (SELECT blockSize() AS bs FROM (
+FROM (SELECT blockSize() + ignore(s, y) AS bs FROM (
     SELECT l.s, r.y FROM bnl_bs_probe l LEFT JOIN bnl_bs_build r ON l.x < r.y))
 SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 0;
 
 SELECT 'matched, rows', max(bs)
-FROM (SELECT blockSize() AS bs FROM (
+FROM (SELECT blockSize() + ignore(s, y) AS bs FROM (
     SELECT l.s, r.y FROM bnl_bs_probe l LEFT JOIN bnl_bs_build r ON l.x < r.y))
 SETTINGS max_joined_block_size_rows = 111, max_joined_block_size_bytes = 0;
 
 -- A row is about a kilobyte wide, so a budget of 10 KB is reached long before 100000 rows are.
 SELECT 'matched, bytes', max(bs) < 1000
-FROM (SELECT blockSize() AS bs FROM (
+FROM (SELECT blockSize() + ignore(s, y) AS bs FROM (
     SELECT l.s, r.y FROM bnl_bs_probe l LEFT JOIN bnl_bs_build r ON l.x < r.y))
 SETTINGS max_joined_block_size_rows = 100000, max_joined_block_size_bytes = 10000;
 
 -- Nothing matches, so the whole result of each of these is the padded side.
 SELECT 'unmatched probe rows, unlimited', max(bs)
-FROM (SELECT blockSize() AS bs FROM (
+FROM (SELECT blockSize() + ignore(s) AS bs FROM (
     SELECT l.s FROM bnl_bs_probe l LEFT JOIN bnl_bs_build r ON l.x + 1000 < r.y))
 SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 0;
 
 SELECT 'unmatched probe rows, bytes', max(bs) < 100
-FROM (SELECT blockSize() AS bs FROM (
+FROM (SELECT blockSize() + ignore(s) AS bs FROM (
     SELECT l.s FROM bnl_bs_probe l LEFT JOIN bnl_bs_build r ON l.x + 1000 < r.y))
 SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 10000;
 
 SELECT 'unmatched build rows, unlimited', max(bs)
-FROM (SELECT blockSize() AS bs FROM (
+FROM (SELECT blockSize() + ignore(t) AS bs FROM (
     SELECT r.t FROM bnl_bs_probe l RIGHT JOIN bnl_bs_build r ON l.x > r.y + 1000))
 SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 0;
 
 SELECT 'unmatched build rows, bytes', max(bs) < 100
-FROM (SELECT blockSize() AS bs FROM (
+FROM (SELECT blockSize() + ignore(t) AS bs FROM (
     SELECT r.t FROM bnl_bs_probe l RIGHT JOIN bnl_bs_build r ON l.x > r.y + 1000))
 SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 10000;
 
