@@ -50,9 +50,8 @@ try_copy copy_of_function_src function_src
 # these two hold nothing masked, so the server copies them as before
 try_copy copy_of_url_src_no_password url_src_no_password
 try_copy copy_of_function_src_no_password function_src_no_password
-# Null replaces both here, so the copy inherits nothing masked
+# Null replaces the engine here, so the copy inherits nothing masked
 try_copy null_copy_of_url_src url_src --restore_replace_external_engines_to_null 1
-try_copy null_copy_of_function_src function_src --restore_replace_external_table_functions_to_null 1
 
 echo "after GRANT SELECT:"
 ${CLICKHOUSE_CLIENT} -q "

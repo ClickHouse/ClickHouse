@@ -51,7 +51,6 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
-#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -1463,33 +1462,6 @@ namespace
         }
     }
 
-    /// the same for a table function, written in the query or inherited from AS y
-    bool replaceExternalTableFunctionWithNullIfNeeded(ASTCreateQuery & create, bool enabled)
-    {
-        if (!enabled)
-            return false;
-
-        auto properties = TableFunctionFactory::instance().tryGetProperties(create.as_table_function->as<ASTFunction>()->name);
-        if (properties && properties->allow_readonly)
-            return false;
-
-        if (create.storage)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage should not be created yet, it's a bug.");
-
-        create.set(create.storage, make_intrusive<ASTStorage>());
-        create.reset(create.as_table_function);
-        setNullTableEngine(*create.storage);
-        return true;
-    }
-
-    /// a DDL worker builds the storage with no user, so resolve the collection here to check the grant
-    void checkAccessToNamedCollectionOfEngine(const ASTStorage * storage, ContextPtr context)
-    {
-        if (storage && storage->engine && storage->engine->arguments)
-            tryGetNamedCollectionWithOverrides(
-                storage->engine->arguments->children, context, /*throw_unknown_collection=*/false);
-    }
-
     void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query)
     {
         ASTDictionary & dict = *create_query.dictionary;
@@ -1538,8 +1510,23 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.as_table_function)
     {
-        replaceExternalTableFunctionWithNullIfNeeded(
-            create, getContext()->getSettingsRef()[Setting::restore_replace_external_table_functions_to_null]);
+        if (getContext()->getSettingsRef()[Setting::restore_replace_external_table_functions_to_null])
+        {
+            const auto & factory = TableFunctionFactory::instance();
+
+            auto properties = factory.tryGetProperties(create.as_table_function->as<ASTFunction>()->name);
+            if (properties && properties->allow_readonly)
+                return;
+            if (!create.storage)
+            {
+                auto storage_ast = make_intrusive<ASTStorage>();
+                create.set(create.storage, storage_ast);
+            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage should not be created yet, it's a bug.");
+            create.reset(create.as_table_function);
+            setNullTableEngine(*create.storage);
+        }
         return;
     }
 
@@ -1643,11 +1630,8 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             /// clauses were specified for the new table; otherwise keep the explicit storage definition.
             if (!create.storage)
             {
+                check_access_to_inherited_definition(*as_create.as_table_function);
                 create.set(create.as_table_function, as_create.as_table_function->ptr());
-                /// Null replaces it as it replaces a written one, and then the copy inherits nothing
-                if (!replaceExternalTableFunctionWithNullIfNeeded(
-                        create, getContext()->getSettingsRef()[Setting::restore_replace_external_table_functions_to_null]))
-                    check_access_to_inherited_definition(*create.as_table_function);
                 return;
             }
         }
@@ -3692,7 +3676,6 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
 {
     prepareOnClusterQuery(create, getContext(), create.cluster);
-    checkAccessToNamedCollectionOfEngine(create.storage, getContext());
     DDLQueryOnClusterParams params;
     params.access_to_check = getRequiredAccess();
     return executeDDLQueryOnCluster(query_ptr, getContext(), params);
@@ -3721,29 +3704,6 @@ BlockIO InterpreterCreateQuery::execute()
             if (is_create_database && create.storage && create.storage->engine
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
-
-            /// the worker builds AS src with no user, so set our database as the UUIDs above do, then
-            /// let setEngine check the inherited definition on a copy
-            if (!create.as_table.empty())
-            {
-                create.as_database = getContext()->resolveDatabase(create.as_database);
-
-                /// OLDEST_VERSION sends no settings, so a worker replaces nothing with Null. check
-                /// what the worker builds, not what our settings give
-                auto preflight_context = Context::createCopy(getContext());
-                if (on_cluster_version == DDLLogEntry::OLDEST_VERSION)
-                {
-                    preflight_context->setSetting("restore_replace_external_engines_to_null", false);
-                    preflight_context->setSetting("restore_replace_external_table_functions_to_null", false);
-                }
-
-                ASTPtr inherited_query = query_ptr->clone();
-                auto & inherited = inherited_query->as<ASTCreateQuery &>();
-                InterpreterCreateQuery(inherited_query, preflight_context).setEngine(inherited);
-                if (inherited.storage && inherited.storage->engine)
-                    getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
-                checkAccessToNamedCollectionOfEngine(inherited.storage, getContext());
-            }
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
             /// so a worker there would resolve `toTime` with its own default.
