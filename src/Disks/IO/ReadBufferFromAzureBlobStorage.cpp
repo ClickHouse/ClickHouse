@@ -175,7 +175,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         /// The response may run past the right bound - e.g. the whole object in answer to a ranged
         /// request at offset 0 - and nothing past the bound may reach the caller.
         if (read_until_position)
-            to_read_bytes = std::min(to_read_bytes, static_cast<size_t>(read_until_position - offset));
+            to_read_bytes = std::min(to_read_bytes, *read_until_position - static_cast<size_t>(offset));
         bool premature_end_of_response = false;
 
         try
@@ -191,7 +191,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
             /// by the caller, and every layer above this buffer takes it as the length of the data,
             /// so a response that ends before it must not be reported as the end of the file - an
             /// endpoint or a proxy that caps its responses would silently truncate the file there.
-            if (bytes_read == 0 && read_until_position && offset < read_until_position)
+            if (bytes_read == 0 && read_until_position && static_cast<size_t>(offset) < *read_until_position)
                 premature_end_of_response = true;
             else
                 break;
@@ -231,12 +231,12 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
             /// Reopen the download at the offset the read has reached, and if the endpoint keeps
             /// ending its responses before the bound, fail instead of returning truncated data.
             LOG_DEBUG(log, "Premature end of the response at offset {} while reading until position {} for file {} at attempt {}/{}",
-                offset, read_until_position, path, i + 1, max_single_read_retries);
+                offset, *read_until_position, path, i + 1, max_single_read_retries);
 
             if (i + 1 == max_single_read_retries)
                 throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE,
                     "Premature end of the response from Azure Blob Storage at offset {} while reading until position {} of file {}",
-                    offset, read_until_position, path);
+                    offset, *read_until_position, path);
 
             /// An endpoint that caps its responses ends every one of them before the bound, so a
             /// read of more than the cap is a correct read assembled from several responses: the
