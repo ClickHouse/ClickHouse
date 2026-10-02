@@ -20,7 +20,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
-#include <Common/FieldVisitorHash.h>
 #include <Common/MemoryTracker.h>
 #include <Common/SipHash.h>
 #include <Common/KnownObjectNames.h>
@@ -31,8 +30,6 @@
 #include <Core/Settings.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
-
-#include <unordered_set>
 
 namespace DB
 {
@@ -474,32 +471,35 @@ UInt64 getFormatSettingsHash(const Settings & settings)
 {
     /// The settings `getFormatSettings` reads: every one of `FORMAT_FACTORY_SETTINGS`, so that a setting
     /// added there is covered without anyone remembering this place, plus the core settings it reads
-    /// besides. Keep the latter list in step with the function above.
-    static const std::unordered_set<std::string_view> read_by_get_format_settings = []
-    {
-        std::unordered_set<std::string_view> names;
-#define ADD_FORMAT_SETTING_NAME(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) names.emplace(#NAME);
-        /// No format setting has an alias, so the alias macro is never expanded (an alias entry would not
-        /// compile here; `Settings::changes` reports canonical names, so only these are needed).
-        FORMAT_FACTORY_SETTINGS(ADD_FORMAT_SETTING_NAME, ADD_FORMAT_SETTING_NAME)
-#undef ADD_FORMAT_SETTING_NAME
-        names.emplace("aggregate_function_input_format");
-        names.emplace("allow_experimental_nullable_tuple_type");
-        names.emplace("allow_special_serialization_kinds_in_output_formats");
-        names.emplace("max_parser_depth");
-        return names;
-    }();
-
-    /// Only the changed settings are hashed, in declaration order, so the hash does not depend on the
-    /// order the session set them in, and sessions at the defaults all share the empty hash.
+    /// besides.
+    ///
+    /// A format setting is hashed only when its effective value differs from the declared default, so a
+    /// session that spells a default explicitly shares the hash of a session that left it alone, and
+    /// sessions at the defaults all share one hash. The `changed` flag is checked first, so only the
+    /// few settings a session actually set are compared. The order is the declaration order, so the
+    /// hash does not depend on the order the session set them in.
     SipHash hash;
-    for (const auto & change : settings.changes())
-    {
-        if (!read_by_get_format_settings.contains(change.name))
-            continue;
-        hash.update(change.name);
-        applyVisitor(FieldVisitorHash(hash), change.value);
+#define HASH_FORMAT_SETTING_IF_NOT_DEFAULT(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    if (const auto & field = settings[Setting::NAME]; field.changed) \
+    { \
+        String value = field.toString(); \
+        if (value != SettingField##TYPE{DEFAULT}.toString()) \
+        { \
+            hash.update(std::string_view(#NAME)); \
+            hash.update(value); \
+        } \
     }
+    /// No format setting has an alias, so the alias macro is never expanded (an alias names the same
+    /// field as its setting anyway).
+    FORMAT_FACTORY_SETTINGS(HASH_FORMAT_SETTING_IF_NOT_DEFAULT, HASH_FORMAT_SETTING_IF_NOT_DEFAULT)
+#undef HASH_FORMAT_SETTING_IF_NOT_DEFAULT
+
+    /// The core settings `getFormatSettings` reads besides; keep in step with the function above.
+    hash.update(static_cast<UInt64>(settings[Setting::aggregate_function_input_format].value));
+    hash.update(settings[Setting::allow_special_serialization_kinds_in_output_formats].value);
+    hash.update(settings[Setting::enable_nullable_tuple_type].value);
+    hash.update(settings[Setting::http_write_exception_in_output_format].value);
+    hash.update(settings[Setting::max_parser_depth].value);
     return hash.get64();
 }
 

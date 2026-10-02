@@ -69,8 +69,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
   * was built contributes this to `IFunctionBase::updateHash`. The struct itself has too many members
   * to hash one by one without leaving one out, while this covers every setting of
   * `FORMAT_FACTORY_SETTINGS` (and the few core settings `getFormatSettings` reads besides) as they
-  * are declared: two sessions get the same hash exactly when they changed the same format settings
-  * to the same values.
+  * are declared: two sessions get the same hash exactly when their format settings have the same
+  * effective values, whether a default was left alone or spelled explicitly.
   */
 UInt64 getFormatSettingsHash(const Settings & settings);
 
