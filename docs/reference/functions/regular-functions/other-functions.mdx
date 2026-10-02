@@ -2316,7 +2316,7 @@ formatReadableTimeDelta(column[, maximum_unit, minimum_unit])
 
 **Arguments**
 
-- `column` — A column with a numeric time delta, or an `INTERVAL` expression. Interval units of `MONTH` and greater are not supported. [`Float64`](/reference/data-types/float) or [`Interval`](/reference/data-types/int-uint)
+- `column` — A column with a numeric time delta, or an `INTERVAL` expression. Interval units of `MONTH` and greater are not supported. [`Float64`](/reference/data-types/float) or [`Interval`](/reference/data-types/special-data-types/interval)
 - `maximum_unit` — Optional. Maximum unit to show. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. Default value: `years`. [`const String`](/reference/data-types/string)
 - `minimum_unit` — Optional. Minimum unit to show. All smaller units are truncated. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. If explicitly specified value is bigger than `maximum_unit`, an exception will be thrown. Default value: `seconds` if `maximum_unit` is `seconds` or bigger, `nanoseconds` otherwise. [`const String`](/reference/data-types/string)
 
@@ -4444,6 +4444,48 @@ SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHa
 ┌─normalizedQueryHashKeepNames─┐
 │                            1 │
 └──────────────────────────────┘
+```
+
+## normalizedQueryHashUnordered {#normalizedQueryHashUnordered}
+
+Introduced in: v26.10.0
+
+Like [`normalizedQueryHash`](#normalizedQueryHash) it returns identical 64 bit hash values without the values of literals for similar queries,
+but it combines the hashes of the tokens with a sum, so the order of the tokens does not matter at all.
+`SELECT a, b FROM t` and `SELECT b, a FROM t` get the same hash.
+
+The query is not parsed, only split into tokens, so the function is lossy on purpose: any reordering of the same tokens gets the same hash,
+including ones that change the meaning (`a - b` and `b - a`) or that are not valid SQL at all (`SELECT 1` and `1 SELECT`).
+Use it to group a workload by shape, for example over `system.query_log`, and never to decide that two queries may be substituted for each other.
+It never throws: text that does not tokenize cleanly is hashed as well.
+    
+
+**Syntax**
+
+```sql
+normalizedQueryHashUnordered(x)
+```
+
+**Arguments**
+
+- `x` — Sequence of characters. [`String`](/reference/data-types/string)
+
+**Returned value**
+
+Returns a 64 bit hash value. [`UInt64`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT normalizedQueryHashUnordered('SELECT a, b FROM t WHERE x = 1') = normalizedQueryHashUnordered('SELECT b, a FROM t WHERE x = 2') AS res
+```
+
+```response title=Response
+┌─res─┐
+│   1 │
+└─────┘
 ```
 
 ## obfuscateQuery {#obfuscateQuery}

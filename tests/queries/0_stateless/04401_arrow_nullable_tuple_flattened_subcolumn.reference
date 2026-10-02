@@ -1,6 +1,6 @@
 -- { echo }
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 SET engine_file_truncate_on_insert = 1;
 -- Single-field nullable struct, flattened subcolumn read (the reported case: expected 42, not 0)
 INSERT INTO FUNCTION file(currentDatabase() || '_04401.arrow', 'Arrow') SELECT CAST(tuple(42), 'Nullable(Tuple(v Int32))') AS s;

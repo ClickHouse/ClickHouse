@@ -1001,7 +1001,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             join_filter_push_down_actions.left_stream_filter_removes_filter = true;
         }
 
-        const auto & result_name = join_filter_push_down_actions.left_stream_filter_to_push_down->getOutputs()[0]->result_name;
+        /// Copy the name: the DAG is moved into the new FilterStep below, whose constructor may fold and
+        /// prune the very node this name belongs to, leaving a reference dangling.
+        const String result_name = join_filter_push_down_actions.left_stream_filter_to_push_down->getOutputs()[0]->result_name;
         updated_steps += addNewFilterStepOrThrow(
             parent_node,
             nodes,
@@ -1036,7 +1038,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             join_filter_push_down_actions.right_stream_filter_removes_filter = true;
         }
 
-        const auto & result_name = join_filter_push_down_actions.right_stream_filter_to_push_down->getOutputs()[0]->result_name;
+        /// Copy the name: the DAG is moved into the new FilterStep below, whose constructor may fold and
+        /// prune the very node this name belongs to, leaving a reference dangling.
+        const String result_name = join_filter_push_down_actions.right_stream_filter_to_push_down->getOutputs()[0]->result_name;
         updated_steps += addNewFilterStepOrThrow(
             parent_node,
             nodes,
@@ -1240,6 +1244,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (const auto * limit_by = typeid_cast<LimitByStep *>(child.get()))
     {
+        if (!settings.filter_push_down_below_limit_by)
+            return 0;
+
         /// A predicate on the LIMIT BY key columns removes whole groups, so the surviving
         /// per-group rows (and therefore the result) are identical whether it runs above or
         /// below the LIMIT BY. But it is only safe to push when every non-empty input group
