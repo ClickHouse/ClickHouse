@@ -1688,17 +1688,15 @@ std::vector<TableInfo> resolveTables(
     }
 
     /// Remote proxy rows are graph-only, but a local proxy must still follow its effective source.
-    /// So must a table with `ENGINE = Remote(...)`: `CREATE` already reads a local shard's table-function target.
     for (auto & row : rows)
     {
         const auto & database_engine = database_info.at(row.database).engine;
         const bool cluster_database = database_engine == "Cluster";
-        const bool proxy_database = database_engine == "Remote" || database_engine == "RemoteSecure" || cluster_database;
-        if (!proxy_database && (row.engine != "Distributed" || row.create_query.empty()))
+        if (database_engine != "Remote" && database_engine != "RemoteSecure" && !cluster_database)
             continue;
 
         /// A `Cluster` proxy is always resolved through its database's `Cluster(...)` arguments.
-        const bool use_database_create = proxy_database && (row.create_query.empty() || cluster_database);
+        const bool use_database_create = row.create_query.empty() || cluster_database;
         const String & create_query = use_database_create ? database_queries.at(row.database) : row.create_query;
         ASTPtr create_ast;
         try
@@ -1708,9 +1706,6 @@ std::vector<TableInfo> resolveTables(
         }
         catch (const Exception & e)
         {
-            /// An ordinary `Distributed` row that does not parse keeps no edge, as before this scan covered it.
-            if (!proxy_database)
-                continue;
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Cannot parse the stored CREATE for external proxy {}.{} to resolve its local source for --dump-schema: {}",
@@ -1752,7 +1747,7 @@ std::vector<TableInfo> resolveTables(
         }
         if (!engine || (engine->name != "Remote" && engine->name != "RemoteSecure" && engine->name != "cluster"))
         {
-            if (use_database_create || !proxy_database)
+            if (use_database_create)
                 continue;
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
@@ -1777,25 +1772,50 @@ std::vector<TableInfo> resolveTables(
     {
         /// A view's select sources are deliberately not in `loading_dependencies_*`, so they are
         /// only discoverable by parsing the stored `SELECT`.
-        if (row.engine != "View" && row.engine != "MaterializedView")
-            continue;
-
         ASTPtr select_ast;
-        try
+        if (row.engine == "Distributed" && !row.create_query.empty() && !database_info.at(row.database).is_external)
         {
-            /// `as_select` is server-produced SQL already known to be valid, not untrusted input;
-            /// max_query_size=0 disables the size cap so a legitimately large SELECT still parses.
-            ParserSelectWithUnionQuery select_parser;
-            select_ast = parseQuery(select_parser, row.as_select, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            /// A table with `ENGINE = Remote(...)` also reads its local shard's table-function target at CREATE.
+            ASTPtr create_ast;
+            try
+            {
+                ParserCreateQuery create_parser;
+                create_ast = parseQuery(
+                    create_parser, row.create_query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            }
+            catch (const Exception & e)
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot parse the stored CREATE for {}.{} to resolve its dependencies for --dump-schema: {}",
+                    row.database, row.name, e.message());
+            }
+            auto * create = create_ast->as<ASTCreateQuery>();
+            ASTFunction * engine = create && create->storage ? create->storage->engine : nullptr;
+            if (!engine || (engine->name != "Remote" && engine->name != "RemoteSecure"))
+                continue;
+            select_ast = engine->ptr();
         }
-        catch (const Exception & e)
+        else if (row.engine != "View" && row.engine != "MaterializedView")
+            continue;
+        else
         {
-            /// A dependency this parse would have found stays undiscovered otherwise, and the dump
-            /// can come out unreplayable without any indication why; fail loudly instead.
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Cannot parse the stored SELECT for {}.{} to resolve its dependencies for --dump-schema: {}. "
-                "The dump would be incomplete without this view/materialized view's dependency edges",
-                row.database, row.name, e.message());
+            try
+            {
+                /// `as_select` is server-produced SQL already known to be valid, not untrusted input;
+                /// max_query_size=0 disables the size cap so a legitimately large SELECT still parses.
+                ParserSelectWithUnionQuery select_parser;
+                select_ast = parseQuery(
+                    select_parser, row.as_select, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            }
+            catch (const Exception & e)
+            {
+                /// A dependency this parse would have found stays undiscovered otherwise, and the dump
+                /// can come out unreplayable without any indication why; fail loudly instead.
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot parse the stored SELECT for {}.{} to resolve its dependencies for --dump-schema: {}. "
+                    "The dump would be incomplete without this view/materialized view's dependency edges",
+                    row.database, row.name, e.message());
+            }
         }
 
         auto add_dependency = [&](const TableReference & candidate)
@@ -2733,9 +2753,9 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
 
         /// The analyzer-side gates fire only where stored query text is re-analysed at replay: a
         /// view's AS SELECT, or a projection (`ProjectionsDescription` runs `runOnlyResolve` on it).
-        /// The analyzer reads them for GROUP BY / PARTITION BY keys, ORDER BY keys and correlated subqueries.
         const auto scan_analyzed = [&needs](const IAST & query)
         {
+            /// Each is read for its own clause: GROUP BY or PARTITION BY keys, ORDER BY keys, a correlated subquery.
             forEachNode(query, [&needs](const IAST & node)
             {
                 if (const auto * select = node.as<ASTSelectQuery>())

@@ -676,13 +676,13 @@ echo "Atomic engine arguments next to a Replicated database, engine-arguments ga
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${ATOMIC_ARGS_DB} SYNC"
 
 # Retained replicated-engine arguments need quiet gate value 3; a materialized view keeps its engine in `targets`.
-$CLICKHOUSE_CLIENT --database_replicated_allow_replicated_engine_arguments=1 -mq "
+$CLICKHOUSE_CLIENT --database_replicated_allow_replicated_engine_arguments=3 -mq "
 CREATE MATERIALIZED VIEW ${REPLICATED_ARGS_DB}.mv ENGINE = ReplicatedMergeTree('/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dump_schema/replicated_args_mv/{shard}', '{replica}') ORDER BY x AS SELECT x FROM ${REPLICATED_ARGS_DB}.src;
 " > /dev/null
 $CLICKHOUSE_CLIENT --dump-schema="${REPLICATED_ARGS_DB}" > "$REPL_DUMP_FILE" 2>"$ERR_FILE"
 echo "replicated engine arguments gate at 3 when only a materialized view keeps them: $(grep -c '^SET database_replicated_allow_replicated_engine_arguments = 3;$' "$REPL_DUMP_FILE")"
 # Explicit UUIDs need gate value 3; value 2 would replace the UUID during replay.
-$CLICKHOUSE_CLIENT --database_replicated_allow_replicated_engine_arguments=1 -q "CREATE TABLE ${REPLICATED_ARGS_DB}.t (x UInt64) ENGINE = ReplicatedMergeTree('/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dump_schema/replicated_args_t/{shard}', '{replica}') ORDER BY x" > /dev/null
+$CLICKHOUSE_CLIENT --database_replicated_allow_replicated_engine_arguments=3 -q "CREATE TABLE ${REPLICATED_ARGS_DB}.t (x UInt64) ENGINE = ReplicatedMergeTree('/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dump_schema/replicated_args_t/{shard}', '{replica}') ORDER BY x" > /dev/null
 $CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 --dump-schema="${REPLICATED_ARGS_DB}" > "$REPL_DUMP_FILE" 2>"$ERR_FILE"
 echo "replicated engine arguments gate at 3 when the dump keeps the arguments: $(grep -c '^SET database_replicated_allow_replicated_engine_arguments = 3;$' "$REPL_DUMP_FILE")"
 echo "explicit uuid gate at 3 when dumped with uuids: $(grep -c '^SET database_replicated_allow_explicit_uuid = 3;$' "$REPL_DUMP_FILE")"
