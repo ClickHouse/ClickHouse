@@ -1062,13 +1062,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, create.as_table);
         StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
 
-        /// An `Alias` reports its target's metadata, so copying that metadata requires the privilege on the
-        /// target that describing the target requires.
-        if (const auto * alias = as_storage->as<StorageAlias>();
-            alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
-            throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
-                            StorageID{as_database_name, create.as_table}.getNameForLogs());
-
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
         /// A lazy table's proxy only caches columns. Its projections and keys are available after
@@ -1076,6 +1069,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         StoragePtr metadata_storage = as_storage;
         if (const auto * lazy_source = as_storage->as<StorageTableProxy>())
             metadata_storage = lazy_source->getNested();
+
+        /// An `Alias` reports its target's metadata. Check the resolved source, including a
+        /// possible lazy proxy's nested storage, before copying any of that metadata.
+        if (const auto * alias = metadata_storage->as<StorageAlias>();
+            alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
+                            StorageID{as_database_name, create.as_table}.getNameForLogs());
+
         auto as_storage_metadata = metadata_storage->getInMemoryMetadataPtr(getContext(), false);
         properties.columns = as_storage_metadata->getColumns();
 
