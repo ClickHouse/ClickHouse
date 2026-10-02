@@ -181,6 +181,13 @@ inline bool avx2_any(UInt8x32 matches)
     return (lanes[0] | lanes[1] | lanes[2] | lanes[3]) != 0;
 }
 
+inline bool avx2_all(UInt8x32 matches)
+{
+    const auto lanes = std::bit_cast<std::array<uint64_t, 4>>(matches);
+    constexpr uint64_t all_ones = ~uint64_t{};
+    return lanes[0] == all_ones && lanes[1] == all_ones && lanes[2] == all_ones && lanes[3] == all_ones;
+}
+
 inline size_t avx2_first(UInt8x32 matches)
 {
     const auto lanes = std::bit_cast<std::array<uint64_t, 4>>(matches);
@@ -355,17 +362,21 @@ inline const char * find_first_symbols_avx2_block(const char * pos)
     UInt8x32 matches0 = avx2_is_in<symbols...>(load_avx2_bytes(pos));
     UInt8x32 matches1 = avx2_is_in<symbols...>(load_avx2_bytes(pos + 32));
 
-    UInt8x32 combined;
     if constexpr (positive)
-        combined = matches0 | matches1;
+    {
+        if (!avx2_any(matches0 | matches1))
+            return nullptr;
+    }
     else
-        combined = ~(matches0 & matches1);
-
-    if (!avx2_any(combined))
-        return nullptr;
-
-    if constexpr (!positive)
+    {
+        /// In a negative search, a 64-byte group has no result only when all
+        /// bytes belong to the symbol set. Testing for all-ones avoids
+        /// materializing an inverted vector on the common no-match path.
+        if (avx2_all(matches0 & matches1))
+            return nullptr;
         matches0 = ~matches0;
+    }
+
     if (avx2_any(matches0))
         return pos + avx2_first(matches0);
 
@@ -399,10 +410,16 @@ template <bool positive, ReturnMode return_mode, char... symbols>
     if (end - pos >= 32)
     {
         UInt8x32 matches = avx2_is_in<symbols...>(load_avx2_bytes(pos));
-        if constexpr (!positive)
+        if constexpr (positive)
+        {
+            if (avx2_any(matches))
+                return pos + avx2_first(matches);
+        }
+        else if (!avx2_all(matches))
+        {
             matches = ~matches;
-        if (avx2_any(matches))
             return pos + avx2_first(matches);
+        }
         pos += 32;
     }
 
