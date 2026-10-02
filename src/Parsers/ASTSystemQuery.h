@@ -192,6 +192,12 @@ public:
     String replica_zk_path;
     bool is_drop_whole_replica{};
     bool with_tables{false};
+
+    /// SYSTEM RESET FILELOG ... FILE 'name' [OFFSET n | TO END]
+    bool filelog_to_end = false;
+    std::optional<String> filelog_file;
+    std::optional<UInt64> filelog_offset;
+
     String storage_policy;
     String volume;
     String disk;
@@ -215,11 +221,6 @@ public:
     String schema_cache_format;
 
     String queue_path;
-
-    /// SYSTEM RESET FILELOG ... FILE 'name' [OFFSET n | TO END]
-    std::optional<String> filelog_file;
-    std::optional<UInt64> filelog_offset;
-    bool filelog_to_end = false;
 
     String fail_point_name;
 
