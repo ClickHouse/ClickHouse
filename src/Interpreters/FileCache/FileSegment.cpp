@@ -1405,7 +1405,7 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
     UInt64 last_hit_active_bytes = 0;
     if (file_segment->cache)
     {
-        const UInt64 live_window = file_segment->cache->getEfficiency().windowNow();
+        const auto live_window = file_segment->cache->getEfficiency().windowNow();
         std::lock_guard efficiency_lock(file_segment->efficiency_mutex);
         const bool hit_in_live_window = file_segment->efficiency_window_id == live_window;
         if (hit_in_live_window)
@@ -1414,7 +1414,7 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
             passive_bytes = downloaded - active_bytes;
             idle_bytes = 0;
         }
-        const UInt64 last_hit_window = hit_in_live_window ? file_segment->previous_hit_window_id : file_segment->efficiency_window_id;
+        const auto last_hit_window = hit_in_live_window ? file_segment->previous_hit_window_id : file_segment->efficiency_window_id;
         if (last_hit_window != FileCacheEfficiency::NEVER_READ && last_hit_window <= live_window)
         {
             last_hit_windows_ago = live_window - last_hit_window;
@@ -1550,7 +1550,7 @@ void FileSegment::markRead(size_t offset, size_t size)
         return;
 
     /// The window id only moves forward, so a stale reader does not count.
-    const UInt64 window = efficiency.currentWindow();
+    const auto window = efficiency.currentWindow();
     if (efficiency_window_id != FileCacheEfficiency::NEVER_READ && efficiency_window_id > window)
         return;
     if (efficiency_window_id != window)
@@ -1561,7 +1561,7 @@ void FileSegment::markRead(size_t offset, size_t size)
             efficiency.moveToActive(window, static_cast<Int64>(bytes));
 }
 
-void FileSegment::startEfficiencyWindowUnlocked(UInt64 window)
+void FileSegment::startEfficiencyWindowUnlocked(FileCacheEfficiency::Window window)
 {
     if (efficiency_window_id != FileCacheEfficiency::NEVER_READ)
     {
@@ -1569,7 +1569,9 @@ void FileSegment::startEfficiencyWindowUnlocked(UInt64 window)
         previous_active_bytes = getActiveBytesUnlocked();
     }
     const size_t range_size = range().size();
-    efficiency_granule_size = std::max<size_t>(1, (range_size + EFFICIENCY_GRANULES - 1) / EFFICIENCY_GRANULES);
+    const size_t granule_size = std::max<size_t>(1, (range_size + EFFICIENCY_GRANULES - 1) / EFFICIENCY_GRANULES);
+    chassert(granule_size <= std::numeric_limits<UInt32>::max());
+    efficiency_granule_size = static_cast<UInt32>(granule_size);
     efficiency_window_range_size = range_size;
     active_granules[0] = 0;
     active_granules[1] = 0;

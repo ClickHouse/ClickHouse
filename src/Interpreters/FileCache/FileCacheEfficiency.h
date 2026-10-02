@@ -20,7 +20,8 @@ namespace DB
 class FileCacheEfficiency
 {
 public:
-    static constexpr UInt64 NEVER_READ = std::numeric_limits<UInt64>::max();
+    using Window = UInt32;
+    static constexpr Window NEVER_READ = std::numeric_limits<Window>::max();
 
     struct Snapshot
     {
@@ -34,14 +35,14 @@ public:
     bool isEnabled() const { return window_sec != 0; }
 
     /// Does not rotate.
-    UInt64 windowNow() const;
+    Window windowNow() const;
 
     /// Rotates if the live window ended.
-    UInt64 currentWindow();
+    Window currentWindow();
 
     /// No-op unless `window` is the live window.
-    void addPassiveBytes(UInt64 window, Int64 bytes);
-    void moveToActive(UInt64 window, Int64 bytes);
+    void addPassiveBytes(Window window, Int64 bytes);
+    void moveToActive(Window window, Int64 bytes);
 
     /// The last full window.
     Snapshot getSnapshot();
@@ -50,7 +51,7 @@ public:
     void shiftTimeForTesting(std::chrono::milliseconds shift) { time_shift_for_testing_ms += shift.count(); }
 
 private:
-    void rotateIfNeeded(UInt64 now_window) TSA_REQUIRES(mutex);
+    void rotateIfNeeded(Window now_window) TSA_REQUIRES(mutex);
 
     const UInt64 window_sec;
     const std::function<size_t()> get_used_size;
@@ -59,7 +60,7 @@ private:
     std::atomic<Int64> time_shift_for_testing_ms = 0;
 
     std::mutex mutex;
-    UInt64 live_window TSA_GUARDED_BY(mutex) = 0;
+    Window live_window TSA_GUARDED_BY(mutex) = 0;
     Int64 live_active_bytes TSA_GUARDED_BY(mutex) = 0;
     Int64 live_passive_bytes TSA_GUARDED_BY(mutex) = 0;
     Snapshot snapshot TSA_GUARDED_BY(mutex);

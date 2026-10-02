@@ -11,23 +11,23 @@ FileCacheEfficiency::FileCacheEfficiency(UInt64 window_sec_, std::function<size_
 {
 }
 
-UInt64 FileCacheEfficiency::windowNow() const
+FileCacheEfficiency::Window FileCacheEfficiency::windowNow() const
 {
     if (!window_sec)
         return 0;
     const Int64 elapsed_ms = static_cast<Int64>(watch.elapsedMilliseconds()) + time_shift_for_testing_ms.load();
-    return static_cast<UInt64>(std::max<Int64>(elapsed_ms, 0)) / (window_sec * 1000);
+    return static_cast<Window>(static_cast<UInt64>(std::max<Int64>(elapsed_ms, 0)) / (window_sec * 1000));
 }
 
-UInt64 FileCacheEfficiency::currentWindow()
+FileCacheEfficiency::Window FileCacheEfficiency::currentWindow()
 {
-    const UInt64 now_window = windowNow();
+    const Window now_window = windowNow();
     std::lock_guard lock(mutex);
     rotateIfNeeded(now_window);
     return now_window;
 }
 
-void FileCacheEfficiency::rotateIfNeeded(UInt64 now_window)
+void FileCacheEfficiency::rotateIfNeeded(Window now_window)
 {
     if (now_window <= live_window)
         return;
@@ -54,14 +54,14 @@ void FileCacheEfficiency::rotateIfNeeded(UInt64 now_window)
     live_window = now_window;
 }
 
-void FileCacheEfficiency::addPassiveBytes(UInt64 window, Int64 bytes)
+void FileCacheEfficiency::addPassiveBytes(Window window, Int64 bytes)
 {
     std::lock_guard lock(mutex);
     if (window == live_window)
         live_passive_bytes += bytes;
 }
 
-void FileCacheEfficiency::moveToActive(UInt64 window, Int64 bytes)
+void FileCacheEfficiency::moveToActive(Window window, Int64 bytes)
 {
     std::lock_guard lock(mutex);
     if (window == live_window)
@@ -75,7 +75,7 @@ FileCacheEfficiency::Snapshot FileCacheEfficiency::getSnapshot()
 {
     if (!window_sec)
         return {};
-    const UInt64 now_window = windowNow();
+    const Window now_window = windowNow();
     std::lock_guard lock(mutex);
     rotateIfNeeded(now_window);
     return snapshot;

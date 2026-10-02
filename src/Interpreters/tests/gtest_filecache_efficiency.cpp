@@ -35,7 +35,7 @@ TEST(FileCacheEfficiency, SnapshotOfLastFullWindow)
     TestEfficiency t(10);
     t.used_size = 300;
 
-    const UInt64 window = t.efficiency.currentWindow();
+    const auto window = t.efficiency.currentWindow();
     EXPECT_EQ(window, 0);
     t.efficiency.addPassiveBytes(window, 200);
     t.efficiency.moveToActive(window, 50);
@@ -76,7 +76,7 @@ TEST(FileCacheEfficiency, NegativeAndInconsistentValuesAreClamped)
 {
     TestEfficiency t(10);
     t.used_size = 50;
-    const UInt64 window = t.efficiency.currentWindow();
+    const auto window = t.efficiency.currentWindow();
     t.efficiency.addPassiveBytes(window, 10);
     t.efficiency.moveToActive(window, 30);   /// more than passive: passive < 0, clamp it to 0
     t.advance(10);

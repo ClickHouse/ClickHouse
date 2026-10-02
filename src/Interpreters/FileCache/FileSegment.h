@@ -270,7 +270,7 @@ private:
 
     void onRemovedFromCache(const FileSegmentGuard::Lock &);
 
-    void startEfficiencyWindowUnlocked(UInt64 window) TSA_REQUIRES(efficiency_mutex);
+    void startEfficiencyWindowUnlocked(FileCacheEfficiency::Window window) TSA_REQUIRES(efficiency_mutex);
     /// Granules `[first, last]` that `[offset, offset + size)` overlaps, cut at the segment end.
     std::optional<std::pair<size_t, size_t>> getGranuleRangeUnlocked(size_t offset, size_t size) const TSA_REQUIRES(efficiency_mutex);
     /// Sets granules `[first, last]`; returns the bytes of the ones that were not set before.
@@ -366,15 +366,15 @@ private:
     /// is taken under it.
     static constexpr size_t EFFICIENCY_GRANULES = 128;
     mutable std::mutex efficiency_mutex;
-    UInt64 efficiency_window_id TSA_GUARDED_BY(efficiency_mutex) = FileCacheEfficiency::NEVER_READ;
     UInt64 active_granules[2] TSA_GUARDED_BY(efficiency_mutex) = {};
     static_assert(sizeof(active_granules) * 8 == EFFICIENCY_GRANULES);
-    UInt64 efficiency_granule_size TSA_GUARDED_BY(efficiency_mutex) = 1;
-    UInt64 efficiency_window_range_size TSA_GUARDED_BY(efficiency_mutex) = 0;
-    bool removed_from_efficiency TSA_GUARDED_BY(efficiency_mutex) = false;
+    FileCacheEfficiency::Window efficiency_window_id TSA_GUARDED_BY(efficiency_mutex) = FileCacheEfficiency::NEVER_READ;
     /// The window before `efficiency_window_id` with a cache hit, and its active bytes.
-    UInt64 previous_hit_window_id TSA_GUARDED_BY(efficiency_mutex) = FileCacheEfficiency::NEVER_READ;
+    FileCacheEfficiency::Window previous_hit_window_id TSA_GUARDED_BY(efficiency_mutex) = FileCacheEfficiency::NEVER_READ;
     UInt64 previous_active_bytes TSA_GUARDED_BY(efficiency_mutex) = 0;
+    UInt32 efficiency_granule_size TSA_GUARDED_BY(efficiency_mutex) = 1;
+    bool removed_from_efficiency TSA_GUARDED_BY(efficiency_mutex) = false;
+    UInt64 efficiency_window_range_size TSA_GUARDED_BY(efficiency_mutex) = 0;
 
     /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;
