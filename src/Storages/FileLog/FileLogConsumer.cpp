@@ -120,6 +120,16 @@ void FileLogConsumer::readNewRecords(FileLogConsumer::Records & new_records, siz
 
 
             std::getline(reader, record.data);
+
+            /// A last line without '\n' may still be being written: leave it for a later read.
+            if (reader.eof())
+            {
+                reader.clear();
+                reader.seekg(offset);
+                StorageFileLog::assertStreamGood(reader);
+                file_ctx.status = StorageFileLog::FileStatus::NO_CHANGE;
+                break;
+            }
             StorageFileLog::assertStreamGood(reader);
 
             new_records.emplace_back(record);
@@ -132,7 +142,7 @@ void FileLogConsumer::readNewRecords(FileLogConsumer::Records & new_records, siz
         file_meta.last_writen_position = current_position;
 
         /// stream reach to end
-        if (current_position == file_meta.last_open_end)
+        if (current_position >= file_meta.last_open_end)
         {
             file_ctx.status = StorageFileLog::FileStatus::NO_CHANGE;
         }
