@@ -63,7 +63,7 @@ inline ALWAYS_INLINE bool hasAllIntegralLoopRemainder(
 #if defined(__AVX2__)
 
 // AVX2 Int64, UInt64 specialization
-template<typename IntType>
+template<bool with_null_maps, typename IntType>
 requires (std::is_same_v<IntType, Int64> || std::is_same_v<IntType, UInt64>)
 NO_INLINE bool sliceHasImplAnyAllImplInt64(
     const NumericArraySlice<IntType> & first,
@@ -73,6 +73,12 @@ NO_INLINE bool sliceHasImplAnyAllImplInt64(
 {
     if (second.size == 0)
         return true;
+
+    if constexpr (!with_null_maps)
+    {
+        first_null_map = nullptr;
+        second_null_map = nullptr;
+    }
 
     if (!hasNull(first_null_map, first.size) && hasNull(second_null_map, second.size))
         return false;
@@ -154,7 +160,7 @@ NO_INLINE bool sliceHasImplAnyAllImplInt64(
 }
 
 // AVX2 Int32, UInt32 specialization
-template<typename IntType>
+template<bool with_null_maps, typename IntType>
 requires (std::is_same_v<IntType, Int32> || std::is_same_v<IntType, UInt32>)
 NO_INLINE bool sliceHasImplAnyAllImplInt32(
     const NumericArraySlice<IntType> & first,
@@ -164,6 +170,12 @@ NO_INLINE bool sliceHasImplAnyAllImplInt32(
 {
     if (second.size == 0)
         return true;
+
+    if constexpr (!with_null_maps)
+    {
+        first_null_map = nullptr;
+        second_null_map = nullptr;
+    }
 
     if (!hasNull(first_null_map, first.size) && hasNull(second_null_map, second.size))
         return false;
@@ -268,7 +280,7 @@ NO_INLINE bool sliceHasImplAnyAllImplInt32(
 }
 
 // AVX2 Int16, UInt16 specialization
-template<typename IntType>
+template<bool with_null_maps, typename IntType>
 requires (std::is_same_v<IntType, Int16> || std::is_same_v<IntType, UInt16>)
 NO_INLINE bool sliceHasImplAnyAllImplInt16(
     const NumericArraySlice<IntType> & first,
@@ -278,6 +290,12 @@ NO_INLINE bool sliceHasImplAnyAllImplInt16(
 {
     if (second.size == 0)
         return true;
+
+    if constexpr (!with_null_maps)
+    {
+        first_null_map = nullptr;
+        second_null_map = nullptr;
+    }
 
     if (!hasNull(first_null_map, first.size) && hasNull(second_null_map, second.size))
         return false;
@@ -417,7 +435,7 @@ NO_INLINE bool sliceHasImplAnyAllImplInt16(
 // Int8 uses SSE rather than AVX2 because with 16 elements per register we need 16 shuffle rotations,
 // which already covers all combinations. AVX2 would need cross-lane shuffles for 32 elements,
 // making it more complex without clear benefit.
-template<typename IntType>
+template<bool with_null_maps, typename IntType>
 requires (std::is_same_v<IntType, Int8> || std::is_same_v<IntType, UInt8>)
 NO_INLINE bool sliceHasImplAnyAllImplInt8(
     const NumericArraySlice<IntType> & first,
@@ -427,6 +445,12 @@ NO_INLINE bool sliceHasImplAnyAllImplInt8(
 {
     if (second.size == 0)
         return true;
+
+    if constexpr (!with_null_maps)
+    {
+        first_null_map = nullptr;
+        second_null_map = nullptr;
+    }
 
     if (!hasNull(first_null_map, first.size) && hasNull(second_null_map, second.size))
         return false;
@@ -617,23 +641,32 @@ template <
 inline ALWAYS_INLINE bool sliceHasImplAnyAll(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
 #if defined(__AVX2__)
+    /// The kernels are NO_INLINE, so arrays without null maps get their own instantiation that has no null-map handling.
     if constexpr (search_type == ArraySearchType::All && std::is_same_v<FirstSliceType, SecondSliceType>)
     {
         if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int8>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt8>>)
         {
-            return sliceHasImplAnyAllImplInt8(first, second, first_null_map, second_null_map);
+            if (first_null_map == nullptr && second_null_map == nullptr)
+                return sliceHasImplAnyAllImplInt8<false>(first, second, nullptr, nullptr);
+            return sliceHasImplAnyAllImplInt8<true>(first, second, first_null_map, second_null_map);
         }
         else if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int16>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt16>>)
         {
-            return sliceHasImplAnyAllImplInt16(first, second, first_null_map, second_null_map);
+            if (first_null_map == nullptr && second_null_map == nullptr)
+                return sliceHasImplAnyAllImplInt16<false>(first, second, nullptr, nullptr);
+            return sliceHasImplAnyAllImplInt16<true>(first, second, first_null_map, second_null_map);
         }
         else if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int32>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt32>>)
         {
-            return sliceHasImplAnyAllImplInt32(first, second, first_null_map, second_null_map);
+            if (first_null_map == nullptr && second_null_map == nullptr)
+                return sliceHasImplAnyAllImplInt32<false>(first, second, nullptr, nullptr);
+            return sliceHasImplAnyAllImplInt32<true>(first, second, first_null_map, second_null_map);
         }
         else if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int64>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt64>>)
         {
-            return sliceHasImplAnyAllImplInt64(first, second, first_null_map, second_null_map);
+            if (first_null_map == nullptr && second_null_map == nullptr)
+                return sliceHasImplAnyAllImplInt64<false>(first, second, nullptr, nullptr);
+            return sliceHasImplAnyAllImplInt64<true>(first, second, first_null_map, second_null_map);
         }
     }
 #endif
