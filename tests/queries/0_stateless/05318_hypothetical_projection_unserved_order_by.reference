@@ -1,0 +1,15 @@
+--- no filter, an ORDER BY the projection order does not serve, fewer marks ---
+status: applicable
+verdict: chosen
+real: from the projection
+--- the same with reading in order disabled ---
+status: not_applicable
+real: from the base table
+--- the same marks ---
+status: applicable
+verdict: not chosen
+real: from the base table
+--- fewer marks win on cost, so prefer_optimize_projection does not force anything ---
+status: applicable
+verdict: chosen
+real: from the projection
