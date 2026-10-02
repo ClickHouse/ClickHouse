@@ -1,0 +1,39 @@
+--- fixture: data files and rows per Iceberg table
+ac	2	2000
+an	2	2000
+mx	2	2000
+pr	2	2000
+pr_twin	2	2000
+--- fixture: NULL counts of an.n per file; whether a file of ac has a metric for c; format and column_sizes of mx
+[0,1000]
+[0,1]
+[('AVRO',0),('PARQUET',1)]
+--- T13 an: an all-NULL file counts as NULLs, not as a file without bounds
+Join: t[2000] ⋈ d[10]
+ResultRows: 200
+__table1.k: 2000 [min 0, max 1999]
+__table1.n: 100 [min 0, max 99, null 0.5]
+--- T13 ac: a file written before ADD COLUMN counts as NULLs
+Join: t[2000] ⋈ d[10]
+ResultRows: 400
+__table1.c: 50 [min 0, max 49, null 0.5]
+__table1.k: 2000 [min 0, max 1999]
+--- T13 mx: no column_sizes in the Avro file and no bounds for Float64, so f takes rule 4
+Join: t[2000] ⋈ d[10]
+ResultRows: 33
+__table1.f: 600
+__table1.k: 2000 [min 0, max 1999]
+--- T14 pr: MODIFY COLUMN k Int64 between the inserts, then RENAME COLUMN v TO w
+Join: t[2000] ⋈ d[10]
+ResultRows: 20
+__table1.k: 1000 [min 0, max 999]
+__table1.w: 2000 [min 0, max 1999]
+--- T14 pr_twin: Int64 from the start
+Join: t[2000] ⋈ d[10]
+ResultRows: 20
+__table1.k: 1000 [min 0, max 999]
+__table1.w: 2000 [min 0, max 1999]
+--- T17 use_statistics = 0: rows only
+Join: t[2000] ⋈ d[no_stats~10]
+ResultRows: ~~10
+column entries: 0
