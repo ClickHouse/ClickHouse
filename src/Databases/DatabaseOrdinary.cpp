@@ -27,7 +27,9 @@
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/FieldFromAST.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/isDiskFunction.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageProxy.h>
@@ -213,19 +215,23 @@ StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(const ASTCrea
     /// query rather than from the storage object, because a lazily loaded table has no storage object yet.
     /// The resolution mirrors `MergeTreeData::getStoragePolicy`: a `disk` setting takes precedence over
     /// `storage_policy`.
+    ///
+    /// Returns nullptr for a table on an inline `disk(...)` definition: resolving it would instantiate the
+    /// custom disk, and this runs for every `MergeTree` table during the metadata scan, before the flag is
+    /// known to exist - with `lazy_load_tables` that would create the disk (and fail on an unavailable
+    /// `include` or `from_zk`) for a table that is otherwise deferred until first access. The conversion
+    /// by flag is not supported for such tables.
     if (create_query.storage)
     {
         if (auto * query_settings = create_query.storage->settings)
         {
             if (const Field * disk_setting = query_settings->changes.tryGet("disk"))
             {
-                /// The value may be a `disk(...)` function defining a custom disk; resolve it to the disk
-                /// name the same way the table does when it is loaded from existing metadata.
-                SettingChange disk_change("disk", *disk_setting);
-                MergeTreeSettings::resolveDiskSetting(
-                    disk_change, getContext(), /* is_loading_from_existing_metadata = */ true,
-                    getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
-                return getContext()->getStoragePolicyFromDisk(disk_change.value.safeGet<String>());
+                CustomType custom;
+                if (disk_setting->tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST")
+                    && isDiskFunction(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast))
+                    return nullptr;
+                return getContext()->getStoragePolicyFromDisk(disk_setting->safeGet<String>());
             }
 
             if (const Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
@@ -262,6 +268,8 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
     /// Get table's storage policy
     auto policy = getStoragePolicyFromCreateQuery(create_query);
+    if (!policy)
+        return;
 
     auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(create_query);
 
@@ -606,8 +614,15 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     /// the loader reports the self-dependency as a logical error.
     auto storage_policy = table->getStoragePolicy();
     if (!storage_policy)
+    {
         if (auto create_query = getCreateQueryFromMetadata(name.table, /* throw_on_error = */ false))
+        {
             storage_policy = getStoragePolicyFromCreateQuery(create_query->as<const ASTCreateQuery &>());
+            /// A table on an inline `disk(...)` definition is never converted by the first phase.
+            if (!storage_policy)
+                return;
+        }
+    }
 
     DiskPtr checking_disk = getDisk();
     if (storage_policy)
