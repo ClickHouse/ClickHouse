@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
-# Tag no-replicated-database: the DDL worker re-parses the DDL with the session `dialect`, which cannot parse the added comment
 # `MODIFY SETTING name = DEFAULT` means a reset for every way a query reaches the server. A JSON AST
 # carries the entry in `default_settings` of its `SetQuery` and never passes through the SQL parser.
 

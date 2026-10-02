@@ -176,12 +176,10 @@ public:
     /// but they are different types in C++ and this affects function overload resolution).
     using Time = Int64;
 
-    /// The time zone names ClickHouse supports: the names of the time zone database linked into the
-    /// binary, which is what `system.time_zones` lists, and the fixed UTC offsets a time zone can
-    /// really have. `cctz` on its own resolves unboundedly many more names, and constructing a
-    /// `DateLUTImpl` for one of them costs ~4.6 MiB that is never released. Validators that want to
-    /// reject a time zone name early call this in addition to `cctz::load_time_zone`, so that they
-    /// cannot start accepting names that the lookup itself rejects. See the definition for details.
+    /// `cctz` loads a whole family of names that no time zone can have. Such a name is not a time
+    /// zone, and constructing a `DateLUTImpl` for it throws. Validators that want to reject a time
+    /// zone name early call this in addition to `cctz::load_time_zone`, so that they cannot start
+    /// accepting names that the lookup itself rejects. See the definition for details.
     static bool isSupportedTimeZoneName(std::string_view time_zone_name);
 
     /// The order of fields matters for alignment and sizeof.
@@ -1180,49 +1178,6 @@ public:
         return static_cast<UInt8>(1 + (toFirstDayNumOfWeek(v) - toDayNum(toFirstDayNumOfISOYearIndex(v))) / 7);
     }
 
-    /// The week number together with its week-year, which is returned as a signed number, because it can
-    /// fall outside of the representable [0000, 9999] range at the boundaries of the `Date32` range: the
-    /// last days of 9999 can belong to the week-year 10000, and 0000-01-01 is a Saturday belonging to the
-    /// week-year -1. See `toYearWeek` and `toYearWeekPacked` for how each of them handles that.
-    template <typename DateOrTime>
-    std::pair<Int32, UInt8> toSignedYearWeek(DateOrTime v, UInt8 week_mode) const
-    {
-        if constexpr (may_be_out_of_lut_range<DateOrTime>)
-            if (unlikely(isOutOfLUTRange(v)))
-            {
-                /// A raw `Date32` day number can be arbitrarily far outside the representable
-                /// [0000-01-01, 9999-12-31] window (`DataTypeDate32` is just an `Int32`, and e.g.
-                /// `toDate32('9999-12-31') + 146097` stays a valid column value). Saturate it first, the same
-                /// way every other out-of-range helper does through `outOfRangeDayIndex`, so that the
-                /// week-year cannot run away from the calendar and overflow the four-digit year.
-                /// The clamp is a no-op for every representable day, so it does not affect the boundary
-                /// values. It is needed exactly for a day number, because `toDayNum` is the identity
-                /// for an `ExtendedDayNum`, while for a `Time` it already saturates the same way.
-                const ExtendedDayNum saturated = dayNumOfDayIndex(outOfRangeDayIndex(toDayNum(v)));
-                /// Year/week numbering is timezone-independent and repeats every 400 years.
-                Int32 cycles = 0;
-                const ExtendedDayNum shifted = shiftIntoLUTRange(saturated, cycles);
-                const YearWeek yw = toYearWeek(shifted, week_mode);
-                return {static_cast<Int32>(yw.first) - cycles * 400, yw.second};
-            }
-
-        const YearWeek yw = toYearWeek(v, week_mode);
-        return {static_cast<Int32>(yw.first), yw.second};
-    }
-
-    /// The result of `toYearWeek` packed into the `YYYYWW` number, as the `toYearWeek` function returns it.
-    /// `ToYearWeekImpl::hasMonotonicity` is `true` and `KeyCondition` relies on it, so a week-year below the
-    /// representable range saturates to zero - the value that sorts before every other one - instead of
-    /// wrapping around. The week-year 10000 of the last days of 9999 fits `UInt32` and is kept as is.
-    template <typename DateOrTime>
-    UInt32 toYearWeekPacked(DateOrTime v, UInt8 week_mode) const
-    {
-        const auto [year, week] = toSignedYearWeek(v, week_mode);
-        if (year < DATE_LUT_MIN_REPRESENTABLE_YEAR)
-            return 0;
-        return static_cast<UInt32>(year) * 100 + week;
-    }
-
     /*
       The bits in week_mode has the following meaning:
        WeekModeFlag::MONDAY_FIRST (0)  If not set Sunday is first day of week
@@ -1262,13 +1217,20 @@ public:
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
             {
-                const auto [year, week] = toSignedYearWeek(v, week_mode);
-                /// Only the week-year can be unrepresentable here, the week number itself is always
-                /// correct, and it is shared with `toWeek`, so it must be returned as is: mode 3 is
-                /// documented to return a number in the `1-53` range, and `toWeek(date, 3)` has to agree
-                /// with `toISOWeek`. The monotonic saturation of the whole `YYYYWW` number lives in
-                /// `toYearWeekPacked` instead.
-                return YearWeek(static_cast<UInt16>(std::max<Int32>(year, DATE_LUT_MIN_REPRESENTABLE_YEAR)), week);
+                /// Year/week numbering is timezone-independent and repeats every 400 years.
+                Int32 cycles = 0;
+                const ExtendedDayNum shifted = shiftIntoLUTRange(toDayNum(v), cycles);
+                YearWeek yw = toYearWeek(shifted, week_mode);
+                /// The ISO week-year can fall just outside the representable [0000, 9999] range at the
+                /// boundaries (e.g. 0000-01-01 is a Saturday belonging to week-year -1, and 9999-12-31 can
+                /// belong to week-year 10000); clamp it so the UInt16 YYYYWW result does not wrap around.
+                Int32 adjusted_year = static_cast<Int32>(yw.first) - cycles * 400;
+                if (adjusted_year < DATE_LUT_MIN_REPRESENTABLE_YEAR)
+                    adjusted_year = DATE_LUT_MIN_REPRESENTABLE_YEAR;
+                else if (adjusted_year > DATE_LUT_MAX_REPRESENTABLE_YEAR)
+                    adjusted_year = DATE_LUT_MAX_REPRESENTABLE_YEAR;
+                yw.first = static_cast<UInt16>(adjusted_year);
+                return yw;
             }
 
         const bool newyear_day_mode = week_mode & static_cast<UInt8>(WeekModeFlag::NEWYEAR_DAY);
@@ -1331,37 +1293,31 @@ public:
     YearWeek toYearWeekOfNewyearMode(DateOrTime v, bool monday_first_mode) const
     {
         YearWeek yw(0, 0);
+        UInt16 offset_day = monday_first_mode ? 0U : 1U;
 
         const LUTIndex i = LUTIndex(v);
 
-        /// Everything below is calculated on day indexes - the number of days since the beginning of the
-        /// lookup table - and not on `LUTIndex`, whose arithmetic saturates at the ends of the table, because
-        /// both ends of a week can lie outside of it: the Sunday that starts the first week of 1900 is
-        /// 1899-12-31, and the Saturday that ends the week of 2299-12-31 is 2300-01-06.
-        /// `toDayOfWeek` numbers the days 1 for Monday to 7 for Sunday.
-        auto days_since_start_of_week = [this, monday_first_mode](LUTIndex index) -> Int64
+        // Checking the week across the year
+        yw.first = toYear(i + (7 - toDayOfWeek(i + offset_day)));
+
+        auto first_day = makeLUTIndex(yw.first, 1, 1);
+        auto this_day = i;
+
+        // TODO: do not perform calculations in terms of DayNum, since that would under/overflow for extended range.
+        if (monday_first_mode)
         {
-            const UInt8 day_of_week = toDayOfWeek(index);
-            return monday_first_mode ? day_of_week - 1 : day_of_week % 7;
-        };
-
-        /// The day the week of the queried day starts on, and the day it ends on.
-        const Int64 this_day = static_cast<Int64>(i.toUnderType()) - days_since_start_of_week(i);
-        const Int64 last_day_of_week = this_day + 6;
-
-        /// The week belongs to the year of its last day. The calendar repeats every 400 years, which is
-        /// exactly the size of the lookup table, so a day past its end is looked up 400 years earlier.
-        const bool crosses_end_of_lut = last_day_of_week >= days_in_400_years;
-        const Int64 last_day_of_week_in_lut = crosses_end_of_lut ? last_day_of_week - days_in_400_years : last_day_of_week;
-        yw.first = static_cast<UInt16>(toYear(LUTIndex(static_cast<UInt32>(last_day_of_week_in_lut))) + (crosses_end_of_lut ? 400 : 0));
-
-        /// Week 1 is the week containing January 1 of that year, which is out of the table's range as well
-        /// when the week of the queried day is.
-        const LUTIndex first_january = makeLUTIndex(crosses_end_of_lut ? yw.first - 400 : yw.first, 1, 1);
-        const Int64 first_day = static_cast<Int64>(first_january.toUnderType())
-            + (crosses_end_of_lut ? days_in_400_years : 0)
-            - days_since_start_of_week(first_january);
-
+            // Rounds down a date to the nearest Monday.
+            first_day = toFirstDayNumOfWeek(first_day);
+            this_day = toFirstDayNumOfWeek(i);
+        }
+        else
+        {
+            // Rounds down a date to the nearest Sunday.
+            if (toDayOfWeek(first_day) != 7)
+                first_day = ExtendedDayNum(first_day - toDayOfWeek(first_day));
+            if (toDayOfWeek(i) != 7)
+                this_day = ExtendedDayNum(i - toDayOfWeek(i));
+        }
         yw.second = static_cast<UInt8>((this_day - first_day) / 7 + 1);
         return yw;
     }

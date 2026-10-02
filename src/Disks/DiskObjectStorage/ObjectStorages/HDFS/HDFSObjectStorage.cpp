@@ -343,7 +343,7 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
     }
 }
 
-void HDFSObjectStorage::copyObject( /// NOLINT
+String HDFSObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
@@ -360,6 +360,8 @@ void HDFSObjectStorage::copyObject( /// NOLINT
     auto out = writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     copyData(*in, *out);
     out->finalize();
+    /// HDFS names no generations.
+    return {};
 }
 
 

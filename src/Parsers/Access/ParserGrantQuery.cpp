@@ -61,7 +61,7 @@ namespace
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ParserRolesOrUsersSet roles_p;
-            roles_p.allowRoles().useIDMode(id_mode).allowQueryParameters();
+            roles_p.allowRoles().useIDMode(id_mode);
             if (is_revoke)
                 roles_p.allowAll();
 
@@ -84,7 +84,7 @@ namespace
 
             ASTPtr ast;
             ParserRolesOrUsersSet roles_p;
-            roles_p.allowRoles().allowUsers().allowCurrentUser().allowAll(is_revoke).allowQueryParameters();
+            roles_p.allowRoles().allowUsers().allowCurrentUser().allowAll(is_revoke);
             if (!roles_p.parse(pos, ast, expected))
                 return false;
 
@@ -201,11 +201,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->cluster = std::move(cluster);
     query->access_rights_elements = std::move(elements);
     query->roles = std::move(roles);
-    if (query->roles && query->roles->hasQueryParameters())
-        query->children.push_back(query->roles);
     query->grantees = std::move(grantees);
-    if (query->grantees && query->grantees->hasQueryParameters())
-        query->children.push_back(query->grantees);
     query->admin_option = admin_option;
     query->replace_access = replace_access;
     query->replace_granted_roles = replace_role;
@@ -507,7 +503,6 @@ The hierarchy of privileges in ClickHouse is shown below:
       - `SYSTEM DROP QUERY CACHE`
       - `SYSTEM DROP S3 CLIENT CACHE`
       - `SYSTEM DROP SCHEMA CACHE`
-      - `SYSTEM DROP TIME SERIES CACHES`
       - `SYSTEM DROP UNCOMPRESSED CACHE`
     - `SYSTEM DROP REPLICA`
     - `SYSTEM FAILPOINT`

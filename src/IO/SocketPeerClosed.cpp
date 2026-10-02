@@ -44,16 +44,7 @@ SocketState getSocketState(int fd)
 
 #if USE_SSL
 
-namespace
-{
-
-struct SSLSocketStateResult
-{
-    SocketState state;
-    bool fatal_error;
-};
-
-SSLSocketStateResult getSSLSocketStateImpl(ssl_st * ssl)
+SocketState getSSLSocketState(ssl_st * ssl)
 {
     /// `SSL_peek` decrypts just enough of the pending records to tell real application data and
     /// harmless post-handshake messages (session tickets, `KeyUpdate`) apart from a `close_notify`.
@@ -63,47 +54,32 @@ SSLSocketStateResult getSSLSocketStateImpl(ssl_st * ssl)
     ERR_clear_error();
     char c = 0;
     int res = SSL_peek(ssl, &c, 1);
-    SSLSocketStateResult result{SocketState::Closed, false};
     if (res > 0)
-    {
-        result = {SocketState::DataPending, false}; /// Application data is waiting to be read; the peer is alive.
-    }
-    else
-    {
-        switch (SSL_get_error(ssl, res))
-        {
-            case SSL_ERROR_WANT_READ:  [[fallthrough]];
-            case SSL_ERROR_WANT_WRITE:
-                /// `SSL_peek` found no complete application-data record, but that alone does not prove
-                /// the connection is idle: the bytes of a record that has only partially arrived (e.g.
-                /// the first fragment of a queued response) are buffered inside the SSL object too, and
-                /// look identical from here - both end in `SSL_ERROR_WANT_READ`. `SSL_has_pending`
-                /// reports on that internal buffer regardless of whether the record is complete, so a
-                /// session ticket / `KeyUpdate` that was fully consumed reads as idle (nothing left
-                /// buffered), while a partial record correctly reads as pending.
-                result = {SSL_has_pending(ssl) ? SocketState::DataPending : SocketState::Idle, false};
-                break;
-            case SSL_ERROR_ZERO_RETURN:
-                result = {SocketState::Closed, false}; /// The peer sent `close_notify`: an orderly TLS shutdown.
-                break;
-            case SSL_ERROR_SYSCALL: [[fallthrough]];
-            case SSL_ERROR_SSL:
-                /// A FIN without `close_notify` or a protocol error is fatal. OpenSSL forbids
-                /// `SSL_shutdown` afterwards.
-                result = {SocketState::Closed, true};
-                break;
-            default:
-                /// Any other unexpected result is treated as closed/broken, but only
-                /// `SSL_ERROR_SYSCALL` and `SSL_ERROR_SSL` make the connection fatal.
-                result = {SocketState::Closed, false};
-                break;
-        }
-    }
+        return SocketState::DataPending;    /// Application data is waiting to be read; the peer is alive.
 
-    /// Do not leak errors from this diagnostic probe into subsequent operations on this thread.
-    ERR_clear_error();
-    return result;
+    switch (SSL_get_error(ssl, res))
+    {
+        case SSL_ERROR_WANT_READ:  [[fallthrough]];
+        case SSL_ERROR_WANT_WRITE:
+            /// `SSL_peek` found no complete application-data record, but that alone does not prove
+            /// the connection is idle: the bytes of a record that has only partially arrived (e.g.
+            /// the first fragment of a queued response) are buffered inside the SSL object too, and
+            /// look identical from here - both end in `SSL_ERROR_WANT_READ`. `SSL_has_pending`
+            /// reports on that internal buffer regardless of whether the record is complete, so a
+            /// session ticket / `KeyUpdate` that was fully consumed reads as idle (nothing left
+            /// buffered), while a partial record correctly reads as pending.
+            return SSL_has_pending(ssl) ? SocketState::DataPending : SocketState::Idle;
+        case SSL_ERROR_ZERO_RETURN:
+            return SocketState::Closed;     /// The peer sent `close_notify`: an orderly TLS shutdown.
+        default:
+            /// A FIN without `close_notify` (`SSL_ERROR_SYSCALL`), a protocol error (`SSL_ERROR_SSL`),
+            /// or anything else: treat as closed/broken.
+            return SocketState::Closed;
+    }
 }
+
+namespace
+{
 
 /// Force the socket into non-blocking mode for the duration of a call, restoring the original
 /// mode afterwards, so that `SSL_peek` on an idle pooled connection can never block.
@@ -114,10 +90,13 @@ public:
         : socket_impl(socket_impl_)
     {
 #if USE_SILK
-        /// The Silk TLS BIO is always non-blocking so that an OpenSSL operation cannot
-        /// suspend and migrate between the operation and `SSL_get_error`.
-        if (dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(&socket_impl))
+        if (auto * fiber_socket_impl = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(&socket_impl))
+        {
+            was_blocking = !fiber_socket_impl->getDontWait();
+            if (was_blocking)
+                fiber_socket_impl->setDontWait(true);
             return;
+        }
 #endif
         was_blocking = socket_impl.getBlocking();
         if (was_blocking)
@@ -131,6 +110,13 @@ public:
 
         try
         {
+#if USE_SILK
+            if (auto * fiber_socket_impl = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(&socket_impl))
+            {
+                fiber_socket_impl->setDontWait(false);
+                return;
+            }
+#endif
             socket_impl.setBlocking(true);
         }
         catch (...)
@@ -144,15 +130,11 @@ public:
 
 private:
     Poco::Net::SocketImpl & socket_impl;
-    /// Whether a regular (non-Silk) socket was blocking before the probe.
+    /// For regular (non-silk) socket: whether it was blocking before.
+    /// For silk socket: whether it was dont-wait before.
     bool was_blocking = false;
 };
 
-}
-
-SocketState getSSLSocketState(ssl_st * ssl)
-{
-    return getSSLSocketStateImpl(ssl).state;
 }
 
 #endif
@@ -167,10 +149,7 @@ SocketState getSocketState(const Poco::Net::StreamSocket & socket)
         if (auto * ssl = secure->ssl())
         {
             ScopedNonBlocking non_blocking(*secure);
-            auto result = getSSLSocketStateImpl(ssl);
-            if (result.fatal_error)
-                secure->markFatalError();
-            return result.state;
+            return getSSLSocketState(ssl);
         }
     }
 #endif

@@ -6,7 +6,6 @@
 #include <IO/ReadContinuityTracker.h>
 #include <IO/LongConnectionLimit.h>
 #include <IO/ICacheProvider.h>
-#include <IO/ReadPlan.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
@@ -31,6 +30,9 @@ namespace DB
 class ReadBufferFromFileBase;
 class EncryptionHeaderCache;
 
+/// Ordered cache chain, front = fastest tier.
+using CacheChain = VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>;
+
 /// Maps a logical read position to a `StoredObject` (via `OffsetMap`) and serves bytes from an
 /// `IFileBasedSourceReader` as a `ChainedBuffers`, one block at a time. Drives the experimental
 /// `use_reader_executor` read path. One instance per column-stream; not thread-safe.
@@ -46,21 +48,18 @@ public:
         size_t min_bytes_for_seek = DEFAULT_READER_EXECUTOR_MIN_BYTES_FOR_SEEK;
         size_t block_size = DEFAULT_READER_EXECUTOR_BLOCK_SIZE;
         size_t max_tail_for_drain = DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN;
-        size_t plan_look_ahead = DEFAULT_READER_EXECUTOR_PLAN_LOOK_AHEAD;
         std::shared_ptr<LongConnectionLimit> long_connection_limit = nullptr;
         std::shared_ptr<EncryptionHeaderCache> encryption_header_cache = nullptr;
         CacheChain cache_chain = {};
     };
 
     /// The sizes one window is read with. Sampled once per window from the memory-pressure level, so
-    /// they are at or below `window_size` / `block_size` / `plan_look_ahead`, and travel together:
-    /// every rule stated in terms of "the current window" must use `window_bytes`, not the base
-    /// `window_size`.
+    /// they are at or below `window_size` / `block_size`, and travel together: every rule stated in
+    /// terms of "the current window" must use `window_bytes`, not the base `window_size`.
     struct BlockAndWindowSizes
     {
         size_t window_bytes;
         size_t block_bytes;
-        size_t plan_bytes;
     };
 
     ReaderExecutor(
@@ -118,12 +117,6 @@ private:
             LongConnectionHits,
             LongConnectionFallbacks,
             LongConnectionBytes,
-            /// Waits on a concurrent downloader of a cache segment. `Timeouts` counts the waits that
-            /// came back short, i.e. where this query tracked the peer's download speed instead of
-            /// reading the same bytes from source at its own.
-            ConcurrentDownloadWaits,
-            ConcurrentDownloadWaitTimeouts,
-            ConcurrentDownloadWaitMicroseconds,
             NumCounters,
         };
 
@@ -204,15 +197,10 @@ private:
     /// The single source-read entry point; spans object boundaries via `OffsetMap::map`. A
     /// known-size short read is truncation and throws.
     ChainedBuffers readSource(size_t file_offset, size_t want, BlockAndWindowSizes sizes);
-    /// Serve one block at `pos` through the held `ReadPlan` (the plan reports memory hold / hit /
-    /// committed writer / fetch). Precondition: `!cache_chain.empty()`.
-    ChainedBuffers readThroughCaches(size_t pos, size_t max_serve, BlockAndWindowSizes sizes);
-    /// Grow `read_plan` to cover `[pos, pos + look_ahead)` (clamped to the file end) and drop whatever
-    /// lies past it; rebuilds from `pos` on a seek or gap. `look_ahead` is the sampled `plan_bytes`.
-    void ensureResolved(size_t pos, size_t look_ahead);
-    /// Serve one block from `pos` out of a FETCH run: read `fetch_range` from source once, fill the
-    /// tiers it spans, hold what no tier accepted, and serve. (Details in the definition.)
-    ChainedBuffers fetchFillServe(size_t pos, ByteRange fetch_range, size_t max_serve, BlockAndWindowSizes sizes);
+    /// Serve the window through the cache chain: serve the cached prefix, then claim and fetch the
+    /// miss ranges and populate them. A range another thread is already downloading is fetched
+    /// through from source. Precondition: `!cache_chain.empty()`.
+    ChainedBuffers readThroughCaches(size_t window_offset, size_t max_serve, BlockAndWindowSizes sizes);
     /// Sample the memory-pressure level and derive the sizes it implies. The only place the level is
     /// read, because sampling advances the sticky cooldown: once per `readNextWindow`, plus once in
     /// the destructor, which has no window to inherit sizes from.
@@ -249,10 +237,6 @@ private:
     CacheChain cache_chain;
     size_t min_bytes_for_seek;
     size_t max_tail_for_drain;
-    size_t plan_look_ahead;
-    /// Cache residency of the look-ahead range, held across serves (see `ReadPlan`). Empty without caches.
-    /// Also owns the executor-local memory hold for fetched bytes no tier accepted.
-    ReadPlan read_plan;
 
 #if USE_SSL
     /// Immutable per-layer decryption config, parsed once by `initDecryption`. SSL builds only.
