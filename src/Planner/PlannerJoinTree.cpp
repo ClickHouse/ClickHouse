@@ -549,6 +549,10 @@ bool applyTrivialCountIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
+    /// `totalRows` counts the live table, not the snapshot pinned for this query.
+    if (query_context->getPinnedStorageSnapshot(storage->getStorageID().uuid))
+        return false;
+
     if (getEffectiveRowPolicyFilter(*storage, query_context))
         return false;
 
@@ -682,6 +686,10 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
     if (!storage->supportsTrivialCountOptimization(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
+        return false;
+
+    /// The column stats describe the live table, not the snapshot pinned for this query.
+    if (query_context->getPinnedStorageSnapshot(storage->getStorageID().uuid))
         return false;
 
     if (getEffectiveRowPolicyFilter(*storage, query_context))
@@ -1225,6 +1233,12 @@ void pushOrderByIntoView(
 
     /// Skip inline view() table functions - they're handled by remote()/Distributed
     if (storage->getStorageID().database_name == "_table_function")
+        return;
+
+    /// A sealed view hides rows from the outer query. The pushed-down `ORDER BY ... LIMIT` would run
+    /// below that boundary, so the amount of data read would depend on the rows the view hides.
+    if (const auto * view = typeid_cast<const StorageView *>(storage.get());
+        view && view->isSealed(*storage_snapshot->metadata, query_context))
         return;
 
     /// `SAMPLE` / `FINAL` applied to the view in the outer query (e.g.
@@ -2198,14 +2212,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     auto underlying_dist = view->tryGetUnderlyingDistributed(storage_snapshot, query_context);
                     if (underlying_dist)
                     {
-                        /// For `SQL SECURITY NONE`, the inner query normally executes with a no-user
-                        /// (global) context via `getSQLSecurityOverriddenContext`, so caller-specific
-                        /// row policies do not apply to the underlying distributed table. Use that
-                        /// same context here to match `StorageView::readImpl`, which uses the override
-                        /// for both the inner interpreter and the inner storage read. (`DEFINER` views
-                        /// are rejected by `tryGetUnderlyingDistributed` outright.)
-                        if (view_sql_security && *view_sql_security == SQLSecurityType::NONE)
-                            inner_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
+                        /// Only an `INVOKER` view gets here: a `DEFINER` or `NONE` view is sealed and
+                        /// `tryGetUnderlyingDistributed` rejects it, so the pushdown runs as the invoker.
 
                         /// Suppress the pushdown when it would move an expression from the coordinator
                         /// onto the shards that is unsafe to evaluate per-shard:
