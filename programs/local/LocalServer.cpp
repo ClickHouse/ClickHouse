@@ -1,5 +1,6 @@
 #include <LocalServer.h>
 
+#include <Server/StartupWarnings.h>
 #include <sys/resource.h>
 #include <exception>
 #include <Common/Config/getLocalConfigPath.h>
@@ -25,6 +26,7 @@
 #include <Databases/DatabaseOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
+#include <Interpreters/CancellationChecker.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
@@ -41,6 +43,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ThreadStackSize.h>
 #include <Common/ThreadStatus.h>
+#include <Common/ThreadFuzzer.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
@@ -65,13 +68,14 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
-#include <Parsers/registerStatements.h>
+#include <Parsers/registerParsers.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
 #include <filesystem>
@@ -92,6 +96,7 @@
 #include <Poco/ThreadPool.h>
 
 #include <algorithm>
+#include <thread>
 
 #include "config.h"
 
@@ -200,6 +205,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_per_cpu_untracked_memory;
     extern const ServerSettingsUInt64 per_cpu_untracked_memory_thread_buffer;
+    extern const ServerSettingsUInt64 min_allocation_size_to_log_stack_trace;
     extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
@@ -216,6 +222,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
+    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_size;
+    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_free_size;
+    extern const ServerSettingsUInt64 iceberg_manifest_decode_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -242,6 +251,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_keep_alive_requests;
     extern const ServerSettingsBool asynchronous_metrics_enable_heavy_metrics;
     extern const ServerSettingsUInt32 asynchronous_heavy_metrics_update_period_s;
+    extern const ServerSettingsString logger_log;
 }
 
 namespace ErrorCodes
@@ -306,12 +316,11 @@ Poco::Util::LayeredConfiguration & LocalServer::getClientConfiguration()
     return config();
 }
 
-void LocalServer::processError(std::string_view) const
+void LocalServer::processError(std::string_view query) const
 {
-    if (ignore_error)
-        return;
-
-    if (is_interactive)
+    /// `--ignore-error` asks to carry on with the next statement, not to hide what went wrong, so
+    /// the exception is reported here rather than rethrown - rethrowing it would end the run.
+    if (is_interactive || ignore_error)
     {
         String message;
         if (server_exception)
@@ -327,7 +336,10 @@ void LocalServer::processError(std::string_view) const
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         fmt::print(stderr, "Received exception:\n{}\n", message);
-        fmt::print(stderr, "\n");
+        if (is_interactive)
+            fmt::print(stderr, "\n");
+        else
+            fmt::print(stderr, "(query: {})\n", query);
 #pragma clang diagnostic pop
     }
     else
@@ -367,19 +379,30 @@ void LocalServer::initialize(Poco::Util::Application & self)
     std::string config_path;
     if (getClientConfiguration().has("config-file"))
         config_path = getClientConfiguration().getString("config-file");
-    else if (config_path.empty() && fs::exists("config.xml"))
+    else if (fs::exists("config.xml"))
         config_path = "config.xml";
-    else if (config_path.empty())
+    else
         config_path = getLocalConfigPath(home_path).value_or("");
 
-    if (fs::exists(config_path))
+    /// The names of the merge directories are derived from the name of the main config file, see
+    /// `ConfigProcessor::getConfigMergeFiles`, so without a config file there is nothing to derive
+    /// them from and a `config.d` in the current directory would be silently ignored. Process a
+    /// config embedded in the binary in place of the missing file, taking the current directory as
+    /// the base config path: then `./config.d` and `./conf.d` are merged into it, and running
+    /// `clickhouse-local` in a directory with a `config.d` does not additionally require creating
+    /// an otherwise empty `config.xml` next to it.
+    if (!fs::exists(config_path))
     {
-        ConfigProcessor config_processor(config_path);
-        ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
-        auto loaded_config = config_processor.loadConfig();
-        getClientConfiguration().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
-        loaded_config_path = config_path;
+        config_path = "config.xml";
+        ConfigProcessor::registerEmbeddedConfig(config_path, "<clickhouse/>");
     }
+
+    ConfigProcessor config_processor(config_path);
+    const fs::path config_dir = fs::path(config_path).parent_path();
+    ConfigProcessor::setConfigPath(config_dir.empty() ? fs::path(".") : config_dir);
+    auto loaded_config = config_processor.loadConfig();
+    getClientConfiguration().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+    loaded_config_path = config_path;
 
     /// Use <echo_formatted/>, <echo_query_id/>, <enable_progress_table_toggle/> unless the
     /// corresponding dashed CLI option is specified. Shared with `clickhouse-client`.
@@ -475,6 +498,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::max_format_parsing_thread_pool_size],
         server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
         server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
+
+    getIcebergManifestDecodeThreadPool().initialize(
+        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
+        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
+        server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
 }
 
 
@@ -1139,34 +1167,30 @@ void LocalServer::setupUsers()
     /// is attached (and thus safe to grant SELECT on implicitly) only when this is enabled.
     access_control.setUserQueryLogEnabled(config.getBool("query_log.enable_user_query_log", true));
 
-    /// Apply user-level configuration from a loaded config file (including those
-    /// auto-discovered via `getLocalConfigPath`, e.g. `~/.clickhouse-local/config.xml`).
-    if (!loaded_config_path.empty())
-    {
-        const auto config_dir = fs::path{loaded_config_path}.remove_filename().string();
-        bool has_user_directories = getClientConfiguration().has("user_directories");
-        String users_config_path = getClientConfiguration().getString("users_config", "");
+    /// Apply user-level configuration from the config processed in `initialize`: a config file
+    /// auto-discovered via `getLocalConfigPath` (e.g. `~/.clickhouse-local/config.xml`), or the
+    /// merge directories of the current directory processed on top of the embedded config.
+    const auto config_dir = fs::path{loaded_config_path}.remove_filename().string();
+    bool has_user_directories = getClientConfiguration().has("user_directories");
+    String users_config_path = getClientConfiguration().getString("users_config", "");
 
-        if (users_config_path.empty() && has_user_directories)
-            users_config_path = getClientConfiguration().getString("user_directories.users_xml.path");
+    if (users_config_path.empty() && has_user_directories)
+        users_config_path = getClientConfiguration().getString("user_directories.users_xml.path");
 
-        /// Anchor relative paths to the config's directory, not the cwd.
-        /// Otherwise a missing `users.xml` silently falls back to `./users.xml`,
-        /// which could grant `access_management` to the default user.
-        if (!users_config_path.empty() && fs::path(users_config_path).is_relative())
-            users_config_path = fs::path(config_dir) / users_config_path;
+    /// Anchor relative paths to the config's directory, not the cwd.
+    /// Otherwise a missing `users.xml` silently falls back to `./users.xml`,
+    /// which could grant `access_management` to the default user.
+    if (!users_config_path.empty() && fs::path(users_config_path).is_relative())
+        users_config_path = fs::path(config_dir) / users_config_path;
 
-        if (users_config_path.empty())
-            users_config = getConfigurationFromXMLString(minimal_default_user_xml);
-        else
-        {
-            ConfigProcessor config_processor(users_config_path);
-            const auto loaded_config = config_processor.loadConfig();
-            users_config = loaded_config.configuration;
-        }
-    }
-    else
+    if (users_config_path.empty())
         users_config = getConfigurationFromXMLString(minimal_default_user_xml);
+    else
+    {
+        ConfigProcessor config_processor(users_config_path);
+        const auto loaded_config = config_processor.loadConfig();
+        users_config = loaded_config.configuration;
+    }
     if (users_config)
         global_context->setUsersConfig(users_config);
     else
@@ -1249,7 +1273,7 @@ try
     }
 
     registerInterpreters();
-    registerStatements();
+    registerParsers();
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
@@ -1259,10 +1283,26 @@ try
     registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
+    QueryPlanStepRegistry::registerPlanSteps();
 
     processConfig();
 
+    /// `workerFunction()` returns only on `terminateThread()`, so it must not hold a slot of a
+    /// bounded pool. SCOPE_EXIT is LIFO, so registering this guard before the `cleanup()` one keeps
+    /// the checker running while `cleanup()` waits for listener connections to drain.
+    std::thread cancellation_thread;
+
+    SCOPE_EXIT({
+        if (cancellation_thread.joinable())
+        {
+            CancellationChecker::getInstance().terminateThread();
+            cancellation_thread.join();
+        }
+    });
+
     SCOPE_EXIT({ cleanup(); });
+
+    cancellation_thread = std::thread([] { CancellationChecker::getInstance().workerFunction(); });
 
     initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")),
         toProgressOption(config().getString("progress-table", "default")));
@@ -1408,6 +1448,10 @@ void LocalServer::processConfig()
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::LOCAL);
 
+    ThreadFuzzer::instance().setup();
+    addBuildWarnings(global_context);
+    addMergeTreeArenaPoolWarnings(global_context);
+
     tryInitPath();
 
     LoggerRawPtr log = &logger();
@@ -1466,6 +1510,10 @@ void LocalServer::processConfig()
 
     CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
         server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
+
+    /// clickhouse-local never creates a trace collector, so the setter reports the refusal here.
+    MemoryTracker::setMinAllocationSizeToLogStackTrace(
+        server_settings[ServerSetting::min_allocation_size_to_log_stack_trace]);
 
     per_cpu_memory.setBudgetCapacity(server_settings[ServerSetting::max_per_cpu_untracked_memory]);
     per_cpu_memory.setThreadBuffer(server_settings[ServerSetting::per_cpu_untracked_memory_thread_buffer]);
@@ -1734,6 +1782,11 @@ void LocalServer::processConfig()
     /// applied only to `client_context` would never reach `executeQuery`. The format options are
     /// taken back out below, once `client_context` exists.
     applyCmdSettings(global_context);
+
+    /// After the default profile and command-line settings: the first access to `MergeTreeSettings`
+    /// caches them, and it must see the final `compatibility` value.
+    std::string server_log_path = !server_logs_file.empty() ? server_logs_file : server_settings[ServerSetting::logger_log];
+    addEnvironmentWarnings(global_context, logger(), global_context->getPath(), server_log_path);
 
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();

@@ -120,9 +120,10 @@ SELECT COUNT(*) FROM (
 -- types whose Field representation has different semantic meaning (Date vs DateTime,
 -- Enum vs String, IPv4 vs UInt32), the two diverge — the rewrite must not happen.
 
--- Date vs DateTime: has() returns 0 (raw Field comparison of 20464 days vs ~1.7e9 seconds),
--- in() would return 1 (DateTime is converted to Date). Verify has() result is preserved
--- and that FUNCTION in() does not appear in the plan.
+-- Date vs DateTime: has() returns 0 (the pair meets as DateTime, where the needle is midnight
+-- and the element is 12:34:56), in() would return 1 (DateTime is converted to Date, which drops
+-- the time of day). Verify has() result is preserved and that FUNCTION in() does not appear in
+-- the plan.
 SELECT has([toDateTime('2026-01-10 12:34:56')], toDate('2026-01-10'));
 SELECT COUNT(*) FROM (
     EXPLAIN actions=1,header=1 SELECT has([toDateTime('2026-01-10 12:34:56')], materialize(toDate('2026-01-10')))

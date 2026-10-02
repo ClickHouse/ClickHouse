@@ -7,7 +7,7 @@
 #    include <DataTypes/DataTypesNumber.h>
 #    include <IO/WriteBufferFromFile.h>
 #    include <Processors/Executors/CompletedPipelineExecutor.h>
-#    include <Processors/Executors/PipelineExecutor.h>
+#    include <Processors/Executors/Runtime/PipelineExecutor.h>
 #    include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
 #    include <Processors/ISource.h>
 #    include <Processors/Sources/SourceFromChunks.h>

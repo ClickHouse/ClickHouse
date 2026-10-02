@@ -54,9 +54,9 @@ For step-by-step setup instructions, see the [Private Networking Setup guide](/p
 
 ## Kubernetes API Private Connection {#k8s-api-private-connection}
 
-By default, the Kubernetes API server endpoint for your BYOC cluster is accessible from the public internet, but access is restricted with IP filtering to allow only ClickHouse NAT Gateway IPs. For stronger security, you can restrict the Kubernetes API server so that it is accessible exclusively through private network connections.
+By default, the Kubernetes API server endpoint for your BYOC cluster is accessible from the public internet. On AWS, access is restricted with IP filtering to allow only ClickHouse NAT Gateway IPs; on GCP and Azure it is gated by cloud IAM instead (see [Kubernetes API server exposure](/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)). For stronger security, you can restrict the Kubernetes API server so that it is accessible exclusively through private network connections.
 
-Two private connection options are available:
+Which private connection options are available depends on your cloud provider:
 
 ### Tailscale (default) {#k8s-api-private-connection-tailscale}
 
@@ -78,6 +78,23 @@ For AWS deployments, the Kubernetes API server can instead be reached privately 
 - Traffic between ClickHouse management services and your Kubernetes API server stays entirely on the AWS private network.
 - The RAM share is created from your account and scoped to a single BYOC cluster; deleting it immediately revokes the private access path.
 - Because access does not depend on an agent running inside your Kubernetes cluster, ClickHouse Support retains access for troubleshooting even if in-cluster components are unavailable.
+
+### GCP private control-plane endpoint {#k8s-api-private-connection-gcp}
+
+For GCP deployments, the GKE cluster's IP-based control-plane endpoint can be disabled, so it is no longer reachable from the public internet. ClickHouse management services then reach the control plane over its DNS-based endpoint (`*.gke.goog`), which is authorized by the `container.clusters.connect` IAM permission on the service account ClickHouse impersonates in your project, rather than by a source-IP allow list.
+
+- Access is governed entirely by cloud IAM in your project, so revoking that permission revokes the path.
+- The request terminates at Google's frontend rather than inside your VPC network, so review it as an access path into your control plane rather than as a network-private link.
+- ClickHouse engineer troubleshooting access continues to use Tailscale.
+
+### Azure Private Link {#k8s-api-private-connection-azure}
+
+For Azure deployments, the AKS API server can be reached privately over [Azure Private Link](https://learn.microsoft.com/en-us/azure/private-link/private-link-overview):
+
+- The cluster is created as a private cluster with API Server VNet Integration, and its public FQDN is disabled.
+- ClickHouse Cloud provisions a Private Link Service in your subscription in front of the API server's internal load balancer, together with a matching private endpoint in the ClickHouse Cloud management VNet. The connection is auto-approved only for the ClickHouse Cloud management subscription.
+- Traffic between ClickHouse management services and your API server stays on the Azure backbone.
+- ClickHouse engineer troubleshooting access continues to use Tailscale.
 
 **Contact ClickHouse Support** to request configuration of a private API endpoint.
 
