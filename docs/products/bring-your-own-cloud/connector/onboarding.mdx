@@ -25,7 +25,7 @@ Before you enroll, your account team registers your environment and enables mana
 - the namespace prefix for services (default `ns-`)
 - how your cluster pulls ClickHouse images: through the registry access ClickHouse Cloud sets up for your account, or your own mirror
 
-ClickHouse Cloud then issues your connector endpoint, a single-use enrollment token, and the ECR repository ARN of the ClickHouse cluster chart (the `chart_repository_arn` input of the [Terraform roots](/products/bring-your-own-cloud/connector/terraform-aws)). For a managed install it also hands over the platform bundle: a Helm install passes it to `clicklink clctl init --platform-bundle`, and a VM install applies it after enrollment with `clicklink clctl platform approve --bundle`. An install with `--no-managed` does not need one. The token identifies your environment, so enrollment needs no extra id.
+ClickHouse Cloud then issues your connector endpoint, a single-use enrollment token, and the ECR repository ARN of the ClickHouse cluster chart (the `chart_repository_arn` input of the [Terraform roots](/products/bring-your-own-cloud/connector/terraform-aws)). A Terraform install also receives the platform bundle here: on Helm `clicklink clctl init --managed --from-terraform --platform-bundle` applies it, and on a VM `clicklink clctl platform approve --bundle` applies it after enrollment. Any other managed install gets its first bundle later, staged by the executor and applied with `clicklink clctl platform approve` as described in [platform updates](/products/bring-your-own-cloud/connector/platform-updates); an install with `--no-managed` needs none. The token identifies your environment, so enrollment needs no extra id.
 
 ### For every install {#prerequisites-every-install}
 
