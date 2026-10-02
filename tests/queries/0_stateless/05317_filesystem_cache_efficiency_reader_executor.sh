@@ -8,8 +8,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Per-segment reuse coverage of the filesystem cache with `use_reader_executor = 1`: `active_bytes`, `passive_bytes`, `idle_bytes`
-# in `system.filesystem_cache`. Only bytes served from the cache count; filling the cache does not.
+# Per-segment reuse coverage of the filesystem cache with `use_reader_executor = 1`: `active_bytes`,
+# `passive_bytes`, `idle_bytes` in `system.filesystem_cache`. Only bytes served from the cache count;
+# filling the cache does not.
 # A private cache keeps other cache users out of the result. Its efficiency window
 # (`efficiency_window_sec`, default 600 s) counts from cache creation, so the whole test runs
 # inside window 0.
@@ -28,9 +29,9 @@ disk="disk(
     disk = 'local_disk')"
 
 # Strictly synchronous reads that always go through the cache, also on a repeated read (no
-# uncompressed cache). A cache hit counts at least one read buffer, so pin a small one: with the
-# cache, `filesystem_cache_prefer_bigger_buffer_size` would raise it to `prefetch_buffer_size`,
-# and a short forward seek would read through the gap.
+# uncompressed cache). A cache hit counts at least one read buffer, so the buffer is pinned small:
+# `filesystem_cache_prefer_bigger_buffer_size` raises it to `prefetch_buffer_size`, and
+# `remote_read_min_bytes_for_seek` reads through a short forward seek.
 read_settings=(
     --max_threads 1
     --enable_filesystem_cache 1
@@ -85,7 +86,7 @@ $CLICKHOUSE_CLIENT --query "
     SELECT sumIf(downloaded_size, queue_entry_type = 'SLRU_Protected') > 0.9 * sum(downloaded_size)
     FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
-# 4. Point queries: the first run fills 4 MiB cells, the second reuses a small part of each.
+# 4. Point queries: the first run fills 4 MiB segments, the second reuses a small part of each.
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '$cache_name'"
 for _ in 1 2; do
     $CLICKHOUSE_CLIENT "${read_settings[@]}" --query "

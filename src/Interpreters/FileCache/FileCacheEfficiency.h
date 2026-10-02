@@ -47,7 +47,6 @@ public:
     /// The last full window.
     Snapshot getSnapshot();
 
-    /// For tests only.
     void shiftTimeForTesting(std::chrono::milliseconds shift) { time_shift_for_testing_ms += shift.count(); }
 
 private:

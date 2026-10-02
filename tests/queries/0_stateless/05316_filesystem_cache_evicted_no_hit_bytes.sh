@@ -5,8 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # `FilesystemCacheEvictedNoHitBytes` counts bytes evicted from file segments that the cache never served.
-# The private LRU cache holds one table but not two. With SLRU new segments would compete only
-# inside the probationary queue, and the query would evict its own new segments.
+# The private LRU cache holds one table but not two. With SLRU, new segments compete only inside
+# the probationary queue, so the query evicts its own new segments.
 cache_name="cache_no_hit_${CLICKHOUSE_DATABASE}"
 
 disk="disk(

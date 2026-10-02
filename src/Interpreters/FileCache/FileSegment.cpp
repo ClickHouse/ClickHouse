@@ -1530,7 +1530,6 @@ void FileSegment::increasePriority()
 namespace
 {
 
-/// The number of the last efficiency granule of a file segment of `size` bytes.
 size_t lastGranuleNumber(size_t size)
 {
     return (size - 1) / FileSegment::EFFICIENCY_GRANULE_SIZE;

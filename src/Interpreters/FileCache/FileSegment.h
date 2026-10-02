@@ -176,7 +176,8 @@ public:
     /// `markRead` counts reuse in granules of this size; the last one is cut at the segment end.
     static constexpr size_t EFFICIENCY_GRANULE_SIZE = 64 * 1024;
 
-    /// Marks `[offset, offset + size)` as served from the cache. Not under a key or file segment lock.
+    /// Marks `[offset, offset + size)` as served from the cache. The caller holds this file segment, so its
+    /// range does not shrink during the call.
     void markRead(size_t offset, size_t size);
 
     /// Whether the cache served any byte of this file segment since it was cached.
