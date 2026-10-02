@@ -138,8 +138,9 @@ def test_parallel_inserts_generated_parts(started_cluster, parallel_inserts):
     )
 
 
+@pytest.mark.parametrize("mode", ["unordered", "exclusive"])
 @pytest.mark.parametrize("parallel_inserts", [0, 1])
-def test_parallel_inserts_with_failures(started_cluster, parallel_inserts):
+def test_parallel_inserts_with_failures(started_cluster, mode, parallel_inserts):
     """Ensure that in case of errors, files won't be inserted multiple times w/ and w/o parallel_inserts"""
     node = started_cluster.instances["instance"]
 
@@ -156,7 +157,7 @@ def test_parallel_inserts_with_failures(started_cluster, parallel_inserts):
         started_cluster,
         node,
         table_name,
-        "unordered",
+        mode,
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
@@ -318,8 +319,11 @@ def test_batch_set_processing_failure_does_not_crash(started_cluster):
     conflict_file = f"{files_path}/test_1.csv"
     conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
     zk = started_cluster.get_kazoo_client("zoo1")
-    zk.ensure_path(f"{keeper_path}/processing")
-    zk.create(f"{keeper_path}/processing/{conflict_node}", b"conflict")
+    # Persistent processing controls the node mode; the queue still creates live nodes
+    # under `processing`, so seed the exact path used by its Keeper multi.
+    processing_path = f"{keeper_path}/processing"
+    zk.ensure_path(processing_path)
+    zk.create(f"{processing_path}/{conflict_node}", b"conflict")
 
     def batch_set_processing_failures():
         node.query("SELECT 1")  # fails loudly if the server aborted
@@ -356,7 +360,7 @@ def test_batch_set_processing_failure_does_not_crash(started_cluster):
 
         # Remove the artificial conflict and confirm the queue keeps making progress after the
         # failed batch (the iterator recovered rather than getting stuck or having crashed).
-        zk.delete(f"{keeper_path}/processing/{conflict_node}")
+        zk.delete(f"{processing_path}/{conflict_node}")
 
         def get_count():
             return int(node.query(f"SELECT count() FROM {dst_table_name}"))

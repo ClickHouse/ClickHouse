@@ -218,11 +218,6 @@ public:
         ++s;
     }
 
-    void skipSerializedInArena(ReadBuffer & in) const override
-    {
-        data->skipSerializedInArena(in);
-    }
-
     void updateHashWithValue(size_t, SipHash & hash) const override
     {
         data->updateHashWithValue(0, hash);
@@ -331,6 +326,11 @@ public:
         return data->isDefaultAt(0) ? s : 0;
     }
 
+    bool hasOnlyTypeDefaults() const override
+    {
+        return s == 0 || data->hasOnlyTypeDefaults();
+    }
+
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         if (!data->isDefaultAt(0))
@@ -350,12 +350,18 @@ public:
     bool valuesHaveFixedSize() const override { return data->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return data->sizeOfValueIfFixed(); }
     std::string_view getRawData() const override { return data->getRawData(); }
+    /// `getRawData` holds one row, not `size()` rows, so there are no planes to read by number.
+    ColumnPlanes getPlanes() const override { return ColumnPlanes(ColumnPlanes::Shape::Rows, this); }
 
     /// Not part of the common interface.
 
     IColumn & getDataColumn() { return *data; }
     const IColumn & getDataColumn() const { return *data; }
     const ColumnPtr & getDataColumnPtr() const { return data; }
+
+    /// Replace the single broadcast value (the number of rows is unchanged). `value` must have exactly one row.
+    /// Only valid while building the column (uniquely owned), e.g. when a serialization fills the value it read.
+    void setValue(const ColumnPtr & value);
 
     Field getField() const { return getDataColumn()[0]; }
 

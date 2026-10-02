@@ -241,12 +241,12 @@ public:
             /// Merging the two sets of flags into a temporary buffer vectorizes better
             /// than fusing both flags into the accumulation loop.
             const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
-            std::unique_ptr<UInt8[]> final_flags(new UInt8[row_end]);
+            const size_t span = row_end - row_begin;
+            auto final_flags = std::make_unique_for_overwrite<UInt8[]>(span);
             for (size_t i = row_begin; i < row_end; ++i)
-                final_flags[i] = (!null_map[i]) & !!if_flags[i];
+                final_flags[i - row_begin] = (!null_map[i]) & !!if_flags[i];
 
-            addManyConditional<false>(this->data(place), column.getData().data(), final_flags.get(), row_begin, row_end);
+            addManyConditional<false>(this->data(place), column.getData().data() + row_begin, final_flags.get(), 0, span);
         }
         else
         {
@@ -392,13 +392,7 @@ INSERT INTO t VALUES (44), (28), (13), (85);
 SELECT groupBitOr(num) FROM t;
         )",
         R"(
--- Result:
--- binary     decimal
--- 01111101 = 125
-
-┌─groupBitOr(num)─┐
-│             125 │
-└─────────────────┘
+125
         )"
     }
     };
@@ -436,13 +430,7 @@ INSERT INTO t VALUES (44), (28), (13), (85);
 SELECT groupBitAnd(num) FROM t;
             )",
             R"(
--- Result:
--- binary     decimal
--- 00000100 = 4
-
-┌─groupBitAnd(num)─┐
-│                4 │
-└──────────────────┘
+4
             )"
     }
     };
@@ -480,13 +468,7 @@ INSERT INTO t VALUES (44), (28), (13), (85);
 SELECT groupBitXor(num) FROM t;
         )",
         R"(
--- Result:
--- binary     decimal
--- 01101000 = 104
-
-┌─groupBitXor(num)─┐
-│              104 │
-└──────────────────┘
+104
         )"
     }
     };

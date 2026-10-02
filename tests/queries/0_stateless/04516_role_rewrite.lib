@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
-table_name="table_04516_${CLICKHOUSE_DATABASE}"
-user_a="user_04516_a_${CLICKHOUSE_DATABASE}"
-user_b="user_04516_b_${CLICKHOUSE_DATABASE}"
-role1="role1_04516_${CLICKHOUSE_DATABASE}"
-role2="role2_04516_${CLICKHOUSE_DATABASE}"
-role3="role3_04516_${CLICKHOUSE_DATABASE}"
-role4="role4_04516_${CLICKHOUSE_DATABASE}"
+table_name="table_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+user_a="user_a_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+user_b="user_b_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+role1="role1_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+role2="role2_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+role3="role3_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+role4="role4_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 query_as_user()
 {

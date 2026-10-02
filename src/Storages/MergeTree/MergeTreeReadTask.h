@@ -113,6 +113,9 @@ struct MergeTreeReadTaskInfo
     MergedPartOffsetsPtr merged_part_offsets;
     /// Prewhere steps that should be applied to execute on-fly mutations for part.
     PrewhereExprSteps mutation_steps;
+    /// Whether `mutation_steps` holds steps for on-fly mutations, as opposed to only the step that
+    /// applies an already materialized lightweight-delete mask.
+    bool has_on_fly_mutation_steps = false;
     /// Patches that should be applied for part.
     PatchPartsForReader patch_parts;
     /// Column names to read during PREWHERE and WHERE
@@ -157,7 +160,7 @@ public:
         MergeTreePatchReaders patches;
         MergeTreeReaderPtr prepared_index;
 
-        void updateAllMarkRanges(const MarkRanges & ranges);
+        void updateAllMarkRanges(const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges);
     };
 
     struct BlockSizeParams
@@ -241,8 +244,11 @@ public:
         bool collect_predicate_statistics);
 
 private:
-    using DataflowCacheUpdateCallback
-        = std::function<void(const ColumnsWithTypeAndName & columns, size_t read_bytes, std::optional<bool> & should_continue_sampling)>;
+    using DataflowCacheUpdateCallback = std::function<void(
+        const ColumnsWithTypeAndName & columns,
+        const NameSet & partially_read_columns,
+        size_t read_bytes,
+        std::optional<bool> & should_continue_sampling)>;
 
     UInt64 estimateNumRows() const;
 

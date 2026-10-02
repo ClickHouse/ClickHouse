@@ -87,7 +87,7 @@ LIMIT 7
 │ 5102 │ comment │ staunch      │ 2007-03-20 02:42:47 │ "Well this is exactly the kind of thing that isn't very obvious. It sounds like once you're wealthy there's a new set of rules you have to live by. It's a shame everyone has had to re-learn these things for themselves because a few bad apples can control their jealousy.<p>Very good to hear it's somewhere in your essay queue though. I'll try not to get rich before you write it, so I have some idea of what to expect :-)" │ []       │ ['Well','this','is','exactly','the','kind','of','thing','that','isn','t','very','obvious','It','sounds','like','once','you','re','wealthy','there','s','a','new','set','of','rules','you','have','to','live','by','It','s','a','shame','everyone','has','had','to','re','learn','these','things','for','themselves','because','a','few','bad','apples','can','control','their','jealousy','p','Very','good','to','hear','it','s','somewhere','in','your','essay','queue','though','I','ll','try','not','to','get','rich','before','you','write','it','so','I','have','some','idea','of','what','to','expect'] │
 ```
 
-5. もう 1 つの方法は、`cat` のようなツールを使ってファイルの内容を `clickhouse-client` に渡すことです。たとえば、次のコマンドは `<` 演算子を使った場合と同じ結果になります。
+5. もう 1 つの方法は、`cat` のようなツールを使ってファイルの内容を `clickhouse-client` にストリーミングすることです。たとえば、次のコマンドは `<` 演算子を使った場合と同じ結果になります。
 
 ```bash
 cat comments.tsv | clickhouse-client \
@@ -110,4 +110,4 @@ cat comments.tsv | clickhouse-client \
 "
 ```
 
-ローカル環境のオペレーティングシステムに `clickhouse-client` をインストールする方法について詳しくは、[`clickhouse-client` のドキュメントページ](/ja/concepts/features/interfaces/cli)を参照してください。
+ローカル環境のオペレーティングシステムに `clickhouse-client` をインストールする方法について詳しくは、[`clickhouse-client` のドキュメントページ](/ja/concepts/features/interfaces/client)を参照してください。

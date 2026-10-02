@@ -8,7 +8,7 @@
       ]
     },
     {
-      "group": "Функции",
+      "group": "Возможности",
       "pages": [
         "ru/products/managed-postgres/connection",
         "ru/products/managed-postgres/settings",
@@ -19,14 +19,23 @@
         "ru/products/managed-postgres/high-availability",
         "ru/products/managed-postgres/read-replicas",
         "ru/products/managed-postgres/backup-and-restore",
+        "ru/products/managed-postgres/branching",
         "ru/products/managed-postgres/extensions",
         {
           "group": "pg_clickhouse",
           "pages": [
+            "ru/products/managed-postgres/extensions/pg_clickhouse/introduction",
             "ru/products/managed-postgres/extensions/pg_clickhouse/reference",
             "ru/products/managed-postgres/extensions/pg_clickhouse/tutorial"
-          ],
-          "root": "ru/products/managed-postgres/extensions/pg_clickhouse/introduction"
+          ]
+        },
+        {
+          "group": "pg_chdb",
+          "pages": [
+            "ru/products/managed-postgres/extensions/chdb/introduction",
+            "ru/products/managed-postgres/extensions/chdb/chdb",
+            "ru/products/managed-postgres/extensions/chdb/chdb_hook"
+          ]
         },
         "ru/products/managed-postgres/upgrades",
         "ru/products/managed-postgres/openapi",
@@ -34,33 +43,28 @@
       ]
     },
     {
-      "group": "Бенчмарки",
-      "pages": [
-        "ru/products/managed-postgres/benchmarks"
-      ]
-    },
-    {
-      "group": "Тарифы",
+      "group": "Цены",
       "pages": [
         "ru/products/managed-postgres/pricing"
       ]
     },
     {
-      "group": "Интеграция ClickHouse",
+      "group": "Интеграция с ClickHouse",
       "pages": [
-        "ru/products/managed-postgres/clickhouse-integration"
+        "ru/products/managed-postgres/sync-to-clickhouse/clickpipes",
+        "ru/products/managed-postgres/sync-to-clickhouse/walshadow"
       ]
     },
     {
       "group": "Миграции",
       "pages": [
         "ru/products/managed-postgres/migrations/overview",
-        "ru/products/managed-postgres/migrations/pg_dump-pg_restore",
-        "ru/products/managed-postgres/migrations/logical-replication",
-        "ru/products/managed-postgres/migrations/peerdb",
         "ru/products/managed-postgres/migrations/clickpipes",
         "ru/products/managed-postgres/migrations/data-validation",
-        "ru/products/managed-postgres/migrations/clickhouse-cloud",
+        "ru/products/managed-postgres/migrations/logical-replication",
+        "ru/products/managed-postgres/migrations/neon",
+        "ru/products/managed-postgres/migrations/pg_dump-pg_restore",
+        "ru/products/managed-postgres/migrations/peerdb",
         "ru/products/managed-postgres/migrations/faq"
       ]
     },
@@ -71,16 +75,17 @@
         "ru/products/managed-postgres/monitoring/dashboard",
         "ru/products/managed-postgres/monitoring/metrics",
         "ru/products/managed-postgres/monitoring/prometheus",
-        "ru/products/managed-postgres/monitoring/query-insights"
+        "ru/products/managed-postgres/monitoring/query-insights",
+        "ru/products/managed-postgres/monitoring/notifications"
       ]
     },
     {
-      "group": "FAQ",
+      "group": "Часто задаваемые вопросы",
       "pages": [
         "ru/products/managed-postgres/faq"
       ]
     }
   ],
   "icon": "/images/icons/icon-postgres.svg",
-  "item": "Managed Postgres"
+  "item": "ClickHouse Managed Postgres"
 }
