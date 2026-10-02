@@ -35,11 +35,15 @@ namespace Setting
 /// Append to `columns_to_read` the columns that the `DEFAULT` expressions of the already requested
 /// columns read, when those columns exist in the data file. Without them a column missing from the
 /// file cannot be materialized from its default (see `AddingDefaultsTransform`).
+/// Hive partition columns are never read from the file: they are appended from the file path after
+/// the per-file reader pipeline, where the defaults are evaluated, so a default over one of them
+/// cannot be evaluated - reading such a column from the file would silently give it the type default.
 static void addDefaultExpressionInputsToRead(
     Strings & columns_to_read,
     const NamesAndTypesList & columns_in_data_file,
     const StorageSnapshotPtr & storage_snapshot,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const PrepareReadingFromFormatHiveParams & hive_parameters)
 {
     const auto & columns = storage_snapshot->metadata->getColumns();
     const auto & column_defaults = columns.getDefaults();
@@ -49,7 +53,8 @@ static void addDefaultExpressionInputsToRead(
     NameSet already_read(columns_to_read.begin(), columns_to_read.end());
     NameSet available_in_file;
     for (const auto & column : columns_in_data_file)
-        available_in_file.insert(column.name);
+        if (!hive_parameters.hive_partition_columns_to_read_from_file_path_map.contains(column.name))
+            available_in_file.insert(column.name);
 
     /// `columns_to_read` grows while it is walked, so a default that reads another defaulted
     /// column pulls in the inputs of that one too.
@@ -149,7 +154,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
         /// expression is expanded first, because a column matcher only names its source columns
         /// after expansion. The extra columns are appended after `source_header` and
         /// `requested_columns` are built, so they are read but not returned.
-        addDefaultExpressionInputsToRead(columns_to_read, columns_in_data_file, storage_snapshot, context);
+        addDefaultExpressionInputsToRead(columns_to_read, columns_in_data_file, storage_snapshot, context, hive_parameters);
 
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
     }
