@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # system.filelog_files: one row per file of a FileLog table with its read offset, size, number of records read and
-# state; it follows files added to and removed from the directory, and shows only tables the user may see.
+# state; it follows files added to, removed from and renamed in the directory, shows only tables the user may see, and
+# shows a table of a lazy_load_tables database once it is loaded.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -70,6 +71,14 @@ while true; do
 done
 files
 
+echo '-- a renamed file whose name is reused, before the table processes it'
+# No materialized view reads this table, so the rename is processed only by the next SELECT: until then the old
+# inode's row keeps the name, which now refers to another file.
+mv "${dir}/a.jsonl" "${dir}/a.jsonl.1"
+printf '{"a":10}\n' > "${dir}/a.jsonl"
+${CLICKHOUSE_CLIENT} -q "SELECT file_name, file_size IS NULL
+    FROM system.filelog_files WHERE database = currentDatabase() AND table = 'file_log' ORDER BY file_name"
+
 echo '-- access'
 user="user_${CLICKHOUSE_DATABASE}_filelog"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}"
@@ -79,6 +88,23 @@ ${CLICKHOUSE_CLIENT} --user "${user}" -q "SELECT count() FROM system.filelog_fil
 ${CLICKHOUSE_CLIENT} -q "GRANT SHOW TABLES ON ${CLICKHOUSE_DATABASE}.file_log TO ${user}"
 ${CLICKHOUSE_CLIENT} --user "${user}" -q "SELECT count() FROM system.filelog_files WHERE database = '${CLICKHOUSE_DATABASE}'"
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${user}"
+
+echo '-- a table of a lazy_load_tables database is shown once it is loaded'
+lazy_db="${CLICKHOUSE_DATABASE}_lazy"
+lazy_dir="${dir}_lazy"
+mkdir -p "${lazy_dir}"
+printf '{"a":1}\n' > "${lazy_dir}/a.jsonl"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${lazy_db}"
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${lazy_db} ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${lazy_db}.file_log (a UInt64) ENGINE = FileLog('${lazy_dir}/', 'JSONEachRow')"
+${CLICKHOUSE_CLIENT} -q "DETACH DATABASE ${lazy_db}"
+${CLICKHOUSE_CLIENT} -q "ATTACH DATABASE ${lazy_db}"
+${CLICKHOUSE_CLIENT} -q "SELECT engine FROM system.tables WHERE database = '${lazy_db}' AND name = 'file_log'"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.filelog_files WHERE database = '${lazy_db}'"
+${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT count() FROM ${lazy_db}.file_log"
+${CLICKHOUSE_CLIENT} -q "SELECT file_name, current_offset, num_records_read FROM system.filelog_files WHERE database = '${lazy_db}'"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${lazy_db} SYNC"
+rm -rf "${lazy_dir:?}"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log"
 rm -rf "${dir:?}"

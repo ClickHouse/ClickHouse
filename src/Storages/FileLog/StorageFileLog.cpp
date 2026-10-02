@@ -28,6 +28,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -1268,6 +1269,8 @@ void StorageFileLog::addRecordsRead(UInt64 inode, size_t num_records)
 
 void StorageFileLog::setFilesException(const std::vector<UInt64> & inodes, const String & exception)
 {
+    /// Called from a catch handler, where the memory tracker may still throw.
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     const auto now = static_cast<UInt64>(time(nullptr));
     std::lock_guard lock(file_statistics_mutex);
     for (const auto inode : inodes)

@@ -14,6 +14,14 @@ c.jsonl	8	8	1	consuming	1
 -- a file recreated with the same inode starts over
 a.jsonl	32	32	4	consuming	1
 c.jsonl	16	16	2	consuming	1
+-- a renamed file whose name is reused, before the table processes it
+a.jsonl	1
+c.jsonl	0
 -- access
 0
 2
+-- a table of a lazy_load_tables database is shown once it is loaded
+TableProxy
+0
+1
+a.jsonl	8	1

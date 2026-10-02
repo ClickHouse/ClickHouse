@@ -16,6 +16,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/FileLog/StorageFileLog.h>
+#include <Storages/StorageTableProxy.h>
 
 #include <sys/stat.h>
 
@@ -60,7 +61,10 @@ void StorageSystemFileLogFiles::fillData(MutableColumns & res_columns, ContextPt
     {
         for (auto it = db.second->getTablesIterator(context, {}, /* skip_not_loaded */ true); it->isValid(); it->next())
         {
-            const auto * file_log = dynamic_cast<const StorageFileLog *>(it->table().get());
+            StoragePtr table = it->table();
+            if (const auto * proxy = dynamic_cast<const StorageTableProxy *>(table.get()))
+                table = proxy->tryGetNested();
+            const auto * file_log = dynamic_cast<const StorageFileLog *>(table.get());
             if (!file_log)
                 continue;
             if (!show_tables_granted && !access->isGranted(AccessType::SHOW_TABLES, it->databaseName(), it->name()))
