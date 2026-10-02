@@ -139,6 +139,21 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
     row_count += other->row_count;
 }
 
+void StatisticsBasic::setSummary(UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count)
+{
+    row_count = rows;
+    if (tracks_numeric)
+    {
+        min = min_value;
+        max = max_value;
+    }
+    /// A summary has no byte lengths.
+    tracks_string = false;
+    /// For any other type the default count would count zeros, which a summary does not give.
+    has_default_count = is_nullable;
+    default_count = is_nullable ? null_count : 0;
+}
+
 void StatisticsBasic::serialize(WriteBuffer & buf)
 {
     writeIntBinary(row_count, buf);
