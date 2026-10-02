@@ -2,14 +2,10 @@
 
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
-#include <IO/parseHTTPDate.h>
-#include <Common/CurrentThread.h>
-#include <Common/FailPoint.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 
 
 namespace ProfileEvents
@@ -22,6 +18,20 @@ namespace ProfileEvents
 
 namespace
 {
+
+bool isRetriableError(const Poco::Net::HTTPResponse::HTTPStatus http_status) noexcept
+{
+    static constexpr std::array non_retriable_errors{
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_BAD_REQUEST,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_IMPLEMENTED,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_METHOD_NOT_ALLOWED};
+
+    return std::all_of(
+        non_retriable_errors.begin(), non_retriable_errors.end(), [&](const auto status) { return http_status != status; });
+}
 
 Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPResponse & response, bool enable_url_encoding)
 {
@@ -58,22 +68,6 @@ public:
 namespace DB
 {
 
-namespace
-{
-
-bool isQueryTimeLimitReached()
-{
-    CurrentThread::checkIfNotCancelled();
-
-    if (auto query_context = CurrentThread::tryGetQueryContext())
-        if (auto query_status = query_context->getProcessListElementSafe())
-            return !query_status->checkTimeLimit();
-
-    return false;
-}
-
-}
-
 namespace ErrorCodes
 {
     extern const int TOO_MANY_REDIRECTS;
@@ -81,20 +75,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
-    extern const int QUERY_WAS_CANCELLED;
-}
-
-ReadInterruptedException::ReadInterruptedException(std::exception_ptr original_exception_)
-    : Exception(ErrorCodes::QUERY_WAS_CANCELLED, "The HTTP read was interrupted by cancellation")
-    , original_exception(std::move(original_exception_))
-{
-}
-
-namespace FailPoints
-{
-    extern const char http_read_buffer_pause_before_metadata_fallback[];
-    extern const char storage_url_pause_before_request_attempt[];
-    extern const char storage_url_pause_before_retry_attempt[];
 }
 
 std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::CallResult::transformToReadBuffer(size_t buf_size) &&
@@ -125,12 +105,7 @@ void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, s
         request.setHost(current_uri.getHost());
 
     if (out_stream_callback)
-    {
-        if (out_stream_fixed_content_length)
-            request.setContentLength(static_cast<std::streamsize>(*out_stream_fixed_content_length));
-        else
-            request.setChunkedTransferEncoding(true);
-    }
+        request.setChunkedTransferEncoding(true);
     else if (method == Poco::Net::HTTPRequest::HTTP_POST)
         request.setContentLength(0);    /// No callback - no body
 
@@ -161,24 +136,18 @@ std::optional<size_t> ReadWriteBufferFromHTTP::tryGetFileSize()
         }
         catch (const HTTPException &)
         {
-            /// A file without a size is fine, but a request interrupted by a cancellation must not
-            /// come out as such a file, see rethrowIfReadInterrupted.
-            rethrowIfReadInterrupted();
             return std::nullopt;
         }
         catch (const NetException &)
         {
-            rethrowIfReadInterrupted();
             return std::nullopt;
         }
         catch (const Poco::Net::NetException &)
         {
-            rethrowIfReadInterrupted();
             return std::nullopt;
         }
         catch (const Poco::IOException &)
         {
-            rethrowIfReadInterrupted();
             return std::nullopt;
         }
     }
@@ -229,12 +198,9 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     size_t max_redirects_,
     bool enable_url_encoding_,
     OutStreamCallback out_stream_callback_,
-    CancellationPtr cancellation_,
-    std::optional<size_t> out_stream_fixed_content_length_,
     bool use_external_buffer_,
     bool http_skip_not_found_url_,
     HTTPHeaderEntries http_header_entries_,
-    RedirectCallback redirect_callback_,
     bool delay_initialization,
     std::optional<HTTPFileInfo> file_info_)
     : SeekableReadBuffer(nullptr, 0)
@@ -252,29 +218,26 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , use_external_buffer(use_external_buffer_)
     , http_skip_not_found_url(http_skip_not_found_url_)
     , out_stream_callback(std::move(out_stream_callback_))
-    , out_stream_fixed_content_length(out_stream_fixed_content_length_)
-    , redirect_callback(std::move(redirect_callback_))
     , redirects(0)
     , http_header_entries {std::move(http_header_entries_)}
     , file_info(file_info_)
     , log(getLogger("ReadWriteBufferFromHTTP"))
-    , cancellation(std::move(cancellation_))
 {
     current_uri = initial_uri;
 
     if (current_uri.getPath().empty())
         current_uri.setPath("/");
 
-    if (read_settings.http_settings.max_tries <= 0 || read_settings.http_settings.retry_initial_backoff_ms <= 0
-        || read_settings.http_settings.retry_initial_backoff_ms >= read_settings.http_settings.retry_max_backoff_ms)
+    if (read_settings.http_max_tries <= 0 || read_settings.http_retry_initial_backoff_ms <= 0
+        || read_settings.http_retry_initial_backoff_ms >= read_settings.http_retry_max_backoff_ms)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Invalid setting for http backoff, "
             "must be http_max_tries >= 1 (current is {}) and "
-            "0 < http_retry_initial_backoff_ms < http_retry_max_backoff_ms (now 0 < {} < {})",
-            read_settings.http_settings.max_tries,
-            read_settings.http_settings.retry_initial_backoff_ms,
-            read_settings.http_settings.retry_max_backoff_ms);
+            "0 < http_retry_initial_backoff_ms < settings.http_retry_max_backoff_ms (now 0 < {} < {})",
+            read_settings.http_max_tries,
+            read_settings.http_retry_initial_backoff_ms,
+            read_settings.http_retry_max_backoff_ms);
 
     // Configure User-Agent if it not already set.
     const std::string user_agent = "User-Agent";
@@ -289,7 +252,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     if (!delay_initialization && use_external_buffer)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Invalid setting for ReadWriteBufferFromHTTP "
+            "Invalid setting for ReadWriteBufferFromHTTP"
             "delay_initialization is false and use_external_buffer it true.");
 
     if (!delay_initialization)
@@ -340,9 +303,6 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
                 " Redirects are restricted to prevent possible attack when a malicious server redirects to an internal resource, bypassing the authentication or firewall.",
                 initial_uri.toString(), max_redirects ? "increase the allowed maximum number of" : "allow");
 
-        if (redirect_callback)
-            redirect_callback(current_uri, uri_redirect);
-
         current_uri = uri_redirect;
         result = callImpl(response, method_, range, true);
     }
@@ -353,45 +313,18 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
 
 void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                                             std::function<void()> on_retry,
-                                            bool mute_logging,
-                                            bool stop_before_first_attempt_when_cancelled) const
+                                            bool mute_logging) const
 {
-    [[maybe_unused]] auto milliseconds_to_wait = read_settings.http_settings.retry_initial_backoff_ms;
+    [[maybe_unused]] auto milliseconds_to_wait = read_settings.http_retry_initial_backoff_ms;
 
     bool is_retriable = true;
     std::exception_ptr exception = nullptr;
 
-    for (size_t attempt = 1; attempt <= read_settings.http_settings.max_tries; ++attempt)
+    for (size_t attempt = 1; attempt <= read_settings.http_max_tries; ++attempt)
     {
-        [[maybe_unused]] bool last_attempt = attempt + 1 > read_settings.http_settings.max_tries;
+        [[maybe_unused]] bool last_attempt = attempt + 1 > read_settings.http_max_tries;
 
         String error_message;
-
-        /// The callers cannot protect the interval after their last cancellation check and before
-        /// this attempt starts. Do not issue a request after cancellation in that interval. A
-        /// caller which continues an already-open response can opt out: consuming its buffered
-        /// data does not issue a request, and it may reveal an error that must not be masked by a
-        /// soft cancellation.
-        FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_request_attempt);
-        const bool soft_time_limit_reached = isQueryTimeLimitReached() && cancellation;
-        if (soft_time_limit_reached && cancellation)
-            cancellation->cancel(true);
-
-        if ((soft_time_limit_reached || isReadCancelled()) && (stop_before_first_attempt_when_cancelled || exception))
-            throw ReadInterruptedException(exception);
-
-        /// `waitBeforeRetry` also cannot protect the interval after it returns and before a retry
-        /// starts. Keep a dedicated failpoint for the retry regression test.
-        if (attempt > 1)
-        {
-            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_retry_attempt);
-            const bool retry_soft_time_limit_reached = isQueryTimeLimitReached() && cancellation;
-            if (retry_soft_time_limit_reached && cancellation)
-                cancellation->cancel(true);
-
-            if (retry_soft_time_limit_reached || isReadCancelled())
-                throw ReadInterruptedException(exception);
-        }
 
         try
         {
@@ -410,7 +343,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         }
         catch (HTTPException & e)
         {
-            if (!isRetriableHTTPError(e.getHTTPStatus()))
+            if (!isRetriableError(e.getHTTPStatus()))
                 is_retriable = false;
 
             error_message = e.displayText();
@@ -443,29 +376,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                           "Failed at try {}/{}.",
                           initial_uri.toString(), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
                           error_message,
-                          attempt, read_settings.http_settings.max_tries);
-
-            /// The same exit as on the retry path below, for the attempt after which there is nothing
-            /// left to retry: a query killed or timed out while the last attempt was in flight is
-            /// reported as a cancellation instead of the network error we happen to have at hand.
-            /// Without it the callers which treat a failed request as an answer - the fallback of
-            /// getFileInfo for the servers without HEAD support, tryGetFileSize,
-            /// tryGetLastModificationTime, the probing of the next failover option in
-            /// StorageURLSource::getFirstAvailableURIAndReadBuffer - would go on working for a query
-            /// that is already gone.
-            /// The cancellation flag, on the other hand, deliberately does not change this exit: the
-            /// error of the attempt that really failed is the only reason we have, it is what the
-            /// caller would get with no cancellation at all, and a reader which must still succeed
-            /// discards it, see StorageURLSource::generate. Replacing it with a synthesized
-            /// cancellation error could mask the failure that tore the pipeline down. Marking the
-            /// error lets that reader tell it from a failure the cancellation has nothing to do
-            /// with, which it must not discard.
-            const bool final_attempt_soft_time_limit_reached = isQueryTimeLimitReached() && cancellation;
-            if (final_attempt_soft_time_limit_reached && cancellation)
-                cancellation->cancel(true);
-
-            if (final_attempt_soft_time_limit_reached || isReadCancelled())
-                throw ReadInterruptedException(exception);
+                          attempt, read_settings.http_max_tries);
 
             std::rethrow_exception(exception);
         }
@@ -482,135 +393,13 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                          "Will retry with current backoff wait is {}/{} ms.",
                          initial_uri.toString(), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
                          error_message,
-                         attempt + 1, read_settings.http_settings.max_tries,
-                         milliseconds_to_wait, read_settings.http_settings.retry_max_backoff_ms);
+                         attempt + 1, read_settings.http_max_tries,
+                         milliseconds_to_wait, read_settings.http_retry_max_backoff_ms);
 
-            const bool cancelled = waitBeforeRetry(milliseconds_to_wait);
-            milliseconds_to_wait = std::min(milliseconds_to_wait * 2, read_settings.http_settings.retry_max_backoff_ms);
-
-            /// One exit for all the attempts: a killed or timed out query is reported as a cancellation
-            /// instead of the network error we happen to have at hand, the same way as it is done for S3.
-            const bool retry_wait_soft_time_limit_reached = isQueryTimeLimitReached() && cancellation;
-            if (retry_wait_soft_time_limit_reached && cancellation)
-                cancellation->cancel(true);
-
-            if (cancelled || retry_wait_soft_time_limit_reached)
-            {
-                /// The read was cancelled for another reason: the pipeline is being torn down because
-                /// something else in the query has already failed, the client has disconnected, or the
-                /// query gave up on further data (a soft timeout with the `break` overflow mode, or a
-                /// consumer that has enough data). There is nothing to gain from the remaining
-                /// attempts, so report the error of the last one - it is the only reason we have, and
-                /// it is what the caller would get after the attempts were exhausted anyway. Mark it,
-                /// so that the reader which discards the errors of the read it has cancelled can tell
-                /// this one from a failure the cancellation has nothing to do with, see
-                /// StorageURLSource::generate.
-                /// Do not leave this loop silently: the callers rely on getting either their data or an
-                /// exception, and treat a normal return as a success.
-                if (!mute_logging)
-                    LOG_DEBUG(log,
-                              "Stopped retrying the request to '{}'{} at try {}/{}, because the read was cancelled. "
-                              "Error: '{}'.",
-                              initial_uri.toString(), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
-                              attempt, read_settings.http_settings.max_tries,
-                              error_message);
-
-                throw ReadInterruptedException(exception);
-            }
+            sleepForMilliseconds(milliseconds_to_wait);
+            milliseconds_to_wait = std::min(milliseconds_to_wait * 2, read_settings.http_retry_max_backoff_ms);
         }
     }
-}
-
-
-bool ReadWriteBufferFromHTTP::isReadCancelled() const
-{
-    return cancellation && cancellation->isCancelled();
-}
-
-
-/// The fallbacks of tryGetFileSize, tryGetLastModificationTime and getFileInfo treat the failure
-/// of their metadata request as an answer: the file simply comes out as one without the metadata.
-/// A request interrupted by a cancellation must not come out that way - the caller would go on
-/// requesting the data no one needs - so its error is rethrown. The interruption is identified by
-/// the request-local exception doWithRetries throws, not by the cancellation flag itself: an error
-/// the cancellation had nothing to do with - one that had already happened when the cancellation
-/// arrived - stays swallowed no matter how the delivery of the cancellation races with the
-/// unwinding, so a soft cancellation cannot turn a failure the fallback would have swallowed into
-/// a failure of the query, see StorageURLSource::generate.
-void ReadWriteBufferFromHTTP::rethrowIfReadInterrupted() const
-{
-    /// Holds the thread right before the check, so that a test can deliver a cancellation to a
-    /// request which had already failed on its own, see
-    /// 04869_url_function_stale_metadata_error_after_soft_cancel.
-    FailPointInjection::pauseFailPoint(FailPoints::http_read_buffer_pause_before_metadata_fallback);
-
-    try
-    {
-        throw;
-    }
-    catch (const ReadInterruptedException &)
-    {
-        throw;
-    }
-    catch (...)
-    {
-        // Ok: only `ReadInterruptedException` needs to escape this metadata fallback.
-        return;
-    }
-}
-
-
-bool ReadWriteBufferFromHTTP::waitBeforeRetry(size_t milliseconds) const
-{
-    constexpr size_t cancellation_check_interval_ms = 100;
-
-    if (cancellation)
-    {
-        /// The owner's `cancel` wakes this wait for every cancellation which reaches the
-        /// processors. A soft time limit with the `break` overflow mode does not always reach
-        /// them: it is noticed by the executor's `checkTimeLimitSoft` polls, which happen between
-        /// the execution steps, so when the only executor thread is the one sleeping right here -
-        /// a single-source query under `PullingPipelineExecutor` or `CompletedPipelineExecutor` -
-        /// no one notices the timeout while this wait lasts (`CancellationChecker` only cancels
-        /// the query for the `throw` overflow mode). Poll the time limit as well, on the same
-        /// grid as the token-less wait below, and latch it into the flag, so the deadline is not
-        /// missed by the remainder of the backoff.
-        while (true)
-        {
-            const auto interval = std::min(milliseconds, cancellation_check_interval_ms);
-            if (cancellation->waitForCancellation(std::chrono::milliseconds(interval)))
-                return true;
-            milliseconds -= interval;
-
-            /// Throws for `KILL QUERY` and for a time limit with the `throw` overflow mode.
-            if (isQueryTimeLimitReached())
-            {
-                cancellation->cancel(/*softly=*/ true);
-                return true;
-            }
-
-            if (!milliseconds)
-                return false;
-        }
-    }
-
-    /// Bare HTTP readers have no owner cancellation token, but they can still be executing in a
-    /// query. Check for hard query cancellation so `KILL QUERY` and a throwing time limit do not
-    /// wait out a long backoff. A soft timeout belongs to the reader's owner, which is the only
-    /// component that knows whether returning a partial result is safe.
-    while (milliseconds)
-    {
-        const auto interval = std::min(milliseconds, cancellation_check_interval_ms);
-        sleepForMilliseconds(interval);
-        milliseconds -= interval;
-
-        /// Throws for `KILL QUERY` and for a time limit with the `throw` overflow mode. Its `false`
-        /// answer - a soft timeout with the `break` overflow mode - is deliberately ignored: with no
-        /// cancellation token there is no owner to decide whether a partial result is safe here.
-        std::ignore = isQueryTimeLimitReached();
-    }
-
-    return false;
 }
 
 
@@ -730,9 +519,7 @@ bool ReadWriteBufferFromHTTP::nextImpl()
         /*on_retry=*/ [&] ()
         {
             impl.reset();
-        },
-        false,
-        !impl);
+        });
 
     return next_result;
 }
@@ -760,7 +547,7 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
                 (offset != 0 || offset + n < *file_info->file_size))
             {
                 String explanation = fmt::format(
-                    "When reading with readBigAt {}. "
+                    "When reading with readBigAt {}."
                     "Cannot read with range: [{}, {}] (response status: {}, reason: {}), will retry",
                     initial_uri.toString(),
                     *range.begin, *range.end,
@@ -829,7 +616,7 @@ off_t ReadWriteBufferFromHTTP::seek(off_t offset_, int whence)
         if (offset_ >= position)
         {
             size_t diff = offset_ - position;
-            if (diff < read_settings.remote_fs_settings.min_bytes_for_seek)
+            if (diff < read_settings.remote_read_min_bytes_for_seek)
             {
                 ignore(diff);
                 return offset_;
@@ -915,13 +702,6 @@ Map ReadWriteBufferFromHTTP::getResponseHeaders() const
     return map;
 }
 
-std::optional<Field> ReadWriteBufferFromHTTP::getMetadata(const String & name) const
-{
-    if (name == "headers")
-        return Field(getResponseHeaders());
-    return std::nullopt;
-}
-
 void ReadWriteBufferFromHTTP::setNextCallback(NextCallback next_callback_)
 {
     next_callback = next_callback_;
@@ -944,24 +724,18 @@ std::optional<time_t> ReadWriteBufferFromHTTP::tryGetLastModificationTime()
         }
         catch (const HTTPException &)
         {
-            /// A file without a modification time is fine, but a request interrupted by a
-            /// cancellation must not come out as such a file, see rethrowIfReadInterrupted.
-            rethrowIfReadInterrupted();
             return std::nullopt;
         }
         catch (const NetException &)
         {
-            rethrowIfReadInterrupted();
             return std::nullopt;
         }
         catch (const Poco::Net::NetException &)
         {
-            rethrowIfReadInterrupted();
             return std::nullopt;
         }
         catch (const Poco::IOException &)
         {
-            rethrowIfReadInterrupted();
             return std::nullopt;
         }
     }
@@ -971,12 +745,9 @@ std::optional<time_t> ReadWriteBufferFromHTTP::tryGetLastModificationTime()
 
 ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
 {
-    if (file_info)
-        return *file_info;
-
     /// May be disabled in case the user knows in advance that the server doesn't support HEAD requests.
     /// Allows to avoid making unnecessary requests in such cases.
-    if (!read_settings.http_settings.make_head_request)
+    if (!read_settings.http_make_head_request)
         return HTTPFileInfo{};
 
     Poco::Net::HTTPResponse response;
@@ -997,20 +768,13 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
             e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_REQUEST_TIMEOUT &&
             e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_MISDIRECTED_REQUEST)
         {
-            /// But a HEAD interrupted by a cancellation must not come out as a file without
-            /// metadata: the caller would go on making requests - here, the requests for the
-            /// metadata this request failed to get - after the read has been cancelled, see
-            /// rethrowIfReadInterrupted.
-            rethrowIfReadInterrupted();
-
             return HTTPFileInfo{};
         }
 
         throw;
     }
 
-    file_info = parseFileInfo(response, 0);
-    return *file_info;
+    return parseFileInfo(response, 0);
 }
 
 ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(const Poco::Net::HTTPResponse & response, size_t requested_range_begin)
@@ -1033,25 +797,18 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
     }
 
     if (response.has("Last-Modified"))
-        res.last_modified = tryParseHTTPDate(response.get("Last-Modified"));
+    {
+        String date_str = response.get("Last-Modified");
+        struct tm info;
+        char * end = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S %Z", &info);
+        if (end == date_str.data() + date_str.size())
+            res.last_modified = timegm(&info);
+    }
 
     return res;
 }
 
 ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTPBasicCredentials & credentials_)
-{
-    return createWithBearerToken(/*bearer_token_=*/ "", credentials_);
-}
-
-ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(const std::string & bearer_token_)
-{
-    /// The buffer keeps a reference to the credentials, hence the immutable static empty object.
-    static const Poco::Net::HTTPBasicCredentials no_credentials;
-    return createWithBearerToken(bearer_token_, no_credentials);
-}
-
-ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
-    const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_)
 {
     ProxyConfiguration proxy_configuration;
 
@@ -1061,17 +818,6 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
         proxy_configuration = ProxyConfigurationResolverProvider::get(proxy_protocol)->resolve();
     }
 
-    /// A non-empty bearer token takes precedence: it and the Basic credentials occupy the
-    /// same `Authorization` header. The buffer keeps a reference to the credentials, hence
-    /// the immutable static for the bearer case (the fallback is then unused).
-    static const Poco::Net::HTTPBasicCredentials no_credentials;
-
-    /// Append the bearer header to a local copy so this does not mutate the builder:
-    /// the same builder can be reused without carrying over a stale `Authorization` header.
-    HTTPHeaderEntries header_entries = http_header_entries;
-    if (!bearer_token_.empty())
-        header_entries.emplace_back("Authorization", "Bearer " + bearer_token_);
-
     // todo it could be a problem if ReadWriteBufferFromHTTP throws
     std::unique_ptr<ReadWriteBufferFromHTTP> ptr(new ReadWriteBufferFromHTTP(
         connection_group,
@@ -1080,41 +826,18 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
         proxy_configuration,
         read_settings,
         timeouts,
-        bearer_token_.empty() ? fallback_credentials_ : no_credentials,
+        credentials_,
         remote_host_filter,
         buffer_size,
         max_redirects,
         enable_url_encoding,
         out_stream_callback,
-        cancellation,
-        out_stream_fixed_content_length,
         use_external_buffer,
         http_skip_not_found_url,
-        header_entries,
-        redirect_callback,
+        http_header_entries,
         delay_initialization,
         /*file_info_=*/ std::nullopt));
     return ptr;
-}
-
-void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri)
-{
-    credentials.clear();
-
-    const auto & user_info = uri.getUserInfo();
-    if (user_info.empty())
-        return;
-
-    const auto n = user_info.find(':');
-    if (n != std::string::npos)
-    {
-        credentials.setUsername(user_info.substr(0, n));
-        credentials.setPassword(user_info.substr(n + 1));
-    }
-    else
-    {
-        credentials.setUsername(user_info);
-    }
 }
 
 }

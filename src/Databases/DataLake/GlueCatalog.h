@@ -33,16 +33,13 @@ public:
         const String & endpoint,
         DB::ContextPtr context_,
         const CatalogSettings & settings_,
-        DB::ASTPtr table_engine_definition_,
-        bool allow_server_credentials_in_user_queries_);
+        DB::ASTPtr table_engine_definition_);
 
     ~GlueCatalog() override;
 
     bool empty() const override;
 
-    CatalogTables getTables() const override;
-
-    Namespaces getNamespaces() const override;
+    DB::Names getTables() const override;
 
     bool existsTable(const std::string & database_name, const std::string & table_name) const override;
 
@@ -67,29 +64,16 @@ public:
         return DB::DatabaseDataLakeCatalogType::GLUE;
     }
 
-    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
-
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
-    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
-
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
-
-    bool updateSchema(
-        const String & namespace_name,
-        const String & table_name,
-        const String & new_metadata_path,
-        Poco::JSON::Object::Ptr new_schema,
-        Int32 previous_schema_id) const override;
-
-    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
+    void dropTable(const String & namespace_name, const String & table_name) const override;
 
     /// Returns a callback that re-vends fresh AWS credentials from the configured
     /// credentials provider chain. Invoked by `ReadBufferFromS3` when an S3 call
     /// fails with `ExpiredToken`, so that a long-running read can recover without
     /// the user having to restart the query.
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
-        const DB::StorageID & storage_id, const TableMetadata & table_metadata) override;
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
 
     /// Resolves the precise Iceberg timestamp type for `column_name` by searching the current schema
     /// in the Iceberg `metadata_object`. Falls back to `"timestamp_ns"` when `glue_column_type` is
@@ -100,6 +84,8 @@ public:
         const String & glue_column_type);
 
 private:
+    void createNamespaceIfNotExists(const String & namespace_name) const;
+
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
@@ -108,14 +94,12 @@ private:
     DB::ASTPtr table_engine_definition;
 
     DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
-    CatalogTables getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
-    CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
+    DB::Names getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
     void setCredentials(TableMetadata & metadata) const;
 
     /// The Glue catalog does not store detailed information about the types of timestamp columns, such as whether the column is timestamp or timestamptz.
     /// This method allows to clarify the actual type of the timestamp column.
-    /// `glue_column_type` is the raw Glue type (`"timestamp"` or `"timestamp_nano"`) used as a fallback when the column is not found in Iceberg metadata.
-    String getActualTimestampType(const String & column_name, const TableMetadata & table_metadata, const String & glue_column_type) const;
+    bool classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const;
 
     String resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const;
 
