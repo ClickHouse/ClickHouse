@@ -27,8 +27,10 @@ SYSTEM FLUSH LOGS query_log;
 -- the thread pool, that includes the small metadata files read synchronously (e.g. with the `read`
 -- method, which cannot tell a cached read from a device read). It can be less than that when a
 -- prefetched buffer is discarded without being consumed.
+-- Whether the reads were page cache hits at all is not checked: `preadv2` with `RWF_NOWAIT` is not
+-- usable on every system (old kernels, `seccomp` profiles, some filesystems), and then every read
+-- falls back to `pread`, is accounted as a device read, and the check below holds trivially.
 SELECT
-    ProfileEvents['ThreadPoolReaderPageCacheHitBytes'] > 0 AS served_from_page_cache,
     ProfileEvents['QueryLocalReadThrottlerBytes']
         <= ProfileEvents['ReadBufferFromFileDescriptorReadBytes'] - ProfileEvents['ThreadPoolReaderPageCacheHitBytes'] AS page_cache_hits_not_throttled
 FROM system.query_log

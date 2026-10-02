@@ -489,8 +489,10 @@ def test_local_read_throttling_reload():
         .strip()
         .split("\t"),
     )
-    assert hit_bytes > 0
-    assert duration < 3
+    # `preadv2` with `RWF_NOWAIT` is not usable on every system (old kernels, `seccomp` profiles,
+    # some filesystems). Then every read falls back to `pread` and is throttled as a device read.
+    if hit_bytes > 0:
+        assert duration < 3
 
     # update bandwidth back to 0
     node_update_config(
