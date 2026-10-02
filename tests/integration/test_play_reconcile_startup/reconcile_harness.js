@@ -512,7 +512,11 @@ function checkAuthHeaderTransport(js) {
             'X-ClickHouse-Key': '%20secret%20',
         }],
         ['empty-password', 'alice', '', { Authorization: 'never', 'X-ClickHouse-User': 'alice' }],
-        ['default-user', '', 'secret', { Authorization: 'never', 'X-ClickHouse-Key': 'secret' }],
+        ['default-user', '', 'secret', {
+            Authorization: 'never',
+            'X-ClickHouse-User': 'default',
+            'X-ClickHouse-Key': 'secret',
+        }],
         ['default-credentials', '', '', { Authorization: 'never' }],
     ];
     for (const [name, user, password, expected] of cases) {
@@ -525,9 +529,10 @@ function checkAuthHeaderTransport(js) {
             Object.entries(actual).every(([header, value]) => browserHeaders.get(header) === value), actual);
 
         const encoded = actual.Authorization === 'ClickHouse-Play';
-        check('auth-header-cases', `${name} round-trips the credentials`,
+        const expected_user = user || (password && !encoded ? 'default' : '');
+        check('auth-header-cases', `${name} round-trips the transmitted credentials`,
             (!actual['X-ClickHouse-User']
-                || (encoded ? decodeURIComponent(actual['X-ClickHouse-User']) : actual['X-ClickHouse-User']) === user)
+                || (encoded ? decodeURIComponent(actual['X-ClickHouse-User']) : actual['X-ClickHouse-User']) === expected_user)
                 && (!actual['X-ClickHouse-Key']
                     || (encoded ? decodeURIComponent(actual['X-ClickHouse-Key']) : actual['X-ClickHouse-Key']) === password),
             actual);
