@@ -146,6 +146,19 @@ static DataTypePtr removeArrayNullableLowCardinality(const DataTypePtr & type)
     return inner_type;
 }
 
+/// Appending zero bytes keeps every term of a value, so `FixedString` padding never hides one.
+static bool tokenizerSplitsAtZeroByte(ITokenizer::Type type)
+{
+    return type == ITokenizer::Type::SplitByNonAlpha
+        || type == ITokenizer::Type::Ngrams
+        || type == ITokenizer::Type::SparseGrams
+        || type == ITokenizer::Type::AsciiCJK
+#if USE_ICU
+        || type == ITokenizer::Type::Icu
+#endif
+        ;
+}
+
 /// The token stream an `Array` column stores differs from the one the row-level function sees, per element.
 static bool isIndexedColumnArray(const Block & header)
 {
@@ -1269,7 +1282,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         const FixedStringNeedleContext context{
             .semantics = *semantics,
             .indexed_fixed_string_size = indexed_fixed_string_size,
-            .padding_never_in_terms = !has_preprocessor && ITokenizer::splitsAtZeroByte(tokenizer->getType()),
+            .padding_never_in_terms = !has_preprocessor && tokenizerSplitsAtZeroByte(tokenizer->getType()),
         };
         if (!tryNormalizeNeedlePadding(value_field, value_type, context))
             return false;
@@ -2282,7 +2295,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     const FixedStringNeedleContext context{
         .semantics = FixedStringPaddingSemantics::BothStripped,
         .indexed_fixed_string_size = indexed_fixed_string_size,
-        .padding_never_in_terms = !has_preprocessor && ITokenizer::splitsAtZeroByte(tokenizer->getType()),
+        .padding_never_in_terms = !has_preprocessor && tokenizerSplitsAtZeroByte(tokenizer->getType()),
     };
     String normalized;
 
