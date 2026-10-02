@@ -525,6 +525,8 @@ namespace
                         process_list_element->checkTimeLimit();
                     block_out.write(block);
                 }
+                if (process_list_element)
+                    process_list_element->checkTimeLimit();
                 data_out->finishWriting();
                 backup_entries[data_bin_pos]
                     = {file_paths[data_bin_pos], std::make_shared<BackupEntryFromAppendOnlyFile>(std::move(data_out))};
