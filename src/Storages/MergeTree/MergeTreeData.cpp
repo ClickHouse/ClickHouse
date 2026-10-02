@@ -5782,6 +5782,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     KeyDescription::checkNoAlias(command.order_by.get(), "ORDER BY");
                 changes_order_by = true;
             }
+            else if (command.type == AlterCommand::MODIFY_TTL && is_initial_alter)
+                KeyDescription::checkNoAlias(command.ttl.get(), "TTL");
+            else if (command.type == AlterCommand::ADD_INDEX && is_initial_alter)
+                KeyDescription::checkNoAlias(command.index_decl.get(), "INDEX");
         }
 
         if (is_initial_alter && changes_order_by)

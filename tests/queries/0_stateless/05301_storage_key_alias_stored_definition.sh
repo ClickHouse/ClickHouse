@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A table that an older server stored with an alias in PRIMARY KEY or ORDER BY still loads:
+# A table that an older server stored with an alias in PRIMARY KEY, ORDER BY, TTL or a skip index still loads:
 # only a new definition is refused (05301_storage_key_alias_not_allowed).
 #
 # Such a definition can no longer be written through SQL, so the stored metadata of a table
@@ -15,14 +15,14 @@ mkdir -p "${WORKING_DIR}"
 
 $CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "
 CREATE DATABASE db;
-CREATE TABLE db.t (c0 Int64, c1 Int64) ENGINE = MergeTree PRIMARY KEY c0 ORDER BY (c0, c1);
-INSERT INTO db.t VALUES (1, 1), (2, 2);
+CREATE TABLE db.t (c0 Int64, c1 Int64, d Date, INDEX i c1 TYPE minmax) ENGINE = MergeTree PRIMARY KEY c0 ORDER BY (c0, c1) TTL d + INTERVAL 1 DAY;
+INSERT INTO db.t VALUES (1, 1, '2100-01-01'), (2, 2, '2100-01-01');
 "
 
 metadata_file=$(grep -rl 'ENGINE = MergeTree' "${WORKING_DIR}" --include='t.sql')
-sed -i 's/PRIMARY KEY c0/PRIMARY KEY (c0 AS a)/; s/ORDER BY (c0, c1)/ORDER BY (c0 AS x, c1)/' "${metadata_file}"
+sed -i 's/PRIMARY KEY c0/PRIMARY KEY (c0 AS a)/; s/ORDER BY (c0, c1)/ORDER BY (c0 AS x, c1)/; s/TTL d + /TTL (d AS e) + /; s/INDEX i c1 /INDEX i (c1 AS b) /' "${metadata_file}"
 # Without this the load below would run against an unmodified definition, i.e. assert nothing.
-grep -c -F -e 'PRIMARY KEY (c0 AS a)' -e 'ORDER BY (c0 AS x, c1)' "${metadata_file}"
+grep -c -F -e 'PRIMARY KEY (c0 AS a)' -e 'ORDER BY (c0 AS x, c1)' -e 'TTL (d AS e) + ' -e 'INDEX i (c1 AS b) ' "${metadata_file}"
 
 $CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "
 SELECT count() FROM db.t;

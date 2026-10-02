@@ -246,6 +246,9 @@ StoragePtr StorageFactory::get(
                 KeyDescription::checkNoAlias(storage_def->primary_key, "PRIMARY KEY");
                 KeyDescription::checkNoAlias(storage_def->order_by, "ORDER BY");
                 KeyDescription::checkNoAlias(storage_def->unique_key, "UNIQUE KEY");
+                KeyDescription::checkNoAlias(storage_def->ttl_table, "TTL");
+                if (query.columns_list)
+                    KeyDescription::checkNoAlias(query.columns_list->indices, "INDEX");
             }
 
             if (storage_def->ttl_table)

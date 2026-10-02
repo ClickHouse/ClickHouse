@@ -16,6 +16,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -96,6 +97,8 @@ BlockIO createHypotheticalIndex(
     const ContextPtr & context)
 {
     const auto & index_ast = query.index_decl->as<ASTIndexDeclaration &>();
+
+    KeyDescription::checkNoAlias(query.index_decl.get(), "INDEX");
 
     /// `IF NOT EXISTS` must short-circuit before building/validating the descriptor,
     /// matching `ALTER TABLE ... ADD INDEX IF NOT EXISTS`. The name is taken if a

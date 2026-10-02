@@ -12,6 +12,7 @@
 #include <Common/quoteString.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -270,6 +271,16 @@ void KeyDescription::checkNoAlias(const IAST * definition_ast, std::string_view 
 
     for (const auto & child : definition_ast->children)
         checkNoAlias(child.get(), clause);
+
+    /// `GROUP BY` keys, `SET` assignments and the `RECOMPRESS` codec of a `TTL` rule are not among its children.
+    if (const auto * ttl_element = definition_ast->as<ASTTTLElement>())
+    {
+        for (const auto & key : ttl_element->group_by_key)
+            checkNoAlias(key.get(), clause);
+        for (const auto & assignment : ttl_element->group_by_assignments)
+            checkNoAlias(assignment.get(), clause);
+        checkNoAlias(ttl_element->recompression_codec.get(), clause);
+    }
 }
 
 KeyDescription KeyDescription::parse(
