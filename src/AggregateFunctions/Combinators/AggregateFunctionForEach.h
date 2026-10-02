@@ -305,7 +305,7 @@ public:
         size_t end) const
     {
         for (const auto * offsets : trailing_offsets)
-            if ((*offsets)[row] != end || (row != 0 && (*offsets)[row - 1] != begin))
+            if ((*offsets)[row] != end || (row != 0 && (*offsets)[static_cast<ssize_t>(row) - 1] != begin))
                 throw Exception(
                     ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                     "Arrays passed to {} aggregate function have different sizes", getName());
@@ -320,7 +320,9 @@ public:
         size_t row,
         Arena * arena) const
     {
-        size_t begin = offsets[row - 1];
+        /// `offsets[-1]` is the guaranteed zero of `PaddedPODArray`'s left padding, as at `row_num`
+        /// above; an unsigned `row - 1` reaches the same byte only by wrapping twice.
+        size_t begin = offsets[static_cast<ssize_t>(row) - 1];
         size_t end = offsets[row];
         assertArraySizesMatch(trailing_offsets, row, begin, end);
         AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
