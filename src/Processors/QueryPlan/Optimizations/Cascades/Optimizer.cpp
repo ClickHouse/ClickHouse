@@ -8,7 +8,9 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -378,6 +380,17 @@ static QueryPlanStepPtr cloneStepForBestPlan(const GroupExpression & expression)
     return step;
 }
 
+/// The partial aggregation under a merge per bucket produces its result in bucket order only for the
+/// memory-efficient merge on one node, which shares its memo group: the shuffle between them does not
+/// keep any order, and with the order the partial aggregation would send its result from one stream.
+static void dropBucketOrderOfPartialAggregationBelow(QueryPlan::Node * node)
+{
+    while (node->children.size() == 1 && dynamic_cast<const LogicalExchangeStep *>(node->step.get()))
+        node = node->children.front();
+    if (auto * aggregating_step = typeid_cast<AggregatingStep *>(node->step.get()); aggregating_step && !aggregating_step->isFinal())
+        aggregating_step->setShouldProduceResultsInBucketOrder(false);
+}
+
 QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, ExpressionProperties required_properties)
 {
     const auto & cost_config = memo.getContext().cost_config;
@@ -464,6 +477,8 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         else if (frame.expression->inputs.size() == 1)
         {
             result = std::move(frame.child_plans[0]);
+            if (frame.expression->strategy == strategySingleton<ShuffleMergeStrategy>())
+                dropBucketOrderOfPartialAggregationBelow(result->getRootNode());
             auto step = cloneStepForBestPlan(*frame.expression);
             addConvertingExpression(*result, step->getInputHeaders().at(0));
             result->addStep(std::move(step));

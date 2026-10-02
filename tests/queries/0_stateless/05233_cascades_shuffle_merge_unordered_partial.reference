@@ -1,0 +1,16 @@
+-- the merge per bucket over shuffled states
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          MergingAggregated
+            ShuffleExchange
+              Aggregating
+                Expression ((Before GROUP BY + Change column names to column identifiers))
+                  ReadFromMergeTree (ParallelRead default.t_shuffle_merge_unordered)
+-- results match the local execution
+5000	499999500000
+5000	499999500000
+-- the reading tasks send the states on from more than one stream each
+1
