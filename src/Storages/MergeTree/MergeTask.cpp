@@ -61,6 +61,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
+#include <Common/ThreadStatus.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
@@ -1318,6 +1319,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         return false;
     };
+
+    /// Lets the worker threads of long single-block steps (e.g. vector similarity index build) stop on cancellation.
+    global_ctx->merge_list_element_ptr->thread_group->setQueryCancellationPredicates(
+        ctx->is_cancelled,
+        [is_cancelled = ctx->is_cancelled]
+        {
+            if (is_cancelled())
+                throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+        });
 
     /// This is the end of preparation. Execution will be per block.
     return false;

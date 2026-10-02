@@ -49,6 +49,7 @@
 #include <Server/DistributedQuery/StreamingExchangeLookup.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/executeQuery.h>
@@ -64,6 +65,7 @@
 #include <Core/Settings.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
+#include <Poco/Message.h>
 
 
 namespace CurrentMetrics
@@ -1404,6 +1406,9 @@ protected:
             }
         }
 
+        /// Whether forwarded worker logs have somewhere to go: the initiator's `send_logs_level` queue.
+        bool receivesWorkerLogs() const { return initiator_logs_queue != nullptr; }
+
         /// Add started task to be tracked
         void addTask(const String & stage_name, RunningTaskInfo task_info)
         {
@@ -1470,6 +1475,7 @@ protected:
             VectorWithMemoryTracking<RunningTaskInfo> tasks_to_cancel;
             {
                 std::lock_guard g(lock);
+                cancel_started = true;
                 for (auto & [stage_name, started_tasks] : stage_tasks)
                 {
                     for (auto & [task_name, task_info] : started_tasks)
@@ -1572,6 +1578,61 @@ protected:
             cancellation->throwIfCancelled();
         }
 
+        /// Status-check threads are not attached to the query, so a plain `LOG_WARNING` would not reach the client.
+        void pushInitiatorLogLine(const String & query_id, const String & text)
+        {
+            static const String source = "DistributedQueryPlanExecutor";
+            if (initiator_logs_queue && initiator_logs_queue->isNeeded(Poco::Message::PRIO_WARNING, source))
+                initiator_logs_queue->pushMessage(Poco::Message::PRIO_WARNING, source, query_id, text);
+        }
+
+        /// Forwards the batch and warns about lines lost to a retried poll (a gap before `begin_offset`) and
+        /// about lines dropped on the worker. After `cancel`, polls of one task can overlap, so only rows are forwarded.
+        void handleWorkerLogs(const RunningTaskInfo & task, DistributedQueryTaskStatus & task_status)
+        {
+            if (!initiator_logs_queue || !task_status.logs)
+                return;
+
+            auto & logs = *task_status.logs;
+            const UInt64 num_rows = logs.rows.rows();
+
+            if (num_rows != 0)
+                initiator_logs_queue->pushBlock(std::move(logs.rows));
+
+            UInt64 lost_in_transit = 0;
+            UInt64 newly_dropped = 0;
+            {
+                std::lock_guard g(lock);
+
+                if (cancel_started)
+                    return;
+
+                auto & cursor = worker_log_cursors[task.task_id];
+
+                if (logs.begin_offset >= cursor.expected_offset)
+                {
+                    lost_in_transit = logs.begin_offset - cursor.expected_offset;
+                    cursor.expected_offset = logs.begin_offset + num_rows;
+                }
+
+                if (logs.dropped_total > cursor.dropped_reported)
+                {
+                    newly_dropped = logs.dropped_total - cursor.dropped_reported;
+                    cursor.dropped_reported = logs.dropped_total;
+                }
+            }
+
+            if (lost_in_transit != 0)
+                pushInitiatorLogLine(task.task_id, fmt::format(
+                    "{} worker log line(s) from {} were lost in transit (status poll retry)",
+                    lost_in_transit, task.endpoint_uri));
+
+            if (newly_dropped != 0)
+                pushInitiatorLogLine(task.task_id, fmt::format(
+                    "{} worker log line(s) were dropped on {} because the forwarding buffer was full",
+                    newly_dropped, task.endpoint_uri));
+        }
+
         /// Thead function to check one task. If the task is not finished, adds the task back to the queue for checking.
         void checkStatusFunc(const String & stage_name, const RunningTaskInfo & task)
         {
@@ -1580,6 +1641,8 @@ protected:
             UInt32 wait_milliseconds = 300;
 
             auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, wait_milliseconds, context);
+
+            handleWorkerLogs(task, task_status);
 
             auto progress_callback = context->getProgressCallback();
             if (progress_callback)
@@ -1630,6 +1693,11 @@ protected:
                 try
                 {
                     auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, poll_wait_ms, context, /*for_cleanup*/ true);
+
+                    /// A task cancelled early (e.g. LIMIT satisfied) still delivers its logs
+                    /// through the cleanup polls.
+                    handleWorkerLogs(task, task_status);
+
                     if (task_status.status != "Running")
                         return task_status;
                 }
@@ -1777,6 +1845,16 @@ protected:
         std::mutex lock;
         UnorderedMapWithMemoryTracking<String, StageInfoPtr> all_stages TSA_GUARDED_BY(lock);
         UnorderedMapWithMemoryTracking<String, MapWithMemoryTracking<String, RunningTaskInfo>> stage_tasks TSA_GUARDED_BY(lock);
+        /// Per task: where the next batch should start and how many worker drops were already reported.
+        /// Kept after the task ends, so a late poll reads as "nothing new".
+        struct WorkerLogCursor
+        {
+            UInt64 expected_offset = 0;
+            UInt64 dropped_reported = 0;
+        };
+        UnorderedMapWithMemoryTracking<String, WorkerLogCursor> worker_log_cursors TSA_GUARDED_BY(lock);
+        /// Set by `cancel`: status polls of one task may overlap from then on, see `handleWorkerLogs`.
+        bool cancel_started TSA_GUARDED_BY(lock) = false;
         std::atomic<Int64> in_flight_request_count = 0;
         /// Queue of stages that have unfinished tasks to be checked
         DequeWithMemoryTracking<StageInfoPtr> stages_to_check TSA_GUARDED_BY(lock);
@@ -1785,6 +1863,9 @@ protected:
         StageWakeupPtr stage_wakeup;
         ThreadPool thread_pool;
         LoggerPtr logger;
+
+        /// Initiator logs queue captured at construction so it is tied to the main query's thread
+        InternalTextLogsQueuePtr initiator_logs_queue = CurrentThread::getInternalTextLogsQueue();
     };
 
     RunningTaskInfo buildTaskInfo(const DistributedQueryTaskDescription & task_description) const
@@ -1814,6 +1895,11 @@ protected:
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
+
+        /// Ask for worker logs only when the initiator has a queue to receive them (e.g. not over
+        /// HTTP without a framing format); the worker attaches its log collector accordingly.
+        TaskCollectors collectors;
+        collectors.logs = running_tasks.receivesWorkerLogs();
 
         const String unique_temp_file_path = toString(unique_query_id);
 
@@ -1854,7 +1940,7 @@ protected:
             LOG_DEBUG(logger, "Sending task {} to {}", task_info.task_id, task_info.endpoint_uri);
             try
             {
-                sendTask(task_info.endpoint_uri, task_info.task_id, task_description, unique_temp_file_path, context);
+                sendTask(task_info.endpoint_uri, task_info.task_id, task_description, unique_temp_file_path, collectors, context);
             }
             catch (...)
             {
@@ -1878,6 +1964,7 @@ protected:
 
 DistributedQueryCancellation::DistributedQueryCancellation()
     : wakeup(std::make_shared<WakeupFd>())
+    , cancelled_wakeup(std::make_shared<WakeupFd>())
 {
 }
 
@@ -1895,6 +1982,7 @@ void DistributedQueryCancellation::cancel()
     cancelled_by_pipeline = true;
     cancelled = true;
     notifyStageWakeup(wakeup);
+    notifyStageWakeup(cancelled_wakeup);
 }
 
 bool DistributedQueryCancellation::recordException(const std::exception_ptr & exception)
@@ -1916,6 +2004,7 @@ bool DistributedQueryCancellation::recordException(const std::exception_ptr & ex
         driving_source_reports = !execution_finished;
     }
     notifyStageWakeup(wakeup);
+    notifyStageWakeup(cancelled_wakeup);
     return driving_source_reports;
 }
 
@@ -1923,6 +2012,12 @@ void DistributedQueryCancellation::markExecutionFinished()
 {
     std::lock_guard lock(mutex);
     execution_finished = true;
+}
+
+bool DistributedQueryCancellation::isExecutionFinished() const
+{
+    std::lock_guard lock(mutex);
+    return execution_finished;
 }
 
 std::exception_ptr DistributedQueryCancellation::getFailure() const

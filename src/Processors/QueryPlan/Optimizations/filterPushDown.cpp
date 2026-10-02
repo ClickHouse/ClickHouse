@@ -1236,6 +1236,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (const auto * limit_by = typeid_cast<LimitByStep *>(child.get()))
     {
+        if (!settings.filter_push_down_below_limit_by)
+            return 0;
+
         /// A predicate on the LIMIT BY key columns removes whole groups, so the surviving
         /// per-group rows (and therefore the result) are identical whether it runs above or
         /// below the LIMIT BY. But it is only safe to push when every non-empty input group
