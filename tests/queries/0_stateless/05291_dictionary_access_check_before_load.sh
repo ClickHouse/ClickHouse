@@ -157,7 +157,7 @@ status
 unload
 as_user "CREATE VIEW v_by_user AS SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct'"
 status
-# Creating a Dictionary table only validates the columns against the definition, it does not load the dictionary.
+# With access, creating a Dictionary table loads the dictionary to validate the columns.
 unload
 as_user "CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(${CLICKHOUSE_DATABASE}.d)"
 status

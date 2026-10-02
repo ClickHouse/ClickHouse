@@ -122,10 +122,10 @@ LOADED
 NOT_LOADED
 CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(db.d)
 
-NOT_LOADED
+LOADED
 CREATE TABLE w_unqualified_by_user (id UInt64, value String) ENGINE = Dictionary(d)
 
-NOT_LOADED
+LOADED
 1	a
 LOADED
 --- dictGet, naiveBayesClassifier
