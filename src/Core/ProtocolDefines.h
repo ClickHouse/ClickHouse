@@ -125,12 +125,18 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// it would reject the name, and its own joins treat `max_rows_in_join` / `max_bytes_in_join` as a
 /// spill trigger, so a plan arriving without the name is read back as legacy mode, and a plan that
 /// needs the new contract is not serialized for such a peer at all.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
+/// Version 21 registers the `BlocksMarshalling` step, so a plan fragment that pre-serializes its
+/// result blocks can be shipped. A peer below it does not know the name and rejects the whole plan.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
 /// future bump can't silently leave this gate behind.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+/// First query-plan serialization version that registers a `BlocksMarshalling` step. It is the step's
+/// introduction version in the registry, so `QueryPlanStepRegistry::versionToWrite` refuses to write
+/// the step into an older stream.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCKS_MARSHALLING_STEP = 21;
 /// First query-plan serialization version that knows `legacy_join_size_limits_trigger_spilling`. Below it, a join
 /// step whose spilling depends on the unified trigger is refused rather than downgraded: the older peer still reads
 /// `max_rows_in_join` / `max_bytes_in_join` as the spill trigger and its standalone `grace_hash` ignores
@@ -177,6 +183,11 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 /// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` plan settings
 /// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
+/// First global query-plan version that writes version 1 of `ReadFromMergeTree`, which carries the
+/// `allow_query_condition_cache` flag bit. A read whose query-condition cache was disabled for
+/// correctness cannot be shipped to a peer below this version: the peer would ignore the bit and
+/// rebuild the read with the cache enabled, so `ReadFromMergeTree::serialize` rejects it instead.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG = 19;
 
 /// First global query-plan version that writes `max_external_merge_fan_in` in the step settings.
 /// Zero omits the setting and preserves unlimited merging. Nonzero values require a reader that
