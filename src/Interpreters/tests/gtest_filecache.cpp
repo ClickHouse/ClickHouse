@@ -58,6 +58,8 @@
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/BoundedReadBuffer.h>
+#include <IO/ChainedBuffers.h>
+#include <IO/DiskCacheProvider.h>
 #include <Interpreters/FileCache/WriteBufferToFileSegment.h>
 
 #include <Disks/SingleDiskVolume.h>
@@ -4570,4 +4572,52 @@ TEST_F(FileCacheTest, EfficiencySegmentWindows)
     /// Window 2: no read; the latest hit window is window 1.
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
     expect(0, 0, S, 1, G, 7 * G);
+}
+
+TEST_F(FileCacheTest, EfficiencyCacheWriterCountsOnlyAnotherFill)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_cache_writer_test"));
+    auto cache = std::make_shared<DB::FileCache>("efficiency_cache_writer", efficiencyCacheSettings(10));
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("efficiency_cache_writer_key");
+    auto holder = cache->getOrSet(key, 0, S, S, {}, 0, user);
+    auto segment = get(holder, 0);
+    FileSegmentsHolderSharedPtr shared_holder = std::move(holder);
+    auto key_str = key.toString();
+    fs::create_directories(fs::path(cache_base_path) / key_str.substr(0, 3) / key_str);
+
+    auto chain = [](size_t offset, size_t size)
+    {
+        auto buffer = std::make_shared<OwnedChainedBuffer>(size);
+        memset(buffer->data(), '0', size);
+        ChainedBuffers chained;
+        chained.append(ChainedBufferNode{std::move(buffer), 0, size, offset});
+        return chained;
+    };
+    auto fill = [&](DiskCacheWriter & writer, size_t offset, size_t size)
+    {
+        auto role = writer.takeFillRole();
+        ASSERT_TRUE(role);
+        ASSERT_EQ(writer.write(chain(offset, size), role), size);
+    };
+    auto active = [&] { return FileSegment::getInfo(segment).efficiency.active_bytes; };
+
+    const DB::FilesystemCacheSettings settings;
+    DiskCacheWriter a(cache, /*object_file_offset=*/0, settings, shared_holder, ByteRange{0, S});
+    DiskCacheWriter b(cache, /*object_file_offset=*/0, settings, shared_holder, ByteRange{0, S});
+
+    /// A writer that serves its own fill does not reuse the cache.
+    fill(a, 0, 2 * G);
+    EXPECT_EQ(a.read(ByteRange{0, 2 * G}).totalBytes(), 2 * G);
+    EXPECT_EQ(active(), 0);
+
+    /// The bytes of another writer are a cache hit; own ones are still not.
+    fill(b, 2 * G, G);
+    EXPECT_EQ(a.read(ByteRange{0, 3 * G}).totalBytes(), 3 * G);
+    EXPECT_EQ(active(), G);
+    EXPECT_EQ(b.read(ByteRange{0, 3 * G}).totalBytes(), 3 * G);
+    EXPECT_EQ(active(), 3 * G);
 }

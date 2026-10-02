@@ -72,6 +72,9 @@ public:
 
 private:
     bool tryWriteToSegment(FileSegment & file_segment, char * data, size_t size, size_t offset);
+    /// Marks `range` (object-local) as served from the cache, except the bytes this writer wrote: a
+    /// concurrent downloader's bytes are a cache hit, our own are a fill.
+    void markReadExceptOwnFill(ByteRange range);
 
     /// Our holder always carries exactly one segment (see the constructor); assert it on each access.
     FileSegment & segment() const { chassert(segment_holder && segment_holder->size() == 1); return segment_holder->front(); }
@@ -82,6 +85,9 @@ private:
     FilesystemCacheSettings cache_settings;
     FileSegmentsHolderSharedPtr segment_holder;
     ByteRange aligned_range;
+    /// Object-local, from our first write to the end of our last one (writes append). No lock: the
+    /// executor that owns this writer uses it from one thread.
+    ByteRange own_fill;
     LoggerPtr log = getLogger("DiskCacheWriter");
 };
 

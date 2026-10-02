@@ -302,6 +302,11 @@ size_t DiskCacheWriter::write(ChainedBuffers data, const FillRole & role)
     if (!written_ok)
         return 0;
 
+    if (own_fill.size == 0)
+        own_fill = ByteRange{write_offset, contiguous};
+    else
+        own_fill.size = write_offset + contiguous - own_fill.offset;
+
     LOG_TRACE(log, "DiskCacheWriter::write: wrote {} bytes to [{}, {}] at offset {}",
         contiguous, seg_range.left, seg_range.right, write_offset);
     return contiguous;
@@ -315,9 +320,23 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
 
     /// Serve an already-committed prefix from this buffer's own segment (a fresh pread reader,
     /// unthrottled, unanchored).
-    readSegmentInto(result, segment(), sub_in_object, object_file_offset,
+    const auto read_range = readSegmentInto(result, segment(), sub_in_object, object_file_offset,
         /*local_throttler=*/nullptr, /*anchors=*/nullptr);
+    markReadExceptOwnFill(read_range);
     return result;
+}
+
+void DiskCacheWriter::markReadExceptOwnFill(ByteRange range)
+{
+    if (!own_fill.overlaps(range))
+    {
+        segment().markRead(range.offset, range.size);
+        return;
+    }
+    if (range.offset < own_fill.offset)
+        segment().markRead(range.offset, own_fill.offset - range.offset);
+    if (range.end() > own_fill.end())
+        segment().markRead(own_fill.end(), range.end() - own_fill.end());
 }
 
 size_t DiskCacheWriter::committed() const
