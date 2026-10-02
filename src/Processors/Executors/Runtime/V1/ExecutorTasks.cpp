@@ -382,6 +382,9 @@ void ExecutorTasks::processAsyncTasks(const std::function<void()> & before_async
             }
         }
     }
+#else
+    /// Async tasks are only supported on Linux and macOS.
+    (void)before_async_job;
 #endif
 }
 
