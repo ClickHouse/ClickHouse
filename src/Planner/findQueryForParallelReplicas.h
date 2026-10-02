@@ -36,6 +36,17 @@ bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextP
 /// Used for views with UNION ALL where each branch reads from a separate MergeTree table.
 const UnionNode * findTableUnionForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
 
+/// Can parallel replicas read anything at all for this query, given these settings?
+///
+/// A conservative, plan-free approximation of the eligibility rules the planner applies: it walks the
+/// query tree and never builds a query plan, so it is cheap enough to run before deciding to plan the
+/// query a second time. It is meant to be used as a sound negative - `false` means the planner would
+/// certainly not produce a read from the other replicas, while `true` only means it might.
+///
+/// `query_tree_node` must be the root of a query tree, that is a `QueryNode` or a `UnionNode`. The
+/// negative is sound only for those: a bare table expression is reported ineligible whatever it reads.
+bool canQueryPossiblyUseParallelReplicas(const QueryTreeNodePtr & query_tree_node, const ContextPtr & context);
+
 struct JoinTreeQueryPlan;
 
 class PlannerContext;

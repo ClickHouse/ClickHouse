@@ -27,9 +27,10 @@ reason: Projection stores `_block_number`, so it is built only when a part is me
 verdict: too close to call
 --- an array join decides by where it sits relative to the read ---
 in the filter above the read:
-status: not_applicable
-reason: The filters and expressions above the read cannot be replayed on a projection (an ARRAY JOIN in one of them, for example), so the optimizer would not use a projection for this read
-real: from the base table
+status: applicable
+verdict: chosen
+reason: 1 mark would be read instead of 10 from the base table
+real: from the projection
 above the slice the chooser replays:
 status: applicable
 verdict: chosen
@@ -59,16 +60,16 @@ SYNTAX_ERROR
 status: applicable
 source: applicability_only
 empirical_status: unsupported
-empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
+empirical_reason: The estimate would read 1000 rows, over max_rows_to_read = 300 (a sample keeps at least ~30 granules and one per part)
 status: applicable
 source: applicability_only
 empirical_status: unsupported
-empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
+empirical_reason: The estimate would read 1000 rows, over max_rows_to_read = 300 (a sample keeps at least ~30 granules and one per part)
 --- the base read exceeding the limit does not produce a verdict either ---
 marks: 5
 rows: 500
 empirical_status: unsupported
-empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
+empirical_reason: The estimate would read 1000 rows, over max_rows_to_read = 300 (a sample keeps at least ~30 granules and one per part)
 --- estimating needs SELECT on the projection columns ---
 ACCESS_DENIED
 status: applicable
