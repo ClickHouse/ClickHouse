@@ -39,10 +39,19 @@ function poll_spans
     return 1
 }
 
+function new_trace
+{
+    # finish_time_us is the span log's second sort key column, a lower bound on it prunes granules.
+    read -r trace_id since_us <<< "$(${CLICKHOUSE_CLIENT} -q "
+        select lower(hex(reverse(reinterpretAsString(generateUUIDv4())))),
+               toUnixTimestamp64Micro(now64(6)) - 1000000" | tr '\t' ' ')"
+}
+
 function fragment_counts_query
 {
     local _trace_id="$1"
     local _query_id="$2"
+    local _since_us="$3"
     echo "
         with UUIDNumToString(toFixedString(unhex('$_trace_id'), 16)) as t
         select
@@ -52,7 +61,7 @@ function fragment_counts_query
             countIf(attribute['clickhouse.target_host'] != ''),
             countIf(attribute['clickhouse.processed_stage'] != '')
         from system.opentelemetry_span_log
-        where finish_date >= yesterday() and trace_id = t
+        where finish_date >= yesterday() and finish_time_us >= $_since_us and trace_id = t
           and operation_name = 'RemoteQueryExecutor::execute'
     "
 }
@@ -61,6 +70,7 @@ function assert_fragment_spans
 {
     local _trace_id="$1"
     local _query_id="$2"
+    local _since_us="$3"
     ${CLICKHOUSE_CLIENT} -q "
         with UUIDNumToString(toFixedString(unhex('$_trace_id'), 16)) as t
         select
@@ -74,7 +84,7 @@ function assert_fragment_spans
                    and countIf(attribute['clickhouse.target_host'] != '') = 2,
                'fragment span attributes: OK', 'fragment span attributes: FAIL')
         from system.opentelemetry_span_log
-        where finish_date >= yesterday() and trace_id = t
+        where finish_date >= yesterday() and finish_time_us >= $_since_us and trace_id = t
           and operation_name = 'RemoteQueryExecutor::execute'
         format TSV
     "
@@ -93,7 +103,7 @@ for async_settings in "1 1" "1 0" "0 0"; do
     read -r async_socket async_send <<< "$async_settings"
     echo "=== async_socket_for_remote=$async_socket async_query_sending_for_remote=$async_send ==="
 
-    trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
+    new_trace
     query_id="$CLICKHOUSE_TEST_UNIQUE_NAME-$async_socket-$async_send"
 
     # prefer_localhost_replica=0: both shards of the cluster must be read through
@@ -106,9 +116,9 @@ for async_settings in "1 1" "1 0" "0 0"; do
         --query_id "$query_id" \
         --query "select * from dist_over_two_shards format Null"
 
-    poll_spans "$(fragment_counts_query "$trace_id" "$query_id")" "2 2 2 2 2" || exit 1
+    poll_spans "$(fragment_counts_query "$trace_id" "$query_id" "$since_us")" "2 2 2 2 2" || exit 1
 
-    assert_fragment_spans "$trace_id" "$query_id"
+    assert_fragment_spans "$trace_id" "$query_id" "$since_us"
 done
 
 # The *Cluster table functions (urlCluster, s3Cluster, ...) do not go through
@@ -120,7 +130,7 @@ done
 # the spans carry the same shard_num values 1 and 2.
 echo "=== urlCluster (IStorageCluster path) ==="
 
-trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
+new_trace
 url_query_id="$CLICKHOUSE_TEST_UNIQUE_NAME-url"
 
 ${CLICKHOUSE_CLIENT} \
@@ -128,9 +138,9 @@ ${CLICKHOUSE_CLIENT} \
     --query_id "$url_query_id" \
     --query "select * from urlCluster('test_cluster_two_shards', 'http://localhost:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+1', 'TSV', 'x UInt8') format Null"
 
-poll_spans "$(fragment_counts_query "$trace_id" "$url_query_id")" "2 2 2 2 2" || exit 1
+poll_spans "$(fragment_counts_query "$trace_id" "$url_query_id" "$since_us")" "2 2 2 2 2" || exit 1
 
-assert_fragment_spans "$trace_id" "$url_query_id"
+assert_fragment_spans "$trace_id" "$url_query_id" "$since_us"
 
 # The synchronous path has no fiber: the span is kept alive by the executor itself and
 # finished on EndOfStream. It must cover the whole remote read, not only connection
@@ -138,7 +148,7 @@ assert_fragment_spans "$trace_id" "$url_query_id"
 # one second. (Only a lower bound is asserted, so the check cannot flake under load.)
 echo "=== synchronous span covers the remote read ==="
 
-trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
+new_trace
 sync_query_id="$CLICKHOUSE_TEST_UNIQUE_NAME-sync"
 
 ${CLICKHOUSE_CLIENT} \
@@ -152,7 +162,7 @@ poll_spans "
     with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
     select count()
     from system.opentelemetry_span_log
-    where finish_date >= yesterday() and trace_id = t
+    where finish_date >= yesterday() and finish_time_us >= $since_us and trace_id = t
       and operation_name = 'RemoteQueryExecutor::execute'
       and attribute['clickhouse.initial_query_id'] = '$sync_query_id'" "1" \
 || exit 1
@@ -165,7 +175,7 @@ ${CLICKHOUSE_CLIENT} -q "
               'sync span covers the remote sleep: OK',
               'sync span covers the remote sleep: FAIL, lasted ' || toString(max(finish_time_us - start_time_us)) || ' us')
     from system.opentelemetry_span_log
-    where finish_date >= yesterday() and trace_id = t
+    where finish_date >= yesterday() and finish_time_us >= $since_us and trace_id = t
       and operation_name = 'RemoteQueryExecutor::execute'
       and attribute['clickhouse.initial_query_id'] = '$sync_query_id'
     format TSV
@@ -178,7 +188,7 @@ ${CLICKHOUSE_CLIENT} -q "
 # including this forced unwind.
 echo "=== cancellation ==="
 
-trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
+new_trace
 kill_query_id="$CLICKHOUSE_TEST_UNIQUE_NAME-kill"
 
 ${CLICKHOUSE_CLIENT} \
@@ -186,8 +196,8 @@ ${CLICKHOUSE_CLIENT} \
     --async_socket_for_remote=1 \
     --async_query_sending_for_remote=1 \
     --query_id "$kill_query_id" \
-    --function_sleep_max_microseconds_per_block=10000000 \
-    --query "select * from remote('127.0.0.2', view(select sleep(3) from system.one)) format Null" \
+    --function_sleep_max_microseconds_per_block=30000000 \
+    --query "select * from remote('127.0.0.2', view(select sleep(30) from system.one)) format Null" \
     >/dev/null 2>&1 &
 
 # Wait until the remote leg is in flight before killing: the non-initial entry appears in
@@ -201,6 +211,9 @@ for _retry in {1..100}; do
 done
 ${CLICKHOUSE_CLIENT} -q "kill query where query_id = '$kill_query_id' sync format Null"
 wait
+# `sleep` never polls the socket the initiator's cancel arrives on, and the KILL above matched only
+# the initiator's own process-list entry, so the remote leg keeps sleeping: end it explicitly.
+${CLICKHOUSE_CLIENT} -q "kill query where initial_query_id = '$kill_query_id' and query_id != initial_query_id sync format Null"
 
 poll_spans "
     with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
@@ -208,7 +221,7 @@ poll_spans "
                    and attribute['clickhouse.target_host'] != ''
                    and attribute['clickhouse.initial_query_id'] = '$kill_query_id')
     from system.opentelemetry_span_log
-    where finish_date >= yesterday() and trace_id = t" "1" \
+    where finish_date >= yesterday() and finish_time_us >= $since_us and trace_id = t" "1" \
 || exit 1
 echo "buffered attributes flushed on cancellation: OK"
 
@@ -226,7 +239,7 @@ ${CLICKHOUSE_CLIENT} -q "
               'killed fragment is UNSET and tagged cancelled by initiator: OK',
               'killed fragment is UNSET and tagged cancelled by initiator: FAIL, ' || arrayStringConcat(groupArray(status_code || '/' || attribute['clickhouse.cancelled'] || '/' || attribute['clickhouse.cancel_reason']), ' '))
     from system.opentelemetry_span_log
-    where finish_date >= yesterday() and trace_id = t
+    where finish_date >= yesterday() and finish_time_us >= $since_us and trace_id = t
       and operation_name = 'RemoteQueryExecutor::execute'
       and attribute['clickhouse.initial_query_id'] = '$kill_query_id'
     format TSV
@@ -251,7 +264,7 @@ ${CLICKHOUSE_CLIENT} -q "create table dist_limit_src (number UInt64) engine = Di
 for async_socket in 1 0; do
     echo "=== LIMIT cancels the shards, async_socket_for_remote=$async_socket ==="
 
-    trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
+    new_trace
     limit_query_id="$CLICKHOUSE_TEST_UNIQUE_NAME-limit-$async_socket"
 
     ${CLICKHOUSE_CLIENT} \
@@ -263,7 +276,7 @@ for async_socket in 1 0; do
         --query_id "$limit_query_id" \
         --query "select * from dist_limit_src where sleepEachRow(0.2) = 0 limit 20 format Null"
 
-    poll_spans "$(fragment_counts_query "$trace_id" "$limit_query_id")" "2 2 2 2 2" || exit 1
+    poll_spans "$(fragment_counts_query "$trace_id" "$limit_query_id" "$since_us")" "2 2 2 2 2" || exit 1
 
     ${CLICKHOUSE_CLIENT} -q "
         with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
@@ -274,7 +287,7 @@ for async_socket in 1 0; do
                   'both fragments are UNSET and tagged cancelled by limit: OK',
                   'both fragments are UNSET and tagged cancelled by limit: FAIL, ' || arrayStringConcat(groupArray(status_code || '/' || attribute['clickhouse.cancelled'] || '/' || attribute['clickhouse.cancel_reason']), ' '))
         from system.opentelemetry_span_log
-        where finish_date >= yesterday() and trace_id = t
+        where finish_date >= yesterday() and finish_time_us >= $since_us and trace_id = t
           and operation_name = 'RemoteQueryExecutor::execute'
           and attribute['clickhouse.initial_query_id'] = '$limit_query_id'
         format TSV
