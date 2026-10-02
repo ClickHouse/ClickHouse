@@ -1422,7 +1422,18 @@ void StatementGenerator::generateInsertToTable(
                       entry.path.size() > 1 ? "Array(" : "",
                       entry.getBottomType()->typeName(false, false),
                       entry.path.size() > 1 ? ")" : "");
-                  ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path()->mutable_col()->set_column(entry.getBottomName());
+                  if (entry.special == ColumnSpecial::SIGN || entry.special == ColumnSpecial::IS_DELETED)
+                  {
+                      const int32_t second = entry.special == ColumnSpecial::SIGN ? -1 : 0;
+
+                      ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_lit_val()->set_no_quote_str(
+                          fmt::format("if({} % 2 = 0, {}, 1)", entry.getBottomNameSQL(), second));
+                  }
+                  else
+                  {
+                      ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path()->mutable_col()->set_column(
+                          entry.getBottomName());
+                  }
                   first = false;
               }
               grf->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
@@ -1568,23 +1579,25 @@ void StatementGenerator::generateUpdateSets(
 
             columnPathRef(entry, uset->mutable_col());
             Expr * expr = uset->mutable_expr();
+            const bool is_special = entry.special == ColumnSpecial::SIGN || entry.special == ColumnSpecial::IS_DELETED;
 
-            if (rg.nextBool())
+            if (is_special || rg.nextBool())
             {
                 /// Set constant value
                 String buf;
                 LiteralValue * lv = expr->mutable_lit_val();
 
-                if ((entry.dmod.has_value() && entry.dmod.value() == DModifier::DEF_DEFAULT && rg.nextMediumNumber() < 6)
-                    || (entry.path.size() == 1 && rg.nextLargeNumber() < 2))
-                {
-                    buf = "DEFAULT";
-                }
-                else if (entry.special == ColumnSpecial::SIGN || entry.special == ColumnSpecial::IS_DELETED)
+                if (is_special)
                 {
                     const String second = entry.special == ColumnSpecial::SIGN ? "-1" : "0";
 
                     buf += rg.nextBool() ? "1" : second;
+                }
+                else if (
+                    (entry.dmod.has_value() && entry.dmod.value() == DModifier::DEF_DEFAULT && rg.nextMediumNumber() < 6)
+                    || (entry.path.size() == 1 && rg.nextLargeNumber() < 2))
+                {
+                    buf = "DEFAULT";
                 }
                 else
                 {
