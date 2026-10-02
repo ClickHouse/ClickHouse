@@ -347,6 +347,7 @@ enum class Dialect : uint8_t
     promql,
     polyglot,
     clickhouse_json,
+    logsql,
     trino,
 };
 

@@ -1276,7 +1276,14 @@ void AlterCommand::apply(
 
         SharedHeader as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
 
-        metadata.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
+        /// A comment, unlike the other column attributes, stays valid for any type the new query gives the column.
+        ColumnsDescription new_columns;
+        for (const auto & column : as_select_sample->getNamesAndTypesList())
+        {
+            const auto * previous_column = metadata.columns.tryGet(column.name);
+            new_columns.add(ColumnDescription(column.name, column.type, previous_column ? previous_column->comment : String{}));
+        }
+        metadata.columns = std::move(new_columns);
     }
     else if (type == MODIFY_REFRESH)
     {
@@ -2465,6 +2472,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (from_nested_table_name != to_nested_table_name)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
                 all_columns.rename(command.column_name, command.rename_to);
+                renamed_columns.emplace(command.column_name);
+                renamed_columns.emplace(command.rename_to);
             }
             else if (!from_nested && !to_nested)
             {

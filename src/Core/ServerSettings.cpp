@@ -1458,6 +1458,14 @@ Controls if the user can change settings related to the different feature tiers.
 
 This is equivalent to setting a readonly constraint on all `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA` features.
 
+A statement on a user, a role or a settings profile is rejected when it sets such a setting to a value other
+than the one in effect for the session running it, and also when it moves such a setting for some user even
+though it names no setting: granting or revoking a role that carries one, assigning a settings profile,
+dropping a role or a profile, or dropping an override by omission. A user defined by SQL whose own settings or
+whose roles' settings hold such a value cannot log in. Settings that the server itself puts in effect through
+the configuration file, and users defined in it, are never rejected. The `compatibility` setting leaves a
+setting of a disabled tier at its default instead of applying the default of the previous version.
+
 <Note>
 A value of `0` means that all settings can be changed.
 </Note>
@@ -1528,7 +1536,7 @@ See [Controlling behavior on server CPU overload](/concepts/features/configurati
     DECLARE(Float, distributed_cache_keep_up_free_connections_ratio, 0.1f, "Soft limit for number of active connection distributed cache will try to keep free. After the number of free connections goes below distributed_cache_keep_up_free_connections_ratio * max_connections, connections with oldest activity will be closed until the number goes above the limit.", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_num, 0, R"(Maximum number of queries allowed per TCP connection before the connection is closed. Set to 0 for unlimited queries.)", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_seconds, 0, R"(Maximum lifetime of a TCP connection in seconds before it is closed. Set to 0 for unlimited connection lifetime.)", 0) \
-    DECLARE(UInt64, handshake_timeout_milliseconds, 30000, R"(Wall-clock timeout in milliseconds for the entire TCP handshake phase (Hello + Addendum). Limits how long an unauthenticated connection can hold a thread. Set to 0 to disable.)", 0) \
+    DECLARE(UInt64, handshake_timeout_milliseconds, 30000, R"(Wall-clock timeout in milliseconds for the entire handshake phase of a native protocol (Hello and Addendum), MySQL or PostgreSQL connection, including the TLS negotiation. Limits how long an unauthenticated connection can hold a thread: the deadline is checked on every read, and the socket receive timeout is clamped to it, so a client that sends nothing cannot outlast the budget either. That clamp keeps a floor of 100 milliseconds, so a small value overdraws the budget slightly rather than cutting reads too short. Set to 0 to disable.)", 0) \
     DECLARE(Bool, skip_binary_checksum_checks, false, R"(Skips ClickHouse binary checksum integrity checks)", 0) \
     DECLARE(Bool, abort_on_logical_error, false, R"(Crash the server on LOGICAL_ERROR exceptions. Only for experts.)", 0) \
     DECLARE(UInt64, jemalloc_merge_tree_arenas, 1, R"(Number of dedicated jemalloc arenas for long-lived MergeTree per-part and per-table metadata. `0` disables the dedicated arena (metadata uses the default per-CPU arenas). `1` uses a single shared arena. `N > 1` creates a pool of `N` arenas and routes allocations per CPU; on many-core machines this avoids serializing metadata allocation on a single arena's locks. Capped at the number of CPUs the process may run on (its affinity mask), so a large value (or the core count) yields one arena per allowed CPU. Applied at startup.)", 0) \

@@ -26,6 +26,7 @@ SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 1000;
 SET optimize_move_to_prewhere = 0;
 SET enable_join_runtime_filters = 1;
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 1;
@@ -59,9 +60,11 @@ SELECT '--- The join plan carries a runtime filter into the TopK-shaped read';
 -- The runtime filter is merged into the read's filter as an `RF...` conjunct, and no
 -- `__topKFilter` is stamped through the join (`topKThroughJoin` and `joinRuntimeFilter`
 -- target disjoint join shapes).
+-- The filter must be built from `dim`, so that it is applied to the read of `tab`.
 SELECT
     (countIf(explain LIKE '%BuildRuntimeFilter%') > 0)
 AND (countIf(explain LIKE '%__topKFilter%') = 0)
+AND (countIf(explain LIKE '%RF_(id, id from %.dim)%') > 0)
 FROM (
     EXPLAIN actions = 1
     SELECT t.v1, t.extra FROM tab t INNER JOIN dim d ON t.id = d.id WHERE t.v2 < 500000 ORDER BY t.v1 ASC LIMIT 5);
