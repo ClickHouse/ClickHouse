@@ -52,9 +52,9 @@ SELECT arrayMap(x -> reinterpretAsUInt64(x), a) AS stored_bits, countEqual(a, to
 [0,9223372036854775808,4609434218613702656]	2	2	2
 SELECT arrayMap(x -> reinterpretAsUInt32(x), a) AS stored_bits, has(a, toFloat32(0)) AS positive_zero_needle, has(a, reinterpretAsFloat32(toUInt32(2147483648))) AS negative_zero_needle, length(arrayFilter(x -> x = toFloat32(0), a)) AS oracle FROM format(JSONEachRow, 'a Array(LowCardinality(Float32))', '{"a":[-0.0,1.5]}');
 [2147483648,1069547520]	1	1	1
--- A CAST array is folded onto the default slot, so its -0.0 element is stored as +0.0.
+-- A CAST array keeps the sign of its -0.0 element, and either zero needle still finds it.
 SELECT arrayMap(x -> reinterpretAsUInt64(x), materialize(CAST([reinterpretAsFloat64(toUInt64(9223372036854775808)), 1.5], 'Array(LowCardinality(Float64))'))) AS stored_bits, has(materialize(CAST([reinterpretAsFloat64(toUInt64(9223372036854775808)), 1.5], 'Array(LowCardinality(Float64))')), toFloat64(0)) AS positive_zero_needle, has(materialize(CAST([reinterpretAsFloat64(toUInt64(9223372036854775808)), 1.5], 'Array(LowCardinality(Float64))')), reinterpretAsFloat64(toUInt64(9223372036854775808))) AS negative_zero_needle;
-[0,4609434218613702656]	1	1
+[9223372036854775808,4609434218613702656]	1	1
 SELECT has(materialize(CAST([0, NULL, 1.5], 'Array(LowCardinality(Nullable(Float64)))')), reinterpretAsFloat64(toUInt64(9223372036854775808))) AS lc, length(arrayFilter(x -> x = reinterpretAsFloat64(toUInt64(9223372036854775808)), materialize(CAST([0, NULL, 1.5], 'Array(LowCardinality(Nullable(Float64)))')))) AS oracle;
 1	1
 -- An Enum needle reaches a float element through its underlying number, so it must be declined too.

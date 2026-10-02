@@ -732,7 +732,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
 
         if (null_map && (*null_map)[row])
             positions[num_added_rows] = static_cast<IndexType>(getNullValueIndex());
-        else if (column->compareAt(getNestedTypeDefaultValueIndex(), row, *src_column, 1) == 0)
+        else if (src_column->isDefaultAt(row))
             positions[num_added_rows] = static_cast<IndexType>(getNestedTypeDefaultValueIndex());
         else
         {
