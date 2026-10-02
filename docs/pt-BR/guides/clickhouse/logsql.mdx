@@ -1,0 +1,37 @@
+---
+title: 'Dialect LogsQL no ClickHouse'
+description: 'Como habilitar o dialect experimental LogsQL (a linguagem de consulta do VictoriaLogs) e quais recursos ele suporta'
+keywords: ['LogsQL', 'VictoriaLogs', 'dialect']
+sidebarTitle: 'LogsQL'
+slug: /guides/clickhouse/logsql
+doc_type: 'guide'
+---
+
+## Visão geral {#overview}
+
+O ClickHouse oferece um dialect experimental `logsql` para consultar tabelas de log com a
+sintaxe do [VictoriaLogs LogsQL](https://docs.victoriametrics.com/victorialogs/logsql/).
+Ele converte uma consulta LogsQL em uma consulta `SELECT` do ClickHouse.
+
+Habilite-o em uma sessão e configure a tabela de origem:
+
+```sql
+SET allow_experimental_logsql_dialect = 1;
+SET logsql_database = 'default';
+SET logsql_table = 'logs';
+SET logsql_time_column = '_time';
+SET logsql_message_column = '_msg';
+SET dialect = 'logsql';
+```
+
+A tabela configurada deve conter as colunas de tempo e de mensagem. Há suporte a filtros LogsQL,
+filtros de stream, comparações textuais e numéricas, intervalos de tempo e operações de pipe,
+como `fields`, `stats`, `sort`, `limit`, `format`, `extract` e `unpack_json`.
+Os filtros de texto esperam colunas de log baseadas em `String`; campos tipados podem
+ser usados em comparações numéricas e estatísticas numéricas.
+
+Este dialect é experimental e não é uma implementação byte a byte do
+VictoriaLogs. Sintaxes sem suporte são rejeitadas com `NOT_IMPLEMENTED`; a semântica das consultas
+também pode divergir nos casos em que os tipos do ClickHouse, as expressões regulares, os fusos
+horários ou as regras de agregação SQL forem diferentes. Use o ClickHouse SQL comum quando uma
+construção LogsQL não tiver suporte ou quando for necessária compatibilidade exata com o VictoriaLogs.

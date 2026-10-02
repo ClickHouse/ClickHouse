@@ -1,0 +1,35 @@
+---
+title: 'ClickHouse における LogsQL ダイアレクト'
+description: '実験的機能である LogsQL ダイアレクト（VictoriaLogs のクエリ言語）を有効化する方法と、そのサポート範囲について説明します'
+keywords: ['LogsQL', 'VictoriaLogs', 'dialect']
+sidebarTitle: 'LogsQL'
+slug: /guides/clickhouse/logsql
+doc_type: 'guide'
+---
+
+## 概要 {#overview}
+
+ClickHouse は、[VictoriaLogs LogsQL](https://docs.victoriametrics.com/victorialogs/logsql/) 構文でログテーブルをクエリするための、実験的な `logsql` ダイアレクトを提供しています。
+このダイアレクトは、LogsQL クエリを ClickHouse の `SELECT` クエリに変換します。
+
+session 単位でこのダイアレクトを有効にし、ソーステーブルを設定します。
+
+```sql
+SET allow_experimental_logsql_dialect = 1;
+SET logsql_database = 'default';
+SET logsql_table = 'logs';
+SET logsql_time_column = '_time';
+SET logsql_message_column = '_msg';
+SET dialect = 'logsql';
+```
+
+設定するテーブルには、時刻カラムとメッセージカラムが含まれている必要があります。LogsQL フィルタ、
+ストリームフィルタ、テキスト比較および数値比較、時間範囲、そして `fields`、`stats`、`sort`、`limit`、`format`、`extract`、`unpack_json`
+などのパイプ操作が
+サポートされています。テキストフィルタは `String` 型のログカラムを前提としています。型が明示されたフィールドは、
+数値比較や数値統計に使用できます。
+
+このダイアレクトは実験的な機能であり、VictoriaLogs を完全に再現した実装ではありません。
+サポートされていない構文は `NOT_IMPLEMENTED` エラーとして拒否されます。また、ClickHouse の型、正規表現、タイム
+ゾーン、SQL の集約ルールの違いにより、クエリのセマンティクスが異なる場合もあります。
+LogsQL の構文がサポートされていない場合や、VictoriaLogs との厳密な互換性が必要な場合は、通常の ClickHouse SQL を使用してください。

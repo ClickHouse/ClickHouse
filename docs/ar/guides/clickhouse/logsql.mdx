@@ -1,0 +1,37 @@
+---
+title: 'لهجة LogsQL في ClickHouse'
+description: 'كيفية تفعيل لهجة LogsQL التجريبية (لغة الاستعلام في VictoriaLogs) والميزات التي تدعمها'
+keywords: ['LogsQL', 'VictoriaLogs', 'dialect']
+sidebarTitle: 'LogsQL'
+slug: /guides/clickhouse/logsql
+doc_type: 'guide'
+---
+
+## نظرة عامة {#overview}
+
+يوفّر ClickHouse لهجة تجريبية باسم `logsql` للاستعلام عن جداول السجلات باستخدام صيغة
+[VictoriaLogs LogsQL](https://docs.victoriametrics.com/victorialogs/logsql/).
+وتتولى هذه اللهجة تحويل استعلام LogsQL إلى استعلام `SELECT` في ClickHouse.
+
+فعّلها على مستوى الـ session، ثم هيّئ الجدول المصدر:
+
+```sql
+SET allow_experimental_logsql_dialect = 1;
+SET logsql_database = 'default';
+SET logsql_table = 'logs';
+SET logsql_time_column = '_time';
+SET logsql_message_column = '_msg';
+SET dialect = 'logsql';
+```
+
+يجب أن يحتوي الجدول الذي تمت تهيئته على عمودَي الوقت والرسالة. يدعم هذا الوضع عوامل تصفية LogsQL،
+وعوامل تصفية الدفق، والمقارنات النصية والرقمية، والنطاقات الزمنية، وعمليات الأنابيب
+مثل `fields` و`stats` و`sort` و`limit` و`format` و`extract` و`unpack_json`.
+تتطلب عوامل التصفية النصية أعمدة سجلات من النوع `String`، في حين يمكن استخدام الحقول ذات الأنواع المُعلنة صراحةً
+في المقارنات الرقمية والإحصاءات الرقمية.
+
+هذه اللهجة تجريبية، وليست تطبيقًا مطابقًا تمامًا لـ
+VictoriaLogs. تُرفض الصيغ غير المدعومة بالخطأ `NOT_IMPLEMENTED`، وقد تختلف دلالات
+الاستعلامات أيضًا حيثما تختلف أنواع ClickHouse، أو التعابير النمطية، أو المناطق
+الزمنية، أو قواعد التجميع في SQL. استخدم ClickHouse SQL العادية عندما تكون إحدى
+بُنى LogsQL غير مدعومة، أو عندما تحتاج إلى توافق تام مع VictoriaLogs.

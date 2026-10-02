@@ -16,6 +16,7 @@ Los dialectos admitidos actualmente son:
 * `clickhouse`: El [dialecto SQL](/es/chdb/reference/sql-reference) predeterminado de ClickHouse
 * `prql`: [Lenguaje de consulta relacional en canalización (PRQL)](https://prql-lang.org/)
 * `kusto`: [Lenguaje de consulta Kusto (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+* `logsql`: [LogsQL](https://docs.victoriametrics.com/victorialogs/logsql/), el lenguaje de consulta de VictoriaLogs
 * `trino`: [Trino SQL](https://trino.io/docs/current/language.html)
 
 El lenguaje de consulta utilizado se controla mediante la configuración `dialect`.
@@ -82,6 +83,29 @@ numbers(10) | project number
 ```
 
 Ten en cuenta que es posible que las consultas KQL no tengan acceso a todas las funciones definidas en ClickHouse.
+
+## LogsQL {#logsql}
+
+<ExperimentalBadge />
+
+LogsQL es el lenguaje de consulta de [VictoriaLogs](https://docs.victoriametrics.com/victorialogs/logsql/).
+ClickHouse traduce cada consulta LogsQL en una consulta `SELECT` sobre una tabla de log configurada.
+Para habilitarlo y apuntarlo a una tabla con una columna de tiempo y una columna de mensaje:
+
+```sql
+SET allow_experimental_logsql_dialect = 1;
+SET logsql_database = 'default';
+SET logsql_table = 'logs';
+SET logsql_time_column = '_time';
+SET logsql_message_column = '_msg';
+SET dialect = 'logsql'
+```
+
+```text title="Query"
+_time:5m error | stats by (level) count() as hits | sort by (hits desc)
+```
+
+Consulte la [guía del dialecto LogsQL](/es/guides/clickhouse/logsql) para conocer el subconjunto compatible y las diferencias con VictoriaLogs.
 
 ## Trino SQL {#trino-sql}
 

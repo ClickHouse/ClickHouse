@@ -16,6 +16,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 * `clickhouse`: ClickHouse의 기본 [SQL 방언](/ko/chdb/reference/sql-reference)
 * `prql`: [파이프라인 기반 관계형 쿼리 언어 (PRQL)](https://prql-lang.org/)
 * `kusto`: [Kusto 쿼리 언어 (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+* `logsql`: VictoriaLogs의 쿼리 언어인 [LogsQL](https://docs.victoriametrics.com/victorialogs/logsql/)
 * `trino`: [Trino SQL](https://trino.io/docs/current/language.html)
 
 사용할 쿼리 언어는 `dialect` 설정으로 제어됩니다.
@@ -82,6 +83,29 @@ numbers(10) | project number
 ```
 
 KQL 쿼리에서는 ClickHouse에 정의된 모든 함수를 사용할 수 없을 수 있다는 점에 유의하십시오.
+
+## LogsQL {#logsql}
+
+<ExperimentalBadge />
+
+LogsQL은 [VictoriaLogs](https://docs.victoriametrics.com/victorialogs/logsql/)의 쿼리 언어입니다.
+ClickHouse는 LogsQL 쿼리를 지정된 로그 테이블을 대상으로 하는 `SELECT` 쿼리로 변환합니다.
+이 기능을 활성화하고 시간 컬럼과 메시지 컬럼이 있는 테이블을 대상으로 지정하려면 다음과 같이 설정하십시오.
+
+```sql
+SET allow_experimental_logsql_dialect = 1;
+SET logsql_database = 'default';
+SET logsql_table = 'logs';
+SET logsql_time_column = '_time';
+SET logsql_message_column = '_msg';
+SET dialect = 'logsql'
+```
+
+```text title="Query"
+_time:5m error | stats by (level) count() as hits | sort by (hits desc)
+```
+
+지원되는 기능 범위와 VictoriaLogs와의 차이점은 [LogsQL 방언 가이드](/ko/guides/clickhouse/logsql)를 참조하십시오.
 
 ## Trino SQL {#trino-sql}
 

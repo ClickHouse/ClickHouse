@@ -16,6 +16,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * `clickhouse`：ClickHouse 默认的 [SQL 方言](/zh/chdb/reference/sql-reference)
 * `prql`：[管道式关系查询语言 (PRQL)](https://prql-lang.org/)
 * `kusto`：[Kusto 查询语言 (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+* `logsql`：[LogsQL](https://docs.victoriametrics.com/victorialogs/logsql/)，即 VictoriaLogs 的查询语言
 * `trino`：[Trino SQL](https://trino.io/docs/current/language.html)
 
 使用哪种查询语言由 `dialect` 设置控制。
@@ -82,6 +83,29 @@ numbers(10) | project number
 ```
 
 请注意，KQL 查询可能无法调用 ClickHouse 中定义的所有函数。
+
+## LogsQL {#logsql}
+
+<ExperimentalBadge />
+
+LogsQL 是 [VictoriaLogs](https://docs.victoriametrics.com/victorialogs/logsql/) 的查询语言。
+ClickHouse 会将 LogsQL 查询转换为对已配置日志表执行的 `SELECT` 查询。
+如需启用该功能，并将其指向一个包含时间列和消息列的表，请按如下方式配置：
+
+```sql
+SET allow_experimental_logsql_dialect = 1;
+SET logsql_database = 'default';
+SET logsql_table = 'logs';
+SET logsql_time_column = '_time';
+SET logsql_message_column = '_msg';
+SET dialect = 'logsql'
+```
+
+```text title="Query"
+_time:5m error | stats by (level) count() as hits | sort by (hits desc)
+```
+
+有关所支持的功能子集以及与 VictoriaLogs 的差异，请参阅 [LogsQL 方言指南](/zh/guides/clickhouse/logsql)。
 
 ## Trino SQL {#trino-sql}
 
