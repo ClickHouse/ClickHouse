@@ -753,8 +753,8 @@ bool tryEstimateProjection(
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
-            "{} against {} from the base table, but the rows differ in width on {} of the {} parts read, so the granule "
-            "layout depends on the blocks the writer was fed and the mark count is a model, not a measurement",
+            "{} against {} from the base table, but the rows are not known to have the same width on {} of the {} parts read, "
+            "so the granule layout depends on the blocks the writer was fed and the mark count is a model, not a measurement",
             marks_text(projection_marks),
             baseline_marks,
             uneven_width_parts,
