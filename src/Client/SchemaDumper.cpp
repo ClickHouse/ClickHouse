@@ -3014,20 +3014,27 @@ ReplayGateNeeds collectReplayGateNeeds(
         if (has_merge_tree)
         {
             std::set<String> columns;
-            /// The TTL build is stricter for `Variant`/`Dynamic` values without the gate.
-            bool variant_or_dynamic_column = false;
+            /// The TTL build is stricter for `Variant`/`Dynamic` values without the gate, so a TTL reading one keeps it.
+            std::set<String> variant_or_dynamic_columns;
             if (create->columns_list && create->columns_list->columns)
                 for (const auto & child : create->columns_list->columns->children)
                     if (const auto * column = child->as<ASTColumnDeclaration>())
                     {
                         columns.insert(column->name);
                         const String type = column->getType() ? column->getType()->formatWithSecretsOneLine() : "";
-                        variant_or_dynamic_column |= type.empty() || type.contains("Variant") || type.contains("Dynamic")
-                            || type.contains("JSON") || type.contains("Object");
+                        if (type.empty() || type.contains("Variant") || type.contains("Dynamic") || type.contains("JSON")
+                            || type.contains("Object"))
+                            variant_or_dynamic_columns.insert(column->name);
                     }
             const auto ttl_needs_gate = [&](const IAST & expression)
             {
-                return variant_or_dynamic_column || ttlMayNeedSuspiciousGate(expression, columns, context);
+                bool reads_variant_or_dynamic = false;
+                forEachNode(expression, [&](const IAST & node)
+                {
+                    if (const auto * identifier = node.as<ASTIdentifier>())
+                        reads_variant_or_dynamic |= variant_or_dynamic_columns.contains(identifier->shortName());
+                });
+                return reads_variant_or_dynamic || ttlMayNeedSuspiciousGate(expression, columns, context);
             };
             for (const auto * storage : storages)
             {
