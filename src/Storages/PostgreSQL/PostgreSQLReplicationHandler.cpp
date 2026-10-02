@@ -24,6 +24,7 @@
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Interpreters/getTableOverride.h>
+#include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
@@ -1332,6 +1333,11 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// List of nested tables (table_name -> nested_storage), which is passed to replication consumer.
     std::unordered_map<String, StorageInfo> nested_storages;
 
+    /// Tables whose first snapshot is taken while the replica resumes from its existing slot, and the
+    /// position of that snapshot: the consumer applies their changes only after it.
+    std::unordered_map<String, StorageInfo> tables_bootstrapped_on_resume;
+    String tables_bootstrapped_on_resume_start_lsn;
+
     /// snapshot_name is initialized only if a new replication slot is created.
     /// start_lsn is initialized in two places:
     /// 1. if replication slot does not exist, start_lsn will be returned with its creation return parameters;
@@ -1407,9 +1413,24 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// and pass them to replication consumer.
     else
     {
+        /// A table this engine is configured to replicate may have no nested table yet even though the
+        /// replica as a whole resumes: in `materialized_postgresql_tables_list` mode the configured set is
+        /// persisted, and a listed table whose first snapshot failed (for example, it had no primary key and
+        /// no replica identity index) was skipped by the initial synchronization while the other tables were
+        /// materialized. It has no local data a snapshot could make stale, so take its first snapshot now
+        /// from a temporary replication slot, exactly as `ATTACH TABLE` does in addTableToReplication(): the
+        /// consumer then ignores its changes up to the snapshot position. Without this, resuming would throw
+        /// on its missing nested table and every attach retry would fail, stopping the other tables too.
+        std::vector<std::pair<String, StorageMaterializedPostgreSQL *>> tables_without_nested;
         for (const auto & [table_name, storage] : materialized_storages)
         {
             auto * materialized_storage = storage->as <StorageMaterializedPostgreSQL>();
+            if (!materialized_storage->tryGetNested())
+            {
+                tables_without_nested.emplace_back(table_name, materialized_storage);
+                continue;
+            }
+
             try
             {
                 auto table_structure = fetchTableStructure(tx, table_name);
@@ -1427,7 +1448,60 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                     throw;
             }
         }
-        LOG_DEBUG(log, "Loaded {} tables", nested_storages.size());
+
+        if (!tables_without_nested.empty())
+        {
+            postgres::Connection snapshot_replication_connection(connection_info, /* replication */true);
+            auto snapshot_tx = std::make_shared<pqxx::nontransaction>(snapshot_replication_connection.getRef());
+
+            String temporary_snapshot_name;
+            String temporary_start_lsn;
+            if (isReplicationSlotExist(*snapshot_tx, temporary_start_lsn, /* temporary */true))
+                dropReplicationSlot(*snapshot_tx, /* temporary */true);
+
+            TemporaryReplicationSlot temporary_slot(this, snapshot_tx, temporary_start_lsn, temporary_snapshot_name);
+
+            for (const auto & [table_name, materialized_storage] : tables_without_nested)
+            {
+                LOG_INFO(
+                    log,
+                    "Table {}.{} has no nested table yet: its first snapshot did not complete in a previous run. "
+                    "Loading it from a fresh snapshot",
+                    postgres_database, table_name);
+                try
+                {
+                    tables_bootstrapped_on_resume.emplace(
+                        table_name, loadFromSnapshot(*tmp_connection, temporary_snapshot_name, table_name, materialized_storage));
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage("while loading table `{}`.`{}`", postgres_database, table_name);
+                    tryLogCurrentException(log);
+
+                    /// A partially loaded nested table would be taken for a completed snapshot on the next
+                    /// attach, so remove whatever this attempt created and let the next attach retry it.
+                    try
+                    {
+                        if (materialized_storage->tryGetNested())
+                            InterpreterDropQuery::executeDropQuery(
+                                ASTDropQuery::Kind::Drop, getContext(), materialized_storage->getNestedTableContext(),
+                                materialized_storage->getNestedStorageID(), /* sync */ true, /* ignore_sync_setting */ true);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "Failed to drop the nested table of a table whose snapshot failed");
+                    }
+
+                    /// Like the initial synchronization, the database engine keeps replicating the tables it
+                    /// could load instead of failing as a whole because of one table.
+                    if (throw_on_error && !is_materialized_postgresql_database)
+                        throw;
+                }
+            }
+            tables_bootstrapped_on_resume_start_lsn = temporary_start_lsn;
+        }
+
+        LOG_DEBUG(log, "Loaded {} tables", nested_storages.size() + tables_bootstrapped_on_resume.size());
     }
 
     tx.commit();
@@ -1446,6 +1520,9 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             schema_as_a_part_of_table_name,
             nested_storages,
             (is_materialized_postgresql_database ? postgres_database : postgres_database + '.' + tables_list));
+
+    for (auto & [table_name, storage_info] : tables_bootstrapped_on_resume)
+        consumer->addNested(table_name, std::move(storage_info), tables_bootstrapped_on_resume_start_lsn);
 
     replication_handler_initialized = true;
 

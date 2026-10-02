@@ -5794,6 +5794,75 @@ def test_bootstrap_from_publication_ignores_out_of_scope_schemas(started_cluster
     pg_manager.drop_materialized_db(mat_db)
 
 
+def test_attach_bootstraps_listed_table_whose_first_snapshot_failed(started_cluster):
+    # Regression for a review finding on https://github.com/ClickHouse/ClickHouse/pull/110493: in
+    # `materialized_postgresql_tables_list` mode the configured table set is persisted, so a listed table
+    # whose first snapshot failed (here: it had no primary key and no replica identity index) is still part
+    # of the database on restart, while the other listed table was materialized and resumes from the slot.
+    # Resuming used to throw on the missing nested table of the failed one, and every attach retry failed
+    # the same way, so the whole database stopped replicating, even after the table was fixed. The failed
+    # table must instead take its first snapshot on attach, and the other table must keep replicating while
+    # it cannot.
+    good = "partial_sync_good"
+    bad = "partial_sync_bad"
+    mat_db = "partial_sync_database"
+    pg_manager.create_postgres_table(good)
+    pg_manager.create_postgres_table(
+        bad, template=postgres_table_template_without_primary_key
+    )
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {good} SELECT i, i FROM generate_series(0, 29) AS i")
+    cursor.execute(f"INSERT INTO {bad} SELECT i, i FROM generate_series(0, 29) AS i")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{good}, {bad}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, good, materialized_database=mat_db)
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{bad}"))
+
+    # A restart while the table is still broken: the materialized table keeps replicating.
+    instance.restart_clickhouse()
+    cursor.execute(f"INSERT INTO {good} SELECT i, i FROM generate_series(30, 39) AS i")
+    check_tables_are_synchronized(instance, good, materialized_database=mat_db)
+    assert 40 == int(instance.query(f"SELECT count() FROM {mat_db}.{good}"))
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{bad}"))
+
+    # The table is fixed while the server is down, and both tables change meanwhile.
+    instance.stop_clickhouse()
+    cursor.execute(f"ALTER TABLE {bad} ADD PRIMARY KEY (key)")
+    cursor.execute(f"INSERT INTO {good} SELECT i, i FROM generate_series(40, 49) AS i")
+    cursor.execute(f"INSERT INTO {bad} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    check_tables_are_synchronized(instance, good, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, bad, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{good}"))
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{bad}"))
+
+    # Both keep streaming, including updates and deletes of the bootstrapped table.
+    cursor.execute(f"INSERT INTO {bad} SELECT i, i FROM generate_series(50, 59) AS i")
+    cursor.execute(f"UPDATE {bad} SET value = value + 1000 WHERE key < 10")
+    cursor.execute(f"DELETE FROM {bad} WHERE key >= 55")
+    cursor.execute(f"INSERT INTO {good} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, good, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, bad, materialized_database=mat_db)
+
+    # And the next restart resumes both from the slot.
+    instance.restart_clickhouse()
+    cursor.execute(f"INSERT INTO {bad} SELECT i, i FROM generate_series(60, 69) AS i")
+    check_tables_are_synchronized(instance, good, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, bad, materialized_database=mat_db)
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
