@@ -14,7 +14,7 @@ namespace DB
 
 /// Splits the bytes of one `FileCache` into three classes in each efficiency window
 /// (`efficiency_window_sec`):
-/// - active: unique bytes that readers read in the window, rounded up to granules;
+/// - active: unique bytes served from the cache in the window, rounded up to granules;
 /// - passive: the other bytes of file segments that had at least one read in the window;
 /// - idle: the bytes of file segments with no read in the window.
 ///

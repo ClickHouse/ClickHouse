@@ -1696,9 +1696,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             }
         }
 
-        /// The bytes are in the cache: read from it, or downloaded into it by this read.
-        if (info.cache_settings.track_cache_efficiency
-            && (state.read_type == ReadType::CACHED || (do_download && download_current_segment_succeeded)))
+        /// Bytes served from the cache count as reuse; bytes this read puts into the cache do not.
+        if (state.read_type == ReadType::CACHED)
             file_segment.markRead(offset, size);
 
         if (do_download && download_current_segment_succeeded)

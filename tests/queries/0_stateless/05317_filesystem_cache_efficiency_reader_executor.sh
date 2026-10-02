@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Tags: no-random-merge-tree-settings
-# no-random-merge-tree-settings: the checks assume that a full scan returns every byte it caches. Some random
-# MergeTree settings (for example `enable_block_number_column`, `prewarm_mark_cache`) make readers revisit and
-# predownload segments, which leaves a few percent of the downloaded bytes unread.
+# no-random-merge-tree-settings: check 1 expects a scan on an empty cache to have no cache hits. Some random
+# MergeTree settings (for example `enable_block_number_column`, `prewarm_mark_cache`) make one scan revisit
+# segments it already filled, and a revisit is a real cache hit.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Per-segment read coverage of the filesystem cache with `use_reader_executor = 1`: `active_bytes` and `windows_since_touch`
-# in `system.filesystem_cache`. A private cache keeps other cache users out of the result. Its
+# Per-segment reuse coverage of the filesystem cache with `use_reader_executor = 1`: `active_bytes` and `windows_since_touch`
+# in `system.filesystem_cache`. Only bytes served from the cache count; filling the cache does not. A private cache keeps other cache users out of the result. Its
 # efficiency window (`efficiency_window_sec`, default 600 s) counts from cache creation, so the
 # whole test runs inside window 0.
 cache_name="cache_efficiency_executor_${CLICKHOUSE_DATABASE}"
@@ -26,7 +26,8 @@ disk="disk(
     load_metadata_asynchronously = 0,
     disk = 'local_disk')"
 
-# Strictly synchronous reads that always go through the cache. A read counts at least one read
+# Strictly synchronous reads that always go through the cache, also on a repeated read (no
+# uncompressed cache). A read counts at least one read
 # buffer, so pin a small one: with the cache, `filesystem_cache_prefer_bigger_buffer_size` would
 # raise it to `prefetch_buffer_size`, and a short forward seek would read through the gap.
 read_settings=(
@@ -37,6 +38,7 @@ read_settings=(
     --filesystem_cache_max_download_size 137438953472
     --remote_filesystem_read_prefetch 0
     --allow_prefetched_read_pool_for_remote_filesystem 0
+    --use_uncompressed_cache 0
     --use_reader_executor 1
     --reader_executor_block_size 131072
     --reader_executor_window_size 131072
@@ -46,10 +48,6 @@ read_settings=(
     --remote_read_min_bytes_for_seek 0
     --remote_filesystem_read_method read
 )
-
-summary="
-    SELECT count() > 0, countIf(windows_since_touch = 0) = count(), sum(active_bytes) >= 0.99 * sum(downloaded_size)
-    FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_efficiency_executor;
@@ -63,30 +61,42 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO t_efficiency_executor SELECT number, cityHash64(number) FROM numbers(2000000);
 "
 
-# 1. A full scan reads every byte that it caches.
+# 1. A scan on an empty cache fills it. Filling is not reuse, so nothing is active yet.
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '$cache_name'"
 $CLICKHOUSE_CLIENT "${read_settings[@]}" --query "SELECT sum(key), sum(value) FROM t_efficiency_executor FORMAT Null"
-$CLICKHOUSE_CLIENT --query "$summary"
+$CLICKHOUSE_CLIENT --query "
+    SELECT count() > 0, countIf(windows_since_touch IS NULL) = count(), sum(active_bytes) = 0
+    FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
-# 2. SLRU: the first fill is probationary, a second read moves the data segments to protected.
-# Marks come from the mark cache on the second read, so their small segments stay probationary.
+# 2. SLRU: the first fill is probationary.
 $CLICKHOUSE_CLIENT --query "SELECT DISTINCT queue_entry_type FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
+
+# 3. A second scan reads from the cache: it reuses almost every byte of the segments it reads, and
+# its hits move the data segments to protected. Marks come from the mark cache, so their small
+# segments get no read.
 $CLICKHOUSE_CLIENT "${read_settings[@]}" --query "SELECT sum(key), sum(value) FROM t_efficiency_executor FORMAT Null"
+$CLICKHOUSE_CLIENT --query "
+    SELECT countIf(windows_since_touch = 0) > 0,
+        sumIf(active_bytes, windows_since_touch = 0) >= 0.99 * sumIf(downloaded_size, windows_since_touch = 0)
+    FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 $CLICKHOUSE_CLIENT --query "
     SELECT sumIf(downloaded_size, queue_entry_type = 'SLRU_Protected') > 0.9 * sum(downloaded_size)
     FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
-# 3. Point queries read a small part of each 4 MiB cell.
+# 4. Point queries: the first run fills 4 MiB cells, the second reuses a small part of each.
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '$cache_name'"
-$CLICKHOUSE_CLIENT "${read_settings[@]}" --query "
-    SELECT sum(value) FROM t_efficiency_executor
-    WHERE key IN (17, 200017, 400017, 600017, 800017, 1000017, 1200017, 1400017, 1600017, 1800017)
-    FORMAT Null"
+for _ in 1 2; do
+    $CLICKHOUSE_CLIENT "${read_settings[@]}" --query "
+        SELECT sum(value) FROM t_efficiency_executor
+        WHERE key IN (17, 200017, 400017, 600017, 800017, 1000017, 1200017, 1400017, 1600017, 1800017)
+        FORMAT Null"
+done
 $CLICKHOUSE_CLIENT --query "
-    SELECT count() > 0, countIf(windows_since_touch = 0) = count(), sum(active_bytes) < 0.5 * sum(downloaded_size)
+    SELECT countIf(windows_since_touch = 0) > 0,
+        sumIf(active_bytes, windows_since_touch = 0) < 0.5 * sumIf(downloaded_size, windows_since_touch = 0)
     FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
-# 4. Write-through puts data into the cache without a read.
+# 5. Write-through puts data into the cache without a read.
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '$cache_name'"
 $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations 1 \
     --query "INSERT INTO t_efficiency_executor_write SELECT number, cityHash64(number) FROM numbers(500000)"

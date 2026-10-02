@@ -124,10 +124,6 @@ public:
     /// Serve an already-committed sub-range from this writer's own held segments. Do not go to the source.
     virtual ChainedBuffers read(ByteRange subrange) = 0;
 
-    /// The executor served `range_in_file` to its caller from the bytes it fetched for this writer.
-    /// The part that is now in this cache counts as read from it.
-    virtual void markServed(ByteRange /*range_in_file*/) {}
-
     /// Decide whether this reader fills the writer's range, and on a coordinating tier acquire the
     /// downloader role for it. The only place a role is taken; `write` never takes one. Return a held
     /// `FillRole` iff there is an uncommitted part this reader must fill; an empty one means the range is

@@ -74,7 +74,7 @@ namespace ErrorCodes
     DECLARE(Bool, expose_prometheus_eviction_metrics, false, "Expose Prometheus metrics for filesystem cache eviction activity (`filesystem_cache_evictions_total` etc.). Off by default. Can be toggled at runtime via `SYSTEM RELOAD CONFIG`.", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics_per_user, false, "Additionally expose per-user-id eviction metrics. Requires `expose_prometheus_eviction_metrics`. Cardinality grows with distinct evicting users.", 0) \
     DECLARE(NonZeroUInt64, drop_cache_threads, FILECACHE_DEFAULT_DROP_CACHE_THREADS, "Maximum number of threads used to remove cache keys in parallel on `SYSTEM DROP FILESYSTEM CACHE`. Value 1 means the removal is performed by the query thread alone", 0) \
-    DECLARE(UInt64, efficiency_window_sec, 600, "Length of the cache efficiency window in seconds. In each window the cache splits its bytes into active (read in the window), passive (not read, in file segments that had a read in the window) and idle (in file segments with no read in the window). 0 disables the tracking. Takes effect only after a server restart. A read counts the bytes that the cache fills into the read buffer (at least one buffer, `prefetch_buffer_size` by default), not the bytes that the query decompresses.", 0) \
+    DECLARE(UInt64, efficiency_window_sec, 600, "Length of the cache efficiency window in seconds. In each window the cache splits its bytes into active (served from the cache in the window), passive (not read, in file segments that had a read in the window) and idle (in file segments with no read in the window). 0 disables the tracking. Takes effect only after a server restart. Only bytes served from the cache count; a read that fills the cache does not. A hit counts the bytes that the cache fills into the read buffer (at least one buffer, `prefetch_buffer_size` by default), not the bytes that the query decompresses.", 0) \
 
 DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FILE_CACHE_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FileCacheSettings, FileCacheSetting)
@@ -147,7 +147,7 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
             "current_elements_num", std::make_shared<DataTypeUInt64>(), "Current cache elements (file segments) number"));
     result.add(
         ColumnDescription(
-            "active_bytes", std::make_shared<DataTypeUInt64>(), "Unique bytes read in the last full efficiency window, rounded up to granules. A read counts the bytes that the cache fills into the read buffer (at least one buffer, `prefetch_buffer_size` by default), not the bytes that the query decompresses."));
+            "active_bytes", std::make_shared<DataTypeUInt64>(), "Unique bytes served from the cache in the last full efficiency window, rounded up to granules. Only bytes served from the cache count; a read that fills the cache does not. A hit counts the bytes that the cache fills into the read buffer (at least one buffer, `prefetch_buffer_size` by default), not the bytes that the query decompresses."));
     result.add(
         ColumnDescription(
             "passive_bytes", std::make_shared<DataTypeUInt64>(), "Bytes not read in the last full efficiency window, in file segments that had at least one read in it"));

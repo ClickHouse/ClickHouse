@@ -29,8 +29,7 @@ public:
         ByteRange range_in_file,
         size_t object_file_offset_,
         ThrottlerPtr local_throttler_,
-        ReaderAnchorCache * anchors_,
-        bool track_cache_efficiency_);
+        ReaderAnchorCache * anchors_);
     ~DiskCacheReader() override;
 
     ByteRange range() const override { return hit_range; }
@@ -46,8 +45,6 @@ private:
     size_t object_file_offset;
     ThrottlerPtr local_throttler;
     ReaderAnchorCache * anchors = nullptr;
-    /// Count served bytes in the cache efficiency window (`FilesystemCacheSettings::track_cache_efficiency`).
-    bool track_cache_efficiency = true;
     /// Whether this reader served any bytes; the destructor then bumps the segment's cache priority.
     bool served = false;
     LoggerPtr log = getLogger("DiskCacheReader");
@@ -70,7 +67,6 @@ public:
     size_t committed() const override;
     size_t write(ChainedBuffers data, const FillRole & role) override;
     ChainedBuffers read(ByteRange subrange) override;
-    void markServed(ByteRange range_in_file) override;
     FillRole takeFillRole() override;
     ChainedBuffers waitAndRead(ByteRange subrange) override;
 

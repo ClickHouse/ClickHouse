@@ -234,7 +234,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
         new_values["FilesystemCacheActiveBytes"] = { active_bytes,
-            "Unique bytes of the `cache` virtual filesystem read in the last full efficiency window (`efficiency_window_sec`), rounded up to granules. A read counts the bytes that the cache fills into the read buffer (at least one buffer, `prefetch_buffer_size` by default), not the bytes that the query decompresses. Active, passive and idle bytes add up to the cache size at the end of the window." };
+            "Unique bytes of the `cache` virtual filesystem served from the cache in the last full efficiency window (`efficiency_window_sec`), rounded up to granules. Only bytes served from the cache count; a read that fills the cache does not. A hit counts the bytes that the cache fills into the read buffer (at least one buffer, `prefetch_buffer_size` by default), not the bytes that the query decompresses. Active, passive and idle bytes add up to the cache size at the end of the window." };
         new_values["FilesystemCachePassiveBytes"] = { passive_bytes,
             "Bytes of the `cache` virtual filesystem not read in the last full efficiency window, in file segments that had at least one read in it. Cache efficiency is active / (active + passive)." };
         new_values["FilesystemCacheIdleBytes"] = { idle_bytes,

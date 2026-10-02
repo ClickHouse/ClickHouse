@@ -171,8 +171,8 @@ public:
 
     void increasePriority();
 
-    /// Records that a reader returned bytes `[offset, offset + size)` of this file segment to its
-    /// caller, and that these bytes are in the cache. `offset` uses the coordinates of `range`.
+    /// Records that the cache served bytes `[offset, offset + size)` of this file segment to a
+    /// reader (a cache hit). `offset` uses the coordinates of `range`.
     /// Feeds the efficiency window of the cache (see `FileCacheEfficiency`).
     /// Do not call under the key lock or the file segment lock.
     void markRead(size_t offset, size_t size);
