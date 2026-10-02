@@ -1,0 +1,74 @@
+unique UInt64	2000000
+unique UInt64	2000000
+repeated Int64	299609
+repeated Int64	299609
+UInt32	1000
+UInt32	1000
+Int8	256
+Int8	256
+Float64	77779
+Float64	77779
+Float32	50000
+Float32	50000
+String	199748
+String	199748
+FixedString	100000
+FixedString	100000
+UUID	249927
+UUID	249927
+Int128	697704
+Int128	697704
+IPv4	100000
+IPv4	100000
+IPv6	100000
+IPv6	100000
+Date	3000
+Date	3000
+DateTime	397267
+DateTime	397267
+Enum8	2
+Enum8	2
+Nullable(Int64)	199885
+Nullable(Int64)	199885
+Nullable(String)	112500
+Nullable(String)	112500
+LowCardinality(String)	1000
+LowCardinality(String)	1000
+zero	1
+zero	1
+expression	123457
+expression	123457
+count distinct	199748
+count distinct	199748
+filter	267257
+filter	267257
+numbers_mt	1000000
+numbers_mt	1000000
+repeated UInt32	200000
+repeated UInt32	200000
+repeated UInt64	200000
+repeated UInt64	200000
+repeated String	200000
+repeated String	200000
+empty	0
+empty	0
+only NULLs	0
+only NULLs	0
+totals	299609
+
+totals	299609
+totals	299609
+
+totals	299609
+distributed	299609
+distributed	299609
+used	1
+used for Nullable	1
+disabled	0
+LowCardinality	0
+two aggregates	0
+GROUP BY	0
+two arguments	0
+single thread	0
+projection	150000
+projection	150000

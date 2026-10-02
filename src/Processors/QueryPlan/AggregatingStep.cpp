@@ -27,6 +27,7 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/RadixUniqExactTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
@@ -391,6 +392,64 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     return nullptr;
 }
 
+bool AggregatingStep::tryBuildRadixUniqExact(QueryPipelineBuilder & pipeline, const AggregatingTransformParamsPtr & transform_params, size_t max_threads) const
+{
+    const auto & aggregator_params = transform_params->params;
+    if (!final || !grouping_sets_params.empty() || !sort_description_for_merging.empty() || skip_merging
+        || aggregator_params.only_merge || aggregator_params.keys_size != 0 || aggregator_params.aggregates_size != 1
+        || aggregator_params.overflow_row
+        || pipeline.getNumStreams() <= 1 || max_threads <= 1)
+        return false;
+
+    const auto & aggregate = aggregator_params.aggregates[0];
+    if (aggregate.function->getName() != "uniqExact" || !aggregate.parameters.empty() || aggregate.argument_names.size() != 1)
+        return false;
+
+    const auto & output_header = transform_params->getHeader();
+    if (output_header.columns() != 1 || !WhichDataType(output_header.getByPosition(0).type).isUInt64())
+        return false;
+
+    const auto & input_header = pipeline.getHeader();
+    const auto & argument = input_header.getByName(aggregate.argument_names[0]);
+    const size_t num_streams = pipeline.getNumStreams();
+    auto state = createRadixUniqExactState(*argument.type, num_streams);
+    if (!state)
+        return false;
+
+    const size_t key_position = input_header.getPositionByName(argument.name);
+    auto result_header = std::make_shared<const Block>(output_header);
+
+    size_t stream = 0;
+    pipeline.addSimpleTransform([&](const SharedHeader & header)
+    {
+        return std::make_shared<RadixUniqExactRouteTransform>(header, result_header, state, stream++, key_position);
+    });
+
+    const size_t num_builders = std::min(max_threads, state->numPartitions());
+    pipeline.transform([&](OutputPortRawPtrs ports)
+    {
+        auto barrier = std::make_shared<RadixUniqExactBarrierTransform>(result_header, ports.size(), num_builders);
+        Processors processors{barrier};
+
+        auto input = barrier->getInputs().begin();
+        for (auto * port : ports)
+            connect(*port, *input++);
+
+        for (auto & output : barrier->getOutputs())
+        {
+            auto builder = std::make_shared<RadixUniqExactBuildTransform>(result_header, state);
+            connect(output, builder->getInputs().front());
+            processors.push_back(std::move(builder));
+        }
+        return processors;
+    });
+
+    pipeline.resize(1);
+    pipeline.addTransform(std::make_shared<RadixUniqExactSumTransform>(
+        result_header, state, aggregator_params.empty_result_for_aggregation_by_empty_set));
+    return true;
+}
+
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     size_t new_merge_threads = merge_threads;
@@ -454,6 +513,12 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
     const auto & src_header = pipeline.getSharedHeader();
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
+
+    if (settings.optimize_uniq_exact_radix_partitioning && tryBuildRadixUniqExact(pipeline, transform_params, max_threads))
+    {
+        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
+        return;
+    }
 
     if (!grouping_sets_params.empty())
     {
