@@ -2824,10 +2824,10 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
         static constexpr size_t state_prefetch_distance = 32;
         struct PendingCell
         {
-            TableKey key;
-            AggregateDataPtr mapped;
+            TableKey key{};
+            AggregateDataPtr mapped = nullptr;
         };
-        std::array<PendingCell, state_prefetch_distance> pending;
+        std::array<PendingCell, state_prefetch_distance> pending{};
         size_t scanned = 0;
         const auto offer_pending = [&](const PendingCell & cell)
         { offer(*reinterpret_cast<const UInt64 *>(cell.mapped + count_offset), cell.key, cell.mapped); };

@@ -890,8 +890,9 @@ void NO_INLINE Aggregator::appendDelayedRecords(
                 null_map = nullable->getNullMapData().data();
                 values = &nullable->getNestedColumn();
             }
+            const char * raw_values = values->getRawData().data();
             fixed_sources.push_back(
-                {.values = values->getRawData().data(),
+                {.values = raw_values,
                  .null_map = null_map,
                  .value_size = null_map ? field.size - 1 : field.size,
                  .offset = field.offset});
@@ -1201,7 +1202,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
         };
         const auto walk_filtered_or_not = [&]<bool with_prefetch>() ALWAYS_INLINE
         {
-            if (alive_bins)
+            if (alive_bins != nullptr)
                 walk_ranges.template operator()<with_prefetch, true>();
             else
                 walk_ranges.template operator()<with_prefetch, false>();

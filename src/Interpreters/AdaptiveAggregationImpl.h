@@ -146,7 +146,7 @@ struct AdaptiveTopKPruning
     struct ProducerBins
     {
         std::unique_ptr<UInt16[]> bins;
-        std::array<UInt16, ADAPTIVE_AGGREGATION_NUM_BUCKETS> bucket_maxima;
+        std::array<UInt16, ADAPTIVE_AGGREGATION_NUM_BUCKETS> bucket_maxima{};
     };
 
     /// Handed over by every producer at its finish, under the session's `producer_buffers_mutex`.
