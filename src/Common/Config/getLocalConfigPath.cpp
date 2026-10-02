@@ -3,8 +3,11 @@
 
 #include <Common/Config/getConfigPath.h>
 
+#include <filesystem>
 #include <vector>
 
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
