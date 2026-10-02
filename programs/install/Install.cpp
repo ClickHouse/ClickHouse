@@ -237,6 +237,8 @@ static bool isKnownWithoutDefaultUserDiskAccessStorage(const fs::path & director
     }
     catch (...)
     {
+        std::cerr << "Cannot check whether " << directory_path.string() << " defines the default user: "
+            << getCurrentExceptionMessage(false) << "\n";
         return false;
     }
 
