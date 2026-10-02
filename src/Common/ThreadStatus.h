@@ -130,9 +130,6 @@ public:
         return shared_data;
     }
 
-    /// Must be called before any thread attaches to the group: threads copy the predicates on attach.
-    void setQueryCancellationPredicates(QueryIsCanceledPredicate is_canceled, ThrowIfQueryCanceledPredicate throw_if_canceled);
-
     /// Mutation shared data
     void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level);
     void attachQueryForLog(const String & query_, UInt64 normalized_hash = 0);
