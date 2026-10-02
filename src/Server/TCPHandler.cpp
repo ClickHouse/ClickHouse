@@ -2201,7 +2201,18 @@ void TCPHandler::receiveHello()
             auto exception
                 = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver mode is disabled for connections to tcp_with_proxy_port");
             session = makeSession();
-            session->onAuthenticationFailure(/* user_name= */ std::nullopt, getClientAddress(session->getClientInfo()), exception);
+
+            /// Unlike `getClientAddress`, do not throw on a malformed forwarded address: the rejection
+            /// must stay `AUTHENTICATION_FAILED`, so that it is recorded in `system.session_log` and
+            /// nothing is serialized back to the unauthenticated peer.
+            auto address = socket().peerAddress();
+            if (server.config().getBool("auth_use_forwarded_address", false))
+            {
+                if (auto forwarded_address = session->getClientInfo().getLastForwardedFor())
+                    address = *forwarded_address;
+            }
+
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, address, exception);
             throw exception; /// NOLINT
         }
 
