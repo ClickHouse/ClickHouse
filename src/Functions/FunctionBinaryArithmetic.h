@@ -1713,7 +1713,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             {
                 if (WhichDataType(to_be_checked.argument.type).isTime())
                 {
-                    to_be_checked.const_val = checkAndGetColumnConst<ColumnTime>(col_raw)->template getValue<UInt32>();
+                    to_be_checked.const_val = checkAndGetColumnConst<ColumnTime>(col_raw)->template getValue<Int32>();
                     /// the output type is the same as the other argument, which is Time64
                     to_be_checked.scale = type->getScaleMultiplier();
                 }
@@ -2264,14 +2264,16 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
         /// non-vector result
         if (col_left_const && col_right_const)
         {
-            const NativeResultType const_a
-                = castConstantToNative<NativeResultType>(helperGetOrConvert<T0, ResultDataType>(col_left_const, left));
-            const NativeResultType const_b
-                = castConstantToNative<NativeResultType>(helperGetOrConvert<T1, ResultDataType>(col_right_const, right));
-
+            /// A `NULL` divisor makes the result `NULL` whatever the operands are, so they are not narrowed
+            /// (and cannot raise `DECIMAL_OVERFLOW`) in that case.
             ResultType res = {};
             if (!right_nullmap || !(*right_nullmap)[0])
             {
+                const NativeResultType const_a
+                    = castConstantToNative<NativeResultType>(helperGetOrConvert<T0, ResultDataType>(col_left_const, left));
+                const NativeResultType const_b
+                    = castConstantToNative<NativeResultType>(helperGetOrConvert<T1, ResultDataType>(col_right_const, right));
+
                 res = helperInvokeEither<left_is_decimal, right_is_decimal, OpImpl, OpImplCheck, ResultType>(
                      const_a, const_b, scale_a, scale_b);
             }

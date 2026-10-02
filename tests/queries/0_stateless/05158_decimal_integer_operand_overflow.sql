@@ -33,3 +33,10 @@ SELECT materialize(toDateTime64('1969-12-31 23:59:59', 0, 'UTC')) - toDateTime64
 SELECT toDateTime64('1969-12-31 23:59:59', 0, 'UTC') - materialize(toDateTime64('1969-12-31 23:59:58', 0, 'UTC'));
 SELECT toTime64('-00:00:01', 0) - toTime64('-00:00:02', 0) SETTINGS enable_time_time64_type = 1;
 SELECT materialize(toTime64('-00:00:01', 0)) - toTime64('-00:00:02', 0) SETTINGS enable_time_time64_type = 1;
+SELECT toTime('-00:00:01') - toTime64('-00:00:02', 0) SETTINGS enable_time_time64_type = 1;
+SELECT toTime64('-00:00:01', 0) - toTime('-00:00:02') SETTINGS enable_time_time64_type = 1;
+
+-- A `NULL` divisor makes the result `NULL` before an operand is narrowed.
+
+SELECT intDiv(9223372036854775807, nullIf(toDecimal32(2, 0), toDecimal32(2, 0)));
+SELECT 9223372036854775807 / nullIf(toDecimal32(2, 0), toDecimal32(2, 0));
