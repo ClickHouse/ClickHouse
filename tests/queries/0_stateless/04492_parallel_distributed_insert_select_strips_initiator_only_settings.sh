@@ -54,10 +54,13 @@ ${CLICKHOUSE_CLIENT} -q "SELECT number FROM numbers(10) FORMAT CSV" > "${DATA_FI
 # `'0'`: a working strip leaves the shard at its profile value `1`, while a regression that drops the
 # strip forwards `0` and overrides the profile. The remaining settings are in no profile, so the
 # plain "present at all" check stays valid for them.
+# `async_insert_select_as_async_insert` is not in any profile, so a plain "present at all" check is
+# valid: set it to a non-default value (default is `1`) and assert the shard did not receive it.
 LEAK_SETTINGS="parallel_distributed_insert_select = 2, prefer_localhost_replica = 0, log_queries = 1, \
     input_format = 'CSV', output_format = 'CSV', default_format = 'CSV', \
     http_allow_database_as_path = 0, http_allow_table_as_file = 0, http_allow_filters_as_path = 0, \
-    http_allow_filters_as_unrecognized_url_parameters = 1, implicit_table_at_top_level = 'src'"
+    http_allow_filters_as_unrecognized_url_parameters = 1, implicit_table_at_top_level = 'src', \
+    async_insert_select_as_async_insert = 0"
 
 # --- Run every exercised query up front; the query log is flushed once, below, before the assertions. ---
 
@@ -162,7 +165,8 @@ check_no_leak() {
             countIf(Settings['http_allow_table_as_file'] = '0') AS leaked_http_allow_table_as_file,
             countIf(Settings['http_allow_filters_as_path'] = '0') AS leaked_http_allow_filters_as_path,
             countIf(Settings['http_allow_filters_as_unrecognized_url_parameters'] != '') AS leaked_http_filters_as_url_params,
-            countIf(Settings['implicit_table_at_top_level'] != '') AS leaked_implicit_table_at_top_level
+            countIf(Settings['implicit_table_at_top_level'] != '') AS leaked_implicit_table_at_top_level,
+            countIf(Settings['async_insert_select_as_async_insert'] != '') AS leaked_async_insert_select
         FROM system.query_log
         WHERE initial_query_id IN (SELECT query_id FROM initial)
           AND is_initial_query = 0
