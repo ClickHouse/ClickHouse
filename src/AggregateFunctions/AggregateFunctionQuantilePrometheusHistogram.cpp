@@ -263,6 +263,18 @@ struct QuantilePrometheusHistogramArrayData
             }
         }
 
+        bool contains(size_t index) const
+        {
+            if (dense)
+                return index < present.size() && present[index] != 0;
+
+            const UInt32 index_uint32 = static_cast<UInt32>(index);
+            auto it = std::lower_bound(
+                sparse_values.begin(), sparse_values.end(), index_uint32,
+                [](const SparseValue & lhs, UInt32 rhs) { return lhs.index < rhs; });
+            return it != sparse_values.end() && it->index == index_uint32;
+        }
+
         bool add(size_t index, CumulativeHistogramValue value, size_t target_grid_size)
         {
             if (dense)
