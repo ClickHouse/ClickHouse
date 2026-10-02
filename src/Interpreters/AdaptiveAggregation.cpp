@@ -1,3 +1,7 @@
+#include <algorithm>
+#include <numeric>
+#include <optional>
+
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
@@ -24,6 +28,11 @@ void Aggregator::initAdaptiveSession(AdaptiveAggregationSession & shared) const
 {
     shared.layout = AdaptivePartitionLayout::forProducers(params.max_threads, params.max_bytes_before_external_group_by);
 
+    /// The bins bound the counts from above, which serves a descending order only. A throw-mode group limit needs every
+    /// group counted, which a skipped unit is not.
+    if (params.bucket_top_k && !params.bucket_top_k_ascending && !params.max_rows_to_group_by)
+        shared.top_k_pruning = std::make_unique<AdaptiveTopKPruning>(params.bucket_top_k);
+
     if (tmp_data && params.max_bytes_before_external_group_by)
     {
         /// An eighth of the threshold over the three buffers of each of the streams.
@@ -34,16 +43,63 @@ void Aggregator::initAdaptiveSession(AdaptiveAggregationSession & shared) const
     shared.initialized.store(true, std::memory_order_release);
 }
 
-void Aggregator::finishAdaptiveProducer(AdaptiveAggregationProducer & adaptive) const
+void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants, AdaptiveAggregationProducer & adaptive) const
 {
-    /// A producer that never froze staged nothing.
-    if (!adaptive.partitions)
-        return;
-
-    adaptive.partitions->finishAppending();
     auto & shared = *adaptive.session;
+
+    /// The bins take the rows of the producer's own table as well, whatever its phase: a producer that never froze
+    /// has no records but its table is a source of the merge.
+    std::optional<AdaptiveTopKPruning::ProducerBins> bins;
+    if (shared.top_k_pruning)
+    {
+        if (!adaptive.count_bins)
+            adaptive.count_bins = std::make_unique<UInt16[]>(adaptive_count_bins);
+        addAdaptiveCountsToBins(local_variants, adaptive.count_bins.get());
+
+        bins.emplace();
+        bins->bins = std::move(adaptive.count_bins);
+        for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
+        {
+            const UInt16 * bucket_bins = bins->bins.get() + bucket * adaptive_count_bins_per_bucket;
+            bins->bucket_maxima[bucket] = *std::max_element(bucket_bins, bucket_bins + adaptive_count_bins_per_bucket);
+        }
+    }
+
+    /// A producer that never froze staged nothing.
+    if (adaptive.partitions)
+        adaptive.partitions->finishAppending();
+
     std::lock_guard lock(shared.producer_buffers_mutex);
-    shared.producer_buffers.push_back(std::move(adaptive.partitions));
+    if (adaptive.partitions)
+        shared.producer_buffers.push_back(std::move(adaptive.partitions));
+    if (bins)
+        shared.top_k_pruning->producer_bins.push_back(std::move(*bins));
+}
+
+void Aggregator::prepareAdaptiveTopKPruning(AdaptiveAggregationSession & shared, size_t producers) const
+{
+    auto & pruning = *shared.top_k_pruning;
+
+    /// The bounds hold only if every source table of the merge counted its rows into bins: a producer without the
+    /// adaptive context (another aggregator of a mixed projection pipeline) did not.
+    if (pruning.producer_bins.size() != producers)
+    {
+        shared.top_k_pruning.reset();
+        return;
+    }
+
+    /// A bucket's largest bin is at most the sum of the producers' largest bins in it, which orders the buckets.
+    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> priorities{};
+    for (const auto & producer : pruning.producer_bins)
+        for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
+            priorities[bucket] += producer.bucket_maxima[bucket];
+    std::iota(pruning.bucket_order.begin(), pruning.bucket_order.end(), 0);
+    std::ranges::stable_sort(pruning.bucket_order, [&](UInt8 lhs, UInt8 rhs) { return priorities[lhs] > priorities[rhs]; });
+}
+
+UInt32 Aggregator::adaptiveBucketToMerge(const AdaptiveAggregationSession & shared, UInt32 claim) const
+{
+    return shared.top_k_pruning ? shared.top_k_pruning->bucket_order[claim] : claim;
 }
 
 void Aggregator::spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive) const

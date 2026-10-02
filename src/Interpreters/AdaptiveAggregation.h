@@ -37,7 +37,8 @@ namespace DB
 /// to two-level. The merge task owning bucket b then merges the bucket's partitions a few at a time: it drains every
 /// thread's records of those partitions and the locals' cells routed to them into one table sized for them, converts
 /// that table into a chunk and frees the partitions' memory, so the table stays in the cache and the staged memory
-/// shrinks as the merge proceeds.
+/// shrinks as the merge proceeds. When the aggregation feeds `ORDER BY count() DESC LIMIT n`, the merge skips the
+/// partitions, records and cells whose groups provably cannot reach the top (see `AdaptiveTopKPruning`).
 ///
 /// The net effect: frequent keys stay in small cache-resident tables, and a rare key is stored
 /// and emplaced exactly once, by one thread, instead of once per thread that saw it.
@@ -53,6 +54,9 @@ struct AdaptiveArgumentLayout;
 
 /// The working memory an adaptive merge task keeps across the buckets it merges.
 struct AdaptiveMergeScratch;
+
+/// The bin-bound pruning of an aggregation that feeds `ORDER BY count() DESC LIMIT n`.
+struct AdaptiveTopKPruning;
 
 /// The staged records of one partition as contiguous byte ranges of whole records: a producer's chunk, or a block
 /// read back from a spill stream.

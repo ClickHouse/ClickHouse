@@ -347,9 +347,14 @@ public:
         AdaptiveAggregationProducer * adaptive) const;
 
     /// Ends a producer's staging when its input ends: records the fill of its partitions and hands them to the
-    /// session. Every producing transform calls it before the finish barrier, so the session holds every
+    /// session, with its count bins when the session prunes, which take the rows of `local_variants`, the producer's
+    /// own table, as well. Every producing transform calls it before the finish barrier, so the session holds every
     /// producer's records by the time the last finisher assembles the merge.
-    void finishAdaptiveProducer(AdaptiveAggregationProducer & adaptive) const;
+    void finishAdaptiveProducer(AggregatedDataVariants & local_variants, AdaptiveAggregationProducer & adaptive) const;
+
+    /// The bucket the merge claim number `claim` takes: the buckets in the order of their bounds when the session
+    /// prunes (see `AdaptiveTopKPruning`), in their own order otherwise.
+    UInt32 adaptiveBucketToMerge(const AdaptiveAggregationSession & shared, UInt32 claim) const;
 
     /// Merges bucket `bucket` of an adaptive aggregation and converts it, one merge unit at a time. A unit is a run
     /// of the bucket's partitions: its records from every producer and the cells of the sources' bucket tables that
@@ -814,15 +819,26 @@ private:
         RuntimeDataflowStatisticsCacheUpdaterPtr updater,
         size_t * full_group_count) const;
 
-    /// Drains one partition's records into `table`. String-like keys are emplaced pointing into the records, which
-    /// are freed only after the table is converted or written.
+    /// Drains one partition's records into `table`, with `alive_bins` only those whose count bin within the bucket is
+    /// marked alive (see `AdaptiveTopKPruning`). String-like keys are emplaced pointing into the records, which are
+    /// freed only after the table is converted or written. Returns how many records it skipped.
     template <typename Method, typename Table>
-    void drainAdaptivePartition(
+    size_t drainAdaptivePartition(
         Table & table,
         Arena * arena,
         const AdaptiveRecordRanges & ranges,
+        const bool * alive_bins,
         PaddedPODArray<AggregateDataPtr> & places,
         RowStorePointers & records) const;
+
+    /// Adds the rows of every group of a producer's own table to its count bins (see `AdaptiveTopKPruning`).
+    void addAdaptiveCountsToBins(AggregatedDataVariants & variants, UInt16 * bins) const;
+    template <typename Method>
+    void addAdaptiveCountsToBins(Method & method, UInt16 * bins) const;
+
+    /// Checks that every producer handed its count bins over, which the bounds rely on, and orders the buckets for the
+    /// merge by their bounds; drops the pruning otherwise. Called with the merge's producers before the merge starts.
+    void prepareAdaptiveTopKPruning(AdaptiveAggregationSession & shared, size_t producers) const;
 
     /// Writes the producer's staged records to the session's spill streams, a partition block at a time, and frees
     /// them; the producer then keeps appending into new chunks. Called over the external-aggregation threshold.

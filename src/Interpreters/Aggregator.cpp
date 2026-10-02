@@ -1418,6 +1418,8 @@ void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggrega
 {
     std::call_once(adaptive.session->init_flag, [&] { initAdaptiveSession(*adaptive.session); });
     adaptive.partitions = std::make_unique<AdaptivePartitionBuffers>(adaptive.session->layout);
+    if (adaptive.session->top_k_pruning)
+        adaptive.count_bins = std::make_unique<UInt16[]>(adaptive_count_bins);
     adaptive.freeze();
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationLocalFreezes);
     LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", result.sizeWithoutOverflowRow());
@@ -4933,6 +4935,10 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
     /// destination goes in front of the tables and takes over their arenas, as the largest table does otherwise.
     if (adaptive_session && adaptive_session->initialized.load(std::memory_order_acquire))
     {
+        /// Every producer's table is still in `data_variants`, the empty ones included.
+        if (adaptive_session->top_k_pruning)
+            prepareAdaptiveTopKPruning(*adaptive_session, data_variants.size());
+
         auto destination = std::make_shared<AggregatedDataVariants>();
         destination->aggregator = this;
         destination->keys_size = params.keys_size;

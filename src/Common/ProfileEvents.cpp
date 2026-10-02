@@ -1033,6 +1033,8 @@ The server successfully detected this situation and will download merged part fr
     M(AdaptiveAggregationSpilledRecords, "How many staged records the adaptive aggregation wrote to disk under memory pressure.", ValueType::Number) \
     M(AdaptiveAggregationSpilledBytes, "How many bytes of staged records the adaptive aggregation wrote to disk under memory pressure, before compression.", ValueType::Bytes) \
     M(AdaptiveAggregationMergeUnits, "How many merge units, runs of the partitions of a two-level bucket merged in one table, the adaptive aggregation merged and converted.", ValueType::Number) \
+    M(AdaptiveAggregationPrunedUnits, "How many merge units the adaptive aggregation skipped without draining them, because no group in them could reach the top of `ORDER BY count() DESC LIMIT n`.", ValueType::Number) \
+    M(AdaptiveAggregationPrunedRecords, "How many staged records the adaptive aggregation's merge skipped, because their group could not reach the top of `ORDER BY count() DESC LIMIT n`.", ValueType::Number) \
     M(AdaptiveAggregationBucketsRetired, "Number of two-level buckets whose working memory (the arena slot of the merged states) was released by the adaptive aggregation's merge right after the bucket's last unit was converted.", ValueType::Number) \
     M(AggregationBucketTopKConversions, "Number of two-level buckets converted through the bucket-local Top-K selection (the aggregationBucketTopK plan optimization).", ValueType::Number) \
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.", ValueType::Number) \

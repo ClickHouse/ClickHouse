@@ -33,6 +33,8 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationStagedBytes;
     extern const Event AdaptiveAggregationDrainedRecords;
     extern const Event AdaptiveAggregationMergeUnits;
+    extern const Event AdaptiveAggregationPrunedUnits;
+    extern const Event AdaptiveAggregationPrunedRecords;
 }
 
 namespace DB
@@ -369,6 +371,58 @@ namespace
         for (const auto & block : spilled)
             if (block.sub == sub)
                 ranges.emplace_back(block.data.data(), block.data.size());
+    }
+
+    /// Adds rows to a count bin of the top-K pruning. The counter saturates, and a saturated bin bounds nothing.
+    void ALWAYS_INLINE addToCountBin(UInt16 & bin, UInt64 rows)
+    {
+        bin = static_cast<UInt16>(std::min<UInt64>(UInt64{bin} + rows, std::numeric_limits<UInt16>::max()));
+    }
+
+    /// A count bin's place among the bins of its bucket.
+    size_t ALWAYS_INLINE bucketCountBin(UInt64 hash)
+    {
+        return DB::adaptiveCountBin(hash) & (DB::adaptive_count_bins_per_bucket - 1);
+    }
+
+    /// The bounds of a bucket's bins: their sums over the producers, unbounded where a producer's counter saturated.
+    std::array<UInt64, DB::adaptive_count_bins_per_bucket> sumBucketCountBins(const DB::AdaptiveTopKPruning & pruning, size_t bucket)
+    {
+        std::array<UInt64, DB::adaptive_count_bins_per_bucket> bounds{};
+        for (const auto & producer : pruning.producer_bins)
+        {
+            const UInt16 * bins = producer.bins.get() + bucket * DB::adaptive_count_bins_per_bucket;
+            for (size_t bin = 0; bin < DB::adaptive_count_bins_per_bucket; ++bin)
+            {
+                if (bins[bin] == std::numeric_limits<UInt16>::max())
+                    bounds[bin] = std::numeric_limits<UInt64>::max();
+                else if (bounds[bin] != std::numeric_limits<UInt64>::max())
+                    bounds[bin] += bins[bin];
+            }
+        }
+        return bounds;
+    }
+
+    /// Offers the counts of a converted unit's groups to the pruning's best counts, and publishes the smallest of them
+    /// as the threshold once there are `limit`.
+    void offerTopKCounts(DB::AdaptiveTopKPruning & pruning, const DB::IColumn & column)
+    {
+        const auto & counts = assert_cast<const DB::ColumnUInt64 &>(column).getData();
+        std::lock_guard lock(pruning.best_mutex);
+        for (const UInt64 count : counts)
+        {
+            if (pruning.best.size() < pruning.limit)
+            {
+                pruning.best.push(count);
+            }
+            else if (count > pruning.best.top())
+            {
+                pruning.best.pop();
+                pruning.best.push(count);
+            }
+        }
+        if (pruning.best.size() == pruning.limit)
+            pruning.threshold.store(pruning.best.top(), std::memory_order_relaxed);
     }
 
     /// The same for a set table, whose cells hold only keys.
@@ -939,6 +993,14 @@ void NO_INLINE Aggregator::appendDelayedRecords(
         }
     }
 
+    /// The rows behind the records go to the count bins of the top-K pruning: a count record stands for its run.
+    if (adaptive.count_bins)
+    {
+        UInt16 * bins = adaptive.count_bins.get();
+        for (size_t i = 0; i < total; ++i)
+            addToCountBin(bins[adaptiveCountBin(adaptive.miss_hashes[i])], counts_only ? adaptive.miss_multiplicities[i] : 1);
+    }
+
     auto & shared = *adaptive.session;
 
     /// Thawing is the adaptive aggregation standing down globally: when the staged stream
@@ -1047,10 +1109,11 @@ void NO_INLINE Aggregator::appendDelayedRecords(
 }
 
 template <typename Method, typename Table>
-void NO_INLINE Aggregator::drainAdaptivePartition(
+size_t NO_INLINE Aggregator::drainAdaptivePartition(
     Table & table,
     Arena * arena,
     const AdaptiveRecordRanges & ranges,
+    const bool * alive_bins,
     PaddedPODArray<AggregateDataPtr> & places,
     RowStorePointers & records) const
 {
@@ -1063,11 +1126,21 @@ void NO_INLINE Aggregator::drainAdaptivePartition(
     const bool prefetch
         = adaptive_key_stages_bytes<Key> || table.getBufferSizeInBytes() > adaptive_drain_prefetch_min_table_bytes;
     size_t drained = 0;
+    size_t skipped = 0;
     /// The callers' lambdas run once per record, so all of them are inlined into the walk.
     const auto walk = [&](auto record_bytes, auto key_of, auto apply) ALWAYS_INLINE
     {
-        const auto walk_ranges = [&]<bool with_prefetch>() ALWAYS_INLINE
+        const auto walk_ranges = [&]<bool with_prefetch, bool filtered>() ALWAYS_INLINE
         {
+            /// Whether the walk takes a record: every one, or with alive bins only those of an alive bin.
+            const auto takes = [&](const char * record) ALWAYS_INLINE
+            {
+                if constexpr (filtered)
+                    return alive_bins[bucketCountBin(unalignedLoad<UInt64>(record))];
+                else
+                    return true;
+            };
+
             /// The prefetch cursor runs the look-ahead distance in front of the walk and crosses from one range to
             /// the next as the walk does: a partition's ranges are as small as a first chunk of a few kilobytes, so
             /// restarting the distance in every range would leave a good share of the records unprefetched.
@@ -1094,8 +1167,11 @@ void NO_INLINE Aggregator::drainAdaptivePartition(
                             __builtin_prefetch(next, /*rw=*/0, /*locality=*/2);
                     }
                 }
-                const auto [key_pos, key_size] = key_of(ahead);
-                prefetchStagedKey<Key>(table, key_pos, key_size, unalignedLoad<UInt64>(ahead));
+                if (takes(ahead))
+                {
+                    const auto [key_pos, key_size] = key_of(ahead);
+                    prefetchStagedKey<Key>(table, key_pos, key_size, unalignedLoad<UInt64>(ahead));
+                }
                 ahead += record_bytes(ahead);
             };
             if constexpr (with_prefetch)
@@ -1110,16 +1186,30 @@ void NO_INLINE Aggregator::drainAdaptivePartition(
                 {
                     if constexpr (with_prefetch)
                         prefetch_next();
-                    apply(record);
+                    if (takes(record))
+                    {
+                        apply(record);
+                        ++drained;
+                    }
+                    else
+                    {
+                        ++skipped;
+                    }
                     record += record_bytes(record);
-                    ++drained;
                 }
             }
         };
+        const auto walk_filtered_or_not = [&]<bool with_prefetch>() ALWAYS_INLINE
+        {
+            if (alive_bins)
+                walk_ranges.template operator()<with_prefetch, true>();
+            else
+                walk_ranges.template operator()<with_prefetch, false>();
+        };
         if (prefetch)
-            walk_ranges.template operator()<true>();
+            walk_filtered_or_not.template operator()<true>();
         else
-            walk_ranges.template operator()<false>();
+            walk_filtered_or_not.template operator()<false>();
     };
 
     if (is_simple_count)
@@ -1291,6 +1381,49 @@ void NO_INLINE Aggregator::drainAdaptivePartition(
     }
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationDrainedRecords, drained);
+    return skipped;
+}
+
+void Aggregator::addAdaptiveCountsToBins(AggregatedDataVariants & variants, UInt16 * bins) const
+{
+#define M(NAME) \
+    else if (variants.type == AggregatedDataVariants::Type::NAME) \
+        addAdaptiveCountsToBins(*variants.NAME, bins);
+
+    if (variants.empty()) {} // NOLINT
+    APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+    APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+#undef M
+    else
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "The adaptive aggregation cannot count the rows of variant {}", variants.getMethodName());
+}
+
+template <typename Method>
+void Aggregator::addAdaptiveCountsToBins(Method & method, UInt16 * bins) const
+{
+    if constexpr (MapAggregationMethod<Method>)
+    {
+        const size_t count_offset = offsets_of_aggregate_states[params.bucket_top_k_count_index];
+        const auto add = [&](auto & table)
+        {
+            forEachMappedCellWithHash(
+                table,
+                [&](const auto &, AggregateDataPtr & mapped, size_t hash)
+                {
+                    const UInt64 rows = is_simple_count ? getInlineCountState(mapped) : getCountState(mapped + count_offset);
+                    addToCountBin(bins[adaptiveCountBin(hash)], rows);
+                });
+        };
+        if constexpr (requires { method.data.impls; })
+        {
+            for (auto & impl : method.data.impls)
+                add(impl);
+        }
+        else
+        {
+            add(method.data);
+        }
+    }
 }
 
 Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucket(
@@ -1387,6 +1520,29 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             forEachKeyCellWithHash(source, [&](const auto & key, size_t hash) { unit_cells[unit_of(hash)].push_back({key, nullptr, hash}); });
     }
 
+    /// With the top-K pruning, the bounds of the bucket's count bins (see `AdaptiveTopKPruning`). The statistics of the
+    /// updater need every group converted, so a merge that collects them does not prune.
+    AdaptiveTopKPruning * const pruning = updater ? nullptr : session.top_k_pruning.get();
+    std::array<UInt64, adaptive_count_bins_per_bucket> bin_bounds{};
+    if (pruning)
+        bin_bounds = sumBucketCountBins(*pruning, bucket);
+    std::array<bool, adaptive_count_bins_per_bucket> alive{};
+    const size_t bins_per_unit = adaptive_count_bins_per_bucket / units;
+    size_t pruned_records = 0;
+
+    /// A source cell whose group cannot reach the top goes with its states.
+    const auto discard_cell = [&](SourceCell & cell)
+    {
+        if constexpr (MapAggregationMethod<Method>)
+        {
+            AggregateDataPtr & place = *cell.mapped;
+            if (!is_simple_count && !all_aggregates_has_trivial_destructor)
+                for (size_t i = 0; i < params.aggregates_size; ++i)
+                    aggregate_functions[i]->destroy(place + offsets_of_aggregate_states[i]);
+            place = nullptr;
+        }
+    };
+
     AggregatedChunks chunks;
     auto & places = scratch.places;
     auto & source_places = scratch.source_places;
@@ -1403,11 +1559,40 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         if (!unit_records && cells.empty())
             continue;
 
-        /// The table is empty here, and grows once to hold the unit's records and source cells. The string table
-        /// keeps its sub-maps as they are, because it would split the hint evenly over its four size-class sub-maps
-        /// while a real key set concentrates in one of them.
+        /// The unit's bins that can still hold a group of the top, at the threshold of the moment: a unit with none is
+        /// skipped, its source cells dropped and its records freed unread; a unit with some drains only theirs.
+        const bool * alive_bins = nullptr;
+        size_t alive_count = bins_per_unit;
+        if (pruning)
+        {
+            const UInt64 threshold = pruning->threshold.load(std::memory_order_relaxed);
+            alive_count = 0;
+            for (size_t bin = unit * bins_per_unit; bin < (unit + 1) * bins_per_unit; ++bin)
+            {
+                alive[bin] = bin_bounds[bin] >= threshold;
+                alive_count += alive[bin];
+            }
+            if (!alive_count)
+            {
+                for (auto & cell : cells)
+                    discard_cell(cell);
+                for (const auto & producer : session.producer_buffers)
+                    for (size_t partition = unit_first_partition; partition < unit_first_partition + partitions_per_unit; ++partition)
+                        producer->releasePartition(partition);
+                pruned_records += unit_records;
+                ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedUnits);
+                continue;
+            }
+            if (alive_count < bins_per_unit)
+                alive_bins = alive.data();
+        }
+
+        /// The table is empty here, and grows once to hold the unit's records and source cells, of its alive bins
+        /// when it is pruned, in their share of the bins. The string table keeps its sub-maps as they are, because it
+        /// would split the hint evenly over its four size-class sub-maps while a real key set concentrates in one of
+        /// them.
         if constexpr (!requires { table.emptyStringSlot(); })
-            table.reserve(unit_records + cells.size());
+            table.reserve((unit_records + cells.size()) * alive_count / bins_per_unit);
 
         /// The sources' cells first: a key a source holds is adopted with its state, so the records of that key
         /// update the adopted state instead of creating one.
@@ -1417,6 +1602,11 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             source_places.clear();
             for (auto & cell : cells)
             {
+                if (alive_bins && !alive_bins[bucketCountBin(cell.hash)])
+                {
+                    discard_cell(cell);
+                    continue;
+                }
                 typename Table::LookupResult it;
                 bool inserted = false;
                 table.emplace(cell.key, it, inserted, cell.hash);
@@ -1447,6 +1637,8 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         {
             for (const auto & cell : cells)
             {
+                if (alive_bins && !alive_bins[bucketCountBin(cell.hash)])
+                    continue;
                 typename Table::LookupResult it;
                 bool inserted = false;
                 table.emplace(cell.key, it, inserted, cell.hash);
@@ -1456,7 +1648,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         for (size_t partition = unit_first_partition; partition < unit_first_partition + partitions_per_unit; ++partition)
         {
             collectPartitionRecords(session, spilled, partition, partition - first_partition, scratch.ranges);
-            drainAdaptivePartition<Method>(table, arena, scratch.ranges, places, scratch.records);
+            pruned_records += drainAdaptivePartition<Method>(table, arena, scratch.ranges, alive_bins, places, scratch.records);
         }
 
         if (full_group_count)
@@ -1475,6 +1667,8 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             else
                 updater->recordAggregationKeySizes(chunk.chunk, keys_positions, key_types);
         }
+        if (pruning)
+            offerTopKCounts(*pruning, *chunk.chunk.getColumns()[params.keys_size + params.bucket_top_k_count_index]);
         chunks.push_back(std::move(chunk));
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationMergeUnits);
 
@@ -1484,7 +1678,10 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                 producer->releasePartition(partition);
     }
 
-    /// Every source cell of the bucket was adopted or merged and its mapped value nulled, so the
+    if (pruned_records)
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedRecords, pruned_records);
+
+    /// Every source cell of the bucket was adopted, merged or discarded and its mapped value nulled, so the
     /// sources' bucket tables only release their buffers.
     for (size_t i = 1; i < data.size(); ++i)
         getDataVariant<Method>(*data[i]).data.impls[bucket].clearAndShrink();
@@ -1543,7 +1740,8 @@ void Aggregator::writeAdaptiveRecordsToTemporaryFiles(AdaptiveAggregationSession
                 for (size_t sub = 0; sub < partitions_per_bucket; ++sub)
                 {
                     collectPartitionRecords(session, spilled, bucket * partitions_per_bucket + sub, sub, ranges);
-                    drainAdaptivePartition<Method>(method.data.impls[bucket], table->aggregates_pool, ranges, places, records);
+                    drainAdaptivePartition<Method>(
+                        method.data.impls[bucket], table->aggregates_pool, ranges, /*alive_bins=*/nullptr, places, records);
                 }
             });
         if (table->allocatedBytes() >= part_bytes)

@@ -4,6 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <variant>
 #include <vector>
 
@@ -55,6 +56,12 @@ constexpr size_t adaptive_merge_unit_records = 16'384;
 /// part is written once its table holds an eighth of the external-aggregation threshold, but never below this
 /// floor, under which every part costs the external merge a reader of its own for little data.
 constexpr size_t adaptive_external_min_part_bytes = 32 << 20;
+/// The count bins of the top-K pruning (see `AdaptiveTopKPruning`) sit on the hash bits 14..31, the bucket's and the
+/// ten right below them, so every bucket owns 1024 consecutive bins and every partition or merge unit a run of them. A
+/// bin then holds a few hundred rows of a hundred-million-row aggregation, which keeps the bounds of most bins below
+/// the counts of a top 10 even when its groups have only a few hundred rows each.
+constexpr size_t adaptive_count_bins_per_bucket = 1024;
+constexpr size_t adaptive_count_bins = ADAPTIVE_AGGREGATION_NUM_BUCKETS * adaptive_count_bins_per_bucket;
 /// A thread gives up on freezing once it has consumed this many times the freeze threshold
 /// in rows while holding fewer keys than the threshold. High-cardinality streams freeze
 /// within a couple of blocks and skewed streams at roughly threshold / (1 - hot share) rows,
@@ -119,6 +126,46 @@ struct AdaptiveArgumentLayout
     size_t num_positions = 0;
 };
 
+inline size_t adaptiveCountBin(UInt64 hash)
+{
+    return (hash >> 14) & (adaptive_count_bins - 1);
+}
+
+/// The bin-bound top-K pruning of an aggregation that feeds `ORDER BY count() DESC LIMIT n`
+/// (`Aggregator::Params::bucket_top_k`). Every producer counts the rows of its staged records, and at its finish the
+/// rows of its own table, into its bins. Summed over the producers, a bin bounds the count of every group in it from
+/// above: the rows of all its groups are in it. The merge keeps the `limit` best exact counts of the groups it has
+/// converted; once there are `limit` of them, a group whose bin is bounded below the smallest one has `limit` groups
+/// ahead of it, so the merge skips the units, staged records and source cells of such bins without draining them.
+/// The merge takes the buckets with the largest bounds first, so the threshold rises early.
+struct AdaptiveTopKPruning
+{
+    explicit AdaptiveTopKPruning(size_t limit_) : limit(limit_) { }
+
+    const size_t limit;
+
+    /// A producer's bins and the largest bin of each bucket. The counters are narrow, to keep the bins of a producer in
+    /// its cache, and saturate: a saturated bin bounds nothing, but it holds that many rows of one producer, so it is
+    /// among the heaviest anyway.
+    struct ProducerBins
+    {
+        std::unique_ptr<UInt16[]> bins;
+        std::array<UInt16, ADAPTIVE_AGGREGATION_NUM_BUCKETS> bucket_maxima;
+    };
+
+    /// Handed over by every producer at its finish, under the session's `producer_buffers_mutex`.
+    std::vector<ProducerBins> producer_bins;
+
+    /// The order the merge tasks claim the buckets in, set before the merge starts (see
+    /// `Aggregator::prepareAdaptiveTopKPruning`).
+    std::array<UInt8, ADAPTIVE_AGGREGATION_NUM_BUCKETS> bucket_order{};
+
+    /// The `limit` best exact counts converted so far, and the smallest of them once there are `limit`.
+    std::mutex best_mutex;
+    std::priority_queue<UInt64, std::vector<UInt64>, std::greater<>> best;
+    std::atomic<UInt64> threshold{0};
+};
+
 struct AdaptiveAggregationSession
 {
     std::once_flag init_flag;
@@ -162,6 +209,10 @@ struct AdaptiveAggregationSession
     /// Set once the staged stream proves repeat-dominated; every thread then thaws its local
     /// table at the next block and returns to the baseline path for good.
     std::atomic<bool> thaw_all{false};
+
+    /// Set by the first freeze when the aggregation feeds `ORDER BY count() DESC LIMIT n` (see
+    /// `AdaptiveTopKPruning`).
+    std::unique_ptr<AdaptiveTopKPruning> top_k_pruning;
 };
 
 using AdaptiveAggregationSessionPtr = std::shared_ptr<AdaptiveAggregationSession>;
@@ -242,6 +293,10 @@ struct AdaptiveAggregationProducer
     PaddedPODArray<UInt64> miss_key_sizes;
     PaddedPODArray<char> miss_keys;
     PaddedPODArray<UInt32> miss_multiplicities;
+
+    /// The producer's count bins when the session prunes (see `AdaptiveTopKPruning`), created by its freeze, or by its
+    /// finish if it never froze, and handed over at the finish.
+    std::unique_ptr<UInt16[]> count_bins;
 };
 
 }

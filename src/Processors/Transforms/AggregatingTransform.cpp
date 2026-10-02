@@ -303,12 +303,13 @@ private:
     {
         while (adaptive_chunks.empty())
         {
-            UInt32 bucket_num = shared_data->next_bucket_to_merge.fetch_add(1);
-            if (bucket_num >= NUM_BUCKETS)
+            const UInt32 claim = shared_data->next_bucket_to_merge.fetch_add(1);
+            if (claim >= NUM_BUCKETS)
             {
                 data.reset();
                 return {};
             }
+            const UInt32 bucket_num = params->aggregator.adaptiveBucketToMerge(*adaptive_session, claim);
 
             size_t full_group_count = 0;
             auto agg_chunks = params->aggregator.mergeAndConvertAdaptiveBucket(
@@ -1573,7 +1574,7 @@ void AggregatingTransform::initGenerate()
     {
         /// Hand this thread's staged records over before the finish barrier below: the last
         /// finisher assembles the merge assuming the session holds every producer's records.
-        params->aggregator.finishAdaptiveProducer(*adaptive_context);
+        params->aggregator.finishAdaptiveProducer(variants, *adaptive_context);
 
         if (variants.isConvertibleToTwoLevel())
             variants.convertToTwoLevel();
