@@ -435,7 +435,7 @@ function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasm
         atob: (b64) => Buffer.from(b64, 'base64').toString('binary'),
         btoa: (bin) => Buffer.from(bin, 'binary').toString('base64'),
         TextEncoder, TextDecoder,
-        URL, URLSearchParams, FormData,
+        URL, URLSearchParams, FormData, Headers,
         Event, CustomEvent,
         AbortController,
         structuredClone,
