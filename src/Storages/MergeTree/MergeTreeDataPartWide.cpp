@@ -31,7 +31,7 @@ namespace ErrorCodes
 
 namespace MergeTreeSetting
 {
-    extern MergeTreeSettingsBool enable_index_granularity_compression;
+    extern const MergeTreeSettingsBool enable_index_granularity_compression;
     extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
@@ -237,7 +237,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
 ColumnSize MergeTreeDataPartWide::calculateSubcolumnSize(const String & subcolumn_name) const
 {
     ColumnSize size;
-    if (checksums.empty())
+    if (checksums.empty() || isEmpty())
         return size;
 
     for (const auto & stream : getListOfStreamsForColumn(getColumn(subcolumn_name)))
