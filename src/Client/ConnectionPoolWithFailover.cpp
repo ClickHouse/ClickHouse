@@ -62,10 +62,10 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
 IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts & timeouts)
 {
     Settings settings;
-    settings[Setting::load_balancing] = get_priority_load_balancing.load_balancing;
-    settings[Setting::load_balancing_first_offset] = 0;
-    settings[Setting::distributed_replica_max_ignored_errors] = 0;
-    settings[Setting::fallback_to_stale_replicas_for_distributed_queries] = true;
+    settings.set(Setting::load_balancing, get_priority_load_balancing.load_balancing);
+    settings.set(Setting::load_balancing_first_offset, 0);
+    settings.set(Setting::distributed_replica_max_ignored_errors, 0);
+    settings.set(Setting::fallback_to_stale_replicas_for_distributed_queries, true);
 
     return get(timeouts, settings);
 }

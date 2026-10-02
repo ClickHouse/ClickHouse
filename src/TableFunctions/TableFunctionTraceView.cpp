@@ -280,8 +280,8 @@ Block executeInternalQuery(const String & query, ContextPtr context)
     /// reads here exactly as it would to a view over the span log.
     Settings settings = query_context->getSettingsCopy();
     ClusterProxy::stripInitiatorOnlySettings(settings);
-    settings[Setting::max_result_rows] = 0;
-    settings[Setting::max_result_bytes] = 0;
+    settings.set(Setting::max_result_rows, 0);
+    settings.set(Setting::max_result_bytes, 0);
     query_context->setSettings(settings);
     auto io = executeQuery(query, query_context, QueryFlags{.internal = true}).second;
     return pullMonoBlock(io.pipeline);
