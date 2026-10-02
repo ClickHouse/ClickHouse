@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/ProjectionsDescription.h>
 
-#include <list>
 #include <optional>
 #include <unordered_map>
 
@@ -14,9 +13,11 @@ namespace DB
 /// the projection optimization weighs them as materialized projections and records the result, but it never reads them
 struct HypotheticalProjections
 {
-    std::list<ProjectionDescription> projections;
-    /// parent part name -> projection name -> in-memory projection part
-    std::unordered_map<String, std::unordered_map<String, MergeTreeDataPartPtr>> parts;
+    explicit HypotheticalProjections(ProjectionDescription projection_) : projection(std::move(projection_)) {}
+
+    ProjectionDescription projection;
+    /// parent part name -> in-memory projection part
+    std::unordered_map<String, MergeTreeDataPartPtr> parts;
 
     struct Outcome
     {
@@ -32,23 +33,12 @@ struct HypotheticalProjections
         bool nothing_to_serve = false;
         String reason;
     };
-    std::unordered_map<String, Outcome> outcomes;
+    Outcome outcome;
 
-    bool contains(const ProjectionDescription * projection) const
+    MergeTreeDataPartPtr findPart(const String & parent_part_name) const
     {
-        for (const auto & own : projections)
-            if (&own == projection)
-                return true;
-        return false;
-    }
-
-    MergeTreeDataPartPtr findPart(const String & parent_part_name, const String & projection_name) const
-    {
-        auto part_it = parts.find(parent_part_name);
-        if (part_it == parts.end())
-            return nullptr;
-        auto it = part_it->second.find(projection_name);
-        return it == part_it->second.end() ? nullptr : it->second;
+        auto it = parts.find(parent_part_name);
+        return it == parts.end() ? nullptr : it->second;
     }
 };
 

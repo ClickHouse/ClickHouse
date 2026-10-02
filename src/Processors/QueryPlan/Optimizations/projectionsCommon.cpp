@@ -407,8 +407,8 @@ bool analyzeProjectionCandidate(
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
         MergeTreeDataPartPtr projection_part = it != created_projections.end() && !it->second->is_broken ? it->second : nullptr;
-        if (!projection_part && hypothetical_projections)
-            projection_part = hypothetical_projections->findPart(part_with_ranges.data_part->name, candidate.projection->name);
+        if (!projection_part && hypothetical_projections && candidate.projection == &hypothetical_projections->projection)
+            projection_part = hypothetical_projections->findPart(part_with_ranges.data_part->name);
         if (projection_part
             && projectionPartHasRequiredColumns(
                 *projection_part, *part_with_ranges.data_part, *candidate.projection, parent_metadata, required_column_names))

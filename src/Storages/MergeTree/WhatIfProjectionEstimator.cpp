@@ -280,14 +280,14 @@ std::vector<size_t> simulateWriterMarks(
 /// builds the projection part in memory for each layout that the writer can leave, with its primary index
 /// with rows of one width, the merge block size sets the granule size
 /// with rows of different widths, the merge cuts its blocks at each source, so `uneven_rows` selects the likeliest layout
-std::array<MergeTreeDataPartPtr, 3> buildSyntheticProjectionParts(
+/// returns one part for each layout, with the index of the likeliest layout
+std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionParts(
     ProjectionPartData & data,
     const ProjectionDescription & projection,
     const MergeTreeData & merge_tree,
     const DataPartPtr & parent_part,
     const MergeTreeSettings & mt_settings,
-    bool uneven_rows,
-    size_t & primary)
+    bool uneven_rows)
 {
     const auto & proj_key = projection.metadata->getSortingKey();
 
@@ -312,7 +312,7 @@ std::array<MergeTreeDataPartPtr, 3> buildSyntheticProjectionParts(
     /// one granule worth of bytes is the shortest run whose width can still move the granule size
     const size_t granule_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
     std::vector<std::pair<size_t, size_t>> chunkings;
-    primary = 0;
+    size_t primary = 0;
     chunkings.emplace_back(data.rows, 0);
     if (granularity_per_block)
     {
@@ -363,7 +363,7 @@ std::array<MergeTreeDataPartPtr, 3> buildSyntheticProjectionParts(
         return part;
     };
 
-    /// equal layouts use the same part, and one layout replaces all three when it is the only one
+    /// equal layouts use the same part
     std::vector<MergeTreeDataPartPtr> built(layouts.size());
     for (size_t i = 0; i < layouts.size(); ++i)
     {
@@ -373,10 +373,15 @@ std::array<MergeTreeDataPartPtr, 3> buildSyntheticProjectionParts(
         if (!built[i])
             built[i] = build(layouts[i]);
     }
-    std::array<MergeTreeDataPartPtr, 3> parts;
-    for (size_t i = 0; i < parts.size(); ++i)
-        parts[i] = built[std::min(i, built.size() - 1)];
-    return parts;
+    return {std::move(built), primary};
+}
+
+/// the reasons of the optimizer start in lower case, but the reasons of `EXPLAIN WHATIF` are sentences
+String capitalized(String text)
+{
+    if (!text.empty())
+        text[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(text[0])));
+    return text;
 }
 
 bool tryEstimateProjection(
@@ -406,10 +411,7 @@ bool tryEstimateProjection(
     /// then it weighs each layout that the writer can leave, to find if the choice changes with the layout
     std::array<HypotheticalProjectionsPtr, 4> scenarios;
     for (auto & scenario : scenarios)
-    {
-        scenario = std::make_shared<HypotheticalProjections>();
-        scenario->projections.push_back(projection.clone());
-    }
+        scenario = std::make_shared<HypotheticalProjections>(projection.clone());
     bool layouts_differ = false;
     UInt64 scanned_parts = 0;
     UInt64 scanned_marks = 0;
@@ -457,13 +459,14 @@ bool tryEstimateProjection(
         if (part_data.rows == 0)
             continue;
 
-        size_t primary = 0;
-        const auto parts = buildSyntheticProjectionParts(part_data, projection, data, part, mt_settings, uneven_rows, primary);
-        scenarios[0]->parts[part->name][projection.name] = parts[primary];
-        for (size_t layout = 0; layout < parts.size(); ++layout)
+        const auto [parts, primary] = buildSyntheticProjectionParts(part_data, projection, data, part, mt_settings, uneven_rows);
+        scenarios[0]->parts[part->name] = parts[primary];
+        /// a part with one layout uses it in every scenario
+        for (size_t layout = 0; layout + 1 < scenarios.size(); ++layout)
         {
-            scenarios[1 + layout]->parts[part->name][projection.name] = parts[layout];
-            layouts_differ |= parts[layout] != parts[primary];
+            const auto & layout_part = parts[std::min(layout, parts.size() - 1)];
+            scenarios[1 + layout]->parts[part->name] = layout_part;
+            layouts_differ |= layout_part != parts[primary];
         }
     }
 
@@ -471,15 +474,15 @@ bool tryEstimateProjection(
     for (size_t i = 0; i < weighed; ++i)
         weigh(scenarios[i]);
 
-    const auto & outcome = scenarios[0]->outcomes[projection.name];
+    const auto & outcome = scenarios[0]->outcome;
     result.sampled_parts = scanned_parts;
     result.sampled_marks = scanned_marks;
     result.elapsed_us = watch.elapsedMicroseconds();
     if (!outcome.marks)
     {
         result.status = WhatIfCandidateResult::NotApplicable;
-        result.not_applicable_reason = outcome.reason.empty() ? "The optimizer did not weigh the projection for this read" : outcome.reason;
-        result.not_applicable_reason[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(result.not_applicable_reason[0])));
+        result.not_applicable_reason
+            = outcome.reason.empty() ? "The optimizer did not weigh the projection for this read" : capitalized(outcome.reason);
         return true;
     }
 
@@ -489,7 +492,7 @@ bool tryEstimateProjection(
     size_t chosen_in = 0;
     for (size_t i = 0; i < weighed; ++i)
     {
-        const auto & scenario_outcome = scenarios[i]->outcomes[projection.name];
+        const auto & scenario_outcome = scenarios[i]->outcome;
         chosen_in += scenario_outcome.chosen;
         if (scenario_outcome.marks)
         {
@@ -727,6 +730,15 @@ WhatIfCandidateResult evaluateProjection(
     }
     else
     {
+        /// no data is read, but the optimizer still decides if the query gives the projection something to serve
+        auto scenario = std::make_shared<HypotheticalProjections>(projection->clone());
+        weigh(scenario);
+        if (scenario->outcome.nothing_to_serve && relaxing_setting.empty())
+        {
+            result.status = WhatIfCandidateResult::NotApplicable;
+            result.not_applicable_reason = capitalized(scenario->outcome.reason);
+            return result;
+        }
         result.empirical_status = WhatIfCandidateResult::Disabled;
     }
 
