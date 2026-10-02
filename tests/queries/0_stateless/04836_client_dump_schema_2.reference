@@ -8,6 +8,9 @@ OK: plain dump without --dump-schema-dir still succeeds (no table-level cycle)
 --- combined with --file/--structure is rejected ---
 OK: non-zero exit code
 BAD_ARGUMENTS
+--- combined with --input-format is rejected ---
+OK: non-zero exit code
+BAD_ARGUMENTS
 --- merge()/loop() with constant-expression arguments name their local source ---
 OK: folded source dumped before aaa_merge_folded
 OK: folded source dumped before aab_loop_folded

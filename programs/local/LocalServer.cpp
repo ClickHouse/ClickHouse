@@ -1391,8 +1391,11 @@ void LocalServer::processConfig()
     bool dump_schema = getClientConfiguration().has("dump-schema");
     if (dump_schema && (!queries.empty() || !queries_files.empty()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option '--dump-schema' cannot be combined with '--query' or '--queries-file'");
-    if (dump_schema && (getClientConfiguration().has("table-file") || getClientConfiguration().has("table-structure")))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option '--dump-schema' cannot be combined with '--table-file' or '--table-structure'");
+    if (dump_schema
+        && (getClientConfiguration().has("table-file") || getClientConfiguration().has("table-structure")
+            || getClientConfiguration().has("table-data-format")))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Option '--dump-schema' cannot be combined with '--file', '--structure' or '--input-format'");
     if (!dump_schema && (getClientConfiguration().has("dump-schema-exclude") || getClientConfiguration().has("dump-schema-dir")))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--dump-schema-exclude'/'--dump-schema-dir' require '--dump-schema'");
     if (dump_schema && !getClientConfiguration().getString("dump-schema", "").empty()

@@ -63,6 +63,12 @@ rc=$?
 grep -o -m1 'BAD_ARGUMENTS' "$ERR_FILE"
 rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_data.csv"
 
+echo '--- combined with --input-format is rejected ---'
+echo '1,2' | $CLICKHOUSE_LOCAL --dump-schema --input-format CSV > /dev/null 2>"$ERR_FILE"
+rc=$?
+[[ $rc -ne 0 ]] && echo 'OK: non-zero exit code' || echo 'FAIL: expected non-zero exit code'
+grep -o -m1 'BAD_ARGUMENTS' "$ERR_FILE"
+
 echo '--- merge()/loop() with constant-expression arguments name their local source ---'
 # Each view reads its source only through folded merge()/loop() arguments.
 CONSTEXPR_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_constexpr"
