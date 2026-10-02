@@ -1,7 +1,7 @@
 --- a healthy materialized view does not get the bad-select gate ---
 healthy views, bad-select gate emitted: 0
 OK: healthy views replayed
-healthy views, replayed objects: 6
+healthy views, replayed objects: 7
 --- a materialized view accepted under a relaxed check gets the gate exactly once ---
 extra output column, bad-select gate emitted: 1
 OK: extra output column replayed
@@ -15,13 +15,16 @@ failed analysis, replayed objects: 1
 merge matching no table, bad-select gate emitted: 1
 OK: merge matching no table replayed
 merge matching no table, replayed objects: 1
+url without a structure, bad-select gate emitted: 1
+OK: url without a structure replayed
+url without a structure, replayed objects: 1
 --- healthy and bad views together get one gate line ---
 mixed views, bad-select gate emitted: 1
 OK: mixed views replayed
 mixed views, replayed objects: 2
 --- a healthy materialized view dump replays under a bad-select constraint ---
 OK: constrained replay succeeded
-constrained replay views present: 5
+constrained replay views present: 6
 --- TimeSeries and Kafka Keeper gates follow their carriers exactly once ---
 TimeSeries tables, time-series gate emitted: 1
 TimeSeries tables and plain Kafka, keeper gate emitted: 0
@@ -41,8 +44,9 @@ plain mixed schema, replayed objects: 8
 fuzzQuery materialized view, fuzz-functions gate emitted: 1
 neighbor materialized view, error-prone-window gate emitted: 1
 multiMatchAny materialized view, hyperscan gate emitted: 1
+CAST materialized view, low-cardinality gate emitted: 1
 OK: function materialized views replayed
-function materialized views, replayed objects: 4
+function materialized views, replayed objects: 5
 plain views, function gates emitted: 0
 plain views, analyzer gates emitted: 0
 OK: plain views replayed
@@ -86,4 +90,4 @@ columns named lowcardinality, fixedstring, json and neighbor, their gates emitte
 --- a plain dump replays under every carrier-gate constraint ---
 plain dump, join-key/minmax-JSON/suspicious-index/url-wildcard gates emitted: 0
 OK: constrained replay succeeded
-constrained replay tables present: 18
+constrained replay tables present: 20

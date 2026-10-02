@@ -50,9 +50,10 @@ CREATE TABLE ${DB}.dst (x Int64, y Int64) ENGINE = MergeTree ORDER BY tuple();
 CREATE MATERIALIZED VIEW ${DB}.mv_to TO ${DB}.dst AS SELECT x, y FROM ${DB}.src;
 CREATE MATERIALIZED VIEW ${DB}.mv_inner ENGINE = MergeTree ORDER BY x AS SELECT x, y FROM ${DB}.src;
 CREATE MATERIALIZED VIEW ${DB}.mv_cols (a Int64, b Int64) ENGINE = MergeTree ORDER BY a AS SELECT x AS a, y AS b FROM ${DB}.src;
-CREATE MATERIALIZED VIEW ${DB}.mv_refresh REFRESH EVERY 1 HOUR (x Int64) ENGINE = Memory AS SELECT number AS x FROM numbers(2);
-CREATE MATERIALIZED VIEW ${DB}.mv_merge REFRESH EVERY 1 HOUR (x Int64) ENGINE = Memory AS SELECT x FROM merge('${DB}', '^src\$');
-CREATE MATERIALIZED VIEW ${DB}.mv_values REFRESH EVERY 1 HOUR (x Int64) ENGINE = Memory AS SELECT x FROM values('x Int64', 1, 2);
+CREATE MATERIALIZED VIEW ${DB}.mv_numbers (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT number FROM numbers(2));
+CREATE MATERIALIZED VIEW ${DB}.mv_merge (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM merge('${DB}', '^src\$'));
+CREATE MATERIALIZED VIEW ${DB}.mv_values (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM values('x Int64', 1, 2));
+CREATE MATERIALIZED VIEW ${DB}.mv_url (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM url('http://127.0.0.1:1/data.csv', CSV, 'x Int64'));
 "
 echo "healthy views, bad-select gate emitted: $(grep -c "$BADSEL_RE" "$DUMP_FILE")"
 replay_local 'healthy views' 'mv%'
@@ -89,10 +90,18 @@ replay_local 'failed analysis' 'mv%'
 make_dump "
 CREATE TABLE ${DB}.src (x Int64) ENGINE = MergeTree ORDER BY tuple();
 SET allow_materialized_view_with_bad_select = 1;
-CREATE MATERIALIZED VIEW ${DB}.mv_bad REFRESH EVERY 1 HOUR (x Int64) ENGINE = Memory AS SELECT x FROM merge('${DB}', '^nothing\$');
+CREATE MATERIALIZED VIEW ${DB}.mv_bad (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM merge('${DB}', '^nothing\$'));
 "
 echo "merge matching no table, bad-select gate emitted: $(grep -c "$BADSEL_RE" "$DUMP_FILE")"
 replay_local 'merge matching no table' 'mv%'
+
+make_dump "
+CREATE TABLE ${DB}.src (x Int64) ENGINE = MergeTree ORDER BY tuple();
+SET allow_materialized_view_with_bad_select = 1;
+CREATE MATERIALIZED VIEW ${DB}.mv_bad (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM url('http://127.0.0.1:1/data.csv', CSV));
+"
+echo "url without a structure, bad-select gate emitted: $(grep -c "$BADSEL_RE" "$DUMP_FILE")"
+replay_local 'url without a structure' 'mv%'
 
 echo '--- healthy and bad views together get one gate line ---'
 make_dump "
@@ -117,9 +126,10 @@ CREATE TABLE ${CONSTRAINT_DB}.src (x Int64, y Int64) ENGINE = MergeTree ORDER BY
 CREATE TABLE ${CONSTRAINT_DB}.dst (x Int64, y Int64) ENGINE = MergeTree ORDER BY tuple();
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_to TO ${CONSTRAINT_DB}.dst AS SELECT x, y FROM ${CONSTRAINT_DB}.src;
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_inner ENGINE = MergeTree ORDER BY x AS SELECT x, y FROM ${CONSTRAINT_DB}.src;
-CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_refresh REFRESH EVERY 1 HOUR (x Int64) ENGINE = Memory AS SELECT number AS x FROM numbers(2);
-CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_merge REFRESH EVERY 1 HOUR (x Int64) ENGINE = Memory AS SELECT x FROM merge('${CONSTRAINT_DB}', '^src\$');
-CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_values REFRESH EVERY 1 HOUR (x Int64) ENGINE = Memory AS SELECT x FROM values('x Int64', 1, 2);
+CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_numbers (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT number FROM numbers(2));
+CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_merge (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT x FROM merge('${CONSTRAINT_DB}', '^src\$'));
+CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_values (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT x FROM values('x Int64', 1, 2));
+CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_url (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT x FROM url('http://127.0.0.1:1/data.csv', CSV, 'x Int64'));
 "
 $CLICKHOUSE_LOCAL --path "$LOCAL_PATH" --dump-schema="$CONSTRAINT_DB" > "$DUMP_FILE" 2>"$ERR_FILE"
 rm -rf "$LOCAL_PATH"
@@ -180,14 +190,16 @@ replay_local 'plain mixed schema' '%'
 echo '--- the shared gates follow their carriers ---'
 make_dump "
 CREATE TABLE ${DB}.mt (x Int64, s String) ENGINE = MergeTree ORDER BY x;
-SET allow_fuzz_query_functions = 1, allow_deprecated_error_prone_window_functions = 1;
+SET allow_fuzz_query_functions = 1, allow_deprecated_error_prone_window_functions = 1, allow_suspicious_low_cardinality_types = 1;
 CREATE MATERIALIZED VIEW ${DB}.mv_fuzz ENGINE = Memory AS SELECT fuzzQuery(s) AS q FROM ${DB}.mt;
+CREATE MATERIALIZED VIEW ${DB}.mv_cast ENGINE = Memory AS SELECT CAST(x, 'LowCardinality(Int64)') AS l FROM ${DB}.mt;
 CREATE MATERIALIZED VIEW ${DB}.mv_neighbor ENGINE = Memory AS SELECT neighbor(x, 1) AS n FROM ${DB}.mt;
 CREATE MATERIALIZED VIEW ${DB}.mv_multi ENGINE = Memory AS SELECT multiMatchAny(s, ['a']) AS m FROM ${DB}.mt;
 "
 echo "fuzzQuery materialized view, fuzz-functions gate emitted: $(grep -c '^SET allow_fuzz_query_functions = 1;' "$DUMP_FILE")"
 echo "neighbor materialized view, error-prone-window gate emitted: $(grep -c '^SET allow_deprecated_error_prone_window_functions = 1;' "$DUMP_FILE")"
 echo "multiMatchAny materialized view, hyperscan gate emitted: $(grep -c '^SET allow_hyperscan = 1;' "$DUMP_FILE")"
+echo "CAST materialized view, low-cardinality gate emitted: $(grep -c '^SET allow_suspicious_low_cardinality_types = 1;' "$DUMP_FILE")"
 replay_local 'function materialized views' '%'
 # A plain view keeps its columns, so replay never analyzes its SELECT.
 make_dump "
@@ -203,7 +215,8 @@ echo "plain views, function gates emitted: $(grep -cE '^SET (allow_fuzz_query_fu
 echo "plain views, analyzer gates emitted: $(grep -cE '^SET (allow_suspicious_types_in_group_by|allow_suspicious_types_in_order_by|allow_experimental_correlated_subqueries) = 1;' "$DUMP_FILE")"
 replay_local 'plain views' '%'
 make_dump "
-CREATE MATERIALIZED VIEW ${DB}.mv_table_function REFRESH EVERY 1 HOUR (query String) ENGINE = Memory AS SELECT * FROM fuzzQuery('SELECT 1') LIMIT 1;
+CREATE TABLE ${DB}.src (s String) ENGINE = MergeTree ORDER BY tuple();
+CREATE MATERIALIZED VIEW ${DB}.mv_table_function (s String) ENGINE = Memory AS SELECT s FROM ${DB}.src WHERE s IN (SELECT query FROM fuzzQuery('SELECT 1') LIMIT 1);
 "
 echo "fuzzQuery table function, fuzz-functions gate emitted: $(grep -c '^SET allow_fuzz_query_functions = 1;' "$DUMP_FILE")"
 replay_local 'fuzzQuery table function' 'mv%'
@@ -301,6 +314,8 @@ CREATE VIEW ${CONSTRAINT_DB}.vf AS SELECT sequenceNextNodeIf('forward', 'head')(
 CREATE VIEW ${CONSTRAINT_DB}.vlc AS SELECT toLowCardinality(x) AS l FROM ${CONSTRAINT_DB}.mt;
 CREATE VIEW ${CONSTRAINT_DB}.u_star AS SELECT * FROM url('http://127.0.0.1:1/*.csv', CSV, 'x UInt8');
 CREATE VIEW ${CONSTRAINT_DB}.vnt AS SELECT CAST(NULL, 'Nullable(Tuple(a UInt8))') AS t;
+CREATE TABLE ${CONSTRAINT_DB}.strings (s String DEFAULT 'time' COMMENT 'variant') ENGINE = MergeTree ORDER BY tuple() COMMENT 'lowcardinality';
+CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_url (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.mt WHERE x IN (SELECT x FROM url('http://127.0.0.1:1/time/variant.csv', CSV, 'x Int64'));
 "
 $CLICKHOUSE_LOCAL --path "$LOCAL_PATH" --dump-schema="$CONSTRAINT_DB" > "$DUMP_FILE" 2>"$ERR_FILE"
 rm -rf "$LOCAL_PATH"
@@ -316,7 +331,7 @@ $CLICKHOUSE_CLIENT --multiquery --query "
 $CLICKHOUSE_CLIENT --user "$CONSTRAINT_USER" --multiquery --queries-file "$DUMP_FILE" > /dev/null 2>"$ERR_FILE"
 rc=$?
 [[ $rc -eq 0 ]] && echo 'OK: constrained replay succeeded' || echo "FAIL: constrained replay rejected: $(cat "$ERR_FILE")"
-echo "constrained replay tables present: $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.tables WHERE database = '${CONSTRAINT_DB}'")"
+echo "constrained replay tables present: $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.tables WHERE database = '${CONSTRAINT_DB}' AND NOT startsWith(name, '.')")"
 $CLICKHOUSE_CLIENT --multiquery --query "
     DROP DATABASE IF EXISTS ${CONSTRAINT_DB} SYNC;
     DROP USER ${CONSTRAINT_USER};

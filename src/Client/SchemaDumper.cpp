@@ -42,6 +42,7 @@
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserDataType.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/StorageURL.h>
@@ -2465,12 +2466,31 @@ void forEachNode(const IAST & node, const std::function<void(const IAST &)> & vi
         forEachNode(*child, visit, skip);
 }
 
-/// Lowercase function names, type names and string literals (structures, CAST types) of `ast`, without the
-/// column, table and database names, so that a gate matched on them is never carried by an object's name.
+/// Lowercase function names and type names of `ast`, without the column, table and database names, so that
+/// a gate matched on them is never carried by an object's name.
 String nameTokens(const IAST & ast, const IAST * skip, bool with_types)
 {
     String names;
     std::set<const IAST *> table_functions;
+    /// `validateDataType` reads strings only as a table-function structure or a CAST target type; other strings are data.
+    const auto add_types_in_string = [&](const IAST & node, bool is_structure)
+    {
+        const auto * literal = node.as<ASTLiteral>();
+        if (!literal || literal->value.getType() != Field::Types::String)
+            return;
+        try
+        {
+            ParserColumnDeclarationList structure_parser;
+            ParserDataType type_parser;
+            IParser & parser = is_structure ? static_cast<IParser &>(structure_parser) : type_parser;
+            const ASTPtr parsed = parseQuery(
+                parser, literal->value.safeGet<String>(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            names += nameTokens(*parsed, nullptr, true);
+        }
+        catch (const Exception &) // NOLINT(bugprone-empty-catch)
+        {
+        }
+    };
     forEachNode(ast, [&](const IAST & node)
     {
         if (const auto * table_expression = node.as<ASTTableExpression>(); table_expression && table_expression->table_function)
@@ -2478,8 +2498,19 @@ String nameTokens(const IAST & ast, const IAST * skip, bool with_types)
         else if (const auto * function = node.as<ASTFunction>())
         {
             /// A table function such as `fuzzQuery` or `timeSeriesData` reads none of these gates.
-            if (!table_functions.contains(&node))
+            if (table_functions.contains(&node))
+            {
+                if (function->arguments)
+                    forEachNode(*function->arguments, [&](const IAST & argument) { add_types_in_string(argument, true); });
+            }
+            else
+            {
                 names += function->name + ' ';
+                const bool is_cast = equalsCaseInsensitive(function->name, "CAST") || equalsCaseInsensitive(function->name, "_CAST")
+                    || function->name == "accurateCast" || function->name == "accurateCastOrNull";
+                if (is_cast && function->arguments && !function->arguments->children.empty())
+                    add_types_in_string(*function->arguments->children.back(), false);
+            }
         }
         else if (const auto * data_type = node.as<ASTDataType>(); data_type && with_types)
         {
@@ -2490,8 +2521,6 @@ String nameTokens(const IAST & ast, const IAST * skip, bool with_types)
                     if (const auto * identifier = argument->as<ASTIdentifier>())
                         names += identifier->name() + ' ';
         }
-        else if (const auto * literal = node.as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
-            names += literal->value.safeGet<String>() + ' ';
     }, skip);
     std::ranges::transform(names, names.begin(), [](unsigned char c) { return std::tolower(c); });
     return names;
@@ -2899,8 +2928,33 @@ std::set<String> insertableColumnNames(const ASTCreateQuery & create)
     return names;
 }
 
+/// `url` over HTTP and `file` with a relative path build their storage from a literal format and structure without reading
+/// the source; other locations meet a per-server check such as `user_files_path`, and an `auto` format reads the data.
+bool fileLikeHasStaticStructure(const ASTFunction & function)
+{
+    const bool is_url = function.name == "url";
+    if ((!is_url && function.name != "file") || !function.arguments || function.arguments->children.size() < 3)
+        return false;
+    const auto & arguments = function.arguments->children;
+    const auto * location = arguments[0]->as<ASTLiteral>();
+    const auto * structure = arguments[2]->as<ASTLiteral>();
+    if (!location || location->value.getType() != Field::Types::String || !structure || structure->value.getType() != Field::Types::String)
+        return false;
+    String format;
+    if (const auto * literal = arguments[1]->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+        format = literal->value.safeGet<String>();
+    else if (const auto * identifier = arguments[1]->as<ASTIdentifier>())
+        format = identifier->name();
+    const String & path = location->value.safeGet<String>();
+    const bool server_independent = is_url ? startsWithCaseInsensitive(path, "http://") || startsWithCaseInsensitive(path, "https://")
+                                       : !path.starts_with('/') && !path.contains("..");
+    return server_independent && !format.empty() && !equalsCaseInsensitive(format, "auto")
+        && !equalsCaseInsensitive(structure->value.safeGet<String>(), "auto");
+}
+
 /// Always analyzes on replay, with columns known from the dump: `numbers`/`zeros` with counts, `generateRandom`/`values`
-/// with literal arguments, and a `merge` matching another emitted table, which replay creates before `owner`.
+/// with literal arguments, a `merge` matching another emitted table, which replay creates before `owner`, and `url`/`file`
+/// with a static structure.
 bool tableFunctionAlwaysAnalyzes(
     const IAST & node, const TableInfo & owner, const std::map<std::pair<String, String>, const TableInfo *> & emitted_tables)
 {
@@ -2950,7 +3004,7 @@ bool tableFunctionAlwaysAnalyzes(
             return false;
         }
     }
-    return false;
+    return fileLikeHasStaticStructure(*function);
 }
 
 bool containsTableFunction(
