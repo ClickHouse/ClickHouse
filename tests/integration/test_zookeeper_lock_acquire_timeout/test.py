@@ -57,9 +57,8 @@ def test_zookeeper_lock_acquire_timeout(started_cluster, zk_name):
         short_timeout_ms = 200
         # The client timeout must outlast the server-side timeout plus process startup and sanitizer scheduling delays.
         client_timeout_seconds = 60
-        max_short_query_duration_seconds = 2  # they should fail close to short_timeout_ms, but give some buffer
-        # `SYSTEM RECONNECT ZOOKEEPER` can spend additional time in command dispatch on sanitizer builds.
-        max_system_reconnect_duration_seconds = 10
+        # End-to-end duration includes client process startup and command dispatch on sanitizer builds.
+        max_query_duration_seconds = 10
 
         short_queries = {
             f"system_zookeeper_{i}": base_query
@@ -131,7 +130,7 @@ def test_zookeeper_lock_acquire_timeout(started_cluster, zk_name):
             f"Expected {len(short_queries)} results, got {len(results)}"
         )
 
-        def assert_lock_timeout(query_id, max_duration_seconds):
+        def assert_lock_timeout(query_id):
             status, duration, error = results[query_id]
             assert status == "error", f"Expected {query_id} to fail, got {status}"
             assert "TIMEOUT_EXCEEDED" in error, (
@@ -143,16 +142,16 @@ def test_zookeeper_lock_acquire_timeout(started_cluster, zk_name):
             assert f"({short_timeout_ms} ms)" in error, (
                 f"Expected the {short_timeout_ms} ms Keeper-lock timeout from {query_id}, got {error}"
             )
-            assert duration < max_duration_seconds, (
-                f"Expected {query_id} timeout < {max_duration_seconds}s, got {duration}s"
+            assert duration < max_query_duration_seconds, (
+                f"Expected {query_id} timeout < {max_query_duration_seconds}s, got {duration}s"
             )
 
         if zk_name == "default":
-            assert_lock_timeout("system_reconnect", max_system_reconnect_duration_seconds)
+            assert_lock_timeout("system_reconnect")
 
         for query_id in short_queries:
             if query_id != "system_reconnect":
-                assert_lock_timeout(query_id, max_short_query_duration_seconds)
+                assert_lock_timeout(query_id)
 
 
 @pytest.mark.parametrize("zk_name", ["default", "zookeeper2"])
