@@ -943,51 +943,6 @@ SinkToStoragePtr StorageObjectStorage::createSink(
             *object_storage, *configuration, settings, first_key, numbered_keys, sequence_number, *reservations))
         first_key = *new_key;
 
-    /// A truncating insert overwrites the table: it starts from the base key, the split objects
-    /// of the previous inserts are forgotten, and the numbering starts over, overwriting them one by one.
-    /// It does not matter whether the current insert is split by size: a rewrite with
-    /// `*_split_on_write_by_size_bytes` turned back to 0 has to drop the numbered tail of the previous
-    /// split insert as well, otherwise both this table and the readers of a wildcard path over the same
-    /// prefix keep seeing the stale rows.
-    if (settings.truncate_on_insert)
-    {
-        /// The same logger the storage uses; the sink is created from a static context.
-        const auto log = getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), storage_id.getFullTableName()));
-
-        if (paths.size() > 1)
-        {
-            /// These objects were written by this table, and are deleted whatever their keys are - unless
-            /// a concurrent insert is still writing them, see `removeStaleSplitObjects`.
-            std::vector<String> stale_keys;
-            stale_keys.reserve(paths.size() - 1);
-            for (auto it = paths.begin() + 1; it != paths.end(); ++it)
-                stale_keys.push_back(it->path);
-
-            /// A key is dropped from the list of the paths only after the object is gone, so that a failure to
-            /// remove one leaves the table reading exactly the objects that are still there: neither the whole
-            /// tail when nothing could be removed, nor a key whose object the cleanup has already deleted.
-            removeStaleSplitObjects(
-                *object_storage,
-                *configuration,
-                stale_keys,
-                [&](const String & removed_key) { configuration->retirePath(removed_key); },
-                log);
-        }
-        else if (settings.split_on_write_by_size_bytes)
-        {
-            /// The table has no numbered tail of its own to delete - it either never had one, or lost it
-            /// on a reload. Only a truncating insert that is split by size claims the numbered sequence.
-            removeStaleSplitObjectsByNumber(
-                *object_storage,
-                *configuration,
-                getNumberedFileNames(paths.front().path),
-                settings.create_new_file_on_insert,
-                log);
-        }
-
-        paths.resize(1);
-    }
-
     /// The new objects are registered in the configuration, so that they are visible for reading from the same table.
     StorageObjectStorageSink::GetNextPathCallback get_next_path;
     StorageObjectStorageSink::PublishPathCallback publish_path;
@@ -1023,7 +978,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
             config->appendPath({new_key});
     };
 
-    return std::make_shared<StorageObjectStorageSink>(
+    auto sink = std::make_shared<StorageObjectStorageSink>(
         first_key,
         object_storage,
         format_settings,
@@ -1035,6 +990,56 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         std::move(get_next_path),
         std::move(publish_path),
         /* path_is_published = */ false);
+
+    /// A truncating insert overwrites the table: it starts from the base key, the split objects
+    /// of the previous inserts are forgotten, and the numbering starts over, overwriting them one by one.
+    /// It does not matter whether the current insert is split by size: a rewrite with
+    /// `*_split_on_write_by_size_bytes` turned back to 0 has to drop the numbered tail of the previous
+    /// split insert as well, otherwise both this table and the readers of a wildcard path over the same
+    /// prefix keep seeing the stale rows.
+    ///
+    /// The cleanup is done only after the sink has started writing the first object of this insert, so that
+    /// an insert that cannot even start it fails without deleting a part of the old data. Starting an object
+    /// does not replace the old one in S3 or Azure - that happens only when the object is committed - so a failed
+    /// cleanup leaves the first object intact as well.
+    if (settings.truncate_on_insert)
+    {
+        /// The same logger the storage uses; the sink is created from a static context.
+        const auto log = getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), storage_id.getFullTableName()));
+
+        if (paths.size() > 1)
+        {
+            /// These objects were written by this table, and are deleted whatever their keys are - unless
+            /// a concurrent insert is still writing them, see `removeStaleSplitObjects`.
+            std::vector<String> stale_keys;
+            stale_keys.reserve(paths.size() - 1);
+            for (auto it = paths.begin() + 1; it != paths.end(); ++it)
+                stale_keys.push_back(it->path);
+
+            /// A key is dropped from the list of the paths only after the object is gone, so that a failure to
+            /// remove one leaves the table reading exactly the objects that are still there: neither the whole
+            /// tail when nothing could be removed, nor a key whose object the cleanup has already deleted.
+            removeStaleSplitObjects(
+                *object_storage,
+                *configuration,
+                stale_keys,
+                [&](const String & removed_key) { configuration->retirePath(removed_key); },
+                log);
+        }
+        else if (settings.split_on_write_by_size_bytes)
+        {
+            /// The table has no numbered tail of its own to delete - it either never had one, or lost it
+            /// on a reload. Only a truncating insert that is split by size claims the numbered sequence.
+            removeStaleSplitObjectsByNumber(
+                *object_storage,
+                *configuration,
+                getNumberedFileNames(paths.front().path),
+                settings.create_new_file_on_insert,
+                log);
+        }
+    }
+
+    return sink;
 }
 
 bool StorageObjectStorage::optimize(

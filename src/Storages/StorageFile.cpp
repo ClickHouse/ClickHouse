@@ -155,6 +155,7 @@ namespace ErrorCodes
     extern const int CANNOT_STAT;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_APPEND_TO_FILE;
+    extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int CANNOT_DETECT_FORMAT;
     extern const int CANNOT_COMPILE_REGEXP;
@@ -2945,6 +2946,20 @@ static void removeStaleSplitFilesByNumber(const NumberedFileNames & numbered_pat
 }
 
 
+/// A truncating insert deletes the stale numbered files before it starts writing, and it must not do that if it
+/// cannot write at all: otherwise a failed insert - a directory in place of the first file, no permissions -
+/// destroys a part of the old data and writes nothing instead. So the first file is opened for writing beforehand,
+/// without truncating it: if the cleanup fails afterwards, the first file is still intact as well.
+static void checkFileCanBeOpenedForWriting(const String & path)
+{
+    int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
+    if (-1 == fd)
+        ErrnoException::throwFromPath(
+            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {}", path);
+    ::close(fd);
+}
+
+
 /// The table only ever deletes the numbered files it remembers, and it remembers only the ones written since
 /// it was loaded: the engine keeps no metadata about the files it has written, and a `DETACH` / `ATTACH` or a
 /// server restart rebuilds the list of the paths from the single configured name. A numbered file left over from
@@ -3333,7 +3348,10 @@ public:
             /// to attribute the numbered names of a previous insert to, and the removal is done only
             /// for a truncating insert that is split by size and therefore claims the whole sequence.
             if (truncate_on_insert)
+            {
+                checkFileCanBeOpenedForWriting(filepath);
                 removeStaleSplitFilesByNumber(numbered_paths, allow_create_multiple_files);
+            }
 
             get_next_path = [numbered_paths, sequence_number, truncate_on_insert, allow_create_multiple_files]() mutable -> String
             {
@@ -3485,6 +3503,14 @@ SinkToStoragePtr StorageFile::write(
     /// The new files are added to the list of paths of the table, so that they are visible for reading.
     const size_t split_on_write_by_size_bytes = context->getSettingsRef()[Setting::engine_file_split_on_write_by_size_bytes];
 
+    /// The path of the table can expand into no files at all - e.g. it names an empty directory. There is then
+    /// no name to derive the numbering of the next files from.
+    if (split_on_write_by_size_bytes && !use_table_fd && current_paths.empty())
+        throw Exception(
+            ErrorCodes::INCORRECT_FILE_NAME,
+            "Cannot split the data by size while writing into the table {}: its path does not name a file to write into",
+            getStorageID().getNameForLogs());
+
     /// A truncating insert overwrites the table: the numbered files of the previous inserts are forgotten,
     /// and the numbering starts over, overwriting them one by one. It does not matter whether the current
     /// insert is split by size: a rewrite with `engine_file_split_on_write_by_size_bytes` turned back to 0
@@ -3496,6 +3522,9 @@ SinkToStoragePtr StorageFile::write(
     /// when nothing could be removed, nor a file that is already gone when the removal stopped in the middle.
     if (!use_table_fd && !current_paths.empty() && context->getSettingsRef()[Setting::engine_file_truncate_on_insert])
     {
+        if (current_paths.size() > 1 || split_on_write_by_size_bytes)
+            checkFileCanBeOpenedForWriting(path);
+
         if (current_paths.size() > 1)
         {
             /// These files were written by this table, and are deleted whatever their names are.

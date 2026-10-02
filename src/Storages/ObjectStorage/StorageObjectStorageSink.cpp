@@ -278,24 +278,13 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     StorageObjectStorageSink::GetNextPathCallback get_next_path;
     if (query_settings.split_on_write_by_size_bytes)
     {
-        /// A partitioned sink keeps no list of the objects it has written, so there is nothing to attribute
-        /// the numbered keys of a previous insert to, and the removal is done only for a truncating insert
-        /// that is split by size and therefore claims the whole sequence.
-        if (query_settings.truncate_on_insert && !names_are_generated)
-            removeStaleSplitObjectsByNumber(
-                *object_storage,
-                *configuration,
-                numbered_keys,
-                query_settings.create_new_file_on_insert,
-                getLogger("PartitionedStorageObjectStorageSink"));
-
         get_next_path = [storage = object_storage, config = configuration, settings = query_settings, numbered_keys, sequence_number, path_reservations = reservations]() mutable -> String
         {
             return getNextKeyForSplittingBySize(*storage, *config, settings, numbered_keys, sequence_number, *path_reservations);
         };
     }
 
-    return std::make_shared<StorageObjectStorageSink>(
+    auto sink = std::make_shared<StorageObjectStorageSink>(
         file_path,
         object_storage,
         format_settings,
@@ -307,6 +296,21 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         std::move(get_next_path),
         std::move(publish_path),
         /* path_is_published = */ false);
+
+    /// A partitioned sink keeps no list of the objects it has written, so there is nothing to attribute
+    /// the numbered keys of a previous insert to, and the removal is done only for a truncating insert
+    /// that is split by size and therefore claims the whole sequence. It is done only after the sink has
+    /// started writing the first object of the partition, so that an insert that cannot even start it
+    /// fails without deleting a part of the old data.
+    if (query_settings.split_on_write_by_size_bytes && query_settings.truncate_on_insert && !names_are_generated)
+        removeStaleSplitObjectsByNumber(
+            *object_storage,
+            *configuration,
+            numbered_keys,
+            query_settings.create_new_file_on_insert,
+            getLogger("PartitionedStorageObjectStorageSink"));
+
+    return sink;
 }
 
 }
