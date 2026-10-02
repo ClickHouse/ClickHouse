@@ -11,11 +11,13 @@
         ENGINE = MergeTree ORDER BY id
     </create_query>
 
-    <!-- The same data with `pfor` postings: multi-block posting lists are counted with posting-list cursors. -->
+    <!-- The same data with `pfor` postings: multi-block posting lists are counted with posting-list cursors.
+         Parts have ~1M rows, so a smaller block size is needed for the posting lists to span multiple blocks. -->
     <create_query>
         CREATE TABLE text_index_trivial_count_pfor (id UInt64, text String,
             INDEX idx text TYPE text(tokenizer = splitByNonAlpha, posting_list_codec = 'pfor') GRANULARITY 1)
         ENGINE = MergeTree ORDER BY id
+        SETTINGS text_index_posting_list_block_size = 131072
     </create_query>
 
     <fill_query>
