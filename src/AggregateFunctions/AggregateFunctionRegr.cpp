@@ -365,6 +365,11 @@ struct RegrResult
                 /// the data, and what is left is at the scale of the spread.
                 return sxx == 0 ? nan : (y0 - (sxy / sxx) * x0) + (mean_dy - (sxy / sxx) * mean_dx);
             case RegrKind::regr_r2:
+                /// Both shortcuts below read one sum of squares and conclude from it alone, which
+                /// only holds while the other one is a number: a NaN in either variable leaves the
+                /// fit undefined, and a constant y is not a line explaining data that holds a NaN.
+                if (isNaN(sxx) || isNaN(syy))
+                    return nan;
                 /// A vertical line explains none of the variance, a horizontal one explains all of it.
                 if (sxx == 0)
                     return nan;

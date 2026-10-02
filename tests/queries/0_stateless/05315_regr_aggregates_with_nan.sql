@@ -23,6 +23,16 @@ FROM VALUES('x Float64, y Float64', (1, 5), (2, 5), (3, 5));
 SELECT regr_r2(y, x), regr_sxx(y, x), regr_slope(y, x)
 FROM VALUES('x Float64, y Float64', (5, 1), (5, 2), (5, 3));
 
+SELECT 'a NaN in x with a constant y is not a horizontal line';
+SELECT regr_r2(y, x), regr_sxx(y, x), regr_syy(y, x), regr_slope(y, x)
+FROM VALUES('x Float64, y Float64', (nan, 5), (2, 5), (3, 5));
+SELECT regr_r2(y, x), regr_sxx(y, x), regr_syy(y, x)
+FROM VALUES('x Float64, y Float64', (inf, 5), (2, 5), (3, 5));
+
+SELECT 'a NaN in y with a constant x is not a vertical line either';
+SELECT regr_r2(y, x), regr_sxx(y, x), regr_syy(y, x)
+FROM VALUES('x Float64, y Float64', (5, nan), (5, 2), (5, 3));
+
 SELECT 'a fit without either is unchanged';
 SELECT regr_r2(y, x), regr_slope(y, x), regr_intercept(y, x)
 FROM VALUES('x Float64, y Float64', (1, 2), (2, 4), (3, 6));
