@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS t_col;
 DROP TABLE IF EXISTS t_start;
 DROP TABLE IF EXISTS t_alias;
 DROP TABLE IF EXISTS t_repl;
+DROP TABLE IF EXISTS t_repl_float;
 DROP TABLE IF EXISTS t_repl_plain;
 
 -- A projection that stores `_part_offset` of the parent part, `_part_offset` both filtered and selected.
@@ -57,6 +58,15 @@ SELECT k, v, payload FROM t_repl FINAL WHERE flag = 1 ORDER BY k LIMIT 5;
 SELECT count(), sum(v), sum(k) FROM (SELECT k, v FROM t_repl FINAL WHERE flag = 1)
 SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0, query_plan_optimize_lazy_materialization = 0;
 
+-- The same with a `Float64` key.
+CREATE TABLE t_repl_float (k Float64, v UInt64, flag UInt8, _part_offset UInt64)
+ENGINE = ReplacingMergeTree(v) ORDER BY k SETTINGS index_granularity = 64;
+SYSTEM STOP MERGES t_repl_float;
+INSERT INTO t_repl_float SELECT number, 1, number % 1000 = 0, 50 FROM numbers(100000);
+INSERT INTO t_repl_float SELECT number * 1000, 2, 1, 60 FROM numbers(20);
+SELECT count(), sum(v), sum(k) FROM (SELECT k, v FROM t_repl_float FINAL WHERE flag = 1)
+SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0, query_plan_optimize_lazy_materialization = 0;
+
 CREATE TABLE t_repl_plain (k UInt64, v UInt64, payload String, flag UInt8)
 ENGINE = ReplacingMergeTree(v) ORDER BY k SETTINGS index_granularity = 64;
 SYSTEM STOP MERGES t_repl_plain;
@@ -74,4 +84,5 @@ DROP TABLE t_col;
 DROP TABLE t_start;
 DROP TABLE t_alias;
 DROP TABLE t_repl;
+DROP TABLE t_repl_float;
 DROP TABLE t_repl_plain;
