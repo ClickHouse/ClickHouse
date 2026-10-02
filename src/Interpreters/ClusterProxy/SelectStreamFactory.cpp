@@ -74,6 +74,7 @@ void SelectStreamFactory::createForShard(
     std::vector<QueryPlanPtr> & local_plans,
     Shards & remote_shards,
     UInt32 shard_count,
+    const String & shard_scope_identity,
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator,
     const UnavailableShardTrackerPtr & unavailable_shard_tracker)
@@ -88,6 +89,7 @@ void SelectStreamFactory::createForShard(
         local_plans,
         remote_shards,
         shard_count,
+        shard_scope_identity,
         parallel_replicas_enabled,
         std::move(shard_filter_generator),
         unavailable_shard_tracker);
@@ -103,6 +105,7 @@ void SelectStreamFactory::createForShardImpl(
     std::vector<QueryPlanPtr> & local_plans,
     Shards & remote_shards,
     UInt32 shard_count,
+    const String & shard_scope_identity,
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator,
     const UnavailableShardTrackerPtr & unavailable_shard_tracker) const
@@ -110,7 +113,7 @@ void SelectStreamFactory::createForShardImpl(
     auto emplace_local_stream = [&]()
     {
         local_plans.emplace_back(createLocalPlan(
-            query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count));
+            query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, shard_scope_identity));
     };
 
     // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
@@ -127,7 +130,7 @@ void SelectStreamFactory::createForShardImpl(
         if (settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {
             query_plan = createLocalPlan(
-                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
+                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, shard_scope_identity, true, shard_info.default_database);
 
             shard_header = query_plan->getCurrentHeader();
         }
@@ -279,6 +282,7 @@ void SelectStreamFactory::createForShard(
     std::vector<QueryPlanPtr> & local_plans,
     Shards & remote_shards,
     UInt32 shard_count,
+    const String & shard_scope_identity,
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator,
     const UnavailableShardTrackerPtr & unavailable_shard_tracker)
@@ -300,6 +304,7 @@ void SelectStreamFactory::createForShard(
         local_plans,
         remote_shards,
         shard_count,
+        shard_scope_identity,
         parallel_replicas_enabled,
         std::move(shard_filter_generator),
         unavailable_shard_tracker);

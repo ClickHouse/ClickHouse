@@ -669,6 +669,7 @@ void executeQuery(
             plans,
             remote_shards,
             static_cast<UInt32>(shards),
+            not_optimized_cluster->getShardScopeIdentity(),
             parallel_replicas_enabled,
             shard_filter_generator,
             unavailable_shard_tracker);
@@ -733,7 +734,17 @@ Block makeShardNumScalar(UInt32 shard_num, const String & shard_scope_identity)
         {DataTypeString().createColumnConst(1, shard_scope_identity), std::make_shared<DataTypeString>(), SHARD_NUM_CLUSTER_COLUMN}};
 }
 
-/// The `_shard_num` scalar shipped by the initiator of a distributed query, or `nullopt` when this query is
+/// Whether the provenance recorded in a `_shard_num` scalar block says that its shard number indexes the
+/// shards of `cluster`.
+static bool shardNumScalarBelongsTo(const Block & block, const Cluster & cluster)
+{
+    const std::string_view provenance = block.getByName(SHARD_NUM_CLUSTER_COLUMN).column->getDataAt(0);
+    /// Compare the numbering, not the name: a derived cluster keeps the name and may renumber the shards.
+    /// An empty identity authenticates nothing, so it must never compare equal.
+    return !provenance.empty() && provenance == cluster.getShardScopeIdentity();
+}
+
+/// The `_shard_num` scalar of the distributed query this query is running inside, or `nullopt` when it is
 /// not running inside one.
 ///
 /// The shard number arrives through two carriers. The remote fan-out ships it as a regular scalar
@@ -741,13 +752,16 @@ Block makeShardNumScalar(UInt32 shard_num, const String & shard_scope_identity)
 /// the query context. A local shard plan never crosses the wire: `createLocalPlan` passes the shard
 /// number in `SelectQueryOptions`, and the interpreter injects it into its context copy with
 /// `addSpecialScalar`, from where context copies inherit it. The special scalar is set by the innermost
-/// interpreter, so when both are present it is the more specific scope and takes precedence. It carries no
-/// provenance column, which is trusted: the `Distributed` dispatch that produced it pins
-/// `cluster_for_parallel_replicas` to its own cluster (`updateSettingsAndClientInfoForCluster`).
-static std::optional<Block> getShardNumScalar(const ContextPtr & context)
+/// interpreter, so it is the more specific scope, and it is used when it belongs to `cluster`, the
+/// `cluster_for_parallel_replicas` of this read. Otherwise it says nothing about this read's shards (for
+/// example, a view re-points `cluster_for_parallel_replicas` at another cluster), and only the regular
+/// scalar is considered, exactly as when there is no special scalar.
+static std::optional<Block> getShardNumScalar(const ContextPtr & context, const Cluster * cluster)
 {
-    if (auto special_scalar = context->tryGetSpecialScalar("_shard_num"))
-        return special_scalar;
+    if (cluster)
+        if (auto special_scalar = context->tryGetSpecialScalar("_shard_num");
+            special_scalar && special_scalar->has(SHARD_NUM_CLUSTER_COLUMN) && shardNumScalarBelongsTo(*special_scalar, *cluster))
+            return special_scalar;
 
     if (!context->hasQueryContext() || !context->getQueryContext()->hasScalar("_shard_num"))
         return {};
@@ -755,11 +769,17 @@ static std::optional<Block> getShardNumScalar(const ContextPtr & context)
     return context->getQueryContext()->getScalar("_shard_num");
 }
 
-/// The shard number the initiator shipped, or 0 when none was. Says nothing about which numbering it
-/// indexes, so it resolves no cluster and cannot fail.
+/// The shard number the initiator shipped, or 0 when none was. Says nothing about which numbering a shipped
+/// number indexes, and cannot fail: `cluster_for_parallel_replicas` is resolved only to decide whether a
+/// special scalar of a local shard plan applies, without `getClusterForParallelReplicas`, which would turn an
+/// unset or unresolvable cluster name into an exception.
 static UInt64 getShippedShardNum(const ContextPtr & context)
 {
-    const auto block = getShardNumScalar(context);
+    ClusterPtr cluster;
+    if (const String cluster_name = context->getSettingsRef()[Setting::cluster_for_parallel_replicas]; !cluster_name.empty())
+        cluster = context->tryGetCluster(cluster_name);
+
+    const auto block = getShardNumScalar(context, cluster.get());
     if (!block)
         return 0;
 
@@ -771,7 +791,7 @@ static UInt64 getShippedShardNum(const ContextPtr & context)
 /// shard scope only when the scalar demonstrably belongs to `cluster`.
 ShardScope getShardScopeForCluster(const ContextPtr & context, const Cluster & cluster)
 {
-    const auto block = getShardNumScalar(context);
+    const auto block = getShardNumScalar(context, &cluster);
     if (!block)
         return {};
 
@@ -783,10 +803,7 @@ ShardScope getShardScopeForCluster(const ContextPtr & context, const Cluster & c
     if (!block->has(SHARD_NUM_CLUSTER_COLUMN))
         return scope;
 
-    const std::string_view provenance = block->getByName(SHARD_NUM_CLUSTER_COLUMN).column->getDataAt(0);
-    /// Compare the numbering, not the name: a derived cluster keeps the name and may renumber the shards.
-    /// An empty identity authenticates nothing, so it must never compare equal.
-    if (provenance.empty() || provenance != cluster.getShardScopeIdentity())
+    if (!shardNumScalarBelongsTo(*block, cluster))
         scope.kind = ShardScopeKind::Foreign;
 
     return scope;
@@ -1603,9 +1620,10 @@ bool canUseLocalPlanForParallelReplicas(const ContextPtr & context)
 
     /// Inside a Distributed sub-query the initiator can't use local plan (see comment in
     /// `executeQueryWithParallelReplicas`). Only whether a shard number was shipped matters here, which does
-    /// not depend on the numbering it indexes, so no cluster is resolved: this predicate is reached from
-    /// projection analysis on a follower (`ReadFromMergeTree::isParallelReplicasLocalPlanForFollower`), where
-    /// `getClusterForParallelReplicas` would turn an unset or unresolvable cluster name into an exception.
+    /// not depend on the numbering it indexes, so `getShippedShardNum` does not use
+    /// `getClusterForParallelReplicas`: this predicate is reached from projection analysis on a follower
+    /// (`ReadFromMergeTree::isParallelReplicasLocalPlanForFollower`), where it would turn an unset or
+    /// unresolvable cluster name into an exception.
     return getShippedShardNum(context) == 0;
 }
 
