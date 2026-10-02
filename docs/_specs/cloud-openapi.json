@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1194182",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1203327",
       "email": "support@clickhouse.com"
     }
   },
@@ -15496,6 +15496,160 @@
         ]
       }
     },
+    "/v1/organizations/{organizationId}/postgres/{postgresId}/backups": {
+      "get": {
+        "summary": "List of Postgres service backups",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a list of the base backups retained for a Postgres service, ordered by last modified date, newest first. Results are capped at `limit` (default and maximum 100) per page. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null. A Postgres service is recovered to a point in time rather than to a single backup, so restore it with the restore endpoint and a timestamp rather than with a backup key from this list.",
+        "operationId": "postgresServiceBackupGetList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the Postgres service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "postgresId",
+            "description": "ID of the Postgres service the backups were created from.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "description": "Opaque cursor from a previous response's `nextCursor`, marking where to resume the list.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PostgresBackup"
+                      }
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "description": "Maximum number of results returned in this page."
+                    },
+                    "totalCount": {
+                      "type": "integer",
+                      "description": "Total number of results across all pages."
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Cursor for the next page, to be sent as the `cursor` query parameter. Null on the last page."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Postgres"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
     "/v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns": {
       "get": {
         "summary": "List Postgres slow query patterns",
@@ -25098,8 +25252,15 @@
           }
         }
       },
-      "ClickPipeKafkaSchemaRegistry": {
+      "ClickPipeKafkaConfluentSchemaRegistry": {
         "properties": {
+          "type": {
+            "description": "Type of the schema registry. Defaults to 'confluent' (a Confluent-compatible REST registry).",
+            "type": "string",
+            "enum": [
+              "confluent"
+            ]
+          },
           "url": {
             "description": "Schema URL. HTTPS required.",
             "type": "string",
@@ -25119,7 +25280,51 @@
               "null"
             ]
           }
-        }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "ClickPipeKafkaGlueSchemaRegistry": {
+        "properties": {
+          "type": {
+            "description": "Type of the schema registry. Use 'glue' for the AWS Glue Schema Registry, which authenticates with IAM instead of credentials.",
+            "type": "string",
+            "enum": [
+              "glue"
+            ]
+          },
+          "glueRegion": {
+            "description": "AWS region of the Glue Schema Registry.",
+            "type": "string",
+            "example": "us-east-1"
+          },
+          "glueRegistryName": {
+            "description": "Name of the Glue Schema Registry.",
+            "type": "string",
+            "example": "my-registry"
+          },
+          "glueRoleArn": {
+            "description": "IAM role to assume for Glue Schema Registry access. Defaults to the iamRole of the Kafka source, so it is required when the source does not authenticate with IAM. Read more in ClickPipes documentation: https://clickhouse.com/docs/en/integrations/clickpipes/kafka#iam",
+            "type": "string",
+            "example": "arn:aws:iam::123456789012:role/MyGlueRegistryRole"
+          }
+        },
+        "required": [
+          "type",
+          "glueRegion",
+          "glueRegistryName"
+        ]
+      },
+      "ClickPipeKafkaSchemaRegistry": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickPipeKafkaConfluentSchemaRegistry"
+          },
+          {
+            "$ref": "#/components/schemas/ClickPipeKafkaGlueSchemaRegistry"
+          }
+        ]
       },
       "ClickPipeKafkaSchemaRegistryCredentials": {
         "properties": {
@@ -25133,8 +25338,15 @@
           }
         }
       },
-      "ClickPipeMutateKafkaSchemaRegistry": {
+      "ClickPipeMutateKafkaConfluentSchemaRegistry": {
         "properties": {
+          "type": {
+            "description": "Type of the schema registry. Defaults to 'confluent' (a Confluent-compatible REST registry).",
+            "type": "string",
+            "enum": [
+              "confluent"
+            ]
+          },
           "url": {
             "description": "Schema URL. HTTPS required.",
             "type": "string",
@@ -25157,7 +25369,22 @@
           "credentials": {
             "$ref": "#/components/schemas/ClickPipeKafkaSchemaRegistryCredentials"
           }
-        }
+        },
+        "required": [
+          "url",
+          "authentication",
+          "credentials"
+        ]
+      },
+      "ClickPipeMutateKafkaSchemaRegistry": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickPipeMutateKafkaConfluentSchemaRegistry"
+          },
+          {
+            "$ref": "#/components/schemas/ClickPipeKafkaGlueSchemaRegistry"
+          }
+        ]
       },
       "AzureEventHub": {
         "properties": {
@@ -29041,7 +29268,8 @@
               "udf_detach",
               "udf_update_services",
               "udf_redeploy",
-              "udf_rebuild"
+              "udf_rebuild",
+              "postgres_action"
             ]
           },
           "actorType": {
@@ -37503,6 +37731,25 @@
         "required": [
           "pgConfig",
           "pgBouncerConfig"
+        ]
+      },
+      "PostgresBackup": {
+        "properties": {
+          "key": {
+            "description": "Identifier of the base backup.",
+            "type": "string",
+            "example": "basebackups_005/000000010000000000000002_backup_stop_sentinel.json"
+          },
+          "lastModified": {
+            "description": "Time the backup was last written to. ISO-8601.",
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-03-31T18:17:37Z"
+          }
+        },
+        "required": [
+          "key",
+          "lastModified"
         ]
       },
       "PostgresMetricDataPoint": {
