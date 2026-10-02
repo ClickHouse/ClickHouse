@@ -601,7 +601,7 @@ bool buildScenarios(
             continue;
 
         /// row bytes only matter when granules are sized by bytes
-        const bool adaptive = mt_settings[MergeTreeSetting::index_granularity_bytes] != 0;
+        const bool adaptive = data.canUseAdaptiveGranularity() && mt_settings[MergeTreeSetting::index_granularity_bytes] != 0;
 
         const MarkRanges & ranges = plan.ranges[part_idx];
         ProjectionPartData part_data;
