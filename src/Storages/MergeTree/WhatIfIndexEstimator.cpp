@@ -138,8 +138,7 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
                         return true;
                     }
                     /// keep the estimate local, use_skip_indexes_on_data_read: avoid over-reporting marks
-                    return change.name == "force_optimize_projection"
-                        || change.name == "force_optimize_projection_name"
+                    return change.name == "force_optimize_projection_name"
                         || change.name == "preferred_optimize_projection_name"
                         || change.name == "enable_parallel_replicas"
                         || change.name == "allow_experimental_parallel_reading_from_replicas"
@@ -318,7 +317,6 @@ WhatIfResult estimateHypotheticalIndexes(
     /// Grab the forced index names, drop them for baseline planning, re-check them at the end
     local_context->resetSettingsToDefaultValue(
         {"force_data_skipping_indices",
-         "force_optimize_projection",
          "force_optimize_projection_name",
          "preferred_optimize_projection_name"});
 
@@ -341,7 +339,10 @@ WhatIfResult estimateHypotheticalIndexes(
         plan = std::move(interpreter).extractQueryPlan();
     }
 
-    plan.optimize(QueryPlanOptimizationSettings(plan_context));
+    /// plan as the query would, but a forced projection that is not used must not fail the statement
+    QueryPlanOptimizationSettings optimization_settings(plan_context);
+    optimization_settings.force_use_projection = false;
+    plan.optimize(optimization_settings);
 
     std::vector<ReadFromMergeTree *> read_steps;
     collectReadSteps(plan.getRootNode(), read_steps);
