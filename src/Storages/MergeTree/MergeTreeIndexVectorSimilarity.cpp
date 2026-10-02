@@ -24,7 +24,10 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
 
+#include <atomic>
 #include <cmath>
+#include <condition_variable>
+#include <mutex>
 #include <ranges>
 #include <string_view>
 
@@ -374,12 +377,9 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     /// the runner is destroyed first (waits for all tasks) and the lambda is destroyed second.
     auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row)
     {
-        /// Check if the query has been cancelled. USearch internally does not check for cancellation,
-        /// and a single `add` call can take a very long time under sanitizers. Without this check, KILL QUERY
-        /// cannot stop the index building. The check is cheap (reads an atomic flag).
-        if (auto query_context = CurrentThread::tryGetQueryContext())
-            if (auto query_status = query_context->getProcessListElementSafe())
-                query_status->throwIfKilled();
+        /// USearch internally does not check for cancellation, and a single `add` call can take a very long time
+        /// under sanitizers. Without this check, KILL QUERY or cancelling a merge cannot stop the index building.
+        CurrentThread::checkIfNotCancelled();
 
         const typename Column::ValueType & value = column_array_data_float_data[column_array_offsets[static_cast<ssize_t>(row) - 1]];
 
@@ -410,14 +410,51 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
 
 
     size_t index_size = index->size();
+
+    /// Stop waiting at the first error (e.g. cancellation) instead of waiting for every queued row: the pool is shared with
+    /// other index builds, so the rest of our rows may sit behind a lot of their work. The runner's destructor drops them.
+    std::mutex mutex;
+    std::condition_variable finished_or_failed;
+    size_t remaining_rows = rows;
+    std::exception_ptr first_exception;
+    std::atomic<bool> failed = false;
+    auto add_row = [&](USearchIndex::vector_key_t key, size_t row)
+    {
+        if (failed)
+            return;
+        try
+        {
+            add_vector_to_index(key, row);
+        }
+        catch (...)
+        {
+            std::lock_guard lock(mutex);
+            if (!first_exception)
+                first_exception = std::current_exception();
+            failed = true;
+            finished_or_failed.notify_all();
+            return;
+        }
+        std::lock_guard lock(mutex);
+        if (--remaining_rows == 0)
+            finished_or_failed.notify_all();
+    };
+
     ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
-    for (size_t row = 0; row < rows; ++row)
+    /// Enqueueing can block on a full pool queue for a long time, so it must stop on an error too
+    for (size_t row = 0; row < rows && !failed; ++row)
     {
         auto key = static_cast<USearchIndex::vector_key_t>(index_size + row);
-        /// Passing add_vector_to_index by reference is safe because it outlives the runner
-        runner.enqueueAndKeepTrack([&add_vector_to_index, key, row] { add_vector_to_index(key, row); });
+        /// Passing add_row by reference is safe because it outlives the runner
+        runner.enqueueAndKeepTrack([&add_row, key, row] { add_row(key, row); });
     }
 
+    {
+        std::unique_lock lock(mutex);
+        finished_or_failed.wait(lock, [&] { return remaining_rows == 0 || first_exception; });
+        if (first_exception)
+            std::rethrow_exception(first_exception);
+    }
     runner.waitForAllToFinishAndRethrowFirstError();
 }
 
