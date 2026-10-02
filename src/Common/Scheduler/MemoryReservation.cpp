@@ -282,7 +282,7 @@ ResourceCost MemoryReservation::takeSpillRequest(const ISpillable * spillable, R
         return 0;
 
     std::lock_guard lock(mutex);
-    if (enqueued_spill <= 0)
+    if (kill_reason || fail_reason || removed || enqueued_spill <= 0)
         return 0;
 
     auto & entry = spillable->spill_accounting;
