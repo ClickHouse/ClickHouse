@@ -50,3 +50,11 @@ a range bounded above by an ordinary value excludes a nested NULL or NaN on both
 1	1
 4	4
 5	5
+a NULL in the key data, hidden by a key transform
+1
+1	1
+1
+1	1
+1
+1
+1	1

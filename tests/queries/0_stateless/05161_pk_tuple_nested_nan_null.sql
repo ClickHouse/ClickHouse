@@ -167,3 +167,32 @@ SELECT count(), sum(x) FROM t_pk_tuple_nan_upper WHERE t <= (4, 5.);
 SELECT count(), sum(x) FROM t_pk_tuple_nan_upper WHERE t != (2, 1.);
 
 DROP TABLE t_pk_tuple_nan_upper;
+
+SELECT 'a NULL in the key data, hidden by a key transform';
+
+-- `toString` maps `(NULL, 1)` to the ordinary key string `'(NULL,1)'`, which the index compares as unequal
+-- to `'(2,1)'`, while the row-level comparison is `NULL`. The key type is a plain `String`, so the atom
+-- itself must give up its exactness. The same holds for `assumeNotNull` over a top-level `NULL`.
+
+CREATE TABLE t_pk_tuple_null_data_transform (t Tuple(Nullable(Int32), Int32), x Int32) ENGINE = MergeTree ORDER BY toString(t)
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_pk_tuple_null_data_transform VALUES ((NULL,1),1),((2,1),1),((3,1),1);
+
+SELECT count() FROM t_pk_tuple_null_data_transform WHERE t != (2, 1);
+SELECT count(), sum(x) FROM t_pk_tuple_null_data_transform WHERE t != (2, 1);
+SELECT count() FROM t_pk_tuple_null_data_transform WHERE NOT (t = (2, 1));
+SELECT count(), sum(x) FROM t_pk_tuple_null_data_transform WHERE NOT (t = (2, 1));
+SELECT count() FROM t_pk_tuple_null_data_transform WHERE t = (2, 1);
+
+DROP TABLE t_pk_tuple_null_data_transform;
+
+CREATE TABLE t_pk_null_data_assume_not_null (n Nullable(Int32), x Int32) ENGINE = MergeTree ORDER BY assumeNotNull(n)
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_pk_null_data_assume_not_null VALUES (NULL,1),(2,1),(3,1);
+
+SELECT count() FROM t_pk_null_data_assume_not_null WHERE n != 2;
+SELECT count(), sum(x) FROM t_pk_null_data_assume_not_null WHERE n != 2;
+
+DROP TABLE t_pk_null_data_assume_not_null;

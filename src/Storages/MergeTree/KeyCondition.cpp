@@ -2637,6 +2637,27 @@ static bool applyDeterministicDagToColumn(
 
 
 /// Returns true if `output_name` depends on `input_name` and the whole sub-DAG is injective w.r.t. that input
+/// Whether a value of `input_type`, the column a deterministic key expression consumes, may hold a `NULL`
+/// that the key value of `key_type` no longer reveals: a top-level `NULL` mapped to a non-`Nullable` key,
+/// or a `NULL` nested in a composite value. `toString` of a `Tuple(Nullable(Int32), Int32)` turns
+/// `(NULL, 1)` into the ordinary string `'(NULL,1)'`.
+static bool deterministicTransformMayHideNull(const DataTypePtr & input_type, const DataTypePtr & key_type)
+{
+    if (!input_type || !key_type)
+        return true;
+
+    if (isNullableOrLowCardinalityNullable(input_type) && !isNullableOrLowCardinalityNullable(key_type))
+        return true;
+
+    bool result = false;
+    removeLowCardinalityAndNullable(input_type)->forEachChild([&](const IDataType & child)
+    {
+        if (child.isNullable() || child.isLowCardinalityNullable())
+            result = true;
+    });
+    return result;
+}
+
 /// Assumes this sub-DAG depends only on `input_name` (checked by the caller)
 /// May not catch all cases, but should be sufficient for most practical cases
 /// For example, ORDER BY (intDiv(x, 2), x % 2) is injective w.r.t. x, but this function will return false
@@ -2799,8 +2820,14 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     /// The comparison reads the constant in the domain of the column the key expression consumes, where a
     /// NaN equals no value, not even itself. The transform maps it to an ordinary key value that the index
     /// compares as equal, so the atom is stricter than the predicate and its `can_be_false` is not usable.
+    ///
+    /// A `NULL` inside a value of that column makes the comparison `NULL` at row level, which `WHERE`
+    /// rejects. When the transform maps such a value to an ordinary key value, the index compares it as
+    /// unequal to the constant, so a negated atom claims the row as matching, and `mayReadNullKeyValue`
+    /// cannot see it from the key type. The atom is not exact then either.
     out_atom_is_exact = isDeterministicTransformInjective(dag.actions->getActionsDAG(), expr_name, dag.output_name)
-        && !transform_input_has_nan;
+        && !transform_input_has_nan
+        && !deterministicTransformMayHideNull(dag.input_type, out_key_column_type);
 
     Field transformed_value = (*transformed_const_column)[0];
 
