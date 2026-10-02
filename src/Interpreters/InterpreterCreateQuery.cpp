@@ -53,6 +53,7 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -2408,6 +2409,64 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
                                            DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode)
 {
+    /// `CREATE ... CLONE AS` copies the source parts via an internal `REPLACE PARTITION ALL FROM`, which
+    /// validates the source against the target with `checkStructureAndGetMergeTreeData` -- but only after the
+    /// new table is already published, so a rejection (e.g. a target ENGINE appends a column to the effective
+    /// sorting key, like `VersionedCollapsingMergeTree`) left an orphan empty table and made a retry fail with
+    /// `TABLE_ALREADY_EXISTS`. Run the same validation up front, against the not yet published storage, so the
+    /// clone is rejected with the same error and no table is left behind.
+    auto check_clone_as_source_structure = [&](const StoragePtr & new_storage)
+    {
+        if (!create.is_clone_as || create.is_create_empty)
+            return;
+        const String as_database_name = getContext()->resolveDatabase(as_database_saved.empty() ? create.as_database : as_database_saved);
+        const String as_table_name = as_table_saved.empty() ? create.as_table : as_table_saved;
+        if (as_table_name.empty())
+            return;
+        if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(new_storage.get()))
+        {
+            if (auto source_table = DatabaseCatalog::instance().tryGetTable({as_database_name, as_table_name}, getContext()))
+            {
+                /// The clone fill of a non-replicated target is `StorageMergeTree::replacePartitionFrom`,
+                /// which rejects a `UNIQUE KEY` source before the structure check. Mirror that veto with the
+                /// same helper. A replicated target fill does not veto `UNIQUE KEY` sources, so it stays legal.
+                if (dynamic_cast<const StorageMergeTree *>(new_storage.get()) != nullptr)
+                    StorageMergeTree::throwIfSourceHasUniqueKey(source_table, getContext());
+
+                TableLockHolder source_lock = source_table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+                auto my_snapshot = new_storage->getInMemoryMetadataPtr(getContext(), false);
+                auto src_snapshot = source_table->getInMemoryMetadataPtr(getContext(), false);
+                merge_tree_data->checkStructureAndGetMergeTreeData(source_table, src_snapshot, my_snapshot);
+            }
+        }
+    };
+
+    /// The storage above is already built (it may have created its data path) but not yet published.
+    /// A failed clone check must drop it, exactly like `validateStorage` does on its own failure, so a
+    /// refused `CLONE AS` leaves no orphan table or leftover data path behind.
+    auto check_clone_as_source_publication = [&](const StoragePtr & new_storage)
+    {
+        try
+        {
+            check_clone_as_source_structure(new_storage);
+        }
+        catch (...)
+        {
+            if (mode <= LoadingStrictnessLevel::CREATE)
+            {
+                try
+                {
+                    new_storage->drop();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("check_clone_as_source_structure");
+                }
+            }
+            throw;
+        }
+    };
+
     if (create.isTemporary())
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
@@ -2427,6 +2486,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 mode,
                 is_restore_from_backup);
             validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
+            check_clone_as_source_publication(res);
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -2678,6 +2738,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (during table creation)");
         }
     }
+
+    check_clone_as_source_publication(res);
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 

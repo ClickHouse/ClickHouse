@@ -129,6 +129,12 @@ public:
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
+    /// Reject a source table with a `UNIQUE KEY`: its parts assume uniqueness is enforced on
+    /// write/merge, so adopting them wholesale would silently break `UNIQUE KEY` invariants. Used by
+    /// `replacePartitionFrom` and by the `CREATE ... CLONE AS` preflight in `InterpreterCreateQuery`
+    /// (the clone fill of a non-replicated target goes through `replacePartitionFrom`).
+    static void throwIfSourceHasUniqueKey(const StoragePtr & source_table, ContextPtr local_context);
+
 private:
 
     /// Mutex and condvar for synchronous mutations wait
