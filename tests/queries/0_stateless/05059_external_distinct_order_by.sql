@@ -1,5 +1,8 @@
 -- Isolate from the default ratio threshold: the spill must be triggered only by the explicit settings.
 SET max_bytes_ratio_before_external_distinct = 0;
+-- The randomized `prefer_external_sort_block_bytes = 1` writes spill blocks of 128 rows, which makes the
+-- spilling queries an order of magnitude slower and brings the test close to the timeout in sanitizer builds.
+SET prefer_external_sort_block_bytes = DEFAULT;
 
 -- The first plan records the `ORDER BY` requirement on the final `DISTINCT`. In the second plan, the
 -- subquery's expression ordering does not establish an input-order requirement for the outer `DISTINCT`.
