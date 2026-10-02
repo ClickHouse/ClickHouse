@@ -1,0 +1,39 @@
+--- fixture: data files and rows per Iceberg table
+ice_a	1	100
+ice_s	1	10
+p	5	40
+--- T5 partition: EXPLAIN, gate 0
+Join: m[1000] ⋈ p
+ResultRows: unknown
+--- T5 partition: executed, gate 0
+15
+--- T5 partition: EXPLAIN, gate 1
+Join: m[1000] ⋈ p[no_stats~15]
+ResultRows: ~~15
+--- T5 partition: executed, gate 1
+15
+--- T5 minmax: EXPLAIN, gate 0
+Join: m[1000] ⋈ p
+ResultRows: unknown
+--- T5 minmax: executed, gate 0
+10
+--- T5 minmax: EXPLAIN, gate 1
+Join: m[1000] ⋈ p[no_stats~10]
+ResultRows: ~~10
+--- T5 minmax: executed, gate 1
+10
+--- T5 counters: PartitionPrunedFiles, PartitionPrunedManifestFiles, MinMaxIndexPrunedFiles, TrivialCountOptimizationApplied
+minmax_executed_gate0	0	0	3	0
+minmax_executed_gate1	0	0	3	0
+minmax_explain_gate0	0	0	0	0
+minmax_explain_gate1	0	0	0	0
+partition_executed_gate0	3	3	0	0
+partition_executed_gate1	3	3	0	0
+partition_explain_gate0	0	0	0	0
+partition_explain_gate1	0	0	0	0
+--- T6 gate on: GLOBAL IN with throwIf, EXPLAIN only
+Join: s[10] ⋈ a[no_stats~?]
+ResultRows: unknown
+--- T6 gate off
+Join: s ⋈ a
+ResultRows: unknown
