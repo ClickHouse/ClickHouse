@@ -45,7 +45,8 @@ CREATE TABLE t_prune_in_table_alias
     p UInt8,
     x UInt64,
     is_hit UInt8 ALIAS p IN t_prune_in_table_keys,
-    is_one UInt8 ALIAS p IN (1)
+    is_one UInt8 ALIAS p IN (1),
+    is_hit_stored UInt8 MATERIALIZED p IN t_prune_in_table_keys
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_prune_in_table_alias', 'r1')
 PARTITION BY p ORDER BY x;
@@ -60,6 +61,9 @@ ALTER TABLE t_prune_in_table_alias DELETE WHERE is_hit;
 ALTER TABLE t_prune_in_table_alias DELETE WHERE is_one;
 -- Not pruned: a qualified name reaches the same `ALIAS` column.
 ALTER TABLE t_prune_in_table_alias DELETE WHERE t_prune_in_table_alias.is_hit;
+-- Pruned to partition 1: a `MATERIALIZED` column is read as it was stored, so its definition is not
+-- evaluated again and does not hide a deferred set.
+ALTER TABLE t_prune_in_table_alias DELETE WHERE is_hit_stored AND p = 1;
 
 SYSTEM SYNC REPLICA t_prune_in_table_alias PULL;
 

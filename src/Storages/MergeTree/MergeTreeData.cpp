@@ -10379,13 +10379,16 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     /// hint. Besides explicit subqueries, `IN` accepts tables and table functions; the analyzer
     /// turns all three forms into prepared sets. Conservatively leave such commands unpruned.
     ///
-    /// A deferred set can also hide behind a column name: a column default (`ALIAS`, `DEFAULT`
-    /// or `MATERIALIZED`) may itself contain `partition_key IN some_table`, and the analysis
-    /// below deliberately expands such columns against the storage (`collectSourceColumns` with
-    /// `keep_alias_columns = false`), so the set still reaches `collectSets` while the raw
-    /// predicate mentions only the column name. Follow an identifier into its column default to
-    /// see it. A column default cannot reference itself, but keep the set of visited columns
-    /// anyway, so that malformed metadata cannot make the recursion unbounded.
+    /// A deferred set can also hide behind a column name: an `ALIAS` column may itself contain
+    /// `partition_key IN some_table`, and the analysis below deliberately expands such columns
+    /// against the storage (`collectSourceColumns` with `keep_alias_columns = false`), so the set
+    /// still reaches `collectSets` while the raw predicate mentions only the column name. Follow
+    /// an identifier into its column definition to see it. Only a read-time carrier is expanded:
+    /// a stored `DEFAULT`/`MATERIALIZED` column is read as it was written, so its definition is
+    /// not evaluated by either pass and following it would only lose pruning for a safe predicate.
+    /// `EPHEMERAL` is followed for symmetry with the non-determinism check below. A column
+    /// definition cannot reference itself, but keep the set of visited columns anyway, so that
+    /// malformed metadata cannot make the recursion unbounded.
     ///
     /// The identifiers are the raw text of the predicate, not resolved yet, so a column may be
     /// spelled qualified (`table.column`, `database.table.column`), while `ColumnsDescription` is
@@ -10470,7 +10473,9 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
             {
                 const auto column_name = name.substr(0, end);
                 if (const auto column_default = columns_description.getDefault(column_name);
-                    column_default && column_default->expression && visited_columns.emplace(column_name).second)
+                    column_default && column_default->expression
+                    && (column_default->kind == ColumnDefaultKind::Alias || column_default->kind == ColumnDefaultKind::Ephemeral)
+                    && visited_columns.emplace(column_name).second)
                 {
                     if (self(column_default->expression, self))
                         return true;
