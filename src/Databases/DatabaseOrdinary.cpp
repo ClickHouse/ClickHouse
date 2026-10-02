@@ -10,7 +10,6 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
-#include <Core/SettingsFields.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabasesCommon.h>
@@ -39,7 +38,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/AsyncLoader.h>
-#include <Interpreters/TransactionManager.h>
+#include <Interpreters/TransactionLog.h>
 
 namespace fs = std::filesystem;
 
@@ -61,7 +60,6 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsString storage_policy;
-    extern const MergeTreeSettingsBool table_readonly;
 }
 
 namespace ServerSetting
@@ -84,7 +82,6 @@ namespace DatabaseMetadataDiskSetting
 {
 extern const DatabaseMetadataDiskSettingsBool lazy_load_tables;
 extern const DatabaseMetadataDiskSettingsString disk;
-extern const DatabaseMetadataDiskSettingsUInt64 max_tables;
 }
 
 
@@ -117,8 +114,6 @@ DatabaseOrdinary::DatabaseOrdinary(
     else
         metadata_disk_ptr = getContext()->getDatabaseDisk();
 
-    max_tables = database_metadata_disk_settings[DatabaseMetadataDiskSetting::max_tables].value;
-
     LOG_INFO(log, "Metadata disk {}, path {}", metadata_disk_ptr->getName(), metadata_disk_ptr->getPath());
 }
 
@@ -145,19 +140,6 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
             "Found existing ZooKeeper path {} while trying to convert table {} to replicated. Table will not be converted.",
             zookeeper_path, backQuote(table_id.getFullTableName())
         );
-}
-
-bool DatabaseOrdinary::isTableReadonlyAsReplicated(const ASTCreateQuery & create_query, ContextPtr local_context)
-{
-    /// Resolved the way `registerStorageMergeTree` resolves the settings of a `ReplicatedMergeTree`:
-    /// the definition's own `SETTINGS` over the `merge_tree` and `replicated_merge_tree` config defaults.
-    if (create_query.storage && create_query.storage->settings)
-    {
-        if (const Field * readonly_setting = create_query.storage->settings->changes.tryGet("table_readonly"))
-            return SettingFieldBool{*readonly_setting}.value;
-    }
-
-    return local_context->getReplicatedMergeTreeSettings()[MergeTreeSetting::table_readonly];
 }
 
 void DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr local_context)
@@ -220,14 +202,18 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     create_query.storage->set(create_query.storage->engine, engine->clone());
 }
 
-String DatabaseOrdinary::getConvertToReplicatedFlagPath(const ASTCreateQuery & create_query)
+String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, bool tableStarted)
 {
-    return fs::path(getTableDataPath(create_query)) / CONVERT_TO_REPLICATED_FLAG_NAME;
-}
+    fs::path data_path;
+    if (!tableStarted)
+    {
+        auto create_query = tryGetCreateTableQuery(name, getContext());
+        data_path = getTableDataPath(create_query->as<ASTCreateQuery &>());
+    }
+    else
+        data_path = getTableDataPath(name);
 
-String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & table_name)
-{
-    return fs::path(getTableDataPath(table_name)) / CONVERT_TO_REPLICATED_FLAG_NAME;
+    return (data_path / CONVERT_TO_REPLICATED_FLAG_NAME);
 }
 
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
@@ -250,7 +236,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
             policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(create_query);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, false);
 
     auto storage_disks = policy->getDisks();
     auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
@@ -262,28 +248,6 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
             "Table engine conversion to replicated is supported only for Atomic databases. Convert your database engine to Atomic first.");
 
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
-
-    /** `table_readonly` is not supported for `ReplicatedMergeTree`, and a converted table keeps the
-      * settings of the table it was converted from, so converting would produce a replicated table
-      * in the state the checks around it exist to make unrepresentable. Leave the table alone and
-      * say so: it keeps loading and serving as it is, `MODIFY SETTING table_readonly = 0` is allowed
-      * on it, and the flag stays in place, so the conversion happens on the next start once the
-      * setting is off. Throwing here would take the table down with the whole database load, and
-      * the setting could then not be changed at all. The setting can also come from the server's
-      * config defaults rather than the definition; an explicit `0` in the definition overrides them.
-      */
-    if (isTableReadonlyAsReplicated(create_query, getContext()))
-    {
-        LOG_ERROR(
-            log,
-            "Not converting table {} to replicated: it would have `table_readonly = 1` (from its definition or the server's "
-            "`merge_tree` / `replicated_merge_tree` defaults), which is not supported for "
-            "ReplicatedMergeTree. Turn it off with `ALTER TABLE ... MODIFY SETTING table_readonly = 0`; the {} flag is kept, "
-            "so the conversion runs on the next start.",
-            backQuote(qualified_name.getFullName()),
-            CONVERT_TO_REPLICATED_FLAG_NAME);
-        return;
-    }
 
     checkReplicaPathIsSafe(create_query, getContext());
     checkReplicaPathExists(create_query, getContext());
@@ -423,7 +387,7 @@ void DatabaseOrdinary::loadTableFromMetadata(
     chassert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
     const auto & query = ast->as<const ASTCreateQuery &>();
 
-    if (shouldLazyLoad(query, name, mode))
+    if (shouldLazyLoad(query, mode))
     {
         loadTableLazy(local_context, name, ast, mode);
         return;
@@ -474,22 +438,13 @@ void DatabaseOrdinary::loadTableFromMetadata(
     }
 }
 
-/// These engines run their ingestion in a background job that only `startup` starts.
-static bool isPushSourceEngine(const String & engine_name)
-{
-    static const std::unordered_set<std::string_view> push_source_engines
-        = {"Kafka", "RabbitMQ", "NATS", "FileLog", "S3Queue", "AzureQueue"};
-
-    return push_source_engines.contains(engine_name);
-}
-
-bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const
+bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStrictnessLevel mode) const
 {
     if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
         return false;
 
     if (query.is_ordinary_view || query.is_materialized_view || query.is_dictionary
-        || query.isParameterizedView())
+        || query.isParameterizedView() || query.is_window_view)
         return false;
 
     /// A lazy proxy would hide the TimeSeries type from the cross-database rename guard, so its
@@ -497,28 +452,8 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const Qualif
     if (query.is_time_series_table)
         return false;
 
-    /// A lazy proxy would hide the `Alias` type from the target-table access checks, so the alias's
-    /// metadata could be read without a grant on the target. Load it eagerly, as for views.
-    if (query.storage && query.storage->engine && query.storage->engine->name == "Alias")
-        return false;
-
     /// Already handled by `StorageTableFunctionProxy`.
     if (query.as_table_function)
-        return false;
-
-    /// A push source starts the background job that feeds its materialized views in its own `startup`,
-    /// which the lazy stand-in never calls: nothing reads such a table directly, so the consumer would
-    /// never start and the ingestion would stall silently until the table is read by hand. Load it
-    /// eagerly, as views are - but only when it really has a materialized view to feed, so that an
-    /// unused source table still costs nothing to load.
-    ///
-    /// `TablesLoader` publishes the view dependencies of everything it is about to load into
-    /// `DatabaseCatalog` before it creates the loading jobs, so the graph is already complete here,
-    /// and it also holds the views of the databases that were loaded earlier. A view created later
-    /// resolves its source table, and that materializes and starts up the stand-in on the spot,
-    /// through `StorageProxy::getStorageSnapshot`.
-    if (query.storage && query.storage->engine && isPushSourceEngine(query.storage->engine->name)
-        && !DatabaseCatalog::instance().getDependentViews(StorageID{name}).empty())
         return false;
 
     if (mode == LoadingStrictnessLevel::FORCE_RESTORE)
@@ -582,7 +517,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
     const ASTPtr & ast,
     LoadingStrictnessLevel mode)
 {
-    TransactionManager::increaseAsyncTablesLoadingJobNumber();
+    TransactionLog::increaseAsyncTablesLoadingJobNumber();
     std::scoped_lock lock(mutex);
     auto job = makeLoadJob(
         std::move(load_after),
@@ -590,7 +525,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
         fmt::format("load table {}", name.getFullName()),
         [this, local_context, file_path, name, ast, mode](AsyncLoader &, const LoadJobPtr &)
         {
-            SCOPE_EXIT(TransactionManager::decreaseAsyncTablesLoadingJobNumber(););
+            SCOPE_EXIT(TransactionLog::decreaseAsyncTablesLoadingJobNumber(););
             loadTableFromMetadata(local_context, file_path, name, ast, mode);
         });
 
@@ -603,7 +538,7 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     if (!rmt)
         return;
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, true);
 
     auto storage_disks = table->getStoragePolicy()->getDisks();
     auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
@@ -786,7 +721,6 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOrdinary::getDetachedTablesIte
 
 VectorWithMemoryTracking<String> DatabaseOrdinary::getAllTableNames(ContextPtr) const
 {
-    ensurePopulated();
     std::set<String> unique_names;
     {
         std::lock_guard lock(mutex);
@@ -861,7 +795,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     }
 
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
     writeMetadataFile(
         db_disk,
@@ -918,34 +852,8 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
 
         return make_shared<DatabaseOrdinary>(args.database_name, args.metadata_path, args.context, database_metadata_disk_settings);
     };
-    factory.registerDatabase("Ordinary", create_fn, /*features=*/{.supports_settings = true, .has_builtin_setting_fn = DatabaseMetadataDiskSettings::hasBuiltin}, Documentation{
-        .description = R"DOCS_MD(
-The `Ordinary` database engine is the legacy database engine. It stores each table's metadata in a separate file and has been superseded by [`Atomic`](/reference/engines/database-engines/atomic).
-
-:::warning
-`Ordinary` is deprecated. Do not use it for new databases.
-:::
-
-## Creating a database {#creating-a-database}
-
-Creating an `Ordinary` database requires enabling [`allow_deprecated_database_ordinary`](/reference/settings/session-settings/allow-deprecated#allow_deprecated_database_ordinary):
-
-```sql
-SET allow_deprecated_database_ordinary = 1;
-
-CREATE DATABASE legacy
-ENGINE = Ordinary;
-```
-
-## Migration {#migration}
-
-Use `Atomic` for new databases. It is the default database engine in open-source ClickHouse and supports atomic metadata operations, including non-blocking `DROP TABLE` and `RENAME TABLE`.
-
-## See also {#see-also}
-
-- [Atomic database engine](/reference/engines/database-engines/atomic)
-- [`allow_deprecated_database_ordinary`](/reference/settings/session-settings/allow-deprecated#allow_deprecated_database_ordinary)
-)DOCS_MD",
+    factory.registerDatabase("Ordinary", create_fn, /*features=*/{.supports_settings = true}, Documentation{
+        .description = "The legacy, deprecated default database engine. It stores each table in its own metadata file and has been superseded by the `Atomic` engine.",
         .syntax = "ENGINE = Ordinary",
         .related = {"Atomic"}});
 }

@@ -23,9 +23,13 @@ doc_type: 'リファレンス'
 
 `clickhousectl` は、人間と AI エージェントの両方による ClickHouse を使った開発を支援します。
 
-## インストール {#installation}
+<div id="installation">
+  ## インストール
+</div>
 
-### クイックインストール {#quick-install}
+<div id="quick-install">
+  ### クイックインストール
+</div>
 
 ```bash
 curl https://clickhouse.com/cli | sh
@@ -33,14 +37,20 @@ curl https://clickhouse.com/cli | sh
 
 インストールスクリプトは、お使いのOSに対応した適切なバージョンをダウンロードし、`~/.local/bin/clickhousectl` にインストールします。利便性のため、`chctl` のaliasも自動的に自動的に作成されます。
 
-## 要件 {#requirements}
+<div id="requirements">
+  ## 要件
+</div>
 
 * macOS (aarch64, x86&#95;64) または Linux (aarch64, x86&#95;64)
 * Cloud コマンドの実行には、[ClickHouse Cloud APIキー](/ja/products/cloud/features/admin-features/api/api-overview) が必要です
 
-## ローカル {#local}
+<div id="local">
+  ## ローカル
+</div>
 
-### ClickHouse バージョンのインストールと管理 {#installing-versions}
+<div id="installing-versions">
+  ### ClickHouse バージョンのインストールと管理
+</div>
 
 `clickhousectl` は `builds.clickhouse.com` から ClickHouse のバイナリをダウンロードし、そこにビルドがない場合は `packages.clickhouse.com` (Linux) または [GitHub releases](https://github.com/ClickHouse/ClickHouse/releases) (macOS) から取得します。
 
@@ -67,7 +77,9 @@ clickhousectl local remove 26.5.2.39
 
 `local use` は、選択したバージョンのバイナリを指す `~/.local/bin/clickhouse` のシンボリックリンクも作成するため、通常の `clickhouse` コマンド (例: `clickhouse local`、`clickhouse client`) を `PATH` 経由で使えるようになります。スキップするには `--no-global` を指定します。そのパスに通常のファイルがすでに存在する場合は、警告を表示してそのまま残します。アクティブなデフォルトバージョンに対して `local remove` を実行すると、このシンボリックリンクも削除されます。
 
-#### ClickHouseバイナリの保存先 {#binary-storage}
+<div id="binary-storage">
+  #### ClickHouseバイナリの保存先
+</div>
 
 ClickHouseのバイナリはグローバルなリポジトリに保存されるため、ストレージを重複させることなく複数のプロジェクトで共有できます。バイナリは `~/.clickhouse/` に保存されます。
 
@@ -79,7 +91,9 @@ ClickHouseのバイナリはグローバルなリポジトリに保存される�
 └── default              # tracks the active version
 ```
 
-### プロジェクトを初期化する {#initializing-project}
+<div id="initializing-project">
+  ### プロジェクトを初期化する
+</div>
 
 ```bash
 clickhousectl local init
@@ -104,7 +118,9 @@ postgres/
 └── seed/                   # Seed data / INSERT statements
 ```
 
-### クエリを実行する {#running-queries}
+<div id="running-queries">
+  ### クエリを実行する
+</div>
 
 ```bash
 # 実行中のサーバーにclickhouse-clientで接続する
@@ -115,7 +131,9 @@ clickhousectl local client --queries-file schema.sql # ファイルからクエ�
 clickhousectl local client --host remote-host --port 9000  # 特定のホスト/ポートに接続する
 ```
 
-### ClickHouse サーバーの作成と管理 {#managing-servers}
+<div id="managing-servers">
+  ### ClickHouse サーバーの作成と管理
+</div>
 
 ClickHouse サーバーのインスタンスを起動・管理します。各サーバーには、それぞれ独立したデータディレクトリが `.clickhouse/servers/<name>/data/` に割り当てられます。
 
@@ -152,7 +170,9 @@ clickhousectl local server dotenv --local                 # Write to .env.local 
 
 **グローバルなサーバー管理:** `list`、`stop`、`stop-all` では `--global` を使用することで、システム全体の全プロジェクトを対象に操作できます。`server list --global` は、実行中のすべての ClickHouse サーバーを表示し、各サーバーがどのディレクトリに属しているかを示す Project カラムも表示します。
 
-#### ローカルサーバー向けのカスタム設定ファイル {#custom-config-files}
+<div id="custom-config-files">
+  #### ローカルサーバー向けのカスタム設定ファイル
+</div>
 
 ローカルサーバーは適切なデフォルト設定で起動しますが、設定を切り替える必要がある場合もあります。設定ファイルを `~/.clickhouse/configs/` に配置し、サーバーの起動時に名前を指定して適用します。
 
@@ -173,7 +193,9 @@ clickhousectl local server start --config-file querylog
 
 指定したファイルは、ClickHouse の**組み込みのデフォルト設定に重ねて適用される** (`config.d` 経由) ため、変更したい設定だけを含めればよく、完全な config を再現する必要はありません。ファイルは `.xml`、`.yaml`、`.yml` のいずれでもよく、拡張子の有無にかかわらず名前で参照できます。
 
-#### プロジェクトローカルのデータディレクトリ {#project-local-data}
+<div id="project-local-data">
+  #### プロジェクトローカルのデータディレクトリ
+</div>
 
 すべてのサーバーのデータは、プロジェクトディレクトリ内の `.clickhouse/` に保存されます。
 
@@ -190,7 +212,9 @@ clickhousectl local server start --config-file querylog
 
 名前付きサーバーごとに専用のデータディレクトリがあるため、サーバー同士は完全に分離されています。再起動してもデータは保持されます。中断したところから再開するには、名前を指定してサーバーを停止し、再度起動してください。サーバーのデータを完全に削除するには、`clickhousectl local server remove <name>` を使用します。
 
-### ローカルのPostgresを実行する {#local-postgres}
+<div id="local-postgres">
+  ### ローカルのPostgresを実行する
+</div>
 
 ClickHouseに加えて、`clickhousectl` ではローカルのPostgresインスタンスを実行・管理することもできます。ローカルのPostgresはDocker上で動作するため、Dockerがインストールされ、起動している必要があります。各インスタンスは名前とメジャーバージョンで識別されるため、複数のPostgresバージョンをそれぞれ別のデータディレクトリで並行して実行できます。
 
@@ -216,13 +240,17 @@ clickhousectl local postgres stop dev
 clickhousectl local postgres remove dev
 ```
 
-## 認証 {#authentication}
+<div id="authentication">
+  ## 認証
+</div>
 
 APIキー (推奨) またはOAuth (ブラウザベース) を使用して、ClickHouse Cloud に認証します。
 
 まだClickHouse Cloudのアカウントをお持ちでない場合は、`clickhousectl cloud auth signup` を実行すると、ブラウザでサインアップページが開きます。
 
-### API キー/シークレット (推奨) {#api-key}
+<div id="api-key">
+  ### API キー/シークレット (推奨)
+</div>
 
 API キーは、認証方法として推奨されています。特に、AI Agent から CLI を操作する場合に適しています。[スコープ付き API キーを作成](/ja/products/cloud/features/admin-features/api/openapi)すると、選択した権限 (read-only または read/write) のみを付与でき、各キーは 1 つの組織に紐付けられます。そのため、CLI にアクセスを許可するための、安全で最小権限の方法となります。
 
@@ -256,7 +284,9 @@ CLICKHOUSE_CLOUD_API_SECRET=your-secret
 clickhousectl cloud --api-key KEY --api-secret SECRET ...
 ```
 
-### OAuthログイン {#oauth-login}
+<div id="oauth-login">
+  ### OAuthログイン
+</div>
 
 ```bash
 clickhousectl cloud auth login
@@ -268,7 +298,9 @@ clickhousectl cloud auth login
   OAuth アクセスは現在 **読み取り専用** で、**あなたが所属するすべての組織** にアクセスできます。書き込みアクセスが必要な場合、または CLI の対象を 1 つの組織に限定する場合は、代わりに [スコープ付き API キーを作成](#api-key) してください。
 </Note>
 
-### 認証ステータスとログアウト {#auth-status}
+<div id="auth-status">
+  ### 認証ステータスとログアウト
+</div>
 
 ```bash
 clickhousectl cloud auth status    # Show current auth state
@@ -277,7 +309,9 @@ clickhousectl cloud auth logout    # Clear all saved credentials (credentials.js
 
 認証情報の解決順: CLI フラグ &gt; `.clickhouse/credentials.json` &gt; export 済みの環境変数 &gt; `.env` ファイル &gt; OAuth トークン。
 
-### 使用された認証情報の取得元をデバッグする {#debug-credentials}
+<div id="debug-credentials">
+  ### 使用された認証情報の取得元をデバッグする
+</div>
 
 任意の`cloud`コマンドに`--debug`を指定すると、コマンドの実行前に、解決された認証情報の取得元 (および API URL) が stderr に出力されます。
 
@@ -288,11 +322,15 @@ clickhousectl cloud --debug service list
 # ... normal output ...
 ```
 
-## Cloud {#cloud}
+<div id="cloud">
+  ## Cloud
+</div>
 
 API を使用して ClickHouse Cloud サービスを管理します。
 
-### 組織 {#organizations}
+<div id="organizations">
+  ### 組織
+</div>
 
 ```bash
 clickhousectl cloud org list              # 組織の一覧表示
@@ -307,7 +345,9 @@ clickhousectl cloud org usage <org-id> \
   --to-date 2024-01-31
 ```
 
-### サービス {#services}
+<div id="services">
+  ### サービス
+</div>
 
 ```bash
 # List services
@@ -386,7 +426,9 @@ clickhousectl cloud service delete <service-id>
 clickhousectl cloud service delete <service-id> --force
 ```
 
-#### サービス作成オプション {#service-create-options}
+<div id="service-create-options">
+  #### サービス作成オプション
+</div>
 
 | オプション                                      | 説明                                               |
 | ------------------------------------------ | ------------------------------------------------ |
@@ -413,7 +455,9 @@ clickhousectl cloud service delete <service-id> --force
 | `--private-preview-terms-checked`          | 必要な場合はプライベートプレビューの利用規約に同意                        |
 | `--enable-core-dumps`                      | サービスのコアダンプ収集を有効または無効にする                          |
 
-#### Query API の認証モード {#query-api-auth-modes}
+<div id="query-api-auth-modes">
+  #### Query API の認証モード
+</div>
 
 `cloud service query` は、`clickhouse` バイナリやサービスのパスワードを使わずに、HTTP 経由で Cloud サービスに対して SQL を実行するための標準的な方法です。どちらの認証モードにも対応しています。
 
@@ -422,7 +466,9 @@ clickhousectl cloud service delete <service-id> --force
 
 **idled** 状態のサービスにクエリすると、どちらの認証モードでも自動的に復帰します (最初のクエリには 1 分ほどかかる場合があります) 。**stopped** 状態のサービスが自動的に起動されることはなく、クエリは `cloud service start` を実行するよう案内するヒント付きで失敗します。生成された Query API ホストを上書きするには、`CLICKHOUSE_CLOUD_QUERY_HOST` を設定します。
 
-#### クエリエンドポイントの管理 {#query-endpoints}
+<div id="query-endpoints">
+  #### クエリエンドポイントの管理
+</div>
 
 ```bash
 clickhousectl cloud service query-endpoint get <service-id>
@@ -433,14 +479,18 @@ clickhousectl cloud service query-endpoint create <service-id> \
 clickhousectl cloud service query-endpoint delete <service-id>
 ```
 
-#### プライベート エンドポイントの管理 {#private-endpoints}
+<div id="private-endpoints">
+  #### プライベート エンドポイントの管理
+</div>
 
 ```bash
 clickhousectl cloud service private-endpoint create <service-id> --endpoint-id vpce-123
 clickhousectl cloud service private-endpoint get-config <service-id>
 ```
 
-#### バックアップ設定 {#backup-config}
+<div id="backup-config">
+  #### バックアップ設定
+</div>
 
 ```bash
 clickhousectl cloud service backup-config get <service-id>
@@ -450,9 +500,11 @@ clickhousectl cloud service backup-config update <service-id> \
   --backup-start-time 02:00
 ```
 
-### Postgres サービス {#postgres-services}
+<div id="postgres-services">
+  ### Postgres サービス
+</div>
 
-`clickhousectl` では、上記の ClickHouse サービス用コマンドと同様に、[ClickHouse Cloud Postgres](/ja/products/managed-postgres/overview) サービスの作成や管理も行えます。GCP は[プライベートプレビュー](https://clickhouse.com/cloud/postgres#gcp-waitlist)段階です。GCP のリージョンとインスタンスサイズを指定して `--provider gcp` を渡してください。
+`clickhousectl` では、上記の ClickHouse サービス用コマンドと同様に、[ClickHouse Cloud Postgres](/ja/products/managed-postgres/overview) サービスの作成や管理も行えます。
 
 ```bash
 # List and inspect
@@ -460,21 +512,13 @@ clickhousectl cloud postgres list
 clickhousectl cloud postgres list --filter state=running
 clickhousectl cloud postgres get <pg-id>
 
-# Create a service on AWS (the default provider)
+# Create a service
 clickhousectl cloud postgres create \
   --name my-pg \
   --region us-east-1 \
   --size m7i.2xlarge \
   --pg-version 17 \
   --ha-type sync
-
-# Create a service on GCP (private preview); region and size use GCP names
-clickhousectl cloud postgres create \
-  --name my-pg \
-  --provider gcp \
-  --region us-central1 \
-  --size c4-standard-4 \
-  --pg-version 18
 
 # Update and delete
 clickhousectl cloud postgres update <pg-id> --size m7i.4xlarge
@@ -503,28 +547,34 @@ clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
 clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
 ```
 
-#### Postgres サービスの作成オプション {#postgres-create-options}
+<div id="postgres-create-options">
+  #### Postgres サービスの作成オプション
+</div>
 
-| オプション                      | 説明                                                            |
-| -------------------------- | ------------------------------------------------------------- |
-| `--name`                   | サービス名 (必須)                                                    |
-| `--region`                 | リージョン (例: AWS では `us-east-1`、GCP では `us-central1`、必須)         |
-| `--size`                   | インスタンスサイズ (例: AWS では `m7i.2xlarge`、GCP では `c4-standard-4`、必須) |
-| `--provider`               | クラウドプロバイダー: `aws`、`gcp` (デフォルト: `aws`)                        |
-| `--pg-version`             | メジャーバージョン: `18`、`17`                                          |
-| `--ha-type`                | 高可用性: `none`、`async`、`sync`                                   |
-| `--tag`                    | リソースタグ `key` または `key=value` (繰り返し指定可能)                       |
-| `--pg-config-file`         | `PgConfig` オブジェクトを含む JSON ファイルのパス                             |
-| `--pg-bouncer-config-file` | `PgBouncerConfig` オブジェクトを含む JSON ファイルのパス                      |
+| オプション                      | 説明                                       |
+| -------------------------- | ---------------------------------------- |
+| `--name`                   | サービス名 (必須)                               |
+| `--region`                 | リージョン (例: `us-east-1`、必須)                |
+| `--size`                   | インスタンスサイズ (例: `m7i.2xlarge`、必須)          |
+| `--provider`               | クラウドプロバイダー (デフォルト: `aws`)                |
+| `--pg-version`             | メジャーバージョン: `18`、`17`                     |
+| `--ha-type`                | 高可用性: `none`、`async`、`sync`              |
+| `--tag`                    | リソースタグ `key` または `key=value` (繰り返し指定可能)  |
+| `--pg-config-file`         | `PgConfig` オブジェクトを含む JSON ファイルのパス        |
+| `--pg-bouncer-config-file` | `PgBouncerConfig` オブジェクトを含む JSON ファイルのパス |
 
-### バックアップ {#backups}
+<div id="backups">
+  ### バックアップ
+</div>
 
 ```bash
 clickhousectl cloud backup list <service-id>
 clickhousectl cloud backup get <service-id> <backup-id>
 ```
 
-### ClickPipes {#clickpipes}
+<div id="clickpipes">
+  ### ClickPipes
+</div>
 
 外部ソースからClickHouse Cloudにデータを取り込むためのClickPipesを管理します。
 
@@ -553,7 +603,9 @@ clickhousectl cloud clickpipe settings update <service-id> <clickpipe-id> \
   --streaming-max-insert-wait-ms 10000
 ```
 
-#### ClickPipes の作成 {#creating-clickpipes}
+<div id="creating-clickpipes">
+  #### ClickPipes の作成
+</div>
 
 各ソースタイプには、`clickpipe create` の配下にそれぞれ固有のサブコマンドがあります。
 
@@ -628,7 +680,9 @@ clickhousectl cloud clickpipe create bigquery <service-id> \
 
 ソースタイプごとの全オプションは、`clickhousectl cloud clickpipe create <source> --help`で確認してください。
 
-### メンバー {#members}
+<div id="members">
+  ### メンバー
+</div>
 
 ```bash
 clickhousectl cloud member list
@@ -637,7 +691,9 @@ clickhousectl cloud member update <user-id> --role-id <role-id>
 clickhousectl cloud member remove <user-id>
 ```
 
-### 招待 {#invitations}
+<div id="invitations">
+  ### 招待
+</div>
 
 ```bash
 clickhousectl cloud invitation list
@@ -646,7 +702,9 @@ clickhousectl cloud invitation get <invitation-id>
 clickhousectl cloud invitation delete <invitation-id>
 ```
 
-### キー {#keys}
+<div id="keys">
+  ### キー
+</div>
 
 ```bash
 clickhousectl cloud key list
@@ -660,14 +718,18 @@ clickhousectl cloud key update <key-id> \
 clickhousectl cloud key delete <key-id>
 ```
 
-### アクティビティ {#activity}
+<div id="activity">
+  ### アクティビティ
+</div>
 
 ```bash
 clickhousectl cloud activity list --from-date 2024-01-01 --to-date 2024-12-31
 clickhousectl cloud activity get <activity-id>
 ```
 
-### JSON 出力 {#json-output}
+<div id="json-output">
+  ### JSON 出力
+</div>
 
 JSON 形式のレスポンスを出力するには、`--json` フラグを使用します。
 
@@ -678,7 +740,9 @@ clickhousectl cloud --json service get <service-id>
 
 `clickhousectl` は、コーディングエージェントのコンテキスト (Claude Code、Cursor、Codex、Gemini CLI、Goose、Devin、および標準の `AGENT` 環境変数を設定する任意のツール) を自動検出し、`--json` を指定しなくても JSON を stdout に自動的に出力します。
 
-### 終了コード {#exit-codes}
+<div id="exit-codes">
+  ### 終了コード
+</div>
 
 終了コードは `gh` CLI の慣例に従います。
 
@@ -689,7 +753,9 @@ clickhousectl cloud --json service get <service-id>
 | `2`  | キャンセル (ユーザーによる中止)                     |
 | `4`  | 認証が必要 (認証情報なし、401/403、OAuth 専用の書き込み)  |
 
-## スキル {#skills}
+<div id="skills">
+  ## スキル
+</div>
 
 公式の ClickHouse Agent スキル は、[ClickHouse/agent-skills](https://github.com/ClickHouse/agent-skills) からインストールしてください。
 
@@ -710,7 +776,9 @@ clickhousectl skills --global --all
 clickhousectl skills --agent claude --agent codex
 ```
 
-### 非対話型フラグ {#non-interactive-flags}
+<div id="non-interactive-flags">
+  ### 非対話型フラグ
+</div>
 
 | フラグ               | 説明                                        |
 | ----------------- | ----------------------------------------- |
@@ -719,7 +787,9 @@ clickhousectl skills --agent claude --agent codex
 | `--all`           | サポートされているすべてのエージェント向けのスキルをインストールします       |
 | `--detected-only` | システム上で検出された、サポート対象のエージェント向けのスキルをインストールします |
 
-## セルフアップデート {#self-update}
+<div id="self-update">
+  ## セルフアップデート
+</div>
 
 `clickhousectl` は自身を最新リリースに更新できます。
 
@@ -733,7 +803,9 @@ clickhousectl update --check
 
 CLI はバックグラウンドで更新の有無も確認し (24 時間に 1 回まで) 、新しいバージョンが利用可能な場合は通知を表示します。
 
-## テレメトリー {#telemetry}
+<div id="telemetry">
+  ## テレメトリー
+</div>
 
 `clickhousectl` は、CLI の利用状況を把握するため、匿名の利用テレメトリーを収集します。これはデフォルトで有効ですが、通知前にデータが送信されることはありません。初回実行時には、CLI が収集内容と無効化する方法を説明する通知を表示し、データは送信しません。収集は2回目以降の実行時にのみ開始されるため、データが収集される前に必ずオプトアウトできます。
 

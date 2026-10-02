@@ -64,7 +64,9 @@ Encaminhamento de cabeçalhos:
 
 Esta parte define quais cabeçalhos serão encaminhados dos cabeçalhos de solicitação do cliente para o autenticador HTTP externo. Observe que os cabeçalhos serão comparados com os definidos na configuração sem diferenciar maiúsculas de minúsculas, mas serão encaminhados como estão, isto é, sem modificação.
 
-### Habilitando a autenticação HTTP em `users.xml` {#enabling-http-auth-in-users-xml}
+<div id="enabling-http-auth-in-users-xml">
+  ### Habilitando a autenticação HTTP em `users.xml`
+</div>
 
 Para habilitar a autenticação HTTP para o usuário, especifique a seção `http_authentication` em vez de `password` ou de seções semelhantes na definição do usuário.
 
@@ -84,7 +86,7 @@ Exemplo (adicione em `users.xml`):
             <server>basic_server</server>
             <scheme>basic</scheme>
         </http_authentication>
-    </my_user>
+    </test_user_2>
 </clickhouse>
 ```
 
