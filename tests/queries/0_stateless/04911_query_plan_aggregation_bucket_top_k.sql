@@ -1,7 +1,7 @@
 -- The bucket top-K plan optimization materializes only each two-level bucket's best n groups
 -- during the aggregation's final conversion. It applies when the aggregation feeds `ORDER BY`
--- over its outputs with `LIMIT n` and the per-bucket selection is provably exact; today the
--- rule fires for a single sort column tracing to the aggregation's lone `count()`. The cells
+-- over its outputs with `LIMIT n` and the per-bucket selection is provably exact; the rule fires
+-- for a single sort column tracing to the aggregation's lone `count()`, `uniqExact` or `uniqExactIf`. The cells
 -- assert the pushed flag by searching the plan of `EXPLAIN actions = 1` for the `Bucket top-K`
 -- line rather than printing whole plans, so unrelated plan changes do not break them; one
 -- exactness pair checks the results. The two plan settings the rewrite depends on are pinned
