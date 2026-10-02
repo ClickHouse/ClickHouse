@@ -51,4 +51,17 @@ FROM t_chain_fixed_string SETTINGS optimize_redundant_comparisons = 1;
 SELECT count() FROM t_chain_fixed_string WHERE s = toFixedString('a', 2) AND s != 'a' SETTINGS optimize_redundant_comparisons = 1;
 SELECT count() FROM t_chain_fixed_string WHERE s != toFixedString('a', 2) AND s = 'a' SETTINGS optimize_redundant_comparisons = 1;
 
+-- Two `equals` on the same expression need no chain: the `FixedString` constant converts to
+-- `'a\0'`, which contradicts `s = 'a'`, so the conjunction was folded to constant false while
+-- both of its terms are true. `optimize_redundant_comparisons` is on by default here.
+SELECT 'equals pair';
+SELECT (s = 'a' AND s = toFixedString('a', 2)) AS pair,
+       (s = 'a') AS lhs,
+       (s = toFixedString('a', 2)) AS rhs
+FROM t_chain_fixed_string;
+SELECT count() FROM t_chain_fixed_string WHERE s = 'a' AND s = toFixedString('a', 2);
+SELECT count() FROM t_chain_fixed_string WHERE toLowCardinality(s) = 'a' AND toLowCardinality(s) = toFixedString('a', 2);
+-- A pair of same-type constants is still folded.
+SELECT count() FROM t_chain_fixed_string WHERE s = 'a' AND s = 'b';
+
 DROP TABLE t_chain_fixed_string;
