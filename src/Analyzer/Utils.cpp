@@ -168,6 +168,22 @@ bool stringFamilyPairIsNotEqualityEquivalent(const DataTypePtr & left_type, cons
         return stringFamilyPairIsNotEqualityEquivalent(left_map->getKeyType(), right_map->getKeyType())
             || stringFamilyPairIsNotEqualityEquivalent(left_map->getValueType(), right_map->getValueType());
 
+    /// A `Variant` value is compared as its active alternative, so the pair can disagree if any
+    /// alternative can.
+    if (const auto * left_variant = typeid_cast<const DataTypeVariant *>(left.get()); left_variant && !left->equals(*right))
+    {
+        for (const auto & alternative : left_variant->getVariants())
+            if (stringFamilyPairIsNotEqualityEquivalent(alternative, right))
+                return true;
+    }
+
+    if (const auto * right_variant = typeid_cast<const DataTypeVariant *>(right.get()); right_variant && !left->equals(*right))
+    {
+        for (const auto & alternative : right_variant->getVariants())
+            if (stringFamilyPairIsNotEqualityEquivalent(left, alternative))
+                return true;
+    }
+
     return isStringOrFixedString(left) && isStringOrFixedString(right) && !left->equals(*right);
 }
 
