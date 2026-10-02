@@ -27,8 +27,10 @@ command = shlex.split(os.environ['CLICKHOUSE_LOCAL']) + [
     '--print-profile-events',
 ]
 
-# A file limit of two permits two readers plus the in-memory tail. With three files, exactly one
-# intermediate merge reduces the files to two, and the tail still joins only the final merge.
+# A file limit of two permits two readers plus an in-memory tail. Sorting keeps its tail in memory: at the
+# limit no intermediate merge is needed, and with three files exactly one reduces them to two. At this
+# threshold the file readers alone exceed the `DISTINCT` budget, so no prefix of its tail fits and the whole
+# tail is spilled as one more file, which takes one more intermediate merge and leaves no in-memory input.
 for num_files in (2, 3):
     unique_rows = num_files * 16384
     for shape in ('sort', 'distinct_fingerprint', 'distinct_ordered'):
@@ -61,13 +63,21 @@ for num_files in (2, 3):
         assert result.returncode == 0, (name, text)
         assert result.stdout.strip() == f'{unique_rows + 16}\t1', (name, result.stdout)
 
-        # Restoring `DISTINCT` input order performs its own external sort with the same file limit.
-        num_stages = 2 if shape == 'distinct_ordered' else 1
-        num_merges = num_stages * (num_files - 2)
+        # Each stage is its number of intermediate merges and its final merge. Restoring `DISTINCT` input
+        # order performs its own external sort with the same file limit after the `DISTINCT` merge.
+        sort_stage = (num_files - 2, ('2', '1'))
+        distinct_stage = (num_files - 1, ('2', '0'))
+        stages = {'sort': [sort_stage], 'distinct_fingerprint': [distinct_stage],
+                  'distinct_ordered': [distinct_stage, sort_stage]}[shape]
+        num_merges = sum(merges for merges, _ in stages)
         groups = [int(n) for n in re.findall(r'Starting intermediate external merge with (\d+) inputs', text)]
         assert groups == [2] * num_merges, (name, groups, text)
         finals = re.findall(r'Starting final external merge with (\d+) files and (\d+) in-memory inputs', text)
-        assert finals == [('2', '1')] * num_stages, (name, finals, text)
+        assert finals == [final for _, final in stages], (name, finals, text)
+        if shape != 'sort':
+            assert 'Spilling a DISTINCT tail prefix before merging (chunks: 1, ' in text, (name, text)
+            assert 'remaining chunks: 0, ' in text, (name, text)
+            assert f'temporary runs: {num_files + 1}, in-memory chunks: 0,' in text, (name, text)
         for event, expected in (('ExternalProcessingIntermediateMerge', num_merges),
                                 ('ExternalProcessingIntermediateMergeInputs', 2 * num_merges)):
             value = sum(int(n) for n in re.findall(rf'{event}: (\d+) \(increment\)', text))
