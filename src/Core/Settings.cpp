@@ -9078,6 +9078,10 @@ Skip whole Iceberg manifest files whose partition summaries in the manifest list
 Estimate the rows of an Iceberg read for join reordering from the `record_count` of the data files in its manifest files, after partition and min-max pruning by the query filter, without reading data. The estimate is exact without a filter and without delete files. As for MergeTree tables without column statistics, a filter that prunes no file gives no estimate.
 )", 0, \
         {"26.10", false, false, "New setting to estimate the rows of Iceberg reads for join reordering from manifest files."}) \
+    DECLARE(Bool, use_iceberg_manifest_column_statistics, false, R"(
+With [`use_iceberg_manifest_statistics`](#use_iceberg_manifest_statistics) and [`use_statistics`](#use_statistics) enabled, also give join reordering the number of distinct values, min/max and NULL fraction of the columns an Iceberg read returns, from the manifest metrics of its remaining data files (identity partition values, value bounds, NULL counts and column sizes). They are given whenever the rows are estimated.
+)", 0, \
+        {"26.10", false, false, "New setting to estimate column statistics of Iceberg reads for join reordering from manifest files."}) \
     DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
 If enabled and the `schema` key of an Iceberg manifest file header carries a schema that differs from the schema already registered for the same schema-id from metadata.json, the metadata.json schema is used and the manifest header copy is ignored with a warning. If disabled, such a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
 

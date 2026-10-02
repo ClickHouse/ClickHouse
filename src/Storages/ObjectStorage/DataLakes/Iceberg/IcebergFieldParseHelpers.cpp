@@ -212,6 +212,16 @@ std::optional<Field> deserializeDecimalFromBinaryRepr(
     return std::nullopt;
 }
 
+std::optional<Field> partitionValueToFieldOfType(const Field & value, const IDataType & type)
+{
+    const WhichDataType which(type);
+    if (value.getType() == Field::Types::Int64 && which.isDateTime64())
+        return DecimalField<Decimal64>(value.safeGet<Int64>(), getDecimalScale(type));
+    if (value.getType() == Field::Types::String && which.isDecimal())
+        return deserializeDecimalFromBinaryRepr(value.safeGet<String>(), type);
+    return value;
+}
+
 std::optional<Field> deserializeFieldFromBinaryRepr(
     const String & str, const DataTypePtr & expected_type, bool lower_bound, bool compensate_rounding)
 {

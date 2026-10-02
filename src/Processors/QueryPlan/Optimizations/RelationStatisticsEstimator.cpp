@@ -240,11 +240,21 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         /// TODO: A filter only on identity-partition columns keeps every row of a remaining file, so it is exact too;
         /// the walk would have to report that.
         const bool exact = *estimate->rows == 0 || (!has_filter && !estimate->has_delete_files);
-        return RelationStats{
+        RelationStats stats{
             .estimated_rows = *estimate->rows,
             .table_name = table_display_name,
             .imprecise_estimate = !exact,
             .source = RowEstimateSource::DataLakeMetadata};
+        if (estimate->column_statistics)
+        {
+            auto profile = estimate->column_statistics->estimateRelationProfile();
+            /// Without a `uniq` sketch the estimator guesses a fixed share of the rows; the manifests give better.
+            for (auto & [name, column] : profile.column_stats)
+                if (auto it = estimate->num_distinct_values.find(name); it != estimate->num_distinct_values.end())
+                    column.num_distinct_values = it->second;
+            stats.column_stats = std::move(profile.column_stats);
+        }
+        return stats;
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))

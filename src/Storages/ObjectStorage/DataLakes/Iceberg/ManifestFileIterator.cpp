@@ -154,35 +154,37 @@ namespace
             hyperrectangles.emplace(field_id, DB::Range(UInt64(0), true, inherited_upper_bound, true));
         }
     }
-}
 
-std::unordered_map<Int32, DB::Range> getDataFileHyperrectangles(
-    const ProcessedManifestFileEntry & entry,
-    const std::unordered_map<Int32, DB::DataTypePtr> & column_types,
-    const IcebergPathFromMetadata & path_to_manifest_file)
-{
-    std::unordered_map<Int32, DB::Range> hyperrectangles;
-    const auto & parsed_entry = entry.parsed_entry;
-    if (parsed_entry->content_type != FileContentType::DATA)
-        return hyperrectangles;
-
-    for (const auto & [column_id, column_type] : column_types)
+    /// The bounds of one column of a data file: as declared, and as range borders, where a decimal bound is shifted outward.
+    struct ColumnBounds
     {
-        auto bounds_it = parsed_entry->value_bounds.find(column_id);
-        if (bounds_it == parsed_entry->value_bounds.end())
-            continue;
+        DB::Field declared_lower;
+        DB::Field declared_upper;
+        DB::Field lower;
+        DB::Field upper;
+    };
+
+    std::optional<ColumnBounds> decodeColumnBounds(
+        const ParsedManifestFileEntry & parsed_entry,
+        Int32 column_id,
+        const DB::DataTypePtr & column_type,
+        const IcebergPathFromMetadata & path_to_manifest_file)
+    {
+        auto bounds_it = parsed_entry.value_bounds.find(column_id);
+        if (bounds_it == parsed_entry.value_bounds.end())
+            return std::nullopt;
         const auto & bounds = bounds_it->second;
 
         String left_str;
         String right_str;
         /// lower_bound and upper_bound may be NULL.
         if (!bounds.first.tryGet(left_str) || !bounds.second.tryGet(right_str))
-            continue;
+            return std::nullopt;
 
         if (const auto type_id = column_type->getTypeId();
             type_id == DB::TypeIndex::Tuple || type_id == DB::TypeIndex::Map || type_id == DB::TypeIndex::Array
             || type_id == DB::TypeIndex::Variant)
-            continue;
+            return std::nullopt;
 
         auto left = deserializeFieldFromBinaryRepr(left_str, column_type, true);
         auto right = deserializeFieldFromBinaryRepr(right_str, column_type, false);
@@ -199,8 +201,8 @@ std::unordered_map<Int32, DB::Range> getDataFileHyperrectangles(
                 "for column id {} of data file '{}'; skipping min/max pruning for this column",
                 path_to_manifest_file,
                 column_id,
-                parsed_entry->file_path_key.serialize());
-            continue;
+                parsed_entry.file_path_key.serialize());
+            return std::nullopt;
         }
 
         /// At a non-zero scale the outward shift moves each decimal bound one integral unit, so it
@@ -227,15 +229,45 @@ std::unordered_map<Int32, DB::Range> getDataFileHyperrectangles(
                 "{} of data file '{}'; skipping min/max pruning for this column",
                 path_to_manifest_file,
                 column_id,
-                parsed_entry->file_path_key.serialize());
-            continue;
+                parsed_entry.file_path_key.serialize());
+            return std::nullopt;
         }
 
-        hyperrectangles.emplace(column_id, DB::Range(*left, true, *right, true));
+        return ColumnBounds{*declared_left, *declared_right, *left, *right};
     }
+}
+
+std::unordered_map<Int32, DB::Range> getDataFileHyperrectangles(
+    const ProcessedManifestFileEntry & entry,
+    const std::unordered_map<Int32, DB::DataTypePtr> & column_types,
+    const IcebergPathFromMetadata & path_to_manifest_file)
+{
+    std::unordered_map<Int32, DB::Range> hyperrectangles;
+    const auto & parsed_entry = entry.parsed_entry;
+    if (parsed_entry->content_type != FileContentType::DATA)
+        return hyperrectangles;
+
+    for (const auto & [column_id, column_type] : column_types)
+        if (auto bounds = decodeColumnBounds(*parsed_entry, column_id, column_type, path_to_manifest_file))
+            hyperrectangles.emplace(column_id, DB::Range(bounds->lower, true, bounds->upper, true));
 
     addRowLineageHyperrectangles(hyperrectangles, entry, path_to_manifest_file);
     return hyperrectangles;
+}
+
+std::optional<std::pair<DB::Field, DB::Field>> getDataFileColumnBounds(
+    const ProcessedManifestFileEntry & entry,
+    Int32 column_id,
+    const DB::DataTypePtr & column_type,
+    const IcebergPathFromMetadata & path_to_manifest_file)
+{
+    if (entry.parsed_entry->content_type != FileContentType::DATA)
+        return std::nullopt;
+
+    auto bounds = decodeColumnBounds(*entry.parsed_entry, column_id, column_type, path_to_manifest_file);
+    if (!bounds)
+        return std::nullopt;
+    return std::pair{std::move(bounds->declared_lower), std::move(bounds->declared_upper)};
 }
 
 const std::vector<ProcessedManifestFileEntryPtr> &

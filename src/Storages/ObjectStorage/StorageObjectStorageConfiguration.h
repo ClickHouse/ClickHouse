@@ -332,7 +332,7 @@ public:
 
     /// See `IDataLakeMetadata::estimateRead`. Plain object storage has no metadata to estimate from.
     virtual std::optional<DataLakeReadEstimate>
-    estimateRead(StorageMetadataPtr /*storage_metadata_snapshot*/, const ActionsDAG * /*filter*/, ContextPtr /*context*/) const
+    estimateRead(StorageMetadataPtr /*storage_metadata_snapshot*/, const ActionsDAG * /*filter*/, const Names & /*column_names*/, ContextPtr /*context*/) const
     {
         return std::nullopt;
     }

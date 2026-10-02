@@ -7,7 +7,9 @@
 # T1: join order of a 3-way join, the same for both text orders. T2: the smaller table becomes the
 # build side. T8: a table that was never written reports 0 rows. T10a: the `icebergLocal` table
 # function gives the same labels. Every arm also runs with the gate off.
-# The MergeTree twins with cardinality-only hints predict the numbers; only their labels differ.
+# With `use_iceberg_manifest_column_statistics = 1` the reads also report the NDV of `k`, so the top join estimates
+# 1000 rows.
+# The MergeTree twins with cardinality and NDV hints predict the numbers; only their labels differ.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,7 +23,7 @@ PINS="--query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_or
     --query_plan_propagate_predicate_across_join=0 --use_statistics=1 --materialize_statistics_on_insert=1
     --explain_query_plan_default=legacy --max_insert_threads=1 --max_threads=1 --max_block_size=1000000
     --allow_insert_into_iceberg=1"
-ON="--use_iceberg_manifest_statistics=1"
+ON="--use_iceberg_manifest_statistics=1 --use_iceberg_manifest_column_statistics=1"
 OFF="--use_iceberg_manifest_statistics=0"
 
 LAKE="${CLICKHOUSE_USER_FILES_UNIQUE}"
@@ -73,7 +75,7 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count() FROM system.iceberg_history WHERE database = currentDatabase() AND table = 'ice_empty'"
 
-HINTS='{"twin_big": {"cardinality": 100000}, "twin_small": {"cardinality": 10}}'
+HINTS='{"twin_big": {"cardinality": 100000, "distinct_keys": {"k": 1000}}, "twin_small": {"cardinality": 10, "distinct_keys": {"k": 10}}}'
 T1_BMS="SELECT count() FROM ice_big AS b JOIN mt AS m ON b.k = m.k JOIN ice_small AS s ON m.k = s.k"
 T1_SMB="SELECT count() FROM ice_small AS s JOIN mt AS m ON s.k = m.k JOIN ice_big AS b ON m.k = b.k"
 
