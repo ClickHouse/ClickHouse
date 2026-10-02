@@ -171,10 +171,7 @@ public:
 
     void increasePriority();
 
-    /// Records that the cache served bytes `[offset, offset + size)` of this file segment to a
-    /// reader (a cache hit). `offset` uses the coordinates of `range`.
-    /// Feeds the efficiency window of the cache (see `FileCacheEfficiency`).
-    /// Do not call under the key lock or the file segment lock.
+    /// Marks `[offset, offset + size)` as served from the cache. Not under a key or file segment lock.
     void markRead(size_t offset, size_t size);
 
     /**
@@ -265,20 +262,14 @@ private:
     DownloadState & getOrCreateDownloadDataUnlocked(const FileSegmentGuard::Lock &);
     void resetDownloadDataUnlocked(const FileSegmentGuard::Lock &);
 
-    /// Changes `reserved_size` by `delta` and keeps the efficiency window of the cache in step.
-    /// Every change of `reserved_size` after construction goes through this method.
+    /// The only way to change `reserved_size` after construction.
     void addReservedSize(Int64 delta);
 
-    /// Removes the share of this file segment from the live efficiency window.
-    /// Called when the file segment leaves the cache.
     void onRemovedFromCache(const FileSegmentGuard::Lock &);
 
-    /// Bytes of the set granules in `active_granules`; the last granule is cut at the segment end.
     size_t getActiveBytes() const;
-    /// Bytes of the granules in the bit masks `low` (granules 0-63) and `high` (64-127), with the
-    /// granule size and range size of the current window.
+    /// `low` holds granules 0-63, `high` 64-127.
     size_t granulesToBytes(UInt64 low, UInt64 high) const;
-    /// Windows since the latest window with a read; `nullopt` if never read or not tracked.
     std::optional<UInt64> getWindowsSinceTouch() const;
 
     /// In release builds returns a single shared logger; in debug builds a per-segment one.
@@ -364,17 +355,12 @@ private:
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
 
-    /// Read coverage for the efficiency window of the cache (see `FileCacheEfficiency`).
-    /// `efficiency_window_id` is the latest window with a read, or `FileCacheEfficiency::NEVER_READ`.
-    /// It moves to a new window only under `segment_guard`, together with clearing `active_granules`.
-    /// Bits of `active_granules` are set without a lock.
+    /// Reuse coverage for `FileCacheEfficiency`. The window id and the granule size change only under
+    /// `segment_guard`, together with clearing the bits; bits are set without a lock.
     static constexpr size_t EFFICIENCY_GRANULES = 128;
     std::atomic<UInt64> efficiency_window_id = FileCacheEfficiency::NEVER_READ;
     std::atomic<UInt64> active_granules[2] = {};
-    /// Set at the first read of each window from the range size, together with clearing
-    /// `active_granules`, so all bits of one window use one granule size.
     std::atomic<UInt64> efficiency_granule_size = 1;
-    /// The range size at that moment. The last granule is cut at it.
     std::atomic<UInt64> efficiency_window_range_size = 0;
 
     /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.

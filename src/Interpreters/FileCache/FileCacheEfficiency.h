@@ -12,25 +12,15 @@
 namespace DB
 {
 
-/// Splits the bytes of one `FileCache` into three classes in each efficiency window
-/// (`efficiency_window_sec`):
-/// - active: unique bytes served from the cache in the window, rounded up to granules;
-/// - passive: the other bytes of file segments that had at least one read in the window;
-/// - idle: the bytes of file segments with no read in the window.
-///
-/// The class keeps the live window (S = bytes of segments read in it, U = active bytes)
-/// and a snapshot of the last full window. `FileSegment` reports reads, size changes and
-/// removals; this class only does the accounting. Window ids count from construction.
-///
-/// Thread safety: all methods are thread-safe. `rotation_mutex` serializes rotation; the live
-/// counters are atomics. At a window edge a live counter can take an update meant for the
-/// previous window; the error disappears with the next window.
+/// Splits the bytes of one `FileCache` per efficiency window (`efficiency_window_sec`) into active
+/// (served from the cache), passive (not served, in segments with a hit) and idle bytes.
+/// Keeps the live window and a snapshot of the last full window. Thread-safe, except
+/// `setClockForTesting`.
 class FileCacheEfficiency
 {
 public:
     using Clock = std::function<std::chrono::steady_clock::time_point()>;
 
-    /// Window id of a file segment that was never read.
     static constexpr UInt64 NEVER_READ = std::numeric_limits<UInt64>::max();
 
     struct Snapshot
@@ -44,22 +34,20 @@ public:
 
     bool isEnabled() const { return window_sec != 0; }
 
-    /// The window id now. Does not rotate.
+    /// Does not rotate.
     UInt64 windowNow() const;
 
-    /// The window id now. First rotates the live window if it ended.
-    /// Do not call under a key lock or a file segment lock.
+    /// Rotates if the live window ended. Not under a key or file segment lock.
     UInt64 currentWindow();
 
-    /// Add to S or U if `window` is the live window; otherwise do nothing. Safe under any lock.
+    /// No-op unless `window` is the live window.
     void addHeldBytes(UInt64 window, Int64 bytes);
     void addActiveBytes(UInt64 window, Int64 bytes);
 
-    /// The last full window; all zeros until the first window ends.
-    /// Rotates first. Do not call under a key lock or a file segment lock.
+    /// The last full window. Not under a key or file segment lock.
     Snapshot getSnapshot();
 
-    /// Replaces the clock and starts counting windows again. Call only before the cache is used.
+    /// Only before the cache is used.
     void setClockForTesting(Clock clock_);
 
 private:

@@ -39,7 +39,6 @@ void FileCacheEfficiency::rotateIfNeeded(UInt64 now_window)
     const Int64 used = static_cast<Int64>(get_used_size());
     if (old_window + 1 == now_window)
     {
-        /// The live window is the last full window.
         const Int64 held = std::max<Int64>(live_held_bytes.load(), 0);
         const Int64 active = std::clamp<Int64>(live_active_bytes.load(), 0, held);
         snapshot = Snapshot{
@@ -50,7 +49,7 @@ void FileCacheEfficiency::rotateIfNeeded(UInt64 now_window)
     }
     else
     {
-        /// Nothing rotated in the last full window, so it had no reads.
+        /// No reads in the last full window.
         snapshot = Snapshot{.active_bytes = 0, .passive_bytes = 0, .idle_bytes = static_cast<UInt64>(used)};
     }
 

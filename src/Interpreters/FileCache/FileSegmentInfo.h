@@ -79,9 +79,8 @@ namespace DB
         bool is_unbound;
         IFileCachePriority::QueueEntryType queue_entry_type;
         FileCacheOriginInfo origin;
-        /// Bytes read in the latest efficiency window with a read, in whole granules.
         uint64_t active_bytes = 0;
-        /// 0 = live window, 1 = last full window, more = older; `nullopt` = never read.
+        /// 0 = live window, 1 = last full window; `nullopt` = never served.
         std::optional<uint64_t> windows_since_touch;
     };
 }

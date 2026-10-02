@@ -1696,7 +1696,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             }
         }
 
-        /// Bytes served from the cache count as reuse; bytes this read puts into the cache do not.
+        /// Only cache hits count for the efficiency window.
         if (state.read_type == ReadType::CACHED)
             file_segment.markRead(offset, size);
 

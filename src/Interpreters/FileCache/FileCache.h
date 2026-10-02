@@ -228,7 +228,6 @@ public:
 
     size_t getReserveGranularity() const { return reserve_granularity.load(std::memory_order_relaxed); }
 
-    /// Accounting of the efficiency window. Thread-safe.
     FileCacheEfficiency & getEfficiency() { return efficiency; }
 
     bool tryReserve(

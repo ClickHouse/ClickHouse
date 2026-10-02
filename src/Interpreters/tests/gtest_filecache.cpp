@@ -4318,7 +4318,6 @@ TEST_F(FileCacheTest, EfficiencyWindow)
     expect(next_window(), 16, 112);
 
     /// Window 4: a read file segment leaves the window when it is removed.
-    /// (`removeFileSegment` skips a file segment that is still held, so drop the references first.)
     a->markRead(0, 16);
     holder_a.reset();
     a.reset();
@@ -4347,11 +4346,10 @@ TEST_F(FileCacheTest, EfficiencyWindow)
         write16();
         ASSERT_EQ(c->getReservedSize(), 64);
     }
-    /// The holder completed the file segment; the shrink returned 16 bytes: S = 48.
+    /// The shrink at completion returns 16 bytes: S = 48.
     expect(next_window(), 16, 32);
 
-    /// Window 6: a read past the end of a short file segment (100 bytes, not a multiple of 128)
-    /// stops at the segment end. C is not read and stays idle.
+    /// Window 6: a read past the end of a 100-byte file segment stops at its end.
     auto short_key = FileCacheKey::fromPath("efficiency_window_short");
     auto holder_d = cache.getOrSet(short_key, 0, 100, /*file_size=*/100, {}, 0, user);
     auto d = get(holder_d, 0);
@@ -4361,8 +4359,7 @@ TEST_F(FileCacheTest, EfficiencyWindow)
     EXPECT_EQ(FileSegment::getInfo(d).active_bytes, 10);
     expect(next_window(), 10, 90);
 
-    /// Window 7: eviction removes the share of a read file segment. Eight new 128-byte file
-    /// segments fill the 1024-byte cache, so LRU evicts C and then D.
+    /// Window 7: eviction (of C, then D) removes the share of a read file segment.
     d->markRead(0, 100);
     holder_d.reset();
     d.reset();
@@ -4426,8 +4423,7 @@ TEST_F(FileCacheTest, EfficiencyGranuleFollowsShrink)
 {
     DB::ThreadStatus thread_status;
     auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_granule_test"));
-    /// 1024-byte file segments: the granule of a full segment is 8 bytes. Alignment 1 makes the
-    /// shrink at completion exact, as the forced shrink of write-through is.
+    /// Granule of a full 1024-byte segment: 8 bytes. Alignment 1 makes the shrink exact.
     auto settings = efficiencyCacheSettings(10);
     settings[FileCacheSetting::max_size] = 8192;
     settings[FileCacheSetting::max_file_segment_size] = 1024;
@@ -4437,8 +4433,7 @@ TEST_F(FileCacheTest, EfficiencyGranuleFollowsShrink)
     cache.initialize();
     const auto & user = FileCache::getCommonOrigin();
 
-    /// A file segment that shrinks to 10 bytes before it is read: the read of all 10 bytes counts
-    /// 10 bytes, not two 8-byte granules of the initial 1024-byte range.
+    /// A file segment that shrinks to 10 bytes before its first read counts 10 bytes.
     auto shrunk_key = FileCacheKey::fromPath("efficiency_granule_shrunk");
     {
         auto holder = cache.getOrSet(shrunk_key, 0, 1024, /*file_size=*/4096, {}, 0, user);
@@ -4452,7 +4447,6 @@ TEST_F(FileCacheTest, EfficiencyGranuleFollowsShrink)
         std::string data(10, '0');
         segment->write(data.data(), 10, segment->getCurrentWriteOffset());
     }
-    /// The holder completed the file segment and shrank it to the 10 downloaded bytes.
     auto holder_shrunk = cache.getOrSet(shrunk_key, 0, 10, /*file_size=*/4096, {}, 0, user);
     auto shrunk = get(holder_shrunk, 0);
     ASSERT_EQ(shrunk->range().size(), 10);
@@ -4460,7 +4454,7 @@ TEST_F(FileCacheTest, EfficiencyGranuleFollowsShrink)
     shrunk->markRead(0, 10);
     EXPECT_EQ(FileSegment::getInfo(shrunk).active_bytes, 10);
 
-    /// A size that is not a multiple of the granule: the last granule is cut at the segment end.
+    /// The last granule is cut at the segment end.
     auto odd_key = FileCacheKey::fromPath("efficiency_granule_odd");
     auto holder_odd = cache.getOrSet(odd_key, 0, 1001, /*file_size=*/1001, {}, 0, user);
     auto odd = get(holder_odd, 0);
@@ -4485,16 +4479,13 @@ TEST_F(FileCacheTest, EfficiencyStaleWindowDoesNotMoveBack)
     auto segment = get(holder, 0);
     download(segment);
 
-    /// Window 1: the segment gets its first read of the window.
     now += std::chrono::seconds(10);
     segment->markRead(0, 16);
 
-    /// A reader that computed window 0 before that read (here: the clock steps back) must not
-    /// move the segment back to window 0.
+    /// A stale reader in window 0 must not move the segment back.
     now -= std::chrono::seconds(5);
     segment->markRead(16, 16);
 
-    /// Window 1 again: the segment is still in the live window, so S keeps one share of it.
     now += std::chrono::seconds(5);
     segment->markRead(32, 16);
     EXPECT_EQ(FileSegment::getInfo(segment).windows_since_touch, 0);
