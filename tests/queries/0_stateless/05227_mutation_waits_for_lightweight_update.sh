@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, no-shared-merge-tree
-# no-parallel: uses a server-wide failpoint that pauses the next lightweight update, whichever table it is on.
+# Tags: no-parallel, no-fasttest, no-replicated-database, no-shared-merge-tree
+# no-parallel, no-fasttest: uses a server-wide failpoint that pauses the next lightweight update, whichever table it is on.
 # no-replicated-database, no-shared-merge-tree: the test is about the mutation selection of the plain `MergeTree`.
 
 # A heavyweight `ALTER ... UPDATE` that ran while a lightweight `UPDATE` was still writing its patch
