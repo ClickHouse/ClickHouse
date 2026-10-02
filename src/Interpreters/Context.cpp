@@ -7613,18 +7613,26 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
     /// deadlocks the very first `MergeTree` part write of the process. The generation counter detects
     /// a configuration reload racing with that read, in which case the policy is re-read, so the
     /// selector is never built from a policy older than the configuration it is built for.
+    ///
+    /// Without a `<compression>` section there is no codec to gate, so the policy is not read at all.
+    constexpr auto config_name = "compression";
     while (true)
     {
         UInt64 generation = 0;
+        bool has_compression_config = false;
 
         {
             SharedLockGuard lock(shared->mutex);
             if (shared->compression_codec_selector)
                 return shared->compression_codec_selector->choose(part_size, part_size_ratio);
             generation = shared->compression_codec_selector_generation;
+            const auto & config = shared->config ? *shared->config : Poco::Util::Application::instance().config();
+            has_compression_config = config.has(config_name);
         }
 
-        const Settings default_profile_settings = getGlobalContext()->getDefaultProfileSettings();
+        std::optional<Settings> default_profile_settings;
+        if (has_compression_config)
+            default_profile_settings = getGlobalContext()->getDefaultProfileSettings();
 
         {
             std::lock_guard lock(shared->mutex);
@@ -7632,15 +7640,14 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
             if (shared->compression_codec_selector)
                 return shared->compression_codec_selector->choose(part_size, part_size_ratio);
 
+            /// An unchanged generation means an unchanged configuration, so `has_compression_config`
+            /// still describes it.
             if (shared->compression_codec_selector_generation != generation)
                 continue;
 
-            constexpr auto config_name = "compression";
-            const auto & config = shared->getConfigRefWithLock(lock);
-
-            auto selector = config.has(config_name)
+            auto selector = has_compression_config
                 ? std::make_unique<CompressionCodecSelector>(
-                      config, config_name, CodecValidationSettings(default_profile_settings))
+                      shared->getConfigRefWithLock(lock), config_name, CodecValidationSettings(*default_profile_settings))
                 : std::make_unique<CompressionCodecSelector>();
 
             /// A selector a gate decision went into is deliberately not cached. The default profile
