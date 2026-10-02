@@ -486,10 +486,27 @@ IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object,
 
 bool IcebergMetadata::optimize(
     [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
-    [[maybe_unused]] ContextPtr context,
-    [[maybe_unused]] const std::optional<FormatSettings> & format_settings)
+    ContextPtr context,
+    [[maybe_unused]] const std::optional<FormatSettings> & format_settings,
+    std::shared_ptr<DataLake::ICatalog> catalog)
 {
     checkTableRootIsQueriedPath("OPTIMIZE");
+
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::iceberg_snapshot_id].changed || settings[Setting::iceberg_timestamp_ms].changed)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "OPTIMIZE is not supported with iceberg_snapshot_id or iceberg_timestamp_ms");
+
+    /// `iceberg_metadata_file_path` also carries the catalog's metadata pointer, so reject it only without a catalog.
+    if (!catalog)
+    {
+        const auto lookup_settings = getMetadataLookupSettings();
+        if (lookup_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "OPTIMIZE is not supported with iceberg_metadata_file_path on a standalone Iceberg table");
+    }
 
 #if CLICKHOUSE_CLOUD
     if (!compaction_enabled)
@@ -503,20 +520,25 @@ bool IcebergMetadata::optimize(
     iceberg_compaction_metadata_generator->waitUntilUpdated();
     return true;
 #else
-    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
+    /// `compactIcebergTable` rewrites files directly and cannot commit through a catalog.
+    if (catalog)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "OPTIMIZE is not supported for catalog-backed Iceberg tables in this build");
+
+    if (getMetadataLookupSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "OPTIMIZE is not supported with iceberg_use_version_hint on a standalone Iceberg table");
+
+    if (settings[Setting::allow_experimental_iceberg_compaction])
     {
-        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        auto snapshots_info = getHistory(context);
-        compactIcebergTable(
-            snapshots_info,
-            persistent_components,
-            object_storage,
-            getMetadataLookupSettings(),
-            format_settings,
-            sample_block,
-            context,
-            write_format);
-        return true;
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "OPTIMIZE TABLE is not yet supported for Iceberg data compaction: the rewritten generation is not published "
+            "atomically (no version increment, no version hint and no catalog commit), so which generation a reader "
+            "resolves is undefined, while the previous generation's files are deleted even though retained snapshots "
+            "still reference them");
     }
     else
     {
@@ -1497,8 +1519,13 @@ void IcebergMetadata::addDeleteTransformers(
             /// get header of delete file
             Block delete_file_header;
             RelativePathWithMetadata delete_file_object(delete_file.file_path);
+            /// Equality deletes may be Parquet/ORC/Avro; only the ones that will actually seek to a
+            /// footer at the tail should skip the generic from-start prefetch.
+            auto read_settings = local_context->getReadSettings();
+            read_settings.remote_fs_settings.random_access
+                = FormatFactory::instance().checkIfFormatIsRandomAccessInput(delete_file.file_format, local_context);
             {
-                auto schema_read_buffer = createReadBuffer(delete_file_object, object_storage, local_context, log);
+                auto schema_read_buffer = createReadBuffer(delete_file_object, object_storage, local_context, log, read_settings);
                 auto schema_reader = FormatFactory::instance().getSchemaReader(delete_file.file_format, *schema_read_buffer, local_context);
                 auto columns_with_names = schema_reader->readSchema();
                 ColumnsWithTypeAndName initial_header_data;
@@ -1525,7 +1552,7 @@ void IcebergMetadata::addDeleteTransformers(
             }
             /// Then we read the content of the delete file.
             auto mutable_columns_for_set = block_for_set.cloneEmptyColumns();
-            std::unique_ptr<ReadBuffer> data_read_buffer = createReadBuffer(delete_file_object, object_storage, local_context, log);
+            std::unique_ptr<ReadBuffer> data_read_buffer = createReadBuffer(delete_file_object, object_storage, local_context, log, read_settings);
             CompressionMethod compression_method = chooseCompressionMethod(delete_file.file_path, "auto");
             auto delete_format = FormatFactory::instance().getInput(
                 delete_file.file_format,
