@@ -3,6 +3,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnSparse.h>
+#include <Common/FailPoint.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
@@ -44,6 +45,11 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char whatif_projection_scan_cut_short[];
+}
 
 namespace Setting
 {
@@ -279,6 +285,12 @@ bool buildProjectionPart(
     Block block;
     while (executor.pull(block))
     {
+        /// a test stops the read here, as a time limit in `break` mode does
+        bool cut_short = false;
+        fiu_do_on(FailPoints::whatif_projection_scan_cut_short, { cut_short = true; });
+        if (cut_short)
+            break;
+
         if (!block.rows())
             continue;
 

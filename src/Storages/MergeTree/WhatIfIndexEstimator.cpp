@@ -8,6 +8,8 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -159,9 +161,11 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
 
 /// a subquery plan cannot see hypothetical projections, so `force_optimize_projection` becomes `prefer_optimize_projection` in each scope
 /// the two settings relax the same checks, but `prefer_optimize_projection` does not throw an exception
-void replaceForceWithPrefer(IAST * node, bool force, bool prefer, bool & force_requested)
+/// `force_requested` gets `force_optimize_projection` of the select that reads the table, the read that WHATIF estimates
+void replaceForceWithPrefer(IAST * node, bool force, bool prefer, bool on_read_path, bool & force_requested)
 {
-    if (auto * select = node->as<ASTSelectQuery>(); select && select->settings())
+    auto * select = node->as<ASTSelectQuery>();
+    if (select && select->settings())
     {
         auto & changes = select->settings()->as<ASTSetQuery &>().changes;
         bool scoped = false;
@@ -177,15 +181,19 @@ void replaceForceWithPrefer(IAST * node, bool force, bool prefer, bool & force_r
         }
         if (scoped)
         {
-            force_requested |= force;
             std::erase_if(changes, [](const auto & change)
                 { return change.name == "force_optimize_projection" || change.name == "prefer_optimize_projection"; });
             changes.emplace_back("prefer_optimize_projection", Field{force || prefer});
         }
     }
 
+    if (select && on_read_path)
+        if (const auto * table = getTableExpression(*select, 0); table && table->database_and_table_name)
+            force_requested = force;
+
+    /// only the subqueries in `FROM` lead to the read, not the ones in expressions
     for (const auto & child : node->children)
-        replaceForceWithPrefer(child.get(), force, prefer, force_requested);
+        replaceForceWithPrefer(child.get(), force, prefer, on_read_path && (!select || child == select->tables()), force_requested);
 }
 
 /// Check applicability, then try empirical → statistical → applicability_only
@@ -363,10 +371,10 @@ WhatIfResult estimateHypotheticalIndexes(
 
     const bool force = context->getSettingsRef()[Setting::force_optimize_projection];
     const bool prefer = context->getSettingsRef()[Setting::prefer_optimize_projection];
-    bool force_requested = force;
+    bool force_requested = false;
     local_context->setSetting("force_optimize_projection", Field{false});
     local_context->setSetting("prefer_optimize_projection", Field{force || prefer});
-    replaceForceWithPrefer(select_query_copy.get(), force, prefer, force_requested);
+    replaceForceWithPrefer(select_query_copy.get(), force, prefer, /* on_read_path */ true, force_requested);
 
     if (forced_strings.empty() && context->getSettingsRef()[Setting::force_data_skipping_indexes].changed)
         forced_strings.push_back(context->getSettingsRef()[Setting::force_data_skipping_indexes]);
