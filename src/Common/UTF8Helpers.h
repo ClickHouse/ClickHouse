@@ -3,11 +3,10 @@
 #include <optional>
 #include <base/types.h>
 #include <base/simd.h>
+#include <base/unaligned.h>
 #include <Common/BitHelpers.h>
 
-#ifdef __AVX2__
-#include <immintrin.h>
-#elif defined(__SSE2__)
+#ifdef __SSE2__
 #include <emmintrin.h>
 #endif
 
@@ -59,26 +58,23 @@ inline size_t seqLength(const UInt8 first_octet)
     return bits - 1 - first_zero;
 }
 
-#if defined(__AVX2__)
-inline constexpr size_t ascii_chunk_size = 32;
-#elif defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
-inline constexpr size_t ascii_chunk_size = 16;
-#else
-inline constexpr size_t ascii_chunk_size = 0;
-#endif
+inline constexpr size_t ascii_word_size = sizeof(UInt64);
+inline constexpr size_t ascii_chunk_size = 4 * ascii_word_size;
 
-/// The caller must ensure that all ascii_chunk_size bytes are within the source bounds.
-inline bool isAllASCIIChunk([[maybe_unused]] const UInt8 * data)
+/// The caller must ensure that the entire word is within the source bounds.
+inline bool isAllASCIIWord(const UInt8 * data)
 {
-#if defined(__AVX2__)
-    return _mm256_movemask_epi8(_mm256_loadu_si256(reinterpret_cast<const __m256i *>(data))) == 0;
-#elif defined(__SSE2__)
-    return _mm_movemask_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data))) == 0;
-#elif defined(__aarch64__) && defined(__ARM_NEON)
-    return vmaxvq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(data))) < 0x80;
-#else
-    return false;
-#endif
+    return (unalignedLoad<UInt64>(data) & 0x8080808080808080ULL) == 0;
+}
+
+/// Check four words at once without alignment requirements or architecture-specific code.
+/// The caller must ensure that all ascii_chunk_size bytes are within the source bounds.
+inline bool isAllASCIIChunk(const UInt8 * data)
+{
+    UInt64 bytes = 0;
+    for (size_t offset = 0; offset < ascii_chunk_size; offset += ascii_word_size)
+        bytes |= unalignedLoad<UInt64>(data + offset);
+    return (bytes & 0x8080808080808080ULL) == 0;
 }
 
 inline size_t countCodePoints(const UInt8 * data, size_t size)

@@ -4,14 +4,18 @@
     </settings>
 
     <substitutions>
-        <!-- Keep SIMD boundaries and non-aligned multi-chunk requests as separate measurements. -->
+        <!-- Keep word and chunk boundaries and non-aligned multi-chunk requests as separate measurements. -->
         <substitution>
             <name>skip</name>
             <values>
                 <value>1</value>
                 <value>4</value>
+                <value>7</value>
+                <value>8</value>
                 <value>9</value>
+                <value>15</value>
                 <value>16</value>
+                <value>17</value>
                 <value>24</value>
                 <value>31</value>
                 <value>32</value>
@@ -32,8 +36,14 @@
             <values>
                 <value>0</value>
                 <value>1</value>
+                <value>7</value>
+                <value>8</value>
+                <value>9</value>
                 <value>15</value>
                 <value>16</value>
+                <value>23</value>
+                <value>24</value>
+                <value>25</value>
                 <value>30</value>
                 <value>31</value>
                 <value>32</value>
@@ -46,7 +56,7 @@
     <query>SELECT sum(length(rightUTF8(concat(repeat('a', 127), toString(number % 10)), 64))) FROM numbers(1000000) FORMAT Null</query>
     <query>SELECT sum(length(substringUTF8(concat(repeat('a', 127), toString(number % 10)), 33, 64))) FROM numbers(1000000) FORMAT Null</query>
 
-    <!-- Exercise short scalar tails, partial ASCII chunks, and the AVX2 32-byte threshold independently. -->
+    <!-- Exercise short scalar tails, partial ASCII chunks, and the portable 32-byte threshold independently. -->
     <query>SELECT sum(length(leftUTF8(concat(repeat('a', 127), toString(number % 10)), {skip}))) FROM numbers(1000000) FORMAT Null</query>
     <query>SELECT sum(length(rightUTF8(concat(repeat('a', 127), toString(number % 10)), {skip}))) FROM numbers(1000000) FORMAT Null</query>
     <query>SELECT sum(length(substringUTF8(concat(repeat('a', 127), toString(number % 10)), 33, {skip}))) FROM numbers(1000000) FORMAT Null</query>
@@ -65,4 +75,8 @@
 
     <query>SELECT sum(length(overlayUTF8(concat(repeat('a', 127), toString(number % 10)), 'x', 33, 64))) FROM numbers(1000000) FORMAT Null</query>
     <query>SELECT sum(length(overlayUTF8(if(number % 1000 = 0, concat(repeat('a', 126), unhex('C3A9')), concat(repeat('a', 127), toString(number % 10))), 'x', 33, 64))) FROM numbers(1000000) FORMAT Null</query>
+
+    <!-- Short source strings must not rely on a full 32-byte load fitting in the row. -->
+    <query>SELECT sum(length(leftUTF8(concat(repeat('a', {skip}), toString(number % 10)), 64))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(length(rightUTF8(concat(repeat('a', {skip}), toString(number % 10)), 64))) FROM numbers(1000000) FORMAT Null</query>
 </test>

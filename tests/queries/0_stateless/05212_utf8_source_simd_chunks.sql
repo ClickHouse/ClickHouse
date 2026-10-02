@@ -40,7 +40,7 @@ FROM
 )
 FORMAT Null;
 
--- Exercise both SIMD widths, short requests, mixed chunks, and clipped negative offsets.
+-- Exercise word and chunk boundaries, short requests, mixed chunks, and clipped negative offsets.
 -- Include non-aligned multi-chunk requests to exercise the final partial ASCII chunk.
 -- Construct expected results from code-point arrays, independently of UTF-8 string traversal.
 WITH
@@ -55,13 +55,29 @@ SELECT throwIf(
     OR substringUTF8(materialize(s), -toInt64(code_point_count + 5), 5) != ''
     , 'UTF-8 source short request or clipped offset mismatch')
 FROM
-    (SELECT arrayJoin([0, 1, 7, 8, 9, 15, 16, 17, 31, 32, 33, 64]) AS prefix) AS prefixes
+    (SELECT arrayJoin([0, 1, 7, 8, 9, 15, 16, 17, 23, 24, 25, 31, 32, 33, 64]) AS prefix) AS prefixes
 CROSS JOIN
-    (SELECT arrayJoin([0, 7, 15, 31, 64]) AS suffix) AS suffixes
+    (SELECT arrayJoin([0, 1, 7, 8, 9, 15, 16, 17, 23, 24, 25, 31, 32, 33, 64]) AS suffix) AS suffixes
 CROSS JOIN
     (SELECT arrayJoin([0, 1, 7, 8, 9, 15, 16, 17, 24, 31, 32, 33, 39, 40, 41, 47, 48, 49, 55, 56, 57, 63, 64, 65, 71, 72, 73, 95, 96, 97, 127, 128, 129]) AS skip) AS skips
 CROSS JOIN
     (SELECT arrayJoin([unhex('00'), 'a', unhex('C3A9'), unhex('E4BDA0'), unhex('F09F9880')]) AS code_point) AS code_points_source
+FORMAT Null;
+
+-- Short ASCII strings exercise the word fallback when a full chunk would cross a row boundary.
+-- Byte-oriented operations provide an independent oracle, including unaligned substring starts.
+WITH repeat('a', byte_length) AS s
+SELECT throwIf(
+    leftUTF8(materialize(s), skip) != repeat('a', least(byte_length, skip))
+    OR rightUTF8(materialize(s), skip) != repeat('a', least(byte_length, skip))
+    OR substringUTF8(materialize(s), byte_offset + 1, skip) != substring(s, byte_offset + 1, skip)
+    , 'UTF-8 source ASCII word boundary mismatch')
+FROM
+    (SELECT arrayJoin([0, 1, 7, 8, 9, 15, 16, 17, 23, 24, 25, 31, 32, 33, 63, 64, 65]) AS byte_length) AS lengths
+CROSS JOIN
+    (SELECT arrayJoin([0, 1, 7, 8, 9, 15, 16, 17, 23, 24, 25, 31, 32, 33, 63, 64, 65, 129]) AS skip) AS skips
+CROSS JOIN
+    (SELECT arrayJoin([0, 1, 7, 8, 9, 31, 32, 33]) AS byte_offset) AS byte_offsets
 FORMAT Null;
 
 SELECT 'OK';

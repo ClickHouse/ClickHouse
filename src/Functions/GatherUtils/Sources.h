@@ -520,22 +520,24 @@ struct UTF8StringSource : public StringSource
 {
     using StringSource::StringSource;
 
-    /// Avoid a SIMD probe for very short requests.
-    static constexpr size_t min_ascii_skip = 8;
-
     static const ColumnString::Char * skipCodePointsForward(const ColumnString::Char * pos, size_t size, const ColumnString::Char * end)
     {
-        if constexpr (UTF8::ascii_chunk_size != 0)
+        /// A full, in-bounds ASCII load can also satisfy the remainder of a request.
+        while (size >= UTF8::ascii_word_size && end - pos >= static_cast<std::ptrdiff_t>(UTF8::ascii_chunk_size)
+               && UTF8::isAllASCIIChunk(pos))
         {
-            /// A full, in-bounds ASCII load can also satisfy the remainder of a request.
-            while (size >= min_ascii_skip && end - pos >= static_cast<std::ptrdiff_t>(UTF8::ascii_chunk_size)
-                   && UTF8::isAllASCIIChunk(pos))
-            {
-                if (size <= UTF8::ascii_chunk_size)
-                    return pos + size;
-                pos += UTF8::ascii_chunk_size;
-                size -= UTF8::ascii_chunk_size;
-            }
+            if (size <= UTF8::ascii_chunk_size)
+                return pos + size;
+            pos += UTF8::ascii_chunk_size;
+            size -= UTF8::ascii_chunk_size;
+        }
+
+        /// Still skip complete ASCII words in a mixed chunk or near the end of the string.
+        while (size >= UTF8::ascii_word_size && end - pos >= static_cast<std::ptrdiff_t>(UTF8::ascii_word_size)
+               && UTF8::isAllASCIIWord(pos))
+        {
+            pos += UTF8::ascii_word_size;
+            size -= UTF8::ascii_word_size;
         }
 
         for (size_t i = 0; i < size && pos < end; ++i)
@@ -547,20 +549,24 @@ struct UTF8StringSource : public StringSource
         const ColumnString::Char * pos, size_t size, const ColumnString::Char * begin, size_t * skipped = nullptr)
     {
         const size_t requested = size;
-        if constexpr (UTF8::ascii_chunk_size != 0)
+        while (size >= UTF8::ascii_word_size && pos - begin >= static_cast<std::ptrdiff_t>(UTF8::ascii_chunk_size)
+               && UTF8::isAllASCIIChunk(pos - UTF8::ascii_chunk_size))
         {
-            while (size >= min_ascii_skip && pos - begin >= static_cast<std::ptrdiff_t>(UTF8::ascii_chunk_size)
-                   && UTF8::isAllASCIIChunk(pos - UTF8::ascii_chunk_size))
+            if (size <= UTF8::ascii_chunk_size)
             {
-                if (size <= UTF8::ascii_chunk_size)
-                {
-                    pos -= size;
-                    size = 0;
-                    break;
-                }
-                pos -= UTF8::ascii_chunk_size;
-                size -= UTF8::ascii_chunk_size;
+                if (skipped)
+                    *skipped = requested;
+                return pos - size;
             }
+            pos -= UTF8::ascii_chunk_size;
+            size -= UTF8::ascii_chunk_size;
+        }
+
+        while (size >= UTF8::ascii_word_size && pos - begin >= static_cast<std::ptrdiff_t>(UTF8::ascii_word_size)
+               && UTF8::isAllASCIIWord(pos - UTF8::ascii_word_size))
+        {
+            pos -= UTF8::ascii_word_size;
+            size -= UTF8::ascii_word_size;
         }
 
         for (; size && pos > begin; --size)
