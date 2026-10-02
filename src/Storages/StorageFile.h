@@ -12,10 +12,10 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/FileRenamer.h>
 #include <Common/Logger.h>
+#include <Common/RWLock.h>
 
 #include <atomic>
 #include <mutex>
-#include <shared_mutex>
 #include <sys/stat.h>
 
 namespace DB
@@ -230,7 +230,12 @@ private:
 
     bool supports_prewhere = false;
 
-    mutable std::shared_timed_mutex rwlock;
+    /// One query may read this table from several sources at once: one per stream, one for the lazy-materialization
+    /// pass, one per table expression in a self-join. A repeat Read by the query already holding it is admitted.
+    mutable RWLock rwlock = RWLockImpl::create();
+
+    RWLockImpl::LockHolder tryLockRwlock(RWLockImpl::Type type, const ContextPtr & context) const;
+    RWLockImpl::LockHolder lockRwlock(RWLockImpl::Type type, const ContextPtr & context) const;
 
     LoggerPtr log = getLogger("StorageFile");
 
@@ -271,7 +276,7 @@ public:
             const ContextPtr & context_,
             bool distributed_processing_ = false,
             String archive_member_path_ = {},
-            std::shared_lock<std::shared_timed_mutex> read_lock_ = {});
+            RWLockImpl::LockHolder read_lock_ = {});
 
         String next();
 
@@ -282,8 +287,7 @@ public:
         /// Called by the last reader when it needs the exclusive lock to rename the files it has read.
         void releaseReadLock()
         {
-            if (read_lock.owns_lock())
-                read_lock.unlock();
+            read_lock.reset();
         }
 
         bool isReadFromArchive() const
@@ -328,9 +332,8 @@ private:
         /// so the list is a consistent set of complete files only while no writer is active. The lock
         /// is taken when the list is snapshotted (at planning time, which happens before the sources
         /// are created), and it stays held for as long as a source reads from this list, because every
-        /// source shares this iterator. The sources take no lock of their own: a second shared lock
-        /// from the same reader would wait behind a writer that arrived in between.
-        std::shared_lock<std::shared_timed_mutex> read_lock;
+        /// source shares this iterator. The sources take no lock of their own.
+        RWLockImpl::LockHolder read_lock;
     };
 
     using FilesIteratorPtr = std::shared_ptr<FilesIterator>;

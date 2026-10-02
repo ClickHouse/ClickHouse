@@ -1527,6 +1527,30 @@ static std::chrono::seconds getLockTimeout(const ContextPtr & context)
     return saturatedSeconds(lock_timeout);
 }
 
+/// `RWLockImpl::getLock` reads a zero timeout as "wait forever", while a zero `lock_acquire_timeout` has
+/// always meant "do not wait at all" here; it turns a negative duration into an already-expired deadline.
+static constexpr auto no_wait_timeout = std::chrono::milliseconds(-1);
+
+static std::chrono::milliseconds getLockTimeoutMs(const ContextPtr & context)
+{
+    auto timeout = std::chrono::duration_cast<std::chrono::milliseconds>(getLockTimeout(context));
+    return timeout == std::chrono::milliseconds::zero() ? no_wait_timeout : timeout;
+}
+
+RWLockImpl::LockHolder StorageFile::tryLockRwlock(RWLockImpl::Type type, const ContextPtr & context) const
+{
+    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    return rwlock->getLock(type, query_id, getLockTimeoutMs(context), /*throw_in_fast_path=*/ false);
+}
+
+RWLockImpl::LockHolder StorageFile::lockRwlock(RWLockImpl::Type type, const ContextPtr & context) const
+{
+    auto holder = tryLockRwlock(type, context);
+    if (!holder)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+    return holder;
+}
+
 using StorageFilePtr = std::shared_ptr<StorageFile>;
 
 StorageFileSource::FilesIterator::FilesIterator(
@@ -1538,7 +1562,7 @@ StorageFileSource::FilesIterator::FilesIterator(
     const ContextPtr & context_,
     bool distributed_processing_,
     String archive_member_path_,
-    std::shared_lock<std::shared_timed_mutex> read_lock_)
+    RWLockImpl::LockHolder read_lock_)
     : WithContext(context_)
     , files(files_)
     , archive_info(std::move(archive_info_))
@@ -1674,8 +1698,10 @@ void StorageFileSource::beforeDestroy()
     if (std::uncaught_exceptions() == 0 && cnt == 1 && !storage->was_renamed)
     {
         /// This is the last reader, so the lock shared by all of them through the iterator can go.
+        /// It must go before the Write lock is requested: a Write acquisition takes the lock's fast path,
+        /// which refuses outright while the same query holds a Read lock.
         files_iterator->releaseReadLock();
-        auto exclusive_lock = std::unique_lock{storage->rwlock, getLockTimeout(getContext())};
+        auto exclusive_lock = storage->tryLockRwlock(RWLockImpl::Write, getContext());
 
         if (!exclusive_lock)
             return;
@@ -1716,7 +1742,14 @@ void StorageFileSource::beforeDestroy()
 
 StorageFileSource::~StorageFileSource()
 {
-    beforeDestroy();
+    try
+    {
+        beforeDestroy();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 
@@ -2532,13 +2565,9 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
     /// one by one while it holds the exclusive lock, so a snapshot taken without the lock could see
     /// a prefix of the files of an insert that is complete by the time the sources open them, or
     /// the files a truncating insert is about to delete.
-    std::shared_lock<std::shared_timed_mutex> read_lock;
+    RWLockImpl::LockHolder read_lock;
     if (!storage->use_table_fd)
-    {
-        read_lock = std::shared_lock(storage->rwlock, getLockTimeout(context));
-        if (!read_lock)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
-    }
+        read_lock = storage->lockRwlock(RWLockImpl::Read, context);
 
     files_iterator = std::make_shared<StorageFileSource::FilesIterator>(
         storage->getPathsSnapshot(),
@@ -2644,9 +2673,7 @@ public:
         , max_block_size(max_block_size_)
         , files(std::move(files_))
     {
-        shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(getContext()));
-        if (!shared_lock)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        read_lock = storage->lockRwlock(RWLockImpl::Read, getContext());
         parser_shared_resources = std::make_shared<FormatParserSharedResources>(getContext()->getSettingsRef(), /*num_streams_=*/ 1);
     }
 
@@ -2808,7 +2835,7 @@ private:
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
 
-    std::shared_lock<std::shared_timed_mutex> shared_lock;
+    RWLockImpl::LockHolder read_lock;
 };
 
 std::shared_ptr<ISource> StorageFile::createLazyRowsSource(
@@ -2993,7 +3020,7 @@ public:
     StorageFileSink(
         const StorageMetadataPtr & metadata_snapshot_,
         const String & table_name_for_log_,
-        std::unique_lock<std::shared_timed_mutex> && lock_,
+        RWLockImpl::LockHolder && lock_,
         int table_fd_,
         bool use_table_fd_,
         std::string base_path_,
@@ -3217,7 +3244,7 @@ private:
     /// usually is - unless the insert had to step aside from a non-empty file into a new one; the next
     /// files of a split insert never are. A file that is not, is registered only after it has been written.
     bool path_is_published = true;
-    std::unique_lock<std::shared_timed_mutex> lock;
+    RWLockImpl::LockHolder lock;
 };
 
 class PartitionedStorageFileSink : public PartitionedSink
@@ -3227,7 +3254,7 @@ public:
         std::shared_ptr<IPartitionStrategy> partition_strategy_,
         const StorageMetadataPtr & metadata_snapshot_,
         const String & table_name_for_log_,
-        std::unique_lock<std::shared_timed_mutex> && lock_,
+        RWLockImpl::LockHolder && lock_,
         String base_path_,
         String path_,
         const CompressionMethod compression_method_,
@@ -3342,7 +3369,7 @@ private:
 
     ContextPtr context;
     int flags;
-    std::unique_lock<std::shared_timed_mutex> lock;
+    RWLockImpl::LockHolder lock;
 };
 
 
@@ -3386,7 +3413,7 @@ SinkToStoragePtr StorageFile::write(
             partition_strategy,
             metadata_snapshot,
             getStorageID().getNameForLogs(),
-            std::unique_lock{rwlock, getLockTimeout(context)},
+            lockRwlock(RWLockImpl::Write, context),
             base_path,
             path_for_partitioned_write,
             chooseCompressionMethod(path_for_partitioned_write, compression_method),
@@ -3400,9 +3427,7 @@ SinkToStoragePtr StorageFile::write(
     /// below and the update of the list of the paths happen under it as well: a `SELECT` that is already
     /// reading this table holds the same lock for the duration of its read, and so finishes before the files
     /// it reads are deleted or overwritten.
-    std::unique_lock write_lock{rwlock, getLockTimeout(context)};
-    if (!write_lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+    auto write_lock = lockRwlock(RWLockImpl::Write, context);
 
     String path;
     /// Whether the file this insert starts with is already a part of the table. A new file is registered
