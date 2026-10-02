@@ -83,11 +83,14 @@ static void executeJob(IProcessor & processor, ReadProgressCallback * read_progr
 {
     try
     {
-        if (auto * spillable = processor.getSpillable())
+        ISpillable * spillable = processor.getSpillable();
+        MemoryReservation * reservation = nullptr;
+
+        if (spillable)
         {
             auto memory = spillable->getMemoryStats();
             QueryStatusPtr process_list_element = read_progress_callback ? read_progress_callback->getProcessListElement() : nullptr;
-            auto * reservation = process_list_element ? process_list_element->getMemoryReservation() : nullptr;
+            reservation = process_list_element ? process_list_element->getMemoryReservation() : nullptr;
             if (reservation)
             {
                 reservation->updateReclaimable(spillable, memory.spillable_memory_bytes);
@@ -123,6 +126,12 @@ static void executeJob(IProcessor & processor, ReadProgressCallback * read_progr
         }
 
         processor.work();
+
+        if (spillable && reservation)
+        {
+            auto memory = spillable->getMemoryStats();
+            reservation->updateReclaimable(spillable, memory.spillable_memory_bytes);
+        }
 
         /// Update read progress only for source nodes.
         bool is_source = processor.getInputs().empty();
