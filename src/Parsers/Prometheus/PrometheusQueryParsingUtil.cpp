@@ -565,6 +565,48 @@ namespace
         return found_time_unit;
     }
 
+    /// Whether a successfully parsed duration literal is explicitly positive before timestamp-scale conversion.
+    bool isPositiveDurationLiteral(std::string_view input)
+    {
+        size_t pos = 0;
+        while (pos != input.length() && std::isspace(input[pos]))
+            ++pos;
+
+        if (pos != input.length() && (input[pos] == '+' || input[pos] == '-'))
+        {
+            if (input[pos] == '-')
+                return false;
+            ++pos;
+        }
+
+        while (pos != input.length() && std::isspace(input[pos]))
+            ++pos;
+
+        size_t end_pos = input.length();
+        while (end_pos != pos && std::isspace(input[end_pos - 1]))
+            --end_pos;
+
+        input = input.substr(pos, end_pos - pos);
+
+        if (isHexFormat(input))
+        {
+            for (char c : input.substr(2))
+            {
+                if ((c >= '1' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
+                    return true;
+            }
+            return false;
+        }
+
+        input = input.substr(0, input.find_first_of("eE"));
+        for (char c : input)
+        {
+            if (c >= '1' && c <= '9')
+                return true;
+        }
+        return false;
+    }
+
     /// Tries to parse an unsigned scalar in duration format, for example "1y2w5d13h15m30s1ms".
     /// If it succeeds the function returns true and sets `result`.
     /// If it fails the function returns false and sets either `allow_other_formats` or `error_pos` & `error_message`.
@@ -921,11 +963,19 @@ bool PrometheusQueryParsingUtil::tryParseSelectorRange(
         return false;
     }
 
+    const auto range_input = input.substr(start_pos, end_pos - start_pos);
     if (!tryParseDuration(
-            input.substr(start_pos, end_pos - start_pos), time_scale, res_range, error_message, error_pos, /* allow_octal_literals */ true))
+            range_input, time_scale, res_range, error_message, error_pos, /* allow_octal_literals */ true))
     {
         if (error_pos)
             *error_pos += start_pos;
+        return false;
+    }
+
+    if (!isPositiveDurationLiteral(range_input))
+    {
+        setErrorMessage(error_message, "Cannot parse time range {}: Expected a duration greater than zero", quoteString(input));
+        setErrorPos(error_pos, start_pos);
         return false;
     }
 
@@ -994,11 +1044,19 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
         return false;
     }
 
+    const auto range_input = input.substr(range_start_pos, range_end_pos - range_start_pos);
     if (!tryParseDuration(
-            input.substr(range_start_pos, range_end_pos - range_start_pos), time_scale, res_range, error_message, error_pos, /* allow_octal_literals */ true))
+            range_input, time_scale, res_range, error_message, error_pos, /* allow_octal_literals */ true))
     {
         if (error_pos)
             *error_pos += range_start_pos;
+        return false;
+    }
+
+    if (!isPositiveDurationLiteral(range_input))
+    {
+        setErrorMessage(error_message, "Cannot parse time range {}: Expected a duration greater than zero", quoteString(input));
+        setErrorPos(error_pos, range_start_pos);
         return false;
     }
 
@@ -1006,11 +1064,19 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
 
     if (step_start_pos != step_end_pos)
     {
+        const auto step_input = input.substr(step_start_pos, step_end_pos - step_start_pos);
         if (!tryParseDuration(
-                input.substr(step_start_pos, step_end_pos - step_start_pos), time_scale, res_step.emplace(), error_message, error_pos, /* allow_octal_literals */ true))
+                step_input, time_scale, res_step.emplace(), error_message, error_pos, /* allow_octal_literals */ true))
         {
             if (error_pos)
                 *error_pos += step_start_pos;
+            return false;
+        }
+
+        if (!isPositiveDurationLiteral(step_input))
+        {
+            setErrorMessage(error_message, "Cannot parse time range {}: Expected a step greater than zero", quoteString(input));
+            setErrorPos(error_pos, step_start_pos);
             return false;
         }
     }
