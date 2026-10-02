@@ -222,7 +222,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
                                 # same limit as rss_limit_mb is applied.
         "only_ascii",           # If 1, generate only ASCII (isprint``+``isspace) inputs. Defaults to 0.
         "use_value_profile",    # If 1, use value profile to guide corpus expansion (adds coverage features for comparison operands). Defaults to 0.
-        "dict",                # Provide a dictionary of input keywords, if absent fuzzer specific dictionary with name <fuzzer>.dict is used when present.
+        "dict",                 # Provide a dictionary of input keywords, if absent fuzzer specific dictionary with name <fuzzer>.dict is used when present.
     ]
 
     allowed_merge_libfuzzer_options = [
