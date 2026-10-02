@@ -32,6 +32,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
+#include <base/errnoToString.h>
 
 #include <sys/stat.h>
 
@@ -152,7 +153,8 @@ private:
                 file_log.getPollTimeoutMillisecond(),
                 stream_number,
                 max_streams_number,
-                (*file_log.filelog_settings)[FileLogSetting::handle_error_mode]));
+                (*file_log.filelog_settings)[FileLogSetting::handle_error_mode],
+                /* skip_broken_records */ false));
         }
 
         return Pipe::unitePipes(std::move(pipes));
@@ -497,14 +499,29 @@ void StorageFileLog::assertStreamGood(const std::ifstream & reader)
 
 void StorageFileLog::openFilesAndSetPos()
 {
+    bool any_open_failed = false;
     for (const auto & file : file_infos.file_names)
     {
         auto & file_ctx = findInMap(file_infos.context_by_name, file);
-        if (file_ctx.status != FileStatus::NO_CHANGE)
+        if (file_ctx.status != FileStatus::NO_CHANGE || file_ctx.open_failed)
         {
             file_ctx.reader.emplace(getFullDataPath(file));
+            const int open_errno = errno;
+            if (!file_ctx.reader->is_open()
+                && (open_errno == ENOENT || open_errno == EACCES || open_errno == EPERM || open_errno == ELOOP))
+            {
+                if (!file_ctx.open_failed)
+                    LOG_ERROR(log, "Cannot open file {}, will retry: {}", getFullDataPath(file), errnoToString(open_errno));
+                file_ctx.reader.reset();
+                file_ctx.status = FileStatus::NO_CHANGE;
+                file_ctx.open_failed = true;
+                any_open_failed = true;
+                continue;
+            }
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
+            if (std::exchange(file_ctx.open_failed, false))
+                file_ctx.status = FileStatus::UPDATED;
 
             reader.seekg(0, std::ios::end);
             assertStreamGood(reader);
@@ -529,6 +546,7 @@ void StorageFileLog::openFilesAndSetPos()
             assertStreamGood(reader);
         }
     }
+    has_files_to_reopen = any_open_failed;
     serialize();
 }
 
@@ -708,7 +726,7 @@ void StorageFileLog::threadFunc()
     {
         if (path_is_directory)
         {
-            if (!getTableDependentCount() || reschedule)
+            if (!getTableDependentCount() || reschedule || has_files_to_reopen)
                 task->holder->scheduleAfter(milliseconds_to_wait);
             else
             {
@@ -790,7 +808,8 @@ bool StorageFileLog::streamToViews()
             getPollTimeoutMillisecond(),
             stream_number,
             max_streams_number,
-            (*filelog_settings)[FileLogSetting::handle_error_mode]));
+            (*filelog_settings)[FileLogSetting::handle_error_mode],
+            /* skip_broken_records */ true));
     }
 
     auto input= Pipe::unitePipes(std::move(pipes));
@@ -950,11 +969,13 @@ Optional parameters:
 - `poll_directory_watch_events_backoff_init` - The initial sleep value for watch directory thread. Default: `500`.
 - `poll_directory_watch_events_backoff_max` - The max sleep value for watch directory thread. Default: `32000`.
 - `poll_directory_watch_events_backoff_factor` - The speed of backoff, exponential by default. Default: `2`.
-- `handle_error_mode` — How to handle errors for FileLog engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
+- `handle_error_mode` — How to handle errors for FileLog engine. Possible values: default (a direct `SELECT` throws an exception if a record fails to parse; while the table streams into materialized views, such a record is skipped and the error is written to the server log), stream (the exception message and raw record will be saved in virtual columns `_error` and `_raw_record`).
 
 ## Description {#description}
 
 The delivered records are tracked automatically, so each record in a log file is only counted once.
+
+A file that cannot be opened (missing, or not readable by the server) is skipped with an error in the server log and retried until it can be opened.
 
 `SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
 
