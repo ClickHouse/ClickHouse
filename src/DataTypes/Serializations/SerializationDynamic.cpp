@@ -16,6 +16,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <Formats/EscapingRuleUtils.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -108,6 +110,23 @@ void SerializationDynamic::SerializationVersion::checkVersion(UInt64 version)
 {
     if (version != V1 && version != V2 && version != FLATTENED && version != V3)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version for Dynamic structure serialization: {}", version);
+}
+
+void SerializationDynamic::SerializationVersion::checkVersion(UInt64 version, bool native_format)
+{
+    checkVersion(version);
+
+    if (native_format && version == V3)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Version {} of Dynamic structure serialization is written only into MergeTree data parts and is not allowed in Native format",
+            version);
+
+    if (!native_format && version == FLATTENED)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Version {} of Dynamic structure serialization is written only in Native format and is not allowed in MergeTree data part",
+            version);
 }
 
 SerializationDynamic::SerializationVersion::SerializationVersion(MergeTreeDynamicSerializationVersion version)
@@ -336,6 +355,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
         /// Read structure serialization version.
         UInt64 structure_version;
         readBinaryLittleEndian(structure_version, *structure_stream);
+        SerializationVersion::checkVersion(structure_version, settings.native_format);
         auto structure_state = std::make_shared<DeserializeBinaryBulkStateDynamicStructure>(structure_version);
         if (structure_state->structure_version.value == SerializationVersion::FLATTENED)
         {
@@ -344,17 +364,30 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             readVarUInt(num_types, *structure_stream);
             structure_state->flattened_data_types.reserve(num_types);
             String data_type_name;
+            std::unordered_set<String> type_names;
             for (size_t i = 0; i != num_types; ++i)
             {
+                DataTypePtr data_type;
                 if (settings.native_format && settings.format_settings && settings.format_settings->native.decode_types_in_binary_format)
                 {
-                    structure_state->flattened_data_types.push_back(decodeDataType(*structure_stream));
+                    data_type = decodeDataType(*structure_stream);
                 }
                 else
                 {
                     readStringBinary(data_type_name, *structure_stream);
-                    structure_state->flattened_data_types.push_back(getDataTypesCache().getType(data_type_name));
+                    data_type = getDataTypesCache().getType(data_type_name);
                 }
+
+                /// Nothing is not stored as a variant, so such a type would have no discriminator to unflatten into.
+                if (isNothing(data_type))
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Type Nothing is not allowed in the list of types of a flattened Dynamic column");
+
+                /// Duplicates would map two different indexes onto the same variant discriminator,
+                /// which makes the offsets of that variant inconsistent with its size.
+                if (!type_names.insert(data_type->getName()).second)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate type {} in the list of types of a flattened Dynamic column", data_type->getName());
+
+                structure_state->flattened_data_types.push_back(std::move(data_type));
             }
 
             structure_state->flattened_indexes_type = getSmallestIndexesType(num_types + 1); /// +1 for NULL index.
@@ -597,6 +630,13 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
         /// First, read indexes.
         auto indexes_serialization = flattened_column.indexes_type->getDefaultSerialization();
         indexes_serialization->deserializeBinaryBulkWithMultipleStreams(flattened_column.indexes_column, 0, limit, settings, dynamic_state->flattened_indexes_state, cache);
+        if (flattened_column.indexes_column->size() != limit)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Mismatch in flattened Dynamic column: {} rows are expected, but the indexes stream contains only {} rows",
+                limit,
+                flattened_column.indexes_column->size());
+
         /// Second, read data of all flattened types in corresponding order.
         auto flattened_limits = getLimitsForFlattenedDynamicColumn(*flattened_column.indexes_column, flattened_column.types.size());
         flattened_column.columns.reserve(flattened_column.types.size());
