@@ -157,24 +157,33 @@ void StorageMySQL::readImpl(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
+    const auto local_only_columns = getLocalOnlyColumnNames(storage_snapshot->metadata);
     String query;
     if (remote_table_or_query.isQuery())
     {
         /// The user-provided query is passed to MySQL as is; no outer predicate is pushed down into it, so
         /// reject any outer filter under external_table_strict_query.
-        rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context_);
+        rejectOuterFilterForQueryBackedExternalSourceIfStrict(
+            query_info, storage_snapshot->metadata->getColumns().getAllPhysical(), context_, getStorageID(), local_only_columns);
         query = buildQueryForExternalDatabaseSubquery(remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::BackticksMySQL);
     }
     else
+        /// All physical columns are pushdown-eligible: a `MATERIALIZED` column is a column of the remote table
+        /// (its value is written there on `INSERT` and read back from there), so a predicate over it is pushed
+        /// down like one over an ordinary column.
         query = transformQueryForExternalDatabase(
             query_info,
             column_names,
-            storage_snapshot->metadata->getColumns().getOrdinary(),
+            storage_snapshot->metadata->getColumns().getAllPhysical(),
             IdentifierQuotingStyle::BackticksMySQL,
             LiteralEscapingStyle::Regular,
             remote_database_name,
             remote_table_or_query.getTableName(),
-            context_);
+            getStorageID(),
+            context_,
+            {},
+            {},
+            local_only_columns);
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
@@ -558,7 +567,8 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(
 
         /// The 3rd argument is either a table name, or a query passed to MySQL as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular);
+            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular,
+            IdentifierQuotingRule::Always);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)
@@ -737,6 +747,14 @@ Instead of a table name, the `table` argument can be a `SELECT` query that is pa
 ```sql
 CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
 CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+Passing a query is supported starting from version 26.7. ClickHouse wraps the query into `SELECT ... FROM (<query>)` before sending it to MySQL, so it must not end with a semicolon.
+
+With a named collection, pass the query in the `query` key instead of `table`, either in the collection itself or as a key-value argument. `query` and `table` cannot be specified together:
+
+```sql
+CREATE TABLE mysql_table ENGINE = MySQL(mysql_creds, database = 'test', query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
 ```
 
 This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`mysql`](/reference/functions/table-functions/mysql) table function.
