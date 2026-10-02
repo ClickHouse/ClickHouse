@@ -131,3 +131,30 @@ SELECT 'the re-added column', count() FROM t_05200_qcc WHERE b = 7 SETTINGS use_
 SELECT 'the re-added column, without the cache', count() FROM t_05200_qcc WHERE b = 7 SETTINGS use_query_condition_cache = 0;
 
 DROP TABLE t_05200_qcc;
+
+-- The same index read on data read, built through the read-pool refiner and through the TopK threshold
+-- path (a `WHERE` disables the analysis-time TopK granule selection, so only the running threshold
+-- consults the minmax). The dropped column is all zeros, so once the threshold is set, a stale index
+-- skips every remaining granule.
+
+DROP TABLE IF EXISTS t_05200_read;
+CREATE TABLE t_05200_read (a UInt64, b UInt64, INDEX idx b TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 10, min_bytes_for_wide_part = 0;
+
+SYSTEM STOP MERGES t_05200_read;
+INSERT INTO t_05200_read SELECT number, 0 FROM numbers(100);
+INSERT INTO t_05200_read SELECT 100 + number, 0 FROM numbers(100);
+
+ALTER TABLE t_05200_read DROP INDEX idx SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_05200_read DROP COLUMN b SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_05200_read ADD COLUMN b UInt64 DEFAULT a + 7;
+ALTER TABLE t_05200_read ADD INDEX idx b TYPE minmax GRANULARITY 1;
+
+SELECT 'a filter, with the refiner', count() FROM t_05200_read WHERE b BETWEEN 100 AND 110
+SETTINGS use_skip_indexes_on_data_read = 1, use_indexes_refiner_in_read_pools = 1;
+SELECT 'the top rows, with a threshold', groupArray(b) FROM (SELECT b FROM t_05200_read WHERE a < 1000 ORDER BY b DESC LIMIT 3
+SETTINGS use_skip_indexes_on_data_read = 1, use_top_k_dynamic_filtering = 1, max_threads = 1);
+SELECT 'the top rows, without the index', groupArray(b) FROM (SELECT b FROM t_05200_read WHERE a < 1000 ORDER BY b DESC LIMIT 3
+SETTINGS use_skip_indexes = 0);
+
+DROP TABLE t_05200_read;
