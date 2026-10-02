@@ -164,11 +164,10 @@ protected:
     /// `clickhouse_json`. The change is temporary (the caller restores the saved settings after the query).
     void pinOutboundDialectForJSONDialect(const String & outbound_query);
 
-    /// Settings to pass to `Connection::sendQuery`: a copy of the client settings with `compatibility`-derived
-    /// values kept but marked unchanged. They still select the client-side network codec, but they are not
-    /// serialized to the server, which re-derives them from `compatibility` itself and honors its own constraints
-    /// (a profile may pin a setting read-only that `compatibility` would otherwise override). Returns nullopt when
-    /// nothing was derived from `compatibility`, so the caller can send the client settings without copying them.
+    /// Settings to transmit to the server: a copy of the client settings with `compatibility`-derived values
+    /// reset, so the server re-derives them from `compatibility` itself and honors its own constraints (a profile
+    /// may pin a setting read-only that `compatibility` would otherwise override). Returns nullopt when nothing
+    /// was derived from `compatibility`, so the caller can send the client settings without copying them.
     std::optional<Settings> settingsWithoutCompatibilityDerived() const;
     void processParsedSingleQuery(
         std::string_view query_,
@@ -405,7 +404,7 @@ protected:
     bool echo_query_id = false; /// Print query_id before execution (defaults to on in interactive mode, off in batch mode).
     String echo_query_separator; /// Optional separator printed before the formatted echoed query (empty = disabled).
     bool highlight_queries = true; /// Highlight the command prompt and the echoed queries.
-    bool ignore_error = false; /// In case of errors, report the error, continue to the next query and do not fail the run. Only applicable for non-interactive mode.
+    bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool inline_insert_data = false; /// Send INSERT data as is in the query text instead of converting to native blocks.
 
     std::optional<Suggest> suggest;

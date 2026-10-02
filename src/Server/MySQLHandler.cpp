@@ -59,6 +59,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
 }
@@ -747,12 +749,6 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
 
         /// Reading rest of HandshakeResponse.
         packet_size = PACKET_HEADER_SIZE + payload_size;
-
-        /// A well-formed client never sends more than the packet it declared in the
-        /// header. Without this check `packet_size - pos` underflows when pos > packet_size,
-        /// turning the copyData() below into an unbounded pre-auth read (read until EOF).
-        if (pos > packet_size)
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Malformed MySQL handshake packet: received {} bytes, but packet declares {}", pos, packet_size);
         WriteBufferFromOwnString buf_for_handshake_response;
         buf_for_handshake_response.write(buf.data(), pos);
         copyData(*packet_endpoint->in, buf_for_handshake_response, packet_size - pos);
@@ -884,7 +880,13 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
 
-        const auto & settings = query_context->getSettingsRef();
+        /// --- Workaround for Bug 56173.
+        auto settings = query_context->getSettingsCopy();
+        if (!settings[Setting::allow_experimental_analyzer])
+        {
+            settings[Setting::prefer_column_name_to_alias] = true;
+            query_context->setSettings(settings);
+        }
 
         /// Update timeouts
         socket().setReceiveTimeout(settings[Setting::receive_timeout]);

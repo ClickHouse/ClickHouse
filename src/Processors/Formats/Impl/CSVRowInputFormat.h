@@ -61,9 +61,7 @@ public:
         return *pos != '\n' && *pos != '\r' && *pos != format_settings.csv.delimiter && *pos != ' ' && *pos != '\t';
     }
 
-    void setDataTypes(const DataTypes & types) override;
-
-    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) override;
+    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
 
     void skipRow() override;
 
@@ -101,12 +99,6 @@ public:
 
 protected:
     PeekableReadBuffer * buf;
-
-    /// Whether the whitespace in front of a field has to be skipped, for every column of the header.
-    /// With `input_format_csv_trim_whitespaces` disabled that whitespace is a part of the value, but
-    /// only for String and FixedString, so the answer depends on nothing but the column type and is
-    /// worked out once in `setDataTypes` rather than for every field of every row.
-    std::vector<UInt8> skip_whitespaces_before_field;
 };
 
 class CSVSchemaReader final : public FormatWithNamesAndTypesSchemaReader

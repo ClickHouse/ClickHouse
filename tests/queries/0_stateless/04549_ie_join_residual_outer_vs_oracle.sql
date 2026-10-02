@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- OUTER and SEMI/ANTI IEJoin with residual ON conditions (conjuncts beyond the two inequalities,
 -- evaluated inside the operator) on pseudo-random duplicate-heavy data with NULL values, verified
 -- against cross-join oracles. For the outer kinds the oracle is built from parts: the INNER pairs
