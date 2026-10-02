@@ -682,6 +682,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         /// False if the main config has `user_directories` without `users_xml` and no `users_config`,
         /// so the server does not read users from any XML file.
         bool has_users_xml_config = true;
+        /// Set if the first XML users config is a relative path that does not exist in the config directory,
+        /// other than the stock `users.xml`. The server resolves it against its working directory, which is not known here,
+        /// so the installer neither creates it nor sets up a password in it.
+        std::optional<fs::path> unresolved_users_config_file;
         /// All XML users configs the server reads users from, in the order it looks up users in them.
         std::vector<fs::path> users_config_files;
         /// The first access storage that is not an XML users config and may store the default user (e.g. `local_directory`),
@@ -875,12 +879,25 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             else
             {
                 /// The first XML users config is a relative path only if it does not exist in the config directory.
-                /// It is created there below, and then the server resolves the path to it the same way as above,
-                /// as it checks the config directory first. This keeps the stock layout with `users.xml` working.
+                /// For the stock `users.xml` it is created there below, and then the server resolves the path to it
+                /// the same way as above, as it checks the config directory first. This keeps the stock layout working.
+                /// Any other relative path may intentionally point to a file in the working directory of the server,
+                /// and creating it in the config directory would silently switch the server to the new file.
                 if (users_config_files.front().is_relative())
-                    users_config_files.front() = (config_dir / users_config_files.front()).lexically_normal();
+                {
+                    if (users_config_files.front().lexically_normal() == users_config_file.filename())
+                        users_config_files.front() = (config_dir / users_config_files.front()).lexically_normal();
+                    else
+                        unresolved_users_config_file = users_config_files.front();
+                }
 
-                if (users_config_files.front() != users_config_file)
+                if (unresolved_users_config_file)
+                {
+                    has_users_xml_config = false;
+                    fmt::print("{} has {} as users config, which is resolved against the working directory of the server.\n",
+                        main_config_file.string(), unresolved_users_config_file->string());
+                }
+                else if (users_config_files.front() != users_config_file)
                 {
                     users_config_file = users_config_files.front();
                     users_d = fs::path(users_config_file).replace_extension("d");
@@ -1052,7 +1069,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         bool can_ask_password = !noninteractive && stdout_is_a_tty;
 
         /// Set up password for default user.
-        if (is_default_user_maybe_shadowed)
+        if (unresolved_users_config_file)
+        {
+            fmt::print("{}The users config {} from {} is not in {}. Not setting up a password for the default user.{}\n",
+                start_hilite, unresolved_users_config_file->string(), main_config_file.string(), config_dir.string(), end_hilite);
+        }
+        else if (is_default_user_maybe_shadowed)
         {
             fmt::print("{}The default user may be defined in {} from {}, which is not an XML users config. Not setting up a password for it.{}\n",
                 start_hilite, shadowing_access_storage, main_config_file.string(), end_hilite);
