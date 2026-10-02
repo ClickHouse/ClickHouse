@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/PipelineExecutionStatus.h>
-#include <Processors/IProcessor_fwd.h>
+#include <Processors/IProcessor.h>
 #include <Processors/Executors/Runtime/ExecutorTasks.h>
 #include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>
@@ -55,11 +54,8 @@ public:
     /// Return true if execution should be continued.
     bool executeStep(std::atomic_bool * yield_flag = nullptr);
 
-    using ExecutionStatus = PipelineExecutionStatus;
-
     /// Cancel execution. May be called from another thread.
-    void cancel(ExecutionStatus reason);
-    void cancel() { cancel(ExecutionStatus::CancelledByUser); }
+    void cancel(IProcessor::CancelReason reason);
 
     /// Cancel processors which only read data from source. May be called from another thread.
     void cancelReading();
@@ -105,7 +101,7 @@ private:
     bool trace_processors = false;
     bool trace_cpu_scheduling = false;
 
-    std::atomic<ExecutionStatus> execution_status = ExecutionStatus::NotStarted;
+    std::atomic<IProcessor::CancelReason> cancel_reason = IProcessor::CancelReason::NotCancelled;
     std::atomic_bool cancelled_reading = false;
 
     LoggerPtr log = getLogger("PipelineExecutor");
@@ -132,10 +128,6 @@ private:
     // Methods for CPU scheduling
     SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation);
     void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
-
-    /// If execution_status == from, change it to desired.
-    bool tryUpdateExecutionStatus(ExecutionStatus expected, ExecutionStatus desired);
-
 };
 
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
