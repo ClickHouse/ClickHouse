@@ -9,14 +9,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 FILE_NAME=${CLICKHOUSE_TEST_UNIQUE_NAME}.data
 DATA_FILE=${USER_FILES_PATH:?}/$FILE_NAME
+KILL_OUTPUT=${CLICKHOUSE_TMP:?}/${CLICKHOUSE_TEST_UNIQUE_NAME}_kill.out
 
-trap 'rm -f "$DATA_FILE"' EXIT
+trap 'rm -f "$DATA_FILE" "$KILL_OUTPUT"' EXIT
 
 # Writes two rows of N one-letter words separated by tabs: the number of candidate structures is exponential in N.
 function words_row()
 {
     local row
-    row=$(yes a | head -n "$1" | paste -sd $'\t' -)
+    row=$(seq "$1" | sed 's/.*/a/' | paste -sd $'\t' -)
     for _ in 1 2; do echo "$row"; done > "$DATA_FILE"
 }
 
@@ -36,20 +37,32 @@ $CLICKHOUSE_CLIENT -q "select count() from file('$FILE_NAME', 'Freeform', '$STRU
 
 echo "An unbounded search stops at KILL QUERY"
 QUERY_ID="${CLICKHOUSE_TEST_UNIQUE_NAME}_kill"
-$CLICKHOUSE_CLIENT --query_id "$QUERY_ID" -q "desc file('$FILE_NAME', 'Freeform') settings max_memory_usage = 2000000000, schema_inference_use_cache_for_file = 0, input_format_freeform_max_search_steps = 0" 2>&1 | grep -oE 'BAD_ARGUMENTS|MEMORY_LIMIT_EXCEEDED|TIMEOUT_EXCEEDED|QUERY_WAS_CANCELLED' | head -1 &
+$CLICKHOUSE_CLIENT --query_id "$QUERY_ID" -q "desc file('$FILE_NAME', 'Freeform') settings max_memory_usage = 2000000000, schema_inference_use_cache_for_file = 0, input_format_freeform_max_search_steps = 0" > "$KILL_OUTPUT" 2>&1 &
+client_pid=$!
 # Wait until the search is under way, so the cancellation has to be seen inside it.
 for _ in $(seq 1 600); do
     [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$QUERY_ID' AND memory_usage > 10000000")" = "1" ] && break
     sleep 0.1
 done
 timeout 10 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$QUERY_ID' SYNC FORMAT Null"
-wait
+# Wait (bounded) for the client to exit, so a search that ignores the cancellation fails the test promptly instead of
+# running until the whole test time limit.
+for _ in $(seq 1 600); do
+    kill -0 "$client_pid" 2>/dev/null || break
+    sleep 0.1
+done
+if kill -0 "$client_pid" 2>/dev/null; then
+    echo "The query is still running 60 seconds after KILL QUERY" >&2
+    kill "$client_pid" 2>/dev/null
+fi
+wait "$client_pid"
+grep -oE 'BAD_ARGUMENTS|MEMORY_LIMIT_EXCEEDED|TIMEOUT_EXCEEDED|QUERY_WAS_CANCELLED' "$KILL_OUTPUT" | head -1
 
 echo "A long validation of the candidates stops at the time limit"
 # A short first row keeps the search within the default bound, and long later rows make every candidate's validation
 # expensive. The last checked row fails every candidate, so only the time limit can stop the query early.
 word=$(head -c 16384 /dev/zero | tr '\0' a)
-long_row=$(yes "$word" | head -n 10 | paste -sd $'\t' -)
+long_row=$(for _ in $(seq 1 10); do echo "$word"; done | paste -sd $'\t' -)
 {
     printf 'a\tb\tc\td\te\tf\tg\th\ti\tj\n'
     for _ in $(seq 1 98); do echo "$long_row"; done
