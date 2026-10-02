@@ -1784,14 +1784,6 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
     return true;
 }
 
-bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
-{
-    RPNBuilderTreeContext tree_context(nullptr, block_with_constants, nullptr);
-    RPNBuilderTreeNode node(expr.get(), tree_context);
-
-    return node.tryGetConstant(out_value, out_type);
-}
-
 bool KeyCondition::hasOnlyConjunctions() const
 {
     return std::ranges::none_of(rpn, [](RPNElement element) { return element.function == RPNElement::FUNCTION_OR; });
@@ -2148,7 +2140,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     bool chain_is_positive = true;
     MonotonicFunctionsChain transform_functions;
     auto can_transform_constant = extractMonotonicFunctionsChainFromKey(
-        node.getTreeContext().getQueryContext(),
+        node.getContext(),
         expr_name,
         info,
         out_key_column_num,
@@ -3355,7 +3347,7 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     if (info.require_ready_sets && !future_set->get())
         return false;
 
-    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
+    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getContext());
     if (!prepared_set)
         return false;
 
@@ -3800,8 +3792,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
 
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
-        auto function = *it;
-        auto func_builder = FunctionFactory::instance().tryGet(function.getFunctionName(), node.getTreeContext().getQueryContext());
+        const auto & function = *it;
+        auto func_builder = FunctionFactory::instance().tryGet(function.getFunctionName(), node.getContext());
         if (!func_builder)
             return false;
         ColumnsWithTypeAndName arguments;
@@ -5011,7 +5003,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
                             /// Declared against the type this cast is actually given, not the stripped
                             /// `key_expr_type` used to pick the supertype.
-                            auto func_cast = createInternalCast({chain_result_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getTreeContext().getQueryContext());
+                            auto func_cast = createInternalCast({chain_result_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getContext());
 
                             /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
                             if (!single_point && !func_cast->hasInformationAboutMonotonicity())
