@@ -310,6 +310,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         std::vector<std::shared_ptr<SerializationObjectSharedData::PathsDataGranules>> bucket_paths_data_granules(buckets);
         /// We need to remember offset and limit from each granule to know which rows to insert in the result.
         std::vector<std::pair<size_t, size_t>> granules_offset_and_limit;
+        std::shared_ptr<SerializationObjectSharedData::StructureGranules> first_bucket_structure_granules;
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
             settings.path.push_back(Substream::Bucket);
@@ -323,10 +324,16 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// Init offset and limit for each granule
             if (bucket == 0)
             {
+                first_bucket_structure_granules = structure_granules;
                 granules_offset_and_limit.reserve(structure_granules->size());
                 for (size_t granule = 0; granule != structure_granules->size(); ++granule)
                     granules_offset_and_limit.emplace_back((*structure_granules)[granule].offset, (*structure_granules)[granule].limit);
             }
+            else
+            {
+                SerializationObjectSharedData::checkGranulesMatchFirstBucket(*structure_granules, *first_bucket_structure_granules, bucket);
+            }
+
             settings.path.pop_back();
         }
 
