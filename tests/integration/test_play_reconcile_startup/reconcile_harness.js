@@ -543,10 +543,10 @@ function checkAuthHeaderTransport(js) {
         const source = extractTopLevelFunction(js, name);
         check('auth-header-cases', `${name} uses header authentication`, source.includes(headerCall), name);
         check('auth-header-cases', `${name} does not append credentials to its URL`,
-            !/url \\+= '&(?:user|password)=/.test(source), name);
+            !/url \+= '&(?:user|password)=/.test(source), name);
     }
 
-    const completionUrlSource = js.match(/function buildCompletionUrl\\(\\) \\{\\n[\\s\\S]*?\\n\\}/);
+    const completionUrlSource = js.match(/function buildCompletionUrl\(\) \{\n[\s\S]*?\n\}/);
     if (!completionUrlSource) throw new Error('buildCompletionUrl not found in play.html');
     const buildCompletionUrl = vm.runInNewContext(`(${completionUrlSource[0]})`, {
         url_elem: { value: 'http://localhost:8123/?tenant=default' },

@@ -8288,7 +8288,7 @@ function canSendRawAuthHeader(value) {
     /// credential byte-for-byte through a regular X-ClickHouse header. Fetch header values are
     /// byte strings and may trim surrounding whitespace, so non-ASCII or normalized values use
     /// the encoded Web UI marker understood by newer servers instead.
-    if (!/^[\\x20-\\x7E]*$/.test(value))
+    if (!/^[\x20-\x7E]*$/.test(value))
         return false;
     try {
         return new Headers({ 'X-ClickHouse-Auth-Check': value }).get('X-ClickHouse-Auth-Check') === value;
