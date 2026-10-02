@@ -1,0 +1,5 @@
+<clickhouse>
+    <access_control_improvements>
+        <readonly_restricts_set_role remove="1"/>
+    </access_control_improvements>
+</clickhouse>
