@@ -110,8 +110,8 @@ SELECT 'log nd sqp=1', if(abs(count() - 50000) < 2000, 'ONCE', if(abs(count() - 
 SELECT 'log nd sqp=0', if(abs(count() - 50000) < 2000, 'ONCE', if(abs(count() - 25000) < 2000, 'TWICE', 'OTHER')) FROM rp_log_dist SETTINGS serialize_query_plan = 0;
 DROP ROW POLICY rp_log_policy ON rp_log;
 
--- Memory and Buffer take a policy into the read when it reads their plain stored columns. Such a policy
--- is not part of the shipped plan, so the executing node applies it.
+-- Memory and Buffer ship a policy on their stored columns as a filter step of the plan, ahead of the
+-- user's own conditions.
 CREATE TABLE rp_mem (x UInt32, y UInt32) ENGINE = Memory;
 INSERT INTO rp_mem SELECT number, number FROM numbers(10);
 CREATE TABLE rp_mem_dist AS rp_mem ENGINE = Distributed(test_shard_localhost, currentDatabase(), rp_mem);
@@ -134,8 +134,8 @@ SELECT 'buffer sqp=1', count() FROM rp_buf_dist SETTINGS serialize_query_plan = 
 SELECT 'buffer sqp=0', count() FROM rp_buf_dist SETTINGS serialize_query_plan = 0;
 DROP ROW POLICY rp_buf_policy ON rp_buf;
 
--- Applied inside the read on the executing node only. A policy on a MATERIALIZED column is outside
--- Memory's PREWHERE columns, so it is shipped as a filter step and must not be applied again.
+-- A Memory policy, on a stored or a MATERIALIZED column, arrives as a filter step of the shipped plan,
+-- so the executing node must not apply it again.
 CREATE TABLE rp_mem_nd (x UInt32, m UInt32 MATERIALIZED x) ENGINE = Memory;
 INSERT INTO rp_mem_nd (x) SELECT number FROM numbers(100000);
 CREATE TABLE rp_mem_nd_dist AS rp_mem_nd ENGINE = Distributed(test_shard_localhost, currentDatabase(), rp_mem_nd);

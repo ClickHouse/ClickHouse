@@ -1,4 +1,4 @@
--- Tags: long, no-parallel-replicas
+-- Tags: long, no-parallel-replicas, no-parallel, no-fasttest
 -- Random settings limits: optimize_read_in_order=(1, None)
 
 SET enable_analyzer = 1;
