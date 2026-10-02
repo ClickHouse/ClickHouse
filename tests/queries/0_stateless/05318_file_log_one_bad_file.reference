@@ -3,4 +3,8 @@ good.jsonl	2
 broken.jsonl	100
 bad.jsonl	10
 bad.jsonl	20
-1	1
+201
+CANNOT_PARSE_INPUT_ASSERTION_FAILED
+1	0
+1	50	1
+1

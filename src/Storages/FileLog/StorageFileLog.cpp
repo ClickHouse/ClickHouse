@@ -521,7 +521,17 @@ void StorageFileLog::openFilesAndSetPos()
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
             if (std::exchange(file_ctx.open_failed, false))
+            {
                 file_ctx.status = FileStatus::UPDATED;
+                /// While the file could not be opened its path may have started to point to another file: read that one from the start.
+                if (const UInt64 inode = getInode(getFullDataPath(file)); inode != file_ctx.inode)
+                {
+                    file_infos.meta_by_inode.erase(file_ctx.inode);
+                    disk->removeFileIfExists(getFullMetaPath(file));
+                    file_ctx.inode = inode;
+                    file_infos.meta_by_inode.insert_or_assign(inode, FileMeta{.file_name = file});
+                }
+            }
 
             reader.seekg(0, std::ios::end);
             assertStreamGood(reader);
@@ -792,6 +802,7 @@ bool StorageFileLog::streamToViews()
 
     auto block_io = interpreter.execute();
 
+    read_more_after_skipped_records = false;
     /// Each stream responsible for closing it's files and store meta
     openFilesAndSetPos();
 
@@ -829,7 +840,9 @@ bool StorageFileLog::streamToViews()
     UInt64 milliseconds = watch.elapsedMilliseconds();
     LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", rows.load(), table_id.getNameForLogs(), milliseconds);
 
-    return updateFileInfos();
+    /// A stream that stopped after skipping broken records has more to read: do not wait for a directory event.
+    bool stalled = updateFileInfos();
+    return stalled && !read_more_after_skipped_records;
 }
 
 void StorageFileLog::wakeUp()
@@ -975,7 +988,7 @@ Optional parameters:
 
 The delivered records are tracked automatically, so each record in a log file is only counted once.
 
-A file that cannot be opened (missing, or not readable by the server) is skipped with an error in the server log and retried until it can be opened.
+A file that cannot be opened (removed, a symlink whose target was removed, or not readable by the server) is skipped with an error in the server log and retried until it can be opened. A symlink is read only if its target exists when the table finds it.
 
 `SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
 

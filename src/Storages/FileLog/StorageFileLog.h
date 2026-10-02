@@ -135,6 +135,8 @@ public:
 
     const LoggerPtr & getLog() const { return log; }
 
+    void setReadMoreAfterSkippedRecords() { read_more_after_skipped_records = true; }
+
 private:
     friend class ReadFromStorageFileLog;
 
@@ -174,6 +176,9 @@ private:
 
     /// Written by openFilesAndSetPos under file_infos_mutex, read by threadFunc without it.
     std::atomic<bool> has_files_to_reopen = false;
+
+    /// Set by a stream that stopped after skipping broken records before the end of its files.
+    std::atomic<bool> read_more_after_skipped_records = false;
 
     struct TaskContext
     {

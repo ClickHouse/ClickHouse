@@ -201,9 +201,10 @@ Chunk FileLogSource::generate()
         LOG_ERROR(storage.getLog(), "Skipped {} records of file {} that could not be parsed, the first one at offset {}: {}",
             skipped.count, file_name, skipped.first_offset, skipped.first_error);
 
-    /// A chunk without rows but with columns does not finish the source, so the next call continues reading.
-    if (total_rows == 0 && (skipped_records.empty() || consumer->noRecords()))
+    if (total_rows == 0)
     {
+        if (!skipped_records.empty() && !consumer->noRecords())
+            storage.setReadMoreAfterSkippedRecords();
         close();
         return {};
     }

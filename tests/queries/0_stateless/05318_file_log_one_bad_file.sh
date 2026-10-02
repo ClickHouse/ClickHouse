@@ -9,8 +9,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 logs_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}
 target=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_target.jsonl
 bad=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_bad.jsonl
-rm -rf "${logs_dir:?}" "${target}" "${bad}"
-mkdir -p "${logs_dir}"
+sel_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_sel
+sel_target=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_sel_target.jsonl
+rm -rf "${logs_dir:?}" "${target}" "${bad}" "${sel_dir:?}" "${sel_target}" "${sel_target}.old"
+mkdir -p "${logs_dir}" "${sel_dir}"
 
 function wait_for_rows()
 {
@@ -34,6 +36,9 @@ rm "${target}"
 
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst (file String, a UInt64) ENGINE = MergeTree ORDER BY (file, a)"
 ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv TO dst AS SELECT _filename AS file, a FROM file_log"
+# An aggregate without GROUP BY gives one row per block it receives, so an empty block would show up as 0.
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst_count (c UInt64) ENGINE = MergeTree ORDER BY tuple()"
+${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_count TO dst_count AS SELECT count() AS c FROM file_log"
 
 wait_for_rows 2
 ${CLICKHOUSE_CLIENT} -q "SELECT file, a FROM dst ORDER BY file, a"
@@ -50,14 +55,45 @@ mv "${bad}" "${logs_dir}/bad.jsonl"
 wait_for_rows 5
 ${CLICKHOUSE_CLIENT} -q "SELECT file, a FROM dst WHERE file = 'bad.jsonl' ORDER BY a"
 
+# Direct reads of a table without views: a file whose symlink target is gone is skipped and logged once, a new target
+# is read from its start and not again after the table is reloaded, and a record that does not parse fails the query.
+printf '{"a":200}\n' > "${sel_target}"
+ln -s "${sel_target}" "${sel_dir}/link.jsonl"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_sel (a UInt64) ENGINE = FileLog('${sel_dir}/', 'JSONEachRow')"
+# A second link keeps the inode of the old target in use, so the new target gets another one.
+ln "${sel_target}" "${sel_target}.old"
+rm "${sel_target}"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel"
+printf '{"a":201}\n' > "${sel_target}"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel"
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE file_log_sel"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log_sel"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel"
+printf 'not json\n' > "${sel_dir}/bad.jsonl"
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE file_log_sel"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log_sel"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel" 2>&1 \
+    | grep -o -m1 'CANNOT_PARSE_INPUT_ASSERTION_FAILED'
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() > 0, countIf(c = 0) FROM dst_count"
+
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
 ${CLICKHOUSE_CLIENT} -q "
     SELECT countIf(message LIKE 'Cannot open file %broken.jsonl%') > 0,
-           countIf(message LIKE 'Skipped % of file bad.jsonl%') > 0
+           sumIf(toUInt64OrZero(extract(message, 'Skipped ([0-9]+) records')), message LIKE 'Skipped % of file bad.jsonl%'),
+           countIf(message LIKE 'Skipped % of file bad.jsonl%') BETWEEN 1 AND 49
     FROM system.text_log
     WHERE event_date >= yesterday() AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log)')"
+${CLICKHOUSE_CLIENT} -q "
+    SELECT countIf(message LIKE 'Cannot open file %link.jsonl%')
+    FROM system.text_log
+    WHERE event_date >= yesterday() AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log_sel)')"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE mv"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_count"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE dst"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE dst_count"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log"
-rm -rf "${logs_dir:?}" "${target}"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_sel"
+rm -rf "${logs_dir:?}" "${target}" "${sel_dir:?}" "${sel_target}" "${sel_target}.old"
