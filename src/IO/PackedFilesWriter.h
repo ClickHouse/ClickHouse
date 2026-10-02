@@ -66,6 +66,8 @@ public:
         UInt8 version = 0;
         /// fsync the whole archive if any of its files was requested to be fsynced.
         bool need_sync = false;
+        /// Size of the serialized header, index, and file contents.
+        UInt64 total_size = 0;
     };
 
     /// Validates the queued metadata changes, chooses the order of the files in the archive and

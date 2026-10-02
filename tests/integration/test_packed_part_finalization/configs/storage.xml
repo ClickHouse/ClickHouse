@@ -1,0 +1,16 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <packed_s3>
+                <type>s3_plain_rewritable</type>
+                <endpoint>http://resolver:8085/root/packed-finalization/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
+            </packed_s3>
+        </disks>
+        <policies>
+            <packed_s3><volumes><main><disk>packed_s3</disk></main></volumes></packed_s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>

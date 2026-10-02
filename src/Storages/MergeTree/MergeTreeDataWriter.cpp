@@ -439,8 +439,11 @@ void MergeTreeTemporaryPart::cancel()
     part.reset();
 }
 
-void MergeTreeTemporaryPart::finalize()
+void MergeTreeTemporaryPart::startFinalization()
 {
+    if (finalization_started)
+        return;
+
     for (auto & stream : streams)
         stream.finalizer.finish();
 
@@ -448,12 +451,23 @@ void MergeTreeTemporaryPart::finalize()
     auto file_order_hint = part->getPreferredFileOrder();
     part->getDataPartStorage().setPreferredFileOrder(file_order_hint);
 
-    part->getDataPartStorage().precommitTransaction();
+    part->getDataPartStorage().startPrecommitTransaction();
     for (const auto & [_, projection] : part->getProjectionParts())
     {
         projection->getDataPartStorage().setPreferredFileOrder(file_order_hint);
-        projection->getDataPartStorage().precommitTransaction();
+        projection->getDataPartStorage().startPrecommitTransaction();
     }
+
+    finalization_started = true;
+}
+
+void MergeTreeTemporaryPart::finalize()
+{
+    startFinalization();
+
+    part->getDataPartStorage().precommitTransaction();
+    for (const auto & [_, projection] : part->getProjectionParts())
+        projection->getDataPartStorage().precommitTransaction();
 
     /// If any minmax column is a virtual, the writer aggregated placeholder values for it. Drop the
     /// in-memory index so `getMinMaxIndex()` reloads from disk and applies the 0-level correction.
