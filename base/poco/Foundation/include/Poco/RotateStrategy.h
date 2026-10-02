@@ -83,6 +83,12 @@ public:
             default:
                 throw InvalidArgumentException("Invalid rotation time specified.");
         }
+
+        /// An out-of-range value would make getNextRollover loop forever; -1 is only valid as the omitted-hour sentinel
+        int min_hour = timestr.count() >= 2 ? 0 : -1;
+        if (_hour < min_hour || _hour > 23 || _minute < 0 || _minute > 59)
+            throw InvalidArgumentException("Invalid rotation time specified: hour must be 0-23 and minute 0-59.");
+
         getNextRollover();
     }
 
