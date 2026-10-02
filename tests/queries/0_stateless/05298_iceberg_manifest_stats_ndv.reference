@@ -1,0 +1,38 @@
+--- fixture: data files and rows per Iceberg table
+f	1	100000
+fa	1	100000
+fp	5	100000
+--- T11 rule 1, identity partition: 5 values
+Join: fp[100000] ⋈ d[1]
+ResultRows: 20000
+--- T11 rule 1 after partition pruning: 2 values in the surviving files
+Join: fp[no_stats~40000] ⋈ d[1]
+ResultRows: ~~20000
+--- T11 rule 2, dense integer: range 2500
+Join: f[100000] ⋈ d[10]
+ResultRows: 400
+--- T11 rule 2, sparse integer: range clamped to the rows
+Join: f[100000] ⋈ d[10]
+ResultRows: 10
+--- T11 rule 3, Float64 without bounds
+ResultRows equals the estimate from column_sizes / 8
+--- T11 rule 3, Decimal(18, 2): bounds, but no range rule for decimals
+ResultRows equals the estimate from column_sizes / 8
+--- T11 rule 4, String: half the rows
+Join: f[100000] ⋈ d[10]
+ResultRows: 20
+--- T11 rule 2 in an Avro data file
+Join: fa[100000] ⋈ d[10]
+ResultRows: 400
+--- T11 rule 4, Float64 in an Avro data file without column_sizes: 30% of the rows
+Join: fa[100000] ⋈ d[10]
+ResultRows: 33
+--- T17 use_statistics = 0: rows only
+Join: f[100000] ⋈ d[no_stats~10]
+ResultRows: ~~10
+--- T17 use_iceberg_manifest_column_statistics = 0: rows only
+Join: f[100000] ⋈ d[10]
+ResultRows: 10
+--- gate off
+Join: f ⋈ d[10]
+ResultRows: unknown
