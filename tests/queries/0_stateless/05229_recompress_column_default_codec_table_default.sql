@@ -40,6 +40,6 @@ SELECT 'explicit Default', count(), round(sum(v), 6) FROM t_recompress_table_def
 ALTER TABLE t_recompress_table_default RECOMPRESS COLUMN w SETTINGS mutations_sync = 2;
 SELECT 'inherited default', count(), round(sum(w), 6) FROM t_recompress_table_default;
 
-SELECT 'projection', sum(v), sum(w) FROM t_recompress_table_default GROUP BY id % 2 ORDER BY 2;
+SELECT 'projection', round(sum(v), 6), sum(w) FROM t_recompress_table_default GROUP BY id % 2 ORDER BY 2;
 
 DROP TABLE t_recompress_table_default;
