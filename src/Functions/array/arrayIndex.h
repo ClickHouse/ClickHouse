@@ -122,8 +122,6 @@ private:
             return result;
         }
 
-        /// Only `break` out of the loop: returning the position from inside it keeps the reduction from being
-        /// vectorized on ARM for 4- and 8-byte elements.
         size_t i = 0;
         for (; size - i >= elements_per_block; i += elements_per_block)
         {
@@ -132,7 +130,19 @@ private:
                 found |= static_cast<unsigned>(data[i + j] == value);
 
             if (found)
+            {
+#if defined(__x86_64__)
+                /// On x86 the rescan of a whole block becomes branchless code that reuses the comparisons above.
+                if constexpr (std::is_same_v<ConcreteAction, HasAction>)
+                    return 1;
+                else
+                    return findScalar(data + i, elements_per_block, value, offset + i);
+#else
+                /// Elsewhere it keeps the comparisons above from being vectorized for 4- and 8-byte elements
+                /// (checked on ARM), so only `break` here and rescan after the loop.
                 break;
+#endif
+            }
         }
 
         if constexpr (std::is_same_v<ConcreteAction, HasAction>)
