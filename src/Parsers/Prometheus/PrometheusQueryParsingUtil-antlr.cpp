@@ -866,19 +866,22 @@ namespace
 
         Node * makeFunction(antlr4_grammars::PromQLParser::Function_Context * ctx, const std::vector<Node *> & arguments)
         {
-            auto * function_name_ctx = ctx->FUNCTION();
-            if (!function_name_ctx)
-                throwInconsistentSchema("Function", ctx->getText());
-
-            auto function_name = getText(function_name_ctx);
-            return makeFunction(function_name, arguments);
+            if (auto * function_name_ctx = ctx->FUNCTION())
+                return makeFunction(getText(function_name_ctx), arguments);
+            if (ctx->START())
+                return makeFunction("start", arguments);
+            if (ctx->END())
+                return makeFunction("end", arguments);
+            throwInconsistentSchema("Function", ctx->getText());
         }
 
         /// Returns the result type of a function.
         ResultType getFunctionResultType(std::string_view function_name)
         {
             if (function_name == "scalar" || function_name == "time" || function_name == "pi"
-                || function_name == "min_of" || function_name == "max_of")
+                || function_name == "min_of" || function_name == "max_of"
+                || function_name == "start" || function_name == "end"
+                || function_name == "step" || function_name == "range")
                 return ResultType::SCALAR;
             else
                 return ResultType::INSTANT_VECTOR;
