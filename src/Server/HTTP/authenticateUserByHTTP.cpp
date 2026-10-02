@@ -135,12 +135,15 @@ bool authenticateUserByHTTP(
 
     const std::string authorization_header = request.get("Authorization", "");
     const bool has_encoded_web_ui_auth = authorization_header == "ClickHouse-Play";
+    const bool has_scripted_web_ui_auth = authorization_header == "never" || has_encoded_web_ui_auth;
 
     /// The user and password can be passed by headers (similar to X-Auth-*),
     /// which is used by load balancers to pass authentication information.
     std::string user = request.get("X-ClickHouse-User", "");
     std::string password = request.get("X-ClickHouse-Key", "");
-    if (has_encoded_web_ui_auth)
+    /// Fixed-user handlers ignore credentials supplied by the Web UI, matching the old
+    /// query-parameter transport. Do not decode headers that will be ignored.
+    if (has_encoded_web_ui_auth && !config_credentials)
     {
         decodeWebUIAuthHeader(user);
         decodeWebUIAuthHeader(password);
@@ -162,7 +165,7 @@ bool authenticateUserByHTTP(
     /// credentials. The `never` sentinel and the `ClickHouse-Play` marker used by scripted
     /// Web UI requests suppress browser-provided Basic credentials. The latter also marks the
     /// X-ClickHouse user/key headers as percent-encoded.
-    const bool suppress_browser_basic_auth = authorization_header == "never" || has_encoded_web_ui_auth;
+    const bool suppress_browser_basic_auth = has_scripted_web_ui_auth;
     bool has_authorization_header = !suppress_browser_basic_auth && request.hasCredentials();
 
     /// Credentials passed in the URL query parameters take precedence over the HTTP
@@ -262,7 +265,7 @@ bool authenticateUserByHTTP(
         /// Other X-ClickHouse header clients still cannot mix their credentials with handler auth.
         if (has_config_credentials)
         {
-            if (!has_encoded_web_ui_auth)
+            if (!has_scripted_web_ui_auth)
                 throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "authentication set in config");
         }
         else
