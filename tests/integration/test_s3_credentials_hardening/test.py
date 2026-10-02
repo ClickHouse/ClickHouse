@@ -597,11 +597,16 @@ def test_dynamic_disk_include_locations_child_local_path_is_fenced():
     # `custom_local_disks_base_directory`. A disk root that names no local path of its own must not let
     # that child through -- `RegisterDiskObjectStorage` builds one object storage per child, each with
     # its own `path`.
+    # A `type = object_storage` disk with an `include` and no literal `object_storage_type` may resolve to S3,
+    # so the credentials restriction rejects it before the disk is created; lift it to reach the path check.
     node_with_includes.query("DROP TABLE IF EXISTS t_loc_local SYNC")
     error = node_with_includes.query_and_get_error(
         "CREATE TABLE t_loc_local (x UInt8) ENGINE = MergeTree ORDER BY tuple() "
         "SETTINGS disk = disk(type = object_storage, include = 'evil_locations_local_path')",
-        settings={"dynamic_disk_allow_include": 1},
+        settings={
+            "dynamic_disk_allow_include": 1,
+            "s3_allow_server_credentials_in_user_queries": 1,
+        },
     )
     assert "must be inside" in error, error
     assert (
