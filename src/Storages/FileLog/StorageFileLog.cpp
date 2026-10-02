@@ -163,8 +163,6 @@ private:
     StorageSnapshotPtr storage_snapshot;
 };
 
-/// A relative `path` is resolved against `user_files_path`. A relative path that is already inside `user_files_path`
-/// from the current working directory is kept as is, so such existing tables read the same files.
 String resolveFileLogPath(const String & path, const String & user_files_path)
 {
     if (user_files_path.empty() || std::filesystem::path(path).is_absolute() || fileOrSymlinkPathStartsWith(path, user_files_path))
