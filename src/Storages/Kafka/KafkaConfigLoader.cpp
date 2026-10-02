@@ -4,6 +4,7 @@
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
+#include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/Exception.h>
@@ -516,6 +517,10 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
 
     updateConfigurationFromConfig(loadConsumerConfig, conf, storage, params, exception_info_sink_ptr);
 
+    /// Re-validate the broker list in case they are changed in the merged configuration
+    if (const auto merged_broker_list = conf.get("metadata.broker.list"); merged_broker_list != params.brokers)
+        conf.set("metadata.broker.list", StorageKafkaUtils::validateBrokerList(merged_broker_list, params.context));
+
     // those settings should not be changed by users.
     conf.set("enable.auto.commit", "false"); // We manually commit offsets after a stream successfully finished
     conf.set("enable.auto.offset.store", "false"); // Update offset automatically - to commit them all at once.
@@ -541,6 +546,10 @@ cppkafka::Configuration KafkaConfigLoader::getProducerConfiguration(TKafkaStorag
     conf.set("client.software.version", VERSION_DESCRIBE);
 
     updateConfigurationFromConfig(loadProducerConfig, conf, storage, params);
+
+    /// See the same check in getConsumerConfiguration.
+    if (const auto merged_broker_list = conf.get("metadata.broker.list"); merged_broker_list != params.brokers)
+        conf.set("metadata.broker.list", StorageKafkaUtils::validateBrokerList(merged_broker_list, params.context));
 
     logConfigProperties(conf, params.log, "Producer");
 
