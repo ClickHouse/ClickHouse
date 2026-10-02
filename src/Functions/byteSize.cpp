@@ -81,66 +81,61 @@ public:
         }
         else
         {
-            size_t num_args = arguments.size();
-
-            /// Fixed-size arguments can be added once even when another argument
-            /// needs per-row sparse accounting.
-            auto is_constant_size = [&](size_t arg_num)
-            {
-                return !arguments[arg_num].column->isSparse()
-                    && arguments[arg_num].type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
-            };
-
-            size_t first_dynamic_arg = num_args;
+            const size_t num_args = arguments.size();
             UInt64 constant_size = 0;
+            bool all_constant = true;
+
+            /// Fold each sparse column's default size into the initial result.
+            /// Only non-default sparse rows then need per-row corrections.
             for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
             {
-                if (is_constant_size(arg_num))
+                const auto & argument = arguments[arg_num];
+                if (const auto * sparse_column = typeid_cast<const ColumnSparse *>(argument.column.get()))
                 {
-                    constant_size += arguments[arg_num].type->getSizeOfValueInMemory();
+                    constant_size += sparse_column->getValuesColumn().byteSizeAt(0);
+                    if (!sparse_column->getOffsetsData().empty())
+                        all_constant = false;
                 }
-                else if (first_dynamic_arg == num_args)
+                else if (argument.type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
                 {
-                    first_dynamic_arg = arg_num;
+                    constant_size += argument.type->getSizeOfValueInMemory();
+                }
+                else
+                {
+                    all_constant = false;
                 }
             }
 
-            if (first_dynamic_arg == num_args)
+            if (all_constant)
                 return result_type->createColumnConst(input_rows_count, constant_size);
 
             auto result_col = ColumnUInt64::create(input_rows_count, constant_size);
             auto & vec_res = result_col->getData();
 
-            auto add_column_size = [&](const IColumn * column)
+            for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
             {
+                const auto & argument = arguments[arg_num];
+                const IColumn * column = argument.column.get();
+
                 if (const auto * sparse_column = typeid_cast<const ColumnSparse *>(column))
                 {
+                    const auto & offsets = sparse_column->getOffsetsData();
+                    if (offsets.empty())
+                        continue;
+
                     const auto & values = sparse_column->getValuesColumn();
                     const size_t default_size = values.byteSizeAt(0);
-
-                    for (size_t row = 0; row < input_rows_count; ++row)
-                        vec_res[row] += default_size;
-
-                    const auto & offsets = sparse_column->getOffsetsData();
                     for (size_t offset = 0; offset < offsets.size(); ++offset)
                     {
                         const size_t row = offsets[offset];
-                        vec_res[row] -= default_size;
-                        vec_res[row] += values.byteSizeAt(offset + 1) + sizeof(UInt64);
+                        vec_res[row] = vec_res[row] - default_size + values.byteSizeAt(offset + 1) + sizeof(UInt64);
                     }
-                    return;
                 }
-
-                for (size_t row = 0; row < input_rows_count; ++row)
-                    vec_res[row] += column->byteSizeAt(row);
-            };
-
-            for (size_t arg_num = first_dynamic_arg; arg_num < num_args; ++arg_num)
-            {
-                if (is_constant_size(arg_num))
-                    continue;
-
-                add_column_size(arguments[arg_num].column.get());
+                else if (!argument.type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+                {
+                    for (size_t row = 0; row < input_rows_count; ++row)
+                        vec_res[row] += column->byteSizeAt(row);
+                }
             }
 
             return result_col;
