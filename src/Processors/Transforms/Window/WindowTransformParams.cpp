@@ -245,17 +245,4 @@ WindowTransformParams WindowTransformParams::create(
     };
 }
 
-bool WindowTransformParams::arePeers(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row) const
-{
-    if (window_description.frame.type == WindowFrame::FrameType::ROWS)
-        return false;
-
-    // For RANGE and GROUPS frames, rows that compare equal on the ORDER BY key are peers; without ORDER BY all rows are.
-    for (const size_t key : order_by_indices)
-        if (lhs[key]->compareAt(lhs_row, rhs_row, *rhs[key], /*nan_direction_hint=*/1) != 0)
-            return false;
-
-    return true;
-}
-
 }
