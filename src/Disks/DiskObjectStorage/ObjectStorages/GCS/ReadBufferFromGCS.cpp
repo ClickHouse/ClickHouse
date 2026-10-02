@@ -436,9 +436,13 @@ std::optional<size_t> ReadBufferFromGCS::tryGetFileSize()
     if (for_disk)
         ProfileEvents::increment(ProfileEvents::DiskGCSGetObjectMetadata);
 
+    /// A successful response always carries the size, so a failure is a real error (permissions, a
+    /// missing object, an unavailable service) and is reported as one, as the S3 and Azure buffers do,
+    /// rather than disguised as "the size is unknown".
     auto metadata = client->GetObjectMetadata(bucket, key);
     if (!metadata)
-        return std::nullopt;
+        throwFromGCSStatus(metadata.status(),
+            fmt::format("while getting the size of '{}' in bucket '{}'", key, bucket));
 
     file_size = metadata->size();
     return file_size;
