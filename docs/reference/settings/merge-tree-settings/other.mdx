@@ -18,7 +18,9 @@ These settings are available in [system.merge_tree_settings](/reference/system-t
 ## adaptive_write_buffer_initial_size {#adaptive_write_buffer_initial_size}
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
-Initial size of an adaptive write buffer
+Sets the initial size, in bytes, of each adaptive write buffer used when writing MergeTree data. Buffers grow automatically as needed. Lower values reduce initial memory use, especially for tables with many columns, but may cause more frequent buffer flushes. This is a starting size, not a memory limit.
+
+Adaptive write buffers are only used in wide parts, as controlled by [`min_columns_to_activate_adaptive_write_buffer`](/reference/settings/merge-tree-settings/min#min_columns_to_activate_adaptive_write_buffer) and [`use_adaptive_write_buffer_for_dynamic_subcolumns`](/reference/settings/merge-tree-settings/use#use_adaptive_write_buffer_for_dynamic_subcolumns).
 
 ## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -444,7 +446,7 @@ Possible values:
 
 ## patch_parts_version {#patch_parts_version}
 <SettingsInfoBlock type="MergeTreePatchPartsVersion" default_value="v2" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "v2"},{"label": "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "v2"},{"label": "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."}]}]}/>
 
 On-disk serialization version for patch parts produced by lightweight UPDATE queries.
 
@@ -731,6 +733,22 @@ This applies only to the TTLs that delete rows. A column `TTL` can only be
 honoured by rewriting the part, so the merges that clear expired columns are
 still assigned when this setting is enabled. Such a merge rewrites the part
 anyway, and therefore also removes the rows that have expired in it.
+
+## unique_key_conflict_action {#unique_key_conflict_action}
+
+<ExperimentalBadge/>
+<SettingsInfoBlock type="UniqueKeyConflictAction" default_value="overwrite" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "overwrite"},{"label": "New table setting: how an INSERT on a UNIQUE KEY table resolves a key already live in the partition (overwrite \/ ignore \/ abort)"}]}]}/>
+
+For `UNIQUE KEY` tables, how an INSERT resolves a key that already exists live in the partition:
+
+- `overwrite` — the incoming row supersedes the existing live row (UPSERT). Default.
+- `ignore` — the existing row is kept and the conflicting incoming row is dropped.
+- `abort` — the INSERT fails on the first live duplicate and publishes nothing.
+
+The policy is a property of the table, so every writer is held to it. Note that an INSERT is
+atomic only when it produces a single part, so `abort` may reject one part of a multi-part
+INSERT after earlier parts committed, exactly as plain MergeTree does.
 
 ## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
