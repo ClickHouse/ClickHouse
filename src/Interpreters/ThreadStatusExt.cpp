@@ -207,13 +207,6 @@ UInt64 ThreadGroup::getGroupElapsedMs() const
     return elapsed_group_ms;
 }
 
-void ThreadGroup::setQueryCancellationPredicates(QueryIsCanceledPredicate is_canceled, ThrowIfQueryCanceledPredicate throw_if_canceled)
-{
-    std::lock_guard lock(mutex);
-    shared_data.query_is_canceled_predicate = std::move(is_canceled);
-    shared_data.throw_if_query_canceled_predicate = std::move(throw_if_canceled);
-}
-
 void ThreadGroup::linkThread(UInt64 thread_id)
 {
     std::lock_guard lock(mutex);
