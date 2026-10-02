@@ -22,9 +22,7 @@ Esto abre el cuadro de diálogo del warehouse, donde puede ver los servicios exi
 
 <Image img="/images/managed-postgres/read-replica-dialog.webp" alt="Cuadro de diálogo para administrar réplicas de lectura" size="md" border />
 
-<div id="managing-read-replicas">
-  ## Gestionar las réplicas de lectura
-</div>
+## Gestionar las réplicas de lectura {#managing-read-replicas}
 
 La página **Réplicas de lectura** te ofrece dos vistas, entre las que puedes alternar con los controles **Flow** y **Table** en la esquina superior derecha.
 
@@ -60,9 +58,7 @@ Al dirigir las consultas analíticas y de inteligencia empresarial a las réplic
 
 Las réplicas de lectura pueden desempeñar un papel fundamental en la recuperación ante desastres. Si su base de datos primaria falla, una réplica de lectura puede promoverse a primaria, lo que minimiza el tiempo de inactividad y la pérdida de datos. Esto proporciona una capa adicional de resiliencia, más allá de sus instancias en espera de alta disponibilidad.
 
-<div id="how-read-replicas-work">
-  ## Cómo funcionan las réplicas de lectura
-</div>
+## Cómo funcionan las réplicas de lectura {#how-read-replicas-work}
 
 Las réplicas de lectura en ClickHouse Managed Postgres usan una arquitectura de WAL shipping en lugar de replicación por streaming. Esta decisión de diseño busca minimizar el impacto en tu base de datos primaria.
 
@@ -70,7 +66,7 @@ Las réplicas de lectura en ClickHouse Managed Postgres usan una arquitectura de
   ### WAL shipping desde el almacenamiento de objetos
 </div>
 
-Cuando la base de datos primaria procesa transacciones, genera registros de Write-Ahead Log (WAL). Estos segmentos de WAL se archivan continuamente en almacenamiento de objetos (S3). Las réplicas de lectura recuperan y reproducen estos segmentos de WAL desde el almacenamiento de objetos para mantenerse sincronizadas con la primaria.
+Cuando la base de datos primaria procesa transacciones, genera registros de Write-Ahead Log (WAL). Estos segmentos de WAL se archivan continuamente en almacenamiento de objetos. Las réplicas de lectura recuperan y reproducen estos segmentos de WAL desde el almacenamiento de objetos para mantenerse sincronizadas con la primaria.
 
 Esta arquitectura difiere de los [standbys de alta disponibilidad](/es/products/managed-postgres/high-availability), que utilizan replicación por streaming con una conexión directa a la primaria.
 
