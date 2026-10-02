@@ -493,15 +493,32 @@ function checkAuthHeaderTransport(js) {
     if (!helperMatch) throw new Error('getAuthHeaders not found in play.html');
     const getAuthHeaders = vm.runInNewContext(`(${helperMatch[0]})`);
     const cases = [
-        ['named-user', 'alice', 'p&?#%', { Authorization: 'never', 'X-ClickHouse-User': 'alice', 'X-ClickHouse-Key': 'p&?#%' }],
-        ['empty-password', 'alice', '', { Authorization: 'never', 'X-ClickHouse-User': 'alice' }],
-        ['default-user', '', 'secret', { Authorization: 'never', 'X-ClickHouse-Key': 'secret' }],
-        ['default-credentials', '', '', { Authorization: 'never' }],
+        ['named-user', 'alice', 'p&?#%', {
+            Authorization: 'ClickHouse-Play',
+            'X-ClickHouse-User': 'alice',
+            'X-ClickHouse-Key': 'p%26%3F%23%25',
+        }],
+        ['utf8-and-spaces', 'play:юзер', '  päss 密码  ', {
+            Authorization: 'ClickHouse-Play',
+            'X-ClickHouse-User': 'play%3A%D1%8E%D0%B7%D0%B5%D1%80',
+            'X-ClickHouse-Key': '%20%20p%C3%A4ss%20%E5%AF%86%E7%A0%81%20%20',
+        }],
+        ['empty-password', 'alice', '', { Authorization: 'ClickHouse-Play', 'X-ClickHouse-User': 'alice' }],
+        ['default-user', '', 'secret', { Authorization: 'ClickHouse-Play', 'X-ClickHouse-Key': 'secret' }],
+        ['default-credentials', '', '', { Authorization: 'ClickHouse-Play' }],
     ];
     for (const [name, user, password, expected] of cases) {
         const actual = getAuthHeaders(user, password);
         check('auth-header-cases', `${name} uses the expected headers`,
             JSON.stringify(actual) === JSON.stringify(expected), actual);
+
+        const browserHeaders = new Headers(actual);
+        check('auth-header-cases', `${name} survives browser header normalization`,
+            Object.entries(actual).every(([header, value]) => browserHeaders.get(header) === value), actual);
+        check('auth-header-cases', `${name} round-trips the credentials`,
+            (!actual['X-ClickHouse-User'] || decodeURIComponent(actual['X-ClickHouse-User']) === user)
+                && (!actual['X-ClickHouse-Key'] || decodeURIComponent(actual['X-ClickHouse-Key']) === password),
+            actual);
     }
 
     const requestFunctions = [

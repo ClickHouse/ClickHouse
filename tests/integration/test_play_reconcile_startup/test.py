@@ -16,6 +16,7 @@ both the live tab state and what gets persisted back.
 import io
 import os
 import tarfile
+import urllib.parse
 
 import docker
 import pytest
@@ -103,3 +104,33 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
         assert "PASS [{}]".format(scenario) in out, "scenario {} did not run:\n{}".format(
             scenario, out
         )
+
+
+def test_play_auth_headers_preserve_credentials(started_cluster):
+    user = "play:юзер"
+    password = "  päss 密码  "
+
+    def quote(value):
+        return urllib.parse.quote(value, safe="-_.!~*'()")
+
+    node.query("DROP USER IF EXISTS '{}'".format(user))
+    try:
+        node.query(
+            "CREATE USER '{}' IDENTIFIED WITH sha256_password BY '{}'".format(
+                user, password
+            )
+        )
+        response = node.http_request(
+            "",
+            method="POST",
+            data="SELECT currentUser()",
+            headers={
+                "Authorization": "ClickHouse-Play",
+                "X-ClickHouse-User": quote(user),
+                "X-ClickHouse-Key": quote(password),
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert response.content.decode("utf-8") == user + "\n"
+    finally:
+        node.query("DROP USER IF EXISTS '{}'".format(user))

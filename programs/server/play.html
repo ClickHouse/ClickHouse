@@ -8284,11 +8284,14 @@ checkURL(true);
 }
 
 function getAuthHeaders(user, password) {
-    const headers = { 'Authorization': 'never' };
+    /// Fetch normalizes header values and accepts only byte-string values. Percent-encode
+    /// credentials so arbitrary UTF-8 and significant spaces survive the header transport
+    /// exactly as they did in URL query parameters.
+    const headers = { 'Authorization': 'ClickHouse-Play' };
     if (user)
-        headers['X-ClickHouse-User'] = user;
+        headers['X-ClickHouse-User'] = encodeURIComponent(user);
     if (password)
-        headers['X-ClickHouse-Key'] = password;
+        headers['X-ClickHouse-Key'] = encodeURIComponent(password);
     return headers;
 }
 

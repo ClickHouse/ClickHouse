@@ -12,6 +12,7 @@
 #include <Interpreters/Session.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/URI.h>
 
 #include <optional>
 
@@ -44,6 +45,25 @@ namespace
     {
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
                         "Invalid authentication: it is not allowed to use {} and {} simultaneously", method1, method2);
+    }
+
+    void decodeWebUIAuthHeader(std::string & value)
+    {
+        if (value.empty())
+            return;
+
+        try
+        {
+            std::string decoded;
+            Poco::URI::decode(value, decoded);
+            value = decoded;
+        }
+        catch (const Poco::URISyntaxException &)
+        {
+            throw Exception(
+                ErrorCodes::AUTHENTICATION_FAILED,
+                "Invalid authentication: malformed percent-encoded Web UI credentials");
+        }
     }
 
     /// Checks that a specified user name is not empty, and throws an exception if it's empty.
@@ -113,10 +133,19 @@ bool authenticateUserByHTTP(
         ? *connection_config.default_session_user
         : String(global_context->getServerSettings()[ServerSetting::default_session_user]);
 
+    const std::string authorization_header = request.get("Authorization", "");
+    const bool has_encoded_web_ui_auth = authorization_header == "ClickHouse-Play";
+
     /// The user and password can be passed by headers (similar to X-Auth-*),
     /// which is used by load balancers to pass authentication information.
     std::string user = request.get("X-ClickHouse-User", "");
     std::string password = request.get("X-ClickHouse-Key", "");
+    if (has_encoded_web_ui_auth)
+    {
+        decodeWebUIAuthHeader(user);
+        decodeWebUIAuthHeader(password);
+    }
+
     std::string quota_key = request.get("X-ClickHouse-Quota", "");
     bool has_auth_headers = !user.empty() || !password.empty();
 
@@ -130,9 +159,11 @@ bool authenticateUserByHTTP(
     bool has_credentials_in_query_params = params.has("user") || params.has("password");
 
     /// Whether the request carries an `Authorization` header that should be treated as
-    /// credentials. The sentinel value `never` (which `play.html` sets on the requests it can
-    /// add headers to) disables it.
-    bool has_authorization_header = request.hasCredentials() && request.get("Authorization") != "never";
+    /// credentials. The `never` sentinel and the `ClickHouse-Play` marker used by scripted
+    /// Web UI requests suppress browser-provided Basic credentials. The latter also marks the
+    /// X-ClickHouse user/key headers as percent-encoded.
+    const bool suppress_browser_basic_auth = authorization_header == "never" || has_encoded_web_ui_auth;
+    bool has_authorization_header = !suppress_browser_basic_auth && request.hasCredentials();
 
     /// Credentials passed in the URL query parameters take precedence over the HTTP
     /// `Authorization` header: when both are present, the header is ignored instead of
@@ -144,9 +175,9 @@ bool authenticateUserByHTTP(
     /// remove headers from, such as a form submission or a download navigation. The Web UI
     /// (`play.html`) download form puts the user name and password into the URL query
     /// parameters, so without this precedence a download request would carry both the remembered
-    /// header and the parameters and be rejected. (The special value `Authorization: never`
-    /// also suppresses the header, but it can only be set from a scripted request such as
-    /// `fetch` or `XHR`, not from a plain navigation.)
+    /// header and the parameters and be rejected. Scripted requests use special `Authorization`
+    /// values (`never` for probes and `ClickHouse-Play` for encoded credentials) to suppress
+    /// browser-provided Basic credentials; a plain navigation cannot set those values.
     ///
     /// This precedence applies only to the default authentication path. When the handler has
     /// its own configured credentials, an `Authorization` header is still rejected as a mix of
@@ -226,20 +257,27 @@ bool authenticateUserByHTTP(
     }
     else if (has_auth_headers)
     {
-        /// It is prohibited to mix different authorization schemes. The mix is rejected before
-        /// the empty user name is resolved through the default session user (see above).
+        /// Scripted Web UI authentication replaces the old URL-parameter transport. When a
+        /// handler has fixed credentials, preserve the old behavior and ignore these UI headers.
+        /// Other X-ClickHouse header clients still cannot mix their credentials with handler auth.
         if (has_config_credentials)
-            throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "authentication set in config");
-        if (has_http_credentials)
-            throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "Authorization HTTP header");
-        if (has_credentials_in_query_params)
-            throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "authentication via parameters");
+        {
+            if (!has_encoded_web_ui_auth)
+                throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "authentication set in config");
+        }
+        else
+        {
+            if (has_http_credentials)
+                throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "Authorization HTTP header");
+            if (has_credentials_in_query_params)
+                throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "authentication via parameters");
 
-        /// The client passed "X-ClickHouse-Key" without "X-ClickHouse-User" (or with an empty one):
-        /// the password is checked against the default session user.
-        if (user.empty())
-            user = default_session_user;
-        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context, session, client_address);
+            /// The client passed "X-ClickHouse-Key" without "X-ClickHouse-User" (or with an empty one):
+            /// the password is checked against the default session user.
+            if (user.empty())
+                user = default_session_user;
+            checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context, session, client_address);
+        }
     }
     else if (has_http_credentials)
     {
@@ -355,7 +393,7 @@ bool authenticateUserByHTTP(
         if (!basic_credentials)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: expected 'Basic' HTTP Authorization scheme");
 
-        if (request.get("Authorization", "") != "never")
+        if (!suppress_browser_basic_auth)
             basic_credentials->enableInteractiveBasicAuthenticationInTheBrowser();
 
         chassert(!user.empty());
