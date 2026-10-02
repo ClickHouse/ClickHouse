@@ -51,4 +51,25 @@ SELECT count(), sum(c), sum(cityHash64(lc, c)) FROM (SELECT toLowCardinality(s) 
 SELECT count(), sum(c), sum(cityHash64(lc, c)) FROM (SELECT toLowCardinality(s) AS lc, count() AS c FROM t_04649 GROUP BY lc)
     SETTINGS enable_packed_string_keys_in_aggregation = 0;
 
+-- A single-threaded GROUP BY whose hash table outgrows the CPU cache, with and without software prefetch.
+SELECT 'String key, hash table larger than the CPU cache';
+SELECT count(), sum(c), sum(cityHash64(s, c)) FROM (SELECT s, count() AS c FROM
+    (SELECT multiIf(number % 13 = 0, '', number % 3 = 0, toString(number % 50000),
+        concat('https://example.com/', toString(number % 200000), '/', repeat('x', number % 40))) AS s
+     FROM numbers(600000)) GROUP BY s)
+    SETTINGS enable_packed_string_keys_in_aggregation = 1, enable_software_prefetch_in_aggregation = 1,
+        max_threads = 1, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
+SELECT count(), sum(c), sum(cityHash64(s, c)) FROM (SELECT s, count() AS c FROM
+    (SELECT multiIf(number % 13 = 0, '', number % 3 = 0, toString(number % 50000),
+        concat('https://example.com/', toString(number % 200000), '/', repeat('x', number % 40))) AS s
+     FROM numbers(600000)) GROUP BY s)
+    SETTINGS enable_packed_string_keys_in_aggregation = 1, enable_software_prefetch_in_aggregation = 0,
+        max_threads = 1, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
+SELECT count(), sum(c), sum(cityHash64(s, c)) FROM (SELECT s, count() AS c FROM
+    (SELECT multiIf(number % 13 = 0, '', number % 3 = 0, toString(number % 50000),
+        concat('https://example.com/', toString(number % 200000), '/', repeat('x', number % 40))) AS s
+     FROM numbers(600000)) GROUP BY s)
+    SETTINGS enable_packed_string_keys_in_aggregation = 0, enable_software_prefetch_in_aggregation = 1,
+        max_threads = 1, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
+
 DROP TABLE t_04649;
