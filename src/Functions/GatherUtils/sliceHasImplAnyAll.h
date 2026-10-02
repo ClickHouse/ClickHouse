@@ -178,12 +178,18 @@ bool sliceHasAllBytes(const NumericArraySlice<T> & first, const NumericArraySlic
         /// `|`, LLVM merged the 16 masks into booleans and rebuilt the bytes from them in every iteration (`psllw` and
         /// `pcmpgtb` on x86).
         using Bytes = UInt8 __attribute__((vector_size(16)));
-        auto hits = reinterpret_cast<Bytes>(found);
+        Bytes hits[lanes];
         [&]<size_t... shift>(std::index_sequence<shift...>) ALWAYS_INLINE
         {
-            ((hits = __builtin_elementwise_max(hits, reinterpret_cast<Bytes>(values == rotateLanes<shift>(elements, lane_indices)))), ...);
+            ((hits[shift] = reinterpret_cast<Bytes>(values == rotateLanes<shift>(elements, lane_indices))), ...);
         }(lane_indices);
-        found = reinterpret_cast<SearchMask<16>>(hits);
+        /// Combined as a tree: a chain of 16 dependent maximums limited AArch64 to one per `umax` latency.
+        for (size_t width = lanes / 2; width > 0; width /= 2)
+        {
+            for (size_t i = 0; i < width; ++i)
+                hits[i] = __builtin_elementwise_max(hits[i], hits[i + width]);
+        }
+        found = reinterpret_cast<SearchMask<16>>(__builtin_elementwise_max(reinterpret_cast<Bytes>(found), hits[0]));
     };
 
     auto group_found = [&](size_t begin) ALWAYS_INLINE
