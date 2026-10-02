@@ -12,20 +12,6 @@
 namespace DB::GatherUtils
 {
 
-inline ALWAYS_INLINE bool hasNull(const UInt8 * null_map, size_t null_map_size)
-{
-    if (null_map == nullptr)
-        return false;
-
-    /// Without an early exit the loop is a few vector ORs. With one it was a scalar loop over every byte, which took a
-    /// fifth of `hasAll` on a `Nullable` array that has no nulls.
-    UInt8 any_null = 0;
-    for (size_t i = 0; i < null_map_size; ++i)
-        any_null |= null_map[i];
-
-    return any_null != 0;
-}
-
 template <typename T>
 constexpr bool is_integral_slice = false;
 
@@ -49,6 +35,31 @@ template <typename Mask>
 ALWAYS_INLINE bool allLanesSet(Mask mask)
 {
     return __builtin_reduce_and(mask) == ~0ULL;
+}
+
+inline ALWAYS_INLINE bool hasNull(const UInt8 * null_map, size_t null_map_size)
+{
+    if (null_map == nullptr)
+        return false;
+
+    /// Tests 64 bytes at a time and stops at the first block with a null. An exit per byte made this a scalar loop, which
+    /// took a fifth of `hasAll` on a `Nullable` array without nulls; reading the whole map made `hasAny` linear even when
+    /// both arrays start with a null and the result is already known.
+    size_t i = 0;
+    for (; i + 64 <= null_map_size; i += 64)
+    {
+        SearchMask<32> low;
+        SearchMask<32> high;
+        memcpy(&low, null_map + i, sizeof(low));
+        memcpy(&high, null_map + i + sizeof(low), sizeof(high));
+        if (anyLaneSet(low | high))
+            return true;
+    }
+
+    UInt8 any_null = 0;
+    for (; i < null_map_size; ++i)
+        any_null |= null_map[i];
+    return any_null != 0;
 }
 
 /// Searches `value` in blocks of 128 bytes. A block is a few whole-vector comparisons and one test of the combined mask,

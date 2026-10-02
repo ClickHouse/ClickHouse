@@ -1,0 +1,18 @@
+Int8	Nullable	3240	1301	0	2945	0
+Int8	not Nullable	3240	1539	0	2976	0
+Int8	mixed	3240	1194	0	2372	0
+UInt8	Nullable	3240	1301	0	2945	0
+UInt8	not Nullable	3240	1539	0	2976	0
+UInt8	mixed	3240	1194	0	2372	0
+Int16	Nullable	3240	1301	0	2945	0
+Int16	not Nullable	3240	1539	0	2976	0
+Int16	mixed	3240	1194	0	2372	0
+Int32	Nullable	3240	1301	0	2945	0
+Int32	not Nullable	3240	1539	0	2976	0
+Int32	mixed	3240	1194	0	2372	0
+Int64	Nullable	3240	1301	0	2945	0
+Int64	not Nullable	3240	1539	0	2976	0
+Int64	mixed	3240	1194	0	2372	0
+UInt64	Nullable	3240	1301	0	2945	0
+UInt64	not Nullable	3240	1539	0	2976	0
+UInt64	mixed	3240	1194	0	2372	0
