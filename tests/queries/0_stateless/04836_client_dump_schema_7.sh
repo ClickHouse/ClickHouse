@@ -21,6 +21,7 @@ TS_RE='^SET (allow_experimental_time_series_table|enable_time_series_table) = 1;
 KEEPER_RE='^SET (allow_experimental_kafka_offsets_storage_in_keeper|allow_kafka_offsets_storage_in_keeper) = 1;'
 HIVE_RE='^SET allow_experimental_object_storage_queue_hive_partitioning = 1;'
 PG_RE='^SET (allow_experimental_materialized_postgresql_table|enable_materialized_postgresql_table) = 1;'
+URL_RE='^SET (allow_experimental_url_wildcard_from_index_pages|allow_url_wildcard_from_index_pages) = 1;'
 
 # make_dump <setup SQL>: build the schema in a fresh local instance and dump it to DUMP_FILE.
 make_dump()
@@ -50,6 +51,8 @@ CREATE MATERIALIZED VIEW ${DB}.mv_to TO ${DB}.dst AS SELECT x, y FROM ${DB}.src;
 CREATE MATERIALIZED VIEW ${DB}.mv_inner ENGINE = MergeTree ORDER BY x AS SELECT x, y FROM ${DB}.src;
 CREATE MATERIALIZED VIEW ${DB}.mv_cols (a Int64, b Int64) ENGINE = MergeTree ORDER BY a AS SELECT x AS a, y AS b FROM ${DB}.src;
 CREATE MATERIALIZED VIEW ${DB}.mv_refresh REFRESH EVERY 1 HOUR (x Int64) ENGINE = Memory AS SELECT number AS x FROM numbers(2);
+CREATE MATERIALIZED VIEW ${DB}.mv_merge REFRESH EVERY 1 HOUR (x Int64) ENGINE = Memory AS SELECT x FROM merge('${DB}', '^src\$');
+CREATE MATERIALIZED VIEW ${DB}.mv_values REFRESH EVERY 1 HOUR (x Int64) ENGINE = Memory AS SELECT x FROM values('x Int64', 1, 2);
 "
 echo "healthy views, bad-select gate emitted: $(grep -c "$BADSEL_RE" "$DUMP_FILE")"
 replay_local 'healthy views' 'mv%'
@@ -83,6 +86,14 @@ DROP TABLE ${DB}.src;
 echo "failed analysis, bad-select gate emitted: $(grep -c "$BADSEL_RE" "$DUMP_FILE")"
 replay_local 'failed analysis' 'mv%'
 
+make_dump "
+CREATE TABLE ${DB}.src (x Int64) ENGINE = MergeTree ORDER BY tuple();
+SET allow_materialized_view_with_bad_select = 1;
+CREATE MATERIALIZED VIEW ${DB}.mv_bad REFRESH EVERY 1 HOUR (x Int64) ENGINE = Memory AS SELECT x FROM merge('${DB}', '^nothing\$');
+"
+echo "merge matching no table, bad-select gate emitted: $(grep -c "$BADSEL_RE" "$DUMP_FILE")"
+replay_local 'merge matching no table' 'mv%'
+
 echo '--- healthy and bad views together get one gate line ---'
 make_dump "
 CREATE TABLE ${DB}.src (x Int64, y Int64) ENGINE = MergeTree ORDER BY tuple();
@@ -107,6 +118,8 @@ CREATE TABLE ${CONSTRAINT_DB}.dst (x Int64, y Int64) ENGINE = MergeTree ORDER BY
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_to TO ${CONSTRAINT_DB}.dst AS SELECT x, y FROM ${CONSTRAINT_DB}.src;
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_inner ENGINE = MergeTree ORDER BY x AS SELECT x, y FROM ${CONSTRAINT_DB}.src;
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_refresh REFRESH EVERY 1 HOUR (x Int64) ENGINE = Memory AS SELECT number AS x FROM numbers(2);
+CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_merge REFRESH EVERY 1 HOUR (x Int64) ENGINE = Memory AS SELECT x FROM merge('${CONSTRAINT_DB}', '^src\$');
+CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_values REFRESH EVERY 1 HOUR (x Int64) ENGINE = Memory AS SELECT x FROM values('x Int64', 1, 2);
 "
 $CLICKHOUSE_LOCAL --path "$LOCAL_PATH" --dump-schema="$CONSTRAINT_DB" > "$DUMP_FILE" 2>"$ERR_FILE"
 rm -rf "$LOCAL_PATH"
@@ -221,6 +234,36 @@ CREATE TABLE ${DB}.named (time UInt32, ttl UInt32) ENGINE = MergeTree ORDER BY t
 "
 echo "columns named time and ttl, time-type gate emitted: $(grep -c '^SET allow_experimental_time_time64_type = 1;' "$DUMP_FILE")"
 echo "columns named time and ttl, suspicious-TTL gate emitted: $(grep -c '^SET allow_suspicious_ttl_expressions = 1;' "$DUMP_FILE")"
+make_dump "
+CREATE TABLE ${DB}.vt (v Variant(String, UInt64)) ENGINE = MergeTree ORDER BY tuple();
+"
+echo "Variant column, suspicious-variant gate emitted: $(grep -c '^SET allow_suspicious_variant_types = 1;' "$DUMP_FILE")"
+replay_local 'Variant column' '%'
+make_dump "
+CREATE TABLE ${DB}.mt (x Int64) ENGINE = MergeTree ORDER BY x;
+SET enable_funnel_functions = 1;
+CREATE MATERIALIZED VIEW ${DB}.mv_funnel ENGINE = Memory AS SELECT sequenceNextNodeIf('forward', 'head')(toDateTime(x), toString(x), x = 1, x = 1, x > 0) AS n FROM ${DB}.mt;
+"
+echo "sequenceNextNodeIf view, funnel gate emitted: $(grep -cE '^SET (allow_experimental_funnel_functions|enable_funnel_functions) = 1;' "$DUMP_FILE")"
+replay_local 'sequenceNextNodeIf view' '%'
+make_dump "
+CREATE VIEW ${DB}.u_plain AS SELECT * FROM url('http://127.0.0.1:1/data.csv', CSV, 'x UInt8');
+CREATE TABLE ${DB}.u_brace (x UInt8) ENGINE = URL('http://127.0.0.1:1/{a,b}.csv', CSV);
+CREATE TABLE ${DB}.u_pipe (x UInt8) ENGINE = URL('http://127.0.0.1:1/a|b.csv', CSV);
+"
+echo "url objects without a path wildcard, url-wildcard gate emitted: $(grep -cE "$URL_RE" "$DUMP_FILE")"
+replay_local 'url objects without a path wildcard' 'u%'
+make_dump "
+SET allow_url_wildcard_from_index_pages = 1;
+CREATE TABLE ${DB}.u_star (x UInt8) ENGINE = URL('http://127.0.0.1:1/*.csv', CSV);
+"
+echo "url table with a path wildcard, url-wildcard gate emitted: $(grep -cE "$URL_RE" "$DUMP_FILE")"
+replay_local 'url table with a path wildcard' 'u%'
+make_dump "
+CREATE TABLE ${DB}.named_gates (variant UInt32, lowcardinality UInt32, fixedstring UInt32, json UInt32, neighbor UInt32, INDEX i json TYPE minmax) ENGINE = MergeTree ORDER BY variant;
+"
+echo "column named variant, suspicious-variant gate emitted: $(grep -c '^SET allow_suspicious_variant_types = 1;' "$DUMP_FILE")"
+echo "columns named lowcardinality, fixedstring, json and neighbor, their gates emitted: $(grep -cE '^SET (allow_suspicious_low_cardinality_types|allow_suspicious_fixed_string_types|allow_minmax_index_for_json|allow_deprecated_error_prone_window_functions) = 1;' "$DUMP_FILE")"
 
 echo '--- a plain dump replays under every carrier-gate constraint ---'
 CONSTRAINT_DB="${DB}_sweep"
@@ -235,15 +278,21 @@ CREATE TABLE ${CONSTRAINT_DB}.plain_kafka (x Int64) ENGINE = Kafka('127.0.0.1:90
 CREATE TABLE ${CONSTRAINT_DB}.dst (x Int64, y Int64) ENGINE = MergeTree ORDER BY tuple();
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_to TO ${CONSTRAINT_DB}.dst AS SELECT x, y FROM ${CONSTRAINT_DB}.mt;
 CREATE VIEW ${CONSTRAINT_DB}.v AS SELECT x FROM ${CONSTRAINT_DB}.mt;
-CREATE TABLE ${CONSTRAINT_DB}.named (time UInt32, ttl UInt32) ENGINE = MergeTree ORDER BY time;
+CREATE TABLE ${CONSTRAINT_DB}.named (time UInt32, ttl UInt32, variant UInt32, lowcardinality UInt32, fixedstring UInt32, json UInt32, neighbor UInt32, INDEX i json TYPE minmax) ENGINE = MergeTree ORDER BY time;
+CREATE VIEW ${CONSTRAINT_DB}.vj AS SELECT a.x FROM ${CONSTRAINT_DB}.mt AS a JOIN ${CONSTRAINT_DB}.mem AS b ON a.x = b.x;
+CREATE TABLE ${CONSTRAINT_DB}.dk (k Dynamic, v UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE VIEW ${CONSTRAINT_DB}.vdk AS SELECT a.v FROM ${CONSTRAINT_DB}.dk AS a JOIN ${CONSTRAINT_DB}.dk AS b ON a.k = b.k;
+CREATE TABLE ${CONSTRAINT_DB}.jm (j JSON, INDEX i j TYPE minmax) ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_minmax_index_for_json = 1;
+CREATE VIEW ${CONSTRAINT_DB}.u_plain AS SELECT * FROM url('http://127.0.0.1:1/data.csv', CSV, 'x UInt8');
 "
 $CLICKHOUSE_LOCAL --path "$LOCAL_PATH" --dump-schema="$CONSTRAINT_DB" > "$DUMP_FILE" 2>"$ERR_FILE"
 rm -rf "$LOCAL_PATH"
+echo "plain dump, join-key/minmax-JSON/suspicious-index/url-wildcard gates emitted: $(grep -cE "^SET (allow_dynamic_type_in_join_keys|allow_minmax_index_for_json|allow_suspicious_indices) = 1;|${URL_RE}" "$DUMP_FILE")"
 $CLICKHOUSE_CLIENT --multiquery --query "
     DROP DATABASE IF EXISTS ${CONSTRAINT_DB};
     DROP USER IF EXISTS ${CONSTRAINT_USER};
     DROP SETTINGS PROFILE IF EXISTS ${CONSTRAINT_PROFILE};
-    CREATE SETTINGS PROFILE ${CONSTRAINT_PROFILE} SETTINGS enable_time_time64_type = 0 CONST, allow_experimental_object_storage_queue_hive_partitioning = 0 CONST, allow_materialized_view_with_bad_select = 0 CONST, enable_time_series_table = 0 CONST, allow_kafka_offsets_storage_in_keeper = 0 CONST, enable_materialized_postgresql_table = 0 CONST, enable_funnel_functions = 0 CONST, allow_experimental_nlp_functions = 0 CONST, allow_experimental_hash_functions = 0 CONST, allow_simdjson = 0 CONST, allow_fuzz_query_functions = 0 CONST, allow_hyperscan = 0 CONST, allow_suspicious_codecs = 0 CONST, allow_deprecated_error_prone_window_functions = 0 CONST, allow_suspicious_low_cardinality_types = 0 CONST, allow_suspicious_fixed_string_types = 0 CONST, allow_suspicious_variant_types = 0 CONST, allow_suspicious_primary_key = 0 CONST, allow_suspicious_ttl_expressions = 0 CONST, allow_experimental_full_text_index = 0 CONST, allow_dynamic_type_in_join_keys = 0 CONST, enable_unique_key = 0 CONST, allow_experimental_ytsaurus_table_engine = 0 CONST, allow_experimental_paimon_storage_engine = 0 CONST, enable_nullable_tuple_type = 0 CONST;
+    CREATE SETTINGS PROFILE ${CONSTRAINT_PROFILE} SETTINGS enable_time_time64_type = 0 CONST, allow_experimental_object_storage_queue_hive_partitioning = 0 CONST, allow_materialized_view_with_bad_select = 0 CONST, enable_time_series_table = 0 CONST, allow_kafka_offsets_storage_in_keeper = 0 CONST, enable_materialized_postgresql_table = 0 CONST, enable_funnel_functions = 0 CONST, allow_experimental_nlp_functions = 0 CONST, allow_experimental_hash_functions = 0 CONST, allow_simdjson = 0 CONST, allow_fuzz_query_functions = 0 CONST, allow_hyperscan = 0 CONST, allow_suspicious_codecs = 0 CONST, allow_deprecated_error_prone_window_functions = 0 CONST, allow_suspicious_low_cardinality_types = 0 CONST, allow_suspicious_fixed_string_types = 0 CONST, allow_suspicious_variant_types = 0 CONST, allow_minmax_index_for_json = 0 CONST, allow_suspicious_indices = 0 CONST, allow_url_wildcard_from_index_pages = 0 CONST, allow_suspicious_primary_key = 0 CONST, allow_suspicious_ttl_expressions = 0 CONST, allow_experimental_full_text_index = 0 CONST, allow_dynamic_type_in_join_keys = 0 CONST, enable_unique_key = 0 CONST, allow_experimental_ytsaurus_table_engine = 0 CONST, allow_experimental_paimon_storage_engine = 0 CONST, enable_nullable_tuple_type = 0 CONST;
     CREATE USER ${CONSTRAINT_USER} SETTINGS PROFILE '${CONSTRAINT_PROFILE}';
     GRANT ALL ON *.* TO ${CONSTRAINT_USER};
 "

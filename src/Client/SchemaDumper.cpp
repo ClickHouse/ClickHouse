@@ -44,6 +44,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/StorageURL.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -2344,14 +2345,11 @@ struct ReplayGateNeeds
     bool fixed_string_type = false;
     bool variant_type = false;
     bool time_type = false;
-    bool suspicious_indices = false;
-    bool minmax_index_for_json = false;
     bool suspicious_codecs = false;
     bool deprecated_merge_tree_syntax = false;
     bool suspicious_primary_key = false;
     bool suspicious_ttl_expressions = false;
     bool full_text_index = false;
-    bool dynamic_type_in_join_keys = false;
     bool queue_hive_partitioning = false;
     bool url_wildcard = false;
     std::set<String> codec_gates; /// `enable_<family>_codec` of the codecs the statements name
@@ -2418,14 +2416,17 @@ bool queueMayUseHivePartitioning(const ASTStorage & storage)
     return false;
 }
 
-/// `url` and `ENGINE = URL` expand wildcards from index pages only for a `*` in the path,
-/// which a named collection can hide.
-bool urlMayHaveWildcard(const ASTFunction & function_or_engine, std::string_view text)
+/// `url`, `urlCluster` and `ENGINE = URL` list index pages only for a URL the server's own predicate accepts;
+/// a URL that is not a string literal (a named collection) may be one.
+bool urlMayHaveWildcard(const ASTFunction & function_or_engine)
 {
-    if (text.contains('*'))
+    const size_t url_position = equalsCaseInsensitive(function_or_engine.name, "urlCluster") ? 1 : 0;
+    if (!function_or_engine.arguments || function_or_engine.arguments->children.size() <= url_position)
         return true;
-    return function_or_engine.arguments && !function_or_engine.arguments->children.empty()
-        && !function_or_engine.arguments->children.front()->as<ASTLiteral>();
+    const auto * literal = function_or_engine.arguments->children[url_position]->as<ASTLiteral>();
+    if (!literal || literal->value.getType() != Field::Types::String)
+        return true;
+    return urlPathHasListableGlobs(literal->value.safeGet<String>());
 }
 
 /// The `DataLakeCatalog` creator reads only the gate of its `catalog_type`; nullopt when the type is not known here.
@@ -2459,6 +2460,31 @@ void forEachNode(const IAST & node, const std::function<void(const IAST &)> & vi
     visit(node);
     for (const auto & child : node.children)
         forEachNode(*child, visit);
+}
+
+/// Lowercase function names, type names and string literals (structures, CAST types) of `ast`, without the
+/// column, table and database names, so that a gate matched on them is never carried by an object's name.
+String nameTokens(const IAST & ast)
+{
+    String names;
+    forEachNode(ast, [&](const IAST & node)
+    {
+        if (const auto * function = node.as<ASTFunction>())
+            names += function->name + ' ';
+        else if (const auto * data_type = node.as<ASTDataType>())
+        {
+            names += data_type->name + ' ';
+            /// `AggregateFunction(sum, UInt64)` names its function with a bare identifier.
+            if (const auto arguments = data_type->getArguments())
+                for (const auto & argument : arguments->children)
+                    if (const auto * identifier = argument->as<ASTIdentifier>())
+                        names += identifier->name() + ' ';
+        }
+        else if (const auto * literal = node.as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+            names += literal->value.safeGet<String>() + ' ';
+    });
+    std::ranges::transform(names, names.begin(), [](unsigned char c) { return std::tolower(c); });
+    return names;
 }
 
 ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_queries)
@@ -2582,30 +2608,30 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
                     if (column->getType()->formatWithSecretsOneLine().contains("Nullable(Tuple"))
                         needs.nullable_tuple_type = true;
 
-        /// Shared gates: each carrier is matched on the statement text or AST, over-approximated
+        /// Shared gates: each carrier is matched on the statement's names or AST, over-approximated
         /// where the exact check site is not worth mirroring.
-        String lower = create_query;
-        std::ranges::transform(lower, lower.begin(), [](unsigned char c) { return std::tolower(c); });
+        const String names = nameTokens(*create_ast);
 
-        needs.funnel_functions |= hasToken(lower, "sequencenextnode");
-        needs.nlp_functions |= hasToken(lower, "synonyms") || hasToken(lower, "lemmatize") || hasToken(lower, "detectlanguage", true)
-            || hasToken(lower, "detectcharset") || hasToken(lower, "detecttonality");
-        needs.fuzz_query_functions |= hasToken(lower, "fuzzquery");
-        needs.error_prone_window_functions |= hasToken(lower, "runningaccumulate") || hasToken(lower, "runningdifference", true)
-            || hasToken(lower, "neighbor");
-        needs.hyperscan_functions |= hasToken(lower, "multimatch", true) || hasToken(lower, "multifuzzymatch", true);
-        needs.time_series_aggregate_functions |= hasTimeSeriesFunction(lower);
+        needs.funnel_functions |= hasToken(names, "sequencenextnode", true);
+        needs.nlp_functions |= hasToken(names, "synonyms") || hasToken(names, "lemmatize") || hasToken(names, "detectlanguage", true)
+            || hasToken(names, "detectcharset") || hasToken(names, "detecttonality");
+        needs.fuzz_query_functions |= hasToken(names, "fuzzquery");
+        needs.error_prone_window_functions |= hasToken(names, "runningaccumulate") || hasToken(names, "runningdifference", true)
+            || hasToken(names, "neighbor");
+        needs.hyperscan_functions |= hasToken(names, "multimatch", true) || hasToken(names, "multifuzzymatch", true);
+        needs.time_series_aggregate_functions |= hasTimeSeriesFunction(names);
 
-        /// Substrings, so that `toLowCardinality` and `toFixedString` also count.
-        needs.low_cardinality_type |= lower.contains("lowcardinality");
-        needs.fixed_string_type |= lower.contains("fixedstring");
-        needs.variant_type |= lower.contains("variant");
+        /// `validateDataType` reads these for column types, table-function structures and CAST types only.
+        needs.low_cardinality_type |= hasToken(names, "lowcardinality");
+        needs.fixed_string_type |= hasToken(names, "fixedstring") || hasToken(names, "binary");
+        needs.variant_type |= hasToken(names, "variant");
+        needs.time_type |= hasToken(names, "time") || hasToken(names, "time64");
 
-        if (hasToken(lower, "codec"))
+        if (hasToken(names, "codec"))
         {
             needs.suspicious_codecs = true;
             for (const auto & gate : codec_gate_names)
-                if (hasToken(lower, std::string_view(gate).substr(7, gate.size() - 7 - 6)))
+                if (hasToken(names, std::string_view(gate).substr(7, gate.size() - 7 - 6)))
                     needs.codec_gates.insert(gate);
         }
 
@@ -2615,16 +2641,6 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
         const IAST * main_engine = create->storage ? create->storage->engine : nullptr;
         forEachNode(*create_ast, [&](const IAST & node)
         {
-            /// `enable_time_time64_type` is checked for column types and for table-function structure strings.
-            if (const auto * data_type = node.as<ASTDataType>())
-                needs.time_type |= equalsCaseInsensitive(data_type->name, "Time") || equalsCaseInsensitive(data_type->name, "Time64");
-            else if (const auto * literal = node.as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
-            {
-                String text = literal->value.safeGet<String>();
-                std::ranges::transform(text, text.begin(), [](unsigned char c) { return std::tolower(c); });
-                needs.time_type |= hasToken(text, "time") || hasToken(text, "time64");
-            }
-
             const auto * function = node.as<ASTFunction>();
             if (!function)
                 return;
@@ -2633,16 +2649,9 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
             else if (equalsCaseInsensitive(function->name, "eval"))
                 needs.eval_table_function = true;
             else if ((equalsCaseInsensitive(function->name, "url") || equalsCaseInsensitive(function->name, "urlCluster"))
-                     && urlMayHaveWildcard(*function, lower))
+                     && urlMayHaveWildcard(*function))
                 needs.url_wildcard = true;
         });
-
-        if (create->select)
-            forEachNode(*create->select, [&](const IAST & node)
-            {
-                if (node.as<ASTTableJoin>())
-                    needs.dynamic_type_in_join_keys = true;
-            });
 
         const bool has_indices = create->columns_list && create->columns_list->indices && !create->columns_list->indices->children.empty();
         const bool has_projections = create->columns_list && create->columns_list->projections
@@ -2668,9 +2677,6 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
             if (endsWithCaseInsensitive(engine.name, "MergeTree"))
             {
                 has_merge_tree = true;
-                /// `checkSuspiciousIndices` looks only at a sorting key written as an expression.
-                if ((storage->order_by && storage->order_by->as<ASTFunction>()) || (storage->primary_key && storage->primary_key->as<ASTFunction>()))
-                    needs.suspicious_indices = true;
                 /// The old `MergeTree(date, key, granularity)` form: arguments and no extended clause.
                 if (engine.arguments && !engine.arguments->children.empty() && !storage->isExtendedStorageDefinition()
                     && !has_indices && !has_projections)
@@ -2683,10 +2689,7 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
 
         if (has_merge_tree)
         {
-            if (has_indices || has_projections)
-                needs.suspicious_indices = true;
-            needs.minmax_index_for_json |= hasToken(lower, "minmax") && (hasToken(lower, "json") || hasToken(lower, "object"));
-            needs.suspicious_primary_key |= hasToken(lower, "simpleaggregatefunction");
+            needs.suspicious_primary_key |= hasToken(names, "simpleaggregatefunction");
             /// Read only for a table TTL or a column TTL.
             for (const auto * storage : storages)
                 needs.suspicious_ttl_expressions |= storage->ttl_table != nullptr;
@@ -2764,6 +2767,11 @@ String replaySettingsPrelude(
         "allow_create_index_without_type",
         "allow_experimental_lightweight_update",
         "allow_experimental_json_lazy_type_hints",
+        /// Read only when a query plans a JOIN; neither a view nor a `Join` table plans one at CREATE.
+        "allow_dynamic_type_in_join_keys",
+        /// Read only by ALTER; CREATE checks the table's own MergeTree setting of the same name, kept in its SETTINGS.
+        "allow_minmax_index_for_json",
+        "allow_suspicious_indices",
     };
     static const std::set<std::string_view> analyzer_settings = {
         "allow_suspicious_types_in_group_by",
@@ -2809,14 +2817,11 @@ String replaySettingsPrelude(
         {"allow_suspicious_fixed_string_types", &ReplayGateNeeds::fixed_string_type},
         {"allow_suspicious_variant_types", &ReplayGateNeeds::variant_type},
         {"allow_experimental_time_time64_type", &ReplayGateNeeds::time_type},
-        {"allow_suspicious_indices", &ReplayGateNeeds::suspicious_indices},
-        {"allow_minmax_index_for_json", &ReplayGateNeeds::minmax_index_for_json},
         {"allow_suspicious_codecs", &ReplayGateNeeds::suspicious_codecs},
         {"allow_deprecated_syntax_for_merge_tree", &ReplayGateNeeds::deprecated_merge_tree_syntax},
         {"allow_suspicious_primary_key", &ReplayGateNeeds::suspicious_primary_key},
         {"allow_suspicious_ttl_expressions", &ReplayGateNeeds::suspicious_ttl_expressions},
         {"allow_experimental_full_text_index", &ReplayGateNeeds::full_text_index},
-        {"allow_dynamic_type_in_join_keys", &ReplayGateNeeds::dynamic_type_in_join_keys},
         {"allow_experimental_object_storage_queue_hive_partitioning", &ReplayGateNeeds::queue_hive_partitioning},
         {"allow_experimental_url_wildcard_from_index_pages", &ReplayGateNeeds::url_wildcard},
     };
@@ -2878,30 +2883,68 @@ std::set<String> insertableColumnNames(const ASTCreateQuery & create)
     return names;
 }
 
-/// `numbers` and `zeros` with plain count arguments have a fixed schema and always analyze.
-bool tableFunctionAlwaysAnalyzes(const IAST & node)
+/// Always analyzes on replay, with columns known from the dump: `numbers`/`zeros` with counts, `generateRandom`/`values`
+/// with literal arguments, and a `merge` matching another emitted table, which replay creates before `owner`.
+bool tableFunctionAlwaysAnalyzes(
+    const IAST & node, const TableInfo & owner, const std::map<std::pair<String, String>, const TableInfo *> & emitted_tables)
 {
     const auto * function = node.as<ASTFunction>();
     if (!function || !function->arguments)
         return false;
     const auto & arguments = function->arguments->children;
-    const bool numbers = equalsCaseInsensitive(function->name, "numbers") || equalsCaseInsensitive(function->name, "numbers_mt");
-    const bool zeros = equalsCaseInsensitive(function->name, "zeros") || equalsCaseInsensitive(function->name, "zeros_mt");
-    if (!(numbers && (arguments.size() == 1 || arguments.size() == 2)) && !(zeros && arguments.size() == 1))
-        return false;
-    return std::ranges::all_of(arguments, [](const ASTPtr & argument)
+    const auto is_count = [](const ASTPtr & argument)
     {
         const auto * literal = argument->as<ASTLiteral>();
         return literal && literal->value.getType() == Field::Types::UInt64;
-    });
+    };
+    if (equalsCaseInsensitive(function->name, "numbers") || equalsCaseInsensitive(function->name, "numbers_mt"))
+        return (arguments.size() == 1 || arguments.size() == 2) && std::ranges::all_of(arguments, is_count);
+    if (equalsCaseInsensitive(function->name, "zeros") || equalsCaseInsensitive(function->name, "zeros_mt"))
+        return arguments.size() == 1 && is_count(arguments[0]);
+    const bool literal_arguments = !arguments.empty()
+        && std::ranges::all_of(arguments, [](const ASTPtr & argument) { return argument->as<ASTLiteral>() != nullptr; });
+    if (equalsCaseInsensitive(function->name, "values"))
+        return literal_arguments;
+    if (equalsCaseInsensitive(function->name, "generateRandom"))
+        return literal_arguments && arguments[0]->as<ASTLiteral>()->value.getType() == Field::Types::String;
+    if (equalsCaseInsensitive(function->name, "merge") && arguments.size() == 2)
+    {
+        bool database_is_regexp = false;
+        bool table_is_regexp = false;
+        const auto database = tryGetStringLiteralOrRegexpWrapper(arguments[0], database_is_regexp);
+        const auto table = tryGetStringLiteralOrRegexpWrapper(arguments[1], table_is_regexp);
+        if (!database || !table)
+            return false;
+        try
+        {
+            std::optional<OptimizedRegularExpression> database_regexp;
+            if (database_is_regexp)
+                database_regexp.emplace(*database);
+            const OptimizedRegularExpression table_regexp(*table);
+            const String & database_name = database->empty() ? owner.database : *database;
+            return std::ranges::any_of(emitted_tables, [&](const auto & entry)
+            {
+                const auto & [db, name] = entry.first;
+                return entry.first != std::pair(owner.database, owner.name)
+                    && (database_regexp ? database_regexp->match(db) : db == database_name) && table_regexp.match(name);
+            });
+        }
+        catch (const Exception &)
+        {
+            return false;
+        }
+    }
+    return false;
 }
 
-bool containsTableFunction(const IAST & node)
+bool containsTableFunction(
+    const IAST & node, const TableInfo & owner, const std::map<std::pair<String, String>, const TableInfo *> & emitted_tables)
 {
     if (const auto * table_expression = node.as<ASTTableExpression>(); table_expression && table_expression->table_function
-        && !tableFunctionAlwaysAnalyzes(*table_expression->table_function))
+        && !tableFunctionAlwaysAnalyzes(*table_expression->table_function, owner, emitted_tables))
         return true;
-    return std::any_of(node.children.begin(), node.children.end(), [](const auto & child) { return containsTableFunction(*child); });
+    return std::any_of(node.children.begin(), node.children.end(),
+        [&](const auto & child) { return containsTableFunction(*child, owner, emitted_tables); });
 }
 
 /// True when the leftmost SELECT may output a column whose name is not in `target_columns`: the
@@ -2987,7 +3030,7 @@ bool materializedViewMayNeedBadSelectGate(
     for (const auto & dependency : table.dependencies)
         if (!DatabaseCatalog::isPredefinedDatabase(dependency.first) && !emitted_tables.contains(dependency))
             return true;
-    if (containsTableFunction(*create->select))
+    if (containsTableFunction(*create->select, table, emitted_tables))
         return true;
 
     return selectMayOutputUnknownColumn(*create->select, target_columns);

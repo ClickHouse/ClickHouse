@@ -1,7 +1,7 @@
 --- a healthy materialized view does not get the bad-select gate ---
 healthy views, bad-select gate emitted: 0
 OK: healthy views replayed
-healthy views, replayed objects: 4
+healthy views, replayed objects: 6
 --- a materialized view accepted under a relaxed check gets the gate exactly once ---
 extra output column, bad-select gate emitted: 1
 OK: extra output column replayed
@@ -12,13 +12,16 @@ missing TO target, replayed objects: 1
 failed analysis, bad-select gate emitted: 1
 OK: failed analysis replayed
 failed analysis, replayed objects: 1
+merge matching no table, bad-select gate emitted: 1
+OK: merge matching no table replayed
+merge matching no table, replayed objects: 1
 --- healthy and bad views together get one gate line ---
 mixed views, bad-select gate emitted: 1
 OK: mixed views replayed
 mixed views, replayed objects: 2
 --- a healthy materialized view dump replays under a bad-select constraint ---
 OK: constrained replay succeeded
-constrained replay views present: 3
+constrained replay views present: 5
 --- TimeSeries and Kafka Keeper gates follow their carriers exactly once ---
 TimeSeries tables, time-series gate emitted: 1
 TimeSeries tables and plain Kafka, keeper gate emitted: 0
@@ -63,6 +66,21 @@ Time column and column TTL, replayed objects: 1
 table TTL, suspicious-TTL gate emitted: 1
 columns named time and ttl, time-type gate emitted: 0
 columns named time and ttl, suspicious-TTL gate emitted: 0
+Variant column, suspicious-variant gate emitted: 1
+OK: Variant column replayed
+Variant column, replayed objects: 1
+sequenceNextNodeIf view, funnel gate emitted: 1
+OK: sequenceNextNodeIf view replayed
+sequenceNextNodeIf view, replayed objects: 2
+url objects without a path wildcard, url-wildcard gate emitted: 0
+OK: url objects without a path wildcard replayed
+url objects without a path wildcard, replayed objects: 3
+url table with a path wildcard, url-wildcard gate emitted: 1
+OK: url table with a path wildcard replayed
+url table with a path wildcard, replayed objects: 1
+column named variant, suspicious-variant gate emitted: 0
+columns named lowcardinality, fixedstring, json and neighbor, their gates emitted: 0
 --- a plain dump replays under every carrier-gate constraint ---
+plain dump, join-key/minmax-JSON/suspicious-index/url-wildcard gates emitted: 0
 OK: constrained replay succeeded
-constrained replay tables present: 7
+constrained replay tables present: 12
