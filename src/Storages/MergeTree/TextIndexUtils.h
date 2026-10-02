@@ -213,34 +213,21 @@ using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;
 
 MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, const String & part_relative_path);
 
-/// Resolves the stream's on-disk name and size from the part's checksums instead of the filesystem.
+/// Opens a substream of a text index.
+/// The dictionary and postings are read in small pieces from random places, so their read buffer is
+/// limited to `expected_buffer_size`, but at least 16 KiB and at most the regular read buffer size of `reader_settings`.
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const IMergeTreeDataPartInfoForReader & data_part_info,
-    const String & stream_name,
-    const String & extension,
-    const MergeTreeReaderSettings & reader_settings);
+    const String & index_file_name,
+    const MergeTreeIndexSubstream & substream,
+    const MergeTreeReaderSettings & reader_settings,
+    size_t expected_buffer_size);
 
 /// For a caller with no part: the index merge reads segments from a temporary storage.
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     DataPartStoragePtr data_part_storage,
-    const String & stream_name,
-    const String & extension,
-    const MergeTreeReaderSettings & reader_settings);
-
-/// Opens the postings substream of a text index.
-/// `expected_buffer_size` is the largest contiguous read after a seek.
-std::unique_ptr<MergeTreeReaderStream> makePostingsInputStream(
-    const IMergeTreeDataPartInfoForReader & data_part_info,
-    const String & stream_name,
-    const String & extension,
-    const MergeTreeReaderSettings & reader_settings,
-    size_t expected_buffer_size);
-
-/// For a caller with no part, like `makeTextIndexInputStream`: the index merge reads segments from a temporary storage.
-std::unique_ptr<MergeTreeReaderStream> makePostingsInputStream(
-    DataPartStoragePtr data_part_storage,
-    const String & stream_name,
-    const String & extension,
+    const String & index_file_name,
+    const MergeTreeIndexSubstream & substream,
     const MergeTreeReaderSettings & reader_settings,
     size_t expected_buffer_size);
 

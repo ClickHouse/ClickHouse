@@ -34,7 +34,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
-#include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
@@ -613,12 +612,14 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
 
     /// The stream opens its file on the first read, so a granule answered from the caches does not open it.
     const auto dictionary_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexDictionary);
+    static constexpr size_t dictionary_buffer_size = 16 * 1024;
 
     auto dictionary_stream = makeTextIndexInputStream(
         state.part_info,
-        state.index.getFileName() + dictionary_substream.suffix,
-        dictionary_substream.extension,
-        MergeTreeIndexReader::patchSettings(state.reader_settings, MergeTreeIndexSubstream::Type::TextIndexDictionary));
+        state.index.getFileName(),
+        dictionary_substream,
+        state.reader_settings,
+        dictionary_buffer_size);
 
     analyzeDictionaryForTokens(text_index_header->sparse_index, *dictionary_stream, state);
     analyzeDictionaryForPatterns(text_index_header->sparse_index, *dictionary_stream, state);
@@ -961,10 +962,10 @@ void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings
     });
 
     const auto postings_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexPostings);
-    auto stream = makePostingsInputStream(
+    auto stream = makeTextIndexInputStream(
         state.part_info,
-        state.index.getFileName() + postings_substream.suffix,
-        postings_substream.extension,
+        state.index.getFileName(),
+        postings_substream,
         state.reader_settings,
         largest_segment_bytes);
 

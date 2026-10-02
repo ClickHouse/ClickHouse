@@ -12,7 +12,6 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
@@ -127,9 +126,10 @@ UInt64 computeCountForPart(
     const auto substreams = index.index->getSubstreams();
     auto sparse_index_stream = makeTextIndexInputStream(
         part_info,
-        index.index->getFileName() + substreams[0].suffix,
-        substreams[0].extension,
-        MergeTreeIndexReader::patchSettings(reader_settings, substreams[0].type));
+        index.index->getFileName(),
+        substreams[0],
+        reader_settings,
+        /*expected_buffer_size=*/ 0);
 
     sparse_index_stream->seekToStart();
 
@@ -183,10 +183,10 @@ UInt64 computeCountForPart(
     for (const auto * token_info : tokens_to_read)
         largest_segment_bytes = std::max(largest_segment_bytes, estimatePostingListBufferSize(*token_info));
 
-    auto postings_stream = makePostingsInputStream(
+    auto postings_stream = makeTextIndexInputStream(
         part_info,
-        index.index->getFileName() + substreams[2].suffix,
-        substreams[2].extension,
+        index.index->getFileName(),
+        substreams[2],
         reader_settings,
         largest_segment_bytes);
 

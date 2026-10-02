@@ -388,9 +388,10 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
 
     positions_stream = makeTextIndexInputStream(
         *data_part_info_for_read,
-        index.index->getFileName() + positions_substream->suffix,
-        positions_substream->extension,
-        MergeTreeIndexReader::patchSettings(settings, positions_substream->type));
+        index.index->getFileName(),
+        *positions_substream,
+        settings,
+        /*expected_buffer_size=*/ 0);
 
     positions_stream->seekToStart();
 }
@@ -546,21 +547,17 @@ void MergeTreeReaderTextIndex::createEmptyColumns(MutableColumns & columns, size
 
 std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makeTextIndexStream(const MergeTreeIndexSubstream & substream) const
 {
-    return makeTextIndexInputStream(
-        *data_part_info_for_read,
-        index.index->getFileName() + substream.suffix,
-        substream.extension,
-        MergeTreeIndexReader::patchSettings(settings, substream.type));
+    return makeTextIndexInputStream(*data_part_info_for_read, index.index->getFileName(), substream, settings, /*expected_buffer_size=*/ 0);
 }
 
 std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makePostingsStream(const TokenPostingsInfo & token_info) const
 {
     const auto substream = index.index->getSubstreams()[2];
 
-    return makePostingsInputStream(
+    return makeTextIndexInputStream(
         *data_part_info_for_read,
-        index.index->getFileName() + substream.suffix,
-        substream.extension,
+        index.index->getFileName(),
+        substream,
         settings,
         estimatePostingListBufferSize(token_info));
 }

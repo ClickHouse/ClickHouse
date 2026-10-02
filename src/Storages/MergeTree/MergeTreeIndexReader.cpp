@@ -145,7 +145,6 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     /// If the stream doesn't exist (neither original nor hashed name), use the full name and
     /// let the first read of its file report the missing path.
     auto stream_name = stream_name_opt.value_or(full_stream_name);
-    auto stream_settings = patchSettings(settings, substream_it->type);
 
     auto stream = makeIndexReaderStream(
         stream_name,
@@ -155,7 +154,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
         all_mark_ranges,
         mark_cache,
         uncompressed_cache,
-        std::move(stream_settings),
+        settings,
         interruptible_marks_read);
 
     streams[substream_it->type] = stream.get();
@@ -241,23 +240,6 @@ void MergeTreeIndexReader::adjustRightMark(size_t right_mark)
 {
     for (const auto & stream : stream_holders)
         stream->adjustRightMark(right_mark);
-}
-
-MergeTreeReaderSettings MergeTreeIndexReader::patchSettings(MergeTreeReaderSettings settings, MergeTreeIndexSubstream::Type substream)
-{
-    using enum MergeTreeIndexSubstream::Type;
-    settings.is_compressed = MergeTreeIndexSubstream::isCompressed(substream);
-
-    /// Adjust read buffer sizes for text index dictionaries and postings
-    /// because usually we read relatively small amounts of data from random places of
-    /// these substreams. So, it doesn't make sense to read more data in the buffer.
-    if (substream == TextIndexDictionary || substream == TextIndexPostings)
-    {
-        settings.read_settings.local_fs_settings.buffer_size = 16 * 1024;
-        settings.read_settings.remote_fs_settings.buffer_size = 16 * 1024;
-    }
-
-    return settings;
 }
 
 }
