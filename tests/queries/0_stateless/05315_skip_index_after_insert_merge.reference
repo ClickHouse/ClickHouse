@@ -7,3 +7,4 @@ graphite toUInt64(Value) % 7	1000	1000
 graphite toStartOfHour(Time)	1000	1000
 summing rows summed to zero	0
 replacing	1000	1000	60
+stored column named length(name)	500	100	100	7500	500	500
