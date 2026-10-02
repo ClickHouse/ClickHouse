@@ -31,6 +31,11 @@ node_b = cluster.add_instance("node_b", main_configs=["configs/secret_b.xml"])
 OLD_REVISION = 54449
 USER_INTERSERVER_MARKER = " INTERSERVER SECRET "
 
+# `INTERSERVER_TABLES_STATUS_REQUEST_LIMITS` in `src/Interpreters/TablesStatus.h`. A legitimate
+# interserver request asks about exactly one table, so these only bound a hostile one.
+MAX_TABLES = 64
+MAX_NAME_SIZE = 4096
+
 # A type name no other test can produce, so the log assertions below cannot be crossed.
 BOGUS_TYPE = "NoSuchTypeGroeneAI"
 BOGUS_TYPE_READ = f"Unknown data type family: {BOGUS_TYPE}"
@@ -351,11 +356,11 @@ def test_interserver_request_table_count_is_bounded(started_cluster):
     """An interserver peer's request body is deserialized before the peer is authenticated, so
     the number of tables it may ask about is capped at
     `INTERSERVER_TABLES_STATUS_REQUEST_LIMITS.max_tables`. At the cap the request is still
-    answered; above it the connection is closed without a response (any exception on an
-    unauthenticated interserver connection closes it silently)."""
+    answered; one table above it the connection is closed without a response (any exception on
+    an unauthenticated interserver connection closes it silently)."""
     sock = open_interserver_connection(node_c)
     try:
-        sock.sendall(tables_status_request([("default", f"t{i}") for i in range(1024)]))
+        sock.sendall(tables_status_request([("default", f"t{i}") for i in range(MAX_TABLES)]))
         # The point is that a `TablesStatusResponse` comes back rather than the connection
         # being dropped on `TOO_LARGE_ARRAY_SIZE`. Which tables it reports is not what this
         # bound is about, and depends on how an unsigned request is answered.
@@ -365,7 +370,9 @@ def test_interserver_request_table_count_is_bounded(started_cluster):
 
     sock = open_interserver_connection(node_c)
     try:
-        sock.sendall(tables_status_request([("default", f"t{i}") for i in range(1025)]))
+        sock.sendall(
+            tables_status_request([("default", f"t{i}") for i in range(MAX_TABLES + 1)])
+        )
         assert not recv_any(sock), (
             "server answered an interserver TablesStatusRequest that exceeds the table-count "
             "bound"
@@ -376,15 +383,30 @@ def test_interserver_request_table_count_is_bounded(started_cluster):
 
 def test_interserver_request_name_length_is_bounded(started_cluster):
     """The table count alone does not bound the request: `readStringBinary` reserves the
-    declared size of a name before reading its bytes, so a single name declared as 1 GiB would
-    be an unauthenticated allocation. Names are capped as well, and the request is refused
-    before the declared bytes are reserved."""
+    declared size of a name before reading its bytes, so without a name cap a peer could make
+    the server reserve an arbitrary size. Names are capped as well, and the request is refused
+    on the declared length, before any of it is reserved.
+
+    The declared length is one byte over the cap rather than something huge on purpose. A huge
+    one would also be refused by the memory tracker on an unfixed server, so the test would
+    pass without the cap existing; one byte over is accepted by every other bound, so only the
+    cap can reject it."""
     sock = open_interserver_connection(node_c)
     try:
-        # Only the length is sent - the point is that the server must not reserve it while
-        # waiting for bytes that never arrive.
-        sock.sendall(varuint(5) + varuint(1) + varstring("default") + varuint(1 << 30))
-        assert not recv_any(sock), (
+        # Only the length is sent, never the bytes.
+        sock.sendall(
+            varuint(5) + varuint(1) + varstring("default") + varuint(MAX_NAME_SIZE + 1)
+        )
+        try:
+            data = sock.recv(4096)
+        except ConnectionResetError:
+            data = b""
+        except TimeoutError:
+            pytest.fail(
+                "server neither answered nor closed the connection, so it accepted the "
+                "declared name length and is waiting for bytes that never arrive"
+            )
+        assert not data, (
             "server answered an interserver TablesStatusRequest declaring an oversized table "
             "name"
         )
@@ -399,7 +421,9 @@ def test_ordinary_client_request_is_not_bounded_by_the_interserver_limit(started
     is a response and not a `TOO_LARGE_ARRAY_SIZE` error."""
     sock = open_ordinary_connection(node_c)
     try:
-        sock.sendall(tables_status_request([("default", f"t{i}") for i in range(1025)]))
+        sock.sendall(
+            tables_status_request([("default", f"t{i}") for i in range(MAX_TABLES + 1)])
+        )
         states = read_tables_status_response(sock)
     finally:
         sock.close()

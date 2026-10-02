@@ -46,16 +46,25 @@ struct TablesStatusRequestLimits
     size_t max_name_size;
 };
 
-/// A `TablesStatusRequest` from an interserver peer asks about the single table behind the
-/// `Distributed` table being read, so these are generous - they bound a hostile request, not a
-/// legitimate one. They are needed because the request body is deserialized before the peer has
-/// proven knowledge of the cluster secret: the hash covers the body, so the body is read before the
-/// hash is validated, and an older peer sends no hash at all. Worst case per request is
-/// `max_tables * 2 * max_name_size` = 16 MiB, and that allocation is memory-tracked.
+/// What an interserver peer is allowed to send. `ConnectionEstablisher` is the only producer of a
+/// `TablesStatusRequest`, and it asks about exactly one table - the remote table behind the
+/// `Distributed` table being read - so this leaves ample headroom (including for the "request
+/// status for joined tables also" TODO there) while still bounding a hostile request.
+///
+/// A bound is needed because the body is deserialized before the peer has proven knowledge of the
+/// cluster secret. That happens on the signed path by construction - the hash covers the body, so
+/// the body has to be read to recompute the digest - and on the unsigned path whenever the request
+/// is not rejected outright (`interserver_tables_status_require_auth`).
+///
+/// The parsed request is at most `max_tables * 2 * max_name_size` = 512 KiB. On the signed path the
+/// transient peak is a small multiple of that, and not all of it is tracked: `getAuthDigest` also
+/// builds a sorted vector of encoded entries and a concatenation of them in plain `std::string`s,
+/// which allocate through `allocNoThrow`; only the final copy into the caller's
+/// `StringWithMemoryTracking` goes through the throwing memory tracker.
 static constexpr TablesStatusRequestLimits INTERSERVER_TABLES_STATUS_REQUEST_LIMITS
 {
-    .max_tables = 1024,
-    .max_name_size = 8192,
+    .max_tables = 64,
+    .max_name_size = 4096,
 };
 
 struct TablesStatusRequest
