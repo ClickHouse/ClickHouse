@@ -10,8 +10,8 @@ namespace DB
 class WriteBuffer;
 
 /// Skips whole 16-byte blocks of ASCII: returns the first such block with a byte of `0x80` or more, or the
-/// position where fewer than 16 bytes are left. After the first 16-byte block it checks 64-byte blocks, so
-/// long ASCII runs are skipped with the widest vectors of the target.
+/// position where fewer than 16 bytes are left. Checks 64-byte blocks first, so long ASCII runs are skipped
+/// with the widest vectors of the target.
 inline const char * skipASCIIBlocks(const char * p, const char * end)
 {
     using Bytes = Int8 __attribute__((ext_vector_type(16)));
@@ -23,14 +23,14 @@ inline const char * skipASCIIBlocks(const char * p, const char * end)
     auto has_non_ascii = [](Bytes bytes) { return __builtin_reduce_or(__builtin_convertvector(bytes >> 7, Mask)); };
 
     /// In non-ASCII text the next such byte is usually close, and then a 64-byte block would be checked
-    /// in vain before the 16-byte one.
+    /// in vain before the 16-byte one. The first block is checked again by the loops, so that they cover
+    /// the same blocks for every length.
     if (end - p >= 16)
     {
         Bytes bytes;
         memcpy(&bytes, p, sizeof(bytes));
         if (has_non_ascii(bytes))
             return p;
-        p += 16;
     }
 
     for (Bytes bytes[4]; end - p >= 64; p += 64)
