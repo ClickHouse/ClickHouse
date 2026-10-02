@@ -207,7 +207,7 @@ SET allow_fuzz_query_functions = 1, allow_deprecated_error_prone_window_function
 CREATE MATERIALIZED VIEW ${DB}.mv_fuzz ENGINE = Memory AS SELECT fuzzQuery(s) AS q FROM ${DB}.mt;
 CREATE MATERIALIZED VIEW ${DB}.mv_cast ENGINE = Memory AS SELECT CAST(x, 'LowCardinality(Int64)') AS l FROM ${DB}.mt;
 CREATE MATERIALIZED VIEW ${DB}.mv_nullable_tuple ENGINE = Memory AS SELECT isNull(CAST(NULL, 'Nullable(Tuple(a UInt8))')) AS t FROM ${DB}.mt;
-CREATE MATERIALIZED VIEW ${DB}.mv_correlated ENGINE = Memory AS SELECT x FROM ${DB}.mt WHERE EXISTS (SELECT 1 FROM ${DB}.mt AS i WHERE i.x = mt.x);
+CREATE MATERIALIZED VIEW ${DB}.mv_correlated ENGINE = Memory AS SELECT x FROM ${DB}.mt AS o WHERE EXISTS (SELECT 1 FROM ${DB}.mt AS i WHERE i.x = o.x);
 CREATE MATERIALIZED VIEW ${DB}.mv_neighbor ENGINE = Memory AS SELECT neighbor(x, 1) AS n FROM ${DB}.mt;
 CREATE MATERIALIZED VIEW ${DB}.mv_multi ENGINE = Memory AS SELECT multiMatchAny(s, ['a']) AS m FROM ${DB}.mt;
 "
