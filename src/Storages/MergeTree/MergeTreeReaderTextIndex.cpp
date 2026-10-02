@@ -251,8 +251,7 @@ void MergeTreeReaderTextIndex::readGranule()
 
     LOG_TRACE(getLogger("MergeTreeReaderTextIndex"), "Reading text index granule for data part '{}'", data_part->getDataPartStorage().getFullPath());
 
-    auto sparse_index_stream = makeTextIndexStream(substreams[0]);
-
+    auto sparse_index_stream = makeTextIndexInputStream(*data_part_info_for_read, index.index->getFileName(), substreams[0], settings, /*expected_buffer_size=*/ std::nullopt);
     sparse_index_stream->seekToStart();
     resetCursors();
 
@@ -365,10 +364,11 @@ PostingListCursorPtr MergeTreeReaderTextIndex::makeLazyCursor(std::string_view t
     if (!(token_info.header & PostingsSerialization::Flags::IsCompressed))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected token for lazy mode: {}. Multi-block postings must be compressed", token);
 
-    auto * postings_cache = condition_text->postingsCache().get();
-    const auto & index_id_for_cache = granule->getIndexIdForCaches();
-
-    return std::make_shared<PostingListCursor>(getPostingsStream(token, token_info), token_info, postings_cache, index_id_for_cache);
+    return std::make_shared<PostingListCursor>(
+        getPostingsStream(token, token_info),
+        token_info,
+        condition_text->postingsCache().get(),
+        granule->getIndexIdForCaches());
 }
 
 void MergeTreeReaderTextIndex::initializePositionsStream()
@@ -391,7 +391,7 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
         index.index->getFileName(),
         *positions_substream,
         settings,
-        /*expected_buffer_size=*/ 0);
+        /*expected_buffer_size=*/ std::nullopt);
 
     positions_stream->seekToStart();
 }
@@ -543,11 +543,6 @@ void MergeTreeReaderTextIndex::createEmptyColumns(MutableColumns & columns, size
             columns[i] = std::move(column);
         }
     }
-}
-
-std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makeTextIndexStream(const MergeTreeIndexSubstream & substream) const
-{
-    return makeTextIndexInputStream(*data_part_info_for_read, index.index->getFileName(), substream, settings, /*expected_buffer_size=*/ 0);
 }
 
 std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makePostingsStream(const TokenPostingsInfo & token_info) const

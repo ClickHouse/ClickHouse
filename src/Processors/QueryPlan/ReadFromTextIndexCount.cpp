@@ -129,7 +129,7 @@ UInt64 computeCountForPart(
         index.index->getFileName(),
         substreams[0],
         reader_settings,
-        /*expected_buffer_size=*/ 0);
+        /*expected_buffer_size=*/ std::nullopt);
 
     sparse_index_stream->seekToStart();
 

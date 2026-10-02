@@ -56,7 +56,6 @@ private:
     void setIndexGranule(MergeTreeIndexGranulePtr index_granule);
     void initializeFallbackReader(const IMergeTreeReader * main_reader);
     void createEmptyColumns(MutableColumns & columns, size_t max_rows_to_read) const;
-    std::unique_ptr<MergeTreeReaderStream> makeTextIndexStream(const MergeTreeIndexSubstream & substream) const;
     /// Opens the postings stream of one token, with the buffer sized to the token's largest segment.
     std::unique_ptr<MergeTreeReaderStream> makePostingsStream(const TokenPostingsInfo & token_info) const;
     /// The postings stream of a token, opened on first use and kept in `postings_streams`.
@@ -127,9 +126,7 @@ private:
     /// Per-virtual-column flag: true if this column's query was abandoned during the scan
     /// and the predicate must be evaluated directly via fallback_expressions.
     std::vector<bool> use_fallback;
-    /// A separate stream is created for each token to read postings blocks continuously without additional
-    /// seeks, with the buffer sized to the token's largest segment. Kept as members because cached lazy
-    /// cursors hold references to them.
+    /// A separate stream is created for each token to read postings blocks continuously without additional seeks.
     absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> postings_streams;
     /// Tokens the analysis left to read: needed by some query and without postings read during the analysis.
     absl::flat_hash_set<std::string_view> tokens_to_read;

@@ -444,18 +444,14 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     {
         for (const auto & substream : substreams)
         {
-            /// The merge reads the postings of a source part in order, list after list,
-            /// so its stream takes the largest buffer of the range: the regular read buffer size.
-            const size_t expected_buffer_size = substream.type == MergeTreeIndexSubstream::Type::TextIndexPostings
-                ? std::numeric_limits<size_t>::max()
-                : 0;
-
+            /// The merge reads the dictionary and the postings of a source part sequentially,
+            /// so their streams take the regular read buffer size.
             auto stream = makeTextIndexInputStream(
                 segments[i].part_storage,
                 segments[i].index_file_name,
                 substream,
                 reader_settings_,
-                expected_buffer_size);
+                /*expected_buffer_size=*/ std::nullopt);
 
             input_streams[i][substream.type] = stream.get();
             input_streams_holders.emplace_back(std::move(stream));
@@ -1238,20 +1234,20 @@ size_t estimatePostingListBufferSize(const TokenPostingsInfo & token_info)
 static MergeTreeReaderSettings makeTextIndexReaderSettings(
     const MergeTreeReaderSettings & reader_settings,
     MergeTreeIndexSubstream::Type substream_type,
-    size_t expected_buffer_size)
+    std::optional<size_t> expected_buffer_size)
 {
     using enum MergeTreeIndexSubstream::Type;
 
     auto settings = reader_settings;
     settings.is_compressed = MergeTreeIndexSubstream::isCompressed(substream_type);
 
-    if (substream_type == TextIndexDictionary || substream_type == TextIndexPostings)
+    if (expected_buffer_size && (substream_type == TextIndexDictionary || substream_type == TextIndexPostings))
     {
         constexpr size_t min_buffer_size = 16 * 1024;
 
         auto adjust = [&](size_t & buffer_size)
         {
-            buffer_size = std::clamp(expected_buffer_size, std::min(min_buffer_size, buffer_size), std::max(min_buffer_size, buffer_size));
+            buffer_size = std::clamp(*expected_buffer_size, std::min(min_buffer_size, buffer_size), std::max(min_buffer_size, buffer_size));
         };
 
         adjust(settings.read_settings.local_fs_settings.buffer_size);
@@ -1291,7 +1287,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & index_file_name,
     const MergeTreeIndexSubstream & substream,
     const MergeTreeReaderSettings & reader_settings,
-    size_t expected_buffer_size)
+    std::optional<size_t> expected_buffer_size)
 {
     const auto stream_name = index_file_name + substream.suffix;
     const auto & extension = substream.extension;
@@ -1329,7 +1325,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & index_file_name,
     const MergeTreeIndexSubstream & substream,
     const MergeTreeReaderSettings & reader_settings,
-    size_t expected_buffer_size)
+    std::optional<size_t> expected_buffer_size)
 {
     const auto stream_name = index_file_name + substream.suffix;
     const auto & extension = substream.extension;
