@@ -64,10 +64,10 @@ REGISTER_FUNCTION(ToLowCardinality)
     FunctionDocumentation::Description description = R"(
 Converts the input argument to the [LowCardinality](/reference/data-types/lowcardinality) version of same data type.
 
-:::tip
+<Tip>
 To convert from the `LowCardinality` data type to a regular data type, use the [CAST](#CAST) function.
 For example: `CAST(x AS String)`.
-:::
+</Tip>
     )";
     FunctionDocumentation::Syntax syntax = "toLowCardinality(expr)";
     FunctionDocumentation::Arguments arguments = {

@@ -31,7 +31,7 @@ public:
 
     /// Marks the data part as non-transactionally removed and persists the removal TID to disk,
     /// including handling the deferred-persistence optimization for non-transactional parts.
-    void setAndStoreNonTransactionalRemovalTID(const TransactionInfoContext & transaction_context) override;
+    void setAndStoreNonTransactionalRemovalTID(LockKind kind, const TransactionInfoContext & transaction_context) override;
 
     /// Attempts to atomically acquire a removal lock for the given transaction.
     /// Uses compare-and-swap on `removal_tid_lock_hash` to ensure only one transaction can lock the part.
@@ -40,15 +40,25 @@ public:
     /// @param context Context information for logging
     /// @param locked_by_id Output parameter: receives TIDHash of the locking transaction if lock acquisition fails
     /// @return true if lock acquired, false if already locked by another transaction
-    bool tryLockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id) override;
+    /// `acquired` is ignored — disk-backed metadata has no Keeper znode and therefore no fingerprint.
+    bool tryLockRemovalTID(
+        const TransactionID & tid,
+        LockKind kind,
+        const TransactionInfoContext & context,
+        TIDHash * locked_by_id,
+        LockFingerprint * acquired) override;
 
     /// Releases the removal lock previously acquired by the given transaction.
     /// Verifies that `tid` matches the transaction holding the lock before unlocking.
     /// Logs the unlock event to `TransactionsInfoLog`.
+    /// `expected` is ignored — disk-backed metadata has no Keeper znode and therefore no fingerprint.
     /// @param tid Transaction ID that acquired the lock
     /// @param context Context information for logging
     /// @throws Exception if tid does not match the locking transaction
-    void unlockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context) override;
+    void unlockRemovalTID(
+        const TransactionID & tid,
+        const TransactionInfoContext & context,
+        LockFingerprint expected) override;
 
     /// Returns true if the data part is currently locked for removal by any transaction.
     /// Checks if `removal_tid_lock_hash` is non-zero.
@@ -62,6 +72,10 @@ public:
     /// Checks both `deferred_persist_info` and the existence of `txn_version.txt` file.
     bool hasPersistedMetadata() const override;
 
+    /// Treat `CANNOT_OPEN_FILE` as valid when the part directory is gone (e.g.
+    /// removed externally between DETACH and ATTACH).
+    bool hasValidMetadata() override;
+
 protected:
     /// Persists the given `VersionInfo` to disk and returns the new storing version number.
     /// Implements deferred persistence optimization: if the part is not involved in a transaction and
@@ -69,6 +83,8 @@ protected:
     /// Once a transaction touches the part, flushes deferred metadata to disk.
     /// Thread-safe: acquires `persisted_info_mutex` before calling `storeInfoUnlocked`.
     std::expected<Int32, StaleVersion> storeInfo(const VersionInfo & new_info) override;
+
+    void finalizeNonTransactionalRemoval(const TransactionID & tid, LockKind kind, LockFingerprint acquired_fp) override;
 
     /// Reads transactional metadata for this part.
     /// If `deferred_persist_info` is set (metadata not yet written to disk), returns it directly.
@@ -109,7 +125,11 @@ private:
     /// Includes fsync operations if configured in storage settings.
     /// Cleans up tmp file if any error occurs during the process.
     static void
-    storeInfoToDataPartStorage(const MergeTreeData & storage, IDataPartStorage & data_part_storage, const VersionInfo & new_info);
+    storeInfoToDataPartStorage(const MergeTreeData & mt_data, IDataPartStorage & data_part_storage, const VersionInfo & new_info);
+
+    /// Loaded part — used for disk-specific calls (`getDataPartStorage`,
+    /// `isStoredOnReadonlyDisk`) that the base class no longer carries.
+    IMergeTreeDataPart * merge_tree_data_part;
 
     /// Whether metadata can be written to disk for this part.
     /// True if the storage supports transactions and the part is not on a read-only disk.

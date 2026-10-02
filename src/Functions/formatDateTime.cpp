@@ -4,12 +4,15 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/NumberTraits.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionLowCardinalityFastPath.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/numLiteralChars.h>
@@ -65,6 +68,8 @@ enum class FormatSyntax : uint8_t
     MySQL,
     Joda
 };
+
+constexpr size_t MAX_JODA_TIMEZONE_NAME_LENGTH = 32;
 
 template <typename DataType> struct InstructionValueTypeMap {};
 template <> struct InstructionValueTypeMap<DataTypeInt8>       { using InstructionValueType = UInt32; };
@@ -139,7 +144,7 @@ constexpr std::string_view monthsShort[] = {"Jan", "Feb", "Mar", "Apr", "May", "
   * PS. We can make this function to return FixedString. Currently it returns String.
   */
 template <typename Name, SupportInteger support_integer, FormatSyntax format_syntax>
-class FunctionFormatDateTimeImpl final : public IFunction
+class FunctionFormatDateTimeImpl : public IFunction
 {
 private:
     /// Time is either UInt32 for DateTime or UInt16 for Date.
@@ -851,6 +856,8 @@ private:
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Short name time zone is not yet supported");
 
             auto str = timezone.getTimeZone();
+            if (str.size() > MAX_JODA_TIMEZONE_NAME_LENGTH)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time zone name is longer than the maximum supported length of {} bytes", MAX_JODA_TIMEZONE_NAME_LENGTH);
             memcpy(dest, str.data(), str.size());
             return str.size();
         }
@@ -952,17 +959,27 @@ private:
     const bool mysql_format_ckl_without_leading_zeros;
     const bool mysql_e_with_space_padding;
 
+    /// Whether the function may be executed on a LowCardinality dictionary as is, see
+    /// `canBeExecutedOnDefaultArguments` below. The delegate is the same function with that
+    /// permission granted; it is stateless, so it is created once and shared across calls.
+    const bool execute_on_dictionary_default;
+    const FunctionPtr dictionary_default_delegate;
+
 public:
     static constexpr auto name = Name::name;
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFormatDateTimeImpl>(context); }
 
-    explicit FunctionFormatDateTimeImpl(ContextPtr context)
+    explicit FunctionFormatDateTimeImpl(ContextPtr context, bool execute_on_dictionary_default_ = false)
         : mysql_M_is_month_name(context->getSettingsRef()[Setting::formatdatetime_parsedatetime_m_is_month_name])
         , mysql_f_prints_single_zero(context->getSettingsRef()[Setting::formatdatetime_f_prints_single_zero])
         , mysql_f_prints_scale_number_of_digits(context->getSettingsRef()[Setting::formatdatetime_f_prints_scale_number_of_digits])
         , mysql_format_ckl_without_leading_zeros(context->getSettingsRef()[Setting::formatdatetime_format_without_leading_zeros])
         , mysql_e_with_space_padding(context->getSettingsRef()[Setting::formatdatetime_e_with_space_padding])
+        , execute_on_dictionary_default(execute_on_dictionary_default_)
+        , dictionary_default_delegate(
+              execute_on_dictionary_default_ ? nullptr
+                                             : std::make_shared<FunctionFormatDateTimeImpl>(context, /*execute_on_dictionary_default_=*/true))
     {
     }
 
@@ -972,6 +989,36 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    /// A LowCardinality dictionary always contains the default value, and the empty string is not a
+    /// valid time zone: executing on the dictionary as is would throw for a time zone column that
+    /// never holds an empty string. Ask for a minimal dictionary of the values actually referenced.
+    ///
+    /// This is asked without the arguments, so it cannot tell a LowCardinality time zone from a
+    /// LowCardinality date or integer, for which the default value is harmless. Only the former
+    /// has to pay for the minimal dictionary, so `tryExecuteLowCardinality` below makes that
+    /// distinction and keeps the cheap dictionary-only execution for every other argument.
+    bool canBeExecutedOnDefaultArguments() const override { return execute_on_dictionary_default; }
+
+    /// Fast path hook for `FunctionWithLowCardinalityFastPath` (see `FunctionLowCardinalityFastPath.h`).
+    /// Returns nullptr to decline, in which case the call is redone with the defaults enabled, i.e.
+    /// on a minimal dictionary as `canBeExecutedOnDefaultArguments` above asks for.
+    ColumnPtr
+    tryExecuteLowCardinality(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    {
+        if (!hasLowCardinalityTypes(arguments))
+            return nullptr;
+
+        /// A non-constant LowCardinality time zone: its dictionary holds the empty string, so
+        /// decline and let the generic code remap the indexes to a minimal dictionary.
+        if (arguments.size() == 3 && checkAndGetColumn<ColumnLowCardinality>(arguments[2].column.get()))
+            return nullptr;
+
+        /// Every other LowCardinality argument is a date, a date with time or an integer, whose
+        /// default value formats just like any other value, so the dictionary can be used as is.
+        return FunctionToExecutableFunctionAdaptor(dictionary_default_delegate)
+            .execute(arguments, result_type, input_rows_count, /*dry_run=*/false);
+    }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -2002,8 +2049,7 @@ public:
                         Instruction<T> instruction;
                         instruction.setJodaFunc(std::bind_front(&Instruction<T>::jodaTimezone, repetitions));
                         instructions.push_back(std::move(instruction));
-                        /// Longest length of full name of time zone is 32.
-                        reserve_size += 32;
+                        reserve_size += MAX_JODA_TIMEZONE_NAME_LENGTH; /// we'll throw at runtime if the time zone is longer than that
                         break;
                     }
                     case 'Z':
@@ -2169,7 +2215,7 @@ LIMIT 10
     FunctionDocumentation::Category category_formatDateTime = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation_formatDateTime = {description_formatDateTime, syntax_formatDateTime, arguments_formatDateTime, {}, returned_value_formatDateTime, examples_formatDateTime, introduced_in_formatDateTime, category_formatDateTime};
 
-    factory.registerFunction<FunctionFormatDateTime>(documentation_formatDateTime);
+    factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionFormatDateTime>>(documentation_formatDateTime);
     factory.registerAlias("DATE_FORMAT", FunctionFormatDateTime::name, FunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_fromUnixTimestamp = R"(
@@ -2216,7 +2262,7 @@ SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime
     FunctionDocumentation documentation_fromUnixTimestamp =
     {description_fromUnixTimestamp, syntax_fromUnixTimestamp, arguments_fromUnixTimestamp, {}, returned_value_fromUnixTimestamp, examples_fromUnixTimestamp, introduced_in_fromUnixTimestamp, category_fromUnixTimestamp};
 
-    factory.registerFunction<FunctionFromUnixTimestamp>(documentation_fromUnixTimestamp);
+    factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionFromUnixTimestamp>>(documentation_fromUnixTimestamp);
     factory.registerAlias("FROM_UNIXTIME", FunctionFromUnixTimestamp::name, FunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_formatDateTimeInJodaSyntax = R"(
@@ -2279,7 +2325,7 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
     FunctionDocumentation::Category category_formatDateTimeInJodaSyntax = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation_formatDateTimeInJodaSyntax = {description_formatDateTimeInJodaSyntax, syntax_formatDateTimeInJodaSyntax, arguments_formatDateTimeInJodaSyntax, {}, returned_value_formatDateTimeInJodaSyntax, examples_formatDateTimeInJodaSyntax, introduced_in_formatDateTimeInJodaSyntax, category_formatDateTimeInJodaSyntax};
 
-    factory.registerFunction<FunctionFormatDateTimeInJodaSyntax>(documentation_formatDateTimeInJodaSyntax);
+    factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionFormatDateTimeInJodaSyntax>>(documentation_formatDateTimeInJodaSyntax);
 
     FunctionDocumentation::Description description_fromUnixTimestampInJodaSyntax = R"(
 This function converts a Unix timestamp to a calendar date and a time of a day.
@@ -2316,6 +2362,6 @@ SELECT fromUnixTimestampInJodaSyntax(1234334543, 'yyyy-MM-dd HH:mm:ss', 'UTC') A
     FunctionDocumentation::Category category_fromUnixTimestampInJodaSyntax = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation_fromUnixTimestampInJodaSyntax = {description_fromUnixTimestampInJodaSyntax, syntax_fromUnixTimestampInJodaSyntax, arguments_fromUnixTimestampInJodaSyntax, {}, returned_value_fromUnixTimestampInJodaSyntax, examples_fromUnixTimestampInJodaSyntax, introduced_in_fromUnixTimestampInJodaSyntax, category_fromUnixTimestampInJodaSyntax};
 
-    factory.registerFunction<FunctionFromUnixTimestampInJodaSyntax>(documentation_fromUnixTimestampInJodaSyntax);
+    factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionFromUnixTimestampInJodaSyntax>>(documentation_fromUnixTimestampInJodaSyntax);
 }
 }

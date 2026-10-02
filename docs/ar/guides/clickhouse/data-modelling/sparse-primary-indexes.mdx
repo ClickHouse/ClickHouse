@@ -286,9 +286,7 @@ bytes_on_disk:               207.07 MiB
 * يحتوي الجدول على فهرس أساسي يضم 1083 إدخالًا (تُسمى &#39;علامات&#39;)، ويبلغ حجم هذا الفهرس 96.93 KB.
 * إجمالًا، تشغل بيانات الجدول وملفات العلامات وملف الفهرس الأساسي معًا مساحة 207.07 MB على القرص.
 
-<div id="data-is-stored-on-disk-ordered-by-primary-key-columns">
-  ### تُخزَّن البيانات على القرص مرتبةً بحسب أعمدة المفتاح الأساسي
-</div>
+### تُخزَّن البيانات على القرص مرتبةً بحسب أعمدة المفتاح الأساسي
 
 يحتوي الجدول الذي أنشأناه أعلاه على:
 
@@ -329,9 +327,7 @@ ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-
   * نرقّم الصفوف بدءًا من 0 ليتوافق ذلك مع مخطط ترقيم الصفوف الداخلي في ClickHouse، والذي يُستخدم أيضًا في رسائل التسجيل.
 </Note>
 
-<div id="data-is-organized-into-granules-for-parallel-data-processing">
-  ### تُنظَّم البيانات في حبيبات لمعالجتها بالتوازي
-</div>
+### تُنظَّم البيانات في حبيبات لمعالجتها بالتوازي
 
 لأغراض معالجة البيانات، تُقسَّم قيم أعمدة الجدول منطقيًا إلى حبيبات.
 والحبيبة هي أصغر مجموعة بيانات غير قابلة للتجزئة تُمرَّر إلى ClickHouse لمعالجة البيانات.
@@ -364,9 +360,7 @@ ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-
   * نرقّم الحبيبات بدءًا من 0 ليتوافق ذلك مع مخطط الترقيم الداخلي في ClickHouse، والذي يُستخدم أيضًا في رسائل التسجيل.
 </Note>
 
-<div id="the-primary-index-has-one-entry-per-granule">
-  ### يحتوي الفهرس الأساسي على إدخال واحد لكل حبيبة
-</div>
+### يحتوي الفهرس الأساسي على إدخال واحد لكل حبيبة
 
 يُنشأ الفهرس الأساسي استنادًا إلى الحبيبات الموضحة في المخطط أعلاه. وهذا الفهرس هو ملف مصفوفة مسطّحة غير مضغوط (`primary.idx`) يحتوي على ما يُعرف بعلامات الفهرس الرقمية، بدءًا من 0.
 
@@ -475,9 +469,7 @@ ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-
 
   سنناقش لاحقًا بمزيد من التفصيل ما يترتب على ذلك من حيث أداء تنفيذ الاستعلام.
 
-<div id="the-primary-index-is-used-for-selecting-granules">
-  ### يُستخدم الفهرس الأساسي لاختيار الحبيبات
-</div>
+### يُستخدم الفهرس الأساسي لاختيار الحبيبات
 
 يمكننا الآن تنفيذ استعلاماتنا بدعم من الفهرس الأساسي.
 
@@ -515,7 +507,7 @@ Processed 8.19 thousand rows,
 
 يُظهر خرج عميل ClickHouse الآن أنه بدلًا من إجراء فحص كامل للجدول، لم يتم تمرير سوى 8.19 ألف صف إلى ClickHouse.
 
-إذا كان <a href="/ar/reference/settings/server-settings/settings/other#logger" target="_blank">تسجيل التتبّع</a> مُمكّنًا، فإن ملف سجل خادم ClickHouse يُظهر أن ClickHouse كان يُجري <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">بحثًا ثنائيًا</a> عبر 1083 من علامات فهرس UserID، لتحديد الحبيبات التي قد تحتوي على صفوف تكون فيها قيمة العمود UserID هي `749927693`. ويتطلّب ذلك 19 خطوة بمتوسط تعقيد زمني قدره `O(log2 n)`:
+إذا كان <a href="/ar/reference/settings/server-settings/settings/other#logger" target="_blank">تسجيل التتبّع</a> مُمكّنًا، فإن ملف سجل خادم ClickHouse يُظهر أن ClickHouse كان يُجري <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">خوارزمية البحث الثنائي</a> عبر 1083 من علامات فهرس UserID، لتحديد الحبيبات التي قد تحتوي على صفوف تكون فيها قيمة العمود UserID هي `749927693`. ويتطلّب ذلك 19 خطوة بمتوسط تعقيد زمني قدره `O(log2 n)`:
 
 ```response highlight={2,7}
 ...Executor): Key condition: (column 0 in [749927693, 749927693])
@@ -528,15 +520,15 @@ Processed 8.19 thousand rows,
 ...Reading ...approx. 8192 rows starting from 1441792
 ```
 
-:::note
-في الإصدارات الحديثة من ClickHouse، تُسجَّل رسائل `Running binary search on index range` و`Found (LEFT) boundary mark` و`Found (RIGHT) boundary mark` عند مستوى `test` (أعلى مستوى من الإسهاب) بدلًا من `trace`. لرؤيتها، ارفع مستوى إسهاب السجل إلى `test` (على سبيل المثال، `SET send_logs_level = 'test'` في العميل، أو `<logger><level>test</level></logger>` في تهيئة الخادم). لا تزال الأسطر المتبقية المعروضة أعلاه تُسجَّل عند مستوى `trace`. ينطبق هذا على كل مثال لسجل البحث الثنائي في هذا الدليل.
-:::
+<Note>
+  في الإصدارات الحديثة من ClickHouse، تُسجَّل رسائل `Running binary search on index range` و`Found (LEFT) boundary mark` و`Found (RIGHT) boundary mark` عند مستوى `test` (أعلى مستوى من الإسهاب) بدلًا من `trace`. لرؤيتها، ارفع مستوى إسهاب السجل إلى `test` (على سبيل المثال، `SET send_logs_level = 'test'` في العميل، أو `<logger><level>test</level></logger>` في تهيئة الخادم). لا تزال الأسطر المتبقية المعروضة أعلاه تُسجَّل عند مستوى `trace`. ينطبق هذا على كل مثال لسجل خوارزمية البحث الثنائي في هذا الدليل.
+</Note>
 
 يمكننا أن نرى في سجل التتبّع أعلاه أن علامة واحدة فقط من بين 1083 علامة موجودة طابقت الاستعلام.
 
 <Accordion title="تفاصيل سجل التتبّع">
   <p>
-    جرى تحديد العلامة 176 (إذ إن &#39;علامة الحد الأيسر التي عُثر عليها&#39; شاملة، بينما &#39;علامة الحد الأيمن التي عُثر عليها&#39; غير شاملة)، ولذلك تُمرَّر بعد ذلك جميع الصفوف الـ8192 من الحبيبة 176 (التي تبدأ عند الصف 1.441.792 — وسنرى ذلك لاحقًا في هذا الدليل) إلى ClickHouse من أجل العثور على الصفوف الفعلية التي تكون فيها قيمة العمود `UserID` هي `749927693`.
+    جرى تحديد العلامة 176 (إذ إن &#39;علامة الحد الأيسر التي عُثر عليها&#39; شاملة، بينما &#39;علامة الحد الأيمن التي عُثر عليها&#39; غير شاملة)، ولذلك تُمرَّر بعد ذلك جميع الصفوف الـ8192 من الحبيبة 176 (التي تبدأ عند الصف 1.441.792 — وسنرى ذلك لاحقًا في هذا الدليل) إلى ClickHouse من أجل العثور على الصفوف الفعلية التي تكون فيها قيمة العمود UserID هي `749927693`.
   </p>
 </Accordion>
 
@@ -595,9 +587,7 @@ LIMIT 10;
 
 نناقش هذه المرحلة الثانية بمزيد من التفصيل في القسم التالي.
 
-<div id="mark-files-are-used-for-locating-granules">
-  ### تُستخدم ملفات العلامات لتحديد مواقع الحبيبات
-</div>
+### تُستخدم ملفات العلامات لتحديد مواقع الحبيبات
 
 يوضح المخطط التالي جزءًا من ملف الفهرس الأساسي لجدولنا.
 
@@ -689,9 +679,7 @@ LIMIT 10;
 
 <a name="filtering-on-key-columns-after-the-first" />
 
-<div id="secondary-key-columns-can-not-be-inefficient">
-  ### قد تكون أعمدة المفتاح الثانوية غير فعّالة (أو لا)
-</div>
+### قد تكون أعمدة المفتاح الثانوية غير فعّالة (أو لا)
 
 عندما يطبّق الاستعلام عامل تصفية على عمودٍ يشكّل جزءًا من مفتاح مركّب ويكون عمود المفتاح الأول، [فإن ClickHouse يشغّل خوارزمية البحث الثنائي على علامات الفهرس لعمود المفتاح](#the-primary-index-is-used-for-selecting-granules).
 
@@ -769,9 +757,7 @@ Processed 8.81 million rows,
 
 <a name="generic-exclusion-search-algorithm" />
 
-<div id="generic-exclusion-search-algorithm">
-  ### خوارزمية البحث بالاستبعاد العامة
-</div>
+### خوارزمية البحث بالاستبعاد العامة
 
 يوضح ما يلي كيفية عمل <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1438" target="_blank">خوارزمية البحث بالاستبعاد العامة في ClickHouse</a> عند تحديد الحبيبات عبر عمود ثانوي، حين تكون الكاردينالية لعمود المفتاح السابق منخفضة أو مرتفعة.
 
@@ -822,9 +808,7 @@ Processed 8.81 million rows,
 
 في مجموعة البيانات النموذجية لدينا، يتمتع كلا عمودي المفتاح (UserID, URL) بكاردينالية مرتفعة ومتقاربة، وكما أوضحنا، فإن خوارزمية البحث بالاستبعاد العامة لا تكون فعّالة جدًا عندما تكون كاردينالية عمود المفتاح السابق للعمود URL مرتفعة أو متقاربة معها.
 
-<div id="note-about-data-skipping-index">
-  ### ملاحظة حول فهرس تخطي البيانات
-</div>
+### ملاحظة حول فهرس تخطي البيانات
 
 نظرًا إلى الارتفاع المتقارب في الكاردينالية لكلٍّ من UserID وURL، فإن [الاستعلام الذي يصفّي حسب URL](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient) لن يستفيد كثيرًا أيضًا من إنشاء [فهرس تخطي بيانات ثانوي](/ar/concepts/features/performance/skip-indexes/skipping-indexes) على عمود URL
 في [جدولنا ذي المفتاح الأساسي المركب (UserID, URL)](#a-table-with-a-primary-key).
@@ -862,9 +846,7 @@ ALTER TABLE hits_UserID_URL MATERIALIZE INDEX url_skipping_index;
 
 <a name="multiple-primary-indexes" />
 
-<div id="options-for-creating-additional-primary-indexes">
-  ### خيارات إنشاء فهارس أساسية إضافية
-</div>
+### خيارات إنشاء فهارس أساسية إضافية
 
 إذا أردنا تسريع استعلامَي العينة بشكل كبير — الاستعلام الذي يصفّي الصفوف ذات `UserID` معيّن، والاستعلام الذي يصفّي الصفوف ذات `URL` معيّن — فعلينا استخدام عدة فهارس أساسية عبر أحد هذه الخيارات الثلاثة:
 
@@ -892,9 +874,7 @@ ALTER TABLE hits_UserID_URL MATERIALIZE INDEX url_skipping_index;
 
 <a name="multiple-primary-indexes-via-secondary-tables" />
 
-<div id="option-1-secondary-tables">
-  ### الخيار 1: الجداول الثانوية
-</div>
+### الخيار 1: الجداول الثانوية
 
 <a name="secondary-table" />
 
@@ -1049,9 +1029,7 @@ Processed 319.49 thousand rows,
 
 لدينا الآن جدولان: أحدهما مُحسَّن لتسريع الاستعلامات التي تطبّق تصفية على `UserIDs`، والآخر لتسريع الاستعلامات التي تطبّق تصفية على عناوين URL:
 
-<div id="option-2-materialized-views">
-  ### الخيار 2: العروض المادية
-</div>
+### الخيار 2: العروض المادية
 
 أنشئ [عرضًا ماديًا](/ar/reference/statements/create/view) على الجدول الحالي.
 
@@ -1134,9 +1112,7 @@ Processed 335.87 thousand rows,
 ...Executor): Reading approx. 335872 rows with 4 streams
 ```
 
-<div id="option-3-projections">
-  ### الخيار 3: الإسقاطات
-</div>
+### الخيار 3: الإسقاطات
 
 أنشئ إسقاطًا على جدولنا الحالي:
 
@@ -1405,9 +1381,7 @@ Processed 20.32 thousand rows,
 
 ويرجع ذلك إلى أن [خوارزمية البحث بالاستبعاد العامة](https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444) تكون أكثر فعالية عندما يتم اختيار [الحبيبات](#the-primary-index-is-used-for-selecting-granules) عبر عمود مفتاح ثانوي يكون عمود المفتاح السابق له أقل من حيث عدد القيم المميزة. وقد أوضحنا ذلك بالتفصيل في [قسم سابق](#generic-exclusion-search-algorithm) من هذا الدليل.
 
-<div id="optimal-compression-ratio-of-data-files">
-  ### أفضل نسبة ضغط لملفات البيانات
-</div>
+### أفضل نسبة ضغط لملفات البيانات
 
 يقارن هذا الاستعلام نسبة ضغط العمود `UserID` بين الجدولين اللذين أنشأناهما أعلاه:
 
@@ -1487,9 +1461,7 @@ ORDER BY Ratio ASC
 
 ومن الحلول الوسط بين أسرع استرجاع ممكن والضغط الأمثل للبيانات استخدام مفتاح أساسي مركب يكون فيه معرّف UUID آخر عمود مفتاح، بعد أعمدة مفتاح أقل كاردينالية وتُستخدم لضمان نسبة ضغط جيدة لبعض أعمدة الجدول.
 
-<div id="a-concrete-example">
-  ### مثال ملموس
-</div>
+### مثال ملموس
 
 أحد الأمثلة الملموسة هو خدمة لصق النصوص غير المشفرة [https://pastila.nl](https://pastila.nl) التي طوّرها Alexey Milovidov و[كتب عنها في مدونته](https://clickhouse.com/blog/building-a-paste-service-with-clickhouse/).
 
