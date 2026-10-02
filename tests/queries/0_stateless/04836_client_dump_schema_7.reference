@@ -38,15 +38,18 @@ plain mixed schema, carrier-derived shared gates emitted: 0
 OK: plain mixed schema replayed
 plain mixed schema, replayed objects: 8
 --- the shared gates follow their carriers ---
-fuzzQuery view, fuzz-functions gate emitted: 1
-OK: fuzzQuery view replayed
-fuzzQuery view, replayed objects: 1
-neighbor view, error-prone-window gate emitted: 1
-OK: neighbor view replayed
-neighbor view, replayed objects: 2
-multiMatchAny view, hyperscan gate emitted: 1
-OK: multiMatchAny view replayed
-multiMatchAny view, replayed objects: 2
+fuzzQuery materialized view, fuzz-functions gate emitted: 1
+neighbor materialized view, error-prone-window gate emitted: 1
+multiMatchAny materialized view, hyperscan gate emitted: 1
+OK: function materialized views replayed
+function materialized views, replayed objects: 4
+plain views, function gates emitted: 0
+plain views, analyzer gates emitted: 0
+OK: plain views replayed
+plain views, replayed objects: 6
+fuzzQuery table function, fuzz-functions gate emitted: 0
+OK: fuzzQuery table function replayed
+fuzzQuery table function, replayed objects: 1
 CODEC column, suspicious-codecs gate emitted: 1
 OK: CODEC column replayed
 CODEC column, replayed objects: 1
@@ -83,4 +86,4 @@ columns named lowcardinality, fixedstring, json and neighbor, their gates emitte
 --- a plain dump replays under every carrier-gate constraint ---
 plain dump, join-key/minmax-JSON/suspicious-index/url-wildcard gates emitted: 0
 OK: constrained replay succeeded
-constrained replay tables present: 12
+constrained replay tables present: 18

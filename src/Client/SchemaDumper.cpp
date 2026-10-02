@@ -2455,23 +2455,33 @@ std::optional<std::vector<String>> dataLakeCatalogGates(const ASTStorage & stora
     return std::nullopt;
 }
 
-void forEachNode(const IAST & node, const std::function<void(const IAST &)> & visit)
+/// Visits `node` and its subtree, except the `skip` subtree.
+void forEachNode(const IAST & node, const std::function<void(const IAST &)> & visit, const IAST * skip = nullptr)
 {
+    if (&node == skip)
+        return;
     visit(node);
     for (const auto & child : node.children)
-        forEachNode(*child, visit);
+        forEachNode(*child, visit, skip);
 }
 
 /// Lowercase function names, type names and string literals (structures, CAST types) of `ast`, without the
 /// column, table and database names, so that a gate matched on them is never carried by an object's name.
-String nameTokens(const IAST & ast)
+String nameTokens(const IAST & ast, const IAST * skip, bool with_types)
 {
     String names;
+    std::set<const IAST *> table_functions;
     forEachNode(ast, [&](const IAST & node)
     {
-        if (const auto * function = node.as<ASTFunction>())
-            names += function->name + ' ';
-        else if (const auto * data_type = node.as<ASTDataType>())
+        if (const auto * table_expression = node.as<ASTTableExpression>(); table_expression && table_expression->table_function)
+            table_functions.insert(table_expression->table_function.get());
+        else if (const auto * function = node.as<ASTFunction>())
+        {
+            /// A table function such as `fuzzQuery` or `timeSeriesData` reads none of these gates.
+            if (!table_functions.contains(&node))
+                names += function->name + ' ';
+        }
+        else if (const auto * data_type = node.as<ASTDataType>(); data_type && with_types)
         {
             names += data_type->name + ' ';
             /// `AggregateFunction(sum, UInt64)` names its function with a bare identifier.
@@ -2482,7 +2492,7 @@ String nameTokens(const IAST & ast)
         }
         else if (const auto * literal = node.as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
             names += literal->value.safeGet<String>() + ' ';
-    });
+    }, skip);
     std::ranges::transform(names, names.begin(), [](unsigned char c) { return std::tolower(c); });
     return names;
 }
@@ -2529,9 +2539,15 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
         if (create->is_materialized_view)
             needs.materialized_view = true;
 
+        /// A plain view stores its columns, so replay neither analyzes its SELECT nor validates its column types.
+        const bool plain_view = create->is_ordinary_view
+            && (create->isParameterizedView()
+                || (create->columns_list && create->columns_list->columns && !create->columns_list->columns->children.empty()));
+        const IAST * unread_select = plain_view ? create->select : nullptr;
+
         /// The analyzer-side gates fire only where stored query text is re-analysed at replay: a
         /// view's AS SELECT, or a projection (`ProjectionsDescription` runs `runOnlyResolve` on it).
-        if (create->select
+        if ((create->select && !plain_view)
             || (create->columns_list && create->columns_list->projections
                 && !create->columns_list->projections->children.empty()))
             needs.analyzable_query_text = true;
@@ -2602,7 +2618,7 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
                     needs.unique_key = true;
 
         /// `enable_nullable_tuple_type` gates `Nullable(Tuple(...))` column types.
-        if (create->columns_list && create->columns_list->columns)
+        if (!plain_view && create->columns_list && create->columns_list->columns)
             for (const auto & child : create->columns_list->columns->children)
                 if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getType())
                     if (column->getType()->formatWithSecretsOneLine().contains("Nullable(Tuple"))
@@ -2610,7 +2626,7 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
 
         /// Shared gates: each carrier is matched on the statement's names or AST, over-approximated
         /// where the exact check site is not worth mirroring.
-        const String names = nameTokens(*create_ast);
+        const String names = nameTokens(*create_ast, unread_select, /* with_types= */ !plain_view);
 
         needs.funnel_functions |= hasToken(names, "sequencenextnode", true);
         needs.nlp_functions |= hasToken(names, "synonyms") || hasToken(names, "lemmatize") || hasToken(names, "detectlanguage", true)
@@ -2651,7 +2667,7 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
             else if ((equalsCaseInsensitive(function->name, "url") || equalsCaseInsensitive(function->name, "urlCluster"))
                      && urlMayHaveWildcard(*function))
                 needs.url_wildcard = true;
-        });
+        }, unread_select);
 
         const bool has_indices = create->columns_list && create->columns_list->indices && !create->columns_list->indices->children.empty();
         const bool has_projections = create->columns_list && create->columns_list->projections

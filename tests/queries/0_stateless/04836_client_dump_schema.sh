@@ -60,14 +60,14 @@ echo "replayed TimeSeries table present: $($CLICKHOUSE_LOCAL --path "$GATED_REPL
 rm -rf "$GATED_PATH" "$GATED_REPLAY_PATH" "$GATED_DUMP_FILE"
 
 echo '--- a dump whose view needs an analyzer-side relaxation replays too ---'
-# CREATE re-analyzes this Dynamic GROUP BY, whose enabling session setting is not stored.
+# Replay re-analyzes a materialized view's Dynamic GROUP BY, whose enabling session setting is not stored.
 ANALYZER_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_analyzer_gated"
 rm -rf "$ANALYZER_PATH"
 $CLICKHOUSE_LOCAL --path "$ANALYZER_PATH" --multiquery --query "
 SET allow_suspicious_types_in_group_by = 1;
 CREATE DATABASE ${DB};
 CREATE TABLE ${DB}.dyn_src (d Dynamic) ENGINE = MergeTree ORDER BY tuple();
-CREATE VIEW ${DB}.dyn_view AS SELECT d FROM ${DB}.dyn_src GROUP BY d;
+CREATE MATERIALIZED VIEW ${DB}.dyn_view ENGINE = Memory AS SELECT d FROM ${DB}.dyn_src GROUP BY d;
 "
 ANALYZER_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_analyzer_dump.sql"
 $CLICKHOUSE_LOCAL --path "$ANALYZER_PATH" --dump-schema="${DB}" > "$ANALYZER_DUMP_FILE" 2>"$ERR_FILE"

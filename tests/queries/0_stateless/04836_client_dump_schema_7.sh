@@ -179,24 +179,34 @@ replay_local 'plain mixed schema' '%'
 
 echo '--- the shared gates follow their carriers ---'
 make_dump "
-SET allow_fuzz_query_functions = 1;
-CREATE VIEW ${DB}.v AS SELECT * FROM fuzzQuery('SELECT 1');
-"
-echo "fuzzQuery view, fuzz-functions gate emitted: $(grep -c '^SET allow_fuzz_query_functions = 1;' "$DUMP_FILE")"
-replay_local 'fuzzQuery view' '%'
-make_dump "
 CREATE TABLE ${DB}.mt (x Int64, s String) ENGINE = MergeTree ORDER BY x;
-SET allow_deprecated_error_prone_window_functions = 1;
-CREATE VIEW ${DB}.v AS SELECT neighbor(x, 1) AS n FROM ${DB}.mt;
+SET allow_fuzz_query_functions = 1, allow_deprecated_error_prone_window_functions = 1;
+CREATE MATERIALIZED VIEW ${DB}.mv_fuzz ENGINE = Memory AS SELECT fuzzQuery(s) AS q FROM ${DB}.mt;
+CREATE MATERIALIZED VIEW ${DB}.mv_neighbor ENGINE = Memory AS SELECT neighbor(x, 1) AS n FROM ${DB}.mt;
+CREATE MATERIALIZED VIEW ${DB}.mv_multi ENGINE = Memory AS SELECT multiMatchAny(s, ['a']) AS m FROM ${DB}.mt;
 "
-echo "neighbor view, error-prone-window gate emitted: $(grep -c '^SET allow_deprecated_error_prone_window_functions = 1;' "$DUMP_FILE")"
-replay_local 'neighbor view' '%'
+echo "fuzzQuery materialized view, fuzz-functions gate emitted: $(grep -c '^SET allow_fuzz_query_functions = 1;' "$DUMP_FILE")"
+echo "neighbor materialized view, error-prone-window gate emitted: $(grep -c '^SET allow_deprecated_error_prone_window_functions = 1;' "$DUMP_FILE")"
+echo "multiMatchAny materialized view, hyperscan gate emitted: $(grep -c '^SET allow_hyperscan = 1;' "$DUMP_FILE")"
+replay_local 'function materialized views' '%'
+# A plain view keeps its columns, so replay never analyzes its SELECT.
 make_dump "
-CREATE TABLE ${DB}.mt (x Int64, s String) ENGINE = MergeTree ORDER BY x;
-CREATE VIEW ${DB}.v AS SELECT multiMatchAny(s, ['a']) AS m FROM ${DB}.mt;
+CREATE TABLE ${DB}.mt (x Int64, s String, d Dynamic) ENGINE = MergeTree ORDER BY x;
+SET allow_fuzz_query_functions = 1, allow_deprecated_error_prone_window_functions = 1, allow_suspicious_types_in_group_by = 1;
+CREATE VIEW ${DB}.v_fuzz AS SELECT fuzzQuery(s) AS q FROM ${DB}.mt;
+CREATE VIEW ${DB}.v_neighbor AS SELECT neighbor(x, 1) AS n FROM ${DB}.mt;
+CREATE VIEW ${DB}.v_multi AS SELECT multiMatchAny(s, ['a']) AS m FROM ${DB}.mt;
+CREATE VIEW ${DB}.v_group AS SELECT d FROM ${DB}.mt GROUP BY d;
+CREATE VIEW ${DB}.v_param AS SELECT neighbor(x, 1) AS n FROM ${DB}.mt WHERE x > {p:Int64};
 "
-echo "multiMatchAny view, hyperscan gate emitted: $(grep -c '^SET allow_hyperscan = 1;' "$DUMP_FILE")"
-replay_local 'multiMatchAny view' '%'
+echo "plain views, function gates emitted: $(grep -cE '^SET (allow_fuzz_query_functions|allow_deprecated_error_prone_window_functions|allow_hyperscan) = 1;' "$DUMP_FILE")"
+echo "plain views, analyzer gates emitted: $(grep -cE '^SET (allow_suspicious_types_in_group_by|allow_suspicious_types_in_order_by|allow_experimental_correlated_subqueries) = 1;' "$DUMP_FILE")"
+replay_local 'plain views' '%'
+make_dump "
+CREATE MATERIALIZED VIEW ${DB}.mv_table_function REFRESH EVERY 1 HOUR (query String) ENGINE = Memory AS SELECT * FROM fuzzQuery('SELECT 1') LIMIT 1;
+"
+echo "fuzzQuery table function, fuzz-functions gate emitted: $(grep -c '^SET allow_fuzz_query_functions = 1;' "$DUMP_FILE")"
+replay_local 'fuzzQuery table function' 'mv%'
 make_dump "
 CREATE TABLE ${DB}.c (x Int64 CODEC(Delta, LZ4)) ENGINE = MergeTree ORDER BY x;
 "
@@ -284,6 +294,13 @@ CREATE TABLE ${CONSTRAINT_DB}.dk (k Dynamic, v UInt64) ENGINE = MergeTree ORDER 
 CREATE VIEW ${CONSTRAINT_DB}.vdk AS SELECT a.v FROM ${CONSTRAINT_DB}.dk AS a JOIN ${CONSTRAINT_DB}.dk AS b ON a.k = b.k;
 CREATE TABLE ${CONSTRAINT_DB}.jm (j JSON, INDEX i j TYPE minmax) ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_minmax_index_for_json = 1;
 CREATE VIEW ${CONSTRAINT_DB}.u_plain AS SELECT * FROM url('http://127.0.0.1:1/data.csv', CSV, 'x UInt8');
+SET allow_deprecated_error_prone_window_functions = 1, enable_funnel_functions = 1, allow_url_wildcard_from_index_pages = 1, enable_nullable_tuple_type = 1;
+CREATE VIEW ${CONSTRAINT_DB}.vn AS SELECT neighbor(x, 1) AS n FROM ${CONSTRAINT_DB}.mt;
+CREATE VIEW ${CONSTRAINT_DB}.vm AS SELECT multiMatchAny(toString(x), ['a']) AS m FROM ${CONSTRAINT_DB}.mt;
+CREATE VIEW ${CONSTRAINT_DB}.vf AS SELECT sequenceNextNodeIf('forward', 'head')(toDateTime(x), toString(x), x = 1, x = 1, x > 0) AS f FROM ${CONSTRAINT_DB}.mt;
+CREATE VIEW ${CONSTRAINT_DB}.vlc AS SELECT toLowCardinality(x) AS l FROM ${CONSTRAINT_DB}.mt;
+CREATE VIEW ${CONSTRAINT_DB}.u_star AS SELECT * FROM url('http://127.0.0.1:1/*.csv', CSV, 'x UInt8');
+CREATE VIEW ${CONSTRAINT_DB}.vnt AS SELECT CAST(NULL, 'Nullable(Tuple(a UInt8))') AS t;
 "
 $CLICKHOUSE_LOCAL --path "$LOCAL_PATH" --dump-schema="$CONSTRAINT_DB" > "$DUMP_FILE" 2>"$ERR_FILE"
 rm -rf "$LOCAL_PATH"
