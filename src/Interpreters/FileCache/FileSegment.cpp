@@ -1524,6 +1524,18 @@ void FileSegment::increasePriority()
     }
 }
 
+namespace
+{
+
+/// Bits `lo..hi` (inclusive) of a 64-bit word.
+UInt64 bitRange(size_t lo, size_t hi)
+{
+    const UInt64 up_to_hi = hi == 63 ? ~UInt64(0) : (UInt64(1) << (hi + 1)) - 1;
+    return up_to_hi & ~((UInt64(1) << lo) - 1);
+}
+
+}
+
 void FileSegment::markRead(size_t offset, size_t size)
 {
     if (!size || !cache || is_unbound)
@@ -1541,48 +1553,57 @@ void FileSegment::markRead(size_t offset, size_t size)
     const UInt64 window = efficiency.currentWindow();
     if (efficiency_window_id != FileCacheEfficiency::NEVER_READ && efficiency_window_id > window)
         return;
-
     if (efficiency_window_id != window)
-    {
-        if (efficiency_window_id != FileCacheEfficiency::NEVER_READ)
-        {
-            previous_hit_window_id = efficiency_window_id;
-            previous_active_bytes = getActiveBytesUnlocked();
-        }
-        const size_t range_size = range().size();
-        efficiency_granule_size = std::max<size_t>(1, (range_size + EFFICIENCY_GRANULES - 1) / EFFICIENCY_GRANULES);
-        efficiency_window_range_size = range_size;
-        active_granules[0] = 0;
-        active_granules[1] = 0;
-        efficiency_window_id = window;
-        efficiency.addPassiveBytes(window, static_cast<Int64>(reserved_size.load()));
-    }
+        startEfficiencyWindowUnlocked(window);
 
+    if (const auto granules = getGranuleRangeUnlocked(offset, size))
+        if (const size_t bytes = setGranulesUnlocked(granules->first, granules->second))
+            efficiency.moveToActive(window, static_cast<Int64>(bytes));
+}
+
+void FileSegment::startEfficiencyWindowUnlocked(UInt64 window)
+{
+    if (efficiency_window_id != FileCacheEfficiency::NEVER_READ)
+    {
+        previous_hit_window_id = efficiency_window_id;
+        previous_active_bytes = getActiveBytesUnlocked();
+    }
+    const size_t range_size = range().size();
+    efficiency_granule_size = std::max<size_t>(1, (range_size + EFFICIENCY_GRANULES - 1) / EFFICIENCY_GRANULES);
+    efficiency_window_range_size = range_size;
+    active_granules[0] = 0;
+    active_granules[1] = 0;
+    efficiency_window_id = window;
+    cache->getEfficiency().addPassiveBytes(window, static_cast<Int64>(reserved_size.load()));
+}
+
+std::optional<std::pair<size_t, size_t>> FileSegment::getGranuleRangeUnlocked(size_t offset, size_t size) const
+{
     const size_t left = range().left;
     const size_t end = std::min(offset + size, left + range().size());
     if (end <= std::max(offset, left))
-        return;
+        return std::nullopt;
     const size_t first = (std::max(offset, left) - left) / efficiency_granule_size;
     const size_t last = std::min((end - 1 - left) / efficiency_granule_size, EFFICIENCY_GRANULES - 1);
     if (first > last)
-        return;
+        return std::nullopt;
+    return std::pair{first, last};
+}
 
+size_t FileSegment::setGranulesUnlocked(size_t first, size_t last)
+{
     UInt64 new_bits[2] = {0, 0};
-    for (size_t word = 0; word < 2; ++word)
+    for (size_t word = 0; word < std::size(active_granules); ++word)
     {
         const size_t word_first = word * 64;
         const size_t word_last = word_first + 63;
         if (last < word_first || first > word_last)
             continue;
-        const size_t lo = std::max(first, word_first) - word_first;
-        const size_t hi = std::min(last, word_last) - word_first;
-        const UInt64 high_mask = hi == 63 ? ~UInt64(0) : (UInt64(1) << (hi + 1)) - 1;
-        const UInt64 mask = high_mask & ~((UInt64(1) << lo) - 1);
+        const UInt64 mask = bitRange(std::max(first, word_first) - word_first, std::min(last, word_last) - word_first);
         new_bits[word] = mask & ~active_granules[word];
         active_granules[word] |= mask;
     }
-    if (const size_t bytes = granulesToBytesUnlocked(new_bits[0], new_bits[1]))
-        efficiency.moveToActive(window, static_cast<Int64>(bytes));
+    return granulesToBytesUnlocked(new_bits[0], new_bits[1]);
 }
 
 size_t FileSegment::granulesToBytesUnlocked(UInt64 low, UInt64 high) const

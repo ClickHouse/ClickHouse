@@ -270,6 +270,11 @@ private:
 
     void onRemovedFromCache(const FileSegmentGuard::Lock &);
 
+    void startEfficiencyWindowUnlocked(UInt64 window) TSA_REQUIRES(efficiency_mutex);
+    /// Granules `[first, last]` that `[offset, offset + size)` overlaps, cut at the segment end.
+    std::optional<std::pair<size_t, size_t>> getGranuleRangeUnlocked(size_t offset, size_t size) const TSA_REQUIRES(efficiency_mutex);
+    /// Sets granules `[first, last]`; returns the bytes of the ones that were not set before.
+    size_t setGranulesUnlocked(size_t first, size_t last) TSA_REQUIRES(efficiency_mutex);
     size_t getActiveBytesUnlocked() const TSA_REQUIRES(efficiency_mutex);
     /// `low` holds granules 0-63, `high` 64-127.
     size_t granulesToBytesUnlocked(UInt64 low, UInt64 high) const TSA_REQUIRES(efficiency_mutex);
