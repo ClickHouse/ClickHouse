@@ -1,6 +1,7 @@
 #include <Storages/ProjectionsDescription.h>
 #include <DataTypes/DataTypeString.h>
 
+#include <base/sort.h>
 #include <Access/AccessControl.h>
 #include <Columns/ColumnConst.h>
 #include <Common/iota.h>
@@ -22,6 +23,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/TableNode.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
 #include <Parsers/ASTFunction.h>
@@ -428,6 +430,17 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     /// `WITH SETTINGS` is part of the table definition, so it is checked whenever that is
     if (isFreshTableDefinition(mode, attach_short_syntax))
     {
+        /// `arrayJoin` is the one function that changes the number of rows, while a projection part is
+        /// written alongside the parent part row by row: `ProjectionDataSink` rejects a block with more
+        /// rows than the parent with a `LOGICAL_ERROR`, so such a projection makes every insert fail.
+        /// The check runs on the raw AST, so it also has to look through the two indirections the
+        /// analyzer would have resolved later: the `unnest` alias (resolved by canonical name, so the
+        /// verdict does not depend on `normalize_function_names`) and a SQL UDF body that is inlined
+        /// into the projection query when it is built. `expressionContainsArrayJoin` does both.
+        if (expressionContainsArrayJoin(projection_definition->query))
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Projection '{}' cannot contain arrayJoin, because it changes the number of rows", result.name);
+
         static const std::unordered_set<std::string_view> ALLOWED_PROJECTION_SETTINGS = {
             "index_granularity",
             "index_granularity_bytes",
@@ -687,7 +700,11 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
 
     auto select_query = make_intrusive<ASTProjectionSelectQuery>();
     ASTPtr select_expression_list = make_intrusive<ASTExpressionList>();
-    for (const auto & column : minmax_columns)
+    /// The i-th min/max pair below is answered from slot i of the part min-max index, whose own order is
+    /// derived the same way: from the partition key column names, never from the table column order.
+    Names sorted_minmax_columns = minmax_columns;
+    ::sort(sorted_minmax_columns.begin(), sorted_minmax_columns.end());
+    for (const auto & column : sorted_minmax_columns)
     {
         select_expression_list->children.push_back(makeASTFunction("min", make_intrusive<ASTIdentifier>(column)));
         select_expression_list->children.push_back(makeASTFunction("max", make_intrusive<ASTIdentifier>(column)));
