@@ -739,6 +739,12 @@ bool tryEstimateProjection(
                 = "The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)";
             return false;
         }
+        /// a time limit in `break` mode or a cancel ends the read without an error
+        if (part_data.rows != part->index_granularity->getRowsCountInRanges(ranges))
+        {
+            result.empirical_unsupported_reason = "The projection scan was cut short by a time limit in `break` mode or a cancel";
+            return false;
+        }
 
         ++scanned_parts;
         scanned_marks += ranges.getNumberOfMarks();
