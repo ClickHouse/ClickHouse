@@ -148,11 +148,11 @@ This function is in private preview, enable it by setting `enable_time_series_ag
         "Example",
         R"(
 SET enable_time_series_aggregate_functions = 1;
-SELECT timeSeriesHistogramAvgOverGroup(h) FROM (SELECT arrayJoin([(0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], []), (0, 0, 0., 8., 21., 0., [(0, 2)], [2., 6.], [], [], [])]::Array(Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64)))) AS h)
+SELECT timeSeriesHistogramAvgOverGroup(h) FROM (SELECT arrayJoin([(0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [], 4, 0, [1, 3], []), (0, 0, 0., 8., 21., 0., [(0, 2)], [2., 6.], [], [], [], 8, 0, [2, 6], [])]::Array(Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64), count_int UInt64, zero_count_int UInt64, positive_values_int Array(UInt64), negative_values_int Array(UInt64)))) AS h)
         )",
         R"(
 ┌─timeSeriesHistogramAvgOverGroup(h)────────────────────────────────────────┐
-│ (0,0,0,6,15.5,0,[(0,2)],[1.5,4.5],[],[],[])                               │
+│ (1,0,0,6,15.5,0,[(0,2)],[1.5,4.5],[],[],[],0,0,[],[])                     │
 └───────────────────────────────────────────────────────────────────────────┘
         )"
     }

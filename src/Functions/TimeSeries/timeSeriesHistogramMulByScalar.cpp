@@ -45,11 +45,11 @@ result as a gauge. The result is `Compact(0)`-ed. Returns NULL when either argum
     {
         "Example",
         R"(
-SELECT timeSeriesHistogramMulByScalar((0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [])::Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64)), 2)
+SELECT timeSeriesHistogramMulByScalar((0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [], 4, 0, [1, 3], [])::Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64), count_int UInt64, zero_count_int UInt64, positive_values_int Array(UInt64), negative_values_int Array(UInt64)), 2)
         )",
         R"(
 ┌─timeSeriesHistogramMulByScalar(...)───────────────────────────────────────┐
-│ (0,0,0,8,20,0,[(0,2)],[2,6],[],[],[])                                     │
+│ (1,0,0,8,20,0,[(0,2)],[2,6],[],[],[],0,0,[],[])                           │
 └───────────────────────────────────────────────────────────────────────────┘
         )"
     }
