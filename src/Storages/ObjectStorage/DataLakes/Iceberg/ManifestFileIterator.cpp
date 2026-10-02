@@ -318,14 +318,38 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             path_to_manifest_file_,
             f_schema);
 
-    Poco::Dynamic::Var json = parser.parse(*schema_json_string);
-    const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
-    Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
+    const bool tolerate_conflicting_manifest_schemas = context_->getSettingsRef()[Setting::iceberg_tolerate_conflicting_manifest_schemas];
 
-    schema_processor.addIcebergTableSchema(
-        schema_object,
-        IcebergSchemaProcessor::SchemaSource::ManifestFile,
-        context_->getSettingsRef()[Setting::iceberg_tolerate_conflicting_manifest_schemas]);
+    std::optional<Int32> header_schema_id;
+    if (auto schema_id_string = manifest_file_deserializer_->tryGetAvroMetadataValue(f_schema_id))
+        header_schema_id = parse<Int32>(*schema_id_string);
+
+    Int32 manifest_schema_id = 0;
+    if (header_schema_id.has_value() && tolerate_conflicting_manifest_schemas
+        && schema_processor.isSchemaRegisteredFromMetadata(*header_schema_id))
+    {
+        manifest_schema_id = *header_schema_id;
+    }
+    else
+    {
+        Poco::Dynamic::Var json = parser.parse(*schema_json_string);
+        const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
+        Int32 embedded_schema_id = schema_object->getValue<int>(f_schema_id);
+        if (header_schema_id.has_value() && *header_schema_id != embedded_schema_id)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Manifest file '{}' has header key '{}' = {} that differs from the '{}' = {} of its '{}' header",
+                path_to_manifest_file_,
+                f_schema_id,
+                *header_schema_id,
+                f_schema_id,
+                embedded_schema_id,
+                f_schema);
+        manifest_schema_id = embedded_schema_id;
+
+        schema_processor.addIcebergTableSchema(
+            schema_object, IcebergSchemaProcessor::SchemaSource::ManifestFile, tolerate_conflicting_manifest_schemas);
+    }
 
     /// Every entry of this manifest carries one partition value per spec field, including the
     /// fields skipped in buildPartitionKeyFromSpec, so this count is the arity its partition tuples must have.
@@ -478,13 +502,14 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         /// those manifests still carry the original snapshot_id. The manifest file's own Avro header
         /// records the correct schema_id for the data files it describes, so falling back to
         /// manifest_schema_id is safe and correct in this case.
-        LOG_DEBUG(
-            getLogger("ManifestFileIterator"),
-            "Manifest file '{}' has entry with snapshot_id '{}' whose snapshot metadata is not present "
-            "(snapshot may have been expired by the catalog). Falling back to manifest schema_id {}.",
-            path_to_manifest_file,
-            resolved_snapshot_id,
-            manifest_schema_id);
+        if (!logged_missing_snapshot_metadata.exchange(true, std::memory_order_relaxed))
+            LOG_TEST(
+                getLogger("ManifestFileIterator"),
+                "Manifest file '{}' has entry with snapshot_id '{}' whose snapshot metadata is not present "
+                "(snapshot may have been expired by the catalog). Falling back to manifest schema_id {}.",
+                path_to_manifest_file,
+                resolved_snapshot_id,
+                manifest_schema_id);
     }
     const auto resolved_schema_id = schema_id_opt.has_value() ? *schema_id_opt : manifest_schema_id;
 
@@ -519,20 +544,18 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     PruningReturnStatus pruning_status = PruningReturnStatus::NOT_PRUNED;
     if (filter_dag)
     {
+        const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->resolved_schema_id);
+
         /// Compute per-column hyperrectangles for DATA files
         std::unordered_map<Int32, DB::Range> hyperrectangles;
         if (parsed_entry->content_type == FileContentType::DATA)
         {
-            for (const auto & [column_id, bounds] : parsed_entry->value_bounds)
+            for (const auto & [column_id, column_type] : current_pruner->getMinMaxColumnTypes())
             {
-                auto field_characteristics = schema_processor_ptr->tryGetFieldCharacteristics(resolved_schema_id, column_id);
-                /// If we don't have column characteristics, bounds don't have any sense.
-                /// This happens if the subfield is inside map or array, because we don't support
-                /// name generation for such subfields (we support names of nested subfields in structs only).
-                if (!field_characteristics)
+                auto bounds_it = parsed_entry->value_bounds.find(column_id);
+                if (bounds_it == parsed_entry->value_bounds.end())
                     continue;
-
-                const auto & name_and_type = *field_characteristics;
+                const auto & bounds = bounds_it->second;
 
                 String left_str;
                 String right_str;
@@ -540,18 +563,20 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 if (!bounds.first.tryGet(left_str) || !bounds.second.tryGet(right_str))
                     continue;
 
-                if (const auto type_id = name_and_type.type->getTypeId();
+                if (const auto type_id = column_type->getTypeId();
                     type_id == DB::TypeIndex::Tuple || type_id == DB::TypeIndex::Map || type_id == DB::TypeIndex::Array
                     || type_id == DB::TypeIndex::Variant)
                     continue;
 
-                auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
-                auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
+                auto left = deserializeFieldFromBinaryRepr(left_str, column_type, true);
+                auto right = deserializeFieldFromBinaryRepr(right_str, column_type, false);
                 if (!left || !right)
                 {
-                    /// Pruning is skipped either way, but a bound narrower than the column is what a promotion
-                    /// (`int` -> `long`) leaves stored, and at scale 38 a bound that only loses its widened form
-                    /// can still be a value the column holds, so this is not on its own a malformed manifest.
+                    /// A bound that does not decode is wider than the storage of its type, a decimal
+                    /// bound beyond the precision of its type on the inner side of the range, or
+                    /// narrower than the column is now, which is what Iceberg leaves behind for a
+                    /// promoted column. The last is well formed, so this stays out of the warning
+                    /// log.
                     LOG_DEBUG(
                         getLogger("ManifestFileIterator"),
                         "Manifest file '{}' declares a bound that cannot be read as a usable range border "
@@ -567,12 +592,12 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 /// declared expose that inversion, which is why they are read again here.
                 std::optional<DB::Field> declared_left = left;
                 std::optional<DB::Field> declared_right = right;
-                if (DB::WhichDataType(DB::removeNullable(name_and_type.type)).isDecimal())
+                if (DB::WhichDataType(DB::removeNullable(column_type)).isDecimal())
                 {
                     declared_left = deserializeFieldFromBinaryRepr(
-                        left_str, name_and_type.type, true, /*compensate_rounding=*/false);
+                        left_str, column_type, true, /*compensate_rounding=*/false);
                     declared_right = deserializeFieldFromBinaryRepr(
-                        right_str, name_and_type.type, false, /*compensate_rounding=*/false);
+                        right_str, column_type, false, /*compensate_rounding=*/false);
                 }
 
                 /// A pair inverted as declared means the manifest's statistics are untrustworthy, so no
@@ -596,7 +621,6 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
             addRowLineageHyperrectangles(hyperrectangles, *entry, path_to_manifest_file);
         }
 
-        const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->resolved_schema_id);
         pruning_status = current_pruner->canBePruned(entry, hyperrectangles);
     }
     insertRowToLogTable(

@@ -59,6 +59,8 @@
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/Trino/ParserTrinoQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
+#include <Parsers/LogsQL/ParserLogsQLQuery.h>
+#include <Parsers/LogsQL/parseLogsQLQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -78,8 +80,9 @@
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
-#include <Interpreters/SessionQueryIdsHistory.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/SessionQueryIdsHistory.h>
 #include <IO/AsyncReadCounters.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -103,6 +106,7 @@
 #include <Core/BaseSettings.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsFields.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsSecrets.h>
 
@@ -156,6 +160,7 @@ namespace ProfileEvents
     extern const Event ASTFuzzerQueries;
     extern const Event ASTFuzzerSkippedBackupRestore;
     extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
+    extern const Event ASTFuzzerSkippedCollaborativeWorker;
     extern const Event QueryParseMicroseconds;
 }
 
@@ -210,6 +215,11 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsString polyglot_dialect;
+    extern const SettingsBool allow_experimental_logsql_dialect;
+    extern const SettingsString logsql_database;
+    extern const SettingsString logsql_table;
+    extern const SettingsString logsql_time_column;
+    extern const SettingsString logsql_message_column;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsBool query_cache_compress_entries;
     extern const SettingsUInt64 query_cache_max_entries;
@@ -248,7 +258,7 @@ namespace Setting
     extern const SettingsBool enable_time_series_table;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
-    extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsDoubleAuto promql_evaluation_time;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
     extern const SettingsBool ignore_format_null_for_explain;
     extern const SettingsString format;
@@ -281,7 +291,6 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int ABORTED;
     extern const int FAULT_INJECTED;
@@ -512,6 +521,17 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         add_counter("max_parallel_prefetch_tasks", async_read_counters->max_parallel_prefetch_tasks.load(std::memory_order_relaxed));
         add_counter("total_prefetch_tasks", async_read_counters->total_prefetch_tasks.load(std::memory_order_relaxed));
     }
+
+    if (auto query_execution_counters = context_ptr->getQueryExecutionCounters())
+    {
+        auto counters = query_execution_counters->getSnapshot();
+        element.used_number_of_joins = counters.number_of_joins;
+        element.used_join_algorithms = std::move(counters.join_algorithms);
+        element.used_join_kinds = std::move(counters.join_kinds);
+        element.used_join_strictness = std::move(counters.join_strictness);
+        element.spilled_to_disk = std::move(counters.spilled_to_disk);
+    }
+
     addPrivilegesInfoToQueryLogElement(element, context_ptr);
 }
 
@@ -1129,18 +1149,8 @@ void logExceptionBeforeStart(
     }
 }
 
-void validateAnalyzerSettings(ASTPtr ast)
+void normalizeAnalyzerSettings(ASTPtr ast)
 {
-    if (ast->as<ASTSetQuery>())
-        return;
-
-    auto field_to_bool = [](const Field & f) -> bool
-    {
-        if (f.getType() == Field::Types::String)
-            return stringToBool(f.safeGet<String>());
-        return f.safeGet<bool>();
-    };
-
     std::vector<ASTPtr> nodes_to_process{ ast };
     while (!nodes_to_process.empty())
     {
@@ -1149,14 +1159,10 @@ void validateAnalyzerSettings(ASTPtr ast)
 
         if (auto * set_query = node->as<ASTSetQuery>())
         {
-            for (const auto * name : {"allow_experimental_analyzer", "enable_analyzer"})
+            for (auto & change : set_query->changes)
             {
-                const auto * value = set_query->changes.tryGet(name);
-                if (value && !field_to_bool(*value))
-                    throw Exception(
-                        ErrorCodes::INCORRECT_QUERY,
-                        "Setting '{}' is obsolete and cannot be disabled: the analyzer is the only supported query analysis",
-                        name);
+                if ((change.name == "allow_experimental_analyzer" || change.name == "enable_analyzer") && !SettingFieldBool{change.value}.value)
+                    change.value = Field(true);
             }
         }
 
@@ -2293,7 +2299,7 @@ static BlockIO executeQueryImpl(
 
     /// `enable_analyzer` (canonically `allow_experimental_analyzer`) is obsolete since v26.9 and the old
     /// query analysis is gone, so nothing reads the value anymore. A change that would disable it is
-    /// refused where the settings constraints are consulted, but a settings profile from the server
+    /// rewritten to `1` where the settings constraints are consulted, but a settings profile from the server
     /// configuration is applied without them, so is a setting given to `clickhouse-local` on the command
     /// line, and so is a secondary query another server sent. Normalize it here, so that `getSetting`,
     /// `system.query_log` and a query this server sends on report the analysis that actually ran.
@@ -2450,6 +2456,22 @@ static BlockIO executeQueryImpl(
                     settings[Setting::max_ast_elements]);
                 checkASTSizeLimits(*out_ast, settings);
             }
+        }
+        else if (settings[Setting::dialect] == Dialect::logsql && !internal)
+        {
+            /// `ParserLogsQLQuery` handles SET queries internally even when the feature gate is off,
+            /// so that users can recover from misconfigured profiles (e.g. `SET dialect = 'clickhouse'`).
+            ParserLogsQLQuery parser(
+                settings[Setting::logsql_database],
+                settings[Setting::logsql_table],
+                settings[Setting::logsql_time_column],
+                settings[Setting::logsql_message_column],
+                begin,
+                end,
+                settings[Setting::allow_experimental_logsql_dialect],
+                settings[Setting::max_parser_depth],
+                max_query_size);
+            out_ast = parseLogsQLQuery(parser, begin, end, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else
         {
@@ -2829,7 +2851,7 @@ static BlockIO executeQueryImpl(
                 visitor.visit(out_ast);
             }
 
-            validateAnalyzerSettings(out_ast);
+            normalizeAnalyzerSettings(out_ast);
 
             if (settings[Setting::enforce_strict_identifier_format])
             {
@@ -2958,9 +2980,9 @@ static BlockIO executeQueryImpl(
 
             if (!queue)
                 reason = "asynchronous insert queue is not configured";
-            else if (insert_query->select)
-                reason = "insert query has select";
-            else if (insert_query->hasInlinedData())
+            /// `INSERT ... SELECT` (including `FROM input()`) is routed through
+            /// `InterpreterInsertQuery::execute` instead, so it must not reach `pushQueryWithInlinedData`.
+            else if (!insert_query->select && insert_query->hasInlinedData())
                 async_insert = true;
 
             if (!reason.empty())
@@ -3009,7 +3031,8 @@ static BlockIO executeQueryImpl(
                         std::move(result.future),
                         timeout,
                         context->getProcessListElement(),
-                        context->getProgressCallback());
+                        context->getProgressCallback(),
+                        /* report_read_progress */ true);
                     res.pipeline = QueryPipeline(Pipe(std::move(source)));
                     res.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(Block())));
                 }
@@ -3275,7 +3298,10 @@ static BlockIO executeQueryImpl(
             plan.resolveStorages(context);
 
             /// `optimize` and `buildQueryPipeline`, or the latter would still try to convert the
-            /// plan to a distributed one.
+            /// plan to a distributed one. A deserialized plan has no planner-registered contexts, and its
+            /// steps captured this query context at deserialization, so it is the object the decision
+            /// must write on fallback (set building reads `make_distributed_plan` live from it).
+            plan.addDistributedPlanDecisionContext(context);
             QueryPlanOptimizationSettings optimization_settings(context);
             plan.applyDistributedPlanFallbackToLocal(optimization_settings);
             plan.optimize(optimization_settings);
@@ -3467,6 +3493,14 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     if (context->getClientInfo().is_replicated_database_internal || context->getZooKeeperMetadataTransaction())
     {
         ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedReplicatedDDLInternal);
+        return;
+    }
+
+    /// A fuzz context copied from a collaborative worker inherits its replica number and the callbacks of the
+    /// initiator's read, so a fuzzed copy would take part in that read a second time as the same worker.
+    if (context->getClientInfo().collaborate_with_initiator)
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedCollaborativeWorker);
         return;
     }
 
@@ -3746,6 +3780,12 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             finish_iteration(/*succeeded=*/false);
             if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
                 throw; /// Oracle mismatch — abort the fuzzer to make it visible in CI
+            LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
+        }
+        catch (...)
+        {
+            /// E.g. a Poco::Exception from a mutated URI: it must not fail the client's query, whose result is already sent.
+            finish_iteration(/*succeeded=*/false);
             LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
         }
     }
