@@ -26,6 +26,7 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -402,7 +403,8 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     stableGetPermutation(data.key_block, sort_description, data.order);
     const PartFromSample whole_part(data, part_rows);
     const auto part_type = merge_tree.choosePartFormat(whole_part.bytes(), whole_part.rows, parent_part->info.level, &projection).part_type;
-    const bool adaptive_marks = parent_part->index_granularity_info.mark_type.adaptive;
+    /// the writer takes the mark type from the table settings, not from the parent part
+    const bool adaptive_marks = MergeTreeIndexGranularityInfo(merge_tree, mt_settings, part_type).mark_type.adaptive;
     /// only adaptive granularity lets block sizes change the layout
     const bool granularity_per_block = part_type == MergeTreeDataPartType::Compact
         || (adaptive_marks && !mt_settings[MergeTreeSetting::use_const_adaptive_granularity]);
@@ -599,8 +601,7 @@ bool buildScenarios(
             continue;
 
         /// row bytes only matter when granules are sized by bytes
-        const bool adaptive = part->index_granularity_info.mark_type.adaptive
-            && mt_settings[MergeTreeSetting::index_granularity_bytes] != 0;
+        const bool adaptive = mt_settings[MergeTreeSetting::index_granularity_bytes] != 0;
 
         const MarkRanges & ranges = plan.ranges[part_idx];
         ProjectionPartData part_data;
