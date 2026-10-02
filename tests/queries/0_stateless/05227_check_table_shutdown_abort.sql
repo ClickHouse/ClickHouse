@@ -27,8 +27,9 @@ CHECK TABLE t_05227;
 SYSTEM ENABLE FAILPOINT check_table_inject_shutdown_abort;
 
 CHECK TABLE t_05227; -- { serverError ABORTED }
+SYSTEM DISABLE FAILPOINT check_table_inject_shutdown_abort;
 
--- The failpoint is ONCE, so it is already consumed, and the healthy parts check out again.
+-- The healthy parts check out again.
 CHECK TABLE t_05227;
 
 -- Cancel the check of a part that is already being checked, the way `part_check_thread.stop()` does
@@ -36,8 +37,24 @@ CHECK TABLE t_05227;
 SYSTEM ENABLE FAILPOINT check_table_inject_part_check_cancelled;
 
 CHECK TABLE t_05227; -- { serverError ABORTED }
+SYSTEM DISABLE FAILPOINT check_table_inject_part_check_cancelled;
 
 CHECK TABLE t_05227;
 SELECT count() FROM t_05227;
 
 DROP TABLE t_05227 SYNC;
+
+-- A shutdown that comes after every part has been checked must not fail the check: the final call that
+-- only reports that no part is left does not look at the shutdown flag. An empty table has no part to
+-- check, so the check consists of that final call alone.
+DROP TABLE IF EXISTS t_05227_empty SYNC;
+
+CREATE TABLE t_05227_empty (a UInt64)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_05227_empty', 'r1')
+ORDER BY a;
+
+SYSTEM ENABLE FAILPOINT check_table_inject_shutdown_abort;
+CHECK TABLE t_05227_empty;
+SYSTEM DISABLE FAILPOINT check_table_inject_shutdown_abort;
+
+DROP TABLE t_05227_empty SYNC;

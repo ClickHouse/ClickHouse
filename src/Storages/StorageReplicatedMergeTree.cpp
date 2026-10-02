@@ -10668,15 +10668,17 @@ IStorage::DataValidationTasksPtr StorageReplicatedMergeTree::getCheckTaskList(
 
 std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
-    /// We want to throw and exit as soon as possible to allow part_check_thread to shutdown
-    bool aborted_by_shutdown = shutdown_called || partial_shutdown_called;
-    fiu_do_on(FailPoints::check_table_inject_shutdown_abort, { aborted_by_shutdown = true; });
-    if (aborted_by_shutdown)
-        throw Exception(ErrorCodes::ABORTED, "Table shutdown was called");
-
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::checkDataNext");
     if (auto part = assert_cast<DataValidationTasks *>(check_task_list.get())->next())
     {
+        /// We want to throw and exit as soon as possible to allow part_check_thread to shutdown.
+        /// Only when there is a part left to check: once every part has been checked, the final call that
+        /// reports the end of the list must not turn a completed check into a failure.
+        bool aborted_by_shutdown = shutdown_called || partial_shutdown_called;
+        fiu_do_on(FailPoints::check_table_inject_shutdown_abort, { aborted_by_shutdown = true; });
+        if (aborted_by_shutdown)
+            throw Exception(ErrorCodes::ABORTED, "Table shutdown was called");
+
         try
         {
             fiu_do_on(FailPoints::check_table_inject_retryable_zk_error,
