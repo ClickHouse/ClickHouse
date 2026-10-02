@@ -22,6 +22,11 @@ server = cluster.add_instance(
     "server",
     base_config_dir="configs",
     main_configs=["configs/server.crt", "configs/server.key"],
+    stay_alive=True,
+)
+
+CIPHER_SUITES_CONFIG_IN_CONTAINER = (
+    "/etc/clickhouse-server/config.d/cipher_suites_without_key_pair.xml"
 )
 
 
@@ -194,6 +199,44 @@ def test_tls13_cipher_suites_per_endpoint():
     assert offer_single_tls13_suite(8445, EXCLUDED_TLS13_SUITE)
     assert offer_single_tls13_suite(8446, ALLOWED_TLS13_SUITE)
     assert not offer_single_tls13_suite(8446, EXCLUDED_TLS13_SUITE)
+
+
+def start_with_protocols(protocols_xml, refused_protocol=None):
+    server.stop_clickhouse()
+    server.replace_config(
+        CIPHER_SUITES_CONFIG_IN_CONTAINER,
+        f"<clickhouse><protocols>{protocols_xml}</protocols></clickhouse>",
+    )
+    try:
+        if refused_protocol is None:
+            server.start_clickhouse()
+            assert server.query("SELECT 1") == "1\n"
+        else:
+            server.start_clickhouse(expected_to_fail=True)
+            assert server.contains_in_log(
+                f"'cipherSuites' in 'protocols.{refused_protocol}' requires a 'privateKeyFile'",
+                filename="clickhouse-server.err.log",
+            )
+    finally:
+        server.stop_clickhouse()
+        server.exec_in_container(
+            ["rm", "-f", CIPHER_SUITES_CONFIG_IN_CONTAINER], user="root"
+        )
+        server.start_clickhouse()
+
+
+def test_tls13_cipher_suites_require_own_key_pair():
+    start_with_protocols(
+        f"<tcp_secure><cipherSuites>{ALLOWED_TLS13_SUITE}</cipherSuites></tcp_secure>",
+        refused_protocol="tcp_secure",
+    )
+    start_with_protocols(
+        "<postgres_secure><type>postgres</type><port>5433</port>"
+        f"<cipherSuites>{ALLOWED_TLS13_SUITE}</cipherSuites></postgres_secure>",
+        refused_protocol="postgres_secure",
+    )
+    # A blank value leaves the defaults in place, so it is accepted.
+    start_with_protocols("<tcp_secure><cipherSuites> </cipherSuites></tcp_secure>")
 
 
 # tests when using PROXYv1 with enabled auth_use_forwarded_address that forwarded address is used for authentication and query's source address
