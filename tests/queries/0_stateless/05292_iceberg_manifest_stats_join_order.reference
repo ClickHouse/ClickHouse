@@ -4,22 +4,22 @@ ice_small	1	10
 0
 --- T1 twin: text order b, m, s
 Join: b[hint~100000] ⋈ (m[1000] ⋈ s[hint~10])
-ResultRows: ~~10
+ResultRows: ~~1000
 Join: m[1000] ⋈ s[hint~10]
 ResultRows: ~~10
 --- T1 twin: text order s, m, b
 Join: b[hint~100000] ⋈ (m[1000] ⋈ s[hint~10])
-ResultRows: ~~10
+ResultRows: ~~1000
 Join: m[1000] ⋈ s[hint~10]
 ResultRows: ~~10
 --- T1 gate on: text order b, m, s
 Join: b[100000] ⋈ (m[1000] ⋈ s[10])
-ResultRows: 10
+ResultRows: 1000
 Join: m[1000] ⋈ s[10]
 ResultRows: 10
 --- T1 gate on: text order s, m, b
 Join: b[100000] ⋈ (m[1000] ⋈ s[10])
-ResultRows: 10
+ResultRows: 1000
 Join: m[1000] ⋈ s[10]
 ResultRows: 10
 --- T1 gate off: text order b, m, s
@@ -52,7 +52,7 @@ Join: m[1000] ⋈ t
 ResultRows: unknown
 --- T10a gate on: table function
 Join: b[100000] ⋈ (m[1000] ⋈ s[10])
-ResultRows: 10
+ResultRows: 1000
 Join: m[1000] ⋈ s[10]
 ResultRows: 10
 --- T10a gate off
