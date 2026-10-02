@@ -141,6 +141,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_CLOSE_FILE;
     extern const int CANNOT_FSTAT;
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int CANNOT_UNLINK;
@@ -2956,7 +2957,8 @@ static void checkFileCanBeOpenedForWriting(const String & path)
     if (-1 == fd)
         ErrnoException::throwFromPath(
             errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {}", path);
-    ::close(fd);
+    if (0 != ::close(fd))
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_CLOSE_FILE, path, "Cannot close file {}", path);
 }
 
 
