@@ -67,8 +67,10 @@ public:
         SharedHeader sample_block,
         ContextPtr context,
         const String & json_column_name,
-        bool fetch_source_)
+        bool fetch_source_,
+        size_t page_size_)
         : ISource(sample_block)
+        , page_size(page_size_)
         , json_pos(sample_block->findPositionByName(json_column_name))
         , id_pos(sample_block->findPositionByName("_id"))
         , index_pos(sample_block->findPositionByName("_index"))
@@ -92,17 +94,20 @@ private:
 
     Chunk generate() override
     {
-        if (page_returned)
+        if (!has_data)
             return {};
 
         auto response = client->searchIndex(fetch_source);
-        page_returned = true;
 
         const auto & header = getPort().getHeader();
         MutableColumns columns = header.cloneEmptyColumns();
         std::ostringstream source_stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
 
         size_t num_rows = response->size();
+
+        if (num_rows == 0)
+            return {};
+
         for (unsigned int i = 0; i < num_rows; ++i)
         {
             auto obj = response->getObject(i);
@@ -129,10 +134,14 @@ private:
             object_serialization->deserializeObject(*columns[*json_pos], source_stream.view(), format_settings);
         }
 
+        if (num_rows < page_size)
+            has_data = false;
+
         return Chunk(std::move(columns), num_rows);
     }
 
-    bool page_returned = false;
+    bool has_data = true;
+    const size_t page_size;
     std::optional<size_t> json_pos;
     std::optional<size_t> id_pos;
     std::optional<size_t> index_pos;
@@ -193,7 +202,7 @@ Pipe StorageElasticsearch::read(
     auto client = std::make_shared<ElasticsearchClient>(config, context);
     return Pipe(std::make_shared<ElasticsearchSource>(
         std::move(client),
-        std::make_shared<Block>(std::move(sample_block)), context, json_column_name, fetch_source));
+        std::make_shared<Block>(std::move(sample_block)), context, json_column_name, fetch_source, config.page_size));
 }
 
 VirtualColumnsDescription StorageElasticsearch::createVirtuals()

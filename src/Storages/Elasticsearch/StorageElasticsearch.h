@@ -46,7 +46,6 @@ public:
 private:
 
     VirtualColumnsDescription createVirtuals();
-
     ElasticsearchConfiguration config;
 };
 
