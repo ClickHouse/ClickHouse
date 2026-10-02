@@ -20,6 +20,15 @@ wrapped in Tuple
 (9223372036854775806)
 wrapped in Map
 {'k':9223372036854775806}
+aggregate functions
+9223372036854775806
+9223372036854775806
+variantType
+UInt64
+union all inside except distinct
+[1,9223372036854775806]
+union distinct inside union all
+[-9223372036854775808,1,9223372036854775806]
 control: explicit casts
 Variant(Int64, UInt64)
 9223372036854775806
