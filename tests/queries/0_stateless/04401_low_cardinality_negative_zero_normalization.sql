@@ -18,18 +18,18 @@ CREATE TABLE lcv (x LowCardinality(Float64)) ENGINE = Memory;
 INSERT INTO lcv SELECT 0.0 FROM numbers(100);
 INSERT INTO lcv VALUES (-0.0);
 INSERT INTO lcv SELECT 0.0 FROM numbers(100);
-SELECT (SELECT count() FROM (SELECT x FROM lcv ORDER BY x LIMIT 1 BY x SETTINGS max_threads = 1))
-     = (SELECT count() FROM (SELECT x FROM lcv GROUP BY x SETTINGS optimize_aggregation_in_order = 0));
+SELECT (SELECT count() FROM (SELECT x FROM lcv ORDER BY x LIMIT 1 BY x) SETTINGS max_threads = 1)
+     = (SELECT count() FROM (SELECT x FROM lcv GROUP BY x) SETTINGS optimize_aggregation_in_order = 0);
 DROP TABLE lcv;
 
 -- LIMIT BY and negative LIMIT BY over a sorted stream, Float32, with a second key value 1.0.
 DROP TABLE IF EXISTS lcv32;
 CREATE TABLE lcv32 (x LowCardinality(Float32)) ENGINE = Memory;
 INSERT INTO lcv32 VALUES (0.0)(-0.0)(1.0)(-0.0)(0.0);
-SELECT (SELECT count() FROM (SELECT x FROM lcv32 ORDER BY x LIMIT 1 BY x SETTINGS max_threads = 1))
-     = (SELECT count() FROM (SELECT x FROM lcv32 GROUP BY x SETTINGS optimize_aggregation_in_order = 0));
-SELECT (SELECT count() FROM (SELECT x FROM lcv32 ORDER BY x LIMIT -1 BY x SETTINGS max_threads = 1))
-     = (SELECT count() FROM (SELECT x FROM lcv32 GROUP BY x SETTINGS optimize_aggregation_in_order = 0));
+SELECT (SELECT count() FROM (SELECT x FROM lcv32 ORDER BY x LIMIT 1 BY x) SETTINGS max_threads = 1)
+     = (SELECT count() FROM (SELECT x FROM lcv32 GROUP BY x) SETTINGS optimize_aggregation_in_order = 0);
+SELECT (SELECT count() FROM (SELECT x FROM lcv32 ORDER BY x LIMIT -1 BY x) SETTINGS max_threads = 1)
+     = (SELECT count() FROM (SELECT x FROM lcv32 GROUP BY x) SETTINGS optimize_aggregation_in_order = 0);
 DROP TABLE lcv32;
 
 -- Nullable inner type, exercising the unwrap that looks through Nullable to the float inner type:
@@ -37,8 +37,8 @@ DROP TABLE lcv32;
 DROP TABLE IF EXISTS lcn;
 CREATE TABLE lcn (x LowCardinality(Nullable(Float64))) ENGINE = Memory;
 INSERT INTO lcn VALUES (0.0)(-0.0)(NULL)(0.0)(-0.0)(NULL);
-SELECT (SELECT count() FROM (SELECT x FROM lcn ORDER BY x LIMIT 1 BY x SETTINGS max_threads = 1))
-     = (SELECT count() FROM (SELECT x FROM lcn GROUP BY x SETTINGS optimize_aggregation_in_order = 0));
+SELECT (SELECT count() FROM (SELECT x FROM lcn ORDER BY x LIMIT 1 BY x) SETTINGS max_threads = 1)
+     = (SELECT count() FROM (SELECT x FROM lcn GROUP BY x) SETTINGS optimize_aggregation_in_order = 0);
 DROP TABLE lcn;
 
 -- MergeTree sorted by the key, exercising the dictionary deserialized from a part together with reading in
@@ -49,8 +49,8 @@ INSERT INTO lc_mt SELECT 0.0 FROM numbers(50);
 INSERT INTO lc_mt VALUES (-0.0);
 INSERT INTO lc_mt SELECT 0.0 FROM numbers(50);
 OPTIMIZE TABLE lc_mt FINAL;
-SELECT (SELECT count() FROM (SELECT DISTINCT x FROM lc_mt SETTINGS max_threads = 1, optimize_distinct_in_order = 1))
-     = (SELECT count() FROM (SELECT x FROM lc_mt GROUP BY x SETTINGS optimize_aggregation_in_order = 0));
-SELECT (SELECT count() FROM (SELECT x FROM lc_mt ORDER BY x LIMIT 1 BY x SETTINGS max_threads = 1))
-     = (SELECT count() FROM (SELECT x FROM lc_mt GROUP BY x SETTINGS optimize_aggregation_in_order = 0));
+SELECT (SELECT count() FROM (SELECT DISTINCT x FROM lc_mt) SETTINGS max_threads = 1, optimize_distinct_in_order = 1)
+     = (SELECT count() FROM (SELECT x FROM lc_mt GROUP BY x) SETTINGS optimize_aggregation_in_order = 0);
+SELECT (SELECT count() FROM (SELECT x FROM lc_mt ORDER BY x LIMIT 1 BY x) SETTINGS max_threads = 1)
+     = (SELECT count() FROM (SELECT x FROM lc_mt GROUP BY x) SETTINGS optimize_aggregation_in_order = 0);
 DROP TABLE lc_mt;

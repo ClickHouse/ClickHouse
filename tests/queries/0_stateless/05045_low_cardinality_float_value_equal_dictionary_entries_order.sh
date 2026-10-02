@@ -11,7 +11,7 @@ run() {
     $CLICKHOUSE_LOCAL --allow_suspicious_low_cardinality_types 1 --query "$1" < /dev/null
 }
 
-# Arming check: two entries with distinct bit patterns, one distinct value. Without it every
+# Arming check: two entries with distinct bit patterns that compare equal. Without it every
 # assertion below would pass without reaching the code under test.
 # The sorts cover both directions of both keys. The one with a limit takes the separate limit branch
 # of IColumn::updatePermutationImpl, which runs a partial sort and then extends the last equal range
@@ -20,7 +20,7 @@ run "
     CREATE TABLE t (k LowCardinality(Float64), v UInt64) ENGINE = Memory;
     INSERT INTO t VALUES (-0.0, 10), (0.0, 20), (-0.0, 30), (0.0, 40);
     SELECT count() FROM (SELECT DISTINCT hex(reinterpretAsUInt64(k)) FROM t);
-    SELECT count() FROM (SELECT DISTINCT toFloat64(k) FROM t);
+    SELECT min(k) = max(k) FROM t;
     SELECT v FROM t ORDER BY k ASC, v ASC;
     SELECT v FROM t ORDER BY k DESC, v ASC;
     SELECT v FROM t ORDER BY k ASC, v DESC;
