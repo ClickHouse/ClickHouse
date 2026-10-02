@@ -1600,6 +1600,12 @@ void FileSegment::onRemovedFromCache(const FileSegmentGuard::Lock &)
     efficiency.addActiveBytes(efficiency_window_id, -static_cast<Int64>(getActiveBytesUnlocked()));
 }
 
+bool FileSegment::wasServedFromCache() const
+{
+    std::lock_guard lock(efficiency_mutex);
+    return efficiency_window_id != FileCacheEfficiency::NEVER_READ;
+}
+
 size_t FileSegment::getActiveBytesUnlocked() const
 {
     return granulesToBytesUnlocked(active_granules[0], active_granules[1]);

@@ -174,6 +174,9 @@ public:
     /// Marks `[offset, offset + size)` as served from the cache. Not under a key or file segment lock.
     void markRead(size_t offset, size_t size);
 
+    /// Whether the cache served any byte of this file segment since it was cached.
+    bool wasServedFromCache() const;
+
     /**
      * ========== Methods used by `cache` ========================
      */

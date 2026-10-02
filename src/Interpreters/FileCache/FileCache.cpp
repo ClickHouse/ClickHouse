@@ -2672,7 +2672,7 @@ void FileCache::onSegmentEvicted(const FileSegment & segment, const String & use
 {
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment.getReservedSize());
-    if (segment.getHitsCount() == 0)
+    if (efficiency.isEnabled() && !segment.wasServedFromCache())
         ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedNoHitBytes, segment.getReservedSize());
 
     if (!expose_eviction_metrics.load(std::memory_order_relaxed))

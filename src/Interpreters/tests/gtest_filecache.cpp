@@ -79,6 +79,7 @@ namespace ProfileEvents
 {
     extern const Event FilesystemCacheDowngradedFileSegments;
     extern const Event FilesystemCacheEvictedFileSegments;
+    extern const Event FilesystemCacheEvictedNoHitBytes;
 }
 
 using namespace std::chrono_literals;
@@ -4494,4 +4495,44 @@ TEST_F(FileCacheTest, EfficiencyStaleWindowDoesNotMoveBack)
     const auto snapshot = cache.getEfficiency().getSnapshot();
     EXPECT_EQ(snapshot.active_bytes, 32);
     EXPECT_EQ(snapshot.passive_bytes, 96);
+}
+
+TEST_F(FileCacheTest, EfficiencyEvictedNoHitBytes)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_no_hit_test"));
+    auto cache = DB::FileCache("efficiency_no_hit", efficiencyCacheSettings(10));
+    cache.initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("efficiency_no_hit_key");
+    auto no_hit_bytes = [] { return ProfileEvents::global_counters[ProfileEvents::FilesystemCacheEvictedNoHitBytes]; };
+
+    /// A: filled and entered again by its filler, which `hits_count` counts as a hit; never served from the cache.
+    {
+        auto holder = cache.getOrSet(key, 0, 128, 1024, {}, 0, user);
+        auto a = get(holder, 0);
+        download(a);
+        a->increasePriority();
+        ASSERT_EQ(a->getHitsCount(), 1);
+    }
+    /// B: served from the cache.
+    {
+        auto holder = cache.getOrSet(key, 128, 128, 1024, {}, 0, user);
+        auto b = get(holder, 0);
+        download(b);
+        b->markRead(128, 128);
+    }
+
+    /// Eight new 128-byte file segments fill the 1024-byte cache: LRU evicts A, then B.
+    const auto before = no_hit_bytes();
+    auto filler_key = FileCacheKey::fromPath("efficiency_no_hit_filler");
+    for (size_t i = 0; i < 8; ++i)
+    {
+        auto holder = cache.getOrSet(filler_key, i * 128, 128, /*file_size=*/1024, {}, 0, user);
+        download(get(holder, 0));
+        if (i == 6)
+            EXPECT_EQ(no_hit_bytes() - before, 128);   /// A is evicted.
+    }
+    EXPECT_EQ(no_hit_bytes() - before, 128);   /// B was served, so it adds nothing.
 }
