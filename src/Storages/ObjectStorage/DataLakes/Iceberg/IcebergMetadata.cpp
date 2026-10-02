@@ -986,6 +986,15 @@ void IcebergMetadata::createInitial(
     if (!compression_suffix.empty())
         compression_suffix = "." + compression_suffix;
 
+    if (compression_method != CompressionMethod::None)
+    {
+        /// A catalog that writes the first metadata file itself reads the codec from this property.
+        Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
+        properties->set("write.metadata.compression-codec", toContentEncodingName(compression_method));
+        metadata_content_object->set("properties", properties);
+        metadata_content = stringifyJSON(metadata_content_object, 4);
+    }
+
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
 
     if (catalog)
@@ -994,7 +1003,7 @@ void IcebergMetadata::createInitial(
         /// validation, so a rejected CREATE leaves no trace in the catalog): a catalog
         /// that shares its storage view with the data (e.g. SeaweedFS) refuses to create
         /// a namespace over the plain directory those files would leave behind.
-        catalog->createNamespaceIfNotExists(namespace_name, location_path);
+        catalog->createNamespaceIfNotExists(namespace_name);
     }
 
     if (!catalog_writes_metadata)

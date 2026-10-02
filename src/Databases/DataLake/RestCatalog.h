@@ -142,7 +142,7 @@ protected:
         bool flat_namespaces_,
         DB::ContextPtr context_);
 
-    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
+    void createNamespaceIfNotExists(const String & namespace_name) const override;
 
     const std::filesystem::path base_url;
     const LoggerPtr log;

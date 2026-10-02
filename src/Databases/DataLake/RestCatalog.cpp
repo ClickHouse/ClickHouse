@@ -1800,7 +1800,7 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
         wb->ignoreAll();
 }
 
-void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & /*location*/) const
+void RestCatalog::createNamespaceIfNotExists(const String & namespace_name) const
 {
     const auto state_snapshot = state.get();
 
@@ -1822,11 +1822,12 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT).generic_string();
 
     /// The request body takes the namespace as a list of levels, unlike the URL form above.
-    /// The location passed here is the table root, not the namespace root, so it is not
-    /// stored. The catalog applies its warehouse default instead.
+    /// No `location` property is sent. The catalog applies its warehouse default instead.
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
         std::vector<String> levels;
+        /// TODO: a level that contains a dot cannot be expressed. The levels are joined with a dot
+        /// in `parseNamespaces`, so this split mirrors that join and `encodeNamespaceForURI`.
         splitInto<'.'>(levels, namespace_name);
         Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
         for (const auto & level : levels)
@@ -1863,13 +1864,21 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
     request_body->set("partition-spec", metadata_content->getArray("partition-specs")->get(0));
 
-    /// The local metadata serializes ORDER BY into sort-orders[0]. The server assigns the order id.
+    /// The local metadata serializes ORDER BY into sort-orders[0].
     request_body->set("write-order", metadata_content->getArray("sort-orders")->get(0));
     request_body->set("stage-create", false);
     Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
 
     if (metadata_content->has("format-version"))
         properties->set("format-version", std::to_string(metadata_content->getValue<int>("format-version")));
+
+    /// Forward the table properties, such as the metadata compression codec.
+    if (metadata_content->has("properties"))
+    {
+        Poco::JSON::Object::Ptr table_properties = metadata_content->getObject("properties");
+        for (const auto & [key, value] : *table_properties)
+            properties->set(key, value);
+    }
 
     request_body->set("properties", properties);
 
