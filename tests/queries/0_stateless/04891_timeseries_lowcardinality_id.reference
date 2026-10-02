@@ -11,8 +11,8 @@ Tuple(UInt64, LowCardinality(UUID))
 1970-01-01 00:01:40.000	5
 1970-01-01 00:02:30.000	10
 1970-01-01 00:04:10.000	20
-1	1
--- partial selector: results, no id range
+1	0
+-- partial selector: results and the id set alone
 1970-01-01 00:01:40.000	1
 1970-01-01 00:03:20.000	2
 1970-01-01 00:05:00.000	3
@@ -21,7 +21,7 @@ Tuple(UInt64, LowCardinality(UUID))
 1970-01-01 00:05:00.000	3
 1970-01-01 00:02:30.000	10
 1970-01-01 00:04:10.000	20
-0
+0	1
 -- prometheus query evaluation over the dictionary-encoded ids
 [('__name__','foo')]	5
 [('__name__','foo'),('env','dev')]	20

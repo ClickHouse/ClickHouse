@@ -9999,6 +9999,10 @@ Allows creation of tables with the [TimeSeries](/reference/engines/table-engines
 Read from the recent samples table of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table instead of the main samples table when the whole requested time range fits in the TTL window of the recent samples table (see the `recent_samples_ttl_seconds` setting of the TimeSeries table engine).
 )", PRIVATE_PREVIEW, \
         {"26.8", true, true, "New setting to read from the recent samples table of a TimeSeries table when the requested time range fits in its TTL window."}) \
+    DECLARE(UInt64, time_series_id_range_check_min_series, 256, R"(
+The minimum number of series selected by a selector of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table with label matchers besides the metric name to check, with one more query on the tags table, whether the range of their identifiers holds any other series of the metric. If it doesn't, the identifiers aren't used for the primary key analysis of the data tables, which is expensive for a large set of identifiers, and their range selects the same granules. A selector of fewer series always uses them together with the range. 0 checks every such selector.
+)", PRIVATE_PREVIEW, \
+        {"26.10", 256, 256, "New setting: the minimum number of series selected from a TimeSeries table for which the range of their identifiers is checked to hold no other series of the metric."}) \
     DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
 Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.
 )", EXPERIMENTAL, \

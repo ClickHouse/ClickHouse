@@ -4,7 +4,6 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -188,6 +187,7 @@ namespace TimeSeriesSetting
 namespace Setting
 {
     extern const SettingsBool time_series_prefer_recent_samples_table;
+    extern const SettingsUInt64 time_series_id_range_check_min_series;
 }
 
 StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfiguration(ASTs & args, const ContextPtr & context)
@@ -489,7 +489,7 @@ namespace
         DateTime64 min_time,
         DateTime64 max_time,
         const DataTypePtr & table_timestamp_type,
-        ASTs whole_metric_id_range_conditions)
+        ASTs id_range_conditions)
     {
         ASTs conditions;
 
@@ -516,12 +516,10 @@ namespace
         /// id IN ids_tmp_table
         conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTIdentifier>(ids_tmp_table_name)));
 
-        /// For a whole-metric selector over a metric-clustered id layout one more condition is
-        /// added: indexHint(<raw id column> >= tuple(hash(metric_name), min) AND <raw id column>
-        /// <= tuple(hash(metric_name), max)). `indexHint` keeps it out of the row-level filter, so
-        /// its only purpose is to give the primary-key index analysis a continuous key range
-        /// instead of the large set (see readImpl).
-        for (auto & condition : whole_metric_id_range_conditions)
+        /// The range of the selected ids: indexHint(<raw id column> >= <min id> AND <raw id column> <= <max id>).
+        /// `indexHint` keeps it out of the row-level filter, so its only purpose is to give the primary-key index analysis
+        /// a continuous key range, together with the id set or instead of it (see readImpl).
+        for (auto & condition : id_range_conditions)
             conditions.push_back(std::move(condition));
 
         return makeASTForLogicalAnd(std::move(conditions));
@@ -587,7 +585,7 @@ namespace
                                         DateTime64 min_time,
                                         DateTime64 max_time,
                                         const DataTypePtr & table_timestamp_type,
-                                        ASTs whole_metric_id_range_conditions)
+                                        ASTs id_range_conditions)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -616,7 +614,7 @@ namespace
         /// WHERE (timestamp >= min_time) AND (timestamp <= max_time) AND (id IN ids_tmp_table)
         {
             auto where_filter = makeWhereFilterForDataTable(
-                ids_tmp_table_name, min_time, max_time, table_timestamp_type, std::move(whole_metric_id_range_conditions));
+                ids_tmp_table_name, min_time, max_time, table_timestamp_type, std::move(id_range_conditions));
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
@@ -710,43 +708,6 @@ namespace
         return res;
     }
 
-    /// Constant ASTs for the minimum and the maximum value of one component of a multi-component
-    /// series id. The supported types are the ones `TimeSeriesIDGenerator` can generate hashes for.
-    std::optional<std::pair<ASTPtr, ASTPtr>> makeMinMaxLiteralsForIDComponent(const IDataType & type)
-    {
-        /// A LowCardinality component has the value space of its dictionary type: the range bounds
-        /// are the dictionary type's bounds (constants have no dictionary encoding of their own).
-        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&type))
-            return makeMinMaxLiteralsForIDComponent(*low_cardinality_type->getDictionaryType());
-
-        WhichDataType which(type);
-
-        if (which.isUInt64())
-            return {{make_intrusive<ASTLiteral>(UInt64{0}), make_intrusive<ASTLiteral>(std::numeric_limits<UInt64>::max())}};
-
-        if (which.isUInt128())
-            return {{make_intrusive<ASTLiteral>(UInt128{0}), make_intrusive<ASTLiteral>(std::numeric_limits<UInt128>::max())}};
-
-        if (which.isUUID())
-        {
-            return {{makeASTFunction("toUUID", make_intrusive<ASTLiteral>("00000000-0000-0000-0000-000000000000")),
-                     makeASTFunction("toUUID", make_intrusive<ASTLiteral>("ffffffff-ffff-ffff-ffff-ffffffffffff"))}};
-        }
-
-        if (which.isFixedString() && (typeid_cast<const DataTypeFixedString &>(type).getN() == 16))
-        {
-            auto fixed_string_16 = [](char c)
-            {
-                return makeASTFunction("CAST",
-                    makeASTFunction("unhex", make_intrusive<ASTLiteral>(String(32, c))),
-                    make_intrusive<ASTLiteral>("FixedString(16)"));
-            };
-            return {{fixed_string_16('0'), fixed_string_16('f')}};
-        }
-
-        return {};
-    }
-
     /// Replaces references to the `metric_name` column with a string literal, in place.
     void substituteMetricNameInPlace(ASTPtr & node, const String & metric_name_value)
     {
@@ -759,104 +720,142 @@ namespace
             substituteMetricNameInPlace(child, metric_name_value);
     }
 
-    /// The primary-key range of the series of one metric: tuple(first_component, second_component_min) <= id
-    /// <= tuple(first_component, second_component_max), see `tryMakeWholeMetricIDRange`.
-    struct WholeMetricIDRange
+    /// The minimum and the maximum of the selected ids.
+    struct IDRange
     {
-        ASTPtr first_component;
-        ASTPtr second_component_min;
-        ASTPtr second_component_max;
+        Field min;
+        Field max;
     };
 
-    /// Checks whether the selector can carry a primary-key range on the data tables' `id`
-    /// column covering the whole metric, and returns the range if it can.
-    ///
-    /// With the canonical id generator for a two-component id type `Tuple(F, S)` (see
-    /// `TimeSeriesIDGenerator::getDefault`) the first id component is a hash of the metric name
-    /// alone, so all series of one metric occupy one continuous range of the samples table's
-    /// primary key: tuple(hash(metric_name), min_S) <= id <= tuple(hash(metric_name), max_S).
-    /// When additionally the selector's matchers select ALL (time-eligible) series of the metric
-    /// - the dominant shape of dashboard and recording-rule queries - the large `id IN <set>`
-    /// condition adds nothing to primary-key index analysis over that range, while costing a
-    /// generic exclusion search over the set (hundreds of milliseconds per part per query for
-    /// tens of thousands of series, single-threaded). The range conditions returned here select
-    /// the same granules through the cheap continuous-range path.
-    ///
-    /// The decision is advisory with respect to correctness: the returned range is a SUPERSET of
-    /// the resolved id set (verified over the existing series by the probe below and guaranteed
-    /// for future inserts by the id generator), and the `id IN <set>` condition is kept in the
-    /// WHERE for exact row-level filtering. Any rows a hash collision could add to the range are
-    /// still rejected row-by-row.
-    ///
-    /// Returns nothing (= emit today's SQL) unless ALL of the following hold:
-    /// 1. The matchers contain exactly one EQ matcher on `__name__` with a non-empty value.
-    /// 2. The id type is a two-component tuple of types supported by `TimeSeriesIDGenerator`,
-    ///    and the id generator used by the table is the canonical one for that type (a custom
-    ///    generator gives no metric clustering).
-    /// 3. Every data table read by the selector (the samples table, and the histograms table if any)
-    ///    physically stores `id` with exactly this type. The range is used for all of them or none:
-    ///    the caller excludes the id set from index analysis for the whole query.
-    /// 4. A probe query on the tags table finds NO time-eligible series of the metric that either
-    ///    fails the remaining matchers (the matcher does not select the whole metric) or has an
-    ///    id outside the range (rows written before an `ALTER ... MODIFY SETTING id_generator`).
-    std::optional<WholeMetricIDRange> tryMakeWholeMetricIDRange(
-        const PrometheusQueryTree::MatcherList & matchers,
-        const std::unordered_map<String, String> & column_name_by_tag_name,
-        const std::vector<const ColumnsDescription *> & data_tables_columns,
-        const StorageID & tags_table_id,
-        const ColumnsDescription & tags_table_columns,
-        const TimeSeriesSettings & time_series_settings,
-        const StorageID & time_series_storage_id,
-        const DataTypePtr & table_id_type,
-        const DataTypePtr & table_timestamp_type,
-        const std::optional<DateTime64> & min_time_to_filter_ids,
-        const std::optional<DateTime64> & max_time_to_filter_ids,
-        const ContextPtr & context,
-        const LoggerPtr & log)
+    /// The ids of the series selected by the tags lookup: the temporary table with the single column `id` holding them,
+    /// their number, their type (the type of the tags table's `id` without `LowCardinality`) and, if the lookup tracked
+    /// it, their range.
+    struct LookedUpIDs
     {
-        /// 1. Exactly one EQ matcher on `__name__`, remember the rest for the probe.
+        std::shared_ptr<TemporaryTableHolder> table;
+        size_t count = 0;
+        DataTypePtr type;
+        std::optional<IDRange> range;
+    };
+
+    /// Updates `min` and `max`, columns of one row or null, with the rows of `column`. Tuples are compared lexicographically.
+    void updateMinMax(const IColumn & column, ColumnPtr & min, ColumnPtr & max)
+    {
+        size_t min_row = 0;
+        size_t max_row = 0;
+        for (size_t row = 1; row < column.size(); ++row)
+        {
+            if (column.compareAt(row, min_row, column, /* nan_direction_hint = */ 1) < 0)
+                min_row = row;
+            if (column.compareAt(row, max_row, column, /* nan_direction_hint = */ 1) > 0)
+                max_row = row;
+        }
+
+        const auto copy_row = [&](size_t row)
+        {
+            auto res = column.cloneEmpty();
+            res->insertFrom(column, row);
+            return ColumnPtr{std::move(res)};
+        };
+
+        if (!min || (column.compareAt(min_row, 0, *min, /* nan_direction_hint = */ 1) < 0))
+            min = copy_row(min_row);
+        if (!max || (column.compareAt(max_row, 0, *max, /* nan_direction_hint = */ 1) > 0))
+            max = copy_row(max_row);
+    }
+
+    /// Makes `_CAST(<value>, '<type>')`. The cast keeps the type of the constant exact after the query is formatted and
+    /// parsed again (e.g. for the replicas): a `UUID` inside a tuple literal would be parsed as a `String`.
+    ASTPtr makeTypedLiteral(const Field & value, const DataTypePtr & type)
+    {
+        return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(value), make_intrusive<ASTLiteral>(type->getName()));
+    }
+
+    /// Makes `<id> >= <min id> AND <id> <= <max id>`. The lookup must have tracked the range of the ids.
+    ASTPtr makeIDRangeCondition(const ASTPtr & id, const LookedUpIDs & ids)
+    {
+        chassert(ids.range);
+        return makeASTForLogicalAnd(
+            {makeASTFunction("greaterOrEquals", id->clone(), makeTypedLiteral(ids.range->min, ids.type)),
+             makeASTFunction("lessOrEquals", id->clone(), makeTypedLiteral(ids.range->max, ids.type))});
+    }
+
+    /// Makes the condition on the raw `id` column of a data table restricting it to the range of the selected ids.
+    ASTPtr makeIDRangeConditionForDataTable(const LookedUpIDs & ids, const StorageID & data_table_id)
+    {
+        /// Qualified so that it resolves to the table column and not to the same-named alias of the SELECT list.
+        const ASTPtr id = make_intrusive<ASTIdentifier>(
+            std::vector<String>{data_table_id.database_name, data_table_id.table_name, TimeSeriesColumnNames::ID});
+
+        /// Wrapped in `indexHint` so the range reaches index analysis but is not evaluated per row: the `id IN <set>`
+        /// condition is the exact filter, and every id of the set is inside the range.
+        return makeASTFunction("indexHint", makeIDRangeCondition(id, ids));
+    }
+
+    /// Whether every data table read by the selector (the samples table, and the histograms table if any) stores `id`
+    /// physically with exactly the type of the tags table's `id`: the range conditions compare the raw column (bypassing
+    /// the identity-cast alias of the SELECT list). The range is used for all of them or none, because the id set is
+    /// excluded from index analysis for the whole query.
+    bool dataTablesStoreIDType(const std::vector<const ColumnsDescription *> & data_tables_columns, const DataTypePtr & table_id_type)
+    {
+        for (const auto * data_table_columns : data_tables_columns)
+        {
+            const auto data_table_id_column = data_table_columns->tryGetPhysical(TimeSeriesColumnNames::ID);
+            if (!data_table_id_column || (data_table_id_column->type->getName() != table_id_type->getName()))
+                return false;
+        }
+        return true;
+    }
+
+    /// A selector whose id range may replace the id set in primary-key index analysis of the data tables, as far as the
+    /// metadata tells (see `tryMakeIDRangeCandidate`): its `__name__` matcher, its other matchers and the first id
+    /// component of the series of its metric.
+    struct IDRangeCandidate
+    {
         const PrometheusQueryTree::Matcher * name_matcher = nullptr;
         std::vector<const PrometheusQueryTree::Matcher *> other_matchers;
+        Field first_component;
+    };
+
+    /// Checks, before the tags lookup, the conditions for the range of the selected ids to replace the id set that don't
+    /// depend on the ids (see `idRangeHoldsOnlySelectedSeries` for the rest): the lookup tracks the range only if they hold.
+    /// Requires:
+    /// 1. Exactly one EQ matcher on `__name__`, with a non-empty value.
+    /// 2. A two-component tuple id with the canonical generator: its first component hashes the metric name alone, so no
+    ///    series of another metric lies between two series of this one.
+    /// 3. The data tables storing `id` with the type of the tags table's `id` (see `dataTablesStoreIDType`).
+    std::optional<IDRangeCandidate> tryMakeIDRangeCandidate(
+        const PrometheusQueryTree::MatcherList & matchers,
+        const ColumnsDescription & tags_table_columns,
+        const std::vector<const ColumnsDescription *> & data_tables_columns,
+        const TimeSeriesSettings & time_series_settings,
+        const DataTypePtr & table_id_type,
+        const ContextPtr & context)
+    {
+        /// 1. Exactly one EQ matcher on `__name__`, remember the rest for the check.
+        IDRangeCandidate res;
         for (const auto & matcher : matchers)
         {
             if ((matcher.matcher_type == PrometheusQueryTree::MatcherType::EQ) && (matcher.label_name == TimeSeriesTagNames::MetricName))
             {
-                if (name_matcher)
+                if (res.name_matcher)
                     return {};
-                name_matcher = &matcher;
+                res.name_matcher = &matcher;
             }
             else
-                other_matchers.push_back(&matcher);
+                res.other_matchers.push_back(&matcher);
         }
-        if (!name_matcher || name_matcher->label_value.empty())
+        if (!res.name_matcher || res.name_matcher->label_value.empty())
             return {};
-        const String & metric_name = name_matcher->label_value;
 
-        /// 2a. The id is a two-component tuple of supported types.
+        /// 2. The canonical id generator for a two-component id type. The resolution order mirrors `TimeSeriesSink`:
+        /// the `id_generator` setting, then the DEFAULT of the tags-table `id` column, then the canonical generator.
         const auto * id_tuple_type = typeid_cast<const DataTypeTuple *>(table_id_type.get());
         if (!id_tuple_type || (id_tuple_type->getElements().size() != 2))
             return {};
-        if (!makeMinMaxLiteralsForIDComponent(*id_tuple_type->getElements()[0]))
+        const ASTPtr canonical_generator = TimeSeriesIDGenerator::tryGetDefault(table_id_type);
+        if (!canonical_generator)
             return {};
-        auto min_max_second_component = makeMinMaxLiteralsForIDComponent(*id_tuple_type->getElements()[1]);
-        if (!min_max_second_component)
-            return {};
-
-        /// 3. The data tables store `id` physically with exactly this type: the range conditions
-        /// compare the raw column (bypassing the identity-cast alias of the SELECT list).
-        for (const auto * data_table_columns : data_tables_columns)
-        {
-            auto data_table_id_column = data_table_columns->tryGetPhysical(TimeSeriesColumnNames::ID);
-            if (!data_table_id_column || (data_table_id_column->type->getName() != table_id_type->getName()))
-                return {};
-        }
-
-        /// 2b. The id generator is the canonical one for this id type. The resolution order mirrors
-        /// `TimeSeriesSink`: the `id_generator` setting, then the DEFAULT of the tags-table `id`
-        /// column, then the canonical generator.
-        /// `getDefault` cannot throw here: two-component tuples of the types accepted above are
-        /// exactly the tuple types it supports.
-        ASTPtr canonical_generator = TimeSeriesIDGenerator::getDefault(table_id_type, time_series_storage_id);
         ASTPtr id_generator = time_series_settings[TimeSeriesSetting::id_generator].value;
         if (!id_generator)
         {
@@ -866,132 +865,99 @@ namespace
         if (id_generator && (id_generator->getTreeHash(/*ignore_aliases=*/true) != canonical_generator->getTreeHash(/*ignore_aliases=*/true)))
             return {};
 
-        /// The first id component for this metric, e.g. sipHash64('my_metric'), as a constant
-        /// expression: the canonical generator's first tuple element with `metric_name` replaced
-        /// by the metric name literal.
+        /// 3. The range conditions compare the raw `id` column of every data table.
+        if (!dataTablesStoreIDType(data_tables_columns, table_id_type))
+            return {};
+
+        /// The first id component for this metric, e.g. sipHash64('my_metric'): the canonical generator's first tuple
+        /// element with `metric_name` replaced by the metric name literal.
         ASTPtr first_component = canonical_generator->as<ASTFunction &>().arguments->children.at(0)->clone();
-        substituteMetricNameInPlace(first_component, metric_name);
-
-        /// 4. The probe: find one time-eligible series of the metric that contradicts the range
-        /// emission, i.e. fails the remaining matchers or does not hash into the range.
-        ///
-        ///     SELECT 1 FROM tags_table
-        ///     WHERE <__name__ matcher and the same time conditions as the tags lookup query>
-        ///       AND (NOT (<other matchers>) OR tupleElement(id, 1) != <first_component>)
-        ///     LIMIT 1
-        ///
-        /// One such series means the id set is not the whole metric's primary-key range: fall back.
-        /// No such series means every series the tags lookup query can select lies in the range. The
-        /// probe result cannot be raced into incorrectness: series inserted after the probe get
-        /// their ids from the current (canonical) generator, so they stay inside the range, and
-        /// the `id IN <set>` condition keeps doing the exact row-level filtering either way.
-        {
-            ASTPtr counterexample = makeASTFunction(
-                "notEquals",
-                makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTLiteral>(UInt64{1})),
-                first_component->clone());
-
-            if (!other_matchers.empty())
-            {
-                ASTs other_matcher_asts;
-                for (const auto * matcher : other_matchers)
-                    other_matcher_asts.push_back(matcherToAST(*matcher, column_name_by_tag_name));
-                counterexample = makeASTFunction(
-                    "or", makeASTFunction("not", makeASTForLogicalAnd(std::move(other_matcher_asts))), std::move(counterexample));
-            }
-
-            PrometheusQueryTree::MatcherList name_matcher_only{*name_matcher};
-            ASTPtr probe_where = makeASTForLogicalAnd(
-                {makeWhereFilterForTagsTable(name_matcher_only, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, table_timestamp_type),
-                 std::move(counterexample)});
-
-            auto probe_select = make_intrusive<ASTSelectQuery>();
-            {
-                auto select_list_exp = make_intrusive<ASTExpressionList>();
-                select_list_exp->children.push_back(make_intrusive<ASTLiteral>(UInt64{1}));
-                probe_select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
-
-                auto tables = make_intrusive<ASTTablesInSelectQuery>();
-                auto table = make_intrusive<ASTTablesInSelectQueryElement>();
-                auto table_exp = make_intrusive<ASTTableExpression>();
-                table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(tags_table_id);
-                table_exp->children.emplace_back(table_exp->database_and_table_name);
-                table->table_expression = table_exp;
-                tables->children.push_back(table);
-                probe_select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
-
-                probe_select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(probe_where));
-                probe_select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(UInt64{1}));
-            }
-
-            auto probe_query = make_intrusive<ASTSelectWithUnionQuery>();
-            probe_query->union_mode = SelectUnionMode::UNION_DEFAULT;
-            auto list_of_selects = make_intrusive<ASTExpressionList>();
-            list_of_selects->children.push_back(std::move(probe_select));
-            probe_query->children.push_back(std::move(list_of_selects));
-            probe_query->list_of_selects = probe_query->children.back();
-
-            LOG_DEBUG(log, "Probing whether selector matches the whole metric {}: {}", quoteString(metric_name), probe_query->formatForLogging());
-
-            try
-            {
-                InterpreterSelectQueryAnalyzer interpreter(probe_query, context, SelectQueryOptions{});
-                auto io = interpreter.execute();
-                PullingPipelineExecutor executor(io.pipeline);
-                Block block;
-                while (executor.pull(block))
-                {
-                    if (block.rows() > 0)
-                        return {};
-                }
-            }
-            catch (...)
-            {
-                /// The probe only chooses between two emissions with identical results; an error
-                /// here must not fail a query that works without this optimization (and an error
-                /// the main query would also hit, e.g. a missing access right on the tags table,
-                /// would have already surfaced in the tags lookup query, which runs before the probe).
-                LOG_DEBUG(log, "Keeping the id set condition for index analysis: the whole-metric probe failed with {}", getCurrentExceptionMessage(false));
-                return {};
-            }
-        }
-
-        return WholeMetricIDRange{std::move(first_component), std::move(min_max_second_component->first), std::move(min_max_second_component->second)};
+        substituteMetricNameInPlace(first_component, res.name_matcher->label_value);
+        res.first_component = evaluateConstantExpression(first_component, context).first;
+        return res;
     }
 
-    /// Makes the condition on the raw `id` column of a data table restricting it to the range of the whole metric.
-    ASTs makeWholeMetricIDRangeConditions(const WholeMetricIDRange & range, const StorageID & data_table_id)
+    /// Checks whether the range of the ids selected for a candidate holds the samples of no other series: then it selects
+    /// the same granules of the data tables as the id set, whose generic exclusion search in primary-key index analysis
+    /// is expensive for a large set, and the range replaces the set in that analysis. Requires:
+    /// 1. The metric's first component in the minimum and the maximum id, hence in every selected id (ids written before
+    ///    an `ALTER ... MODIFY SETTING id_generator` may differ).
+    /// 2. No unselected series of the metric with samples in the time range has its id in the range: true without other
+    ///    matchers, otherwise checked by a query on the tags table, for large sets only.
+    bool idRangeHoldsOnlySelectedSeries(
+        const IDRangeCandidate & candidate,
+        const LookedUpIDs & ids,
+        const std::unordered_map<String, String> & column_name_by_tag_name,
+        const StorageID & tags_table_id,
+        const DataTypePtr & table_timestamp_type,
+        const TableTimeRange & time_range_to_filter_ids,
+        const ContextPtr & context,
+        const LoggerPtr & log)
     {
-        /// The range conditions on the raw `id` column of the data table, qualified so that they
-        /// resolve to the table column and not to the same-named alias of the SELECT list.
-        auto make_qualified_id = [&]
+        chassert(ids.range);
+
+        /// 1. The first component of every selected id.
+        if ((ids.range->min.safeGet<Tuple>().at(0) != candidate.first_component)
+            || (ids.range->max.safeGet<Tuple>().at(0) != candidate.first_component))
+            return false;
+
+        /// 2. Without other matchers the lookup selected every series of the metric with samples in the time range.
+        const auto & other_matchers = candidate.other_matchers;
+        if (other_matchers.empty())
+            return true;
+
+        /// The check costs a query on the tags table, while the exclusion search with a small set is cheap.
+        if (ids.count < context->getSettingsRef()[Setting::time_series_id_range_check_min_series])
+            return false;
+
+        /// The check finds one series of the metric with samples in the time range which has its id in the range but
+        /// fails the other matchers:
+        ///
+        ///     SELECT 1 FROM tags_table
+        ///     WHERE <__name__ matcher and the time conditions of the tags lookup query>
+        ///       AND id >= <min id> AND id <= <max id> AND NOT (<other matchers>)
+        ///     LIMIT 1
+        ///
+        /// A series inserted after the check gets its id from the canonical generator: a series of another metric can't
+        /// get into the range, and one of this metric would only make the read include its granules. The `id IN <set>`
+        /// condition keeps doing the exact row-level filtering either way.
+        ASTs other_matcher_asts;
+        for (const auto * matcher : other_matchers)
+            other_matcher_asts.push_back(matcherToAST(*matcher, column_name_by_tag_name));
+
+        const PrometheusQueryTree::MatcherList name_matcher_only{*candidate.name_matcher};
+        const ASTPtr check_query = makeSelectQueryFromTagsTable(
+            tags_table_id, {make_intrusive<ASTLiteral>(UInt64{1})}, name_matcher_only, column_name_by_tag_name,
+            time_range_to_filter_ids.min_time, time_range_to_filter_ids.max_time, table_timestamp_type);
+
+        auto & check_select = typeid_cast<ASTSelectQuery &>(
+            *typeid_cast<const ASTSelectWithUnionQuery &>(*check_query).list_of_selects->children.at(0));
+        check_select.setExpression(
+            ASTSelectQuery::Expression::WHERE,
+            makeASTForLogicalAnd(
+                {check_select.where(),
+                 makeIDRangeCondition(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), ids),
+                 makeASTFunction("not", makeASTForLogicalAnd(std::move(other_matcher_asts)))}));
+        check_select.setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(UInt64{1}));
+
+        LOG_DEBUG(log, "Checking whether the id range of {} series of metric {} holds only them: {}",
+                  ids.count, quoteString(candidate.name_matcher->label_value), check_query->formatForLogging());
+
+        InterpreterSelectQueryAnalyzer interpreter(check_query, context, SelectQueryOptions{});
+        auto io = interpreter.execute();
+        PullingPipelineExecutor executor(io.pipeline);
+        Block block;
+        while (executor.pull(block))
         {
-            return make_intrusive<ASTIdentifier>(
-                std::vector<String>{data_table_id.database_name, data_table_id.table_name, TimeSeriesColumnNames::ID});
-        };
-
-        ASTs range_conditions;
-        range_conditions.push_back(makeASTFunction(
-            "greaterOrEquals",
-            make_qualified_id(),
-            makeASTFunction("tuple", range.first_component->clone(), range.second_component_min->clone())));
-        range_conditions.push_back(makeASTFunction(
-            "lessOrEquals",
-            make_qualified_id(),
-            makeASTFunction("tuple", range.first_component->clone(), range.second_component_max->clone())));
-
-        /// Wrapped in `indexHint` so the range reaches index analysis but is not evaluated per row:
-        /// the `id IN <set>` condition the caller keeps is the exact filter, and on this path every
-        /// id of that set is inside the range (that is what the probe establishes).
-        ASTs conditions;
-        conditions.push_back(makeASTFunction("indexHint", makeASTForLogicalAnd(std::move(range_conditions))));
-        return conditions;
+            if (block.rows() > 0)
+                return false;
+        }
+        return true;
     }
 
     /// Selects the series matching the matchers from the tags table, stores their tags into the tags collector of the query
-    /// context and returns a temporary table with the single column `id` holding their ids. `time_range` filters the series
-    /// by their stored `min_time` and `max_time`. `tags_table_id_type` is the type of the column `id` of the tags table.
-    std::shared_ptr<TemporaryTableHolder> lookUpTags(
+    /// context and stores selected ids in a temporary table. Tracks the range of the ids if `track_range` is set.
+    LookedUpIDs lookUpTags(
         const StorageID & tags_table_id,
         const DataTypePtr & tags_table_id_type,
         const PrometheusQueryTree::MatcherList & matchers,
@@ -999,6 +965,7 @@ namespace
         const TableTimeRange & time_range,
         const DataTypePtr & table_timestamp_type,
         const StorageLimitsList & storage_limits,
+        const bool track_range,
         const ContextPtr & context)
     {
         /// SELECT _CAST(id, '<id type without LowCardinality>') AS id, tags, '__name__', metric_name, 'tag_name1', tag_column1, ...
@@ -1059,6 +1026,10 @@ namespace
         PushingPipelineExecutor insert_executor(insert_pipeline);
         insert_executor.start();
 
+        LookedUpIDs res{.table = ids_tmp_table, .count = 0, .type = id_column.type, .range = {}};
+        ColumnPtr min_id;
+        ColumnPtr max_id;
+
         const auto tags_collector = query_context->getTimeSeriesTagsCollector();
         PullingPipelineExecutor executor(io.pipeline);
         Block block;
@@ -1080,11 +1051,18 @@ namespace
                 throw;
             }
 
+            if (track_range)
+                updateMinMax(*ids.column->convertToFullColumnIfConst(), min_id, max_id);
+            res.count += block.rows();
+
             insert_executor.push(Block{{ids.column, ids.type, TimeSeriesColumnNames::ID}});
         }
         insert_executor.finish();
 
-        return ids_tmp_table;
+        if (track_range && res.count)
+            res.range = IDRange{.min = (*min_id)[0], .max = (*max_id)[0]};
+
+        return res;
     }
 }
 
@@ -1187,41 +1165,6 @@ void StorageTimeSeriesSelector::readImpl(
         modified_context->setSetting("merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem", UInt64{4 * 1024 * 1024});
 
     auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
-
-    const auto ids_tmp_table = lookUpTags(
-        tags_table_id,
-        tags_table_metadata->getColumns().getPhysical(TimeSeriesColumnNames::ID).type,
-        matchers,
-        column_name_by_tag_name,
-        time_range_to_filter_ids,
-        config.table_timestamp_type,
-        *query_info.storage_limits,
-        modified_context);
-
-    const auto num_ids = ids_tmp_table->getTable()->totalRows(modified_context);
-    if (!num_ids)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "The temporary table with the ids of the selected series doesn't report its number of rows");
-    }
-
-    LOG_DEBUG(log, "Collected the tags of {} series for selector {}", *num_ids, quoteString(config.selector.toString()));
-
-    if (*num_ids == 0)
-    {
-        /// No series match the selector. Nothing is read - an uninitialized query plan reads from an empty source.
-        return;
-    }
-
-    /// The data tables are filtered by `id IN <ids_tmp_table>`, and replicas reading them receive the table as an external one.
-    const String ids_tmp_table_name = ids_tmp_table->getGlobalTableID().getTableName();
-    modified_context->addExternalTable(ids_tmp_table_name, ids_tmp_table);
-
-    /// The conditions on the data tables are ordered by `makeWhereFilterForDataTable`. Estimating their selectivity from
-    /// statistics converts the whole id set into ranges, which costs more than the rest of the planning.
-    if (!context->getSettingsRef().isChanged("use_statistics"))
-        modified_context->setSetting("use_statistics", false);
-
     auto samples_table_metadata = time_series_storage->getTargetTable(samples_table_kind, context)->getInMemoryMetadataPtr(context, false);
 
     std::vector<const ColumnsDescription *> data_tables_columns{&samples_table_metadata->getColumns()};
@@ -1232,38 +1175,65 @@ void StorageTimeSeriesSelector::readImpl(
         data_tables_columns.push_back(&histograms_table_metadata->getColumns());
     }
 
-    const auto whole_metric_id_range = tryMakeWholeMetricIDRange(
+    const auto id_range_candidate = tryMakeIDRangeCandidate(
+        matchers, tags_table_metadata->getColumns(), data_tables_columns, *time_series_settings, config.table_id_type, context);
+
+    const auto ids = lookUpTags(
+        tags_table_id,
+        tags_table_metadata->getColumns().getPhysical(TimeSeriesColumnNames::ID).type,
         matchers,
         column_name_by_tag_name,
-        data_tables_columns,
-        tags_table_id,
-        tags_table_metadata->getColumns(),
-        *time_series_settings,
-        config.time_series_storage_id,
-        config.table_id_type,
+        time_range_to_filter_ids,
         config.table_timestamp_type,
-        time_range_to_filter_ids.min_time,
-        time_range_to_filter_ids.max_time,
-        context,
-        log);
+        *query_info.storage_limits,
+        /* track_range = */ id_range_candidate.has_value(),
+        modified_context);
 
-    if (whole_metric_id_range)
+    LOG_DEBUG(log, "Collected the tags of {} series for selector {}", ids.count, quoteString(config.selector.toString()));
+
+    if (ids.count == 0)
     {
-        /// The `id IN <ids_tmp_table>` condition stays in the WHERE for exact row-level filtering,
-        /// but its set must not enter primary-key index analysis: `KeyCondition` runs a generic exclusion search
-        /// with the whole set, which costs hundreds of milliseconds per part for tens of
-        /// thousands of series, single-threaded, while the whole-metric range conditions select
-        /// the same granules through the cheap continuous-range path. Setting
-        /// `use_index_for_in_with_subqueries_max_values = 1` makes the set unusable for index
-        /// analysis without affecting the row-level filter.
+        /// No series match the selector. Nothing is read - an uninitialized query plan reads from an empty source.
+        return;
+    }
+
+    /// The data tables are filtered by `id IN <ids_tmp_table>`, and replicas reading them receive the table as an external one.
+    const String ids_tmp_table_name = ids.table->getGlobalTableID().getTableName();
+    modified_context->addExternalTable(ids_tmp_table_name, ids.table);
+
+    /// The conditions on the data tables are ordered by `makeWhereFilterForDataTable`. Estimating their selectivity from
+    /// statistics converts the whole id set into ranges, which costs more than the rest of the planning.
+    if (!context->getSettingsRef().isChanged("use_statistics"))
+        modified_context->setSetting("use_statistics", false);
+
+    /// The range of the selected ids replaces the id set in primary-key index analysis of the data tables if it holds no
+    /// other series. Otherwise the set selects the granules alone: it lies inside the range, so the range adds nothing.
+    const bool use_id_range = id_range_candidate
+        && idRangeHoldsOnlySelectedSeries(
+            *id_range_candidate,
+            ids,
+            column_name_by_tag_name,
+            tags_table_id,
+            config.table_timestamp_type,
+            time_range_to_filter_ids,
+            context,
+            log);
+
+    if (use_id_range)
+    {
+        /// The `id IN <ids_tmp_table>` condition stays in the WHERE for exact row-level filtering, but its set must not
+        /// enter primary-key index analysis: `KeyCondition` runs a generic exclusion search with the whole set, which is
+        /// expensive for a large set, while the range selects the same granules through the cheap continuous-range path.
+        /// Setting `use_index_for_in_with_subqueries_max_values = 1` makes the set unusable for index analysis without
+        /// affecting the row-level filter.
         modified_context->setSetting("use_index_for_in_with_subqueries_max_values", UInt64{1});
-        LOG_DEBUG(log, "Selector {} matches the whole metric: adding a primary-key range on id and excluding the id set from index analysis",
+        LOG_DEBUG(log, "The id range of selector {} holds only the selected series: excluding the id set from index analysis",
                   quoteString(config.selector.toString()));
     }
 
-    const auto make_whole_metric_id_range_conditions = [&](const StorageID & data_table_id)
+    const auto make_id_range_conditions = [&](const StorageID & data_table_id)
     {
-        return whole_metric_id_range ? makeWholeMetricIDRangeConditions(*whole_metric_id_range, data_table_id) : ASTs{};
+        return use_id_range ? ASTs{makeIDRangeConditionForDataTable(ids, data_table_id)} : ASTs{};
     };
 
     /// The casts of the final query produce exactly the columns of this storage.
@@ -1281,7 +1251,7 @@ void StorageTimeSeriesSelector::readImpl(
             table_min_time,
             table_max_time,
             config.table_timestamp_type,
-            make_whole_metric_id_range_conditions(samples_table_id)));
+            make_id_range_conditions(samples_table_id)));
         selects.push_back(makeSelectQueryFromDataTable(
             *histograms_table_id,
             makeHistogramsProjection(config.table_value_type),
@@ -1289,7 +1259,7 @@ void StorageTimeSeriesSelector::readImpl(
             table_min_time,
             table_max_time,
             config.table_timestamp_type,
-            make_whole_metric_id_range_conditions(*histograms_table_id)));
+            make_id_range_conditions(*histograms_table_id)));
 
         select_query = makeSelectQuery(makeSelectWithUnionQuery(std::move(selects)), columns);
     }
@@ -1302,7 +1272,7 @@ void StorageTimeSeriesSelector::readImpl(
             table_min_time,
             table_max_time,
             config.table_timestamp_type,
-            make_whole_metric_id_range_conditions(samples_table_id));
+            make_id_range_conditions(samples_table_id));
 
         select_query = makeSelectQuery(makeSelectWithUnionQuery({std::move(select_query_from_data_table)}), columns);
     }

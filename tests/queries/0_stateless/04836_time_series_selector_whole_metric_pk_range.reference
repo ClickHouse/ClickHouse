@@ -1,22 +1,25 @@
--- whole-metric selector: same rows as a filtered read, and the WHERE carries the id range
+-- whole-metric selector: same rows as a filtered read, the range in index analysis, the id set only in the WHERE
 1970-01-01 00:01:40.000	1
 1970-01-01 00:03:20.000	2
 1970-01-01 00:05:00.000	3
 1970-01-01 00:01:40.000	5
 1970-01-01 00:02:30.000	10
 1970-01-01 00:04:10.000	20
-1	1
--- the range is an index condition only: it is not part of any row-level filter
-1	1	1
--- whole-metric-by-data selector (a matcher every series passes): the range is still emitted
-1970-01-01 00:01:40.000	1
-1970-01-01 00:03:20.000	2
-1970-01-01 00:05:00.000	3
-1970-01-01 00:01:40.000	5
-1970-01-01 00:02:30.000	10
-1970-01-01 00:04:10.000	20
+1	0
 1
--- partial-metric selector (a matcher filters some series out): falls back to the id set only
+-- the range is made of the selected ids and is an index condition only: it is not part of any row-level filter
+1	1	1
+-- a matcher every series passes, fewer series than time_series_id_range_check_min_series: no check, the id set alone
+1970-01-01 00:01:40.000	1
+1970-01-01 00:03:20.000	2
+1970-01-01 00:05:00.000	3
+1970-01-01 00:01:40.000	5
+1970-01-01 00:02:30.000	10
+1970-01-01 00:04:10.000	20
+0	1
+-- the same selector with the check: the range holds only the selected series, the id set is out of index analysis
+1	0
+-- partial-metric selector (a matcher filters some series out): the id set alone
 1970-01-01 00:01:40.000	1
 1970-01-01 00:03:20.000	2
 1970-01-01 00:05:00.000	3
@@ -25,13 +28,23 @@
 1970-01-01 00:05:00.000	3
 1970-01-01 00:02:30.000	10
 1970-01-01 00:04:10.000	20
-0
--- regex matcher on the metric name: falls back
+0	1
+-- the check with a matcher that filters series out: three series of one metric, in id order
+b
+a
+c
+-- adjacent series selected: the check passes, the range replaces the id set
+3
+1	0
+-- an unselected series between the selected ones: the check fails, the id set alone
+6
+0	1
+-- regex matcher on the metric name: the id set alone
 1970-01-01 00:02:30.000	10
 1970-01-01 00:04:10.000	20
 1970-01-01 00:01:40.000	100
 1970-01-01 00:05:00.000	300
-0
+0	1
 -- selector with no series in the time range: empty result either way
 0
 0
@@ -44,23 +57,23 @@
 [('__name__','foo'),('env','dev')]	[('1970-01-01 00:03:20.000',10),('1970-01-01 00:05:00.000',20)]
 -- the id set stays in the row-level filter: series of another metric are never returned
 0
--- single-component id layout: no metric clustering, no id range, same results
+-- single-component id layout: no metric clustering, the id set alone, same results
 1970-01-01 00:01:40.000	1
 1970-01-01 00:03:20.000	2
 1970-01-01 00:02:30.000	10
-0
--- custom id generator: no structural guarantee, no id range, same results
+0	1
+-- custom id generator: no structural guarantee, the id set alone, same results
 1970-01-01 00:01:40.000	1
 1970-01-01 00:02:30.000	10
-0
--- id_generator changed after ingestion: old series ids are outside the range, the probe detects them and falls back
+0	1
+-- id_generator changed after ingestion: the old series ids have another first component, the id set alone
 1970-01-01 00:01:40.000	1
 1970-01-01 00:03:20.000	2
-0
--- Tuple(UInt64, UInt64) id layout: the range is emitted with the max-UInt64 literal
+0	1
+-- Tuple(UInt64, UInt64) id layout: the range in index analysis, the id set only in the WHERE
 1970-01-01 00:01:40.000	1
 1970-01-01 00:02:30.000	10
-1
+1	0
 -- the index-only range still drops the part that holds another metric
 3	2
 1	1
