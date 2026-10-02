@@ -25,13 +25,8 @@ class RemoteQueryExecutor;
 class RemoteQueryExecutorReadContext : public AsyncTaskExecutor
 {
 public:
-    /// fragment_trace_context_: the tracing context of the executor's fragment span, which the fiber
-    /// runs inside (the executor owns and finishes that span; empty when the query is not traced).
     explicit RemoteQueryExecutorReadContext(
-        RemoteQueryExecutor & executor_,
-        bool suspend_when_query_sent_,
-        bool read_packet_type_separately_,
-        OpenTelemetry::TracingContextOnThread fragment_trace_context_);
+        RemoteQueryExecutor & executor_, bool suspend_when_query_sent_, bool read_packet_type_separately_);
 
     ~RemoteQueryExecutorReadContext() override;
 
@@ -113,7 +108,7 @@ private:
     int pipe_fd[2] = { -1, -1 };
     std::atomic_bool is_pipe_alarmed = false;
 
-    Epoll epoll{EpollNesting::AsyncReadContext};
+    Epoll epoll;
 
     std::string connection_fd_description;
     bool suspend_when_query_sent = false;

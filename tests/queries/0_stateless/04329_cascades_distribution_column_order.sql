@@ -1,3 +1,5 @@
+-- Tags: no-darwin
+-- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- Distribution-column matching in `isDistributionSatisfiedBy` must be
 -- positional: the partition hash is computed over the key columns in order,

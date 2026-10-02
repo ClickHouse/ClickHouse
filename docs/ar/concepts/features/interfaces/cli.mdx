@@ -23,9 +23,13 @@ doc_type: 'مرجع'
 
 يساعد `clickhousectl` المستخدمين ووكلاء الذكاء الاصطناعي على التطوير باستخدام ClickHouse.
 
-## التثبيت {#installation}
+<div id="installation">
+  ## التثبيت
+</div>
 
-### التثبيت السريع {#quick-install}
+<div id="quick-install">
+  ### التثبيت السريع
+</div>
 
 ```bash
 curl https://clickhouse.com/cli | sh
@@ -33,14 +37,20 @@ curl https://clickhouse.com/cli | sh
 
 يقوم برنامج التثبيت النصي بتنزيل الإصدار المناسب لنظام التشغيل لديك وتثبيته في `~/.local/bin/clickhousectl`. كما يُنشئ تلقائيًا أيضًا اسمًا مستعارًا `chctl` لتسهيل الاستخدام.
 
-## المتطلبات {#requirements}
+<div id="requirements">
+  ## المتطلبات
+</div>
 
 * macOS ‏(aarch64, x86&#95;64) أو Linux ‏(aarch64, x86&#95;64)
 * تتطلب أوامر Cloud [مفتاح واجهة برمجة تطبيقات الخاص بـ ClickHouse Cloud](/ar/products/cloud/features/admin-features/api/api-overview)
 
-## محلي {#local}
+<div id="local">
+  ## محلي
+</div>
 
-### تثبيت إصدارات ClickHouse وإدارتها {#installing-versions}
+<div id="installing-versions">
+  ### تثبيت إصدارات ClickHouse وإدارتها
+</div>
 
 يقوم `clickhousectl` بتنزيل الملفات التنفيذية لـ ClickHouse من `builds.clickhouse.com`، مع الرجوع إلى `packages.clickhouse.com` (Linux) أو [إصدارات GitHub](https://github.com/ClickHouse/ClickHouse/releases) ‏(macOS) إذا لم يكن الإصدار متاحًا هناك.
 
@@ -67,7 +77,9 @@ clickhousectl local remove 26.5.2.39
 
 يقوم `local use` أيضًا بإنشاء رابط رمزي في `~/.local/bin/clickhouse` يشير إلى الملف التنفيذي للإصدار المحدد، بحيث يصبح الأمر `clickhouse` العادي (مثل `clickhouse local` و`clickhouse client`) متاحًا على `PATH`. مرّر `--no-global` لتخطي ذلك. إذا كان هناك ملف عادي موجود بالفعل في ذلك المسار، فسيُترك كما هو مع عرض تحذير. كما أن `local remove` للإصدار الافتراضي النشط يزيل الرابط الرمزي أيضًا.
 
-#### تخزين الملفات التنفيذية لـ ClickHouse {#binary-storage}
+<div id="binary-storage">
+  #### تخزين الملفات التنفيذية لـ ClickHouse
+</div>
 
 تُخزَّن الملفات التنفيذية لـ ClickHouse في مستودع عام، بحيث يمكن لعدة مشاريع استخدامها دون تكرار التخزين. وتُخزَّن هذه الملفات في `~/.clickhouse/`:
 
@@ -79,7 +91,9 @@ clickhousectl local remove 26.5.2.39
 └── default              # tracks the active version
 ```
 
-### إعداد مشروع {#initializing-project}
+<div id="initializing-project">
+  ### إعداد مشروع
+</div>
 
 ```bash
 clickhousectl local init
@@ -104,7 +118,9 @@ postgres/
 └── seed/                   # Seed data / INSERT statements
 ```
 
-### تنفيذ الاستعلامات {#running-queries}
+<div id="running-queries">
+  ### تنفيذ الاستعلامات
+</div>
 
 ```bash
 # Connect to a running server with clickhouse-client
@@ -115,7 +131,9 @@ clickhousectl local client --queries-file schema.sql # Run queries from a file
 clickhousectl local client --host remote-host --port 9000  # Connect to a specific host/port
 ```
 
-### إنشاء خوادم ClickHouse وإدارتها {#managing-servers}
+<div id="managing-servers">
+  ### إنشاء خوادم ClickHouse وإدارتها
+</div>
 
 ابدأ مثيلات خادم ClickHouse وأدرها. يحصل كل خادم على مجلد بيانات معزول خاص به في `.clickhouse/servers/<name>/data/`.
 
@@ -152,7 +170,9 @@ clickhousectl local server dotenv --local                 # Write to .env.local 
 
 **إدارة الخوادم العامة:** استخدم `--global` مع `list` و`stop` و`stop-all` للعمل على مستوى جميع المشاريع على مستوى النظام. يعرض `server list --global` جميع خوادم ClickHouse قيد التشغيل، مع عمود Project يوضّح الدليل الذي ينتمي إليه كل خادم.
 
-#### ملفات config مخصّصة للخوادم المحلية {#custom-config-files}
+<div id="custom-config-files">
+  #### ملفات config مخصّصة للخوادم المحلية
+</div>
 
 تبدأ الخوادم المحلية بإعدادات افتراضية مناسبة، لكنك قد تحتاج أحيانًا إلى تغيير أحد الإعدادات. ضع ملف config في `~/.clickhouse/configs/` وطبّقه بالاسم عند بدء تشغيل خادم:
 
@@ -173,7 +193,9 @@ clickhousectl local server start --config-file querylog
 
 يُطبَّق الملف المُسمّى **فوق الإعدادات الافتراضية المضمّنة في ClickHouse** (عبر `config.d`)، لذلك لا يحتاج إلا إلى تضمين الإعدادات التي تريد تغييرها، ولا حاجة إلى إعادة إنشاء ملف config كامل. يمكن أن تكون الملفات بصيغة `.xml` أو `.yaml` أو `.yml`، ويمكنك الإشارة إليها بالاسم سواء مع الامتداد أو بدونه.
 
-#### مجلد البيانات الخاص بالمشروع {#project-local-data}
+<div id="project-local-data">
+  #### مجلد البيانات الخاص بالمشروع
+</div>
 
 توجد جميع بيانات الخادم داخل `.clickhouse/` في مجلد المشروع:
 
@@ -190,7 +212,9 @@ clickhousectl local server start --config-file querylog
 
 لكل خادم مُسمّى مجلد بيانات خاص به، لذا تكون الخوادم معزولة تمامًا عن بعضها البعض. تظل البيانات محفوظة بين عمليات إعادة التشغيل. أوقِف الخادم وشغّله بالاسم لمتابعة العمل من حيث توقفت. استخدم `clickhousectl local server remove <name>` لحذف بيانات الخادم نهائيًا.
 
-### تشغيل Postgres محليًا {#local-postgres}
+<div id="local-postgres">
+  ### تشغيل Postgres محليًا
+</div>
 
 بالإضافة إلى ClickHouse، يمكن لـ `clickhousectl` تشغيل مثيلات Postgres محلية وإدارتها. ويعتمد Postgres المحلي على Docker، لذا يجب أن يكون Docker مثبّتًا وقيد التشغيل. ويُعرَّف كل مثيل باسمه وإصداره الرئيسي، لذلك يمكن تشغيل عدة إصدارات من Postgres جنبًا إلى جنب، مع أدلة بيانات منفصلة لكل منها.
 
@@ -216,13 +240,17 @@ clickhousectl local postgres stop dev
 clickhousectl local postgres remove dev
 ```
 
-## المصادقة {#authentication}
+<div id="authentication">
+  ## المصادقة
+</div>
 
 قم بالمصادقة إلى ClickHouse Cloud باستخدام مفاتيح واجهة برمجة تطبيقات (موصى بها) أو OAuth (عبر المتصفح).
 
 إذا لم يكن لديك حساب ClickHouse Cloud بعد، فإن `clickhousectl cloud auth signup` يفتح صفحة التسجيل في متصفحك.
 
-### مفتاح/سرّ واجهة برمجة تطبيقات (موصى به) {#api-key}
+<div id="api-key">
+  ### مفتاح/سرّ واجهة برمجة تطبيقات (موصى به)
+</div>
 
 تُعد مفاتيح واجهة برمجة تطبيقات الطريقة الموصى بها للمصادقة، خصوصًا عند تشغيل واجهة سطر الأوامر بواسطة وكيل ذكاء اصطناعي. يمكنك [إنشاء مفاتيح واجهة برمجة تطبيقات محددة النطاق](/ar/products/cloud/features/admin-features/api/openapi) تمنح فقط الصلاحيات التي تختارها (للقراءة فقط أو للقراءة/الكتابة)، ويرتبط كل مفتاح بمنظمة واحدة. وهذا يجعلها وسيلة آمنة قائمة على مبدأ أقلّ الامتيازات لمنح واجهة سطر الأوامر حق الوصول.
 
@@ -256,7 +284,9 @@ CLICKHOUSE_CLOUD_API_SECRET=your-secret
 clickhousectl cloud --api-key KEY --api-secret SECRET ...
 ```
 
-### تسجيل الدخول باستخدام OAuth {#oauth-login}
+<div id="oauth-login">
+  ### تسجيل الدخول باستخدام OAuth
+</div>
 
 ```bash
 clickhousectl cloud auth login
@@ -268,7 +298,9 @@ clickhousectl cloud auth login
   إن وصول OAuth حاليًا **للقراءة فقط**، ويتيح الوصول إلى **جميع المؤسسات التي تنتمي إليها**. للحصول على حق الكتابة، أو لحصر نطاق واجهة سطر الأوامر في مؤسسة واحدة، [أنشئ مفتاح واجهة برمجة تطبيقات مقيّد النطاق](#api-key) بدلًا من ذلك.
 </Note>
 
-### حالة المصادقة وتسجيل الخروج {#auth-status}
+<div id="auth-status">
+  ### حالة المصادقة وتسجيل الخروج
+</div>
 
 ```bash
 clickhousectl cloud auth status    # Show current auth state
@@ -277,7 +309,9 @@ clickhousectl cloud auth logout    # Clear all saved credentials (credentials.js
 
 ترتيب البحث عن بيانات الاعتماد: خيارات واجهة سطر الأوامر &gt; `.clickhouse/credentials.json` &gt; متغيرات البيئة المُصدَّرة &gt; ملف `.env` &gt; رموز OAuth.
 
-### تصحيح الأخطاء لمعرفة مصدر بيانات الاعتماد المستخدم {#debug-credentials}
+<div id="debug-credentials">
+  ### تصحيح الأخطاء لمعرفة مصدر بيانات الاعتماد المستخدم
+</div>
 
 مرِّر `--debug` إلى أي أمر `cloud` لعرض مصدر بيانات الاعتماد الذي تم تحديده (و`URL` الخاص بواجهة برمجة التطبيقات) في stderr قبل تشغيل الأمر.
 
@@ -288,11 +322,15 @@ clickhousectl cloud --debug service list
 # ... normal output ...
 ```
 
-## Cloud {#cloud}
+<div id="cloud">
+  ## Cloud
+</div>
 
 أدِر خدمات ClickHouse Cloud عبر واجهة برمجة التطبيقات.
 
-### المنظمات {#organizations}
+<div id="organizations">
+  ### المنظمات
+</div>
 
 ```bash
 clickhousectl cloud org list              # List organizations
@@ -307,7 +345,9 @@ clickhousectl cloud org usage <org-id> \
   --to-date 2024-01-31
 ```
 
-### الخدمات {#services}
+<div id="services">
+  ### الخدمات
+</div>
 
 ```bash
 # List services
@@ -386,7 +426,9 @@ clickhousectl cloud service delete <service-id>
 clickhousectl cloud service delete <service-id> --force
 ```
 
-#### خيارات إنشاء الخدمة {#service-create-options}
+<div id="service-create-options">
+  #### خيارات إنشاء الخدمة
+</div>
 
 | الخيار                                     | الوصف                                                                |
 | ------------------------------------------ | -------------------------------------------------------------------- |
@@ -413,7 +455,9 @@ clickhousectl cloud service delete <service-id> --force
 | `--private-preview-terms-checked`          | قبول شروط المعاينة الخاصة عند الحاجة                                 |
 | `--enable-core-dumps`                      | تمكين أو تعطيل جمع تفريغات الذاكرة الأساسية للخدمة                   |
 
-#### أوضاع مصادقة واجهة برمجة تطبيقات الاستعلام {#query-api-auth-modes}
+<div id="query-api-auth-modes">
+  #### أوضاع مصادقة واجهة برمجة تطبيقات الاستعلام
+</div>
 
 تُعد `cloud service query` الطريقة القياسية لتشغيل SQL على خدمة سحابية عبر HTTP، من دون الحاجة إلى ملف `clickhouse` التنفيذي أو كلمة مرور الخدمة. وهي تعمل مع وضعي بيانات الاعتماد كليهما:
 
@@ -422,7 +466,9 @@ clickhousectl cloud service delete <service-id> --force
 
 يؤدي الاستعلام عن خدمة **idled** إلى تنشيطها تلقائيًا في كلا وضعي المصادقة (قد يستغرق الاستعلام الأول دقيقة). أما الخدمة **stopped** فلا يتم تنشيطها مطلقًا: يفشل الاستعلام مع تلميح لتشغيل `cloud service start`. عيّن `CLICKHOUSE_CLOUD_QUERY_HOST` لتجاوز مضيف واجهة برمجة تطبيقات الاستعلام المُشتق.
 
-#### إدارة نقاط نهاية الاستعلام {#query-endpoints}
+<div id="query-endpoints">
+  #### إدارة نقاط نهاية الاستعلام
+</div>
 
 ```bash
 clickhousectl cloud service query-endpoint get <service-id>
@@ -433,14 +479,18 @@ clickhousectl cloud service query-endpoint create <service-id> \
 clickhousectl cloud service query-endpoint delete <service-id>
 ```
 
-#### إدارة نقطة النهاية الخاصة {#private-endpoints}
+<div id="private-endpoints">
+  #### إدارة نقطة النهاية الخاصة
+</div>
 
 ```bash
 clickhousectl cloud service private-endpoint create <service-id> --endpoint-id vpce-123
 clickhousectl cloud service private-endpoint get-config <service-id>
 ```
 
-#### تهيئة النسخ الاحتياطي {#backup-config}
+<div id="backup-config">
+  #### تهيئة النسخ الاحتياطي
+</div>
 
 ```bash
 clickhousectl cloud service backup-config get <service-id>
@@ -450,9 +500,11 @@ clickhousectl cloud service backup-config update <service-id> \
   --backup-start-time 02:00
 ```
 
-### خدمات Postgres {#postgres-services}
+<div id="postgres-services">
+  ### خدمات Postgres
+</div>
 
-يمكن لـ `clickhousectl` أيضًا إنشاء خدمات [Postgres في ClickHouse Cloud](/ar/products/managed-postgres/overview) وإدارتها، وذلك على غرار أوامر خدمة ClickHouse المذكورة أعلاه. أما GCP فهي في مرحلة [معاينة خاصة](https://clickhouse.com/cloud/postgres#gcp-waitlist)؛ مرّر `--provider gcp` مع منطقة GCP وحجم instance.
+يمكن لـ `clickhousectl` أيضًا إنشاء خدمات [ClickHouse Cloud Postgres](/ar/products/managed-postgres/overview) وإدارتها، وذلك على غرار أوامر خدمة ClickHouse المذكورة أعلاه.
 
 ```bash
 # List and inspect
@@ -460,21 +512,13 @@ clickhousectl cloud postgres list
 clickhousectl cloud postgres list --filter state=running
 clickhousectl cloud postgres get <pg-id>
 
-# Create a service on AWS (the default provider)
+# Create a service
 clickhousectl cloud postgres create \
   --name my-pg \
   --region us-east-1 \
   --size m7i.2xlarge \
   --pg-version 17 \
   --ha-type sync
-
-# Create a service on GCP (private preview); region and size use GCP names
-clickhousectl cloud postgres create \
-  --name my-pg \
-  --provider gcp \
-  --region us-central1 \
-  --size c4-standard-4 \
-  --pg-version 18
 
 # Update and delete
 clickhousectl cloud postgres update <pg-id> --size m7i.4xlarge
@@ -503,28 +547,34 @@ clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
 clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
 ```
 
-#### خيارات إنشاء خدمة Postgres {#postgres-create-options}
+<div id="postgres-create-options">
+  #### خيارات إنشاء خدمة Postgres
+</div>
 
-| الخيار                     | الوصف                                                                                |
-| -------------------------- | ------------------------------------------------------------------------------------ |
-| `--name`                   | اسم الخدمة (مطلوب)                                                                   |
-| `--region`                 | المنطقة، على سبيل المثال `us-east-1` على AWS أو `us-central1` على GCP (مطلوب)        |
-| `--size`                   | حجم المثيل، على سبيل المثال `m7i.2xlarge` على AWS أو `c4-standard-4` على GCP (مطلوب) |
-| `--provider`               | موفّر Cloud: `aws`، `gcp` (الافتراضي: `aws`)                                |
-| `--pg-version`             | الإصدار الرئيسي: `18`، `17`                                                          |
-| `--ha-type`                | التوفّر العالي: `none`، `async`، `sync`                                              |
-| `--tag`                    | وسم المورد `key` أو `key=value` (يمكن تكراره)                                        |
-| `--pg-config-file`         | مسار إلى ملف JSON يحتوي على كائن `PgConfig`                                          |
-| `--pg-bouncer-config-file` | مسار إلى ملف JSON يحتوي على كائن `PgBouncerConfig`                                   |
+| الخيار                     | الوصف                                              |
+| -------------------------- | -------------------------------------------------- |
+| `--name`                   | اسم الخدمة (مطلوب)                                 |
+| `--region`                 | المنطقة، على سبيل المثال `us-east-1` (مطلوب)       |
+| `--size`                   | حجم المثيل، على سبيل المثال `m7i.2xlarge` (مطلوب)  |
+| `--provider`               | موفر الخدمة السحابية (الافتراضي: `aws`)            |
+| `--pg-version`             | الإصدار الرئيسي: `18`، `17`                        |
+| `--ha-type`                | التوفّر العالي: `none`، `async`، `sync`            |
+| `--tag`                    | وسم المورد `key` أو `key=value` (يمكن تكراره)      |
+| `--pg-config-file`         | مسار إلى ملف JSON يحتوي على كائن `PgConfig`        |
+| `--pg-bouncer-config-file` | مسار إلى ملف JSON يحتوي على كائن `PgBouncerConfig` |
 
-### النسخ الاحتياطية {#backups}
+<div id="backups">
+  ### النسخ الاحتياطية
+</div>
 
 ```bash
 clickhousectl cloud backup list <service-id>
 clickhousectl cloud backup get <service-id> <backup-id>
 ```
 
-### ClickPipes {#clickpipes}
+<div id="clickpipes">
+  ### ClickPipes
+</div>
 
 أدِر ClickPipes لإدخال البيانات إلى ClickHouse Cloud من مصادر خارجية.
 
@@ -553,7 +603,9 @@ clickhousectl cloud clickpipe settings update <service-id> <clickpipe-id> \
   --streaming-max-insert-wait-ms 10000
 ```
 
-#### إنشاء ClickPipes {#creating-clickpipes}
+<div id="creating-clickpipes">
+  #### إنشاء ClickPipes
+</div>
 
 لكل نوع من أنواع المصادر أمرٌ فرعي خاص به ضمن `clickpipe create`:
 
@@ -628,7 +680,9 @@ clickhousectl cloud clickpipe create bigquery <service-id> \
 
 استخدم `clickhousectl cloud clickpipe create <source> --help` للاطّلاع على القائمة الكاملة للخيارات لكل نوع من المصادر.
 
-### الأعضاء {#members}
+<div id="members">
+  ### الأعضاء
+</div>
 
 ```bash
 clickhousectl cloud member list
@@ -637,7 +691,9 @@ clickhousectl cloud member update <user-id> --role-id <role-id>
 clickhousectl cloud member remove <user-id>
 ```
 
-### الدعوات {#invitations}
+<div id="invitations">
+  ### الدعوات
+</div>
 
 ```bash
 clickhousectl cloud invitation list
@@ -646,7 +702,9 @@ clickhousectl cloud invitation get <invitation-id>
 clickhousectl cloud invitation delete <invitation-id>
 ```
 
-### المفاتيح {#keys}
+<div id="keys">
+  ### المفاتيح
+</div>
 
 ```bash
 clickhousectl cloud key list
@@ -660,14 +718,18 @@ clickhousectl cloud key update <key-id> \
 clickhousectl cloud key delete <key-id>
 ```
 
-### Activity {#activity}
+<div id="activity">
+  ### Activity
+</div>
 
 ```bash
 clickhousectl cloud activity list --from-date 2024-01-01 --to-date 2024-12-31
 clickhousectl cloud activity get <activity-id>
 ```
 
-### مخرجات JSON {#json-output}
+<div id="json-output">
+  ### مخرجات JSON
+</div>
 
 استخدم الخيار `--json` لطباعة الاستجابات بتنسيق JSON.
 
@@ -678,7 +740,9 @@ clickhousectl cloud --json service get <service-id>
 
 يكتشف `clickhousectl` تلقائيًا سياقات coding-agent (Claude Code وCursor وCodex وGemini CLI وGoose وDevin وأي أداة تضبط متغير البيئة القياسي `AGENT`) ويطبع JSON إلى stdout تلقائيًا من دون الحاجة إلى تعيين `--json`.
 
-### رموز الخروج {#exit-codes}
+<div id="exit-codes">
+  ### رموز الخروج
+</div>
 
 تتبع رموز الخروج الاصطلاحات المتبعة في واجهة سطر الأوامر `gh`:
 
@@ -689,7 +753,9 @@ clickhousectl cloud --json service get <service-id>
 | `2`   | تم الإلغاء (أوقفه المستخدم)                                                  |
 | `4`   | المصادقة مطلوبة (لا توجد بيانات اعتماد، 401/403، عمليات كتابة عبر OAuth فقط) |
 
-## Skills {#skills}
+<div id="skills">
+  ## Skills
+</div>
 
 ثبّت حزمة ClickHouse Agent Skills الرسمية من [ClickHouse/agent-skills](https://github.com/ClickHouse/agent-skills).
 
@@ -710,7 +776,9 @@ clickhousectl skills --global --all
 clickhousectl skills --agent claude --agent codex
 ```
 
-### علامات الوضع غير التفاعلي {#non-interactive-flags}
+<div id="non-interactive-flags">
+  ### علامات الوضع غير التفاعلي
+</div>
 
 | العلامة           | الوصف                                                        |
 | ----------------- | ------------------------------------------------------------ |
@@ -719,7 +787,9 @@ clickhousectl skills --agent claude --agent codex
 | `--all`           | ثبّت Skills لجميع الوكلاء المدعومين                          |
 | `--detected-only` | ثبّت Skills للوكلاء المدعومين الذين اكتشفهم النظام           |
 
-## التحديث الذاتي {#self-update}
+<div id="self-update">
+  ## التحديث الذاتي
+</div>
 
 يمكن لـ `clickhousectl` تحديث نفسه إلى أحدث إصدار:
 
@@ -733,7 +803,9 @@ clickhousectl update --check
 
 تتحقق واجهة سطر الأوامر أيضًا من التحديثات في الخلفية (بحد أقصى مرة كل 24 ساعة) ويعرض إشعارًا عند توفر إصدار أحدث.
 
-## القياس عن بُعد {#telemetry}
+<div id="telemetry">
+  ## القياس عن بُعد
+</div>
 
 يجمع `clickhousectl` بيانات استخدام مجهولة الهوية لمساعدتنا على فهم كيفية استخدام واجهة سطر الأوامر. وهي مفعّلة افتراضيًا، لكن لا يُرسل أي شيء قبل إعلامك بذلك: فعند التشغيل لأول مرة، تعرض واجهة سطر الأوامر إشعارًا يوضح ما يُجمع وكيفية إيقافه، ولا ترسل شيئًا. ولا يبدأ الجمع إلا في عمليات التشغيل اللاحقة، لذا تتاح لك دائمًا فرصة إلغاء الاشتراك قبل جمع أي بيانات.
 

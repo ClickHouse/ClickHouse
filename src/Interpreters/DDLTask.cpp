@@ -812,9 +812,6 @@ ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
         all_groups = true;
     }
 
-    if (name.empty())
-        return {};
-
     if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(name).get()))
     {
         if (all_groups)

@@ -8,7 +8,9 @@ doc_type: 'reference'
 
 Les fonctions de table permettent de construire des tables.
 
-## Utilisation {#usage}
+<div id="usage">
+  ## Utilisation
+</div>
 
 Les fonctions de table peuvent être utilisées dans la clause [`FROM`](/fr/reference/statements/select/from)
 d’une requête `SELECT`. Par exemple, vous pouvez `SELECT` des données depuis un fichier situé sur votre machine locale
@@ -27,7 +29,7 @@ echo "1, 2, 3" > example.csv
 ```
 
 Vous pouvez également utiliser des fonctions de table pour créer une table temporaire accessible
-uniquement pendant la requête en cours. Par exemple :
+uniquement pendant la requête en cours. Par exemple :
 
 ```sql title="Query"
 SELECT * FROM generateSeries(1,5);
@@ -45,13 +47,13 @@ SELECT * FROM generateSeries(1,5);
 
 La table est supprimée lorsque la requête se termine.
 
-Les fonctions de table peuvent servir à créer des tables, selon la syntaxe suivante :
+Les fonctions de table peuvent servir à créer des tables, selon la syntaxe suivante :
 
 ```sql title="Query"
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
 
-Par exemple :
+Par exemple :
 
 ```sql title="Query"
 CREATE TABLE series AS generateSeries(1, 5);
@@ -70,7 +72,7 @@ SELECT * FROM series;
 
 Enfin, les fonctions de table peuvent être utilisées pour `INSERT` des données dans une table. Par exemple,
 nous pourrions écrire le contenu de la table que nous avons créée dans l’exemple précédent
-dans un fichier sur disque en utilisant à nouveau la fonction de table `file` :
+dans un fichier sur disque en utilisant à nouveau la fonction de table `file` :
 
 ```sql title="Query"
 INSERT INTO FUNCTION file('numbers.csv', 'CSV') SELECT * FROM series;
@@ -86,7 +88,5 @@ cat numbers.csv
 ```
 
 <Note>
-  La plupart des fonctions de table nécessitent le privilège `CREATE TEMPORARY TABLE` pour s’exécuter ; un `SELECT` ou un `INSERT`
-  qui en exécute une est donc refusé lorsque
-  [`readonly`](/fr/concepts/features/configuration/settings/permissions-for-queries#readonly) est défini à 1.
+  Vous ne pouvez pas utiliser de fonctions de table si le paramètre [allow&#95;ddl](/fr/reference/settings/session-settings/allow#allow_ddl) est désactivé.
 </Note>

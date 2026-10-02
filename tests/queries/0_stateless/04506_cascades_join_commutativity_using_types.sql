@@ -1,6 +1,7 @@
--- Tags: no-flaky-check
+-- Tags: no-darwin, no-flaky-check
 -- no-flaky-check: every distributed-plan statement pays for a full optimizer run and multi-stage
 -- execution, which is ~50x slower in debug builds; the flaky check's repeated runs exceed its budget.
+-- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- `JoinCommutativity` swaps joins whose `USING` clause casts a mismatched key type to the
 -- supertype: `swapInputs` remaps the cast and the `join_use_nulls` wrappers to the new sides.

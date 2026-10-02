@@ -4,7 +4,6 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
@@ -36,12 +35,6 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCOMPATIBLE_COLUMNS;
-    extern const int NETWORK_ERROR;
-}
-
-namespace DB::FailPoints
-{
-    extern const char delta_lake_commit_fail_before_log_write[];
 }
 
 namespace DeltaLake
@@ -50,10 +43,9 @@ namespace DeltaLake
 namespace
 {
 
-/// The Delta protocol defines `add.modificationTime` as milliseconds since the epoch.
-UInt64 getCurrentTimeMs()
+UInt64 getCurrentTime()
 {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
 void exportTable(
@@ -108,7 +100,7 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
         columns[0]->insert(path);
         columns[1]->insert(partition_values);
         columns[2]->insert(size_bytes);
-        columns[3]->insert(getCurrentTimeMs());
+        columns[3]->insert(getCurrentTime());
         std::string stats_json = fmt::format("{{\"numRecords\":{}}}", size_rows);
         DB::Tuple stats{stats_json};
         columns[4]->insert(stats);
@@ -254,11 +246,6 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     }
 
     ffi::add_files(transaction.get(), engine_data.release());
-
-    fiu_do_on(DB::FailPoints::delta_lake_commit_fail_before_log_write, {
-        throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Failpoint for a commit failure before the log write enabled");
-    });
-
     using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
     KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
         ffi::commit(transaction.release(), engine.get()),

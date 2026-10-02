@@ -318,38 +318,14 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             path_to_manifest_file_,
             f_schema);
 
-    const bool tolerate_conflicting_manifest_schemas = context_->getSettingsRef()[Setting::iceberg_tolerate_conflicting_manifest_schemas];
+    Poco::Dynamic::Var json = parser.parse(*schema_json_string);
+    const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
+    Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
 
-    std::optional<Int32> header_schema_id;
-    if (auto schema_id_string = manifest_file_deserializer_->tryGetAvroMetadataValue(f_schema_id))
-        header_schema_id = parse<Int32>(*schema_id_string);
-
-    Int32 manifest_schema_id = 0;
-    if (header_schema_id.has_value() && tolerate_conflicting_manifest_schemas
-        && schema_processor.isSchemaRegisteredFromMetadata(*header_schema_id))
-    {
-        manifest_schema_id = *header_schema_id;
-    }
-    else
-    {
-        Poco::Dynamic::Var json = parser.parse(*schema_json_string);
-        const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
-        Int32 embedded_schema_id = schema_object->getValue<int>(f_schema_id);
-        if (header_schema_id.has_value() && *header_schema_id != embedded_schema_id)
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Manifest file '{}' has header key '{}' = {} that differs from the '{}' = {} of its '{}' header",
-                path_to_manifest_file_,
-                f_schema_id,
-                *header_schema_id,
-                f_schema_id,
-                embedded_schema_id,
-                f_schema);
-        manifest_schema_id = embedded_schema_id;
-
-        schema_processor.addIcebergTableSchema(
-            schema_object, IcebergSchemaProcessor::SchemaSource::ManifestFile, tolerate_conflicting_manifest_schemas);
-    }
+    schema_processor.addIcebergTableSchema(
+        schema_object,
+        IcebergSchemaProcessor::SchemaSource::ManifestFile,
+        context_->getSettingsRef()[Setting::iceberg_tolerate_conflicting_manifest_schemas]);
 
     /// Every entry of this manifest carries one partition value per spec field, including the
     /// fields skipped in buildPartitionKeyFromSpec, so this count is the arity its partition tuples must have.
@@ -572,11 +548,9 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 auto right = deserializeFieldFromBinaryRepr(right_str, column_type, false);
                 if (!left || !right)
                 {
-                    /// A bound that does not decode is wider than the storage of its type, a decimal
-                    /// bound beyond the precision of its type on the inner side of the range, or
-                    /// narrower than the column is now, which is what Iceberg leaves behind for a
-                    /// promoted column. The last is well formed, so this stays out of the warning
-                    /// log.
+                    /// Pruning is skipped either way, but at scale 38 a bound that only loses its widened
+                    /// form can still be a value the column holds, so this is not on its own a malformed
+                    /// manifest and stays out of the warning log.
                     LOG_DEBUG(
                         getLogger("ManifestFileIterator"),
                         "Manifest file '{}' declares a bound that cannot be read as a usable range border "

@@ -26,7 +26,6 @@
 #include <Databases/DatabaseOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
-#include <Interpreters/CancellationChecker.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
@@ -96,7 +95,6 @@
 #include <Poco/ThreadPool.h>
 
 #include <algorithm>
-#include <thread>
 
 #include "config.h"
 
@@ -205,7 +203,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_per_cpu_untracked_memory;
     extern const ServerSettingsUInt64 per_cpu_untracked_memory_thread_buffer;
-    extern const ServerSettingsUInt64 min_allocation_size_to_log_stack_trace;
     extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
@@ -316,11 +313,12 @@ Poco::Util::LayeredConfiguration & LocalServer::getClientConfiguration()
     return config();
 }
 
-void LocalServer::processError(std::string_view query) const
+void LocalServer::processError(std::string_view) const
 {
-    /// `--ignore-error` asks to carry on with the next statement, not to hide what went wrong, so
-    /// the exception is reported here rather than rethrown - rethrowing it would end the run.
-    if (is_interactive || ignore_error)
+    if (ignore_error)
+        return;
+
+    if (is_interactive)
     {
         String message;
         if (server_exception)
@@ -336,10 +334,7 @@ void LocalServer::processError(std::string_view query) const
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         fmt::print(stderr, "Received exception:\n{}\n", message);
-        if (is_interactive)
-            fmt::print(stderr, "\n");
-        else
-            fmt::print(stderr, "(query: {})\n", query);
+        fmt::print(stderr, "\n");
 #pragma clang diagnostic pop
     }
     else
@@ -1287,22 +1282,7 @@ try
 
     processConfig();
 
-    /// `workerFunction()` returns only on `terminateThread()`, so it must not hold a slot of a
-    /// bounded pool. SCOPE_EXIT is LIFO, so registering this guard before the `cleanup()` one keeps
-    /// the checker running while `cleanup()` waits for listener connections to drain.
-    std::thread cancellation_thread;
-
-    SCOPE_EXIT({
-        if (cancellation_thread.joinable())
-        {
-            CancellationChecker::getInstance().terminateThread();
-            cancellation_thread.join();
-        }
-    });
-
     SCOPE_EXIT({ cleanup(); });
-
-    cancellation_thread = std::thread([] { CancellationChecker::getInstance().workerFunction(); });
 
     initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")),
         toProgressOption(config().getString("progress-table", "default")));
@@ -1510,10 +1490,6 @@ void LocalServer::processConfig()
 
     CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
         server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
-
-    /// clickhouse-local never creates a trace collector, so the setter reports the refusal here.
-    MemoryTracker::setMinAllocationSizeToLogStackTrace(
-        server_settings[ServerSetting::min_allocation_size_to_log_stack_trace]);
 
     per_cpu_memory.setBudgetCapacity(server_settings[ServerSetting::max_per_cpu_untracked_memory]);
     per_cpu_memory.setThreadBuffer(server_settings[ServerSetting::per_cpu_untracked_memory_thread_buffer]);

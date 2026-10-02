@@ -6,22 +6,12 @@
 namespace DB
 {
 
-class ColumnString;
-
 /// Drives text-index analysis during a granule's dictionary scan: folds per-query
 /// token postings and row ranges, then bypasses queries that have failed or are no
 /// longer worth evaluating (low-selectivity hints, pattern bypass).
 class TextIndexAnalyzer
 {
 public:
-    /// Half-open range of dictionary token keys. An empty `end` reaches the end of the dictionary.
-    /// Equal bounds are the single key `begin`, not an empty range.
-    struct TokenKeyRange
-    {
-        String begin;
-        String end;
-    };
-
     struct ReadableRows
     {
     public:
@@ -89,11 +79,6 @@ public:
     /// Attaches a scan-discovered `token` to every pattern query whose regex matches it.
     /// Returns true if any pattern matched.
     bool addTokenToPatterns(std::string_view token);
-    /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
-    std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
-    bool canFilterTokensByLiterals() const;
-    /// Appends, ascending, the tokens `addTokenToPatterns` accepts, running it only on those holding a pattern's literal.
-    void matchTokensByLiterals(const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks, std::vector<size_t> & matched_indices);
     /// Marks all pattern queries as bypassed (e.g. dictionary scan budget exhausted).
     void bypassPatternQueries();
 
@@ -108,9 +93,6 @@ private:
     /// then cleans up `queries_by_token` for any query that just failed.
     template <typename Operation>
     void processTokenOperation(std::string_view token, Operation && operation);
-
-    static void markPatternCandidateTokens(
-        const OptimizedRegularExpression & pattern, const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks);
 
     /// Removes the query from `queries_by_token` for all affected tokens, so they stop passing `isTokenNeeded`.
     void detachQueryFromTokens(const UInt128 & query_hash, const QueryBuilder & query_builder);
