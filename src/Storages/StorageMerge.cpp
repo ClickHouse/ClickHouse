@@ -2502,8 +2502,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
         if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&snapshot->storage))
             inner_share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
-        /// A subcolumn of a column the child does not have is extracted from that column once it is
-        /// filled, so it matches the column: `x.null` of a NULL is 1, not the `UInt8` default.
+        /// A subcolumn of a column the child does not have is extracted from that column once it is filled.
         const auto & current_header = *child.plan.getCurrentHeader();
         NamesAndTypesList columns_to_fill;
         NameSet columns_to_fill_names;
