@@ -86,9 +86,6 @@ private:
     enum class CheckExistingPartResult : uint8_t
     {
         PART_EXISTS,
-        /// The part is active locally, but its node under `replicas/<r>/parts/` is missing. It has
-        /// been enqueued for check; the entry has to wait for the part check thread to reconcile it.
-        PART_MISSING_IN_ZOOKEEPER,
         OK
     };
 

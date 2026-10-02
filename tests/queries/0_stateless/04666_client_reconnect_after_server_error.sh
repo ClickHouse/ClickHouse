@@ -34,10 +34,7 @@ done
 PROXY_PORT=$(cat "$PROXY_PORT_FILE")
 
 # The address of the proxy replaces the address of the server, the rest of the options is kept.
-# The server-side logs are turned off, because the log of the failing query is forwarded to the client
-# as well, and its text also names the error code that the test looks for.
-CLIENT_OPT=$(echo "${CLICKHOUSE_CLIENT_OPT}" | sed "s/--host=[^ ]*//g; s/--port=[^ ]*//g; s/--send_logs_level=[^ ]*//g")
-CLIENT_OPT="${CLIENT_OPT} --send_logs_level=none"
+CLIENT_OPT=$(echo "${CLICKHOUSE_CLIENT_OPT}" | sed "s/--host=[^ ]*//g; s/--port=[^ ]*//g")
 
 # The error is not annotated with a test hint, so the recovery cannot rely on the expected-error path.
 # shellcheck disable=SC2086

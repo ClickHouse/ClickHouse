@@ -1,42 +1,115 @@
 ---
-description: 'ClickHouse의 Prometheus HTTP API 지원: TimeSeries 테이블을 통한 remote write, remote read 및 PromQL 쿼리.'
-sidebarTitle: 'Prometheus API 및 PromQL'
+description: 'ClickHouse의 Prometheus HTTP API 지원: remote write, remote read, PromQL 쿼리, 서버 메트릭.'
+sidebarTitle: 'Prometheus 및 PromQL'
 slug: /interfaces/prometheus
-title: 'Prometheus HTTP API 및 PromQL'
+title: 'Prometheus 프로토콜 및 PromQL'
 doc_type: 'reference'
 ---
 
-import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-<PrivatePreviewBadge />
+<div id="expose">
+  ## ClickHouse 서버 메트릭 노출
+</div>
+
+<Note>
+  ClickHouse Cloud를 사용하는 경우 [Prometheus 통합](/ko/products/cloud/features/monitoring/prometheus)을 통해 Prometheus에 메트릭을 노출할 수 있습니다.
+</Note>
+
+Prometheus 서버가 ClickHouse 자체 메트릭을 스크레이프해야 하는 경우 전용 포트를 구성하십시오:
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <endpoint>/metrics</endpoint>
+    <metrics>true</metrics>
+    <asynchronous_metrics>true</asynchronous_metrics>
+    <events>true</events>
+    <errors>true</errors>
+    <histograms>true</histograms>
+    <dimensional_metrics>true</dimensional_metrics>
+</prometheus>
+```
+
+동일한 포트에서 더 확장된 핸들러를 구성하려면 `<prometheus.handlers>` 섹션을 사용할 수 있습니다.
+이 섹션은 [`<http_handlers>`](/ko/concepts/features/interfaces/http)와 유사하지만 Prometheus 프로토콜에서 작동합니다:
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/metrics</url>
+            <handler>
+                <type>expose_metrics</type>
+                <metrics>true</metrics>
+                <asynchronous_metrics>true</asynchronous_metrics>
+                <events>true</events>
+                <errors>true</errors>
+                <histograms>true</histograms>
+                <dimensional_metrics>true</dimensional_metrics>
+                <labels>
+                    <environment>production</environment>
+                    <shard from_env="SHARD_NAME"></shard>
+                </labels>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+```
+
+설정:
+
+| Name                         | Default    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`                       | 없음         | ClickHouse 메트릭을 제공하는 포트입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `endpoint`                   | `/metrics` | 메트릭을 수집할 HTTP 엔드포인트입니다. `/`로 시작합니다. `<handlers>` 섹션과 함께 사용하면 안 됩니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `url` / `headers` / `method` | 없음         | 요청에 일치하는 핸들러를 찾는 데 사용하는 필터입니다. [`<http_handlers>`](/ko/concepts/features/interfaces/http) 섹션의 동일한 이름의 필드와 유사합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `info`                       | true       | 서버 아이덴티티 레이블(`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`)과 함께 `ClickHouse_Info` Gauge를 노출합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `metrics`                    | true       | [`system.metrics`](/ko/reference/system-tables/metrics)의 메트릭을 노출합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `asynchronous_metrics`       | true       | [`system.asynchronous_metrics`](/ko/reference/system-tables/asynchronous_metrics)의 메트릭을 노출합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `events`                     | true       | [`system.events`](/ko/reference/system-tables/events)의 메트릭을 노출합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `errors`                     | true       | [`system.errors`](/ko/reference/system-tables/errors)의 오류 수를 노출합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `histograms`                 | true       | [`system.histogram_metrics`](/ko/reference/system-tables/histogram_metrics)의 메트릭을 노출합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `dimensional_metrics`        | true       | [`system.dimensional_metrics`](/ko/reference/system-tables/dimensional_metrics)의 메트릭을 노출합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `labels`                     | 없음         | 노출되는 모든 메트릭에 추가되는 상수 레이블입니다. 각 하위 요소는 하나의 레이블을 정의합니다. 요소 이름은 레이블 이름이며(`[a-zA-Z_][a-zA-Z0-9_]*`와 일치해야 함), 요소 값은 레이블 값입니다. 레이블 값은 `from_env` 속성과 같은 표준 구성 치환을 지원합니다. 레이블 이름이 `__`로 시작하거나(Prometheus에서 예약됨), 이 엔드포인트가 활성화된 섹션 중 하나에서 이미 내보내는 레이블과 충돌하면 거부됩니다. 따라서 예약된 집합은 엔드포인트에서 현재 활성화된 노출 범위를 따릅니다. `histograms`가 활성화된 경우 `le`, `info`가 활성화된 경우 `ClickHouse_Info` 레이블(`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`), `histograms` 또는 `dimensional_metrics`가 활성화된 경우 노출된 히스토그램 또는 차원 메트릭 패밀리에서 사용하는 모든 레이블(예: `group`, `direction`, `operation_type`)이 해당합니다. 엔드포인트가 실제로 노출하는 항목에 따라 달라지므로, 한 엔드포인트에서는 유효한 이름이 다른 엔드포인트에서는 거부될 수 있습니다. |
+
+엔드포인트를 확인하십시오:
+
+```bash
+curl http://127.0.0.1:9363/metrics
+```
+
+<CloudNotSupportedBadge />
+
+<div id="prometheus-http-api-and-promql">
+  ## Prometheus HTTP API 및 PromQL
+</div>
 
 ClickHouse는 [`TimeSeries`](/ko/reference/engines/table-engines/integrations/time-series) 테이블을 통해 Prometheus HTTP API를 구현합니다. 하나의 핸들러가 remote write, remote read, 즉시 PromQL 쿼리 및 범위 PromQL 쿼리를 처리합니다.
 
-Prometheus 서버가 스크레이프할 수 있도록 ClickHouse 자체 메트릭을 노출하려면 [Prometheus 메트릭 엔드포인트](/ko/concepts/features/interfaces/prometheus-metrics)를 참조하십시오.
+<div id="prerequisites">
+  ### 사전 요구 사항
+</div>
 
-## 사전 요구 사항 {#prerequisites}
-
-설정 단계는 ClickHouse Cloud와 자가 관리형 ClickHouse가 서로 다릅니다. 사용 중인 배포 방식에 해당하는 섹션을 따르십시오.
-
-### ClickHouse Cloud {#prerequisites-cloud}
-
-<Note>
-  ClickHouse Cloud의 PromQL 지원은 비공개 프리뷰 단계입니다. 비공개 프리뷰에 참여 중인 서비스에는 `enable_time_series_table` 설정과 Prometheus API 엔드포인트가 이미 구성되어 있습니다. 그 외의 ClickHouse Cloud 서비스에는 이러한 구성이 적용되어 있지 않으며, 사용자가 해당 서비스에서 직접 이 기능을 활성화할 수도 없습니다. 다음 섹션에서 설명하는 `SET enable_time_series_table` SQL 문과 `http_handlers` 구성은 자가 관리형 배포에만 해당합니다.
-</Note>
-
-비공개 프리뷰에 참여 중인 서비스라면 [TimeSeries 테이블 생성](#create-a-timeseries-table)부터 이어서 진행하십시오. 해당 서비스는 [엔드포인트 표](#configure-prometheus-api)에 나열된 엔드포인트 경로를 제공합니다.
-
-### 자가 관리형: TimeSeries 설정 활성화 {#enable-the-timeseries-setting}
-
-테이블을 생성하고 액세스하는 사용자에 대해 `enable_time_series_table` 설정을 활성화하십시오:
+테이블을 생성하고 액세스하는 사용자에 대해 [`allow_experimental_time_series_table`](/ko/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) 설정을 활성화하십시오:
 
 ```sql
-SET enable_time_series_table = 1;
+SET allow_experimental_time_series_table = 1;
 ```
 
-HTTP API 요청의 경우 API 사용자 프로필에서 `enable_time_series_table`을 활성화하십시오.
+데이터베이스와 `TimeSeries` 테이블을 생성합니다.
 
-### 자가 관리형: Prometheus API 엔드포인트 구성 {#configure-prometheus-api}
+```sql
+CREATE DATABASE prometheus;
+CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
+```
+
+HTTP API 요청의 경우 API 사용자 profile에서 `allow_experimental_time_series_table`을 활성화하십시오.
+
+<div id="configure-prometheus-api">
+  ### Prometheus API 구성
+</div>
 
 기본 ClickHouse HTTP 포트에 접두사 기반으로 라우팅되는 핸들러 하나를 구성합니다:
 
@@ -54,17 +127,16 @@ HTTP API 요청의 경우 API 사용자 프로필에서 `enable_time_series_tabl
 
 `<defaults/>`는 `/ping` 및 SQL 요청 같은 엔드포인트에 대한 기본 제공 핸들러를 유지합니다. 위의 접두사는 하나의 핸들러를 통해 이러한 엔드포인트를 노출합니다.
 
-| 엔드포인트                             | 용도                      |
-| --------------------------------- | ----------------------- |
-| `/prometheus/api/v1/write`        | Prometheus remote write |
-| `/prometheus/api/v1/read`         | Prometheus remote read  |
-| `/prometheus/api/v1/query`        | 즉시 PromQL 쿼리            |
-| `/prometheus/api/v1/query_range`  | 범위 PromQL 쿼리            |
-| `/prometheus/api/v1/format_query` | PromQL 표현식 포맷팅          |
-| `/prometheus/api/v1/series`       | 시리즈 메타데이터               |
-| `/prometheus/api/v1/metadata`     | 메트릭 패밀리 메타데이터           |
+| 엔드포인트                            | 용도                      |
+| -------------------------------- | ----------------------- |
+| `/prometheus/api/v1/write`       | Prometheus remote write |
+| `/prometheus/api/v1/read`        | Prometheus remote read  |
+| `/prometheus/api/v1/query`       | 즉시 PromQL 쿼리            |
+| `/prometheus/api/v1/query_range` | 범위 PromQL 쿼리            |
+| `/prometheus/api/v1/series`      | 시리즈 메타데이터               |
+| `/prometheus/api/v1/metadata`    | 메트릭 패밀리 메타데이터           |
 
-이 예시에서는 핸들러에서 `database`와 `table`을 생략합니다. 각 요청에는 `table` 쿼리 매개변수가 반드시 포함되어야 합니다(주어진 PromQL 표현식만 파싱하므로 테이블이 필요 없는 `/format_query`는 제외). `database`를 지정하거나, `prometheus.metrics`와 같은 정규화된 테이블 이름을 사용하거나, 데이터베이스를 생략해 `default`를 사용할 수도 있습니다. 따라서 하나의 핸들러로 여러 `TimeSeries` 테이블을 처리할 수 있습니다.
+이 예시에서는 핸들러에서 `database`와 `table`을 생략합니다. 각 요청에는 `table` 쿼리 매개변수가 반드시 포함되어야 합니다. `database`를 지정하거나, `prometheus.metrics`와 같은 정규화된 테이블 이름을 사용하거나, 데이터베이스를 생략해 `default`를 사용할 수도 있습니다. 따라서 하나의 핸들러로 여러 `TimeSeries` 테이블을 처리할 수 있습니다.
 
 모든 요청에 하나의 고정 테이블을 사용하려면 핸들러에서 이를 구성하십시오.
 
@@ -86,16 +158,9 @@ HTTP API 요청의 경우 API 사용자 프로필에서 `enable_time_series_tabl
 | `table`      | none | `TimeSeries` 테이블 이름입니다. 생략하면 요청에서 `table` 쿼리 매개변수를 제공해야 합니다. 구성된 이름에는 데이터베이스를 포함할 수 있습니다.                              |
 | `database`   | none | 테이블이 포함된 데이터베이스입니다. 요청에서 쿼리 매개변수로 지정할 수 있습니다. 생략하면 ClickHouse는 정규화된 `table` 값에 지정된 데이터베이스를 사용하며, 없으면 `default`를 사용합니다. |
 
-### TimeSeries 테이블 생성 {#create-a-timeseries-table}
-
-데이터베이스와 `TimeSeries` 테이블을 생성합니다.
-
-```sql
-CREATE DATABASE prometheus;
-CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
-```
-
-## remote write를 통한 메트릭 수집 {#remote-write}
+<div id="remote-write">
+  ### remote write를 통한 메트릭 수집
+</div>
 
 ClickHouse는 [Prometheus remote-write 프로토콜](https://prometheus.io/docs/specs/remote_write_spec/)을 지원합니다. Prometheus가 핸들러에 쓰도록 구성하십시오:
 
@@ -118,7 +183,9 @@ remote_write:
 
 ClickHouse는 [`wait_for_async_insert`](/ko/reference/settings/session-settings/wait-for#wait_for_async_insert) 설정과 관계없이 데이터가 `TimeSeries` 테이블의 모든 내부 테이블에 플러시된 후에만 비동기 remote-write 요청을 승인합니다. remote-write 프로토콜은 승인된 쓰기를 영속성이 보장된 것으로 간주합니다. 플러시에 실패하면 요청에서 오류가 반환되고 Prometheus가 재시도합니다.
 
-## PromQL로 쿼리 {#promql-query-support}
+<div id="promql-query-support">
+  ### PromQL로 쿼리
+</div>
 
 특정 시점에서 PromQL 표현식을 평가하려면 instant-query 엔드포인트를 사용하십시오:
 
@@ -143,32 +210,11 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
-쿼리 엔드포인트는 form body로 전달된 매개변수도 허용합니다. `--get` 없이 실행하면 curl은 매개변수를 `application/x-www-form-urlencoded` 형식으로 `POST` 요청에 담아 전송합니다:
-
-```bash
-curl --user default:<password> \
-  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
-  --data-urlencode "query=rate(http_requests_total[5m])" \
-  --data-urlencode "start=2026-08-15T12:00:00Z" \
-  --data-urlencode "end=2026-08-15T13:00:00Z" \
-  --data-urlencode "step=60s" \
-  --data-urlencode "database=prometheus" \
-  --data-urlencode "table=metrics"
-```
-
-PromQL 표현식을 평가하지 않고 파싱하여 포맷팅하려면 format-query 엔드포인트를 사용하십시오:
-
-```bash
-curl --user default:<password> --get \
-  "https://clickhouse.example.com:8443/prometheus/api/v1/format_query" \
-  --data-urlencode "query=sum by(job)(http_requests_total{code=\"200\"})/2"
-```
-
-표현식은 파싱된 쿼리에서 직렬화되어 반환되며, 이때 공백은 정규화되고 주석은 제거되며 불필요한 괄호는 삭제되고 duration은 초 단위 숫자로 변환됩니다: `sum by (job) (http_requests_total{code="200"}) / 2`. 이 엔드포인트는 표현식을 평가하지 않으므로 `database` 및 `table` 매개변수가 필요하지 않습니다.
-
 HTTP API, `promql` 방언 및 테이블 함수에서 지원하는 함수와 집계 연산자 목록은 [지원되는 PromQL 기능](/ko/reference/functions/table-functions/prometheusQueryRange#supported-promql-features)을 참조하십시오.
 
-### Grafana {#grafana}
+<div id="grafana">
+  #### Grafana
+</div>
 
 기준 URL이 `/api/v1` 앞에서 끝나도록 Prometheus 데이터 소스를 구성하십시오:
 
@@ -182,7 +228,7 @@ datasources:
     basicAuth: true
     basicAuthUser: default
     jsonData:
-      httpMethod: POST
+      httpMethod: GET
       customQueryParameters: database=prometheus&table=metrics
     secureJsonData:
       basicAuthPassword: <password>
@@ -190,13 +236,13 @@ datasources:
 
 Grafana는 이 기준 URL 뒤에 `/api/v1/query` 또는 `/api/v1/query_range`를 추가하고, 각 요청에 `customQueryParameters`를 추가합니다.
 
-`httpMethod: POST`를 사용하면 Grafana는 쿼리 매개변수를 request body로 전송합니다. ClickHouse는 request body와 URL 쿼리 문자열을 모두 읽으므로 `customQueryParameters`는 계속 적용됩니다. URL에는 길이 제한이 있으므로 긴 PromQL 표현식에는 `POST`를 사용하십시오.
-
 <Note>
-  쿼리 엔드포인트인 `/api/v1/query`, `/api/v1/query_range`, `/api/v1/format_query`와 메타데이터 엔드포인트 `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, `/api/v1/metadata`만 구현되어 있습니다. `/api/v1/series`에는 최소 하나의 `match[]` 시리즈 셀렉터가 필요하며, 선택 사항인 `start`, `end`, `limit` 매개변수를 지원하고, 각 셀렉터와 일치하는 시리즈의 합집합을 반환합니다. `/api/v1/labels`는 동일한 매개변수를 허용하며, `match[]`는 선택 사항이고 일치하는 시리즈의 정렬된 레이블 이름을 반환합니다(셀렉터가 제공되지 않은 경우 모든 시리즈의 레이블 이름을 반환합니다). `/api/v1/label/<name>/values`는 `/api/v1/labels`와 동일한 매개변수를 허용하며 하나의 레이블에 대한 정렬된 값을 반환합니다. 이때 `<name>`에는 `[a-zA-Z0-9_]` 범위를 벗어나는 문자를 포함하는 레이블 이름에 대해 Prometheus의 `U__...` 이스케이프를 선택적으로 사용할 수 있습니다. 이러한 엔드포인트는 Grafana Prometheus 데이터 소스가 레이블 탐색, 템플릿 변수, 쿼리 빌더 자동 완성에 사용하는 기능을 모두 다룹니다.
+  쿼리 엔드포인트인 `/api/v1/query` 및 `/api/v1/query_range`와 메타데이터 엔드포인트 `/api/v1/series`, `/api/v1/labels`, `/api/v1/metadata`만 구현되어 있습니다. `/api/v1/series`에는 최소 하나의 `match[]` 시리즈 셀렉터가 필요하며, 선택 사항인 `start`, `end`, `limit` 매개변수를 지원하고, 각 셀렉터와 일치하는 시리즈의 합집합을 반환합니다. `/api/v1/labels`는 동일한 매개변수를 허용하며, `match[]`는 선택 사항이고 일치하는 시리즈의 정렬된 레이블 이름을 반환합니다(셀렉터가 제공되지 않은 경우 모든 시리즈의 레이블 이름을 반환합니다). Grafana Prometheus 데이터 소스에서 레이블 탐색, 템플릿 변수, 쿼리 빌더 자동 완성에 사용하는 레이블 값 엔드포인트(`/api/v1/label/<name>/values`)는 구현되어 있지 않으므로 오류를 반환합니다. 쿼리 빌더 대신 코드 모드에서 PromQL 표현식을 작성하십시오.
 </Note>
 
-### SQL 진입점 {#sql-entry-points}
+<div id="sql-entry-points">
+  #### SQL 진입점
+</div>
 
 ClickHouse는 HTTP API, `promql` 방언, [`prometheusQuery`](/ko/reference/functions/table-functions/prometheusQuery) 및 [`prometheusQueryRange`](/ko/reference/functions/table-functions/prometheusQueryRange) 테이블 함수에서 동일한 PromQL 컨버터를 사용합니다.
 
@@ -221,7 +267,9 @@ FROM prometheusQuery(
 );
 ```
 
-## 메트릭 메타데이터 쿼리 {#metadata}
+<div id="metadata">
+  ### 메트릭 메타데이터 쿼리
+</div>
 
 `/prometheus/api/v1/metadata` 엔드포인트는 `TimeSeries` 테이블의 `Metrics` 대상 테이블에 저장된 메트릭 메타데이터(각 메트릭 패밀리의 유형, 도움말 텍스트, 단위)를 반환합니다. URL 쿼리 문자열에서 다음 Prometheus 매개변수를 지원합니다.
 
@@ -241,7 +289,9 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
-## remote read를 통해 메트릭 읽기 {#remote-read}
+<div id="remote-read">
+  ### remote read를 통해 메트릭 읽기
+</div>
 
 ClickHouse는 `/prometheus/api/v1/read`에서 [Prometheus remote-read 프로토콜](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/)을 지원합니다.
 

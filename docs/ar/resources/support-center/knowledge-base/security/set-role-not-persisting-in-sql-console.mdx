@@ -10,13 +10,15 @@ tags: ['الأمان والمصادقة', 'إدارة Cloud', 'استكشاف ا
 keywords: ['SQL Console', 'SET ROLE', 'RBAC', 'Access Control']
 ---
 
-عند تشغيل `SET ROLE` في ClickHouse Cloud SQL Console، قد يبدو أن الدور يتغير لاستعلام واحد ثم يعود إلى حالته السابقة في الاستعلام التالي. استخدم دور SQL Console لكل مستخدم عندما تحتاج الأذونات إلى الاستمرار عبر الاستعلامات والجلسات.
+عند تشغيل `SET ROLE` في ClickHouse Cloud SQL Console، قد يبدو أن الدور يتغير لاستعلام واحد ثم يعود إلى حالته السابقة في الاستعلام التالي. استخدم دور SQL Console مخصصًا لكل مستخدم عندما تحتاج الأذونات إلى الاستمرار عبر الاستعلامات والجلسات.
 
 <Tip>
-  يُفضّل استخدام [أدوار قاعدة البيانات المُدارة عبر Cloud](/ar/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) لإدارة الوصول إلى قاعدة البيانات من وحدة التحكم. لا تتوافق أدوار `sql-console-role:<email>` مع جلسات JWT داخل SQL console.
+  يُفضّل استخدام [أدوار قاعدة البيانات المُدارة عبر Cloud](/ar/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (بيتا) لإدارة الوصول إلى قاعدة البيانات من وحدة التحكم. لا تتوافق أدوار `sql-console-role:<email>` مع [مصادقة JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
 </Tip>
 
-## الأعراض {#symptoms}
+<div id="symptoms">
+  ## الأعراض
+</div>
 
 قد تلاحظ واحدًا أو أكثر مما يلي:
 
@@ -35,7 +37,9 @@ SELECT
     defaultRoles();
 ```
 
-## سبب حدوث ذلك {#why-this-happens}
+<div id="why-this-happens">
+  ## سبب حدوث ذلك
+</div>
 
 ترسل SQL Console الاستعلامات عبر اتصالات HTTP عديمة الحالة إلى خدمة ClickHouse Cloud تضم عدة نُسخ متماثلة. ولا يُضمن أن تستخدم الاستعلامات المتتالية الاتصال نفسه أو النسخة المتماثلة نفسها.
 
@@ -43,7 +47,9 @@ SELECT
 
 لهذا السبب، لا تستخدم `SET ROLE` كآلية دائمة للتحكم في الوصول في SQL Console.
 
-## آلية عمل أدوار مستخدمي SQL Console {#how-sql-console-user-roles-work}
+<div id="how-sql-console-user-roles-work">
+  ## آلية عمل أدوار مستخدمي SQL Console
+</div>
 
 عندما يفتح المستخدم SQL Console، ينشئ ClickHouse Cloud مستخدم قاعدة بيانات وفق اصطلاح التسمية التالي:
 
@@ -65,7 +71,9 @@ sql-console-role:user@example.com
 | `sql_console_admin` و`sql_console_read_only` | أدوار SQL Console المضمّنة                             | نعم، يديرها ClickHouse Cloud        |
 | `sql-console-role:<email>`                   | دور مخصص لكل مستخدم ينشئه مسؤول                        | نعم، يُطبّق عند تسجيل دخول المستخدم |
 
-## تهيئة الأذونات الدائمة {#configure-persistent-permissions}
+<div id="configure-persistent-permissions">
+  ## تهيئة الأذونات الدائمة
+</div>
 
 نفّذ العبارات التالية بصفتك مستخدمًا لديه امتيازات إدارية على الخدمة، مثل مستخدم SQL Console لديه دور `sql_console_admin` أو مستخدم آخر لديه امتياز `ACCESS MANAGEMENT`.
 
@@ -127,7 +135,9 @@ sql-console-role:user@example.com
   </Step>
 </Steps>
 
-## تجنب تعديل الأدوار المُدارة {#avoid-modifying-managed-roles}
+<div id="avoid-modifying-managed-roles">
+  ## تجنب تعديل الأدوار المُدارة
+</div>
 
 لا تعدّل `sql_console_admin` أو `sql_console_read_only` لمنح أذونات مخصصة. يدير ClickHouse Cloud هذه الأدوار المضمنة. استخدم بدلاً من ذلك `sql-console-role:<email>` لتعيين أذونات لكل مستخدم.
 
