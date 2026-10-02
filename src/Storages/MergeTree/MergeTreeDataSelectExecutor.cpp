@@ -741,8 +741,26 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     if (minmax_idx_condition)
         minmax_columns_types = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data.getSettings()).getTypes();
 
+    /// `force_index_by_date` requires a condition on the partition key. The min-max index may also cover
+    /// `_block_number` and `_block_offset` (see `part_minmax_index_columns`), which come after the
+    /// partition-key columns, so a condition on them alone does not count.
+    auto minmax_idx_uses_partition_key = [&]
+    {
+        if (!minmax_idx_condition)
+            return false;
+        const auto & condition = minmax_idx_condition->generateUnsubstituted();
+        if (condition.alwaysUnknownOrTrue())
+            return false;
+        const size_t num_partition_key_columns = MergeTreeData::getMinMaxColumns(
+            metadata_snapshot->getPartitionKey(), data.getSettings(), MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).size();
+        for (size_t column : condition.getUsedColumns())
+            if (column < num_partition_key_columns)
+                return true;
+        return false;
+    };
+
     if (check_index_usage && metadata_snapshot->hasPartitionKey() && settings[Setting::force_index_by_date]
-        && (!minmax_idx_condition || minmax_idx_condition->generateUnsubstituted().alwaysUnknownOrTrue())
+        && !minmax_idx_uses_partition_key()
         && (!partition_pruner || partition_pruner->isUseless()))
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
