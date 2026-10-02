@@ -2940,6 +2940,7 @@ static void advanceValueIdxUntilRow(size_t end_row_idx, Reader::PageState & page
     {
         constexpr size_t batch_size = 64;
         constexpr size_t large_batch_size = 4 * batch_size;
+        size_t rows_to_advance = end_row_idx - page.next_row_idx;
 
         while (new_value_idx + large_batch_size <= page.num_values)
         {
@@ -2948,12 +2949,11 @@ static void advanceValueIdxUntilRow(size_t end_row_idx, Reader::PageState & page
                 + std::popcount(~bytes64MaskToBits64Mask(page.rep.data() + new_value_idx + batch_size))
                 + std::popcount(~bytes64MaskToBits64Mask(page.rep.data() + new_value_idx + 2 * batch_size))
                 + std::popcount(~bytes64MaskToBits64Mask(page.rep.data() + new_value_idx + 3 * batch_size));
-            const size_t rows_to_advance = end_row_idx - page.next_row_idx;
 
             if (rows_in_chunk > rows_to_advance)
                 break;
 
-            page.next_row_idx += rows_in_chunk;
+            rows_to_advance -= rows_in_chunk;
             new_value_idx += large_batch_size;
         }
 
@@ -2961,14 +2961,13 @@ static void advanceValueIdxUntilRow(size_t end_row_idx, Reader::PageState & page
         {
             const size_t rows_in_chunk = std::popcount(
                 ~bytes64MaskToBits64Mask(page.rep.data() + new_value_idx));
-            const size_t rows_to_advance = end_row_idx - page.next_row_idx;
 
             /// Consume a whole batch only if it doesn't cross the target row.
             /// Otherwise the scalar loop below finds the exact boundary.
             if (rows_in_chunk > rows_to_advance)
                 break;
 
-            page.next_row_idx += rows_in_chunk;
+            rows_to_advance -= rows_in_chunk;
             new_value_idx += batch_size;
         }
 
@@ -2976,12 +2975,14 @@ static void advanceValueIdxUntilRow(size_t end_row_idx, Reader::PageState & page
         {
             if (page.rep[new_value_idx] == 0)
             {
-                if (page.next_row_idx == end_row_idx)
+                if (rows_to_advance == 0)
                     break;
-                page.next_row_idx += 1;
+                --rows_to_advance;
             }
             new_value_idx += 1;
         }
+
+        page.next_row_idx = end_row_idx - rows_to_advance;
     }
     page.value_idx = new_value_idx;
 }
@@ -3121,11 +3122,11 @@ static size_t processRepDefLevelsForFlatArray(
     out_offsets.resize_assume_reserved(old_size + num_rows);
 
     size_t i = 0;
-    bool use_masks = num_rows <= num_values / 4;
-    if (!use_masks && num_rows <= num_values / 2 && memchr(def, 0, num_values) == nullptr)
-        use_masks = true;
+    const bool sparse_boundaries = num_rows <= num_values / 4;
+    const bool known_all_values_defined
+        = !sparse_boundaries && num_rows <= num_values / 2 && memchr(def, 0, num_values) == nullptr;
 
-    if (use_masks)
+    if (sparse_boundaries || known_all_values_defined)
     {
         constexpr size_t batch_size = 64;
         for (; i + batch_size <= num_values; i += batch_size)
@@ -3134,7 +3135,8 @@ static size_t processRepDefLevelsForFlatArray(
             /// Reuse ClickHouse's generic 64-byte mask helper for row boundaries and
             /// values that contribute to the array offset.
             UInt64 boundaries = ~bytes64MaskToBits64Mask(rep + i);
-            const UInt64 contributes = bytes64MaskToBits64Mask(def + i);
+            const UInt64 contributes
+                = known_all_values_defined ? ~UInt64(0) : bytes64MaskToBits64Mask(def + i);
 
             if (contributes == ~UInt64(0))
             {
