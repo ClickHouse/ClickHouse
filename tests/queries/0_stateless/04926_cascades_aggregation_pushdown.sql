@@ -37,7 +37,6 @@ SET query_plan_optimize_join_order_randomize = 0;
 -- filter moves into PREWHERE decides between a `Filter` and an `Expression` step in it
 SET enable_join_runtime_filters = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 -- the physical build-side choice, the runtime-filter row threshold and the pre-cascades
 -- join-order pass (which attaches the row estimates) decide the pinned push-right shapes
 -- (all three settings are randomized by the test harness)
