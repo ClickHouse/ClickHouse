@@ -3,8 +3,6 @@
 #include <Parsers/Access/ASTCreateTokenQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -44,9 +42,11 @@ bool ParserCreateTokenQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     return true;
 }
 
-void registerStatementCreateToken(StatementFactory & factory)
+std::map<String, Documentation> ParserCreateTokenQuery::getDocumentation() const
 {
-    factory.registerStatement("CREATE TOKEN",
+    std::map<String, Documentation> documentation;
+
+    documentation["CREATE TOKEN"] =
     {
         .description = R"DOCS_MD(
 Creates a token for the current user: the server generates a random secret, adds it to the current user as
@@ -195,7 +195,9 @@ CREATE TOKEN
 )",
         .parent = "CREATE",
         .related = {"CREATE USER", "ALTER USER", "GRANT", "SHOW"},
-    });
+    };
+
+    return documentation;
 }
 
 }
