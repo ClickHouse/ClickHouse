@@ -190,6 +190,13 @@ TEST(ParserQueryWithOutput, CloneOwnsItsChildren)
     }
 }
 
+TEST(ParserCheckQuery, RejectEmptyPartName)
+{
+    const String query = "CHECK TABLE t PART ''";
+    ParserQuery parser(query.data() + query.size());
+    EXPECT_THROW(parseQuery(parser, query, "", 0, 0, 0), DB::Exception);
+}
+
 /// `ASTIndexDeclaration` carries a `part_of_create_index_query` flag that switches its formatting
 /// between the `CREATE INDEX` form (`(expr) TYPE ...`, with the extra wrapper this PR restores for
 /// parenthesized expressions) and the column-list form (`name expr TYPE ...`). `clone()` must carry
