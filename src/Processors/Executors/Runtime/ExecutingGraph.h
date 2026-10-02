@@ -2,7 +2,7 @@
 
 #include <Processors/Port.h>
 #include <Processors/IProcessor.h>
-#include <Common/SharedMutex.h>
+#include <Common/ReadMostlySharedMutex.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <atomic>
 #include <list>
@@ -192,7 +192,12 @@ private:
     /// Monotonic counter for assigning Node::processors_id.
     uint64_t next_node_id = 0;
 
-    SharedMutex nodes_mutex;
+    /// Read on every node update by every executor thread, written only when
+    /// the pipeline expands or processors are removed. A plain shared mutex
+    /// makes every reader contend for the write permission on one cache line,
+    /// which shows up on wide pipelines that pass small blocks; this one takes
+    /// the read side with a single fetch_add that never retries.
+    ReadMostlySharedMutex nodes_mutex;
 
     /// Set when `updatePipeline` threw halfway through recording the processors an expansion
     /// added (an allocation failed, for example): the parent's ports are already connected to

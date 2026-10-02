@@ -776,14 +776,36 @@ void Pipe::resize(size_t num_streams, bool strict, UInt64 min_outstreams_per_res
     /// 1. Mitigates lock contention.
     /// 2. Maintains ResizeProcessor's benefit of balancing data flow among multiple streams.
     ///
+    /// The split below is meant to break up a resize that already exists, not
+    /// to introduce one. Its condition only looks at the stream count, so once
+    /// there are enough streams to split (num_streams >= 2 *
+    /// min_outstreams_per_resize_after_split, i.e. 48 by default) it also fires
+    /// for a strict N-to-N resize, which the line after it would otherwise
+    /// elide. Every block then pays for an extra pipeline stage: up to ~2x on
+    /// a pipeline passing small blocks. That figure is a whole-branch CI
+    /// measurement, but it is attributable here because this change is inert
+    /// below 48 streams and only the 48-stream shapes moved.
+    ///
+    /// Note this is a trade, not a free win. A StrictResize is not a
+    /// pass-through even when its port counts match: it matches any input
+    /// holding data to any free output, so it distributes work between streams
+    /// that would otherwise be pinned to each other end to end. Dropping it
+    /// costs ~10% on a high-cardinality GROUP BY at 96 threads, where
+    /// per-stream work is uneven. The trade is taken because the loss is an
+    /// order of magnitude smaller than the gain, and because the alternative is
+    /// to keep a balancer that appears only above an arbitrary stream count --
+    /// below 48 streams the line after this one removes it anyway. Making such
+    /// a balancer deliberate, at every stream count, would be a separate
+    /// change with its own measurements.
+    if (strict && num_streams == numOutputPorts())
+        return;
+
     /// Disable this optimization when min_outstreams_per_resize_after_split is 0
     if (output_ports.size() > 1 && min_outstreams_per_resize_after_split != 0 && num_streams / min_outstreams_per_resize_after_split > 1)
     {
         addSplitResizeTransform(num_streams, min_outstreams_per_resize_after_split, strict);
         return;
     }
-    if (strict && num_streams == numOutputPorts())
-        return;
 
     ProcessorPtr resize;
 

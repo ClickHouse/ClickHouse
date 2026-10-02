@@ -118,23 +118,50 @@ void ProgressValues::writeJSON(WriteBuffer & out, bool write_zero_values) const
 
 bool Progress::incrementPiecewiseAtomically(const Progress & rhs)
 {
-    read_rows += rhs.read_rows;
-    read_bytes += rhs.read_bytes;
+    /// Every one of these is a locked read-modify-write that takes the cache
+    /// line exclusively even when the addend is zero, and one of these objects
+    /// is shared by every thread of the query. On the hot read path only
+    /// read_rows and read_bytes are ever set, so eight of the ten increments
+    /// are contended no-ops. Testing first costs a register compare and keeps
+    /// the line where it is.
+    const UInt64 rhs_read_rows = rhs.read_rows;
+    const UInt64 rhs_read_bytes = rhs.read_bytes;
+    const UInt64 rhs_total_rows_to_read = rhs.total_rows_to_read;
+    const UInt64 rhs_total_bytes_to_read = rhs.total_bytes_to_read;
+    const UInt64 rhs_written_rows = rhs.written_rows;
+    const UInt64 rhs_written_bytes = rhs.written_bytes;
+    const UInt64 rhs_result_rows = rhs.result_rows;
+    const UInt64 rhs_result_bytes = rhs.result_bytes;
+    const UInt64 rhs_elapsed_ns = rhs.elapsed_ns;
+    const Int64 rhs_memory_usage = rhs.memory_usage;
 
-    total_rows_to_read += rhs.total_rows_to_read;
-    total_bytes_to_read += rhs.total_bytes_to_read;
+    if (rhs_read_rows)
+        read_rows += rhs_read_rows;
+    if (rhs_read_bytes)
+        read_bytes += rhs_read_bytes;
 
-    written_rows += rhs.written_rows;
-    written_bytes += rhs.written_bytes;
+    if (rhs_total_rows_to_read)
+        total_rows_to_read += rhs_total_rows_to_read;
+    if (rhs_total_bytes_to_read)
+        total_bytes_to_read += rhs_total_bytes_to_read;
 
-    result_rows += rhs.result_rows;
-    result_bytes += rhs.result_bytes;
+    if (rhs_written_rows)
+        written_rows += rhs_written_rows;
+    if (rhs_written_bytes)
+        written_bytes += rhs_written_bytes;
 
-    elapsed_ns += rhs.elapsed_ns;
+    if (rhs_result_rows)
+        result_rows += rhs_result_rows;
+    if (rhs_result_bytes)
+        result_bytes += rhs_result_bytes;
 
-    memory_usage += rhs.memory_usage;
+    if (rhs_elapsed_ns)
+        elapsed_ns += rhs_elapsed_ns;
 
-    return rhs.read_rows || rhs.written_rows;
+    if (rhs_memory_usage)
+        memory_usage += rhs_memory_usage;
+
+    return rhs_read_rows || rhs_written_rows;
 }
 
 void Progress::reset()
