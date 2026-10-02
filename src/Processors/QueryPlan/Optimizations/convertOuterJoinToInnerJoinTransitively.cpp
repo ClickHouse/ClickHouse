@@ -293,8 +293,9 @@ void convertJoinKind(JoinStepLogical & join, QueryPlan::Node & node, const NameS
     if (join_operator.strictness != JoinStrictness::All)
         return;
 
-    /// A `JoinStepLogicalLookup` source expects a particular join kind.
-    auto is_storage_join = [&]()
+    /// A `Join` engine source expects its declared join kind, and only an outer join on a key-value
+    /// source must not be converted to prevent the optimizer from reordering it.
+    auto is_prepared_join_storage = [&]()
     {
         for (const auto * child : node.children)
         {
@@ -302,12 +303,12 @@ void convertJoinKind(JoinStepLogical & join, QueryPlan::Node & node, const NameS
                 child = child->children.front();
 
             if (auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(child->step.get()))
-                if (lookup_step->getPreparedJoinStorage().storage_join != nullptr)
+                if (lookup_step->getPreparedJoinStorage())
                     return true;
         }
         return false;
     }();
-    if (is_storage_join)
+    if (is_prepared_join_storage)
         return;
 
     /// A side is "safe" when the rows this join would null-extend on it cannot survive above.
