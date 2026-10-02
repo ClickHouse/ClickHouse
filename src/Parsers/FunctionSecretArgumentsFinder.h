@@ -186,6 +186,12 @@ protected:
     void findXDBCSecretArguments();
     void findS3FunctionSecretArguments(bool is_cluster_function);
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function);
+    /// The raw indexes of the arguments `AzureStorageParsedArguments::fromAST` assigns slots to: no
+    /// `extra_credentials(...)` and no `key = value`. Hides every `key = value` value the explicit form
+    /// does not read, and every argument when the slots cannot be established.
+    std::vector<size_t> azurePositionalArguments();
+    /// The explicit-url form of every Azure table function and engine, `url` at slot `url_slot`.
+    void findAzurePositionalSecretArguments(size_t url_slot);
     bool maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0);
     /// Whether the arguments an `AzureBlobStorage(named_collection, ...)` destination or table takes
     /// from `start` can be shown: only an argument written here can carry a credential, and each has
