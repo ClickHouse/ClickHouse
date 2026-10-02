@@ -33,7 +33,12 @@ public:
 
     std::string getName() const override { return "FullSortingMergeJoin"; }
 
-    std::string getAlgorithm() const override { return toString(JoinAlgorithm::FULL_SORTING_MERGE); }
+    /// The single-stream variant of the selected algorithm. The `parallel_*` variants are reported by
+    /// `JoinStep` only when the join was actually built sharded (see `getShardedAlgorithm`).
+    std::string getAlgorithm() const override
+    {
+        return toString(isSortedMerge() ? JoinAlgorithm::SORTED_MERGE : JoinAlgorithm::FULL_SORTING_MERGE);
+    }
 
     const TableJoin & getTableJoin() const override { return *table_join; }
 
@@ -69,6 +74,15 @@ public:
     bool isSortedMerge() const
     {
         return selected_algorithm == JoinAlgorithm::SORTED_MERGE || selected_algorithm == JoinAlgorithm::PARALLEL_SORTED_MERGE;
+    }
+
+    /// The algorithm to report when the join pipeline is built sharded: the selected `parallel_*` variant,
+    /// otherwise the same as `getAlgorithm` (e.g. `full_sorting_merge` sharded by `query_plan_join_shard_by_pk_ranges`).
+    std::string getShardedAlgorithm() const
+    {
+        if (selected_algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE || selected_algorithm == JoinAlgorithm::PARALLEL_SORTED_MERGE)
+            return toString(selected_algorithm);
+        return getAlgorithm();
     }
 
     bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override

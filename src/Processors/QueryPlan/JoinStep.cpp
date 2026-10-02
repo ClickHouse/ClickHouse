@@ -42,9 +42,8 @@ std::string getExecutedJoinAlgorithm(const IJoin & join, bool use_sharding)
     if (!use_sharding)
         return join.getAlgorithm();
 
-    const auto * full_sorting_merge_join = typeid_cast<const FullSortingMergeJoin *>(&join);
-    if (full_sorting_merge_join && full_sorting_merge_join->isParallel())
-        return toString(JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
+    if (const auto * full_sorting_merge_join = typeid_cast<const FullSortingMergeJoin *>(&join))
+        return full_sorting_merge_join->getShardedAlgorithm();
 
     return join.getAlgorithm();
 }
