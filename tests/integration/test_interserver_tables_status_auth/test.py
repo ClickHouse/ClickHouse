@@ -9,7 +9,9 @@ from helpers.cluster import ClickHouseCluster
 # table existence / readonly / replication-delay status to a peer that has not proven
 # knowledge of the cluster `<secret>`. Two rejection paths are covered:
 #
-#  * old protocol (no hash) + `interserver_tables_status_require_auth` -> rejected;
+#  * old protocol (no hash) -> rejected by the default value of
+#    `interserver_tables_status_require_auth`, which the configs deliberately do not set, so that a
+#    change of that default fails this test;
 #  * new protocol with a wrong cluster secret -> hash validation fails -> rejected.
 #
 # The legitimate authenticated path is covered by `test_distributed_inter_server_secret`.
