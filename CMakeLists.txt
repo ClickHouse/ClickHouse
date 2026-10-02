@@ -188,14 +188,14 @@ if (OS_LINUX)
     #   and whatever is poisoning it by LD_PRELOAD should not link to our symbols.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic -Wl,--gc-sections")
 
+    if (LINKER_NAME MATCHES "lld")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--fatal-warnings")
+    endif ()
+
     if (LINKER_NAME MATCHES "lld" AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
         # Fold identical code and data sections to reduce binary size.
         # `safe` keeps address-taken functions distinct, as C and C++ require.
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--icf=safe")
-        # lldb tries to attach to __jit_debug_register_code (controllable plugin.jit-loader.gdb.enable, default ON)
-        # and this function may be merged with others, which will make the clickhouse under lldb unusable,
-        # because on each this function lldb will hit a breakpoint
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--keep-unique=__jit_debug_register_code")
     endif ()
 
     # In Release builds, strip residual debug sections that may come from contrib

@@ -146,6 +146,15 @@ static DataTypePtr removeArrayNullableLowCardinality(const DataTypePtr & type)
     return inner_type;
 }
 
+/// The token stream an `Array` column stores differs from the one the row-level function sees, per element.
+static bool isIndexedColumnArray(const Block & header)
+{
+    if (header.columns() != 1)
+        return false;
+
+    return isArray(removeNullableOrLowCardinalityNullable(header.getByPosition(0).type));
+}
+
 static std::optional<size_t> tryGetIndexedFixedStringSize(const Block & header)
 {
     /// A text index is always defined on a single expression.
@@ -171,6 +180,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     NameSet columns_shadowing_map_subcolumns_)
     : WithContext(context_)
     , header(index_sample_block)
+    , indexed_column_is_array(isIndexedColumnArray(header))
     , indexed_fixed_string_size(tryGetIndexedFixedStringSize(header))
     , normalized_index_column_name(normalized_index_column_name_)
     , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
@@ -343,7 +353,7 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     }
 
     if (function_name == "hasPhrase")
-        return has_positions ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+        return has_positions && !indexed_column_is_array ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
 
     /// Exact mode requires array tokenizer with neither pre- nor postprocessor.
     const bool can_be_exact_read_mode = is_array_tokenizer && !has_preprocessor && !has_postprocessor;
@@ -382,8 +392,7 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const ActionsDAG::Node & node) const
 {
     RPNElement rpn_element;
-    RPNBuilderTreeContext rpn_tree_context(getContext());
-    RPNBuilderTreeNode rpn_node(&node, rpn_tree_context);
+    RPNBuilderTreeNode rpn_node(&node, getContext());
 
     if (!traverseAtomNode(rpn_node, rpn_element))
         return nullptr;
@@ -405,8 +414,7 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
     if (function_name == "like" || function_name == "ilike" || function_name == "mapContainsKeyValue")
         return true;
 
-    RPNBuilderTreeContext rpn_tree_context(getContext());
-    RPNBuilderTreeNode rpn_node(&node, rpn_tree_context);
+    RPNBuilderTreeNode rpn_node(&node, getContext());
     const auto function_node = rpn_node.toFunctionNode();
 
     return tokenizerArgumentMatchesIndex(function_name, function_node.getArgumentAt(2));
@@ -1101,15 +1109,6 @@ static std::optional<FixedStringPaddingSemantics> fixedStringPaddingSemantics(co
     return std::nullopt;
 }
 
-/// Their terms never contain a zero byte, so appending zero bytes to a value keeps all its terms.
-static bool tokenizerSplitsAtZeroByte(ITokenizer::Type type)
-{
-    return type == ITokenizer::Type::SplitByNonAlpha
-        || type == ITokenizer::Type::Ngrams
-        || type == ITokenizer::Type::SparseGrams
-        || type == ITokenizer::Type::AsciiCJK;
-}
-
 static std::string_view withoutTrailingZeros(std::string_view value)
 {
     return value.substr(0, value.find_last_not_of('\0') + 1);
@@ -1340,7 +1339,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         const FixedStringNeedleContext context{
             .semantics = *semantics,
             .indexed_fixed_string_size = indexed_fixed_string_size,
-            .padding_never_in_terms = !has_preprocessor && tokenizerSplitsAtZeroByte(tokenizer->getType()),
+            .padding_never_in_terms = !has_preprocessor && ITokenizer::splitsAtZeroByte(tokenizer->getType()),
         };
         if (!tryNormalizeNeedlePadding(value_field, value_type, context))
             return false;
@@ -1560,11 +1559,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasPhrase")
     {
-        /// Only splitByNonAlpha, splitByString, splitByRegexp, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
+        /// Only splitByNonAlpha, splitByString, splitByRegexp, array, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
         static const std::unordered_set<std::string_view> supported_tokenizers = {
             SplitByNonAlphaTokenizer::getExternalName(),
             SplitByStringTokenizer::getExternalName(),
             SplitByRegexpTokenizer::getExternalName(),
+            ArrayTokenizer::getExternalName(),
             AsciiCJKTokenizer::getExternalName(),
 #if USE_ICU
             IcuTokenizer::getExternalName(),
@@ -1574,23 +1574,55 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
             return false;
 
-        /// The postprocessor in `optimizeDirectReadFromTextIndex` rejoins the normalized tokens with a
-        /// space and re-tokenizes them, and validates each token with the `splitByNonAlpha` separator rule.
-        /// Both assumptions are wrong for `splitByRegexp`: its separator need not be whitespace (so the rejoin
-        /// would collapse tokens, causing false negatives) and its tokens may contain characters such as `#` or
-        /// `+` (which the validation would reject). Rather than bypassing the index - which would silently fall
-        /// back to the default `splitByNonAlpha` and produce false positives - reject this combination
-        /// explicitly. `splitByRegexp` + `hasPhrase` without a postprocessor is fully supported. This also
-        /// covers `match_tokens` mode, where adjacency is even less reliable.
-        if (tokenizer->getType() == ITokenizer::Type::SplitByRegexp && has_postprocessor)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Function 'hasPhrase' is not supported on a text index that uses the 'splitByRegexp' tokenizer and a postprocessor");
+        /// The two sides number an element's tokens differently, so the row-level function decides alone.
+        const bool use_positions = has_positions && !indexed_column_is_array;
+
+        /// An Array phrase carries the tokens verbatim: neither the tokenizer nor the preprocessor applies.
+        if (value_field.getType() == Field::Types::Array)
+        {
+            VectorWithMemoryTracking<String> phrase_tokens;
+            for (const Field & element : value_field.safeGet<Array>())
+            {
+                if (element.getType() != Field::Types::String)
+                    return false;
+
+                const auto & element_value = element.safeGet<String>();
+                if (!element_value.empty())
+                    phrase_tokens.push_back(element_value);
+            }
+
+            if (has_postprocessor)
+                phrase_tokens = postprocessor->processTokens(std::move(phrase_tokens));
+
+            std::set<String> dedup(phrase_tokens.begin(), phrase_tokens.end());
+            VectorWithMemoryTracking<String> unique_tokens(dedup.begin(), dedup.end());
+
+            if (use_positions)
+            {
+                auto query = std::make_shared<TextSearchQuery>(
+                    function_name,
+                    TextSearchMode::Phrase,
+                    direct_read_mode,
+                    std::move(unique_tokens),
+                    std::vector<OptimizedRegularExpression>{},
+                    std::move(phrase_tokens));
+
+                out.function = RPNElement::FUNCTION_HAS_PHRASE;
+                out.text_search_queries.emplace_back(std::move(query));
+                return true;
+            }
+
+            out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
+            out.text_search_queries.emplace_back(
+                std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(unique_tokens)));
+
+            return true;
+        }
 
         const String value = preprocessor->processConstant(value_field.safeGet<String>());
 
         /// When positions are available, use phrase search with positional intersection.
-        if (has_positions)
+        if (use_positions)
         {
             /// phrase_tokens keeps order and duplicates for positional search; unique_tokens is the
             /// sorted distinct set used for granule-level filtering (all tokens must exist).
@@ -1973,7 +2005,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
                 /// A NULL key is declined: `arrayElement` returns NULL for it, not the default value.
                 Field key_field;
                 DataTypePtr key_type;
-                if (!RPNBuilderTreeNode(const_key_argument, function_node.getTreeContext()).tryGetConstant(key_field, key_type)
+                if (!RPNBuilderTreeNode(const_key_argument, function_node.getContext()).tryGetConstant(key_field, key_type)
                     || key_field.getType() != Field::Types::String)
                     return false;
 
@@ -2274,7 +2306,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     if (!future_set)
         return false;
 
-    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
+    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getContext());
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
@@ -2302,7 +2334,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     const FixedStringNeedleContext context{
         .semantics = FixedStringPaddingSemantics::BothStripped,
         .indexed_fixed_string_size = indexed_fixed_string_size,
-        .padding_never_in_terms = !has_preprocessor && tokenizerSplitsAtZeroByte(tokenizer->getType()),
+        .padding_never_in_terms = !has_preprocessor && ITokenizer::splitsAtZeroByte(tokenizer->getType()),
     };
     String normalized;
 
