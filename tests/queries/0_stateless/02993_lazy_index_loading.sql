@@ -1,3 +1,5 @@
+-- Tags: no-object-storage
+-- no-object-storage: remote reads allocate prefetch buffers that can exceed the 200M limit
 DROP TABLE IF EXISTS test;
 -- Lazy loading is the subject of this test, and CI randomizes `primary_key_lazy_load` off; without
 -- it ATTACH loads the index eagerly and the two "index was not loaded" checks below see 10 MB.

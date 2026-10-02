@@ -15,7 +15,7 @@ CLICKHOUSE_CLIENT_DEBUG_LOG=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_l
 # unrelated to the projection-analysis reuse under test. Pin it off.
 # `prefer_optimize_projection` takes a projection regardless of its estimated cost, which reads
 # the whole partition instead of the pruned ranges asserted below. Pin it off.
-CLICKHOUSE_CLIENT_DEBUG_LOG="${CLICKHOUSE_CLIENT_DEBUG_LOG} --parallel_replicas_local_plan 1 --parallel_replicas_support_projection 1 --optimize_aggregation_in_order 0 --optimize_use_projections 1 --optimize_use_projection_filtering 1 --optimize_move_to_prewhere 1 --query_plan_optimize_prewhere 1 --use_projection_index_in_read_pools 0 --prefer_optimize_projection 0"
+CLICKHOUSE_CLIENT_DEBUG_LOG="${CLICKHOUSE_CLIENT_DEBUG_LOG} --parallel_replicas_local_plan 1 --parallel_replicas_support_projection 1 --optimize_aggregation_in_order 0 --optimize_use_projections 1 --optimize_use_projection_filtering 1 --optimize_move_to_prewhere 1 --use_projection_index_in_read_pools 0 --prefer_optimize_projection 0"
 
 ${CLICKHOUSE_CLIENT_DEBUG_LOG} -q "select count() from t where e >= '2023-11-08 00:00:00.000' and e < '2023-11-09 00:00:00.000' and s in ('AAPL') settings optimize_use_projection_filtering = 1 format Null" 2>&1 | grep -m 1 -oh "Selected .* parts by partition key, *. parts by primary key, .* marks by primary key, .* marks to read from .* ranges.*$"
 

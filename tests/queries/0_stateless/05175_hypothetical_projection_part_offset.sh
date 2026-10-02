@@ -5,7 +5,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# prefer_optimize_projection (randomized in CI) would take p_ix regardless of cost, so no base-table fallback
 PIN="optimize_use_projections = 1, optimize_use_implicit_projections = 0, optimize_read_in_order = 1, prefer_optimize_projection = 0"
 
 $CLICKHOUSE_CLIENT -q "

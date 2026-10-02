@@ -175,7 +175,7 @@ ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "SELECT sum(v)
     | grep -oF 'ICEBERG_SPECIFICATION_VIOLATION' | head -n1
 # Such a manifest is rejected however it is read: a read that builds no filter, and one with
 # pruning off, both consume the tuple to match delete files to the data files they cover.
-${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "SELECT count() FROM t_long" 2>&1 \
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --optimize_trivial_count_query=0 --query "SELECT count() FROM t_long" 2>&1 \
     | grep -oF 'ICEBERG_SPECIFICATION_VIOLATION' | head -n1
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 \
     --query "SELECT sum(v) FROM t_long WHERE p = 1 SETTINGS use_iceberg_partition_pruning = 0" 2>&1 \

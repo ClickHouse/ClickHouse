@@ -71,6 +71,9 @@ struct TransformAndArgument
 
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src);
 
+/// Maps a `PARTITION BY` alias of an Iceberg date transform (e.g. `toRelativeDayNum`) to its `iceberg*` function.
+String normalizeIcebergTransformFunctionName(const String & function_name);
+
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
 Poco::JSON::Object::Ptr getMetadataJSONObject(

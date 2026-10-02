@@ -58,7 +58,7 @@ INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k
 LEFT JOIN t_corr_right_uniq AS t3 ON t1.k = t3.k
 GROUP BY t1.k ORDER BY k
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy',
-    enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+    enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1;
 
 -- Variant B onto the subtree under a LEFT SEMI top join - and the pushed final aggregation
 -- immediately takes a SECOND, variant-A pushdown through the INNER join (its expression is new
@@ -72,7 +72,7 @@ INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k
 LEFT SEMI JOIN t_corr_right_uniq AS t3 ON t1.k = t3.k
 GROUP BY t1.k ORDER BY k
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy',
-    enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+    enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1;
 
 -- Repeated variant-B pushdown through two LEFT SEMI joins: the rule fires a second time on the
 -- final aggregation its first application created, leaving the aggregation below both
@@ -84,14 +84,15 @@ LEFT SEMI JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k
 LEFT SEMI JOIN t_corr_right_multi AS t3 ON t1.k = t3.k
 GROUP BY t1.k ORDER BY k
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy',
-    enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+    enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1;
 
 SELECT '-- 1. variant A onto the join subtree (INNER below, LEFT above)';
 SELECT t1.k AS k, count() AS c, sum(t1.v) AS s
 FROM t_corr_left AS t1
 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k
 LEFT JOIN t_corr_right_uniq AS t3 ON t1.k = t3.k
-GROUP BY t1.k ORDER BY k;
+GROUP BY t1.k ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT t1.k AS k, count() AS c, sum(t1.v) AS s
 FROM t_corr_left AS t1
 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k
@@ -104,7 +105,8 @@ SELECT t1.k AS k, count() AS c, sum(t1.v) AS s
 FROM t_corr_left AS t1
 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k
 LEFT SEMI JOIN t_corr_right_uniq AS t3 ON t1.k = t3.k
-GROUP BY t1.k ORDER BY k;
+GROUP BY t1.k ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT t1.k AS k, count() AS c, sum(t1.v) AS s
 FROM t_corr_left AS t1
 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k
@@ -117,7 +119,8 @@ SELECT t1.k AS k, count() AS c
 FROM t_corr_left AS t1
 LEFT SEMI JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k
 LEFT SEMI JOIN t_corr_right_multi AS t3 ON t1.k = t3.k
-GROUP BY t1.k ORDER BY k;
+GROUP BY t1.k ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT t1.k AS k, count() AS c
 FROM t_corr_left AS t1
 LEFT SEMI JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k

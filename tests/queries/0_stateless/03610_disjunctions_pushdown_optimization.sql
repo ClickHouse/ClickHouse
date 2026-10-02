@@ -7,7 +7,6 @@ SET explain_query_plan_default = 'legacy';
 SET enable_analyzer=1;
 SET enable_join_runtime_filters=0;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET query_plan_propagate_predicate_across_join = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 -- Pin (randomized in CI): below the limit, an IN set is ranked by its exact range-based

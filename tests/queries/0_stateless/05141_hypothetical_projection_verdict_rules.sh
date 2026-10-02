@@ -5,8 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# count() must reach the read step and the real projection must be allowed to win, but on cost:
-# prefer_optimize_projection (randomized in CI) takes one regardless, so the base table never wins
+# count() must reach the read step and the real projection must be allowed to win
 PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, optimize_read_in_order = 1, prefer_optimize_projection = 0"
 
 $CLICKHOUSE_CLIENT -q "
