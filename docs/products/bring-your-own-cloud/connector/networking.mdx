@@ -12,7 +12,7 @@ import { Image } from "/snippets/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-The ClickHouse Connector reaches ClickHouse Cloud over two hostnames: your connector endpoint, `<subdomain>.<connector-domain>`, and your enrollment endpoint, `<subdomain>.enroll.<connector-domain>`. By default both resolve to public addresses and the connector reaches them through your VPC's internet egress. Each hostname is also published as an AWS PrivateLink endpoint service. You create one interface endpoint per service in your VPC and, once ClickHouse has accepted the connections, enable private DNS. The same hostnames then resolve to addresses inside the VPC and the traffic stays on the AWS network.
+The ClickHouse Connector reaches ClickHouse Cloud over two hostnames: your connector endpoint, `<subdomain>.<connector-domain>`, and your enrollment endpoint, `<subdomain>.enroll.<connector-domain>`. By default both resolve to public addresses and the connector reaches them through your VPC's internet egress. Each hostname is also published as an AWS PrivateLink endpoint service. You create one interface endpoint per service in your VPC and, once ClickHouse has accepted the connections, enable private DNS. The same hostnames then resolve to addresses inside the VPC and traffic from inside it stays on the AWS network.
 
 TLS and mutual TLS still terminate on the ClickHouse side, and the client certificate, HMAC signing, and WebSocket channels in [architecture](/products/bring-your-own-cloud/connector/architecture#connections) are unchanged. Every connection stays outbound. On Kubernetes the NetworkPolicy egress CIDRs do change; see [verify](#verify).
 
@@ -64,7 +64,7 @@ dig +short <subdomain>.enroll.<connector-domain>
 Then enroll as in [onboarding](/products/bring-your-own-cloud/connector/onboarding#install-and-enroll). `init --enroll` redeems the token and gets the certificate signed over the enrollment endpoint; every later request goes to the API endpoint. When `--from-terraform` reads outputs that carry `connector_privatelink`, `init` resolves both hostnames before it redeems the token:
 
 - On a VM (`--target systemd`) the host it runs on is the connector. A hostname that does not resolve, or resolves to an address outside RFC 1918, `100.64.0.0/10`, or an IPv6 unique local range, stops the enrollment, because the enrollment and every later request would leave the VPC. Run `init` from inside the VPC once the connections are accepted and private DNS is on, or pass `--skip-privatelink-check` to enroll over the internet.
-- On Kubernetes (`--target helm`) the pods resolve through the cluster's resolver, not the workstation, so `init` prints what the workstation resolves and continues.
+- On Kubernetes (`--target helm`) the pods resolve through the cluster's resolver, not the workstation, so `init` prints what the workstation resolves and continues. The enrollment call itself still comes from the workstation: `init --enroll` redeems the token and has the certificate signed from the machine it runs on, so a workstation outside the VPC reaches the enrollment hostname over the internet. To keep enrollment private too, run `init` from inside the VPC, or take it out of band with `--handoff <bundle-file>` plus `--no-auto-sign` and then `init --signed-cert` (see [air-gapped and mirrored installs](/products/bring-your-own-cloud/connector/onboarding#air-gapped-and-mirrored-installs)); `--no-auto-sign` alone moves only the signing.
 
 The check runs with `--enroll` and `--handoff`; `--signed-cert` is not checked.
 
