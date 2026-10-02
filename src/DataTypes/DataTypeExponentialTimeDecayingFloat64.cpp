@@ -141,10 +141,17 @@ public:
         const Float64 time
             = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
 
-        writeBinaryLittleEndian(
-            getExponentialTimeDecayingOrderingKey(
-                value, time, decay_length),
-            ostr);
+        UInt8 domain = 1;
+        UInt64 sortable_unit_timestamp = 0;
+        if (value != 0)
+        {
+            domain = std::signbit(value) ? 0 : 2;
+            sortable_unit_timestamp = getExponentialTimeDecayingSortableFloatKey(
+                getExponentialTimeDecayingUnitTimestamp(value, time, decay_length));
+        }
+
+        writeBinary(domain, ostr);
+        writeBinaryLittleEndian(sortable_unit_timestamp, ostr);
     }
 
     void serializeBinaryBulk(
