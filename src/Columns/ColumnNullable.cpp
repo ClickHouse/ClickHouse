@@ -359,8 +359,20 @@ void ColumnNullable::doInsertFrom(const IColumn & src, size_t n)
 #endif
 {
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
-    getNestedColumn().insertFrom(src_concrete.getNestedColumn(), n);
-    getNullMapData().push_back(src_concrete.getNullMapData()[n]);
+    auto & null_map_data = getNullMapData();
+
+    /// Append the null marker first so the success path needs only the capacity check
+    /// inside push_back. Roll it back if the nested insertion fails.
+    null_map_data.push_back(src_concrete.getNullMapData()[n]);
+    try
+    {
+        insertOneWithRollbackIfNeeded(getNestedColumn(), src_concrete.getNestedColumn(), n);
+    }
+    catch (...)
+    {
+        null_map_data.pop_back();
+        throw;
+    }
 }
 
 
@@ -378,9 +390,7 @@ void ColumnNullable::doInsertManyFrom(const IColumn & src, size_t position, size
 
     if (length == 1)
     {
-        null_map_data.reserve(null_map_data.size() + 1);
-        insertOneWithRollbackIfNeeded(getNestedColumn(), src_concrete.getNestedColumn(), position);
-        null_map_data.push_back(src_concrete.getNullMapData()[position]);
+        insertFrom(src, position);
         return;
     }
 
@@ -400,10 +410,18 @@ void ColumnNullable::insertFromNotNullable(const IColumn & src, size_t n)
 {
     auto & null_map_data = getNullMapData();
 
-    /// Reserve the null marker first so it cannot allocate after the nested insert succeeds.
-    null_map_data.reserve(null_map_data.size() + 1);
-    insertOneWithRollbackIfNeeded(getNestedColumn(), src, n);
+    /// Append the null marker first so the success path needs only the capacity check
+    /// inside push_back. Roll it back if the nested insertion fails.
     null_map_data.push_back(false);
+    try
+    {
+        insertOneWithRollbackIfNeeded(getNestedColumn(), src, n);
+    }
+    catch (...)
+    {
+        null_map_data.pop_back();
+        throw;
+    }
 }
 
 void ColumnNullable::insertRangeFromNotNullable(const IColumn & src, size_t start, size_t length)

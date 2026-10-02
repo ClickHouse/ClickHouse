@@ -156,6 +156,22 @@ TEST(ColumnNullable, InsertManyFromNullableSourceRepeatsRawNullMarker)
     dst->checkConsistency();
 }
 
+TEST(ColumnNullable, InsertFromNullableSourceRollsBackCompositeFailure)
+{
+    auto src_nested = makeTupleColumn(8, 42, 's');
+    auto src_null_map = ColumnUInt8::create();
+    src_null_map->insertValue(0);
+    auto src = ColumnNullable::create(std::move(src_nested), std::move(src_null_map));
+
+    auto dst_nested = makeTupleColumn(4, 7, 'd');
+    auto dst_null_map = ColumnUInt8::create();
+    dst_null_map->insertValue(0);
+    auto dst = ColumnNullable::create(std::move(dst_nested), std::move(dst_null_map));
+
+    EXPECT_THROW(dst->insertFrom(*src, 0), Exception);
+    expectTupleColumnUnchanged(*dst);
+}
+
 TEST(ColumnNullable, InsertManyFromNullableSourceRollsBackCompositeFailure)
 {
     auto src_nested = makeTupleColumn(8, 42, 's');
