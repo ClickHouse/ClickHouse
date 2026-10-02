@@ -328,8 +328,8 @@ namespace
         DB::PaddedPODArray<char> data;
     };
 
-    /// Reads the bucket's spill stream back and removes it. Called by the one task that merges or writes the
-    /// bucket, after the finish barrier, so no producer writes to the stream any more.
+    /// Reads the bucket's spill stream back and removes it. Called by the one task that merges the bucket, after the
+    /// finish barrier, so no producer writes to the stream any more.
     std::vector<SpilledPartitionRecords> readSpilledBucket(DB::AdaptiveAggregationSession & session, size_t bucket)
     {
         std::vector<SpilledPartitionRecords> blocks;
