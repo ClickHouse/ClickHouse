@@ -55,7 +55,7 @@ void StorageSystemFileLogFiles::fillData(MutableColumns & res_columns, ContextPt
 
     for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
-        if (db.first == DatabaseCatalog::TEMPORARY_DATABASE)
+        if (db.first == DatabaseCatalog::TEMPORARY_DATABASE || db.second->isExternal())
             continue;
 
         for (auto it = db.second->getTablesIterator(context, {}, /* skip_not_loaded */ true); it->isValid(); it->next())
