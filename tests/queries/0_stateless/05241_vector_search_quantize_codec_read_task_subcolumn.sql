@@ -39,3 +39,30 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comm
 ORDER BY log_comment;
 
 DROP TABLE quantize_read_task;
+
+-- The same in a compact part with substream marks, where several subcolumns of `vec` are read in the order of their
+-- substreams: the result must not change after the part is loaded back from disk.
+DROP TABLE IF EXISTS quantize_read_task_compact;
+CREATE TABLE quantize_read_task_compact
+(
+    id UInt32,
+    vec Array(Float32) CODEC(Quantized('int8', 64))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, write_marks_for_substreams_in_compact_parts = 1;
+
+INSERT INTO quantize_read_task_compact
+SELECT number, arrayMap(j -> toFloat32(sipHash64(number, j) % 100), range(64))
+FROM numbers(20000);
+
+SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 'quantize_read_task_compact' AND active;
+SELECT sum(length(vec.quantized)), sum(vec.size0), groupBitXor(cityHash64(id, vec.quantized)) FROM quantize_read_task_compact;
+
+DETACH TABLE quantize_read_task_compact;
+ATTACH TABLE quantize_read_task_compact;
+
+SELECT sum(length(vec.quantized)), sum(vec.size0), groupBitXor(cityHash64(id, vec.quantized)) FROM quantize_read_task_compact;
+SELECT sum(vec.size0), sum(length(vec.quantized)), groupBitXor(cityHash64(id, vec.quantized)) FROM quantize_read_task_compact;
+SELECT count() FROM quantize_read_task_compact PREWHERE length(vec.quantized) > 0 WHERE vec.size0 = 64;
+
+DROP TABLE quantize_read_task_compact;
