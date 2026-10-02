@@ -35,6 +35,9 @@
 #include <IO/ReadHelpers.h>
 #include <Access/AccessEntityIO.h>
 #include <Access/User.h>
+#include <Access/Common/AccessEntityType.h>
+#include <Common/StringUtils.h>
+#include <base/range.h>
 #include <readpassphrase.h>
 
 #include <Poco/Util/XMLConfiguration.h>
@@ -188,8 +191,9 @@ static bool hasAuthentication(const Poco::Util::AbstractConfiguration & config, 
 }
 
 /// Whether a `DiskAccessStorage` at `directory_path` is known not to define the default user.
-/// It loads users either from `users.list` (with the other `*.list` files) or, when rebuilding the lists, from `<id>.sql` files,
-/// so both are checked. Empty lists and entities of other types (roles, settings profiles, etc.) don't define the default user.
+/// Mirrors how it loads entities at startup: if there is no `need_rebuild_lists.mark` and all `*.list` files can be read,
+/// it trusts them and ignores `<id>.sql` files not listed there; otherwise it rebuilds the lists from all `<id>.sql` files.
+/// Empty lists and entities of other types (roles, settings profiles, etc.) don't define the default user.
 /// A relative path is resolved against the working directory of the server, which is not known here.
 /// A directory or a file that cannot be inspected (e.g. without permissions, or corrupted) is not known to be without the default user.
 static bool isKnownWithoutDefaultUserDiskAccessStorage(const fs::path & directory_path)
@@ -203,23 +207,47 @@ static bool isKnownWithoutDefaultUserDiskAccessStorage(const fs::path & director
 
     try
     {
-        const fs::path users_list_path = directory_path / "users.list";
-        if (fs::exists(users_list_path))
+        /// Same as `DiskAccessStorage::readLists`: if any list file is missing or cannot be parsed, the lists are rebuilt.
+        bool lists_are_used = !fs::exists(directory_path / "need_rebuild_lists.mark");
+        bool has_default_user_in_lists = false;
+        for (auto type : collections::range(AccessEntityType::MAX))
         {
-            /// Same format as `writeListFile` in `DiskAccessStorage`.
-            ReadBufferFromFile in(users_list_path.string());
-            size_t num = 0;
-            readVarUInt(num, in);
-            for (size_t i = 0; i != num; ++i)
+            if (!lists_are_used)
+                break;
+
+            String list_file_name = AccessEntityTypeInfo::get(type).plural_raw_name;
+            toLowerASCII(list_file_name);
+            const fs::path list_path = directory_path / (list_file_name + ".list");
+            if (!fs::exists(list_path))
             {
-                String name;
-                readStringBinary(name, in);
-                UUID id;
-                readUUIDText(id, in);
-                if (name == "default")
-                    return false;
+                lists_are_used = false;
+                break;
+            }
+
+            try
+            {
+                /// Same format as `writeListFile` in `DiskAccessStorage`.
+                ReadBufferFromFile in(list_path.string());
+                size_t num = 0;
+                readVarUInt(num, in);
+                for (size_t i = 0; i != num; ++i)
+                {
+                    String name;
+                    readStringBinary(name, in);
+                    UUID id;
+                    readUUIDText(id, in);
+                    if (type == AccessEntityType::USER && name == "default")
+                        has_default_user_in_lists = true;
+                }
+            }
+            catch (...)
+            {
+                lists_are_used = false;
             }
         }
+
+        if (lists_are_used)
+            return !has_default_user_in_lists;
 
         for (const auto & entry : fs::directory_iterator(directory_path))
         {
@@ -693,6 +721,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         /// so if no preceding XML users config defines the default user, the installer cannot know the effective one.
         std::string shadowing_access_storage;
         size_t num_users_configs_before_shadowing_access_storage = 0;
+        /// Set if the default user may instead be defined in a later XML users config with a relative path
+        /// that is resolved against the working directory of the server, which is not known here.
+        std::optional<fs::path> unresolved_later_users_config_file;
 
         if (!fs::exists(config_d))
         {
@@ -965,8 +996,16 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 }
 
                 const auto & users_config_path = users_config_files[i];
-                /// A relative path here is resolved against the working directory of the server, which is not known.
-                if (users_config_path.is_relative() || !fs::exists(users_config_path))
+                /// A relative path here is resolved against the working directory of the server, which is not known,
+                /// so the default user may be defined in that file.
+                if (users_config_path.is_relative())
+                {
+                    is_default_user_removed = false;
+                    unresolved_later_users_config_file = users_config_path;
+                    break;
+                }
+
+                if (!fs::exists(users_config_path))
                     continue;
 
                 ConfigProcessor processor(users_config_path.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
@@ -1073,6 +1112,11 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         {
             fmt::print("{}The users config {} from {} is not in {}. Not setting up a password for the default user.{}\n",
                 start_hilite, unresolved_users_config_file->string(), main_config_file.string(), config_dir.string(), end_hilite);
+        }
+        else if (unresolved_later_users_config_file)
+        {
+            fmt::print("{}The default user may be defined in the users config {} from {}, which is resolved against the working directory of the server. Not setting up a password for it.{}\n",
+                start_hilite, unresolved_later_users_config_file->string(), main_config_file.string(), end_hilite);
         }
         else if (is_default_user_maybe_shadowed)
         {
