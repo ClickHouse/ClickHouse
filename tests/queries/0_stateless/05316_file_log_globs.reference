@@ -21,6 +21,7 @@ app.log	13
 -- renamed before it was read
 fresh.log.1	15
 fresh.log.1	16
+hop.log.2	17
 -- chain
 chain.log	20
 -- chain rotation

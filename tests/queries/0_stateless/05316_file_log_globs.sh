@@ -2,7 +2,7 @@
 # A glob in the file name of the FileLog path selects which files of the directory are read.
 # A file that is already read keeps being read after it is renamed to a non-matching name (log rotation),
 # also across DETACH/ATTACH, until it is removed.
-# A file renamed from a matching name before the table read it is read, and a rotation chain renamed while detached keeps its offsets.
+# A file renamed from a matching name before the table read it is read, also after a second rename, and a rotation chain renamed while detached keeps its offsets.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,7 +17,7 @@ printf '1\n2\n' > "$dir/app.log"
 printf '100\n' > "$dir/notes.txt"
 printf '200\n' > "$dir/app.log.1.gz"
 
-$CLICKHOUSE_CLIENT -q "CREATE TABLE file_log (v UInt64) ENGINE = FileLog('$dir/*.log', 'TSV')"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE file_log (v UInt64) ENGINE = FileLog('$dir/*.log', 'TSV') SETTINGS max_threads = 1, poll_timeout_ms = 100"
 
 step=0
 # Reads until a newly created matching file is seen: then every earlier file operation has been processed.
@@ -76,7 +76,12 @@ printf '14\n' >> "$dir/app.log.0"
 read_rows "renamed file replaced"
 
 printf '15\n' > "$dir/fresh.log"
+printf '17\n' > "$dir/hop.log"
+# The macOS watcher compares directory listings: it has to list both files before they are renamed.
+sleep 1
 mv "$dir/fresh.log" "$dir/fresh.log.1"
+mv "$dir/hop.log" "$dir/hop.log.1"
+mv "$dir/hop.log.1" "$dir/hop.log.2"
 printf '16\n' >> "$dir/fresh.log.1"
 read_rows "renamed before it was read"
 
