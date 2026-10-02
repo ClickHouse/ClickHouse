@@ -147,6 +147,18 @@ def test_native_fallback_to_password():
     assert "AUTHENTICATION_FAILED" in str(err.value)
 
 
+def test_native_cn_nul_byte_no_bypass():
+    # Authentication bypass: client13's CN is "client1\0.evil.com" and user 'john' is configured with
+    # <common_name>client1</common_name>. If server-side CN extraction truncated at the embedded NUL
+    # byte, the CN would collapse to "client1" and the certificate would authenticate as user 'john'.
+    # The full CN must be preserved, so the match must fail.
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="john", cert_name="client13"
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+
+
 def get_ssl_context(cert_name):
     context = WrapSSLContextWithSNI(SSL_HOST, ssl.PROTOCOL_TLS_CLIENT)
     context.load_verify_locations(cafile=f"{SCRIPT_DIR}/certs/ca-cert.pem")
@@ -219,6 +231,14 @@ def test_https_wrong_cert():
             enable_ssl_auth=False,
             cert_name="client1",
         )
+
+
+def test_https_cn_nul_byte_no_bypass():
+    # Same bypass as test_native_cn_nul_byte_no_bypass, over the HTTPS interface: client13's CN
+    # "client1\0.evil.com" must not be truncated to "client1" and authenticate as user 'john'.
+    with pytest.raises(Exception) as err:
+        execute_query_https("SELECT currentUser()", user="john", cert_name="client13")
+    assert "403" in str(err.value)
 
 
 def test_https_non_ssl_auth():
@@ -546,6 +566,21 @@ def test_x509_cn_wildcard_single_label():
     assert "403" in str(err.value)
 
 
+def test_x509_wildcard_nul_byte_no_bypass():
+    # Authentication bypass: client14's CN and DNS SAN are both "evil\0.corp.example.com". Users
+    # 'wildcard_cn' and 'wildcard_dns' are configured with '*.corp.example.com' and
+    # 'DNS:*.corp.example.com'. The '*' must not match the span "evil\0", so both must fail.
+    for user in ["wildcard_cn", "wildcard_dns"]:
+        with pytest.raises(Exception) as err:
+            execute_query_native(
+                instance, "SELECT currentUser()", user=user, cert_name="client14"
+            )
+        assert "AUTHENTICATION_FAILED" in str(err.value)
+        with pytest.raises(Exception) as err:
+            execute_query_https("SELECT currentUser()", user=user, cert_name="client14")
+        assert "403" in str(err.value)
+
+
 def test_x509_uri_san_wildcard_dot_in_segment():
     # Non-regression: '.' separates labels for DNS/CN but is NOT a separator for URI SANs,
     # whose separator is '/'. A wildcard URI path segment may legitimately contain dots, so
@@ -739,14 +774,14 @@ def test_x509_san_email_support():
     # Test native protocol with email SAN
     assert (
         execute_query_native(
-            instance, "SELECT currentUser()", user="alice", cert_name="client13"
+            instance, "SELECT currentUser()", user="alice", cert_name="client15"
         )
         == "alice\n"
     )
 
     # Test HTTPS protocol with email SAN
     assert (
-        execute_query_https("SELECT currentUser()", user="alice", cert_name="client13")
+        execute_query_https("SELECT currentUser()", user="alice", cert_name="client15")
         == "alice\n"
     )
 
@@ -769,7 +804,7 @@ def test_x509_san_email_support():
         "CREATE USER bob IDENTIFIED WITH ssl_certificate SAN 'EMAIL:alice@example.com'"
     )
     assert (
-        execute_query_https("SELECT currentUser()", user="bob", cert_name="client13")
+        execute_query_https("SELECT currentUser()", user="bob", cert_name="client15")
         == "bob\n"
     )
     assert (
@@ -791,13 +826,13 @@ def test_x509_san_email_lowercase_type_prefix():
             instance,
             "SELECT currentUser()",
             user="email_lowercase_prefix",
-            cert_name="client13",
+            cert_name="client15",
         )
         == "email_lowercase_prefix\n"
     )
     assert (
         execute_query_https(
-            "SELECT currentUser()", user="email_lowercase_prefix", cert_name="client13"
+            "SELECT currentUser()", user="email_lowercase_prefix", cert_name="client15"
         )
         == "email_lowercase_prefix\n"
     )
@@ -818,7 +853,7 @@ def test_x509_san_email_lowercase_type_prefix():
     try:
         assert (
             execute_query_https(
-                "SELECT currentUser()", user="email_lowercase_sql", cert_name="client13"
+                "SELECT currentUser()", user="email_lowercase_sql", cert_name="client15"
             )
             == "email_lowercase_sql\n"
         )
@@ -830,7 +865,7 @@ def test_x509_san_email_lowercase_type_prefix():
             execute_query_https(
                 "SELECT currentUser()",
                 user="email_lowercase_literal",
-                cert_name="client14",
+                cert_name="client16",
             )
             == "email_lowercase_literal\n"
         )
@@ -838,7 +873,7 @@ def test_x509_san_email_lowercase_type_prefix():
             execute_query_https(
                 "SELECT currentUser()",
                 user="email_lowercase_literal",
-                cert_name="client13",
+                cert_name="client15",
             )
         assert "403" in str(err.value)
     finally:
@@ -856,30 +891,30 @@ def test_x509_san_email_no_wildcard():
         "CREATE USER email_wildcard IDENTIFIED WITH ssl_certificate SAN 'EMAIL:*@example.com'"
     )
     try:
-        # client14's certificate carries the literal 'EMAIL:*@example.com', which must match.
+        # client16's certificate carries the literal 'EMAIL:*@example.com', which must match.
         assert (
             execute_query_native(
                 instance,
                 "SELECT currentUser()",
                 user="email_wildcard",
-                cert_name="client14",
+                cert_name="client16",
             )
             == "email_wildcard\n"
         )
 
-        # client13's certificate carries 'EMAIL:alice@example.com', which is not the literal
+        # client15's certificate carries 'EMAIL:alice@example.com', which is not the literal
         # pattern, so authentication must fail on both interfaces (no wildcard expansion).
         with pytest.raises(Exception) as err:
             execute_query_native(
                 instance,
                 "SELECT currentUser()",
                 user="email_wildcard",
-                cert_name="client13",
+                cert_name="client15",
             )
         assert "AUTHENTICATION_FAILED" in str(err.value)
         with pytest.raises(Exception) as err:
             execute_query_https(
-                "SELECT currentUser()", user="email_wildcard", cert_name="client13"
+                "SELECT currentUser()", user="email_wildcard", cert_name="client15"
             )
         assert "403" in str(err.value)
     finally:
@@ -888,7 +923,7 @@ def test_x509_san_email_no_wildcard():
 
 def test_x509_san_email_host_part_case():
     # An 'EMAIL:' SAN is an rfc822Name (RFC 5280): the local part is case-sensitive, while the host
-    # part is a DNS name and is therefore compared case-insensitively. client13's certificate carries
+    # part is a DNS name and is therefore compared case-insensitively. client15's certificate carries
     # 'EMAIL:alice@example.com'.
     instance.query("DROP USER IF EXISTS email_upper_host")
     instance.query("DROP USER IF EXISTS email_upper_local")
@@ -905,13 +940,13 @@ def test_x509_san_email_host_part_case():
                 instance,
                 "SELECT currentUser()",
                 user="email_upper_host",
-                cert_name="client13",
+                cert_name="client15",
             )
             == "email_upper_host\n"
         )
         assert (
             execute_query_https(
-                "SELECT currentUser()", user="email_upper_host", cert_name="client13"
+                "SELECT currentUser()", user="email_upper_host", cert_name="client15"
             )
             == "email_upper_host\n"
         )
@@ -922,12 +957,12 @@ def test_x509_san_email_host_part_case():
                 instance,
                 "SELECT currentUser()",
                 user="email_upper_local",
-                cert_name="client13",
+                cert_name="client15",
             )
         assert "AUTHENTICATION_FAILED" in str(err.value)
         with pytest.raises(Exception) as err:
             execute_query_https(
-                "SELECT currentUser()", user="email_upper_local", cert_name="client13"
+                "SELECT currentUser()", user="email_upper_local", cert_name="client15"
             )
         assert "403" in str(err.value)
     finally:
