@@ -1434,6 +1434,35 @@ def test_create_gzip_metadata(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
+def test_create_writes_no_orphan_metadata(started_cluster):
+    # The REST server writes the first metadata file on create. The client must not
+    # prewrite `v1.metadata.json` next to it, or the table root keeps an orphan file.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_no_orphan_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+
+    table = catalog.load_table(f"{root_namespace}.{table_name}")
+    metadata_prefix = f"{table_name}/metadata/"
+    metadata_objects = [
+        f"s3://warehouse-rest/{metadata_prefix}{obj}"
+        for obj in list_s3_objects(started_cluster.minio_client, "warehouse-rest", metadata_prefix)
+    ]
+    assert metadata_objects == [table.metadata_location], metadata_objects
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
 def test_drop_table(started_cluster):
     node = started_cluster.instances["node1"]
 
