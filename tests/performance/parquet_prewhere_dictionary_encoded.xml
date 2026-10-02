@@ -15,4 +15,5 @@
     <query>SELECT sum(a), sum(r), max(s) FROM file('test_parquet_prewhere_dictionary_encoded.parquet', Parquet) PREWHERE k % 10 != 0 FORMAT Null</query>
     <query>SELECT sum(a), sum(r), max(s) FROM file('test_parquet_prewhere_dictionary_encoded.parquet', Parquet) PREWHERE k % 1000 = 0 FORMAT Null</query>
     <query>SELECT sum(a), sum(r), max(s) FROM file('test_parquet_prewhere_dictionary_encoded.parquet', Parquet) PREWHERE k % 1000 != 0 FORMAT Null</query>
+    <query>SELECT sum(a), sum(r), max(s) FROM file('test_parquet_prewhere_dictionary_encoded.parquet', Parquet) PREWHERE k &lt; 50000000 FORMAT Null</query>
 </test>
