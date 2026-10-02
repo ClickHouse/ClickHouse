@@ -243,4 +243,28 @@ TEST(AzureReadUntilPositionChange, BoundRaisedThenLoweredBeforeNextRead)
     ASSERT_EQ(endpoint->requested_offsets, (std::vector<size_t>{0}));
 }
 
+/// The right bound is lifted while the reader still holds bytes from the response of the previous
+/// bound: the response answered the range 0..63, the caller consumes 32 bytes and clears the bound.
+/// The buffered bytes 32..63 are kept, and the download is reopened after them, to the end.
+TEST(AzureReadUntilPositionChange, BoundLiftedAfterBufferedBytes)
+{
+    auto endpoint = std::make_shared<BlobEndpoint>(/* served_size */ 100, /* advertised_size */ 100, /* max_response_size */ 100);
+    auto buffer = makeBuffer(endpoint);
+    buffer->setReadUntilPosition(64);
+
+    std::string head(32, '\0');
+    ASSERT_EQ(buffer->read(head.data(), head.size()), static_cast<size_t>(32));
+    assertCountsFrom(head, 0);
+
+    buffer->setReadUntilEnd();
+    ASSERT_EQ(buffer->available(), static_cast<size_t>(32));
+
+    std::string tail;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(tail, *buffer));
+    ASSERT_EQ(tail.size(), static_cast<size_t>(68));
+    assertCountsFrom(tail, 32);
+    ASSERT_EQ(buffer->getPosition(), 100);
+    ASSERT_EQ(endpoint->requested_offsets, (std::vector<size_t>{0, 64}));
+}
+
 #endif

@@ -98,16 +98,9 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
 
 void ReadBufferFromAzureBlobStorage::setReadUntilEnd()
 {
-    if (read_until_position)
-    {
-        read_until_position = 0;
-        if (initialized)
-        {
-            offset = getPosition();
-            resetWorkingBuffer();
-            initialized = false;
-        }
-    }
+    /// Lifting the bound is a bound change like any other: the download opened under the previous
+    /// bound is closed, and the buffered bytes, which all lie within the lifted bound, are kept.
+    setReadUntilPosition(0);
 }
 
 void ReadBufferFromAzureBlobStorage::setReadUntilPosition(size_t position)
