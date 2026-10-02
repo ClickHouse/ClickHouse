@@ -21,6 +21,13 @@ FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_whatif_force_nested
       WHERE a = 42 AND b IN (SELECT b FROM t_whatif_force_nested WHERE b >= 40) SETTINGS force_optimize_projection = 1)
 WHERE match(line, '^(status|verdict|reason):');
 
+SELECT '-- IN subquery without PREWHERE, the set has its own plan step';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_whatif_force_nested
+      WHERE a = 42 AND b IN (SELECT b FROM t_whatif_force_nested WHERE b >= 40)
+      SETTINGS force_optimize_projection = 1, optimize_move_to_prewhere = 0)
+WHERE match(line, '^(status|verdict|reason):');
+
 SELECT '-- force_optimize_projection in the subquery only, the cost decides the outer read';
 SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
 FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_whatif_force_nested
