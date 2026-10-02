@@ -4317,14 +4317,14 @@ TEST_F(FileCacheTest, EfficiencyWindow)
 
     /// Window 3: removing an unread file segment does not change the window.
     a->markRead(0, G);
-    holder_b.reset();
+    holder_b = nullptr;
     b.reset();
     cache.removeFileSegment(key, S, user.user_id);
     expect(next_window(), G, 7 * G);
 
     /// Window 4: a read file segment leaves the window when it is removed.
     a->markRead(0, G);
-    holder_a.reset();
+    holder_a = nullptr;
     a.reset();
     cache.removeFileSegment(key, 0, user.user_id);
     expect(next_window(), 0, 0);
@@ -4366,7 +4366,7 @@ TEST_F(FileCacheTest, EfficiencyWindow)
 
     /// Window 7: eviction (of C, then D) removes the share of a read file segment.
     d->markRead(0, G + 100);
-    holder_d.reset();
+    holder_d = nullptr;
     d.reset();
     auto filler_key = FileCacheKey::fromPath("efficiency_window_filler");
     for (size_t i = 0; i < 8; ++i)
