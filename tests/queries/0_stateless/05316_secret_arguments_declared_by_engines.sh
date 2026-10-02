@@ -39,6 +39,8 @@ SELECT * FROM arrowflight('host:8815', 'dataset', 'user', 'plain_password')
 SELECT * FROM url('http://example.com/data.csv', 'CSV', extra_credentials(role_arn = 'arn', external_id = 'plain_external_id'))
 CREATE TABLE test_iceberg (key UInt64) ENGINE = Iceberg('http://bucket.s3.amazonaws.com/table/') SETTINGS auth_header = 'plain_auth_header'
 CREATE TABLE test_iceberg_azure (key UInt64) ENGINE = IcebergAzure('https://account.blob.core.windows.net', 'container', 'path', 'account', 'plain_account_key')
+SELECT * FROM azureBlobStorage('https://account.blob.core.windows.net/?sig=plain_sas_signature', 'container', 'blob')
+SELECT * FROM azureBlobStorage(azure_conf, storage_account_url = 'https://account.blob.core.windows.net/?sig=plain_sas_signature', container = 'container', blob_path = 'blob')
 SELECT encrypt('aes-256-ofb', 'plain_text', 'plain_key'), hmac('sha256', 'message', 'plain_key')
 BACKUP TABLE t TO S3('http://bucket.s3.amazonaws.com/backup', 'access_key_id', 'plain_secret_key')
 CREATE DICTIONARY test_dict (key UInt64, value String) PRIMARY KEY key SOURCE(CLICKHOUSE(HOST 'localhost' USER 'user' PASSWORD 'plain_password' TABLE 't')) LIFETIME(0) LAYOUT(FLAT())

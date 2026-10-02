@@ -150,6 +150,28 @@ bool azureCollectionArgumentsAreShowable(FunctionSecretArgumentsFinder & finder,
     return true;
 }
 
+/// Hides a connection value that no rule here can show: a URL carrying a credential of its own
+/// (`user:key@`, a SAS `?sig=...`), or a value that is not a plain string literal.
+void maskUnshowableAzureConnectionValue(FunctionSecretArgumentsFinder & finder, size_t index, const AbstractFunction::Argument & value, bool argument_is_named)
+{
+    String text;
+    if (!value.tryGetString(&text, /* allow_identifier= */ false) || classifyAzureConnectionValue(text) == AzureConnectionValue::Unmaskable)
+        finder.markSecretArgument(index, argument_is_named);
+}
+
+/// The same, for the `connection_string` and `storage_account_url` overrides of a named collection from `start` on.
+void maskUnshowableAzureConnectionOverrides(FunctionSecretArgumentsFinder & finder, size_t start)
+{
+    for (const auto * key : {"connection_string", "storage_account_url"})
+    {
+        for (ssize_t i = finder.findNamedArgument(nullptr, key, start); i >= 0; i = finder.findNamedArgument(nullptr, key, static_cast<size_t>(i) + 1))
+        {
+            const auto index = static_cast<size_t>(i);
+            maskUnshowableAzureConnectionValue(finder, index, *finder.function->arguments->at(index)->getFunction()->arguments->at(1), true);
+        }
+    }
+}
+
 void findAzureBlobStorageFunctionSecretArguments(FunctionSecretArgumentsFinder & finder, bool is_cluster_function)
 {
     /// azureBlobStorageCluster('cluster_name', 'conn_string/storage_account_url', ...) has 'conn_string/storage_account_url' as its second argument.
@@ -160,6 +182,7 @@ void findAzureBlobStorageFunctionSecretArguments(FunctionSecretArgumentsFinder &
         /// azureBlobStorage(named_collection, ..., account_key = 'account_key', ...)
         if (maskAzureConnectionString(finder, -1, true, 1))
             return;
+        maskUnshowableAzureConnectionOverrides(finder, 1);
         finder.findSecretNamedArgument("account_key", 1);
         return;
     }
@@ -168,12 +191,16 @@ void findAzureBlobStorageFunctionSecretArguments(FunctionSecretArgumentsFinder &
         /// azureBlobStorageCluster(cluster, named_collection, ..., account_key = 'account_key', ...)
         if (maskAzureConnectionString(finder, -1, true, 2))
             return;
+        maskUnshowableAzureConnectionOverrides(finder, 2);
         finder.findSecretNamedArgument("account_key", 2);
         return;
     }
 
     if (maskAzureConnectionString(finder, url_arg_idx))
         return;
+
+    if (url_arg_idx < finder.function->arguments->size())
+        maskUnshowableAzureConnectionValue(finder, url_arg_idx, *finder.function->arguments->at(url_arg_idx), false);
 
     /// We should check other arguments first because we don't need to do any replacement in case of
     /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
