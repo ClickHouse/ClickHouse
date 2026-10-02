@@ -51,8 +51,19 @@ ALWAYS_INLINE size_t selectorIndexAt(const Selector & selector, size_t k)
 {
     if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Indexes>)
         return selector.getData()[k];
+    else if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Selector>)
+        return selector[k];
     else
         return selector.first + k;
+}
+
+template <typename Selector>
+ALWAYS_INLINE size_t selectorSize(const Selector & selector)
+{
+    if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Selector>)
+        return selector.size();
+    else
+        return ScatteredBlock::Selector::size(selector);
 }
 
 template <typename KeyGetter, typename Selector>
@@ -65,7 +76,7 @@ ALWAYS_INLINE bool prepareConsecutiveProbeCache(KeyGetter & key_getter, const Se
     })
     {
         constexpr size_t max_sample_rows = 64;
-        const size_t rows = ScatteredBlock::Selector::size(selector);
+        const size_t rows = selectorSize(selector);
         const size_t sample_rows = std::min(rows, max_sample_rows);
 
         size_t equal_pairs = 0;
