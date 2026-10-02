@@ -15,10 +15,8 @@
 #include <Functions/FunctionFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
-#include <Client/ClientBaseHelpers.h>
 #include <Client/Connection.h>
 #include <Client/LocalConnection.h>
-#include <Core/Settings.h>
 
 
 namespace DB
@@ -171,8 +169,7 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                 fetch(*connection,
                     connection_parameters.timeouts,
                     suggestion_query,
-                    my_context->getClientInfo(),
-                    my_context->getSettingsRef());
+                    my_context->getClientInfo());
             }
             catch (const Exception & e)
             {
@@ -213,14 +210,13 @@ void Suggest::load(IServerConnection & connection,
                    const ConnectionTimeouts & timeouts,
                    Int32 suggestion_limit,
                    const ClientInfo & client_info,
-                   const Settings & settings,
                    std::ostream & error_stream)
 {
     try
     {
         last_exchange_ended_in_sync = false;
         auto suggestion_query = getLoadSuggestionQuery(connection, suggestion_limit, true, timeouts);
-        fetch(connection, timeouts, suggestion_query, client_info, settings);
+        fetch(connection, timeouts, suggestion_query, client_info);
     }
     catch (...)
     {
@@ -229,16 +225,10 @@ void Suggest::load(IServerConnection & connection,
     }
 }
 
-void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info, const Settings & settings)
+void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info)
 {
-    /// Pass the compression-related settings (rather than `nullptr`) so this helper query honors
-    /// `network_compression_method` like a regular client query, instead of unconditionally using the
-    /// built-in default network codec. The rest of the session settings must not leak into this query -
-    /// it is a plain SQL query issued by the client itself, so, for example, a session-level `dialect`
-    /// would make the server fail to parse it.
-    const Settings compression_settings = networkCompressionSettings(settings);
     connection.sendQuery(
-        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, &compression_settings, &client_info, false, {} /* external_roles*/, {});
+        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, &client_info, false, {} /* external_roles*/, {});
 
     while (true)
     {

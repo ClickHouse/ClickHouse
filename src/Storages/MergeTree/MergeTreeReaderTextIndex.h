@@ -5,7 +5,6 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexPositionData.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
-#include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -45,9 +44,7 @@ public:
         size_t max_rows_to_read,
         MutableColumns & res_columns) override;
 
-    /// The virtual columns are resolved from per-mark posting lists addressed
-    /// by absolute row number, so a read may start or stop inside a mark.
-    bool canReadIncompleteGranules() const override { return can_read_incomplete_granules; }
+    bool canReadIncompleteGranules() const override { return false; }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
 
     /// Sets a pre-computed granule from the skip index reader (Path 2: use_skip_indexes_on_data_read = 1).
@@ -100,15 +97,9 @@ private:
     void applyPostingsPhrase(IColumn & column, const TextSearchQueryPtr & search_query, size_t row_offset, size_t num_rows);
     void initializePositionsStream();
 
-    /// Intersects the phrase tokens' postings into candidates, then decodes only the covering blocks.
-    PaddedPODArray<UInt32> phraseSearchBlocked(const TextSearchQuery & search_query);
-    /// One token's full posting list — the rank space the blocked position stream is addressed in.
-    PostingList readAllPostingsForToken(std::string_view token, const TokenPostingsInfo & token_info);
-
     using TextIndexGranulePtr = std::shared_ptr<const MergeTreeIndexGranuleText>;
 
     MergeTreeIndexWithCondition index;
-    bool can_read_incomplete_granules = false;
     std::shared_ptr<MergeTreeIndexConditionText> condition_text;
     std::vector<TextSearchQueryPtr> search_queries;
     TextIndexGranulePtr granule;
@@ -141,7 +132,6 @@ private:
     size_t current_row = 0;
     size_t current_mark = 0;
     PaddedPODArray<UInt32> indices_buffer;
-    TextIndexBlockedPositionsCodec::DecodeScratch blocked_positions_scratch;
 
     bool is_initialized = false;
     /// Virtual columns that are always true.
@@ -153,11 +143,11 @@ private:
     /// sparse-index header and confirming no virtual column carries pattern predicates.
     bool lazy_mode_requested = false;
     bool use_lazy_mode = false;
-    TextIndexPostingsIntersectionAlgorithm intersection_algorithm = TextIndexPostingsIntersectionAlgorithm::Auto;
+    float lazy_intersection_density_threshold = 0.2f;
 
     /// Cached lazy cursors, indexed by column position in `columns_to_read` and keyed by token.
     /// Cursors are forward-only and hold mutable segment/block position, so they must not be
-    /// shared across columns. Dropped on granule reload and on backward `readRows` jumps (`from_row < current_row`).
+    /// shared across columns. Dropped on granule reload and on backward `readRows` jumps (`from_mark < current_mark`).
     std::vector<absl::flat_hash_map<String, PostingListCursorPtr>> lazy_cursors;
 
     /// Per-column synthetic cursor over the analyzer-folded postings of small/embedded tokens,

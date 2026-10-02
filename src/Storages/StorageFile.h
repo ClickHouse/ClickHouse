@@ -12,10 +12,9 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/FileRenamer.h>
 #include <Common/Logger.h>
-#include <Common/RWLock.h>
 
 #include <atomic>
-#include <mutex>
+#include <shared_mutex>
 #include <sys/stat.h>
 
 namespace DB
@@ -139,7 +138,6 @@ public:
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
-    size_t getMaxReadStreams(size_t num_streams, ContextPtr) override;
 
     bool supportsPartitionBy() const override { return true; }
 
@@ -193,8 +191,6 @@ private:
 
     void setStorageMetadata(CommonArguments args);
 
-    Strings getPathsSnapshot() const;
-
     std::string format_name;
     // We use format settings from global context + CREATE query for File table
     // function -- in this case, format_settings is set.
@@ -206,8 +202,6 @@ private:
     String compression_method;
 
     std::string base_path;
-    /// Grows when a writer creates an extra file (`engine_file_allow_create_multiple_files`).
-    /// Mutations hold `rwlock` exclusively and `paths_mutex`; plan-time readers hold `paths_mutex`.
     std::vector<std::string> paths;
 
     std::optional<ArchiveInfo> archive_info;
@@ -217,15 +211,7 @@ private:
 
     bool supports_prewhere = false;
 
-    /// One query may read this table from several sources at once: one per stream, one for the lazy-materialization
-    /// pass, one per table expression in a self-join. A repeat Read by the query already holding it is admitted.
-    mutable RWLock rwlock = RWLockImpl::create();
-
-    RWLockImpl::LockHolder tryLockRwlock(RWLockImpl::Type type, const ContextPtr & context) const;
-    RWLockImpl::LockHolder lockRwlock(RWLockImpl::Type type, const ContextPtr & context) const;
-
-    /// Guards the `paths` vector object; `rwlock` serialises the writes themselves.
-    mutable std::mutex paths_mutex;
+    mutable std::shared_timed_mutex rwlock;
 
     LoggerPtr log = getLogger("StorageFile");
 
@@ -261,11 +247,10 @@ public:
             const Strings & files_,
             std::optional<StorageFile::ArchiveInfo> archive_info_,
             const ActionsDAG::Node * predicate,
-            const NamesAndTypesList & virtual_columns_,
-            const NamesAndTypesList & hive_columns_,
+            const NamesAndTypesList & virtual_columns,
+            const NamesAndTypesList & hive_columns,
             const ContextPtr & context_,
-            bool distributed_processing_ = false,
-            String archive_member_path_ = {});
+            bool distributed_processing_ = false);
 
         String next();
 
@@ -293,16 +278,6 @@ private:
         std::atomic<size_t> index = 0;
 
         bool distributed_processing;
-
-        /// A `_path` / `_file` filter that could not be applied while the iterator was created,
-        /// because a set in it was not ready yet. It is applied in `next`, when the pipeline runs,
-        /// before a file is opened.
-        ExpressionActionsPtr deferred_filter_actions;
-        NamesAndTypesList virtual_columns;
-        NamesAndTypesList hive_columns;
-        /// A known archive member is part of the user-visible `_path` / `_file` value, although
-        /// this iterator must open the outer archive file.
-        const String archive_member_path;
     };
 
     using FilesIteratorPtr = std::shared_ptr<FilesIterator>;
@@ -392,7 +367,7 @@ private:
     /// The registry index of the file currently being read. Assigned on the first chunk.
     std::optional<UInt64> current_file_index;
 
-    RWLockImpl::LockHolder read_lock;
+    std::shared_lock<std::shared_timed_mutex> shared_lock;
 };
 
 class ReadFromFile : public SourceStepWithFilter
@@ -403,11 +378,6 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
-
-    /// TopN dynamic filtering: only the Parquet reader consumes `FormatFilterInfo::top_k_filter`,
-    /// and only for a sort column it physically reads from the file.
-    bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
-    void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
 
     ReadFromFile(
         const Names & column_names_,
@@ -421,7 +391,6 @@ public:
         size_t num_streams_)
         : SourceStepWithFilter(std::make_shared<const Block>(info_.source_header), column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
-        , paths_snapshot(storage->getPathsSnapshot())
         , info(std::move(info_))
         , need_only_count(need_only_count_)
         , max_block_size(max_block_size_)
@@ -442,7 +411,6 @@ public:
 
 private:
     std::shared_ptr<StorageFile> storage;
-    const Strings paths_snapshot;
     ReadFromFormatInfo info;
     const bool need_only_count;
 
@@ -450,7 +418,6 @@ private:
     const size_t max_num_streams;
 
     std::shared_ptr<StorageFileSource::FilesIterator> files_iterator;
-    std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
 
     /// Lazy materialization: set iff keepOnlyRequiredColumnsAndCreateLazyReadStep was called.
     LazyFileRegistryPtr lazy_row_index_registry;

@@ -3,7 +3,6 @@
 #include <Access/resolveSetting.h>
 #include <Access/AccessControl.h>
 #include <Core/Settings.h>
-#include <Core/SettingsFields.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
@@ -61,16 +60,6 @@ SettingSourceRestrictions getSettingSourceRestrictions(std::string_view name)
     if (settingConstraintIter != SETTINGS_SOURCE_RESTRICTIONS.end())
         return settingConstraintIter->second;
     return SettingSourceRestrictions(); // allows everything
-}
-
-/// The analyzer became mandatory in v26.9: `enable_analyzer` (canonically
-/// `allow_experimental_analyzer`) is an obsolete setting frozen at its default value, and the query
-/// analysis it used to switch to has been removed. A change that would disable it is accepted and
-/// rewritten to `1`, so that queries, sessions, settings profiles, clients and drivers that still
-/// carry `enable_analyzer = 0` keep working after an upgrade instead of failing.
-bool isChangeDisablingTheAnalyzer(std::string_view resolved_name, const Field & new_value)
-{
-    return resolved_name == "allow_experimental_analyzer" && !SettingFieldBool{new_value}.value;
 }
 
 /// Settings that are always allowed to change in readonly mode, regardless of the user profile's
@@ -460,16 +449,6 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
         if (getCurrentValueOfSetting(current_settings, change.name, current_value)
             && new_value == castValueOfSetting<Settings>(change.name, current_value))
             return true;
-    }
-
-    if (isChangeDisablingTheAnalyzer(setting_name, new_value))
-    {
-        /// Store the only supported value instead of the requested one. Other constraints are not
-        /// consulted: the value that ends up stored is the default one. `executeQuery` normalizes the
-        /// setting again for the paths that do not consult the constraints at all (a settings profile
-        /// from the server configuration, `clickhouse-local` on the command line, a secondary query).
-        change.value = Field(true);
-        return true;
     }
 
     return getChecker(current_settings, setting_name).check(change, new_value, reaction, source);

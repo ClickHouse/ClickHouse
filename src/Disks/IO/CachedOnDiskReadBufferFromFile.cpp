@@ -31,8 +31,8 @@ extern const Event CachedReadBufferCacheWriteMicroseconds;
 extern const Event CachedReadBufferReadFromSourceBytes;
 extern const Event CachedReadBufferPredownloadedFromSourceBytes;
 extern const Event CachedReadBufferReadFromCacheBytes;
+extern const Event CachedReadBufferPredownloadedBytes;
 extern const Event CachedReadBufferCacheWriteBytes;
-extern const Event CachedReadBufferCacheWriteStopped;
 extern const Event CachedReadBufferCreateBufferMicroseconds;
 
 extern const Event CachedReadBufferReadFromCacheHits;
@@ -1121,6 +1121,7 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
 
             ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedFromSourceBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, size);
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedBytes, size);
 
             std::string failure_reason;
             /// Bytes left to read from the download offset (read_until_position is exclusive).
@@ -1191,7 +1192,6 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
 
                 LOG_TEST(log, "Bypassing cache for {}", file_segment.getInfoForLog());
 
-                ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteStopped);
                 state.read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
                 LOG_DEBUG(
@@ -1666,7 +1666,6 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
 
             if (!success)
             {
-                ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteStopped);
                 state.read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                 chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
             }
