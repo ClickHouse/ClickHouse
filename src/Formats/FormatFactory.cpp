@@ -405,6 +405,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.sql_insert.table_name = settings[Setting::output_format_sql_insert_table_name];
     format_settings.sql_insert.use_replace = settings[Setting::output_format_sql_insert_use_replace];
     format_settings.sql_insert.quote_names = settings[Setting::output_format_sql_insert_quote_names];
+    format_settings.sqlite.input_table_name = settings[Setting::input_format_sqlite_table_name];
+    format_settings.sqlite.output_table_name = settings[Setting::output_format_sqlite_table_name];
     format_settings.precise_float_parsing = settings[Setting::precise_float_parsing];
     format_settings.try_infer_integers = settings[Setting::input_format_try_infer_integers];
     format_settings.try_infer_dates = settings[Setting::input_format_try_infer_dates];
@@ -1152,6 +1154,18 @@ bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name, co
     const auto & target = getCreators(name);
     auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
     return target.subset_of_columns_support_checker && target.subset_of_columns_support_checker(format_settings);
+}
+
+bool FormatFactory::checkIfFormatIsRandomAccessInput(
+    const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const
+{
+    const bool seekable_read
+        = format_settings_ ? format_settings_->seekable_read : context->getSettingsRef()[Setting::input_format_allow_seeks];
+    if (!seekable_read)
+        return false;
+
+    const auto & target = getCreators(name);
+    return target.random_access_input_creator || target.random_access_input_creator_with_metadata;
 }
 
 void FormatFactory::registerPrewhereSupportChecker(const String & name, PrewhereSupportChecker prewhere_support_checker)

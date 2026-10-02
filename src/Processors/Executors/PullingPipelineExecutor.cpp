@@ -1,10 +1,11 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/Formats/PullingOutputFormat.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/ReadProgressCallback.h>
+#include <Interpreters/ProcessList.h>
 
 namespace DB
 {
@@ -54,8 +55,11 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
         executor->setStepProfiler(pipeline.getStepProfiler());
     }
 
-    if (!executor->checkTimeLimitSoft())
+    if (pipeline.process_list_element && !pipeline.process_list_element->checkTimeLimitSoft())
+    {
+        executor->cancel(IProcessor::CancelReason::CancelledByTimeout);
         return false;
+    }
 
     if (!executor->executeStep(&has_data_flag))
         return false;
@@ -93,7 +97,7 @@ void PullingPipelineExecutor::cancel()
 {
     /// Cancel execution if it wasn't finished.
     if (executor)
-        executor->cancel();
+        executor->cancel(IProcessor::CancelReason::CancelledByUser);
 }
 
 Chunk PullingPipelineExecutor::getTotals()
