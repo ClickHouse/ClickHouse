@@ -1506,14 +1506,30 @@ void FileSegment::markRead(size_t offset, size_t size)
     if (!efficiency.isEnabled() || download_state.load() == State::DETACHED)
         return;
 
+    /// The window id of a segment only moves forward. A reader that computed its window before
+    /// another read moved the segment to a newer window does not count.
+    auto is_newer = [](UInt64 segment_window, UInt64 reader_window)
+    {
+        return segment_window != FileCacheEfficiency::NEVER_READ && segment_window > reader_window;
+    };
+
     const UInt64 window = efficiency.currentWindow();
-    if (efficiency_window_id.load(std::memory_order_acquire) != window)
+    /// `acquire` pairs with the `release` store below: a reader that sees the new window id also
+    /// sees the cleared bits and the new granule size.
+    const UInt64 segment_window = efficiency_window_id.load(std::memory_order_acquire);
+    if (is_newer(segment_window, window))
+        return;
+    if (segment_window != window)
     {
         auto lk = lock();
         /// A removed file segment is not in the cache anymore.
         if (download_state == State::DETACHED)
             return;
-        if (efficiency_window_id.load() != window)
+        /// The window id changes only under the segment lock, so the lock orders this load.
+        const UInt64 locked_window = efficiency_window_id.load(std::memory_order_relaxed);
+        if (is_newer(locked_window, window))
+            return;
+        if (locked_window != window)
         {
             const size_t range_size = range().size();
             efficiency_granule_size.store(std::max<size_t>(1, (range_size + EFFICIENCY_GRANULES - 1) / EFFICIENCY_GRANULES));

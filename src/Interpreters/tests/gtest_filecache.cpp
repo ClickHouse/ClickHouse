@@ -4469,3 +4469,38 @@ TEST_F(FileCacheTest, EfficiencyGranuleFollowsShrink)
     odd->markRead(0, 1001);
     EXPECT_EQ(FileSegment::getInfo(odd).active_bytes, 1001);
 }
+
+TEST_F(FileCacheTest, EfficiencyStaleWindowDoesNotMoveBack)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_stale_window_test"));
+    auto cache = DB::FileCache("efficiency_stale_window", efficiencyCacheSettings(10));
+    auto now = std::chrono::steady_clock::time_point{};
+    cache.getEfficiency().setClockForTesting([&] { return now; });
+    cache.initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("efficiency_stale_window_key");
+    auto holder = cache.getOrSet(key, 0, 128, 128, {}, 0, user);
+    auto segment = get(holder, 0);
+    download(segment);
+
+    /// Window 1: the segment gets its first read of the window.
+    now += std::chrono::seconds(10);
+    segment->markRead(0, 16);
+
+    /// A reader that computed window 0 before that read (here: the clock steps back) must not
+    /// move the segment back to window 0.
+    now -= std::chrono::seconds(5);
+    segment->markRead(16, 16);
+
+    /// Window 1 again: the segment is still in the live window, so S keeps one share of it.
+    now += std::chrono::seconds(5);
+    segment->markRead(32, 16);
+    EXPECT_EQ(FileSegment::getInfo(segment).windows_since_touch, 0);
+
+    now += std::chrono::seconds(10);
+    const auto snapshot = cache.getEfficiency().getSnapshot();
+    EXPECT_EQ(snapshot.active_bytes, 32);
+    EXPECT_EQ(snapshot.passive_bytes, 96);
+}
