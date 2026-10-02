@@ -35,9 +35,9 @@ SELECT count() > 1 FROM (EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE 1 IN (0, 
 -- The EXPLAIN-local single_record option still wins over compatibility when explicitly set.
 SELECT count() FROM (EXPLAIN SYNTAX single_record = 1 SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2));
 
--- Pin the version boundary itself: the change is recorded under 26.8 in `SettingsChangesHistory.cpp`,
+-- Pin the version boundary itself: the change is recorded under 26.8 in the history of the setting,
 -- so the last version before it (26.7) must still get the one-record-per-line output, while 26.8
--- itself must already get the single record. This fails if the entry is registered under a wrong version.
+-- itself must already get the single record. This fails if the change is recorded under a wrong version.
 SET compatibility = '26.7';
 SELECT count() > 1 FROM (EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2));
 SET compatibility = '26.8';

@@ -785,13 +785,13 @@ bool Client::buzzHouse()
         full_query2.reserve(8192);
         BuzzHouse::StatementGenerator gen(rg, *fuzz_config, *external_integrations, has_cloud_features);
         BuzzHouse::QueryOracle qo(*fuzz_config);
-        /// Open transactions and hypothetical indexes are session scoped on the server, so the
+        /// Open transactions and hypothetical objects are session scoped on the server, so the
         /// bookkeeping must be dropped on every reconnect, including the ones `tryToReconnect`
         /// does after query errors on a dropped TCP session.
         after_fuzz_reconnect = [&gen]()
         {
             gen.setInTransaction(false);
-            gen.clearHypotheticalIndexes();
+            gen.clearHypotheticals();
         };
         SCOPE_EXIT({ after_fuzz_reconnect = {}; });
         while (server_up && (no_timeout = (!deadline || clock::now() < *deadline)))
