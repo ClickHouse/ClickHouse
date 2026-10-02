@@ -2359,7 +2359,7 @@ Contains one row per file of each [FileLog](/reference/engines/table-engines/spe
 
 `file_size - current_offset` is the number of bytes not read yet. `current_offset` comes from the metadata of the table, while `num_records_read`, `last_poll_time`, `last_exception` and `state` are kept in memory and start over when the table is loaded.
 
-`state` is `stuck` when the last background read round (to materialized views) that included the file failed, and `last_exception` holds the error. The rows of a table are shown only to users with the `SHOW TABLES` privilege on it. A table of a database with `lazy_load_tables` is shown once it is loaded. Temporary tables are not shown.
+`state` is `stuck` when a background read round (to materialized views) failed while it included the file or the file had unread bytes, and no later round that included the file succeeded; `last_exception` holds the error. The rows of a table are shown only to users with the `SHOW TABLES` privilege on it. A table of a database with `lazy_load_tables` is shown once it is loaded. Temporary tables are not shown.
 
 .examples
 ```sql

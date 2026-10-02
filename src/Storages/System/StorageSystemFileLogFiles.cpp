@@ -36,7 +36,7 @@ ColumnsDescription StorageSystemFileLogFiles::getColumnsDescription()
         {"last_poll_time", std::make_shared<DataTypeDateTime>(),
          "Time when the table last started reading the file, including reads that returned nothing or failed."},
         {"last_exception", std::make_shared<DataTypeString>(),
-         "Text of the most recent exception of a background read round (to materialized views) that included the file. "
+         "Text of the most recent exception of a background read round (to materialized views) that included the file or failed while the file had unread bytes. "
          "It is kept after the file is consumed again."},
         {"last_exception_time", std::make_shared<DataTypeDateTime>(), "Time of `last_exception`."},
         {"state",
@@ -44,7 +44,7 @@ ColumnsDescription StorageSystemFileLogFiles::getColumnsDescription()
              {"consuming", 0},
              {"stuck", 1},
          }),
-         "`stuck` if the last background read round that included the file failed, `consuming` otherwise."},
+         "`stuck` if a background read round failed while it included the file or the file had unread bytes, and no later round that included the file succeeded; `consuming` otherwise."},
     };
 }
 

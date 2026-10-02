@@ -35,6 +35,7 @@
 #include <Common/logger_useful.h>
 
 #include <sys/stat.h>
+#include <unordered_set>
 
 namespace DB
 {
@@ -1272,15 +1273,21 @@ void StorageFileLog::setFilesException(const std::vector<UInt64> & inodes, const
     /// Called from a catch handler, where the memory tracker may still throw.
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     const auto now = static_cast<UInt64>(time(nullptr));
+    const std::unordered_set<UInt64> in_round(inodes.begin(), inodes.end());
     std::lock_guard lock(file_statistics_mutex);
-    for (const auto inode : inodes)
+    for (auto & [inode, statistics] : file_statistics)
     {
-        if (auto it = file_statistics.find(inode); it != file_statistics.end())
+        /// A round can fail before it reads, while files with new data are not part of it yet.
+        if (!in_round.contains(inode))
         {
-            it->second.last_exception = exception;
-            it->second.last_exception_time = now;
-            it->second.stuck = true;
+            struct stat file_stat{};
+            if (::stat(getFullDataPath(statistics.file_name).c_str(), &file_stat) != 0 || file_stat.st_ino != inode
+                || static_cast<UInt64>(file_stat.st_size) <= statistics.offset)
+                continue;
         }
+        statistics.last_exception = exception;
+        statistics.last_exception_time = now;
+        statistics.stuck = true;
     }
 }
 
