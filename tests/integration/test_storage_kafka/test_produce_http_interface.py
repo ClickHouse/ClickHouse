@@ -1,6 +1,7 @@
 import logging
 
 import pytest
+from kafka import KafkaAdminClient
 
 from helpers.cluster import ClickHouseCluster
 import helpers.kafka.common as k
@@ -46,7 +47,9 @@ def kafka_setup_teardown():
 
 def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
     # reproduction of #61060 with validating the written messages
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
     topic_prefix = "http_row_"
 
@@ -176,7 +179,9 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
 
 def test_kafka_produce_http_interface_single_column_format(kafka_cluster):
     # Test formats that only support a single column: LineAsString, RawBLOB, Npy
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
     topic_prefix = "http_single_col_"
 

@@ -62,23 +62,13 @@ A continuación, mostramos de forma esquemática cómo se utiliza el índice pri
 
 <br />
 
-<Steps>
-  <Step title="Analizar el predicado de la consulta">
-    La consulta de ejemplo incluye un predicado sobre ambas columnas de la clave primaria: `town = 'LONDON' AND street = 'OXFORD STREET'`.
-  </Step>
+① La consulta de ejemplo incluye un predicado sobre ambas columnas de la clave primaria: `town = 'LONDON' AND street = 'OXFORD STREET'`.
 
-  <Step title="Cargar el índice primario">
-    Para acelerar la consulta, ClickHouse carga en memoria el índice primario de la tabla.
-  </Step>
+② Para acelerar la consulta, ClickHouse carga en memoria el índice primario de la tabla.
 
-  <Step title="Identificar los gránulos coincidentes">
-    A continuación, examina las entradas del índice para identificar qué gránulos podrían contener filas que coincidan con el predicado; es decir, qué gránulos no se pueden omitir.
-  </Step>
+③ A continuación, examina las entradas del índice para identificar qué gránulos podrían contener filas que coincidan con el predicado; es decir, qué gránulos no se pueden omitir.
 
-  <Step title="Cargar y procesar gránulos">
-    Después, estos gránulos potencialmente relevantes se cargan y se [procesan](/es/concepts/core-concepts/query-parallelism) en memoria, junto con los gránulos correspondientes de cualquier otra columna necesaria para la consulta.
-  </Step>
-</Steps>
+④ Después, estos gránulos potencialmente relevantes se cargan y se [procesan](/es/concepts/core-concepts/query-parallelism) en memoria, junto con los gránulos correspondientes de cualquier otra columna necesaria para la consulta.
 
 <div id="monitoring-primary-indexes">
   ## Supervisión de índices primarios

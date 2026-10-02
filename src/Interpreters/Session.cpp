@@ -13,8 +13,10 @@
 #include <Common/SipHash.h>
 #include <Common/Crypto/X509Certificate.h>
 #include <IO/WriteHelpers.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Common/config_version.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
@@ -422,19 +424,6 @@ void Session::checkIfUserIsStillValid() const
     }
 }
 
-std::shared_ptr<const AccessRightsElements> Session::getAuthenticationGrants() const
-{
-    const auto & grants = user_authenticated_with.getGrants();
-    if (grants.structurallyEmpty())
-        return nullptr;
-    return std::make_shared<const AccessRightsElements>(grants);
-}
-
-time_t Session::getAuthenticationValidUntil() const
-{
-    return user_authenticated_with.getValidUntil();
-}
-
 void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)
 {
     LOG_DEBUG(log, "Authentication failed with error: {}", e.what());
@@ -596,7 +585,7 @@ ContextMutablePtr Session::makeSessionContext()
     prepared_client_info.reset();
 
     /// Set user information for the new context: current profiles, roles, access rights.
-    new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
+    new_session_context->setUser(*user_id, external_roles);
 
     /// Session context is ready.
     session_context = new_session_context;
@@ -651,20 +640,11 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     /// Set user information for the new context: current profiles, roles, access rights.
     if (!access->tryGetUser())
     {
-        new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
+        new_session_context->setUser(*user_id, external_roles);
         max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
     }
     else
     {
-        /// The session context is reused, but the current connection could be authenticated with
-        /// a different authentication method than the one which created the session. The access rights
-        /// limit must correspond to the method used by this connection: otherwise reattaching to a named session
-        /// would allow a credential with the GRANTS clause to use the full access rights of the user.
-        new_session_context->setAuthenticationGrants(getAuthenticationGrants());
-        /// The per-method expiry follows the same reasoning: the reused context must fail closed on the
-        /// expiry of the method used by this connection, not the one that originally created the session.
-        new_session_context->setAuthenticationValidUntil(getAuthenticationValidUntil());
-
         // Always get setting from profile
         // profile can be changed by ALTER PROFILE during single session
         auto settings = access->getDefaultSettings();
@@ -761,8 +741,16 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
         /// A query initiated at this server through an interface that does not report a client
         /// version (e.g. a raw HTTP request via `curl`, or a MySQL/PostgreSQL client) leaves the
-        /// version at 0.0.0.
-        query_context->setInitiatorVersionIfUnset();
+        /// version at 0.0.0. This server is the real initiator of the query and of any distributed
+        /// sub-query it spawns, so fill the version with this server's version; otherwise remote
+        /// shards treat the initiator as a pre-23.3 server and apply legacy compatibility
+        /// downgrades - in particular disabling the analyzer (see `TCPHandler`) - diverging from the
+        /// initiator, and `RemoteQueryExecutor` now rejects such a zero version outright.
+        const auto & new_client_info = query_context->getClientInfo();
+        if (new_client_info.client_version_major == 0
+            && new_client_info.client_version_minor == 0
+            && new_client_info.client_version_patch == 0)
+            query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
     }
 
     if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
@@ -789,7 +777,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !query_context->getAccess()->tryGetUser())
-        query_context->setUser(*user_id, effective_external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
+        query_context->setUser(*user_id, effective_external_roles);
 
     if (apply_initiator_roles && user_id)
         query_context->setCurrentRoles(std::vector<UUID>{}, /* check_grants= */ false);

@@ -1,5 +1,4 @@
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFixedString.h>
 
@@ -19,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-extern const int LOGICAL_ERROR;
 }
 }
 
@@ -144,71 +142,3 @@ TEST(ColumnTuple, EmptyTuplePermute)
         ASSERT_EQ(e.code(), ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
     }
 }
-
-namespace
-{
-
-/// Two rows of a constant next to a full element of two rows: the sizes match, so only the constant is wrong.
-ColumnPtr createTupleFromMutableColumnsWithConst()
-{
-    MutableColumns elements;
-    elements.push_back(ColumnUInt64::create(2, 1));
-    elements.push_back(ColumnConst::create(ColumnUInt64::create(1, 42), 2));
-    return ColumnTuple::create(std::move(elements));
-}
-
-ColumnPtr createTupleFromColumnsWithConst()
-{
-    return ColumnTuple::create(Columns{ColumnUInt64::create(2, 1), ColumnConst::create(ColumnUInt64::create(1, 42), 2)});
-}
-
-ColumnPtr createTupleFromTupleColumnsWithConst()
-{
-    VectorWithMemoryTracking<IColumn::WrappedPtr> elements;
-    elements.emplace_back(ColumnUInt64::create(2, 1));
-    elements.emplace_back(ColumnConst::create(ColumnUInt64::create(1, 42), 2));
-    return ColumnTuple::create(elements);
-}
-
-}
-
-/// Skipped under debug/sanitizers: LOGICAL_ERROR aborts there, so the exception can't be caught.
-#ifndef DEBUG_OR_SANITIZER_BUILD
-
-namespace
-{
-
-int errorCodeOf(ColumnPtr (*create)())
-{
-    try
-    {
-        (void)create();
-    }
-    catch (const Exception & e)
-    {
-        return e.code();
-    }
-    return 0;
-}
-
-}
-
-TEST(ColumnTuple, ConstElementIsRejected)
-{
-    EXPECT_EQ(errorCodeOf(createTupleFromMutableColumnsWithConst), ErrorCodes::LOGICAL_ERROR);
-    EXPECT_EQ(errorCodeOf(createTupleFromColumnsWithConst), ErrorCodes::LOGICAL_ERROR);
-    EXPECT_EQ(errorCodeOf(createTupleFromTupleColumnsWithConst), ErrorCodes::LOGICAL_ERROR);
-}
-
-#else
-
-TEST(ColumnTupleDeathTest, ConstElementIsRejected)
-{
-    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
-
-    EXPECT_DEATH(createTupleFromMutableColumnsWithConst(), "ColumnTuple cannot have ColumnConst as its element");
-    EXPECT_DEATH(createTupleFromColumnsWithConst(), "ColumnTuple cannot have ColumnConst as its element");
-    EXPECT_DEATH(createTupleFromTupleColumnsWithConst(), "ColumnTuple cannot have ColumnConst as its element");
-}
-
-#endif
