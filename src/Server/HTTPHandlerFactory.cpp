@@ -733,8 +733,13 @@ void addCatchAllQueryHandlerFactory(
                 /// `Authorization: never` is a supported sentinel that makes `authenticateUserByHTTP`
                 /// ignore credentials (see `03362_basic_auth_interactive_not_with_authorization_never`);
                 /// let it through so a path-style request is handled the same way the query-string
-                /// route is, instead of falling through to `NotFoundHandler`.
-                if (!boost::iequals(scheme, "Basic") && !boost::iequals(scheme, "Negotiate") && !boost::iequals(auth_header, "never"))
+                /// route is, instead of falling through to `NotFoundHandler`. Scripted Web UI requests
+                /// use `Authorization: ClickHouse-Play` to mark their encoded auth headers and must
+                /// reach `authenticateUserByHTTP` as well.
+                if (!boost::iequals(scheme, "Basic")
+                    && !boost::iequals(scheme, "Negotiate")
+                    && !boost::iequals(auth_header, "never")
+                    && auth_header != "ClickHouse-Play")
                     return false;
             }
 

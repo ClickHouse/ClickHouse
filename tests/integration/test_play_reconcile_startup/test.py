@@ -106,7 +106,7 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
         )
 
 
-def test_play_auth_headers_preserve_credentials(started_cluster):
+def test_play_auth_headers_preserve_credentials_with_database_path(started_cluster):
     user = "play:юзер"
     password = "  päss 密码  "
 
@@ -120,9 +120,11 @@ def test_play_auth_headers_preserve_credentials(started_cluster):
                 user, password
             )
         )
+        # A scripted /play server_address may include a database path.
         response = node.http_request(
-            "",
+            "default",
             method="POST",
+            params={"add_http_cors_header": "1"},
             data="SELECT currentUser()",
             headers={
                 "Authorization": "ClickHouse-Play",
