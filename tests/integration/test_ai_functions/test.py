@@ -2704,3 +2704,32 @@ def test_kill_query_stops_issuing_requests(started_cluster):
     ).strip()
     assert exception_code == "394"
     assert int(get_profile_events(qid, "ExceptionWhileProcessing")["api_calls"]) == requests
+
+
+def test_max_execution_time_stops_issuing_requests(started_cluster):
+    """`max_execution_time` stops an AI function mid-block like `KILL QUERY`: the 400 rows form one block
+    that would take 50s at 4 requests per 0.5s, and the query fails after 2s having sent a fraction of them."""
+    _reset_concurrency()
+    error = instance.query_and_get_error(
+        f"SELECT countIf(r != '') FROM (SELECT {SLOW_CHAT_CALL} AS r FROM numbers(400))",
+        settings={"ai_function_max_concurrent_requests_per_thread": 4, "max_execution_time": 2},
+    )
+    assert "TIMEOUT_EXCEEDED" in error
+    requests = _concurrency_stats()["requests"]
+    assert requests < 40, f"the timed-out query kept sending requests: {requests} of 400 were sent"
+
+
+def test_max_execution_time_break_stops_issuing_requests(started_cluster):
+    """With `timeout_overflow_mode = 'break'` the query returns without an error once the time limit is
+    reached, and no further requests are sent."""
+    _reset_concurrency()
+    instance.query(
+        f"SELECT countIf(r != '') FROM (SELECT {SLOW_CHAT_CALL} AS r FROM numbers(400))",
+        settings={
+            "ai_function_max_concurrent_requests_per_thread": 4,
+            "max_execution_time": 2,
+            "timeout_overflow_mode": "break",
+        },
+    )
+    requests = _concurrency_stats()["requests"]
+    assert requests < 40, f"the query kept sending requests past the time limit: {requests} of 400 were sent"
