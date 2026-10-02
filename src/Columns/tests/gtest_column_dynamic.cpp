@@ -444,6 +444,26 @@ TEST(ColumnDynamic, InsertManyFromOverflowNull)
     ASSERT_TRUE(column_to->isNullAt(2));
 }
 
+TEST(ColumnDynamic, InsertManyFromZeroLengthIsNoOp)
+{
+    auto column_from = ColumnDynamic::create(10);
+    column_from->insert(Field(42));
+
+    auto column_to = ColumnDynamic::create(10);
+    column_to->insert(Field("value"));
+
+    const auto size_before = column_to->size();
+    const auto variant_names_before = column_to->getVariantInfo().variant_names;
+
+    column_to->insertManyFrom(*column_from, 0, 0);
+    ASSERT_EQ(column_to->size(), size_before);
+    ASSERT_EQ(column_to->getVariantInfo().variant_names, variant_names_before);
+
+    ASSERT_NO_THROW(column_to->insertManyFrom(*column_from, column_from->size(), 0));
+    ASSERT_EQ(column_to->size(), size_before);
+    ASSERT_EQ(column_to->getVariantInfo().variant_names, variant_names_before);
+}
+
 /// Helper for the regression test below: returns the set of type names that are physically present
 /// in the shared variant of a ColumnDynamic (decoded from the binary-encoded shared variant rows).
 static std::set<String> getTypeNamesInSharedVariant(const ColumnDynamic & column)
