@@ -1463,6 +1463,41 @@ def test_create_writes_no_orphan_metadata(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
+def test_create_in_fresh_multi_level_namespace(started_cluster):
+    # No `create_namespace` here. The client must register the namespace itself, as a
+    # list of levels, and must not store the table root as the namespace location.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_fresh_ns_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+    namespace = f"{root_namespace}.sub"
+    table_name = f"{test_ref}_table"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, namespace, table_name, "(x String)")
+
+    assert (root_namespace, "sub") in catalog.list_namespaces((root_namespace,))
+    assert catalog.list_tables(namespace) == [(root_namespace, "sub", table_name)]
+
+    first_table = catalog.load_table(f"{namespace}.{table_name}")
+    assert first_table.location() == f"s3://warehouse-rest/{table_name}"
+
+    # A later table without an explicit location must not land inside the first table.
+    second_table = catalog.create_table(
+        identifier=f"{namespace}.{table_name}_second",
+        schema=Schema(NestedField(field_id=1, name="x", field_type=StringType(), required=False)),
+    )
+    assert not second_table.location().startswith(first_table.location()), second_table.location()
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{namespace}.{table_name}` VALUES ('AAPL');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}`") == "AAPL\n"
+
+
 def test_drop_table(started_cluster):
     node = started_cluster.instances["node1"]
 

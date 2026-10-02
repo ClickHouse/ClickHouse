@@ -1800,7 +1800,7 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
         wb->ignoreAll();
 }
 
-void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
+void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & /*location*/) const
 {
     const auto state_snapshot = state.get();
 
@@ -1821,16 +1821,17 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT).generic_string();
 
+    /// The request body takes the namespace as a list of levels, unlike the URL form above.
+    /// The location passed here is the table root, not the namespace root, so it is not
+    /// stored. The catalog applies its warehouse default instead.
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
+        std::vector<String> levels;
+        splitInto<'.'>(levels, namespace_name);
         Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
+        for (const auto & level : levels)
+            namespaces->add(level);
         request_body->set("namespace", namespaces);
-    }
-    {
-        Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
-        properties->set("location", location);
-        request_body->set("properties", properties);
     }
 
     try
