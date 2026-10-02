@@ -809,6 +809,8 @@ public:
     static ContextMutablePtr createCopy(const ContextWeakPtr & other);
     static ContextMutablePtr createCopy(const ContextMutablePtr & other);
     static ContextMutablePtr createCopy(const ContextPtr & other);
+    /// Initial query objects use current accounting; their weak-reference control block can outlive the query.
+    static ContextMutablePtr createCopyForQuery(const ContextPtr & other);
     static SharedContextHolder createShared();
 
 

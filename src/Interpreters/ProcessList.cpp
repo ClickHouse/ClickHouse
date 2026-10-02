@@ -1,4 +1,7 @@
 #include <Interpreters/ProcessList.h>
+#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/FailPoint.h>
 #include <Core/Settings.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/Context.h>
@@ -40,6 +43,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char query_setup_memory_rejection_before_cleanup[];
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 max_concurrent_queries_for_all_users;
@@ -120,6 +128,8 @@ ProcessList::EntryPtr ProcessList::insert(
     bool is_internal)
 {
     EntryPtr res;
+    MemoryTracker * pending_user_memory_tracker = nullptr;
+    std::optional<MemoryTracker::ParentLimitExceeded> user_memory_limit_exceeded;
 
     const ClientInfo & client_info = query_context->getClientInfo();
     const Settings & settings = query_context->getSettingsRef();
@@ -178,6 +188,16 @@ ProcessList::EntryPtr ProcessList::insert(
             }
         }
     }
+
+    /// Flush and check setup memory before taking `mutex`: diagnostics may allocate or take other locks.
+    const auto setup_thread_group = CurrentThread::getGroup();
+    if (setup_thread_group)
+        setup_thread_group->memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage]);
+    CurrentThread::flushUntrackedMemory();
+    /// Existing ancestors already accounted for setup bytes. Rechecking the global limit
+    /// here would defeat `users_to_ignore_early_memory_limit_check` for recovery queries.
+    if (setup_thread_group)
+        setup_thread_group->memory_tracker.checkQueryLimit();
 
     {
         LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); /// To avoid deadlock in case of OOM
@@ -304,6 +324,8 @@ ProcessList::EntryPtr ProcessList::insert(
         auto user_process_list_it = user_to_queries.find(client_info.current_user);
         if (user_process_list_it == user_to_queries.end())
         {
+            /// User entries and map buckets survive query teardown and tracker resets.
+            MemoryTrackerSwitcher user_metadata_memory_scope(&total_memory_tracker);
             user_process_list_it = user_to_queries.emplace(std::piecewise_construct,
                 std::forward_as_tuple(client_info.current_user),
                 std::forward_as_tuple(query_context->getGlobalContext(), this)).first;
@@ -316,7 +338,10 @@ ProcessList::EntryPtr ProcessList::insert(
         if (thread_group)
         {
             thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
-            thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
+            if (thread_group->memory_tracker.getParent() == &total_memory_tracker)
+                pending_user_memory_tracker = &user_process_list.user_memory_tracker;
+            else
+                thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             thread_group->memory_pressure_monitor.setParent(user_process_list.user_memory_pressure_monitor);
             if (user_process_list.user_temp_data_on_disk)
             {
@@ -334,7 +359,6 @@ ProcessList::EntryPtr ProcessList::insert(
             }
 
             /// Set query-level memory trackers
-            thread_group->memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage]);
             configureMemoryTrackerFromSettings(query_context->hasTraceCollector(), thread_group->memory_tracker, settings);
 
             /// Reapply sampling
@@ -429,6 +453,25 @@ ProcessList::EntryPtr ProcessList::insert(
             else if (settings[Setting::max_network_bandwidth_for_all_users])
                 user_process_list.user_throttler = total_network_throttler;
         }
+        if (pending_user_memory_tracker)
+        {
+            /// Transfer setup bytes before publishing admission; report rejection after unlocking.
+            user_memory_limit_exceeded = CurrentThread::getGroup()->memory_tracker.tryInsertParent(pending_user_memory_tracker);
+            if (user_memory_limit_exceeded)
+                query->is_killed.store(true, std::memory_order_relaxed);
+        }
+    }
+
+    if (user_memory_limit_exceeded)
+    {
+        /// Remove the rejected admission before allocating exception diagnostics.
+        {
+            LockMemoryExceptionInThread block_exceptions(VariableContext::Global);
+            FailPointInjection::pauseFailPoint(FailPoints::query_setup_memory_rejection_before_cleanup);
+            res.reset();
+            query.reset();
+        }
+        user_memory_limit_exceeded->throwException();
     }
 
     return res;
