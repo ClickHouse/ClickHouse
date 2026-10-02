@@ -1,53 +1,48 @@
 #include <Processors/Transforms/Window/Partition.h>
 
-#include <algorithm>
-
 namespace DB
 {
 
 namespace
 {
 
-RowNumber advancePartitionEnd(const SlidingBlock & block, RowNumber end)
+bool isPartitionStart(const SlidingBlocks & blocks, RowNumber row)
 {
-    const auto & starts = block.index.partition_starts;
-    const auto next_start = std::find(starts.begin() + end.row, starts.end(), true);
-    if (next_start == starts.end())
-        return RowNumber{block.block_number + 1, 0};
-
-    return RowNumber{block.block_number, next_start - starts.begin()};
+    return blocks.blockAt(row.block).index.partition_starts[row.row];
 }
 
 }
 
 Partition::Partition()
 {
-    beginAt(RowNumber{0, 0});
+    finish(RowNumber{0, 0});
 }
 
-void Partition::beginAt(RowNumber first_row)
+void Partition::beginAt(const SlidingBlocks & blocks, RowNumber first_row)
 {
-    found = PartitionBounds{.start = first_row, .end = RowNumber{first_row.block, first_row.row + 1}, .fully_visible = false};
+    partition_bounds = PartitionBounds{.start = first_row, .end = blocks.next(first_row), .fully_visible = false};
 }
 
-void Partition::advance(const SlidingBlock & block)
+void Partition::advance(const SlidingBlocks & blocks)
 {
-    if (found.fully_visible)
-        return;
-
-    found.end = advancePartitionEnd(block, found.end);
-    found.fully_visible = found.end.block == block.block_number;
+    while (!partition_bounds.fully_visible && partition_bounds.end < blocks.end())
+    {
+        if (isPartitionStart(blocks, partition_bounds.end))
+            partition_bounds.fully_visible = true;
+        else
+            partition_bounds.end = blocks.next(partition_bounds.end);
+    }
 }
 
 void Partition::finish(RowNumber data_end)
 {
-    found.end = data_end;
-    found.fully_visible = true;
+    partition_bounds.end = data_end;
+    partition_bounds.fully_visible = true;
 }
 
 const PartitionBounds & Partition::bounds() const
 {
-    return found;
+    return partition_bounds;
 }
 
 }

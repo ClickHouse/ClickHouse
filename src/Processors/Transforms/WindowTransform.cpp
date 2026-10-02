@@ -788,7 +788,7 @@ void WindowTransform::addInputBlock(Chunk chunk)
     auto materialized_columns = materializeColumns(chunk.getColumns(), params.should_materialize);
     auto index = indexes.calculate(materialized_columns, rows_count);
     auto & block = blocks.add(std::move(chunk), std::move(materialized_columns), std::move(index));
-    partition.advance(block);
+    partition.advance(blocks);
 
     // Initialize output columns.
     for (auto & ws : workspaces)
@@ -925,9 +925,8 @@ void WindowTransform::computeReadyRows()
 void WindowTransform::startNextPartition()
 {
     const RowNumber partition_start = partition.bounds().end;
-    partition.beginAt(partition_start);
-    for (int64_t block_number = partition_start.block; !partition.bounds().fully_visible && block_number < blocks.end().block; ++block_number)
-        partition.advance(blocks.blockAt(block_number));
+    partition.beginAt(blocks, partition_start);
+    partition.advance(blocks);
     // We have to reset the frame and other pointers when the new partition
     // starts.
     frame_start = partition_start;
