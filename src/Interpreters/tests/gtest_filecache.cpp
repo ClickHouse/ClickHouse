@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 
 
@@ -1722,6 +1723,65 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     priority.resetEvictionPos();
     ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
+}
+
+TEST_F(FileCacheTest, ReserveUndoneWhenKeyDirectoryCannotBeCreated)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("reserve_key_directory_failure");
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 16;
+    settings[FileCacheSetting::max_elements] = 4;
+    settings[FileCacheSetting::max_file_segment_size] = 8;
+    settings[FileCacheSetting::boundary_alignment] = 8;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("reserve_key_directory_failure", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = DB::FileCacheKey::fromPath("reserve_key_directory_failure_key");
+
+    /// A regular file at the key directory path makes `create_directories` fail, even as root.
+    const fs::path key_path = cache->getKeyPath(key, user);
+    fs::create_directories(key_path.parent_path());
+    std::ofstream(key_path) << "x";
+
+    auto holder = cache->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
+    ASSERT_EQ(holder->size(), 1u);
+    auto seg = *holder->begin();
+    ASSERT_EQ(seg->getOrSetDownloader(), FileSegment::getCallerId());
+
+    /// On this branch `createBaseDirectory` throws for an error other than a full or read-only disk.
+    std::string failure_reason;
+    ASSERT_ANY_THROW(seg->reserve(8, 1000, failure_reason));
+    ASSERT_EQ(seg->getReservedSize(), 0u);
+    ASSERT_EQ(cache->getUsedCacheSize(), 0u);
+
+    /// Releasing the last holder of the empty segment removes it, so the same offset gets
+    /// a new segment, which caches normally once the directory can be created.
+    seg.reset();
+    holder = nullptr;
+    fs::remove(key_path);
+    auto next_holder = cache->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
+    ASSERT_EQ(next_holder->size(), 1u);
+    download(*next_holder->begin());
+    ASSERT_EQ(cache->getUsedCacheSize(), 8u);
 }
 
 TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
