@@ -541,9 +541,12 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
     if (!hive_partitioning_sample_path_deferred)
         return;
 
-    std::lock_guard lock(hive_partitioning_resolution_mutex);
-    if (hive_partitioning_sample_path_resolved)
-        return;
+    /// Not held while listing: a waiter could not be cancelled.
+    {
+        std::lock_guard lock(hive_partitioning_resolution_mutex);
+        if (hive_partitioning_sample_path_resolved)
+            return;
+    }
 
     /// Listing the storage happens on behalf of the triggering query, so it must use its context.
     /// Rebuilding the client with any other one would ignore that session's credential restriction.
@@ -591,6 +594,10 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
         LOG_TRACE(log, "An empty listing, hive partitioning resolution stays deferred until files appear");
         return;
     }
+
+    std::lock_guard lock(hive_partitioning_resolution_mutex);
+    if (hive_partitioning_sample_path_resolved)
+        return;
 
     auto current_metadata = getInMemoryMetadataPtr(query_context, false);
     auto new_metadata = *current_metadata;
