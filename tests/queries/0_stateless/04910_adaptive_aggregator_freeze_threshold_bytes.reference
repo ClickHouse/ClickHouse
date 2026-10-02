@@ -1,0 +1,6 @@
+no freeze when disabled	0
+freezes by bytes	1
+exact	490968	2000000	2050
+exact	490968	2000000	2050
+warm and cold runs all froze	8
+warm freezes by growth	1

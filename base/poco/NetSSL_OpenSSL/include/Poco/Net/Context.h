@@ -100,7 +100,8 @@ namespace Net
             PROTO_SSLV3 = 0x02,
             PROTO_TLSV1 = 0x04,
             PROTO_TLSV1_1 = 0x08,
-            PROTO_TLSV1_2 = 0x10
+            PROTO_TLSV1_2 = 0x10,
+            PROTO_TLSV1_3 = 0x20
         };
 
         struct NetSSL_API CAPaths
@@ -108,6 +109,9 @@ namespace Net
             std::string caDefaultDir;
             std::string caDefaultFile;
             std::string caLocation;
+            bool caEmbedded = false;
+            /// Whether the CA certificates embedded into the binary were added to the store
+            /// because none were found on the filesystem.
         };
 
         struct NetSSL_API Params

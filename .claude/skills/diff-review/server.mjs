@@ -4,23 +4,25 @@
 // @pierre/diffs bundle (see vendor/README.md) — nothing is loaded from a CDN.
 //
 // Usage:
-//   node server.mjs [--repo <path>] [--base <ref>] [--committed] [--port 3000] [--out <file>] [--no-open]
+//   node server.mjs [--repo <path>] [--base <ref>] [--committed] [--port 3000] [--out <file>] [--no-open] [--force]
 //
 // By default the working tree (staged + unstaged + untracked) is diffed against
 // --base. With --committed, <base>..HEAD is diffed instead and the working tree
 // is ignored — use it to review already-committed branch work.
 //
 // Exits 0 after the user submits their review (comments written to --out),
-// exits 3 when there is nothing to review, exits 1 on errors (e.g. port busy).
+// exits 3 when there is nothing to review, exits 4 when the machine looked
+// remote or headless and nobody opened the review page within the wait
+// window, exits 1 on errors (e.g. port busy).
 
 import { createServer } from 'node:http';
 import { spawnSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
-import { readFileSync, writeFileSync, lstatSync, readlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, lstatSync, readlinkSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { tmpdir } from 'node:os';
+import { tmpdir, userInfo } from 'node:os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -35,7 +37,72 @@ const REPO = resolve(argVal('--repo', process.cwd()));
 const OUT = resolve(argVal('--out', join(tmpdir(), `diff-review-${Date.now()}.json`)));
 const NO_OPEN = args.includes('--no-open');
 const COMMITTED = args.includes('--committed');
+const FORCE = args.includes('--force') || process.env.DIFF_REVIEW_FORCE === '1';
 const MAX_FILE_BYTES = 2_000_000;
+
+// ── Signals that the user's browser is probably elsewhere ────────────────────
+// The server binds to loopback, so the review UI is reachable from a browser on
+// this very host — or from any machine, once the user forwards the port
+// (ssh -L 3000:localhost:3000). None of the signals below prove the page is
+// unreachable: a cloud desktop has a local browser, `ssh -X` opens one over the
+// wire, and a forwarded port reaches loopback from anywhere. So the signals
+// refuse nothing on their own. They decide two things: whether to print the
+// port-forwarding hint, and whether to arm a deadline so that on an isolated VM
+// — where a review can never be submitted — the server exits instead of leaving
+// a background task waiting forever. The refusal itself rests on the one
+// observation that does prove nobody is looking: no request arrived in time.
+function detectRemoteSignals() {
+  const reasons = [];
+
+  // A remote shell: the user's browser usually runs on the machine at the other
+  // end of the connection, and reaches our loopback only through a forwarded
+  // port.
+  if (process.env.SSH_CONNECTION || process.env.SSH_CLIENT || process.env.SSH_TTY)
+    reasons.push('this is an SSH session (SSH_CONNECTION/SSH_CLIENT/SSH_TTY is set)');
+
+  // A cloud instance. cloud-init state is the cheapest reliable marker, and the
+  // DMI vendor strings cover images that clean it up. Both are plain file
+  // reads. Deliberately not IMDS: querying 169.254.169.254 costs a network
+  // round trip (two, under IMDSv2) and hangs where the link-local route is
+  // firewalled off, to report what the DMI strings already say for free.
+  const cloudInitMarker = ['/var/lib/cloud/instance', '/run/cloud-init/instance-data.json'].find(
+    (p) => existsSync(p)
+  );
+  if (cloudInitMarker) {
+    reasons.push(`cloud-init state is present (${cloudInitMarker})`);
+  } else {
+    const CLOUD_VENDORS =
+      /amazon ec2|google|microsoft corporation|digitalocean|hetzner|openstack|alibaba cloud|oraclecloud|scaleway|vultr/i;
+    for (const field of ['sys_vendor', 'chassis_asset_tag', 'board_vendor']) {
+      let value;
+      try {
+        value = readFileSync(`/sys/class/dmi/id/${field}`, 'utf8').trim();
+      } catch {
+        continue;
+      }
+      if (CLOUD_VENDORS.test(value)) {
+        reasons.push(`DMI ${field} reads "${value}", so this is a cloud instance`);
+        break;
+      }
+    }
+  }
+
+  // No graphical session: no browser can be auto-opened here (the user may
+  // still bring their own through a forwarded port). macOS and Windows always
+  // have a window server, so this only applies to Linux.
+  if (process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY)
+    reasons.push('there is no graphical session (DISPLAY and WAYLAND_DISPLAY are both unset)');
+
+  return reasons;
+}
+
+// How long a remote-looking machine waits for the first request before giving
+// up. Long enough to copy the printed ssh -L command into another terminal;
+// short enough that an unattended run does not hang. --force waits forever.
+const NO_VISITOR_WAIT_SECS = 120;
+const remoteSignals = FORCE ? [] : detectRemoteSignals();
+let noVisitorTimer = null;
+
 // Per-session secret: embedded into the served page and required on /submit, so
 // that a submission can only come from the UI this server handed out — not from
 // a random cross-origin tab or a blind POST to localhost.
@@ -165,6 +232,13 @@ const VENDOR_FILES = new Map([
 
 // ── HTTP server ──────────────────────────────────────────────────────────────
 const server = createServer((req, res) => {
+  // A request is the proof the environment signals could not give: some browser
+  // does reach this server. From here on, wait for the review indefinitely.
+  if (noVisitorTimer != null) {
+    clearTimeout(noVisitorTimer);
+    noVisitorTimer = null;
+    process.stdout.write('diff-review: a browser reached the server; waiting for the review\n');
+  }
   const url = new URL(req.url, `http://localhost:${PORT}`);
   if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -264,7 +338,12 @@ server.listen(PORT, '127.0.0.1', () => {
     `diff-review: ${files.length} file(s) ready for review at ${url}\n` +
       `diff-review: waiting for the user to submit their review; comments will be written to ${OUT}\n`
   );
-  if (!NO_OPEN) {
+  // Auto-open skips only where it literally cannot work: Linux without a
+  // display. Under `ssh -X` or on a cloud desktop, DISPLAY is set and the
+  // browser opens on the user's screen despite the remote-looking signals.
+  const canOpenBrowser =
+    process.platform !== 'linux' || process.env.DISPLAY || process.env.WAYLAND_DISPLAY;
+  if (!NO_OPEN && canOpenBrowser) {
     const opener =
       process.platform === 'darwin'
         ? ['open', [url]]
@@ -278,6 +357,41 @@ server.listen(PORT, '127.0.0.1', () => {
     } catch {
       process.stdout.write(`diff-review: could not open a browser; open ${url} manually\n`);
     }
+  }
+  if (remoteSignals.length > 0) {
+    // SSH_CONNECTION is "<client_ip> <client_port> <server_ip> <server_port>":
+    // the address and port the user's own ssh connected to, which a forwarding
+    // command must reuse. hostname() would often name a private interface
+    // (ip-172-31-…) that the user's machine cannot resolve, so without
+    // SSH_CONNECTION the hint shows placeholders instead of posing as
+    // copy-pasteable.
+    const ssh = (process.env.SSH_CONNECTION ?? '').trim().split(/\s+/);
+    let target = '<user>@<this-machine>';
+    if (ssh.length === 4) {
+      let user;
+      try {
+        user = userInfo().username;
+      } catch {
+        user = '<user>';
+      }
+      target = (ssh[3] === '22' ? '' : `-p ${ssh[3]} `) + `${user}@${ssh[2]}`;
+    }
+    process.stdout.write(
+      'diff-review: this machine looks remote:\n' +
+        remoteSignals.map((r) => `  - ${r}\n`).join('') +
+        'diff-review: the server listens on loopback only. To review from your own machine, forward the port:\n' +
+        `diff-review:   ssh -L ${PORT}:localhost:${PORT} ${target}\n` +
+        `diff-review: then open ${url} there.\n` +
+        `diff-review: exiting in ${NO_VISITOR_WAIT_SECS} s unless the review page is opened (--force waits indefinitely).\n`
+    );
+    noVisitorTimer = setTimeout(() => {
+      process.stderr.write(
+        `diff-review: no browser reached the server within ${NO_VISITOR_WAIT_SECS} s, exiting without a review.\n` +
+          'diff-review: show the diff in the terminal instead, with git diff or git show.\n' +
+          'diff-review: or forward the port and re-run with --force to wait indefinitely.\n'
+      );
+      process.exit(4);
+    }, NO_VISITOR_WAIT_SECS * 1000);
   }
 });
 

@@ -157,7 +157,7 @@ ColumnPtr convertToFullColumnArrayImpl(const ColumnArray & src, const PaddedPODA
     for (size_t i = 0; i < num_rows; ++i)
     {
         ssize_t row = row_indexes[i];
-        res_data->insertRangeFrom(src_data, src_offsets[row - 1], src_offsets[row] - src_offsets[row - 1]);
+        res_data->insertRangeFrom(src_data,/*start*/src_offsets[row - 1], /*length*/src_offsets[row] - src_offsets[row - 1]);
     }
 
     return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
@@ -222,11 +222,6 @@ void ColumnReplicated::deserializeAndInsertFromArena(ReadBuffer & in, const ICol
 {
     nested_column->deserializeAndInsertFromArena(in, settings);
     indexes.insertIndex(nested_column->size() - 1);
-}
-
-void ColumnReplicated::skipSerializedInArena(ReadBuffer & in) const
-{
-    nested_column->skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

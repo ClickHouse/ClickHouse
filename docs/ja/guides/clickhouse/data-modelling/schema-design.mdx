@@ -37,32 +37,32 @@ Stack Overflow dataset には、相互に関連する複数のテーブルが含
 ClickHouse には、データセットの型を自動的に識別するスキーマ推論機能があります。これは Parquet を含むすべてのデータフォーマットでサポートされています。この機能を利用すると、s3 テーブル関数と[`DESCRIBE`](/ja/reference/statements/describe-table)コマンドを使って、データの ClickHouse 型を特定できます。以下の例では、`stackoverflow/parquet/posts` フォルダー内のすべてのファイルを読み込むために、glob パターン `*.parquet` を使用しています。
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
 ```response
 ┌─name──────────────────┬─type───────────────────────────┐
-│ Id                    │ Nullable(Int64)               │
-│ PostTypeId            │ Nullable(Int64)               │
-│ AcceptedAnswerId      │ Nullable(Int64)               │
+│ Id                    │ Nullable(Int64)                │
+│ PostTypeId            │ Nullable(Int64)                │
+│ AcceptedAnswerId      │ Nullable(Int64)                │
 │ CreationDate          │ Nullable(DateTime64(3, 'UTC')) │
-│ Score                 │ Nullable(Int64)               │
-│ ViewCount             │ Nullable(Int64)               │
-│ Body                  │ Nullable(String)              │
-│ OwnerUserId           │ Nullable(Int64)               │
-│ OwnerDisplayName      │ Nullable(String)              │
-│ LastEditorUserId      │ Nullable(Int64)               │
-│ LastEditorDisplayName │ Nullable(String)              │
+│ Score                 │ Nullable(Int64)                │
+│ ViewCount             │ Nullable(Int64)                │
+│ Body                  │ Nullable(String)               │
+│ OwnerUserId           │ Nullable(Int64)                │
+│ OwnerDisplayName      │ Nullable(String)               │
+│ LastEditorUserId      │ Nullable(Int64)                │
+│ LastEditorDisplayName │ Nullable(String)               │
 │ LastEditDate          │ Nullable(DateTime64(3, 'UTC')) │
 │ LastActivityDate      │ Nullable(DateTime64(3, 'UTC')) │
-│ Title                 │ Nullable(String)              │
-│ Tags                  │ Nullable(String)              │
-│ AnswerCount           │ Nullable(Int64)               │
-│ CommentCount          │ Nullable(Int64)               │
-│ FavoriteCount         │ Nullable(Int64)               │
-│ ContentLicense        │ Nullable(String)              │
-│ ParentId              │ Nullable(String)              │
+│ Title                 │ Nullable(String)               │
+│ Tags                  │ Nullable(String)               │
+│ AnswerCount           │ Nullable(Int64)                │
+│ CommentCount          │ Nullable(Int64)                │
+│ FavoriteCount         │ Nullable(Int64)                │
+│ ContentLicense        │ Nullable(String)               │
+│ ParentId              │ Nullable(String)               │
 │ CommunityOwnedDate    │ Nullable(DateTime64(3, 'UTC')) │
 │ ClosedDate            │ Nullable(DateTime64(3, 'UTC')) │
 └───────────────────────┴────────────────────────────────┘
@@ -76,7 +76,7 @@ SETTINGS describe_compact_output = 1
 CREATE TABLE posts
 ENGINE = MergeTree
 ORDER BY () EMPTY AS
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
 
 いくつか重要なポイントがあります。
@@ -120,14 +120,14 @@ ENGINE = MergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
 ORDER BY tuple()
 ```
 
-初期スキーマを定義したら、S3 table function を使ってデータを読み込み、`INSERT INTO SELECT` でデータを投入できます。以下の例では、8 コアの ClickHouse Cloud インスタンスで `posts` データを約 2 分で読み込みます。
+初期スキーマを定義したら、S3 テーブル関数を使ってデータを読み込み、`INSERT INTO SELECT` でデータを投入できます。以下の例では、8 コアの ClickHouse Cloud インスタンスで `posts` データを約 2 分で読み込みます。
 
 ```sql
-INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
 
 ```response
-セット内の行数: 0。経過時間: 148.140 秒。59.82 百万行、38.07 GB を処理しました（403.80 千行/秒、257.00 MB/秒）。
+0 rows in set. Elapsed: 148.140 sec. Processed 59.82 million rows, 38.07 GB (403.80 thousand rows/s., 257.00 MB/s.)
 ```
 
 > 上記のクエリでは 6000 万行を読み込みます。ClickHouse にとっては小規模ですが、インターネット接続が遅い環境では、データの一部だけを読み込みたい場合もあります。これは、読み込みたい年を glob パターンで指定するだけで実現できます。たとえば、`https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2008.parquet` や `https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/{2008, 2009}.parquet` のように指定します。glob パターンを使ってファイルの一部を対象にする方法については、[こちら](/ja/reference/functions/table-functions/file#globs-in-path)を参照してください。
@@ -275,10 +275,10 @@ LIMIT 3
 
 ```response
 ┌───────Id─┬─Title─────────────────────────────────────────────────────────────┬─CommentCount─┐
-│ 78203063 │ How to avoid default initialization of objects in std::vector?     │               74 │
-│ 78183948 │ About memory barrier                                               │               52 │
-│ 77900279 │ Speed Test for Buffer Alignment: IBM's PowerPC results vs. my CPU │        49 │
-└──────────┴───────────────────────────────────────────────────────────────────┴──────────────
+│ 78203063 │ How to avoid default initialization of objects in std::vector?    │           74 │
+│ 78183948 │ About memory barrier                                              │           52 │
+│ 77900279 │ Speed Test for Buffer Alignment: IBM's PowerPC results vs. my CPU │           49 │
+└──────────┴───────────────────────────────────────────────────────────────────┴──────────────┘
 
 10 rows in set. Elapsed: 0.070 sec. Processed 59.82 million rows, 569.21 MB (852.55 million rows/s., 8.11 GB/s.)
 Peak memory usage: 429.38 MiB.
@@ -320,7 +320,7 @@ ENGINE = MergeTree
 ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
 COMMENT 'Ordering Key'
 
---既存のテーブルからデータを投入する
+--populate table from existing table
 
 INSERT INTO posts_v3 SELECT * FROM posts_v2
 ```
@@ -330,7 +330,7 @@ INSERT INTO posts_v3 SELECT * FROM posts_v2
 Peak memory usage: 6.41 GiB.
 ```
 
-前のクエリでは、応答時間が3倍以上改善されます。
+前のクエリでは、クエリの応答時間が3倍以上改善されます。
 
 ```sql
 SELECT

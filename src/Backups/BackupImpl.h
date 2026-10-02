@@ -8,6 +8,7 @@
 #include <Common/Logger_fwd.h>
 #include <atomic>
 #include <map>
+#include <memory>
 #include <mutex>
 
 
@@ -19,6 +20,9 @@ class IBackupWriter;
 class SeekableReadBuffer;
 class IArchiveReader;
 class IArchiveWriter;
+#if CLICKHOUSE_CLOUD && USE_SSL
+class BackupEncryptionSidecar;
+#endif
 
 /// Implementation of IBackup.
 /// Along with passed files it also stores backup metadata - a single file named ".backup" in XML format
@@ -26,6 +30,17 @@ class IArchiveWriter;
 /// whether the base backup should be used for each entry.
 class BackupImpl : public IBackup
 {
+#if CLICKHOUSE_CLOUD
+    /// Reopens a destination this backup already owns, which needs the writer, the lock file and the
+    /// helpers below that claim and release it.
+    friend class BackupResumer;
+#endif
+#if CLICKHOUSE_CLOUD && USE_SSL
+    /// Owns `encryption_config.json` in the destination, which needs the writer, the reader and the
+    /// archive name.
+    friend class BackupEncryptionSidecar;
+#endif
+
 public:
     struct ArchiveParams
     {
@@ -85,9 +100,13 @@ public:
     SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const override;
     std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) const override;
     std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, const SizeAndChecksum & size_and_checksum) const override;
-    size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
-    size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
+    size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const override;
+    size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const override;
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
+#if CLICKHOUSE_CLOUD && USE_SSL
+    /// See `getBackupEncryptionKeyInfos`, which is how the rest of the code reaches it.
+    BackupEncryptionSidecar & getEncryptionSidecar() const { return *encryption_sidecar; }
+#endif
     bool supportsWritingInMultipleThreads() const override { return !use_archive; }
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
@@ -103,6 +122,10 @@ private:
 
     /// Writes the file ".backup" containing backup's metadata.
     void writeBackupMetadata() TSA_REQUIRES(mutex);
+#if CLICKHOUSE_CLOUD
+    /// Reached only while continuing an interrupted backup, whose manifest is already published.
+    void recalculateMetadataCounters() TSA_REQUIRES(mutex);
+#endif
     void readBackupMetadata() TSA_REQUIRES(mutex);
 
 #if CLICKHOUSE_CLOUD
@@ -111,6 +134,11 @@ private:
 
     String getObjectKey(const String & file_name) const;
     std::unique_ptr<ReadBufferFromFileBase> readFileByObjectKey(const BackupFileInfo & info) const;
+
+    /// Copies a lightweight-snapshot (object-key) entry to the destination through a live write buffer
+    /// and fsyncs it (the optimized object-key copy exposes no buffer to fsync). Reached only in the
+    /// cloud build, where object keys are present; defined unconditionally so it is type-checked everywhere.
+    size_t copyObjectKeyEntryToDiskSynced(const String & object_key, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const;
 
     /// Returns the base backup or null if there is no base backup.
     std::shared_ptr<const IBackup> getBaseBackupUnlocked() const TSA_REQUIRES(mutex);
@@ -122,7 +150,9 @@ private:
     /// Thus it will not be allowed to put any other backup to the same place (even if the BACKUP command is executed on a different node).
     void createLockFile();
     bool checkLockFile(bool throw_if_failed) const;
-    void removeLockFile();
+    /// Both return true only when the destination no longer holds this backup's lock file.
+    bool removeLockFile();
+    bool tryRemoveOwnLockFile() noexcept;
 
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
@@ -179,10 +209,20 @@ private:
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;
+#if CLICKHOUSE_CLOUD && USE_SSL
+    /// `encryption_config.json` next to the backup, if this one holds files of KMS-encrypted disks.
+    /// It keeps the keys and its own size, which the sizes reported here include.
+    std::unique_ptr<BackupEncryptionSidecar> encryption_sidecar;
+#endif
+    String lock_file_contents;
     std::atomic<bool> lock_file_before_first_file_checked = false;
 
     bool writing_finalized = false;
     bool corrupted = false;
+    /// Outcome of the one own-lock cleanup a failed `open` performs; see `tryRemoveOwnLockFile`.
+    std::optional<bool> own_lock_cleanup_result;
+    /// Whether this `open` wrote the destination lock, which is what makes it ours to take back.
+    bool created_own_lock_file = false;
     const LoggerPtr log;
 };
 

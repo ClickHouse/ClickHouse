@@ -82,6 +82,11 @@ public:
         if (likely(std::abs(untracked_memory - state.contributed) < buffer_now))
             return true;
 
+        return publish(untracked_memory, state);
+    }
+
+    [[nodiscard]] ALWAYS_INLINE bool publish(Int64 untracked_memory, PerCPUMemoryThreadState & state)
+    {
         const int cpu = sched_getcpu();
         if (unlikely(static_cast<unsigned>(cpu) >= static_cast<unsigned>(cpu_count)))
             return false;
@@ -210,6 +215,7 @@ public:
     static constexpr Int64 UNLIMITED_BUDGET = std::numeric_limits<Int64>::max() / 2;
 
     [[nodiscard]] bool sync(Int64 /*untracked_memory*/, PerCPUMemoryThreadState &) { return true; }
+    [[nodiscard]] bool publish(Int64 /*untracked_memory*/, PerCPUMemoryThreadState &) { return true; }
     void release(PerCPUMemoryThreadState &) {}
     void rollback(PerCPUMemoryThreadState &, const PerCPUMemoryThreadState &) {}
     void setThreadBuffer(Int64 bytes) { buffer.store(bytes < 0 ? 0 : bytes, std::memory_order_relaxed); }

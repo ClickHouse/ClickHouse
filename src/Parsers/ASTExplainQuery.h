@@ -138,6 +138,22 @@ public:
     }
 
     const ASTPtr & getExplainedQuery() const { return query; }
+
+    /// Replace the explained query, keeping the `children` entry in sync (the explained query is
+    /// stored both in `query` and in `children`, see `setExplainedQuery`).
+    void replaceExplainedQuery(ASTPtr query_)
+    {
+        for (auto & child : children)
+        {
+            if (child == query)
+            {
+                child = query_;
+                break;
+            }
+        }
+        query = std::move(query_);
+    }
+
     const ASTPtr & getSettings() const { return ast_settings; }
     /// Empty unless this query came from the parser - see `setSettings`.
     const String & getSettingsText() const { return settings_text; }
@@ -164,23 +180,49 @@ protected:
         {
             ostr << settings.nl_or_ws;
 
-            /// When trailing output options (SETTINGS, FORMAT, etc.) follow the EXPLAIN body,
-            /// and the inner query is not an ASTQueryWithOutput (e.g. a bare SELECT or UNION),
-            /// we must wrap it in parentheses. Otherwise the trailing SETTINGS clause would be
-            /// consumed by the inner SELECT during re-parsing.
-            /// For inner ASTQueryWithOutput queries (like CREATE TABLE), the flag propagates
-            /// through the frame and is handled by each query's own `formatQueryImpl`.
-            /// INSERT queries also don't need wrapping: wrapping INSERT in parens would
-            /// produce `(INSERT ...)` which cannot be parsed back.
-            bool need_parens = frame.has_trailing_output_options
-                && !dynamic_cast<const ASTQueryWithOutput *>(query.get())
-                && query->getQueryKind() != QueryKind::Insert
-                && query->getQueryKind() != QueryKind::AsyncInsertFlush;
+            /// Trailing output options belong to the EXPLAIN only if the inner query cannot take them on re-parse.
+            /// EXPLAIN AST accepts any parenthesized query except one the subquery parser reads; other kinds parenthesize only a SELECT.
+            bool need_parens = false;
+            if (frame.has_trailing_output_options)
+            {
+                const auto inner_kind = query->getQueryKind();
+                const auto * inner_output = dynamic_cast<const ASTQueryWithOutput *>(query.get());
+                if (kind == ParsedAST)
+                {
+                    bool parsed_as_subquery = inner_kind == QueryKind::Select;
+                    if (const auto * inner_explain = query->as<ASTExplainQuery>())
+                    {
+                        const auto & explained = inner_explain->getExplainedQuery();
+                        parsed_as_subquery = inner_explain->getKind() == ParsedAST || !explained
+                            || explained->getQueryKind() == QueryKind::Select;
+                    }
+                    need_parens = !inner_output || !parsed_as_subquery;
+                    /// A bare inner query takes INTO OUTFILE only if it has no output options, FORMAT or SETTINGS only if it lacks that clause.
+                    if (!need_parens)
+                    {
+                        if (out_file)
+                            need_parens = !inner_output->hasOutputOptions();
+                        else if (format_ast)
+                            need_parens = !inner_output->format_ast;
+                        else if (settings_ast)
+                            need_parens = !inner_output->settings_ast;
+                    }
+                }
+                else
+                    need_parens = !inner_output && inner_kind == QueryKind::Select;
+            }
+
             if (need_parens)
+            {
+                FormatStateStacked frame_nested = frame;
+                frame_nested.parent_has_trailing_settings = false;
+                frame_nested.has_trailing_output_options = false;
                 ostr << "(";
-            query->format(ostr, settings, state, frame);
-            if (need_parens)
+                query->format(ostr, settings, state, frame_nested);
                 ostr << ")";
+            }
+            else
+                query->format(ostr, settings, state, frame);
         }
         if (table_function)
         {
