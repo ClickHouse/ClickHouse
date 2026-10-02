@@ -61,6 +61,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheBackgroundEvictedBytes;
     extern const Event FilesystemCacheEvictedFileSegments;
     extern const Event FilesystemCacheEvictedBytes;
+    extern const Event FilesystemCacheEvictedNoHitBytes;
     extern const Event FilesystemCacheCheckCorrectness;
     extern const Event FilesystemCacheCheckCorrectnessMicroseconds;
     extern const Event FilesystemCacheIdleClientEvictions;
@@ -2671,6 +2672,8 @@ void FileCache::onSegmentEvicted(const FileSegment & segment, const String & use
 {
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment.getReservedSize());
+    if (segment.getHitsCount() == 0)
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedNoHitBytes, segment.getReservedSize());
 
     if (!expose_eviction_metrics.load(std::memory_order_relaxed))
         return;
