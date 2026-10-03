@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-detach
+# Tags: no-parallel, no-fasttest, no-random-detach
 # no-random-detach: test checks system.parts
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

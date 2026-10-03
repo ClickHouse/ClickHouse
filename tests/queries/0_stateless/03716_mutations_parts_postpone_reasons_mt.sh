@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-async-insert, no-random-detach
+# Tags: no-parallel, no-async-insert, no-fasttest, no-random-detach
 # no-random-detach: test checks mutation state
 # Tag no-parallel: Fails due to failpoint intersection
 

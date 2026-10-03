@@ -131,7 +131,7 @@ ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 -- as the style check requires (a `{...:String}` parameter is not recognized by it).
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-SELECT '-- re-attached tables are lazy proxies --';
+SELECT '-- only the re-attached MergeTree is a lazy proxy --';
 SELECT name, engine FROM system.tables WHERE database = currentDatabase() ORDER BY name;
 
 SELECT '-- the proxy must still reject the mismatched column, not abort --';

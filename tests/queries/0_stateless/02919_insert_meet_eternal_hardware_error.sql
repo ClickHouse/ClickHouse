@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-parallel, no-shared-merge-tree, no-random-detach
+-- Tags: zookeeper, no-parallel, no-shared-merge-tree, no-fasttest, no-random-detach
 -- no-random-detach: test checks replication state
 -- no-shared-merge-tree: This failure injection is only RMT specific
 

@@ -190,7 +190,7 @@ wget -nv -O- 'http://localhost:8123/?query=SELECT 1, 2, 3 FORMAT JSON'
 }
 ```
 
-You can use the `default_format` URL parameter to specify a default format other than `TabSeparated`. The `X-ClickHouse-Format` header selects the format of the response explicitly: it is an alias for the `output_format` setting, so it also overrides a `FORMAT` clause in the query. It never changes how the request body of an `INSERT` is parsed — use `input_format` or `format` for that.
+You can use the `default_format` URL parameter to specify a default format other than `TabSeparated`. The `X-ClickHouse-Format` header selects the format of the response explicitly: it is an alias for the `output_format` setting, so it also overrides a `FORMAT` clause in the query. It never changes how the request body of an `INSERT` is parsed — use `input_format` or `format` for that. To restore the behavior of versions before 26.8, where the header was an alias for `default_format` and did not override a `FORMAT` clause, disable the `http_x_clickhouse_format_overrides_output_format` setting (in a user profile or as a URL parameter; like the format settings themselves, it can be changed in read-only mode).
 
 ```bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -213,36 +213,40 @@ $ curl -X POST -F 'query=select {p1:UInt8} + {p2:UInt8}' -F "param_p1=3" -F "par
 
 Available in ClickHouse 26.8 and later.
 
-The HTTP interface can interpret a URL path as a database, table, output format, and compression method. URL parameters can then shape the result, so simple read requests do not require SQL. These features are disabled by default and must be enabled explicitly.
+The HTTP interface can interpret a URL path as a database, table, output format, and compression method. URL parameters can then shape the result, so simple read requests do not require SQL. These features are enabled by default since ClickHouse 26.10; in 26.8 and 26.9 they had to be enabled explicitly.
 
-### Enable path routing {#enabling-path-routing}
+### Path routing settings {#enabling-path-routing}
 
 Path interpretation is gated at two levels:
 
-1. Enable the server-level `http_allow_path_requests` configuration setting, which allows the HTTP interface to route path-style requests to the query handler:
+1. The server-level `http_allow_path_requests` configuration setting allows the HTTP interface to route path-style requests to the query handler. It is enabled by default; set it to `0` to make every path that is not a configured handler return `404` again:
 
 ```xml
 <clickhouse>
-    <http_allow_path_requests>1</http_allow_path_requests>
+    <http_allow_path_requests>0</http_allow_path_requests>
 </clickhouse>
 ```
 
-2. Enable the required per-user settings:
+2. The per-user settings below decide how a routed path is interpreted. All of them except `http_allow_filters_as_unrecognized_url_parameters` are enabled by default, and each can be enabled or disabled per user, role, or profile:
 
 | Setting | Effect |
 |---------|--------|
 | `http_allow_table_as_file` | Interprets the last path component as `table`, `table.format`, or `table.format.compression`. |
 | `http_allow_database_as_path` | Interprets a leading `/database/` path component as the current database. |
 | `http_allow_filters_as_path` | Interprets Hive-style `/name=value/` path components as `WHERE` filters. |
-| `http_allow_filters_as_unrecognized_url_parameters` | Interprets unrecognized URL parameters as `WHERE` filters. |
+| `http_allow_filters_as_unrecognized_url_parameters` | Interprets unrecognized URL parameters as `WHERE` filters. Disabled by default. |
 
 <Note>
-Routing occurs before authentication, so it cannot depend on a per-user setting. When `http_allow_path_requests` is disabled, an unknown path returns a pre-authentication `404`. After routing and authentication, the per-user settings determine how the path is interpreted, allowing you to enable the feature selectively for a user, role, or profile.
+Routing occurs before authentication, so it cannot depend on a per-user setting. When `http_allow_path_requests` is disabled, an unknown path returns a pre-authentication `404`. After routing and authentication, the per-user settings determine how the path is interpreted, allowing you to enable or disable the feature selectively for a user, role, or profile.
+</Note>
+
+<Note>
+`http_allow_filters_as_unrecognized_url_parameters` stays disabled by default because it applies to every request of the HTTP interface, including the `/?query=...` endpoint: when it is enabled, any unrecognized URL parameter a client appends becomes a filter of the query. A misspelt setting name is then no longer reported as `UNKNOWN_SETTING`, but fails with `UNKNOWN_IDENTIFIER` — or, when the name happens to match a column of the queried table, silently filters the result.
 </Note>
 
 ### Access tables as files {#table-as-file-examples}
 
-With `http_allow_table_as_file` enabled, a request to `/table.format.compression` is processed as `SELECT * FROM table`. Enable `http_allow_database_as_path` to use `/database/table.format.compression`.
+With `http_allow_table_as_file` enabled, a request to `/table.format.compression` is processed as `SELECT * FROM table`. `http_allow_database_as_path` additionally allows `/database/table.format.compression`.
 
 ```bash
 # SELECT * FROM my_db.hits, formatted as CSV
@@ -316,7 +320,7 @@ INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
 
 | Setting | Effect |
 |---------|--------|
-| `output_format` | Overrides the output format. It takes precedence over the query's `FORMAT` clause, the path extension, `format`, and `default_format`. It can also be set using the `X-ClickHouse-Format` header. |
+| `output_format` | Overrides the output format. It takes precedence over the query's `FORMAT` clause, the path extension, `format`, and `default_format`. It can also be set using the `X-ClickHouse-Format` header. With `http_x_clickhouse_format_overrides_output_format = 0`, the header sets `default_format` instead, as in versions before 26.8. |
 | `input_format` | Overrides the input format for `INSERT`. It takes precedence over the query's `FORMAT` clause and `format`. |
 | `format` | Overrides the format in both directions unless a direction-specific setting is provided. |
 | `default_format` | Sets the output format when the query has no `FORMAT` clause, no path extension, and no other format override. |
@@ -375,6 +379,24 @@ To insert data from a tab-separated dump, specify the corresponding format:
 $ echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
 ```
 
+The same works for any other [input format](/reference/formats), for example CSV with a header row, or one JSON object per row:
+
+```bash
+$ echo -ne 'a\n13\n14\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20CSVWithNames' --data-binary @-
+$ echo '{"a":15} {"a":16}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20JSONEachRow' --data-binary @-
+```
+
+To insert the contents of a file, pass its name to `--data-binary` with an `@` prefix:
+
+```bash
+$ echo -ne '17\n18\n' > data.csv
+$ curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20CSV' --data-binary @data.csv
+```
+
+<Warning>
+Use `--data-binary`, not `-d` (`--data`). curl's `-d @file` strips the newlines from the file, so the two rows above arrive as the single value `1718`.
+</Warning>
+
 To read the table contents:
 
 ```bash
@@ -385,6 +407,12 @@ $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 10
 11
 12
+13
+14
+15
+16
+17
+18
 1
 2
 3
@@ -404,6 +432,63 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 For successful requests that don't return a data table, an empty response body is returned.
+
+### Insert Protobuf data {#insert-protobuf}
+
+Binary formats such as [`Protobuf`](/reference/formats/Protobuf/Protobuf) are sent the same way, since `--data-binary` passes the bytes through unchanged.
+Settings the format needs, such as [`format_schema`](/reference/settings/formats/format-schema#format_schema), are passed as URL parameters next to `query`, like any other setting.
+
+The examples below use this table and the schema file `message.proto`, placed in the server's [`format_schema_path`](/reference/settings/server-settings/settings/format#format_schema_path) directory:
+
+```bash
+$ echo 'CREATE TABLE protobuf_messages (name String, surname String, birthDate UInt32, phoneNumbers Array(String)) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
+```
+
+```protobuf
+syntax = "proto3";
+
+message MessageType {
+  string name = 1;
+  string surname = 2;
+  uint32 birthDate = 3;
+  repeated string phoneNumbers = 4;
+}
+```
+
+To get a file of Protobuf messages to insert, this example has ClickHouse write one:
+
+```bash
+$ echo "SELECT 'Aisha' AS name, 'Khan' AS surname, 19920815 AS birthDate, ['(555) 247-8903', '(555) 612-3457'] AS phoneNumbers FORMAT Protobuf" | curl 'http://localhost:8123/?format_schema=message:MessageType' --data-binary @- > messages.bin
+```
+
+To insert the file, name the schema file and the message type in `format_schema`:
+
+```bash
+$ curl 'http://localhost:8123/?query=INSERT%20INTO%20protobuf_messages%20FORMAT%20Protobuf&format_schema=message:MessageType' --data-binary @messages.bin
+```
+
+When no schema file can be placed on the server, as in ClickHouse Cloud, send the schema itself with [`format_schema_source`](/reference/settings/formats/format-schema#format_schema_source) set to `string`, and name the message type in [`format_schema_message_name`](/reference/settings/formats/format-schema#format_schema_message_name).
+curl's `--url-query` option (curl 7.87 and later) URL-encodes each parameter, so the query and the schema can be written as they are:
+
+```bash
+$ curl 'http://localhost:8123/' \
+    --url-query 'query=INSERT INTO protobuf_messages FORMAT Protobuf' \
+    --url-query 'format_schema_source=string' \
+    --url-query 'format_schema=syntax = "proto3"; message MessageType { string name = 1; string surname = 2; uint32 birthDate = 3; repeated string phoneNumbers = 4; }' \
+    --url-query 'format_schema_message_name=MessageType' \
+    --data-binary @messages.bin
+```
+
+To read the table contents:
+
+```bash
+$ curl 'http://localhost:8123/?query=SELECT%20*%20FROM%20protobuf_messages'
+Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
+Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
+```
+
+`Protobuf` expects each message to be prefixed with its length as a varint.
+For a single message without the prefix, use [`ProtobufSingle`](/reference/formats/Protobuf/ProtobufSingle); for rows sent as sub-messages of one `Envelope` message, use [`ProtobufList`](/reference/formats/Protobuf/ProtobufList).
 
 ## Compression {#compression}
 
