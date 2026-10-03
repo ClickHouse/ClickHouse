@@ -15,6 +15,12 @@ INSERT INTO t_05233 VALUES (10);
 SELECT value FROM t_05233 PREWHERE arrayMap(value -> toUInt8(t_05233.value) + value, [1])[1] = 11;
 SELECT value FROM t_05233 PREWHERE arrayMap(value -> value + toUInt8(t_05233.value), [1])[1] = 11;
 
+-- The same one lambda deeper: the nested lambda references the argument of the outer lambda first,
+-- so the table column must not reuse that argument node. `y` is unused; the result is 1 + 10 = 11.
+SELECT value FROM t_05233 PREWHERE arrayMap(value -> arrayMap(y -> value + t_05233.value, [1])[1], [toUInt8(1)])[1] = 11;
+SELECT value FROM t_05233 PREWHERE arrayMap(value -> arrayMap(y -> t_05233.value + value, [1])[1], [toUInt8(1)])[1] = 11;
+SELECT value FROM t_05233 PREWHERE arrayMap(value -> arrayMap(y -> arrayMap(z -> value + t_05233.value, [1])[1], [1])[1], [toUInt8(1)])[1] = 11;
+
 -- The same for a correlated column of the outer query. Executing a correlated column captured by a lambda
 -- in `PREWHERE` is not supported yet for any argument name, so only check that planning succeeds.
 SELECT count() > 0 FROM
