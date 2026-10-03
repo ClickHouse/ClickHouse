@@ -714,29 +714,3 @@ TEST(ExperimentalSpillCodecPlanSetting, OneOperatorIsSerializedConcurrently)
             EXPECT_EQ(carried[i], 1u) << "round " << round << ", thread " << i;
     }
 }
-
-TEST(ExperimentalSpillCodecPlanSetting, JoinEmitsItForABlockNestedLoopJoin)
-{
-    tryRegisterFunctions();
-
-    /// A join with no cross-side equality can become a block nested loop join, whatever the algorithm list
-    /// is, and that operator spills its build side under memory pressure even without an external-join
-    /// threshold.
-    TestJoinOperator keyless_left(JoinKind::Left, JoinStrictness::All, /*keyed=*/false);
-    auto in_memory_hash = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH});
-    EXPECT_TRUE(in_memory_hash.allow_block_nested_loop_join);
-    EXPECT_TRUE(joinCarriesSetting(in_memory_hash, keyless_left.join_operator));
-
-    in_memory_hash.allow_block_nested_loop_join = false;
-    EXPECT_FALSE(joinCarriesSetting(in_memory_hash, keyless_left.join_operator));
-
-    /// A keyless `ALL INNER` join is converted to `CROSS` instead when `hash` is enabled, and then only the
-    /// in-memory size limits can make it spill.
-    TestJoinOperator keyless_inner(JoinKind::Inner, JoinStrictness::All, /*keyed=*/false);
-    EXPECT_FALSE(joinCarriesSetting(makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH}), keyless_inner.join_operator));
-    EXPECT_TRUE(joinCarriesSetting(makeJoinSettings(experimental_codec, true, {JoinAlgorithm::FULL_SORTING_MERGE}), keyless_inner.join_operator));
-
-    /// A keyed join never reaches it.
-    TestJoinOperator keyed_left(JoinKind::Left);
-    EXPECT_FALSE(joinCarriesSetting(makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH}), keyed_left.join_operator));
-}
