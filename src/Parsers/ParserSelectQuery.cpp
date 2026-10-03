@@ -19,6 +19,7 @@
 #include <Parsers/TokenIterator.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/StatementFactory.h>
 #include <Parsers/registerStatements.h>
@@ -394,6 +395,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr limit_until;
     ASTPtr top_length;
     ASTPtr settings;
+    bool group_by_rollup_or_cube_in_function_syntax = false;
 
     /// WITH expr_list
     {
@@ -585,9 +587,15 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (s_group_by.ignore(pos, expected))
     {
         if (s_rollup.ignore(pos, expected))
+        {
             select_query->group_by_with_rollup = true;
+            group_by_rollup_or_cube_in_function_syntax = true;
+        }
         else if (s_cube.ignore(pos, expected))
+        {
             select_query->group_by_with_cube = true;
+            group_by_rollup_or_cube_in_function_syntax = true;
+        }
         else if (s_grouping_sets.ignore(pos, expected))
             select_query->group_by_with_grouping_sets = true;
         else if (s_all.ignore(pos, expected))
@@ -637,6 +645,26 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else
             return false;
+    }
+
+    /// `GROUP BY (a, b) WITH ROLLUP/CUBE` historically treats the parentheses as
+    /// a key-list wrapper, while `GROUP BY ROLLUP/CUBE((a, b))` uses a tuple key.
+    /// Canonicalize the ambiguous singleton form while the parser still knows
+    /// which spelling was used.
+    if (group_expression_list && (select_query->group_by_with_rollup || select_query->group_by_with_cube))
+    {
+        auto & group_by_elements = group_expression_list->as<ASTExpressionList &>().children;
+        if (group_by_elements.size() == 1)
+        {
+            if (auto * tuple = group_by_elements.front()->as<ASTFunction>();
+                tuple && tuple->name == "tuple" && tuple->isOperator() && !tuple->isParenthesized())
+            {
+                if (group_by_rollup_or_cube_in_function_syntax)
+                    tuple->setIsOperator(false);
+                else
+                    group_expression_list = tuple->arguments;
+            }
+        }
     }
 
     /// HAVING expr

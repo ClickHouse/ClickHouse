@@ -53,6 +53,38 @@ FROM
     GROUP BY tuple(a, b) WITH ROLLUP
 );
 
+SELECT 'parenthesized key list with CUBE', count()
+FROM
+(
+    SELECT count()
+    FROM numbers(3)
+    GROUP BY (number, number % 2) WITH CUBE
+);
+
+SELECT 'parenthesized key list with ROLLUP', count()
+FROM
+(
+    SELECT count()
+    FROM numbers(3)
+    GROUP BY (number, number % 2) WITH ROLLUP
+);
+
+SELECT 'tuple key in CUBE(...)', count()
+FROM
+(
+    SELECT count()
+    FROM numbers(3)
+    GROUP BY CUBE((number, number % 2))
+);
+
+SELECT 'tuple key in ROLLUP(...)', count()
+FROM
+(
+    SELECT count()
+    FROM numbers(3)
+    GROUP BY ROLLUP((number, number % 2))
+);
+
 SELECT 'tuple key with scalar and CUBE', count()
 FROM
 (
