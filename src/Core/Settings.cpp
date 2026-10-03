@@ -10561,6 +10561,13 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
 )", PRIVATE_PREVIEW, evaluation_time, \
         {"25.9", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."}, \
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
+    DECLARE_WITH_ALIAS(Bool, enable_prometheus_remote_write_v2, false, R"(
+Enables Prometheus Remote Write 2.0 (`io.prometheus.write.v2.Request`) on Prometheus write handlers.
+Possible values:
+- 0: Remote Write 2.0 requests are rejected. Remote Write 1.0 still works.
+- 1: Remote Write 2.0 requests are accepted. Support is float-only. Requests that contain native histograms, exemplars, or a nonzero `start_timestamp` are rejected.
+)", PRIVATE_PREVIEW, allow_experimental_prometheus_remote_write_v2, \
+        {"26.10", false, false, "New setting to accept Prometheus Remote Write 2.0 (`io.prometheus.write.v2.Request`) on Prometheus write handlers. Added an alias `allow_experimental_prometheus_remote_write_v2`."}) \
     DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
 Allow to create tables with Paimon* table engines.
 )", EXPERIMENTAL, \

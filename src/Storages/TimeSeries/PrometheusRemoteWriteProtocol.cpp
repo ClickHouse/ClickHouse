@@ -28,8 +28,10 @@
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
+#include <prompb/io/prometheus/write/v2/types.pb.h>
 
 #include <chrono>
+#include <vector>
 
 
 namespace DB
@@ -44,6 +46,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ASYNC_INSERT_FLUSH_TIMEOUT;
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TIME_SERIES_TAGS;
     extern const int LOGICAL_ERROR;
@@ -70,6 +73,11 @@ std::string_view metricTypeToString(prometheus::MetricMetadata::MetricType metri
     return "";
 }
 
+std::string_view metricTypeToString(io::prometheus::write::v2::Metadata::MetricType metric_type)
+{
+    return metricTypeToString(static_cast<prometheus::MetricMetadata::MetricType>(metric_type));
+}
+
 void insertTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
 {
     if (typeid_cast<ColumnDecimal<DateTime64> *>(&column))
@@ -78,98 +86,133 @@ void insertTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
         column.insert(DecimalUtils::convertTo<UInt32>(DateTime64{timestamp_ms}, 3));
 }
 
+class TimeSeriesBlockBuilder
+{
+public:
+    TimeSeriesBlockBuilder(size_t num_rows, const StorageInMemoryMetadata & metadata, const String & samples_column_name)
+        : metric_name_type(metadata.columns.get(TimeSeriesColumnNames::MetricName).type)
+        , metric_name_column(metric_name_type->createColumn())
+        , tags_type(typeid_cast<std::shared_ptr<const DataTypeMap>>(metadata.columns.get(TimeSeriesColumnNames::Tags).type))
+        , time_series_type(typeid_cast<std::shared_ptr<const DataTypeArray>>(metadata.columns.get(samples_column_name).type))
+    {
+        if (!tags_type)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have a Map type", TimeSeriesColumnNames::Tags);
+        if (!time_series_type)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have an Array type", samples_column_name);
+
+        metric_name_column->reserve(num_rows);
+        tags_names = tags_type->getKeyType()->createColumn();
+        tags_values = tags_type->getValueType()->createColumn();
+        tags_offsets->reserve(num_rows);
+
+        auto [timestamp_type, value_type] = splitTimeSeriesType(time_series_type);
+        timestamps = timestamp_type->createColumn();
+        values = value_type->createColumn();
+        time_series_offsets->reserve(num_rows);
+        timestamp_scale = tryGetDecimalScale(*timestamp_type).value_or(0);
+    }
+
+    void addLabel(std::string_view name, std::string_view value)
+    {
+        if (metric_name.empty() && name == TimeSeriesTagNames::MetricName && !value.empty())
+            metric_name = value;
+        else
+        {
+            tags_names->insertData(name.data(), name.size());
+            tags_values->insertData(value.data(), value.size());
+        }
+    }
+
+    void addSample(Int64 timestamp, double value)
+    {
+        insertTimestamp(timestamp, timestamp_scale, *timestamps);
+        values->insert(value);
+    }
+
+    void finishTimeSeries(int missing_metric_name_error_code)
+    {
+        if (metric_name.empty())
+            throw Exception(
+                missing_metric_name_error_code,
+                "Metric name is missing: a time series has no `{}` label with a non-empty value",
+                TimeSeriesTagNames::MetricName);
+        metric_name_column->insertData(metric_name.data(), metric_name.size());
+        tags_offsets->insert(tags_names->size());
+        time_series_offsets->insert(timestamps->size());
+        metric_name = {};
+    }
+
+    Block finish(size_t num_metadata_rows, const String & samples_column_name)
+    {
+        metric_name_column->insertManyDefaults(num_metadata_rows);
+        for (size_t i = 0; i != num_metadata_rows; ++i)
+        {
+            tags_offsets->insert(tags_names->size());
+            time_series_offsets->insert(timestamps->size());
+        }
+
+        Columns tags_tuple_columns;
+        tags_tuple_columns.push_back(std::move(tags_names));
+        tags_tuple_columns.push_back(std::move(tags_values));
+        auto tags_column = ColumnMap::create(
+            ColumnArray::create(ColumnTuple::create(std::move(tags_tuple_columns)), std::move(tags_offsets)));
+
+        Columns time_series_tuple_columns;
+        time_series_tuple_columns.push_back(std::move(timestamps));
+        time_series_tuple_columns.push_back(std::move(values));
+        auto time_series_column = ColumnArray::create(
+            ColumnTuple::create(std::move(time_series_tuple_columns)), std::move(time_series_offsets));
+
+        Block block;
+        block.insert(ColumnWithTypeAndName{std::move(metric_name_column), metric_name_type, TimeSeriesColumnNames::MetricName});
+        block.insert(ColumnWithTypeAndName{std::move(tags_column), tags_type, TimeSeriesColumnNames::Tags});
+        block.insert(ColumnWithTypeAndName{std::move(time_series_column), time_series_type, samples_column_name});
+        return block;
+    }
+
+private:
+    DataTypePtr metric_name_type;
+    MutableColumnPtr metric_name_column;
+    std::shared_ptr<const DataTypeMap> tags_type;
+    MutableColumnPtr tags_names;
+    MutableColumnPtr tags_values;
+    MutableColumnPtr tags_offsets = ColumnArray::ColumnOffsets::create();
+    std::shared_ptr<const DataTypeArray> time_series_type;
+    MutableColumnPtr timestamps;
+    MutableColumnPtr values;
+    MutableColumnPtr time_series_offsets = ColumnArray::ColumnOffsets::create();
+    UInt32 timestamp_scale = 0;
+    std::string_view metric_name;
+};
+
 Block makeTimeSeriesBlock(
     const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
     size_t num_metadata_rows,
     const StorageInMemoryMetadata & metadata,
     const String & samples_column_name)
 {
-    const size_t num_rows = time_series.size() + num_metadata_rows;
-
-    const auto metric_name_type = metadata.columns.get(TimeSeriesColumnNames::MetricName).type;
-    auto metric_name_column = metric_name_type->createColumn();
-    metric_name_column->reserve(num_rows);
-
-    const auto tags_type = typeid_cast<std::shared_ptr<const DataTypeMap>>(metadata.columns.get(TimeSeriesColumnNames::Tags).type);
-    if (!tags_type)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have a Map type", TimeSeriesColumnNames::Tags);
-    auto tags_names = tags_type->getKeyType()->createColumn();
-    auto tags_values = tags_type->getValueType()->createColumn();
-    auto tags_offsets = ColumnArray::ColumnOffsets::create();
-    tags_offsets->reserve(num_rows);
-
-    const auto time_series_type
-        = typeid_cast<std::shared_ptr<const DataTypeArray>>(metadata.columns.get(samples_column_name).type);
-    if (!time_series_type)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have an Array type", samples_column_name);
-    auto [timestamp_type, value_type] = splitTimeSeriesType(time_series_type);
-    auto timestamps = timestamp_type->createColumn();
-    auto values = value_type->createColumn();
-    auto time_series_offsets = ColumnArray::ColumnOffsets::create();
-    time_series_offsets->reserve(num_rows);
-    const UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_type).value_or(0);
-
+    TimeSeriesBlockBuilder builder(time_series.size() + num_metadata_rows, metadata, samples_column_name);
     for (const auto & element : time_series)
     {
-        std::string_view metric_name;
-        bool has_metric_name = false;
         for (const auto & label : element.labels())
-        {
-            if (!has_metric_name && label.name() == TimeSeriesTagNames::MetricName && !label.value().empty())
-            {
-                metric_name = label.value();
-                has_metric_name = true;
-            }
-            else
-            {
-                tags_names->insertData(label.name().data(), label.name().size());
-                tags_values->insertData(label.value().data(), label.value().size());
-            }
-        }
-        if (metric_name.empty())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TIME_SERIES_TAGS,
-                "Metric name is missing: a time series has no `{}` label with a non-empty value",
-                TimeSeriesTagNames::MetricName);
-        metric_name_column->insertData(metric_name.data(), metric_name.size());
-        tags_offsets->insert(tags_names->size());
-
+            builder.addLabel(label.name(), label.value());
         for (const auto & sample : element.samples())
-        {
-            insertTimestamp(sample.timestamp(), timestamp_scale, *timestamps);
-            values->insert(sample.value());
-        }
-        time_series_offsets->insert(timestamps->size());
+            builder.addSample(sample.timestamp(), sample.value());
+        builder.finishTimeSeries(ErrorCodes::ILLEGAL_TIME_SERIES_TAGS);
     }
-
-    metric_name_column->insertManyDefaults(num_metadata_rows);
-    for (size_t i = 0; i != num_metadata_rows; ++i)
-    {
-        tags_offsets->insert(tags_names->size());
-        time_series_offsets->insert(timestamps->size());
-    }
-
-    Columns tags_tuple_columns;
-    tags_tuple_columns.push_back(std::move(tags_names));
-    tags_tuple_columns.push_back(std::move(tags_values));
-    auto tags_column = ColumnMap::create(
-        ColumnArray::create(ColumnTuple::create(std::move(tags_tuple_columns)), std::move(tags_offsets)));
-
-    Columns time_series_tuple_columns;
-    time_series_tuple_columns.push_back(std::move(timestamps));
-    time_series_tuple_columns.push_back(std::move(values));
-    auto time_series_column = ColumnArray::create(
-        ColumnTuple::create(std::move(time_series_tuple_columns)), std::move(time_series_offsets));
-
-    Block block;
-    block.insert(ColumnWithTypeAndName{std::move(metric_name_column), metric_name_type, TimeSeriesColumnNames::MetricName});
-    block.insert(ColumnWithTypeAndName{std::move(tags_column), tags_type, TimeSeriesColumnNames::Tags});
-    block.insert(ColumnWithTypeAndName{std::move(time_series_column), time_series_type, samples_column_name});
-    return block;
+    return builder.finish(num_metadata_rows, samples_column_name);
 }
 
+struct MetricsMetadata
+{
+    std::string_view metric_family_name;
+    std::string_view type;
+    std::string_view unit;
+    std::string_view help;
+};
+
 Block makeMetricsMetadataBlock(
-    const google::protobuf::RepeatedPtrField<prometheus::MetricMetadata> & metrics_metadata,
+    const std::vector<MetricsMetadata> & metrics_metadata,
     size_t num_time_series_rows,
     const StorageInMemoryMetadata & metadata)
 {
@@ -195,11 +238,10 @@ Block makeMetricsMetadataBlock(
 
     for (const auto & element : metrics_metadata)
     {
-        const auto metric_type = metricTypeToString(element.type());
-        metric_family_column->insertData(element.metric_family_name().data(), element.metric_family_name().size());
-        type_column->insertData(metric_type.data(), metric_type.size());
-        unit_column->insertData(element.unit().data(), element.unit().size());
-        help_column->insertData(element.help().data(), element.help().size());
+        metric_family_column->insertData(element.metric_family_name.data(), element.metric_family_name.size());
+        type_column->insertData(element.type.data(), element.type.size());
+        unit_column->insertData(element.unit.data(), element.unit.size());
+        help_column->insertData(element.help.data(), element.help.size());
     }
 
     Block block;
@@ -231,10 +273,88 @@ Block makeBlock(
     }
     if (!metrics_metadata.empty())
     {
+        std::vector<MetricsMetadata> converted_metadata;
+        converted_metadata.reserve(metrics_metadata.size());
+        for (const auto & element : metrics_metadata)
+            converted_metadata.emplace_back(
+                element.metric_family_name(), metricTypeToString(element.type()), element.unit(), element.help());
         appendBlock(
             block,
-            makeMetricsMetadataBlock(metrics_metadata, time_series.size(), metadata));
+            makeMetricsMetadataBlock(converted_metadata, time_series.size(), metadata));
     }
+    return block;
+}
+
+size_t countFloatTimeSeries(const io::prometheus::write::v2::Request & request)
+{
+    size_t count = 0;
+    for (const auto & element : request.timeseries())
+        count += !element.samples().empty();
+    return count;
+}
+
+Block makeBlock(
+    const io::prometheus::write::v2::Request & request,
+    const StorageInMemoryMetadata & metadata,
+    const String & samples_column_name)
+{
+    const auto num_time_series = countFloatTimeSeries(request);
+    const auto & symbols = request.symbols();
+    const auto lookup = [&](UInt32 ref) -> const std::string &
+    {
+        if (ref >= static_cast<UInt32>(symbols.size()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Prometheus remote write v2 symbol reference {}", ref);
+        return symbols[static_cast<int>(ref)];
+    };
+
+    std::vector<MetricsMetadata> metrics_metadata;
+    for (const auto & element : request.timeseries())
+    {
+        if (!element.has_metadata())
+            continue;
+        if (element.labels_refs_size() % 2 != 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 labels_refs size must be even");
+
+        std::string_view metric_name;
+        for (int i = 0; i < element.labels_refs_size(); i += 2)
+        {
+            const auto & name = lookup(element.labels_refs(i));
+            const auto & value = lookup(element.labels_refs(i + 1));
+            if (name == TimeSeriesTagNames::MetricName)
+                metric_name = value;
+        }
+
+        const auto & element_metadata = element.metadata();
+        metrics_metadata.emplace_back(
+            metric_name,
+            metricTypeToString(element_metadata.type()),
+            lookup(element_metadata.unit_ref()),
+            lookup(element_metadata.help_ref()));
+    }
+    if (!num_time_series && metrics_metadata.empty())
+        return {};
+
+    Block block;
+    if (num_time_series)
+    {
+        TimeSeriesBlockBuilder builder(num_time_series + metrics_metadata.size(), metadata, samples_column_name);
+        for (const auto & element : request.timeseries())
+        {
+            if (element.samples().empty())
+                continue;
+            if (element.labels_refs_size() % 2 != 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 labels_refs size must be even");
+
+            for (int i = 0; i < element.labels_refs_size(); i += 2)
+                builder.addLabel(lookup(element.labels_refs(i)), lookup(element.labels_refs(i + 1)));
+            for (const auto & sample : element.samples())
+                builder.addSample(sample.timestamp(), sample.value());
+            builder.finishTimeSeries(ErrorCodes::BAD_ARGUMENTS);
+        }
+        appendBlock(block, builder.finish(metrics_metadata.size(), samples_column_name));
+    }
+    if (!metrics_metadata.empty())
+        appendBlock(block, makeMetricsMetadataBlock(metrics_metadata, num_time_series, metadata));
     return block;
 }
 
@@ -334,6 +454,45 @@ void PrometheusRemoteWriteProtocol::write(
         storage_id.getNameForLogs(),
         time_series.size(),
         metrics_metadata.size());
+}
+
+size_t PrometheusRemoteWriteProtocol::write(const io::prometheus::write::v2::Request & request)
+{
+    size_t samples_written = 0;
+    for (const auto & element : request.timeseries())
+    {
+        if (element.exemplars_size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 exemplars are not supported");
+        if (element.histograms_size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 native histograms are not supported");
+        if (element.samples().empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 time series must contain samples");
+        for (const auto & sample : element.samples())
+        {
+            if (sample.start_timestamp())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prometheus remote write v2 sample start timestamps are not supported");
+            ++samples_written;
+        }
+    }
+
+    const auto storage_id = time_series_storage->getStorageID();
+    const auto num_time_series = countFloatTimeSeries(request);
+    LOG_TRACE(
+        log,
+        "{}: Writing {} time series",
+        storage_id.getNameForLogs(),
+        num_time_series);
+
+    auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
+    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
+    insertBlock(makeBlock(request, *metadata, samples_column_name), *time_series_storage, getContext());
+
+    LOG_TRACE(
+        log,
+        "{}: {} time series written",
+        storage_id.getNameForLogs(),
+        num_time_series);
+    return samples_written;
 }
 
 }

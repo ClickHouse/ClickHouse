@@ -34,7 +34,7 @@ Enable the `enable_time_series_table` setting for the user that creates and acce
 SET enable_time_series_table = 1;
 ```
 
-For HTTP API requests, enable `enable_time_series_table` in the profile of the API user.
+For HTTP API requests, enable `enable_time_series_table` in the profile of the API user. To accept Remote Write 2.0, also enable `enable_prometheus_remote_write_v2` in that profile.
 
 ### Self-managed: configure the Prometheus API endpoints {#configure-prometheus-api}
 
@@ -108,6 +108,35 @@ remote_write:
 ```
 
 Prometheus sends samples to the `prometheus.metrics` table.
+
+Remote Write 1.0 is enabled by default. To accept Remote Write 2.0 (`io.prometheus.write.v2.Request`), enable `enable_prometheus_remote_write_v2` for the API user:
+
+```sql
+SET enable_prometheus_remote_write_v2 = 1;
+```
+
+Remote Write 2.0 support is float-only. ClickHouse stores float samples and metric metadata.
+ClickHouse rejects the complete request when native histograms are present.
+ClickHouse rejects the complete request when exemplars are present.
+ClickHouse rejects the complete request when a sample has a nonzero `start_timestamp`.
+Senders can set `send_exemplars: false` to omit exemplars.
+
+Prometheus `send_native_histograms` is a no-op for `io.prometheus.write.v2.Request`, so a sender cannot use it to omit native histograms.
+A sender drops native histogram series with a `write_relabel_configs` rule on the `__type__` label.
+Prometheus sets `__type__` only when it runs with `--enable-feature=type-and-unit-labels`.
+Without that feature flag the rule matches nothing, and ClickHouse rejects every request that carries a native histogram.
+The rule removes the complete series, not only its histogram samples.
+
+```yaml
+remote_write:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics
+    protobuf_message: io.prometheus.write.v2.Request
+    send_exemplars: false
+    write_relabel_configs:
+      - source_labels: [__type__]
+        regex: histogram|gaugehistogram
+        action: drop
+```
 
 To batch data from many concurrent remote-write requests into fewer parts, enable [asynchronous inserts](/reference/settings/session-settings/async-insert#async_insert) by adding the `async_insert` setting to the URL (or by enabling it in the user profile):
 
