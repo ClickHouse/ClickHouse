@@ -282,7 +282,7 @@ void validateMutationsAllowed(const CommandSegments & segments, const DatabasePt
     }
 }
 
-void validateReplicatedDatabaseSegments(const CommandSegments & segments, const DatabasePtr & database)
+void validateReplicatedDatabaseSegments(const CommandSegments & segments, const DatabasePtr & database, const StoragePtr & table)
 {
     if (!typeid_cast<DatabaseReplicated *>(database.get()))
         return;
@@ -291,9 +291,11 @@ void validateReplicatedDatabaseSegments(const CommandSegments & segments, const 
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED,
             "For Replicated databases it's not allowed to execute ALTERs of different types in single query");
 
+    const bool column_comments_are_replicated = table->supportsReplication();
     for (const auto & segment : segments)
         if (const auto * alter_commands = std::get_if<AlterCommands>(&segment))
-            if (alter_commands->hasNonReplicatedAlterCommand() && !alter_commands->areNonReplicatedAlterCommands())
+            if (alter_commands->hasNonReplicatedAlterCommand(column_comments_are_replicated)
+                && !alter_commands->areNonReplicatedAlterCommands(column_comments_are_replicated))
                 throw Exception(ErrorCodes::QUERY_IS_PROHIBITED,
                     "For Replicated databases it's not allowed "
                     "to execute ALTERs of different types (replicated and non replicated) in single query");
@@ -611,7 +613,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     auto segments = parseAlterCommandSegments(alter, table, getContext());
     validateSegmentsCombination(segments);
     validateMutationsAllowed(segments, database, getContext());
-    validateReplicatedDatabaseSegments(segments, database);
+    validateReplicatedDatabaseSegments(segments, database, table);
 
     {
         auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);

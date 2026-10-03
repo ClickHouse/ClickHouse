@@ -597,9 +597,11 @@ private:
     ZooKeeperRetriesInfo getCreateQueryZooKeeperRetriesInfo() const;
     void clearCreateQueryZooKeeperRetriesInfo();
 
+    /// If `columns_from_zk` is not null, it is filled with the columns read from ZooKeeper.
     bool checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check,
-                             const ZooKeeperRetriesInfo & zookeeper_retries_info);
-    bool checkTableStructureAttempt(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check) const;
+                             const ZooKeeperRetriesInfo & zookeeper_retries_info, ColumnsDescription * columns_from_zk = nullptr);
+    bool checkTableStructureAttempt(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check,
+                                    ColumnsDescription * columns_from_zk_out) const;
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
     /// Must be called under IStorage::lockForAlter() lock.
