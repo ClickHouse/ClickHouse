@@ -1362,6 +1362,11 @@ Write column index and offset index (i.e. statistics about each data page, which
 Write bloom filters in parquet files.
 )", 0, \
         {"25.2", false, true, "Added support for writing Parquet bloom filters."}) \
+    DECLARE(Bool, output_format_parquet_enable_alp, false, R"(
+Enable ALP encoding for FLOAT and DOUBLE columns when writing Parquet. Opt-in: ALP is a
+Preview encoding in the Parquet spec and most readers cannot yet decode it.
+)", 0, \
+        {"26.10", false, false, "New setting: opt-in ALP encoding for float/double columns in Parquet output."}) \
     DECLARE(Double, output_format_parquet_bloom_filter_bits_per_value, 10.5, R"(
 Approximate number of bits to use for each distinct value in parquet bloom filters. Estimated false positive rates:
   *  6   bits - 10%

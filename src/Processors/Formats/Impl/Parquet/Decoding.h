@@ -18,6 +18,8 @@ class IDataType;
 namespace DB::Parquet
 {
 
+static constexpr parq::Encoding::type ALP_ENCODING = static_cast<parq::Encoding::type>(10);
+
 struct PageDecoderInfo;
 
 struct Dictionary
