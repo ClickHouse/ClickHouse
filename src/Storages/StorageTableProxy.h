@@ -97,7 +97,28 @@ public:
         return loaded && loaded->isDroppedOrDetached();
     }
 
+    /// Same as isDroppedOrDetached: `SYSTEM RESTART REPLICA` marks the storage it resolves, which is
+    /// the loaded storage once the proxy has been replaced.
+    bool isBeingRestarted() const override
+    {
+        if (IStorage::isBeingRestarted()) // NOLINT(bugprone-parent-virtual-call)
+            return true;
+        auto loaded = getLoadedLazyTable();
+        return loaded && loaded->isBeingRestarted();
+    }
+
     StoragePtr loadLazyTable() const override { return getNested(); }
+
+    /// `SYSTEM START ...` may lift an action lock through a proxy it resolved before the replacement,
+    /// e.g. from a database-wide snapshot of the tables. The lock itself is keyed by the loaded storage
+    /// (see `ActionLocksManager`), and the wake-up has to reach that storage as well, otherwise the
+    /// background work it reschedules stays asleep. A proxy that has not been loaded cannot hold an
+    /// action lock, so there is nothing to wake up, and nothing is loaded here.
+    void onActionLockRemove(StorageActionBlockType action_type) override
+    {
+        if (auto loaded = getLoadedLazyTable())
+            loaded->onActionLockRemove(action_type);
+    }
 
     /// `StorageProxy` forwards `mutate`, but not the checks that gate a mutation, an UPDATE or a
     /// DELETE. Without these, the first such statement addressed to a table that has not been loaded

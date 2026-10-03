@@ -749,6 +749,11 @@ public:
     virtual bool isDroppedOrDetached() const { return is_dropped || is_detached; }
     std::atomic<bool> is_being_restarted{false};
 
+    /// Whether the table this storage stands for is being restarted (`SYSTEM RESTART REPLICA`).
+    /// Checked by lockForShare and tryLockForShare. Overridden by `StorageTableProxy` for the same
+    /// reason as isDroppedOrDetached.
+    virtual bool isBeingRestarted() const { return is_being_restarted; }
+
     /** A list of tasks to check a validity of data.
       * Each IStorage implementation may interpret this task in its own way.
       * E.g. for some storages it's a list of files in filesystem, for others it can be a list of parts.
