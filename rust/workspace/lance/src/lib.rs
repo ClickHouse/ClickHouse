@@ -2328,6 +2328,15 @@ unsafe fn ch_lance_next_batch_impl(
         duration_microseconds(wait_started.elapsed()),
         Ordering::Relaxed,
     );
+    // Account the pop while still holding the receiver lock. Otherwise another consumer can
+    // receive `End` and snapshot the stats before this batch is counted as popped.
+    if let Ok(Some(ScanMessage::Batch(envelope))) = &next {
+        scan.stats.queued_batches.fetch_sub(1, Ordering::Relaxed);
+        scan.stats
+            .queued_bytes
+            .fetch_sub(envelope.bytes, Ordering::Relaxed);
+        scan.stats.queue_pop_batches.fetch_add(1, Ordering::Relaxed);
+    }
     drop(receiver);
 
     let next = match next {
@@ -2345,11 +2354,6 @@ unsafe fn ch_lance_next_batch_impl(
             false
         }
         Some(ScanMessage::Batch(envelope)) => {
-            scan.stats.queued_batches.fetch_sub(1, Ordering::Relaxed);
-            scan.stats
-                .queued_bytes
-                .fetch_sub(envelope.bytes, Ordering::Relaxed);
-            scan.stats.queue_pop_batches.fetch_add(1, Ordering::Relaxed);
             scan.byte_budget.release(envelope.bytes);
             drop(envelope.batch_permit);
             scan.stats.in_flight_batches.fetch_add(1, Ordering::Relaxed);

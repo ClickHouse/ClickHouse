@@ -5,11 +5,14 @@ ENGINE = LanceLocal('tests/queries/0_stateless/data_lance/multi_frag.lance');
 
 SET log_queries = 1;
 
+-- `optimize_trivial_count_query` and `optimize_count_from_files` are randomized in CI and disable the count fast path.
 SELECT count()
 FROM lance_local_count_record_batch
 FORMAT Null
 SETTINGS
     enable_parallel_replicas = 0,
+    optimize_trivial_count_query = 1,
+    optimize_count_from_files = 1,
     log_comment = '04635_lance_fast_count';
 
 SELECT

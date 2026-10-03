@@ -64,10 +64,14 @@ SETTINGS
     lance_enable_fragment_parallelism = 0,
     log_comment = 'lance_frag_single_pack';
 
+-- `optimize_trivial_count_query` and `optimize_count_from_files` are randomized in CI and disable the count fast path.
 SELECT count()
 FROM lance_local_fragment_parallelism
 FORMAT Null
-SETTINGS log_comment = 'lance_frag_count_fast';
+SETTINGS
+    optimize_trivial_count_query = 1,
+    optimize_count_from_files = 1,
+    log_comment = 'lance_frag_count_fast';
 
 SYSTEM FLUSH LOGS query_log;
 
