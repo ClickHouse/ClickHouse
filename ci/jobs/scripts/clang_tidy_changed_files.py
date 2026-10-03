@@ -68,7 +68,22 @@ TIDY_CONFIG_PATHS = (
     ".clang-tidy",
     "cmake/clang_tidy.cmake",
     "ci/jobs/scripts/clang_tidy_changed_files.py",
+    "ci/jobs/scripts/workflow_hooks/filter_job.py",
+    "ci/jobs/build_clickhouse.py",
 )
+# Inputs of code generators whose output is C++ that clang-tidy parses, mapped
+# to the suffixes of the headers generated from them: `Foo.proto` becomes
+# `Foo.pb.h` (and `Foo.grpc.pb.h` for a service), a `configure_file` template
+# `Foo.h.in` becomes `Foo.h`. A change to such an input touches no C++ file, yet
+# the code compiled against the regenerated header can stop compiling or start
+# triggering a check. The generated headers live in the build directory and are
+# not analyzed themselves, so a change to an input is covered through the
+# analyzed files that include its generated headers, as if those had changed.
+GENERATOR_INPUTS = {
+    ".proto": (".pb.h", ".grpc.pb.h"),
+    ".h.in": (".h",),
+}
+
 CANARY_TRANSLATION_UNITS = (
     "base/base/JSON.cpp",
     "src/Common/Exception.cpp",
@@ -165,6 +180,12 @@ def is_tidy_config_path(path):
     return path in TIDY_CONFIG_PATHS
 
 
+def is_generator_input(path):
+    """True for an input of a code generator that produces C++ clang-tidy parses."""
+    root = path.split("/", 1)[0]
+    return root in ANALYZED_ROOTS and path.endswith(tuple(GENERATOR_INPUTS))
+
+
 def normalize_changed_path(path):
     return path.removeprefix("./").removeprefix("/")
 
@@ -193,6 +214,66 @@ def changed_tidy_config_files(changed_files):
         for path in {normalize_changed_path(f) for f in changed_files}
         if is_tidy_config_path(path)
     )
+
+
+def generated_headers(path):
+    """The file names of the headers generated from the generator input `path`."""
+    for input_suffix, output_suffixes in GENERATOR_INPUTS.items():
+        if path.endswith(input_suffix):
+            stem = os.path.basename(path)[: -len(input_suffix)]
+            return [f"{stem}{suffix}" for suffix in output_suffixes]
+    return []
+
+
+def generated_header_consumers(changed_files, repo_dir, limit):
+    """Analyzed files that include a header generated from a changed input.
+
+    At most `limit` per generated header, translation units before headers, so
+    that a widely included one like `config.h` does not turn into a full check.
+    The include is matched by file name: the generated header is found through
+    the build directory's include path, so it is included by its name alone.
+    """
+    pathspecs = [
+        f"{root}/*{suffix}"
+        for root in ANALYZED_ROOTS
+        for suffix in SOURCE_SUFFIXES + HEADER_SUFFIXES
+    ]
+    consumers = set()
+    inputs = sorted(
+        path
+        for path in {normalize_changed_path(f) for f in changed_files}
+        if is_generator_input(path)
+    )
+    for path in inputs:
+        for header in generated_headers(path):
+            pattern = (
+                r'^[[:space:]]*#[[:space:]]*include[[:space:]]*[<"]([^">]*/)?'
+                + re.escape(header)
+                + '[">]'
+            )
+            completed = subprocess.run(
+                ["git", "grep", "--files-with-matches", "-E", "-e", pattern, "--"]
+                + pathspecs,
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            # `git grep` exits with 1 when nothing matches.
+            if completed.returncode not in (0, 1):
+                raise RuntimeError(
+                    f"git grep for includers of {header} failed: {completed.stderr}"
+                )
+            found = sorted(
+                (
+                    line.strip()
+                    for line in completed.stdout.splitlines()
+                    if line.strip()
+                ),
+                key=lambda f: (not f.endswith(SOURCE_SUFFIXES), f),
+            )
+            consumers.update(found[:limit])
+    return sorted(consumers)
 
 
 def load_compile_commands(build_dir):
@@ -577,8 +658,16 @@ def run(changed_files, repo_dir, build_dir, temp_dir):
     stop_watch = Utils.Stopwatch()
     changed = analyzable_changed_files(changed_files, repo_dir)
     config_changed = changed_tidy_config_files(changed_files)
+    consumers = generated_header_consumers(
+        changed_files, repo_dir, MAX_INCLUDERS_PER_HEADER
+    )
     print(f"Changed files clang-tidy analyzes: {changed}")
     print(f"Changed clang-tidy configuration files: {config_changed}")
+    print(f"Files including headers generated from changed inputs: {consumers}")
+    # The consumers are selected and reported as if they had changed: `master`
+    # is clean under the full check, so a diagnostic located in them is one the
+    # regenerated header introduced.
+    changed = sorted(set(changed) | set(consumers))
     if not changed and not config_changed:
         return Result.create_from(
             name=RESULT_NAME,
