@@ -2554,9 +2554,10 @@ try
     /// A materialized view's projections belong to its inner table. Its constructor creates
     /// that table through this same finalizer, so inspect the already-published inner metadata
     /// without installing declarations on the view or rewriting the inner table after publication.
+    const bool has_candidate_projections = !candidate_projections.empty() || candidate_projections.hasUnavailable();
     StoragePtr projection_storage = storage;
     bool projections_belong_to_inner_table = false;
-    if (!candidate_projections.empty() || candidate_projections.hasUnavailable())
+    if (has_candidate_projections)
         if (const auto * view = storage->as<StorageMaterializedView>(); view && view->hasInnerTable())
         {
             projection_storage = view->getTargetTable();
@@ -2589,20 +2590,27 @@ try
 
     /// Check the complete prepared candidate, including analyzed definitions. A new creator
     /// must not publish a storage that silently omitted one of its prepared projections.
-    const auto metadata = projection_storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
-    for (const auto & projection : candidate_projections)
-        if (!metadata->projections.has(projection.name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage omitted prepared projection {}", backQuote(projection.name));
-    for (const auto & definition : candidate_projections.getUnavailableDefinitions())
+    StorageMetadataHandle metadata;
+    if (has_candidate_projections)
     {
-        const auto & name = definition->as<const ASTProjectionDeclaration &>().name;
-        if (!metadata->projections.has(name) && !metadata->projections.isUnavailable(name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage omitted prepared projection {}", backQuote(name));
+        /// A lazy table function may resolve an external source when its metadata is read.
+        /// With no projection candidate there is nothing to compare, so leave it lazy.
+        metadata = projection_storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
+        for (const auto & projection : candidate_projections)
+            if (!metadata->projections.has(projection.name))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage omitted prepared projection {}", backQuote(projection.name));
+        for (const auto & definition : candidate_projections.getUnavailableDefinitions())
+        {
+            const auto & name = definition->as<const ASTProjectionDeclaration &>().name;
+            if (!metadata->projections.has(name) && !metadata->projections.isUnavailable(name))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage omitted prepared projection {}", backQuote(name));
+        }
     }
 
     validateVirtualColumns(*storage, context);
     checkForUnsupportedColumns(*storage, mode, context, is_temporary);
-    if (projection_source != ProjectionDefinitionSource::PreviouslyAccepted && !projections_belong_to_inner_table
+    if (has_candidate_projections
+        && projection_source != ProjectionDefinitionSource::PreviouslyAccepted && !projections_belong_to_inner_table
         && !context->getClientInfo().is_replicated_database_internal
         && !isSecondaryProjectionMetadataReplay(context))
         if (const auto * merge_tree = castStorage<MergeTreeData>(projection_storage, DeferredTable::Load).get())
