@@ -321,6 +321,15 @@ public:
     /// common object storages (S3, GCS, Azure) and the defaults of the corresponding settings.
     virtual size_t getListObjectsDefaultPageSize() const { return 1000; }
 
+    /// A hard upper bound on the bytes one object returned by `listObjectsSingleLevel` may add to a listed
+    /// batch beyond its fixed-size wrapper: its key plus its `ObjectMetadata` payload (`etag`, and `tags`
+    /// when `with_tags`), as charged by `ObjectStorageParallelListingIterator::batchBytes`. Derived from
+    /// the storage's documented limits (key length, tag count and lengths), not from observed objects, so
+    /// that the parallel listing can reserve its buffered-object byte budget for a page before listing it,
+    /// whatever the sizes of the objects listed so far. Storages implementing `listObjectsSingleLevel`
+    /// must override it.
+    virtual size_t getListedObjectPayloadBytesUpperBound(bool with_tags) const;
+
     /// List a single "directory level" under `path_prefix`, grouping deeper keys by `delimiter`.
     /// Unlike `listObjects`/`iterate` (which list recursively), this returns only the keys directly
     /// under the prefix together with the immediate sub-"directories" (common prefixes).

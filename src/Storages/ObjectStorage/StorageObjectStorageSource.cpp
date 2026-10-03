@@ -2094,7 +2094,11 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
             /// The count cap below scales with the user-set parallelism and page size, so on its own it
             /// would admit millions of buffered keys at extreme settings; the iterator's built-in
             /// buffered-object byte budget (`DEFAULT_MAX_BUFFERED_OBJECT_BYTES`) bounds the buffered-key
-            /// memory independently of these settings.
+            /// memory independently of these settings. Every listing reserves an a-priori upper bound of a
+            /// page against that budget, so pages bigger than the ones listed before them (longer keys, or
+            /// more tags) cannot overshoot it once per concurrent listing.
+            const size_t max_page_bytes_bound = ObjectStorageParallelListingIterator::pageBytesUpperBound(
+                page_size, object_storage->getListedObjectPayloadBytesUpperBound(with_tags));
             object_storage_iterator = std::make_shared<ObjectStorageParallelListingIterator>(
                 *listing_start_prefix,
                 parallelism,
@@ -2112,7 +2116,8 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
                 /// level into every matching directory only to surface its marker. Tell the iterator so
                 /// that such a range stops after its first page instead of paginating (and splitting) the
                 /// whole subtree to prove a marker is absent.
-                makeIsMarkerOnlyPrefixPredicate(key_with_globs.path));
+                makeIsMarkerOnlyPrefixPredicate(key_with_globs.path),
+                max_page_bytes_bound);
         }
         else
         {

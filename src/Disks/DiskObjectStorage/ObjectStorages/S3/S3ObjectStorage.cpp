@@ -387,6 +387,21 @@ size_t S3ObjectStorage::getListObjectsDefaultPageSize() const
     return s3_settings.get()->request_settings[S3RequestSetting::list_object_keys_size];
 }
 
+size_t S3ObjectStorage::getListedObjectPayloadBytesUpperBound(bool with_tags) const
+{
+    static constexpr size_t max_key_bytes = 1024;
+    /// A quoted 32-character MD5 plus a `-<parts>` suffix is 45 bytes at most; leave room for compatible
+    /// storages with slightly longer ones.
+    static constexpr size_t max_etag_bytes = 128;
+    static constexpr size_t max_tags = 10;
+    static constexpr size_t max_tag_bytes = sizeof(ObjectAttributes::value_type) + 4 * (128 + 256);
+
+    size_t bytes = max_key_bytes + max_etag_bytes;
+    if (with_tags)
+        bytes += max_tags * max_tag_bytes;
+    return bytes;
+}
+
 void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     auto settings_ptr = s3_settings.get();

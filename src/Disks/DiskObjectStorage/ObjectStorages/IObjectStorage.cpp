@@ -39,6 +39,11 @@ ObjectStorageListResult IObjectStorage::listObjectsSingleLevel(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjectsSingleLevel() is not supported");
 }
 
+size_t IObjectStorage::getListedObjectPayloadBytesUpperBound(bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getListedObjectPayloadBytesUpperBound() is not supported");
+}
+
 /// Read single object
 SmallObjectDataWithMetadata IObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
     const StoredObject & object,

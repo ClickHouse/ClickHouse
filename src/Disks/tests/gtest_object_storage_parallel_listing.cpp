@@ -9,6 +9,7 @@
 #include <atomic>
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <future>
 #include <limits>
 #include <memory>
@@ -64,6 +65,9 @@ struct FakeS3
     /// accounting need objects whose metadata dwarfs the path.
     std::string object_etag;
     ObjectAttributes object_tags;
+    /// If set, only the objects whose key it accepts carry the payload above (to model listings whose
+    /// later pages are much bigger than the earlier ones).
+    std::function<bool(const std::string & key)> has_metadata;
 
     void add(std::string key) { keys.push_back(std::move(key)); }
 
@@ -160,7 +164,7 @@ struct FakeS3
                 return res;
             }
             std::optional<ObjectMetadata> metadata;
-            if (!object_etag.empty() || !object_tags.empty())
+            if ((!object_etag.empty() || !object_tags.empty()) && (!has_metadata || has_metadata(key)))
             {
                 metadata.emplace();
                 metadata->etag = object_etag;
@@ -762,6 +766,80 @@ TEST(ObjectStorageParallelListing, BufferedObjectByteBudgetBoundsMetadataHeavyLi
         /// The bound above must not be trivially satisfiable by ignoring the metadata: even a lone page
         /// of 10 objects carries ~26 KiB of metadata payload, above the whole budget.
         EXPECT_GE(peak, s3.page_size * metadata_payload) << "threads=" << threads;
+    }
+}
+
+TEST(ObjectStorageParallelListing, BufferedObjectByteBudgetBoundsSkewedPageSizes)
+{
+    /// Regression test: the reservation a worker makes before listing a page must bound the page whatever
+    /// the sizes of the pages listed before it. Here the first page of every directory is small (plain
+    /// keys), and the second one is metadata-heavy (as with a `_tags` scan over objects with big tag sets).
+    /// If the reservation were only the largest page listed so far, every worker admitted against the small
+    /// early pages could then list a heavy page at once, and the buffer would overshoot the budget by one
+    /// heavy page per concurrent listing. With the caller's a-priori page bound (`pageBytesUpperBound`),
+    /// the overshoot stays within one page, whatever the number of threads.
+    FakeS3 s3;
+    s3.page_size = 50;
+    s3.object_etag = std::string(512, 'e');
+    for (size_t i = 0; i < 16; ++i)
+        s3.object_tags["tag" + std::to_string(i)] = std::string(96, 't');
+    s3.has_metadata = [](const std::string & key) { return key.find("/heavy") != std::string::npos; };
+    constexpr size_t num_dirs = 200;
+    for (size_t d = 0; d < num_dirs; ++d)
+    {
+        for (size_t k = 0; k < s3.page_size; ++k)
+        {
+            s3.add(fmt::format("skew/d{:04}/a{:04}", d, k));
+            s3.add(fmt::format("skew/d{:04}/heavy{:04}", d, k));
+        }
+    }
+    s3.finalize();
+    const auto expected = expectedUnder(s3, "skew/");
+
+    size_t max_object_payload_bytes = std::string("skew/d0000/heavy0000").size() + s3.object_etag.size();
+    for (const auto & [key, value] : s3.object_tags)
+        max_object_payload_bytes += sizeof(ObjectAttributes::value_type) + key.size() + value.size();
+    const size_t page_bound = ObjectStorageParallelListingIterator::pageBytesUpperBound(s3.page_size, max_object_payload_bytes);
+
+    /// Room for a few light pages (so an estimate learned from them would admit several listings at once),
+    /// but below the bound of a single page, so only a lone listing may run at any time.
+    constexpr size_t budget = 64 * 1024;
+    ASSERT_GT(page_bound, budget);
+    for (size_t threads : {4, 16, 64})
+    {
+        std::atomic<size_t> listings_in_flight{0};
+        std::atomic<size_t> max_listings_in_flight{0};
+        auto list_level = [&s3, &listings_in_flight, &max_listings_in_flight](
+            const std::string & prefix, const std::string & delimiter, const std::string & start_after, const std::string & token)
+        {
+            const size_t in_flight = listings_in_flight.fetch_add(1) + 1;
+            size_t observed = max_listings_in_flight.load();
+            while (observed < in_flight && !max_listings_in_flight.compare_exchange_weak(observed, in_flight))
+            {
+            }
+            auto result = s3.list(prefix, delimiter, start_after, token);
+            listings_in_flight.fetch_sub(1);
+            return result;
+        };
+
+        ObjectStorageParallelListingIterator iterator(
+            "skew/", threads, /* max_buffered_keys */ std::numeric_limits<size_t>::max(),
+            list_level, makeProbeLevel(s3), descendAll,
+            /* allow_keyspace_split */ true, /* check_cancellation */ {},
+            ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES, budget,
+            /* allow_start_after */ true, /* root_range_end */ {}, /* is_marker_only_prefix */ {},
+            page_bound);
+        auto got = drain(iterator);
+        std::sort(got.begin(), got.end());
+        EXPECT_EQ(got, expected) << "threads=" << threads;
+
+        const size_t peak = iterator.getPeakBufferedObjectBytes();
+        EXPECT_LE(peak, budget + page_bound)
+            << "buffered-object bytes grew to " << peak << " despite a budget of " << budget
+            << " (threads=" << threads << ")";
+        /// The reservation is the a-priori bound from the very first page, not the size of the small
+        /// pages listed so far, so no second listing is ever admitted next to a running one.
+        EXPECT_EQ(max_listings_in_flight.load(), 1) << "threads=" << threads;
     }
 }
 

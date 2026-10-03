@@ -126,6 +126,11 @@ public:
     /// The same fallback `iterate` and `listObjectsSingleLevel` apply to `max_keys = 0`.
     size_t getListObjectsDefaultPageSize() const override;
 
+    /// From the limits of S3: a key of at most 1024 bytes, an `ETag` (a quoted MD5, with a part-count
+    /// suffix for multipart uploads), and at most 10 tags per object of at most 128 + 256 Unicode
+    /// characters (up to 4 bytes each in UTF-8).
+    size_t getListedObjectPayloadBytesUpperBound(bool with_tags) const override;
+
     ObjectStorageListResult listObjectsSingleLevel(
         const std::string & path_prefix,
         const std::string & delimiter,

@@ -53,10 +53,12 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     size_t max_buffered_object_bytes_,
     bool allow_start_after_,
     std::string root_range_end_,
-    std::function<bool(const std::string & common_prefix)> is_marker_only_prefix_)
+    std::function<bool(const std::string & common_prefix)> is_marker_only_prefix_,
+    size_t max_page_bytes_bound_)
     : num_threads(std::max<size_t>(num_threads_, 1))
     , max_buffered_objects(std::max<size_t>(max_buffered_keys_, 1))
     , max_buffered_object_bytes(std::max<size_t>(max_buffered_object_bytes_, 1))
+    , max_page_bytes_bound(max_page_bytes_bound_)
     /// Keep the shared queue big enough to feed every worker with stealable work, but bounded (independent
     /// of the listing size): the bulk of a wide walk lives on the workers' private depth-first frontiers.
     , max_pending_ranges(std::max<size_t>(num_threads * 4, 64))
@@ -132,6 +134,13 @@ size_t ObjectStorageParallelListingIterator::batchBytes(const RelativePathsWithM
         }
     }
     return bytes;
+}
+
+size_t ObjectStorageParallelListingIterator::pageBytesUpperBound(size_t max_keys, size_t max_object_payload_bytes)
+{
+    /// Mirrors `batchBytes`. A batch is built by `push_back`, so its capacity is below twice its size.
+    return sizeof(RelativePathsWithMetadata)
+        + max_keys * (2 * sizeof(RelativePathWithMetadataPtr) + sizeof(RelativePathWithMetadata) + max_object_payload_bytes);
 }
 
 ObjectStorageParallelListingIterator::~ObjectStorageParallelListingIterator()
@@ -721,9 +730,15 @@ bool ObjectStorageParallelListingIterator::canStartListingLocked() const
         return false;
     if (listings_in_flight == 0)
         return true;
-    if (max_page_bytes == 0)
+    const size_t reservation = pageReservationLocked();
+    if (reservation == 0)
         return false;
-    return buffered_object_bytes + (listings_in_flight + 1) * max_page_bytes <= max_buffered_object_bytes;
+    return buffered_object_bytes + (listings_in_flight + 1) * reservation <= max_buffered_object_bytes;
+}
+
+size_t ObjectStorageParallelListingIterator::pageReservationLocked() const
+{
+    return std::max(max_page_bytes_bound, max_page_bytes);
 }
 
 std::optional<RelativePathsWithMetadata> ObjectStorageParallelListingIterator::popBatch(std::unique_lock<std::mutex> & lock)
