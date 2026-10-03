@@ -25,8 +25,6 @@
 #include <base/defines.h>
 #include <base/extended_types.h>
 
-#include <mutex>
-
 #include "config.h"
 
 #if USE_JEMALLOC
