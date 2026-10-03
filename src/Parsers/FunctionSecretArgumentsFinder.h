@@ -91,8 +91,9 @@ public:
     FunctionSecretArgumentsFinder::Result getResult() const { return result; }
 
     /// Whether a key of the `extra_credentials(..)` nested map carries a non-secret identifier whose
-    /// value stays visible when the map is masked. Only `role_arn` qualifies: it names the role to
-    /// assume, like `access_key_id` names a key. The other two keys of the assume-role triple are
+    /// value stays visible when the map is masked. `role_arn` names the role to assume, like
+    /// `access_key_id` names a key; `client_id` / `tenant_id` are the Azure AD identifiers Azure's
+    /// `extra_credentials` reads (not secrets). The other two keys of the assume-role triple are
     /// secrets: `external_id` is its shared secret, and `role_session_name` can be one too, because a
     /// trust policy can require a specific value through the `sts:RoleSessionName` condition (the
     /// ClickHouse Cloud guide documents exactly this use). Any other key - unknown, malformed or an
@@ -101,7 +102,7 @@ public:
     /// on purpose, so that a role-authenticated backup chain stays restorable (see `BackupInfo.cpp`).
     static bool isNonSecretExtraCredentialsKey(std::string_view key)
     {
-        return key == "role_arn";
+        return key == "role_arn" || key == "client_id" || key == "tenant_id";
     }
 
 protected:
@@ -186,11 +187,12 @@ protected:
     void findXDBCSecretArguments();
     void findS3FunctionSecretArguments(bool is_cluster_function);
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function);
-    /// The raw indexes of the arguments `AzureStorageParsedArguments::fromAST` assigns slots to: no
-    /// `extra_credentials(...)` and no `key = value`. Hides every `key = value` value the explicit form
+    /// The raw indexes of the arguments the explicit form assigns positional slots to: all but
+    /// `extra_credentials(...)` and `key = value`. Hides every `key = value` value the explicit form
     /// does not read, and every argument when the slots cannot be established.
     std::vector<size_t> azurePositionalArguments();
-    /// The explicit-url form of every Azure table function and engine, `url` at slot `url_slot`.
+    /// The explicit-url form of the Azure table functions and the `AzureBlobStorage`/`AzureQueue`
+    /// engines, `url` at slot `url_slot`.
     void findAzurePositionalSecretArguments(size_t url_slot);
     bool maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0);
     /// Whether the arguments an `AzureBlobStorage(named_collection, ...)` destination or table takes

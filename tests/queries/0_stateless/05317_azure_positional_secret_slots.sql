@@ -17,6 +17,21 @@ SELECT count() FROM (EXPLAIN AST SELECT * FROM azureBlobStorage('http://localhos
 SELECT count() FROM (EXPLAIN AST SELECT * FROM azureBlobStorage('http://localhost:11111/visible_g4', 'visible_g4_cont', 'visible_g4_blob', extra_credentials(client_id = 'visible_g4_cid', tenant_id = 'visible_g4_tid'), 'visible_g4_acct', 'SEKRIT_G4'));
 EXPLAIN AST CREATE TABLE t_e2 (x UInt8) ENGINE = AzureBlobStorage('http://localhost:11111/visible_e2/cont/data.csv', 'sp=r&sig=SEKRIT_E2', extra_credentials(client_id = 'visible_e2_cid', tenant_id = 'visible_e2_tid'));
 EXPLAIN AST CREATE TABLE t_g2 (x UInt8) ENGINE = AzureBlobStorage('http://localhost:11111/visible_g2', extra_credentials(client_id = 'visible_g2_cid', tenant_id = 'visible_g2_tid'), 'visible_g2_cont', 'visible_g2_blob', 'visible_g2_acct', 'SEKRIT_G2');
+-- Only the first one is taken out, so with two the slots cannot be established and every argument is hidden.
+SELECT count() FROM (EXPLAIN AST SELECT * FROM azureBlobStorage('http://localhost:11111/url_m2', 'cont_m2', 'blob_m2', extra_credentials(client_id = 'visible_m2_cid'), extra_credentials(tenant_id = 'visible_m2_tid'), 'SEKRIT_M2P', 'SEKRIT_M2S'));
+
+-- Inside `extra_credentials(...)` only `client_id` and `tenant_id` are shown.
+SELECT count() FROM (EXPLAIN AST SELECT * FROM azureBlobStorage('http://localhost:11111/visible_x1/cont/data.csv', 'sp=r&sig=SEKRIT_X1S', extra_credentials(client_id = 'visible_x1_cid', client_secret = 'SEKRIT_X1')));
+EXPLAIN AST CREATE TABLE t_x2 (x UInt8) ENGINE = AzureBlobStorage('http://localhost:11111/visible_x2', 'visible_x2_cont', 'visible_x2_blob', 'CSV', extra_credentials(tenant_id = 'visible_x2_tid', client_secret = 'SEKRIT_X2'));
+
+-- A connection string is read part by part and a repeated key keeps its last value, so every
+-- `AccountKey` and `SharedAccessSignature` is hidden, and so is an endpoint url with a query.
+SELECT count() FROM (EXPLAIN AST SELECT * FROM azureBlobStorage('DefaultEndpointsProtocol=http;AccountName=visible_cs1;AccountKey=SEKRIT_CS1K;SharedAccessSignature=sp=r&sig=SEKRIT_CS1S;BlobEndpoint=http://localhost:11111/visible_cs1;', 'visible_cs1_cont', 'visible_cs1_blob', 'CSV'));
+SELECT count() FROM (EXPLAIN AST SELECT * FROM azureBlobStorage('AccountName=visible_cs2;BlobEndpoint=http://localhost:11111/visible_cs2/?sp=r&sig=SEKRIT_CS2;', 'visible_cs2_cont', 'visible_cs2_blob'));
+SELECT count() FROM (EXPLAIN AST SELECT * FROM azureBlobStorage('AccountName=visible_cs3;AccountKey=SEKRIT_CS3A;AccountKey=SEKRIT_CS3B;', 'visible_cs3_cont', 'visible_cs3_blob', 'CSV'));
+EXPLAIN AST CREATE TABLE t_cs4 (x UInt8) ENGINE = AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=visible_cs4;AccountKey=SEKRIT_CS4K;SharedAccessSignature=sp=r&sig=SEKRIT_CS4S;BlobEndpoint=http://localhost:11111/visible_cs4;', 'visible_cs4_cont', 'visible_cs4_blob', 'CSV');
+SELECT count() FROM (EXPLAIN AST SELECT * FROM azureBlobStorage(nc_05317_missing, connection_string = 'AccountName=visible_cs5;AccountKey=SEKRIT_CS5K;SharedAccessSignature=sp=r&sig=SEKRIT_CS5S', container = 'visible_cs5_cont', blob_path = 'visible_cs5_blob'));
+EXPLAIN AST CREATE TABLE t_cs6 (x UInt8) ENGINE = AzureQueue('http://localhost:11111/visible_cs6', 'visible_cs6_cont', '*', 'CSV') SETTINGS mode = 'unordered', after_processing = 'move', after_processing_move_connection_string = 'BlobEndpoint=http://localhost:11111/visible_cs6/?sp=r&sig=SEKRIT_CS6;AccountKey=SEKRIT_CS6A;AccountKey=SEKRIT_CS6B';
 
 -- Neither does a `key = value` argument, and the value of a key the explicit form does not read is hidden.
 SELECT count() FROM (EXPLAIN AST SELECT * FROM azureBlobStorage('http://localhost:11111/visible_f1/cont/data.csv', 'sp=r&sig=SEKRIT_F1', partition_strategy = 'none'));

@@ -724,6 +724,8 @@ void FunctionSecretArgumentsFinder::findS3FunctionSecretArguments(bool is_cluste
 
 void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function)
 {
+    maskNestedSecretMaps();
+
     /// azureBlobStorageCluster('cluster_name', 'conn_string/storage_account_url', ...) has 'conn_string/storage_account_url' as its second argument.
     size_t url_arg_idx = is_cluster_function ? 1 : 0;
 
@@ -849,17 +851,7 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
 
     if (!url_arg.starts_with("http"))
     {
-        if (maskConnectionStringKey(url_arg, "AccountKey="))
-        {
-            chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
-            result.start = url_arg_idx;
-            result.are_named = argument_is_named;
-            result.count = 1;
-            result.replacement = url_arg;
-            return true;
-        }
-
-        if (maskConnectionStringKey(url_arg, "SharedAccessSignature="))
+        if (maskAzureConnectionStringSecrets(url_arg))
         {
             chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
             result.start = url_arg_idx;
@@ -1307,6 +1299,8 @@ void FunctionSecretArgumentsFinder::findS3TableEngineSecretArguments()
 
 void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArguments()
 {
+    maskNestedSecretMaps();
+
    /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format, [account_name, account_key, ...])
     size_t url_arg_idx = 0;
 
