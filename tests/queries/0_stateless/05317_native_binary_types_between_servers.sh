@@ -49,4 +49,10 @@ $CLIENT_BINARY_TYPES --query_kind secondary_query -q "INSERT INTO t_dst VALUES (
 $CLIENT_BINARY_TYPES --query_kind secondary_query -q "SELECT d, dynamicType(d) FROM t_src ORDER BY toString(d) SETTINGS enable_parallel_replicas = 0"
 $CLICKHOUSE_CLIENT -q "SELECT x FROM t_dst ORDER BY x"
 
+echo 'flags from a user profile'
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS user_${CLICKHOUSE_DATABASE}_05317; CREATE USER user_${CLICKHOUSE_DATABASE}_05317 SETTINGS output_format_native_encode_types_in_binary_format = 1, input_format_native_decode_types_in_binary_format = 1; GRANT SELECT, INSERT ON ${CLICKHOUSE_DATABASE}.* TO user_${CLICKHOUSE_DATABASE}_05317"
+$CLICKHOUSE_CLIENT --user "user_${CLICKHOUSE_DATABASE}_05317" -q "INSERT INTO t_dst VALUES (9)"
+$CLICKHOUSE_CLIENT --user "user_${CLICKHOUSE_DATABASE}_05317" -q "SELECT d, dynamicType(d) FROM t_src ORDER BY toString(d) SETTINGS enable_parallel_replicas = 0"
+$CLICKHOUSE_CLIENT -q "SELECT x FROM t_dst WHERE x = 9; DROP USER user_${CLICKHOUSE_DATABASE}_05317"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_src; DROP TABLE t_dst"
