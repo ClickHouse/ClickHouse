@@ -1,0 +1,10 @@
+-- ./config.yaml
+1001
+-- ./config.yml
+1001
+-- ./config.xml wins over ./config.yaml
+1003
+-- --config-file wins over the current directory
+1002
+-- HOME/.clickhouse-local/config.yaml
+1004
