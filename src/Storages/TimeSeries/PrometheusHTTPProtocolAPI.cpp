@@ -260,7 +260,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         PullingAsyncPipelineExecutor executor(io.pipeline);
 
         /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
-        writeQueryResponse(response, executor, converter.getResultType());
+        writeQueryResponse(response, executor, converter.getResultType(), params.limit);
 
         /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
         /// the executor's destructor cancels the pipeline processors, after which the pending write would be discarded.
@@ -278,7 +278,10 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponse(
-    WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type)
+    WriteBuffer & response,
+    PullingAsyncPipelineExecutor & pulling_executor,
+    PrometheusQueryResultType result_type,
+    UInt64 limit)
 {
     /// Pull until the first non-empty block is ready before writing the header
     /// because pulling_executor.pull() can throw an exception and it's better to catch it early and write
@@ -296,18 +299,49 @@ void PrometheusHTTPProtocolAPI::writeQueryResponse(
 
     writeQueryResponseHeader(response, result_type);
 
+    const bool limit_series = result_type == PrometheusQueryTree::ResultType::INSTANT_VECTOR
+        || result_type == PrometheusQueryTree::ResultType::RANGE_VECTOR;
+    UInt64 written_series = 0;
+    bool truncated = false;
+    bool first = true;
+
+    auto rowsToWrite = [&](const Block & result_block) -> size_t
+    {
+        if (!limit_series || limit == 0)
+            return result_block.rows();
+
+        const UInt64 block_rows = static_cast<UInt64>(result_block.rows());
+        const UInt64 remaining = limit - written_series;
+        const UInt64 rows_to_write = remaining < block_rows ? remaining : block_rows;
+        written_series += rows_to_write;
+        truncated |= rows_to_write < block_rows;
+        return static_cast<size_t>(rows_to_write);
+    };
+
     if (has_output)
     {
-        writeQueryResponseBlock(response, result_type, block, /*first=*/ true);
+        size_t rows_to_write = rowsToWrite(block);
+        if (rows_to_write)
+        {
+            writeQueryResponseBlock(response, result_type, block, first, rows_to_write);
+            first = false;
+        }
 
         while (pulling_executor.pull(block))
         {
             if (block.rows() > 0)
-                writeQueryResponseBlock(response, result_type, block, /*first=*/ false);
+            {
+                rows_to_write = rowsToWrite(block);
+                if (rows_to_write)
+                {
+                    writeQueryResponseBlock(response, result_type, block, first, rows_to_write);
+                    first = false;
+                }
+            }
         }
     }
 
-    writeQueryResponseFooter(response);
+    writeQueryResponseFooter(response, truncated);
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponseHeader(WriteBuffer & response, PrometheusQueryResultType result_type)
@@ -334,14 +368,22 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseHeader(WriteBuffer & response,
     writeString(R"(","result":[)", response);
 }
 
-void PrometheusHTTPProtocolAPI::writeQueryResponseFooter(WriteBuffer & response)
+void PrometheusHTTPProtocolAPI::writeQueryResponseFooter(WriteBuffer & response, bool truncated)
 {
-    writeString("]}}", response);
+    if (truncated)
+        writeString(R"(]},"warnings":["results truncated due to limit"]})", response);
+    else
+        writeString("]}}", response);
 }
 
-void PrometheusHTTPProtocolAPI::writeQueryResponseBlock(WriteBuffer & response, PrometheusQueryResultType result_type, const Block & result_block, bool first)
+void PrometheusHTTPProtocolAPI::writeQueryResponseBlock(
+    WriteBuffer & response,
+    PrometheusQueryResultType result_type,
+    const Block & result_block,
+    bool first,
+    size_t rows_to_write)
 {
-    LOG_TRACE(log, "Prometheus: Writing {} result ({} rows)", result_type, result_block.rows());
+    LOG_TRACE(log, "Prometheus: Writing {} result ({} rows)", result_type, rows_to_write);
 
     switch (result_type)
     {
@@ -357,12 +399,12 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseBlock(WriteBuffer & response, 
         }
         case PrometheusQueryTree::ResultType::INSTANT_VECTOR:
         {
-            writeQueryResponseInstantVectorBlock(response, result_block, first);
+            writeQueryResponseInstantVectorBlock(response, result_block, first, rows_to_write);
             return;
         }
         case PrometheusQueryTree::ResultType::RANGE_VECTOR:
         {
-            writeQueryResponseRangeVectorBlock(response, result_block, first);
+            writeQueryResponseRangeVectorBlock(response, result_block, first, rows_to_write);
             return;
         }
     }
@@ -411,7 +453,8 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseStringBlock(WriteBuffer & resp
     writeJSONString(value, response, format_settings);
 }
 
-void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
+void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(
+    WriteBuffer & response, const Block & result_block, bool first, size_t rows_to_write)
 {
     if (result_block.rows() == 0)
         return;
@@ -427,7 +470,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer
 
     bool need_comma = !first;
 
-    for (size_t i = 0; i < result_block.rows(); ++i)
+    for (size_t i = 0; i < rows_to_write; ++i)
     {
         if (need_comma)
             writeString(",", response);
@@ -459,7 +502,8 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer
     }
 }
 
-void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
+void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(
+    WriteBuffer & response, const Block & result_block, bool first, size_t rows_to_write)
 {
     const auto & time_series_column_with_type
         = result_block.getByName(TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion()));
@@ -479,7 +523,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
 
     bool need_comma = !first;
 
-    for (size_t i = 0; i < result_block.rows(); ++i)
+    for (size_t i = 0; i < rows_to_write; ++i)
     {
         if (need_comma)
             writeString(",", response);

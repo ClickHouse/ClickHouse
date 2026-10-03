@@ -156,6 +156,8 @@ curl --user default:<password> \
   --data-urlencode "table=metrics"
 ```
 
+The optional `limit` parameter caps vector and matrix responses to the specified number of series. A value of `0` disables the cap, scalar and string responses are unchanged, and a truncated response includes a warning; the order of returned series is not guaranteed.
+
 Use the format-query endpoint to parse and format a PromQL expression without evaluating it:
 
 ```bash
