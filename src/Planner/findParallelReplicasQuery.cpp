@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
@@ -35,6 +36,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_allow_materialized_views;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
+    extern const SettingsBool parallel_replicas_plan_based;
 }
 
 namespace ErrorCodes
@@ -234,6 +236,113 @@ static QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, con
     return query->cloneAndReplace(visitor.replacement_map);
 }
 
+/// Does the tree hold anything the walk below cannot answer for, evaluating the whole tree against
+/// one context and one branch of every `UNION`?
+///
+/// - A `UNION`: the walk descends into its first branch and stops, so it says nothing about the
+///   others, and the planner does read a later branch with replicas when the first one is not
+///   readable - `SELECT a FROM log_table UNION ALL SELECT a FROM mt_table` plans a
+///   `ReadFromRemoteParallelReplicas` under its second arm.
+/// - A `SETTINGS` clause on a subquery: that subquery is planned with its own context, so it can
+///   re-enable what the outer query turned off, and the read below it is then made with replicas
+///   although the outer context forbids it. The root's own clause is not a problem - it is in the
+///   context the walk is handed.
+/// - A table, or a table function such as `view(...)`, whose own storage is not what gets read. A `View` plans its body with its own
+///   interpreter, and `getViewContext` clears `enable_parallel_replicas` for it only when
+///   `parallel_replicas_allow_view_over_mergetree` let the walk unwrap the view, so with that setting
+///   at its default `SELECT sum(a) FROM view_over_mergetree` reads the body with replicas while the
+///   walk stopped at the view. An `Alias` forwards reading to its target with the same context and is
+///   the same story one step removed, whatever that target turns out to be. A `StorageProxy`, which is
+///   how a table of a `lazy_load_tables` database is attached, hides even a plain `MergeTree`: it
+///   forwards `supportsReplication` but not `isMergeTree`, so the walk would call such a table
+///   ineligible. `StorageTableFunctionProxy`, which is how `CREATE TABLE t AS view(...)` is attached,
+///   is worse still: it answers `isView() == false` outright. A `MaterializedView` is included by the
+///   same `isView`: the walk does unwrap one to its target, but keyed on the concrete storage, so it
+///   misses a target that is itself wrapped.
+///
+/// The test is the one `validateCorrelatedSubqueries` uses for the same question, for the same reason.
+static bool walkCannotAnswerFor(const IQueryTreeNode * root)
+{
+    std::vector<const IQueryTreeNode *> stack{root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (node->getNodeType() == QueryTreeNodeType::UNION)
+            return true;
+
+        if (node != root)
+            if (const auto * query_node = node->as<QueryNode>(); query_node && query_node->hasSettingsChanges())
+                return true;
+
+        const auto * table_node = node->as<TableNode>();
+        const auto * table_function_node = node->as<TableFunctionNode>();
+        if (table_node || table_function_node)
+        {
+            /// An unresolved table function is unknown too, for want of a storage to ask.
+            const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+            const auto nested_storage = storage ? unwrapStorageProxy(storage) : nullptr;
+            if (!nested_storage || nested_storage != storage)
+                return true;
+
+            if (nested_storage->isView() || nested_storage->readsFromOtherTables())
+                return true;
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                stack.push_back(child.get());
+    }
+    return false;
+}
+
+bool canQueryPossiblyUseParallelReplicas(const QueryTreeNodePtr & query_tree_node, const ContextPtr & context)
+{
+    /// The walk below reports the `QUERY` nodes it descended through, so a tree that is a bare table
+    /// expression comes back empty however readable that table is, and would be reported ineligible.
+    /// The root of a query tree is always a query or a union - `findQueryForParallelReplicas`, the
+    /// planner's own entry into the same walk, rejects anything else outright - so state that here
+    /// rather than have the answer quietly depend on it.
+    chassert(query_tree_node->as<QueryNode>() || query_tree_node->as<UnionNode>());
+
+    /// The plan-based implementation decides where to read with replicas by analyzing the query plan
+    /// rather than the query tree, so the walk below does not describe what it will do. Report every
+    /// query as possibly eligible there instead of risking a rejection of one it could parallelize.
+    if (context->getSettingsRef()[Setting::parallel_replicas_plan_based])
+        return true;
+
+    /// Everything below reads one context, so it can only answer for a tree that is planned against
+    /// one. Report the rest as possibly eligible - including against the settings check right after,
+    /// which a subquery's own `SETTINGS` clause defeats just as well.
+    if (walkCannotAnswerFor(query_tree_node.get()))
+        return true;
+
+    if (!context->canUseParallelReplicasOnInitiator())
+        return false;
+
+    /// The walk returns an empty stack when nothing in the join tree can be read with replicas: a
+    /// non-MergeTree storage, a table function, a `FINAL` modifier, a view that does not resolve to a
+    /// MergeTree table, a refreshable materialized view, a non-replicated MergeTree without
+    /// `parallel_replicas_for_non_replicated_merge_tree`, or a join the walk cannot descend one side
+    /// of - `CROSS`, `FULL`, an `INNER` that is not `ALL`, a `RIGHT` with `RightAny` strictness, and a
+    /// `RIGHT` whose left side is not a table, query or union. Note that `RIGHT ANY JOIN` is none of
+    /// those: it carries strictness `Any`, not `RightAny` (the old ANY JOIN, see `JoinStrictness`), so
+    /// it is admitted here and rejected later, if at all.
+    ///
+    /// In practice the storage-shaped cases above rarely reach this function: a plan that reads from
+    /// them fails `plan_is_simple_enough` in `considerEnablingParallelReplicas` first. What this check
+    /// actually saves a candidate plan on is the join-kind and settings cases.
+    ///
+    /// It is deliberately only the query-tree half of the eligibility rules. The planner disables
+    /// parallel replicas for a few more reasons that are not visible here - a correlated subquery
+    /// (`DisableParallelReplicasPass`), `IN` with a subquery under
+    /// `parallel_replicas_allow_in_with_subquery = 0`, `additional_table_filters` without
+    /// `serialize_query_plan`, a `STREAM` modifier - and each of those only costs a missed skip, never a
+    /// wrong one.
+    return !getSupportingParallelReplicasQueries(query_tree_node.get(), context).empty();
+}
+
 #ifdef DUMP_PARALLEL_REPLICAS_QUERY_CANDIDATES
 #include <ranges>
 
@@ -371,6 +480,10 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     auto context = query_node ? query_node->getContext() : union_node->getContext();
 
     if (!context->canUseParallelReplicasOnInitiator())
+        return nullptr;
+
+    /// A shard number shipped for a different cluster cannot scope this read.
+    if (ClusterProxy::hasForeignShardScope(context))
         return nullptr;
 
     auto stack = getSupportingParallelReplicasQueries(query_tree_node.get(), context);

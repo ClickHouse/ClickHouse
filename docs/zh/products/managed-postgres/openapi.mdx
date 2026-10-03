@@ -13,9 +13,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 使用 [ClickHouse OpenAPI](/zh/products/cloud/features/admin-features/api/api-overview) 可像管理 ClickHouse 服务一样，以编程方式管理您的 ClickHouse Managed Postgres 服务。同一个 API 还公开了一个用于抓取服务指标的 [Prometheus 端点]。如果您已经熟悉 [OpenAPI]，可直接获取您的 [API 密钥] 并跳转到 [ClickHouse Managed Postgres API 参考文档][pg-openapi]。否则，请继续阅读，快速了解一下。
 
-<div id="api-keys">
-  ## API 密钥
-</div>
+## API 密钥 {#api-keys}
 
 使用 ClickHouse OpenAPI 需要进行身份验证；有关如何创建 API 密钥，请参阅 [API 密钥]。然后可按如下方式通过 Basic Auth 凭据使用这些密钥：
 
@@ -26,9 +24,7 @@ KEY_SECRET=mykeysecret
 curl -s --user "$KEY_ID:$KEY_SECRET" https://api.clickhouse.cloud/v1/organizations | jq
 ```
 
-<div id="organization-id">
-  ## Organization ID
-</div>
+## Organization ID {#organization-id}
 
 接下来，你需要用到你的 Organization ID。
 
@@ -71,22 +67,18 @@ Postgres 服务器。输出应类似于：
 }
 ```
 
-<div id="crud">
-  ## CRUD
-</div>
+## CRUD {#crud}
 
 下面来了解 Postgres 服务 的生命周期。
 
-<div id="create">
-  ### 创建
-</div>
+### 创建 {#create}
 
 首先，使用 [create API]
 创建一个新的实例。请求的 JSON body
 需要包含以下属性：
 
 * `name`：新 Postgres 服务的名称
-* `provider`：云提供商的名称
+* `provider`：云提供商的名称：`aws` (或 `gcp`，处于[私有预览](https://clickhouse.com/cloud/postgres#gcp-waitlist)阶段)
 * `region`：在提供商网络中部署该
   服务的区域
 * `size`：VM 规格
@@ -141,9 +133,7 @@ echo "$pg_created" | jq
 }
 ```
 
-<div id="read">
-  ### 查询
-</div>
+### 查询 {#read}
 
 使用响应中的 `id` 再次查询该服务：
 
@@ -182,9 +172,7 @@ postgres=#
 
 输入 `\q` 退出 [psql]。
 
-<div id="update">
-  ### 更新
-</div>
+### 更新 {#update}
 
 [patch API] 支持通过 [RFC 7396] JSON Merge Patch 更新 Managed
 Postgres 服务的部分属性。对于复杂的部署场景，标签可能尤其有用；
@@ -260,9 +248,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
 
   */}
 
-<div id="delete">
-  ### 删除
-</div>
+### 删除 {#delete}
 
 使用[删除 API]删除 Postgres 服务。
 
@@ -286,25 +272,19 @@ curl -sX DELETE --user "$KEY_ID:$KEY_SECRET" \
 }
 ```
 
-<div id="monitoring">
-  ## 监控
-</div>
+## 监控 {#monitoring}
 
 两个兼容 Prometheus 的端点可提供 ClickHouse Managed Postgres 服务的 CPU、内存、I/O、连接
 和事务指标：其中一个返回组织内所有服务的指标，另一个返回单个
 服务的指标。有关设置，请参阅 [Prometheus 端点] 页面；完整指标列表请参阅
 [指标参考]。
 
-<div id="query-insights">
-  ## Query insights
-</div>
+## Query insights {#query-insights}
 
 云控制台中 [Query Insights] 选项卡背后的按语句粒度的遥测数据也可通过编程方式获取。两个端点公开了某个服务上最慢的
 查询模式：一个列出按影响排序的所有模式，另一个返回单个模式及其最近的执行记录。
 
-<div id="list-slow-query-patterns">
-  ### 列出慢查询模式
-</div>
+### 列出慢查询模式 {#list-slow-query-patterns}
 
 [慢查询模式 API] 返回指定时间窗口内观测到的最慢查询
 模式的聚合指标。必须提供该时间窗口——请传递
@@ -361,9 +341,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 
 `queryId` 是归一化后语句的有符号 64 位哈希值，因此通常为负数。将它原样传回——包括开头的 `-`——即可获取单个查询模式。
 
-<div id="get-slow-query-pattern">
-  ### 获取慢查询模式
-</div>
+### 获取慢查询模式 {#get-slow-query-pattern}
 
 将列表响应中的 `queryId` 传递给[慢查询模式 API]，即可获取该
 模式的聚合指标，以及其最近的各次单独执行记录。
@@ -422,9 +400,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 该示例为简洁起见对这两个对象都进行了裁剪；API 返回的是
 [per-execution counters]中记录的完整计数器集合。
 
-<div id="server-logs">
-  ## 服务器日志
-</div>
+## 服务器日志 {#server-logs}
 
 云控制台中日志查看器所显示的 PostgreSQL 服务器日志也可通过
 编程方式获取。[日志 API] 会返回某项服务在指定时间窗口内的各条日志记录。

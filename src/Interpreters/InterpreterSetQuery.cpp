@@ -371,15 +371,25 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
         /// at all, so they work with parameterized queries. See issue #103324.
         if (backup_query->settings)
         {
-            SettingsChanges core_settings = (backup_query->kind == ASTBackupQuery::Kind::BACKUP)
+            CoreSettingsFromQuery core = (backup_query->kind == ASTBackupQuery::Kind::BACKUP)
                 ? BackupSettings::extractCoreSettingsFromQuery(*backup_query)
                 : RestoreSettings::extractCoreSettingsFromQuery(*backup_query);
 
-            if (!core_settings.empty())
-            {
-                context_->checkSettingsConstraints(core_settings, SettingSource::QUERY);
-                context_->applySettingsChanges(core_settings);
-            }
+            /// Both carriers are checked before either is applied, so a violation leaves the statement without
+            /// effect.
+            ///
+            /// The `changes` check keeps its emptiness guard, since it also runs a sanity clamp. const on
+            /// purpose - see the note in execute().
+            if (!core.changes.empty())
+                context_->checkSettingsConstraints(std::as_const(core.changes), SettingSource::QUERY);
+            context_->checkSettingsConstraintsForSettingsReset(core.default_names, core.changes, SettingSource::QUERY);
+            rejectHTTPOnlyConstructionSettings(backup_query->settings->as<const ASTSetQuery &>());
+
+            if (!core.changes.empty())
+                context_->applySettingsChanges(core.changes);
+
+            /// After the overrides, so a name in both carriers ends at its default, as in `SET x = 1, x = DEFAULT`.
+            context_->resetSettingsToDefaultValue(core.default_names);
         }
     }
 }

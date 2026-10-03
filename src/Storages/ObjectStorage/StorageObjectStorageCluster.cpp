@@ -245,7 +245,7 @@ bool StorageObjectStorageCluster::optimize(
     bool /*cleanup*/,
     ContextPtr context)
 {
-    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings);
+    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings, catalog);
 }
 
 void StorageObjectStorageCluster::mutate(const MutationCommands & commands, ContextPtr context)
