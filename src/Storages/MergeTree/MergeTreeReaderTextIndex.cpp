@@ -826,7 +826,7 @@ MergeTreeReaderTextIndex::ResolvedSearch MergeTreeReaderTextIndex::resolveSearch
         }
         else if (!query_builder.postings->isEmpty())
         {
-            /// If there are no cursors for large postings, the column is filled directly from the postings.
+            /// No cursors for large postings: fill the column directly from the postings.
             if (resolved.cursors.empty())
             {
                 resolved.kind = ResolvedSearch::Kind::DirectPostings;
@@ -875,7 +875,7 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, size_t column_id
 
     if (resolved->kind == ResolvedSearch::Kind::DirectPostings)
     {
-        /// Analyzer-folded postings only, no lazy cursors: clip them to the rows of this granule.
+        /// Clip the analyzer-folded postings to the rows of this granule.
         if (range_posting.isEmpty())
         {
             requireRowOffsetRepresentable(row_offset);

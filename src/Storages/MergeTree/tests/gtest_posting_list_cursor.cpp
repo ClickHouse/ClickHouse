@@ -140,7 +140,7 @@ std::vector<PostingListCursorPtr> resolveTokenCursors(
     return cursors;
 }
 
-/// Helper: the cursors as raw pointers, the form `lazyUnionPostingLists` / `lazyIntersectPostingLists` take.
+/// Helper: convert the cursors to raw pointers.
 std::vector<PostingListCursor *> rawCursors(const std::vector<PostingListCursorPtr> & cursors)
 {
     std::vector<PostingListCursor *> raw;
@@ -150,8 +150,7 @@ std::vector<PostingListCursor *> rawCursors(const std::vector<PostingListCursorP
     return raw;
 }
 
-/// Helper: union the way the reader does it, ordering the cursors first (the reader orders them once per part
-/// in `MergeTreeReaderTextIndex::resolveSearch`; the tests order them per call).
+/// Helper: sort the cursors and perform union, as the reader does.
 void unionSorted(IColumn & column, const std::vector<PostingListCursorPtr> & cursors, size_t column_offset, size_t row_offset, size_t num_rows)
 {
     auto sorted = rawCursors(cursors);
@@ -159,8 +158,7 @@ void unionSorted(IColumn & column, const std::vector<PostingListCursorPtr> & cur
     lazyUnionPostingLists(column, sorted, column_offset, row_offset, num_rows);
 }
 
-/// Helper: intersection the way the reader does it, ordering the cursors and resolving the algorithm first;
-/// the counters are discarded.
+/// Helper: sort the cursors, resolve the algorithm and perform intersection, as the reader does.
 void intersectSorted(
     IColumn & column,
     const std::vector<PostingListCursorPtr> & cursors,

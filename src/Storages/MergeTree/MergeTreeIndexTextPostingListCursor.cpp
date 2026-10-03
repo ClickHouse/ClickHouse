@@ -1270,7 +1270,7 @@ void lazyIntersectPostingLists(
 
     if (algorithm == TextIndexPostingsIntersectionAlgorithm::BruteForce)
     {
-        /// The brute-force counters are `UInt8`; `chooseIntersectionAlgorithm` keeps 256 or more cursors on leapfrog.
+        /// The counters are `UInt8`, `chooseIntersectionAlgorithm` never picks brute force for 256+ cursors.
         if (n >= 256)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Brute-force intersection of {} posting lists would overflow its counters", n);
 
@@ -1280,7 +1280,7 @@ void lazyIntersectPostingLists(
     }
 
     if (algorithm != TextIndexPostingsIntersectionAlgorithm::Leapfrog)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersection algorithm must be resolved with chooseIntersectionAlgorithm before lazyIntersectPostingLists");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unresolved intersection algorithm: {}", algorithm);
 
     for (size_t i = 0; i < n; ++i)
     {

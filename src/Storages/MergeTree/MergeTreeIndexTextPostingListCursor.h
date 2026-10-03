@@ -197,10 +197,8 @@ using PostingListCursorMap = absl::flat_hash_map<std::string_view, PostingListCu
 /// Throw a `LOGICAL_ERROR` rather than wrap the offset and corrupt the output column.
 void requireRowOffsetRepresentable(size_t row_offset);
 
-/// Counters of the lazy unions and intersections. The caller batches them (the reader keeps one instance per
-/// `readRows` call, which covers a run of granules) and flushes them into the profile events with one
-/// `ProfileEvents::increment` per event instead of one per granule: every increment walks the thread, query
-/// and global counters.
+/// Counters of lazy intersections, accumulated over many granules and flushed into the profile events at once,
+/// because each `ProfileEvents::increment` updates the thread, query and global counters.
 struct LazyPostingsStats
 {
     size_t brute_force_intersections = 0;
@@ -211,34 +209,22 @@ struct LazyPostingsStats
     void flush();
 };
 
-/// The lazy union and intersection take the cursors of one search column as raw pointers, ordered by the caller,
-/// and own nothing: the cursors are owned by the reader. Densities and cardinalities are properties of a posting
-/// list, i.e. of the part, so the reader orders the cursors and picks the algorithm once per part
-/// (`MergeTreeReaderTextIndex::resolveSearch`) and reuses them for every granule.
-
-/// Orders the cursors for `lazyUnionPostingLists`: descending density, so the densest cursor fills the output
-/// buffer first. Stable, so cursors of equal density keep the caller's order.
+/// Sorts the cursors for `lazyUnionPostingLists` by descending density, so the densest cursor fills the output first.
 void sortCursorsForUnion(std::vector<PostingListCursor *> & cursors);
 
-/// Orders the cursors for `lazyIntersectPostingLists`: ascending cardinality. The sparsest cursor leads the
-/// leapfrog. In the brute-force intersection it is scanned first: it is the most likely to have no rows in the
-/// window (early exit), and it leaves the largest all-zero regions, which the denser cursors then skip without
-/// decoding.
+/// Sorts the cursors for `lazyIntersectPostingLists` by ascending cardinality, so the sparsest cursor goes first:
+/// it leads the leapfrog and gives the brute force the earliest exit.
 void sortCursorsForIntersection(std::vector<PostingListCursor *> & cursors);
 
-/// Resolves `algorithm` to the concrete one `lazyIntersectPostingLists` runs for these cursors.
-/// `Auto` picks leapfrog only where it can skip whole packed blocks of the densest list. A block of that list
-/// spans about `BLOCK_SIZE / max_density` rows. Over that span, the sparsest list has about
-/// `min_density * BLOCK_SIZE / max_density` postings. Once that reaches one, leapfrog decodes every block anyway
-/// and only adds a search per posting on top of the brute-force counting pass.
-/// Brute force counts per row in a `UInt8`, so with 256 or more cursors the result is leapfrog regardless.
+/// Returns `BruteForce` or `Leapfrog` for these cursors. `Auto` picks leapfrog only if it can skip whole blocks of
+/// the densest list, i.e. if the sparsest list has less than one posting per such block:
+/// `min_density * BLOCK_SIZE < max_density`. With 256 or more cursors it is always leapfrog (`UInt8` counters).
 TextIndexPostingsIntersectionAlgorithm chooseIntersectionAlgorithm(
     const std::vector<PostingListCursor *> & cursors,
     TextIndexPostingsIntersectionAlgorithm algorithm);
 
 /// Union (OR) of posting lists: set output[row] = 1 if the row appears in ANY posting list.
-/// The caller is responsible for preparing the cursor vector (resolving search tokens to cursors,
-/// deduplicating if necessary, and ordering them with `sortCursorsForUnion`).
+/// `cursors` must be deduplicated and sorted with `sortCursorsForUnion`.
 void lazyUnionPostingLists(
     IColumn & column,
     const std::vector<PostingListCursor *> & cursors,
@@ -247,16 +233,15 @@ void lazyUnionPostingLists(
     size_t num_rows);
 
 /// Intersection (AND) of posting lists: set output[row] = 1 only if the row appears in ALL posting lists.
-/// The caller is responsible for preparing the cursor vector (resolving search tokens to cursors,
-/// deduplicating if necessary, and ordering them with `sortCursorsForIntersection`) and for resolving
-/// `algorithm` to a concrete one with `chooseIntersectionAlgorithm`: `Auto` is a logical error here.
+/// `cursors` must be deduplicated and sorted with `sortCursorsForIntersection`,
+/// `algorithm` must be the result of `chooseIntersectionAlgorithm`.
 ///
-/// The two algorithms. In both the cursors are sorted by ascending cardinality, so the sparsest posting list goes first:
+/// The two algorithms, selected by `algorithm`.
 ///   - Brute-force bitmap counting — the sparsest cursor sets bits,
 //      the remaining ones increment counters,
 ///     then a final pass keeps only the rows where the count is n.
 ///   - Leapfrog — the sparsest cursor leads and the others advance forward, skipping whole blocks.
-/// The intersections run and the brute-force early exits are counted in `stats`.
+/// Intersections and brute-force early exits are counted in `stats`.
 void lazyIntersectPostingLists(
     IColumn & column,
     const std::vector<PostingListCursor *> & cursors,
