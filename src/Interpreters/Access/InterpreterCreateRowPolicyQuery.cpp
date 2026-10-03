@@ -60,8 +60,13 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     /// Reject invalid filters on user-facing CREATE/ALTER only. Deserialization of persisted
     /// policies (ATTACH/replicated/restored) must not fail here; the query-time guard in
     /// ContextAccess::getRowPolicyFilter rejects such policies when they are actually used.
-    for (const auto & [filter_type, filter] : query.filters)
-        checkRowPolicyFilterExpression(filter);
+    /// `ATTACH ROW POLICY` is the persisted spelling of a policy (see `SHOW CREATE ROW POLICY` in attach mode),
+    /// so it is not validated either: a policy stored before a check was added must still be attachable.
+    if (!query.attach)
+    {
+        for (const auto & [filter_type, filter] : query.filters)
+            checkRowPolicyFilterExpression(filter);
+    }
 
     if (!query.cluster.empty())
     {
