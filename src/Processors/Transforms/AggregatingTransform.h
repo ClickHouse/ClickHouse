@@ -15,8 +15,6 @@
 
 #include <Parsers/IASTHash.h>
 
-#include <optional>
-#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 

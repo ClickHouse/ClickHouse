@@ -41,7 +41,6 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/SettingsEnums.h>
 
-#include <algorithm>
 #include <optional>
 
 namespace DB
