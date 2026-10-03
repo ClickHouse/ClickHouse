@@ -808,6 +808,13 @@
                 roles - section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server.
                         If no roles are specified here or assigned during role mapping (below), user will not be able to perform any
                          actions after authentication.
+                exclude_users - optional section with a list of 'user' entries. The listed user names are never served by this
+                         directory: the LDAP server is not contacted for them (not even by the interserver authentication of a
+                         cluster with a 'secret' or by EXECUTE AS), and they are reported as not found, so the user directories that
+                         follow are consulted instead. Use it for application accounts that must authenticate only with the secret
+                         defined for them locally. Names are matched exactly; an empty name, or any element other than 'user' inside
+                         'exclude_users', is rejected at startup. Like the other parameters of this section, the list is read at
+                         server startup only and changes require a restart.
                 role_mapping - section with LDAP search parameters and mapping rules.
                         When a user authenticates, while still bound to LDAP, an LDAP search is performed using search_filter and the
                          name of the logged in user. For each entry found during that search, the value of the specified attribute is
@@ -837,6 +844,10 @@
                         <my_local_role1 />
                         <my_local_role2 />
                     </roles>
+                    <exclude_users>
+                        <user>app_user1</user>
+                        <user>app_user2</user>
+                    </exclude_users>
                     <role_mapping>
                         <base_dn>ou=groups,dc=example,dc=com</base_dn>
                         <scope>subtree</scope>
