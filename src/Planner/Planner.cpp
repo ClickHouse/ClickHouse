@@ -728,6 +728,24 @@ ALWAYS_INLINE void addFilterStep(
     query_plan.addStep(std::move(where_step));
 }
 
+/// A table expression that is not a `MergeTree` table (a `View`, a `Merge` or `Distributed` table, a table
+/// function, a subquery) may read data whose identity is not represented by the per-part partial aggregate cache key.
+bool hasNonMergeTreeTableInputs(const SelectQueryInfo & select_query_info)
+{
+    const auto * query_node = select_query_info.query_tree ? select_query_info.query_tree->as<QueryNode>() : nullptr;
+    if (!query_node)
+        return true;
+
+    for (const auto & table_expression : extractTableExpressions(query_node->getJoinTree(), /*add_array_join=*/ false, /*recursive=*/ true))
+    {
+        const auto * table_node = table_expression->as<TableNode>();
+        if (!table_node || !table_node->getStorage()->isMergeTree())
+            return true;
+    }
+
+    return false;
+}
+
 Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
@@ -746,7 +764,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         query_context->getCurrentDatabase(),
         apply_deleted_mask_value,
         has_row_level_filter,
-        has_additional_table_filters);
+        has_additional_table_filters,
+        hasNonMergeTreeTableInputs(select_query_info));
 
     /// The cache key is computed later from the query plan in setAggregationHashTableCacheKeys
     /// (key == 0 keeps preallocation disabled until the optimization pass stamps the real key).

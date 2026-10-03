@@ -6189,9 +6189,10 @@ UInt64 partialAggregateCacheSemanticKey(
     const String & current_database,
     bool apply_deleted_mask,
     bool has_row_level_filter,
-    bool has_additional_table_filters)
+    bool has_additional_table_filters,
+    bool has_non_merge_tree_inputs)
 {
-    if (has_row_level_filter || has_additional_table_filters)
+    if (has_row_level_filter || has_additional_table_filters || has_non_merge_tree_inputs)
         return 0;
 
     const auto & select = select_query->as<DB::ASTSelectQuery &>();

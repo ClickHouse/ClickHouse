@@ -1481,13 +1481,16 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query);
 /// `apply_deleted_mask` affects which rows are visible for MergeTree reads; `has_row_level_filter` disables
 /// caching because row policies are not represented in the AST hash. Non-empty `additional_table_filters`
 /// is applied outside that AST and also disables the semantic key. Predicate subqueries in `PREWHERE`/`WHERE`
-/// also disable the key because external source freshness is not tracked.
+/// also disable the key because external source freshness is not tracked. `has_non_merge_tree_inputs` disables
+/// the key when a table in `FROM` is not a `MergeTree` table: e.g. a `View` is read through its own inner query,
+/// which can hide a `JOIN` or a subquery that the outer query AST does not show.
 UInt64 partialAggregateCacheSemanticKey(
     const DB::ASTPtr & select_query,
     const String & current_database,
     bool apply_deleted_mask,
     bool has_row_level_filter,
-    bool has_additional_table_filters);
+    bool has_additional_table_filters,
+    bool has_non_merge_tree_inputs);
 
 /** Get the aggregation variant by its type. */
 template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);

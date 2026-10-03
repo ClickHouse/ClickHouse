@@ -2951,6 +2951,7 @@ static Aggregator::Params getAggregatorParams(
     const SelectQueryExpressionAnalyzer & query_analyzer,
     const Context & context,
     const SelectQueryInfo & select_query_info,
+    const StoragePtr & storage,
     const Names & keys,
     const AggregateDescriptions & aggregates,
     bool overflow_row,
@@ -2966,7 +2967,8 @@ static Aggregator::Params getAggregatorParams(
         context.getCurrentDatabase(),
         apply_deleted_mask_value,
         has_row_level_filter,
-        has_additional_table_filters);
+        has_additional_table_filters,
+        /*has_non_merge_tree_inputs=*/ !storage || !storage->isMergeTree());
 
     /// The cache key is computed later from the query plan in setAggregationHashTableCacheKeys
     /// (key == 0 keeps preallocation disabled until the optimization pass stamps the real key).
@@ -3033,6 +3035,7 @@ void InterpreterSelectQuery::executeAggregation(
         *query_analyzer,
         *context,
         query_info,
+        storage,
         keys,
         aggregates,
         overflow_row,
@@ -3178,7 +3181,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     for (auto & aggregate : aggregates)
         aggregate.argument_names.clear();
 
-    auto params = getAggregatorParams(query_ptr, *query_analyzer, *context, query_info, keys, aggregates, false, settings, 0, 0);
+    auto params = getAggregatorParams(query_ptr, *query_analyzer, *context, query_info, storage, keys, aggregates, false, settings, 0, 0);
     const bool final = true;
 
     QueryPlanStepPtr step;
