@@ -1,8 +1,8 @@
 -- A projection part is read without the parent part's `AlterConversions`, so while the mutation of
 -- `DROP COLUMN c` is pending, the projection part still carries the old `c`. After the column and the
 -- projection are re-added under the same names, a query served from the projection returned the old
--- values of `c` instead of the default of the new column. Projections are not used while a
--- `RENAME COLUMN` / `DROP COLUMN` mutation is pending.
+-- values of `c` instead of the default of the new column. A part with a pending `RENAME COLUMN` /
+-- `DROP COLUMN` mutation is read from the parent part, not from its projection part.
 
 DROP TABLE IF EXISTS t_readd_projection;
 CREATE TABLE t_readd_projection (id UInt64, c UInt64, PROJECTION p (SELECT id, c ORDER BY c))

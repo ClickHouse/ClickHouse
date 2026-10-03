@@ -84,12 +84,15 @@ size_t filterPartsByProjection(
 
 /// This function fills ProjectionCandidate structure for specified projection.
 /// It returns false if for some reason we cannot read from projection.
+/// `parent_mutations_snapshot` is the snapshot of the parent read: a part with a pending
+/// `RENAME COLUMN` / `DROP COLUMN` mutation is read from the parent part, not from its projection part.
 /// `top_k_filter_info` is the TopK stamp of the read the projection would replace (if any), so
 /// that the query condition cache consult inside the candidate analysis observes the same TopK
 /// gating and key salting as the read itself.
 bool analyzeProjectionCandidate(
     ProjectionCandidate & candidate,
     const MergeTreeDataSelectExecutor & reader,
+    const MergeTreeData::MutationsSnapshotPtr & parent_mutations_snapshot,
     MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
     const Names & required_column_names,
     const StorageMetadataPtr & parent_metadata,
