@@ -11300,7 +11300,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 server_address,
                 user,
                 password);
-                content_type = response.headers.get('Content-Type') ?? '';
+            content_type = response.headers.get('Content-Type') ?? '';
         }
 
         /// A framed error stream is read in full before dispatching on it: when the exception is
@@ -11333,7 +11333,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                     server_address,
                     user,
                     password);
-                        content_type = response.headers.get('Content-Type') ?? '';
+                content_type = response.headers.get('Content-Type') ?? '';
             }
         }
 
