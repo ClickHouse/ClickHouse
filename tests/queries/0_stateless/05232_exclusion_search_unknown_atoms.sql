@@ -8,10 +8,11 @@ ENGINE = MergeTree ORDER BY (a, b)
 SETTINGS index_granularity = 8;
 
 -- Three values of `a`, so that a condition on `b` uses the exclusion search, not the binary search.
+-- A single insert thread creates a single part. `OPTIMIZE FINAL` is avoided: a merge of 3750 tiny granules
+-- is very slow with the thread fuzzer.
 INSERT INTO t_exclusion_search_unknown_atoms
-SELECT number % 3, intDiv(number, 3), number, toString(number) FROM numbers(30000);
-
-OPTIMIZE TABLE t_exclusion_search_unknown_atoms FINAL;
+SELECT number % 3, intDiv(number, 3), number, toString(number) FROM numbers(30000)
+SETTINGS max_insert_threads = 1;
 
 -- The condition on `b` alone needs about 200 steps, so the budget of 500 must not be reached.
 -- Every query runs with and without the budget; results and selected marks must match.
