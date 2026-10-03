@@ -108,9 +108,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// A requested subcolumn (e.g. `arr.size0`) that the destination table cannot resolve, but whose
-/// parent column (`arr`) it does have under a type the Buffer converts anyway. Such a subcolumn
-/// must be derived from the converted parent rather than filled with a type default.
+/// A subcolumn the destination cannot resolve, whose parent it has under a type the Buffer converts.
 struct DerivableSubcolumn
 {
     String name;                       /// "arr.size0" as requested
@@ -118,9 +116,7 @@ struct DerivableSubcolumn
     DataTypePtr parent_type_in_destination;
 };
 
-/// Returns nullopt for a name the destination resolves, a non-subcolumn, or a genuinely absent
-/// parent - that last case must keep its default-value behaviour, which is what makes a Buffer
-/// over a destination with a different column set work.
+/// A parent absent from the destination is not derivable: such a column keeps its default values.
 std::optional<DerivableSubcolumn> tryGetDerivableSubcolumn(
     const StorageSnapshotPtr & destination_snapshot,
     const StorageSnapshotPtr & our_snapshot,
@@ -144,8 +140,7 @@ std::optional<DerivableSubcolumn> tryGetDerivableSubcolumn(
     if (!destination_parent)
         return {};
 
-    /// The parent must be physical in the Buffer too - that is what puts it in the sample block
-    /// used as the conversion target below.
+    /// Only physical columns are in the sample block used as the conversion target.
     if (!our_snapshot->tryGetColumn(parent_options, parent_name))
         return {};
 
@@ -450,7 +445,6 @@ void StorageBuffer::read(
 
             std::vector<DerivableSubcolumn> derivable_subcolumns;
             NameSet derivable_names;
-            /// Several subcolumns can share one parent, so keep the parents deduplicated.
             Names derivable_parent_names;
             NameSet seen_parent_names;
             for (const String & column_name : column_names)
@@ -472,9 +466,8 @@ void StorageBuffer::read(
                     "at query processing stage {}", backQuoteIfNeed(derivable_subcolumns.front().name),
                     QueryProcessingStage::toString(processed_stage));
 
-            /// The destination cannot read a derivable subcolumn, so it must be absent from every
-            /// block negotiated with it: the defaults list would zero it and a conversion target
-            /// would find no matching input. It is derived from the converted parent below.
+            /// The destination cannot produce a derivable subcolumn, so it is kept out of the defaults
+            /// and of every conversion target.
             Block header_without_derivable;
             for (const auto & column : header)
                 if (!derivable_names.contains(column.name))
@@ -500,8 +493,7 @@ void StorageBuffer::read(
                 }
             }
 
-            /// Read the parent even when only the subcolumn was requested, otherwise the
-            /// intersection can be empty and the destination is not read at all.
+            /// An empty intersection skips the destination, so read the parent even for a subcolumn-only select.
             for (const auto & derivation : derivable_subcolumns)
             {
                 if (std::find(columns_intersection.begin(), columns_intersection.end(), derivation.parent_name) == columns_intersection.end())
@@ -582,9 +574,8 @@ void StorageBuffer::read(
 
                     auto merged = ActionsDAG::merge(converting_dag.clone(), std::move(filter_dag));
 
-                    /// A column the filter consumes is dropped from the read's output unless it is
-                    /// also an output of the filter's actions. The parents below must pass through,
-                    /// or the subcolumns derived after the read see a fabricated default instead.
+                    /// A column the filter consumes is dropped from the read's output unless it is also
+                    /// an output of the filter's actions, so keep the parents as pass-throughs.
                     NameSet filter_output_names(filter_outputs.begin(), filter_outputs.end());
                     for (const auto & parent_name : derivable_parent_names)
                     {
@@ -677,9 +668,7 @@ void StorageBuffer::read(
                             ActionsDAG::MatchColumnsMode::Name,
                             local_context);
 
-                    /// Derive the subcolumns in the same step: the extraction is built against the
-                    /// converted block, where the parent already has the Buffer's type and thus
-                    /// exposes the subcolumn, and it executes after the conversion it binds to.
+                    /// Only the converted parent exposes the subcolumn, so the extraction runs after the conversion.
                     if (!derivable_subcolumns.empty())
                     {
                         Names derivable_names_list;
