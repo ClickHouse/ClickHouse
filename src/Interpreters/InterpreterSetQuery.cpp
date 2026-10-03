@@ -24,6 +24,9 @@
 
 #include <utility>
 
+#include <optional>
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -71,6 +74,48 @@ void rejectHTTPOnlyConstructionSettings(const ASTSetQuery & set_query)
 
 }
 
+namespace
+{
+
+SettingsChanges expandSQLCompatibilityModeForConstraintCheck(const SettingsChanges & changes)
+{
+    SettingsChanges effective_changes = changes;
+    std::unordered_set<String> explicitly_set_names;
+    std::optional<SQLCompatibilityMode> mode;
+
+    for (const auto & change : changes)
+    {
+        auto resolved_name = Settings::resolveName(change.name);
+        if (resolved_name == "sql_compatibility_mode")
+        {
+            if (change.value.getType() != Field::Types::Which::String)
+                continue;
+
+            SettingFieldSQLCompatibilityMode parsed;
+            parsed.parseFromString(change.value.safeGet<String>());
+            mode = parsed.value;
+            continue;
+        }
+
+        explicitly_set_names.emplace(resolved_name);
+    }
+
+    if (!mode.has_value())
+        return effective_changes;
+
+    for (const auto & bundled_change : getSQLCompatibilityModeSettingChanges(*mode))
+    {
+        auto bundled_name = Settings::resolveName(bundled_change.name);
+        if (explicitly_set_names.contains(String(bundled_name)))
+            continue;
+        effective_changes.push_back(bundled_change);
+    }
+
+    return effective_changes;
+}
+
+}
+
 BlockIO InterpreterSetQuery::execute()
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
@@ -88,7 +133,8 @@ BlockIO InterpreterSetQuery::execute()
     /// Pass as const on purpose: the non-const checkSettingsConstraints overload rewrites the
     /// changes (dropping no-op changes), which would lose the "changed" flag for a setting
     /// explicitly set to its current value. The original code applies const `ast.changes`.
-    getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
+    const auto effective_changes = expandSQLCompatibilityModeForConstraintCheck(changes);
+    getContext()->checkSettingsConstraints(effective_changes, SettingSource::QUERY);
     /// Checked before anything is applied, so that a violation leaves the whole statement without effect.
     getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, changes, SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
@@ -109,7 +155,8 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     /// const on purpose - see the note in execute().
     if (!ignore_setting_constraints)
     {
-        getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
+        const auto effective_changes = expandSQLCompatibilityModeForConstraintCheck(changes);
+        getContext()->checkSettingsConstraints(effective_changes, SettingSource::QUERY);
         getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, changes, SettingSource::QUERY);
         rejectHTTPOnlyConstructionSettings(ast);
     }
