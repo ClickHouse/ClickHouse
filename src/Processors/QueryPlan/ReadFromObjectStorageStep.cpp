@@ -129,10 +129,10 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
         query_info.row_level_filter,
         query_info.prewhere_info);
-    // Delete transforms in data lakes need row numbers
+    /// The delete transforms of a data lake need row numbers only for files with attached deletes;
+    /// `StorageObjectStorageSource::createReader` asks for them per file in that case.
     format_filter_info->need_row_numbers = lazy_row_index_registry != nullptr
-        || VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns)
-        || configuration->isDataLakeConfiguration();
+        || VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
