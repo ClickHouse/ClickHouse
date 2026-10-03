@@ -2687,7 +2687,6 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     const bool use_filter_in_decoder = (column_info.levels.back().rep == 0) &&
         !row_subgroup.filter.filter.empty() &&
         column.page.initialized &&
-        !column.page.is_dictionary_encoded &&
         column.data_pages.empty() &&
         !column.need_null_map;
     const size_t subgroup_end_row_idx = row_subgroup.start_row_idx + row_subgroup.filter.rows_total;
@@ -3429,23 +3428,26 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
         if (row_subgroup && !row_subgroup->filter.filter.empty())
         {
             chassert(first_row_idx >= row_subgroup->start_row_idx);
+            chassert(page.def.empty());
             filter_offset = first_row_idx - row_subgroup->start_row_idx;
             filter = row_subgroup->filter.filter.data();
         }
 
         if (page.is_dictionary_encoded)
         {
-            chassert(!filter);
+            /// A subgroup whose rows all pass is read like an unfiltered one, through the fused path.
+            if (filter && row_subgroup->filter.rows_pass == row_subgroup->filter.rows_total)
+                filter = nullptr;
             /// Fused decode-and-gather; falls back to materializing the indexes as a column when
-            /// the decoder or the dictionary mode does not support the fusion.
-            if (!page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
+            /// filtering, or when the decoder or the dictionary mode does not support the fusion.
+            if (filter || !page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
             {
                 if (!page.indices_column)
                     page.indices_column = ColumnUInt32::create();
                 auto & indices_column_uint32 = assert_cast<ColumnUInt32 &>(*page.indices_column);
                 auto & data = indices_column_uint32.getData();
                 chassert(data.empty());
-                page.decoder->decode(encoded_values_to_read, *page.indices_column, nullptr, 0);
+                page.decoder->decode(encoded_values_to_read, *page.indices_column, filter, filter_offset);
                 column.dictionary.index(indices_column_uint32, *subchunk.column);
                 data.clear();
             }
