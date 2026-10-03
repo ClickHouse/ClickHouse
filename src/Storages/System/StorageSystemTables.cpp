@@ -6,6 +6,7 @@
 #include <set>
 
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Common/Exception.h>
 #include <Core/UUID.h>
 #if CLICKHOUSE_CLOUD
@@ -1066,6 +1067,17 @@ protected:
                                     break;
                                 }
                             }
+                        }
+                        /// A non-trivial `SELECT` row policy hides some rows of the table from the caller, but
+                        /// the hash covers the whole table, so it would reveal changes to filtered-out rows
+                        /// while the caller's visible result stays the same. Fail closed, matching
+                        /// `computeTableModificationHashForConsistency`, which applies the same check to every
+                        /// table reached through a wrapper engine or a view.
+                        if (can_read)
+                        {
+                            if (auto row_policy_filter = context->getRowPolicyFilter(database_name, table_name, RowPolicyFilterType::SELECT_FILTER);
+                                row_policy_filter && !row_policy_filter->isAlwaysTrue())
+                                can_read = false;
                         }
                         if (can_read)
                         {
