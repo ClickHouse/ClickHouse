@@ -1263,6 +1263,43 @@ Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint
     return code;
 }
 
+Coordination::Error ZooKeeper::listRecursiveFallback(const std::string & path, Strings & res, uint32_t children_nodes_limit)
+{
+    res.clear();
+
+    /// `res` doubles as the BFS queue: seeded with `path`, which we drop before returning so only descendants remain.
+    res.push_back(path);
+    for (size_t frontier = 0; frontier < res.size(); ++frontier)
+    {
+        Strings children;
+        Coordination::Error code = tryGetChildren(res[frontier], children);
+        /// A node may be removed concurrently while we walk the tree; just skip it.
+        if (code == Coordination::Error::ZNONODE)
+            continue;
+        if (code != Coordination::Error::ZOK)
+        {
+            res.clear();
+            return code;
+        }
+
+        /// `res[frontier]` may be invalidated by the push_back below, so copy it first.
+        const std::string current = res[frontier];
+        for (const auto & child : children)
+        {
+            /// `res.size() - 1` excludes the seed `path`, matching the server-side `children_nodes_limit` accounting.
+            if (res.size() - 1 >= children_nodes_limit)
+            {
+                res.erase(res.begin());
+                return Coordination::Error::ZOK;
+            }
+            res.push_back(fs::path(current) / child);
+        }
+    }
+
+    res.erase(res.begin());
+    return Coordination::Error::ZOK;
+}
+
 Strings ZooKeeper::listRecursive(const std::string & path, uint32_t children_nodes_limit)
 {
     Strings res;
@@ -1285,8 +1322,14 @@ Coordination::Error ZooKeeper::tryListRecursive(const std::string & path, String
         );
         DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
     }
+    /// Older backends do not support the recursive listing request; fall back to a non-atomic
+    /// breadth-first traversal built from `getChildren` calls.
     if (!isFeatureEnabled(DB::KeeperFeatureFlag::GET_CHILDREN_RECURSIVE))
-        return Coordination::Error::ZBADARGUMENTS;
+    {
+        Coordination::Error code = listRecursiveFallback(path, res, children_nodes_limit);
+        maybeSetSpanStatus(maybe_span, code);
+        return code;
+    }
 
     auto promise = std::make_shared<std::promise<Coordination::ListRecursiveResponse>>();
     auto future = promise->get_future();
