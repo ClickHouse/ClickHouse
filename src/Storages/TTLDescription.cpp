@@ -718,7 +718,8 @@ std::vector<ColumnPtr> checkActionsDAGForAggregateFunctions(
                         {
                             auto offsets = ColumnArray::ColumnOffsets::create();
                             offsets->getData().push_back(1);
-                            candidates.push_back(ColumnArray::create(element->cloneResized(1), std::move(offsets)));
+                            candidates.push_back(
+                                ColumnArray::create(element->convertToFullColumnIfConst()->cloneResized(1), std::move(offsets)));
                         }
                     }
                     else
@@ -1192,6 +1193,20 @@ NamesAndTypesList widenTemporalColumns(const NamesAndTypesList & columns)
     return result;
 }
 
+/// Every analysis of a stored TTL expression uses the server settings, as CREATE and table loading do,
+/// on a copy of the caller's context, so the caller's user and current database still apply.
+ContextPtr getTTLExpressionContext(const ContextPtr & context)
+{
+    const auto global_context = context->getGlobalContext();
+    const auto & global_settings = global_context->getSettingsRef();
+    if (context->getSettingsRef() == global_settings)
+        return context;
+
+    auto ttl_context = Context::createCopy(context);
+    ttl_context->setSettings(global_settings);
+    return ttl_context;
+}
+
 }
 
 TTLDescription::TTLDescription(const TTLDescription & other)
@@ -1418,7 +1433,7 @@ ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) co
         checkTTLExpressionPreservesRowCount(set_part.expression, /*ast=*/ nullptr, /*expression_kind=*/ "GROUP BY SET ");
 
     auto ast = expression_ast->clone();
-    return buildExpressionAndSets(ast, expression_source_columns, context);
+    return buildExpressionAndSets(ast, expression_source_columns, getTTLExpressionContext(context));
 }
 
 ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & context) const
@@ -1430,7 +1445,7 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
         auto ast = where_expression_ast->clone();
         /// Only the TTL timestamp expression needs widening. The `DELETE WHERE`
         /// predicate must keep the table's original static column types.
-        return buildExpressionAndSets(ast, where_expression_source_columns, context, nullptr, false);
+        return buildExpressionAndSets(ast, where_expression_source_columns, getTTLExpressionContext(context), nullptr, false);
     }
 
     return {};
@@ -1443,6 +1458,8 @@ TTLDescription TTLDescription::getTTLFromAST(
     const KeyDescription & primary_key,
     TTLValidationMode validation_mode)
 {
+    const auto expression_context = getTTLExpressionContext(context);
+
     TTLDescription result;
     const auto * ttl_element = definition_ast->as<ASTTTLElement>();
 
@@ -1468,7 +1485,7 @@ TTLDescription TTLDescription::getTTLFromAST(
         build_strictness.emplace(/*variant_throw_on_type_mismatch=*/ false, /*dynamic_throw_on_type_mismatch=*/ false);
 
     auto ttl_ast = result.expression_ast->clone();
-    auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context, &result.expression_source_columns).expression;
+    auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), expression_context, &result.expression_source_columns).expression;
     result.expression_columns = expression->getRequiredColumnsWithTypes();
 
     result.result_column = expression->getSampleBlock().safeGetByPosition(0).name;
@@ -1499,7 +1516,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                 ASTPtr ast = where_expr_ast->clone();
                 where_expression
                 = buildExpressionAndSets(
-                    ast, columns.getAllPhysical(), context, &result.where_expression_source_columns, /*widen_temporal_columns=*/ false).expression;
+                    ast, columns.getAllPhysical(), expression_context, &result.where_expression_source_columns, /*widen_temporal_columns=*/ false).expression;
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
@@ -1563,7 +1580,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                     "Invalid expression for assignment of column {}. Should contain an aggregate function", assignment.column_name);
 
                 if (!skip_validation)
-                    checkTTLGroupBySetForAggregateFunctions(ass_expression, columns.getAllPhysical(), context);
+                    checkTTLGroupBySetForAggregateFunctions(ass_expression, columns.getAllPhysical(), expression_context);
 
                 ass_expression = addTypeConversionToAST(std::move(ass_expression), columns.getPhysical(assignment.column_name).type->getName());
                 aggregations.emplace_back(assignment.column_name, std::move(ass_expression));
@@ -1577,8 +1594,8 @@ TTLDescription TTLDescription::getTTLFromAST(
 
             for (auto [name, value] : aggregations)
             {
-                auto syntax_result = TreeRewriter(context).analyze(value, columns.getAllPhysical(), {}, {}, true);
-                auto expr_analyzer = ExpressionAnalyzer(value, syntax_result, context);
+                auto syntax_result = TreeRewriter(expression_context).analyze(value, columns.getAllPhysical(), {}, {}, true);
+                auto expr_analyzer = ExpressionAnalyzer(value, syntax_result, expression_context);
 
                 TTLAggregateDescription set_part;
                 set_part.column_name = name;
