@@ -1,0 +1,7 @@
+-- exempt queries
+0
+FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
+0	0
+-- not exempt
+FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
+1	1
