@@ -1,6 +1,8 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel-replicas
 -- ^^ ANTLR4 support is disabled in the fast-test build, and the PromQL
 -- grammar requires it.
+-- Tag no-parallel-replicas: every parallel replica reads all rows of the table behind `timeSeriesTags`, so each row
+-- is returned once per replica, see https://github.com/ClickHouse/ClickHouse/issues/118130.
 
 -- The `tags` column of the tags target table contains all the tags, including the metric name
 -- (the `__name__` tag) and the tags with dedicated columns from the `tags_to_columns` setting.
