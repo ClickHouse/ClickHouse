@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
@@ -26,11 +27,15 @@ public:
         size_t part_uncompressed_bytes,
         WrittenOffsetSubstreams * written_offset_substreams,
         bool try_adaptive_codec,
-        class PackedFilesWriter * external_packed_skip_indices_writer = nullptr);
+        class PackedFilesWriter * external_packed_skip_indices_writer = nullptr,
+        SerializationByName serializations_override = {});
 
     void write(const Block & block) override;
     void finalizeIndexGranularity();
     MergeTreeData::DataPart::Checksums fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeDataPartChecksums & all_checksums);
+
+    /// File checksums only. Does not change the part's column list or serialization infos.
+    MergeTreeData::DataPart::Checksums fillChecksumsWithoutUpdatingPart(MergeTreeDataPartChecksums & all_checksums);
 
     /// Forwarded to the underlying writer; see IMergeTreeDataPartWriter::preloadPackedSkipIndicesArchive.
     void preloadPackedSkipIndicesArchive(const class DataPartStorageOnDiskBase & source, const NameSet & files)

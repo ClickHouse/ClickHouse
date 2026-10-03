@@ -270,6 +270,10 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         /// dedicated arena directly, rather than assigning and re-homing with a second copy later.
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
         new_part->checksums = checksums;
+        /// This object is what later queries read. `loadColumnsChecksumsIndexes` does not run
+        /// again until the part is reloaded from disk, so take the key lists now that the files
+        /// are flushed and present in `checksums`.
+        new_part->loadMapKeyColumnsManifests();
     }
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());

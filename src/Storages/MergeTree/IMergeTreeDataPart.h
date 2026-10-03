@@ -9,6 +9,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
 #include <IO/WriteSettings.h>
 #include <Storages/ColumnSize.h>
 #include <Storages/ColumnsDescription.h>
@@ -470,6 +471,17 @@ public:
 
     Checksums checksums;
 
+    /// Key lists of `with_key_columns` Map columns, loaded from `<column>.key_columns.txt`.
+    std::unordered_map<String, MapKeyManifest> map_key_columns_manifests;
+
+    const MapKeyManifest * tryGetMapKeyColumnsManifest(const String & column_name) const
+    {
+        auto it = map_key_columns_manifests.find(column_name);
+        if (it == map_key_columns_manifests.end())
+            return nullptr;
+        return &it->second;
+    }
+
     /// Columns with values, that all have been zeroed by expired ttl
     NameSet expired_columns;
 
@@ -644,6 +656,9 @@ public:
 
     /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
+
+    /// Read `<column>.key_columns.txt` for every `with_key_columns` Map column. Requires columns and checksums.
+    void loadMapKeyColumnsManifests();
     bool areChecksumsLoaded() const { return !checksums.empty(); }
 
     /// Whether this part's column and secondary index sizes are already computed.

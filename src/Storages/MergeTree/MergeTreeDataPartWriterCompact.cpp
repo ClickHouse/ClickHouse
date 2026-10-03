@@ -1,11 +1,18 @@
 #include <Compression/CompressionFactory.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Storages/MergeTree/MapWithKeyColumnsMerge.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
+#include <Common/typeid_cast.h>
+#include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <IO/NullWriteBuffer.h>
+#include <Common/escapeForFileName.h>
+#include <Common/quoteString.h>
 #include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 
@@ -15,17 +22,28 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool compress_per_column_in_compact_parts;
+    extern const MergeTreeSettingsUInt64 map_max_key_columns;
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int FAULT_INJECTED;
+    extern const int INVALID_SETTING_VALUE;
+    extern const int LIMIT_EXCEEDED;
 }
 
 namespace FailPoints
 {
     extern const char compact_part_writer_fail_in_add_streams[];
+}
+
+/// Compact marks require at least one substream slot per column. A with_key_columns Map whose
+/// frozen key set is empty writes no data.bin streams (`key_columns.txt` is a separate file), so register this
+/// placeholder instead. Deserialize never requests it.
+static String emptyMapKeyColumnsPlaceholderStreamName(const String & column_name)
+{
+    return escapeForFileName(column_name) + ".empty";
 }
 
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
@@ -74,6 +92,15 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
     if (settings.save_marks_in_cache)
         cached_marks[MergeTreeDataPartCompact::DATA_FILE_NAME] = std::make_unique<MarksInCompressedFile::PlainArray>();
+
+    /// Detect `with_key_columns` Map columns up front so write()/finalizeIndexGranularity take the
+    /// buffered/frozen path. Their physical stream set only becomes known once the whole part is
+    /// buffered and the key union is frozen.
+    for (const auto & column : columns_list)
+    {
+        if (typeid_cast<const SerializationMapWithKeyColumns *>(getSerialization(column.name).get()))
+            map_key_columns.push_back(column.name);
+    }
 }
 
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc)
@@ -82,6 +109,11 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
+
+        /// The key list is `<column>.key_columns.txt`, not a data.bin substream.
+        if (substream_path.back().type == ISerialization::Substream::MapKeysInfo)
+            return;
+
         String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
         /// Shared offsets for Nested type.
@@ -94,7 +126,21 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         /// Codecs that need the vector dimension upfront (e.g. SZ3) keep per-stream state in the codec
         /// object, so they must not be shared between streams. Make the key unique per stream so that
         /// every such stream gets its own codec instance, while still being tracked for finalize/cancel.
-        if (compression_codec->needsVectorDimensionUpfront())
+        /// `with_key_columns` Map keys must also stay unshared: Compact puts every
+        /// stream in `data.bin`, and a shared compressor would fold all keys into
+        /// one frame so a single-key read decompresses the whole Map.
+        bool isolate_map_key_columns_stream = false;
+        for (const auto & elem : substream_path)
+        {
+            if (elem.type == ISerialization::Substream::MapKey
+                || elem.type == ISerialization::Substream::MapKeyExists
+                || elem.type == ISerialization::Substream::MapKeysInfo)
+            {
+                isolate_map_key_columns_stream = true;
+                break;
+            }
+        }
+        if (compression_codec->needsVectorDimensionUpfront() || isolate_map_key_columns_stream)
         {
             SipHash codec_hash;
             codec_hash.update(codec_id);
@@ -127,8 +173,33 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     enumerate_settings.map_buckets_min_avg_size = settings.map_buckets_min_avg_size;
     enumerate_settings.data_part_type = MergeTreeDataPartType::Compact;
     auto serialization = getSerialization(name_and_type.name);
+    if (typeid_cast<const SerializationMapWithKeyColumns *>(serialization.get())
+        && !index_granularity_info.mark_type.with_substreams)
+    {
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Map serialization version 'with_key_columns' requires write_marks_for_substreams_in_compact_parts = 1");
+    }
     auto substream_data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     serialization->enumerateStreams(enumerate_settings, callback, substream_data);
+
+    /// Empty frozen with_key_columns Maps have no per-key streams.
+    /// Create a placeholder compressed stream so Compact granules still have a mark to seek to.
+    auto frozen_keys_it = map_key_columns_frozen_keys.find(name_and_type.name);
+    if (frozen_keys_it != map_key_columns_frozen_keys.end() && frozen_keys_it->second.empty())
+    {
+        String stream_name = emptyMapKeyColumnsPlaceholderStreamName(name_and_type.name);
+        if (!compressed_streams.contains(stream_name))
+        {
+            CompressionCodecPtr compression_codec
+                = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
+            UInt64 codec_id = compression_codec->getHash();
+            auto it = streams_by_codec.find(codec_id);
+            if (it == streams_by_codec.end())
+                it = streams_by_codec.emplace(codec_id, std::make_shared<CompressedStream>(plain_hashing, compression_codec)).first;
+            compressed_streams.emplace(stream_name, it->second);
+        }
+    }
 }
 
 namespace
@@ -246,6 +317,18 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     /// preparations to achieve it.
     prepareBlockForWriting(result_block);
 
+    if (hasMapKeyColumns())
+    {
+        /// `with_key_columns` Map columns cannot pick their physical stream set block by block, so
+        /// buffer the permuted rows of the whole part. freeze + write happens once every block was
+        /// seen, in finalizeIndexGranularity via writeBufferedMapKeyColumnsPart.
+        result_block = permuteBlockIfNeeded(result_block, permutation, nullptr);
+        if (header.empty())
+            header = result_block.cloneEmpty();
+        columns_buffer.add(result_block.mutateColumns());
+        return;
+    }
+
     initStreamsIfNeeded();
     initColumnsSubstreamsIfNeeded();
 
@@ -317,7 +400,12 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
         auto name_and_type = columns_list.begin();
         for (size_t i = 0; i < columns_list.size(); ++i, ++name_and_type)
         {
+            /// `with_key_columns` Map keys must each occupy an independent compressed block so that
+            /// reading m['k'] decodes only that key's substreams. Flush the shared codec stream
+            /// after every substream, not just when the codec changes.
+            const bool is_map_key_column = map_key_columns_frozen && map_key_columns_frozen_keys.contains(name_and_type->name);
             bool is_first_substream = true;
+            bool column_wrote_substream = false;
             auto stream_getter = [&, this](const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
             {
                 String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
@@ -341,12 +429,12 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                     setVectorDimensionsIfNeeded(compression_codec, block.getColumnOrSubcolumnByName(name_and_type->name).column.get());
                 }
 
-                /// Write one compressed block per column in granule for more optimal reading.
-                if (prev_stream && prev_stream != result_stream)
+                /// Write one compressed block per column (per substream for Map keys) in granule for more optimal reading.
+                if (prev_stream && (prev_stream != result_stream || is_map_key_column))
                 {
-                    /// Offset should be 0, because compressed block is written for every granule.
-                    chassert(result_stream->hashing_buf.offset() == 0);
                     prev_stream->hashing_buf.next();
+                    /// Offset should be 0, because compressed block is written for every granule/substream.
+                    chassert(result_stream->hashing_buf.offset() == 0);
                 }
 
                 /// We have 2 types of marks in Compact part. With or without substreams.
@@ -365,6 +453,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 }
 
                 prev_stream = result_stream;
+                column_wrote_substream = true;
 
                 return &result_stream->hashing_buf;
             };
@@ -377,12 +466,44 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
             auto serialize_settings = getSerializationSettings();
             serialize_settings.min_compress_block_size = getEffectiveMinCompressBlockSize(*name_and_type);
+            if (is_map_key_column)
+                serialize_settings.map_key_columns_frozen_keys = &map_key_columns_frozen_keys.at(name_and_type->name);
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), block_sample.getByName(name_and_type->name),
                 getSerialization(name_and_type->name),
                 stream_getter, stream_mark_getter, granule.start_row, granule.rows_to_write, !data_written, std::move(serialize_settings));
 
-            if (settings.compress_per_column_in_compact_parts)
+            /// Empty frozen with_key_columns Maps never call the stream getter. Write the placeholder
+            /// substream marks (and later flush an empty compressed block) so Compact mark files always
+            /// have one slot per registered substream.
+            if (!column_wrote_substream && index_granularity_info.mark_type.with_substreams)
+            {
+                for (const auto & stream_name : columns_substreams.getColumnSubstreams(i))
+                {
+                    auto stream_it = compressed_streams.find(stream_name);
+                    if (stream_it == compressed_streams.end())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream {} for column {} not found", stream_name, name_and_type->name);
+
+                    auto & result_stream = stream_it->second;
+                    if (prev_stream && (prev_stream != result_stream || is_map_key_column))
+                    {
+                        prev_stream->hashing_buf.next();
+                        chassert(result_stream->hashing_buf.offset() == 0);
+                    }
+
+                    MarkInCompressedFile mark{plain_hashing.count(), result_stream->hashing_buf.offset()};
+                    writeBinaryLittleEndian(mark.offset_in_compressed_file, marks_out);
+                    writeBinaryLittleEndian(mark.offset_in_decompressed_block, marks_out);
+
+                    if (!cached_marks.empty())
+                        cached_marks.begin()->second->push_back(mark);
+
+                    prev_stream = result_stream;
+                    column_wrote_substream = true;
+                }
+            }
+
+            if ((settings.compress_per_column_in_compact_parts || is_map_key_column) && column_wrote_substream)
             {
                 prev_stream->hashing_buf.next();
                 prev_stream = nullptr;
@@ -397,8 +518,162 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
     }
 }
 
+void MergeTreeDataPartWriterCompact::writeBufferedMapKeyColumnsPart()
+{
+    if (map_key_columns_frozen)
+        return;
+
+    Block block;
+    if (!header.empty())
+        block = header.cloneWithColumns(columns_buffer.releaseColumns());
+
+    /// Every column needs a sample column even for an empty part.
+    if (block_sample.empty())
+    {
+        for (const auto & [name, type] : columns_list)
+            block_sample.insert(ColumnWithTypeAndName{type->createColumn(), type, name});
+    }
+
+    const UInt64 max_keys = (*storage_settings)[MergeTreeSetting::map_max_key_columns];
+    for (const auto & name : map_key_columns)
+    {
+        const auto * per_key = typeid_cast<const SerializationMapWithKeyColumns *>(getSerialization(name).get());
+        if (!per_key)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} does not have with_key_columns Map serialization", name);
+
+        std::vector<Field> keys;
+        if (block.has(name))
+            keys = per_key->collectAllKeys(*block.getByName(name).column);
+
+        if (max_keys && keys.size() > max_keys)
+            throw Exception(
+                ErrorCodes::LIMIT_EXCEEDED,
+                "Number of distinct keys in Map column {} is {}, exceeds map_max_key_columns ({})",
+                backQuoteIfNeed(name),
+                keys.size(),
+                max_keys);
+
+        /// All-keys sample so addStreams / initColumnsSubstreams enumerate every key's physical streams.
+        auto keys_column = per_key->getKeyType()->createColumn();
+        auto values_column = per_key->getValueType()->createColumn();
+        keys_column->reserve(keys.size());
+        values_column->reserve(keys.size());
+        for (const auto & key : keys)
+        {
+            keys_column->insert(key);
+            values_column->insertDefault();
+        }
+        auto offsets = ColumnArray::ColumnOffsets::create();
+        offsets->insert(keys.size());
+        block_sample.getByName(name).column
+            = ColumnMap::create(std::move(keys_column), std::move(values_column), std::move(offsets));
+
+        map_key_columns_frozen_keys[name] = std::move(keys);
+    }
+
+    map_key_columns_frozen = true;
+
+    initStreamsIfNeeded();
+    initFrozenColumnsSubstreams();
+
+    if (block.columns() == 0 || block.rows() == 0)
+        return;
+
+    if (compute_granularity)
+    {
+        size_t index_granularity_for_block = computeIndexGranularity(block);
+        fillIndexGranularity(index_granularity_for_block, block.rows());
+    }
+
+    auto granules_to_write = getGranulesToWrite(*index_granularity, block.rows(), getCurrentMark(), /*last_block=*/ true);
+    if (!granules_to_write.empty() && !granules_to_write.back().is_complete)
+        index_granularity->adjustLastMark(granules_to_write.back().rows_to_write);
+    writeDataBlockPrimaryIndexAndSkipIndices(block, granules_to_write);
+    setCurrentMark(getCurrentMark() + granules_to_write.size());
+}
+
+void MergeTreeDataPartWriterCompact::initFrozenColumnsSubstreams()
+{
+    /// Registered columns (even with zero substreams) mean the frozen layout is already built.
+    if (!columns_substreams.empty())
+        return;
+    /// Only the substream mark format lists per-substream positions; with_key_columns requires it.
+    if (!index_granularity_info.mark_type.with_substreams)
+        return;
+
+    if (block_sample.empty())
+    {
+        for (const auto & [name, type] : columns_list)
+            block_sample.insert(ColumnWithTypeAndName{type->createColumn(), type, name});
+    }
+
+    NullWriteBuffer buf;
+    for (const auto & name_and_type : columns_list)
+    {
+        columns_substreams.addColumn(name_and_type.name);
+        auto serialize_settings = getSerializationSettings();
+        auto frozen_it = map_key_columns_frozen_keys.find(name_and_type.name);
+        if (frozen_it != map_key_columns_frozen_keys.end())
+            serialize_settings.map_key_columns_frozen_keys = &frozen_it->second;
+
+        serialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            columns_substreams.addSubstreamToLastColumn(
+                ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)));
+            return &buf;
+        };
+        serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath &) { return MarkInCompressedFile(); };
+
+        ISerialization::SerializeBinaryBulkStatePtr state;
+        auto serialization = getSerialization(name_and_type.name);
+        const auto & column = block_sample.getByName(name_and_type.name);
+        serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
+        serialization->serializeBinaryBulkWithMultipleStreams(*column.column, column.column->size(), 0, serialize_settings, state);
+        serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
+
+        const auto * registered = columns_substreams.tryGetColumnSubstreams(name_and_type.name);
+        if (registered && registered->empty())
+            columns_substreams.addSubstreamToLastColumn(emptyMapKeyColumnsPlaceholderStreamName(name_and_type.name));
+    }
+}
+
+void MergeTreeDataPartWriterCompact::writeMapKeyColumnsFiles(MergeTreeDataPartChecksums & checksums)
+{
+    for (const auto & name : map_key_columns)
+    {
+        const auto * per_key = typeid_cast<const SerializationMapWithKeyColumns *>(getSerialization(name).get());
+        if (!per_key)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} does not have with_key_columns Map serialization", name);
+
+        MapKeyManifest manifest;
+        const auto keys_it = map_key_columns_frozen_keys.find(name);
+        if (keys_it != map_key_columns_frozen_keys.end())
+        {
+            for (const auto & key : keys_it->second)
+                manifest.keys.push_back(MapKeyManifestEntry{.key = key, .presence_kind = MapKeyPresenceKind::Tracked});
+        }
+
+        key_columns_files.push_back(writeMapKeyColumnsFile(
+            getDataPartStorage(),
+            name,
+            *storage_settings,
+            per_key->getKeyType(),
+            manifest,
+            settings.query_write_settings,
+            checksums));
+    }
+}
+
 void MergeTreeDataPartWriterCompact::finalizeIndexGranularity()
 {
+    if (hasMapKeyColumns())
+    {
+        /// The whole part is buffered: freeze the key set, init streams/substreams from the frozen
+        /// keys, and write every granule now. This flushes columns_buffer, so the generic
+        /// leftover-buffer path below becomes a no-op.
+        writeBufferedMapKeyColumnsPart();
+    }
+
     /// If no data was written, streams and columns substreams will be uninitialized, but we need them.
     initStreamsIfNeeded();
     initColumnsSubstreamsIfNeeded();
@@ -472,6 +747,13 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)
 
     plain_file->finalize();
     marks_file->finalize();
+
+    for (auto & file : key_columns_files)
+    {
+        if (sync)
+            file->sync();
+        file->finalize();
+    }
 
     /// Release the data (`data.bin`) and marks (`data.cmrk*`) file descriptors now that everything
     /// has been flushed and synced. Otherwise the writer keeps these handles open until it is
@@ -600,6 +882,10 @@ void MergeTreeDataPartWriterCompact::fillChecksums(MergeTreeDataPartChecksums & 
     if (!columns_list.empty())
         fillDataChecksums(checksums);
 
+    /// The `with_key_columns` Map manifests are sidecar files, written once for the whole part.
+    if (hasMapKeyColumns())
+        writeMapKeyColumnsFiles(checksums);
+
     if (settings.rewrite_primary_key)
         fillPrimaryIndexChecksums(checksums);
 
@@ -647,6 +933,10 @@ void MergeTreeDataPartWriterCompact::cancel() noexcept
 
     if (marks_file)
         marks_file->cancel();
+
+    for (auto & file : key_columns_files)
+        if (file)
+            file->cancel();
 
     Base::cancel();
 }

@@ -77,4 +77,67 @@ private:
     DataTypePtr nested_type;
 };
 
+/// Presence of one key (`m.exists_<key>`) for `basic` and `with_buckets` parts.
+/// Reads the same streams as `SerializationMapKeyValue` and writes `UInt8` 0/1.
+/// `with_key_columns` parts use `SerializationMapKeyPresence` instead, which reads only `.exists_<key>`.
+/// Writing is not supported: the subcolumn is read-only.
+class SerializationMapKeyExists final : public SerializationWrapper
+{
+private:
+    SerializationMapKeyExists(
+        const SerializationPtr & uint8_serialization_,
+        const SerializationPtr & map_nested_serialization_,
+        MergeTreeMapSerializationVersion serialization_version_,
+        ColumnPtr key_,
+        const DataTypePtr & nested_type_);
+
+public:
+    static SerializationPtr create(
+        const SerializationPtr & map_nested_serialization_,
+        MergeTreeMapSerializationVersion serialization_version_,
+        ColumnPtr key_,
+        const DataTypePtr & nested_type_);
+
+    bool supportsPooling() const override { return false; }
+
+    void enumerateStreams(
+        EnumerateStreamsSettings & settings,
+        const StreamCallback & callback,
+        const SubstreamData & data) const override;
+
+    void serializeBinaryBulkStatePrefix(
+        const IColumn & column,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
+
+    void serializeBinaryBulkStateSuffix(
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
+
+    void deserializeBinaryBulkStatePrefix(
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsDeserializeStatesCache * cache) const override;
+
+    void serializeBinaryBulkWithMultipleStreams(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
+
+    void deserializeBinaryBulkWithMultipleStreams(
+        IColumn & column,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const override;
+
+private:
+    SerializationPtr map_nested_serialization;
+    MergeTreeMapSerializationVersion serialization_version;
+    ColumnPtr key;
+    DataTypePtr nested_type;
+};
+
 }

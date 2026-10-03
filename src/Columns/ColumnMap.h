@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Core/Field.h>
 
 namespace DB
 {
@@ -26,6 +27,11 @@ public:
         Float64 avg = 0;
         /// Number of map rows that contributed to `avg`.
         UInt64 count = 0;
+        /// When true, `takeOrCalculateStatisticsFrom` also collects a frozen distinct key set.
+        /// Off by default so `basic` / `with_buckets` writes do not scan keys.
+        bool collect_keys = false;
+        /// Distinct keys frozen for `with_key_columns` serialization, in `K` comparison order.
+        Array keys;
     };
 
     using StatisticsPtr = std::shared_ptr<const Statistics>;
@@ -151,6 +157,7 @@ public:
     const StatisticsPtr & getStatistics() const { return statistics; }
     StatisticsPtr getOrCalculateStatistics() const;
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
+    void enableKeyCollection();
     Statistics calculateStatisticsForRange(size_t start, size_t end) const;
     bool hasStatistics() const override { return true; }
     void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;

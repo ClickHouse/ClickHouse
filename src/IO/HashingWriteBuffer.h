@@ -3,6 +3,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
+#include <Common/Exception.h>
 #include <city.h>
 
 constexpr size_t DBMS_DEFAULT_HASHING_BLOCK_SIZE = 2048ULL;
@@ -10,6 +11,11 @@ constexpr size_t DBMS_DEFAULT_HASHING_BLOCK_SIZE = 2048ULL;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 template <typename Buffer>
 class IHashingBuffer : public BufferWithOwnMemory<Buffer>
@@ -85,6 +91,33 @@ public:
     {
         next();
         return IHashingBuffer<WriteBuffer>::getHash();
+    }
+
+    /// Copy CityHash state and the incomplete hash block. The nested `out` buffer
+    /// must already have been cloned so `target.out` aliases the cloned workspace.
+    void deepCopyTo(HashingWriteBuffer & target) const
+    {
+        if (target.block_size != block_size)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot deepCopyTo HashingWriteBuffer with a different block size (source {}, target {})",
+                block_size,
+                target.block_size);
+        }
+
+        target.state = state;
+        target.block_pos = block_pos;
+        if (block_pos)
+            memcpy(target.memory.data(), memory.data(), block_pos);
+
+        target.working_buffer = target.out.buffer();
+        target.internal_buffer = target.out.internalBuffer();
+        /// The nested buffer's position may lag behind ours, so its clone can miss these pending bytes.
+        if (offset())
+            memcpy(target.working_buffer.begin(), working_buffer.begin(), offset());
+        target.pos = target.working_buffer.begin() + offset();
+        target.bytes = bytes;
     }
 };
 

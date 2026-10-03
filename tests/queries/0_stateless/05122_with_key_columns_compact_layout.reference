@@ -1,0 +1,25 @@
+part type
+Compact
+substreams
+['m.exists_a','m.exists_b','m.exists_c','m.key_a','m.key_b','m.key_c']
+files
+data_bin=1
+compact_marks=1
+key_columns_txt=1
+keys_info_sidecar=0
+key_a_bin=0
+key_b_bin=0
+key_presence_bin=0
+template=0
+columns_substreams for m
+	m.key_a
+	m.exists_a
+	m.key_b
+	m.exists_b
+	m.key_c
+	m.exists_c
+missing key is default
+0	0
+0	0
+0	0
+0	0

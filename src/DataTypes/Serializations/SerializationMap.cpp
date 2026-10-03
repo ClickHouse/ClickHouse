@@ -190,6 +190,11 @@ bool SerializationMap::isKeyValueSubcolumn(const SubstreamPath & path)
     return !path.empty() && path.back().type == Substream::MapKeyValue;
 }
 
+bool SerializationMap::isKeyExistsSubcolumn(const SubstreamPath & path)
+{
+    return !path.empty() && path.back().type == Substream::MapKeyExists;
+}
+
 template <typename KeyWriter, typename ValueWriter>
 void SerializationMap::serializeTextImpl(
     const IColumn & column,

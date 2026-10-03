@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstring>
+
 #include <IO/BufferBase.h>
 #include <boost/noncopyable.hpp>
 
@@ -161,6 +163,29 @@ public:
         }
         memory.resize(size, deallocate_if_empty);
         Base::set(memory.data(), size);
+    }
+
+    /// Copy unflushed workspace and byte counter.
+    /// The target must already exist and own its memory. File handles are not copied.
+    void deepCopyOwnMemoryTo(BufferWithOwnMemory & target) const
+    {
+        if (use_existing_memory || target.use_existing_memory)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "deepCopyOwnMemoryTo is not supported for buffers that use external memory");
+        }
+
+        const size_t pending = Base::offset();
+        const size_t source_size = memory.size();
+        if (target.memory.size() < source_size)
+            target.resize(source_size);
+
+        if (pending)
+            memcpy(target.memory.data(), memory.data(), pending);
+
+        target.Base::set(target.memory.data(), source_size, pending);
+        target.Base::bytes = Base::bytes;
     }
 };
 

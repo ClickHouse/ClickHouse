@@ -4,6 +4,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
+#include <Storages/MergeTree/MapWithKeyColumnsMerge.h>
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -1265,6 +1266,22 @@ static NameSet collectFilesToSkip(
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
+    /// A rewritten `with_key_columns` Map gets a new `<column>.key_columns.txt` from the writer.
+    /// Skip the source file so the hardlink is not overwritten in place.
+    /// The new part's header can name columns the source part does not store
+    /// (`_row_exists`, `_block_number`, a name produced by `RENAME`). No serialization
+    /// means there is no `<column>.key_columns.txt` to skip. `partUsesMapWithKeyColumns`
+    /// throws when the column is absent, so check first.
+    for (const auto & column : updated_header.getNamesAndTypesList())
+    {
+        if (!source_part->tryGetSerialization(column.name))
+            continue;
+        if (!partUsesMapWithKeyColumns(*source_part, column.name))
+            continue;
+        files_to_skip.insert(getMapKeyColumnsFileName(
+            column.name, *source_part->storage.getSettings(), &source_part->getDataPartStorage()));
+    }
+
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
     files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
 
@@ -1431,6 +1448,34 @@ static NameToNameVector collectFilesForRenames(
     /// Remove old data
     for (const auto & command : commands_for_renames)
     {
+        if (command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN)
+        {
+            /// An older part may not store a column added and then dropped. No serialization
+            /// means there is no `<column>.key_columns.txt` to drop or rename.
+            if (source_part->tryGetSerialization(command.column_name)
+                && partUsesMapWithKeyColumns(*source_part, command.column_name))
+            {
+                const auto & storage_settings = *source_part->storage.getSettings();
+                const auto file_from = getMapKeyColumnsFileName(
+                    command.column_name, storage_settings, &source_part->getDataPartStorage());
+                if (source_part->checksums.has(file_from))
+                {
+                    if (command.type == MutationCommand::Type::DROP_COLUMN
+                        || updated_columns_in_patches.contains(command.rename_to))
+                    {
+                        add_rename(file_from, "");
+                    }
+                    else
+                    {
+                        const auto file_to = getMapKeyColumnsFileName(
+                            command.rename_to, storage_settings, &new_part->getDataPartStorage());
+                        if (file_from != file_to)
+                            add_rename(file_from, file_to);
+                    }
+                }
+            }
+        }
+
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
             /// The index type is gone from metadata by now, so enumerate every suffix any skip
@@ -1871,6 +1916,12 @@ static void finalizeMutatedPart(
         reallocateByCopy(new_data_part->ttl_infos);
         if (new_data_part->index_granularity)
             new_data_part->index_granularity = new_data_part->index_granularity->clone();
+    }
+
+    /// Same as `MergedBlockOutputStream::finalizePartAsync`: the mutated part is queried in memory.
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        new_data_part->loadMapKeyColumnsManifests();
     }
 }
 

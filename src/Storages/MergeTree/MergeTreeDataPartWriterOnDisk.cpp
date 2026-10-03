@@ -18,9 +18,12 @@
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionCodecAdaptive.h>
 #include <Compression/CompressionFactory.h>
+#include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/PackedFilesWriter.h>
@@ -652,7 +655,18 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
             if (column.column->hasDynamicStructure())
                 mutable_column->takeExactDynamicStructureFrom(*column.column);
             if (column.column->hasStatistics())
+            {
+                if (auto * map_column = typeid_cast<ColumnMap *>(mutable_column.get()))
+                {
+                    /// `skip_empty_columns_on_insert` can drop an all-default Map from
+                    /// `serializations` while the block still carries the column.
+                    auto serialization_it = serializations.find(column.name);
+                    if (serialization_it != serializations.end()
+                        && typeid_cast<const SerializationMapWithKeyColumns *>(serialization_it->second.get()))
+                        map_column->enableKeyCollection();
+                }
                 mutable_column->takeOrCalculateStatisticsFrom({column.column});
+            }
             sample_column.column = std::move(mutable_column);
             block_sample.insert(std::move(sample_column));
         }
@@ -745,6 +759,14 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
         serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
         serialization->serializeBinaryBulkWithMultipleStreams(*column.column, column.column->size(), 0, serialize_settings, state);
         serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
+
+        /// `with_key_columns` discovers keys while writing, and the key list itself is
+        /// `<column>.key_columns.txt`, not a data substream. This dry run therefore sees no
+        /// streams. A column still needs one slot here so the next column can be added;
+        /// the Wide writer replaces it with the real key streams once the key set is known.
+        const auto & recorded = columns_substreams.getColumnSubstreams(columns_substreams.getColumnNames().size() - 1);
+        if (recorded.empty() && typeid_cast<const SerializationMapWithKeyColumns *>(serialization.get()))
+            columns_substreams.addSubstreamToLastColumn(escapeForFileName(name_and_type.name) + ".empty");
     }
 }
 

@@ -58,6 +58,44 @@ void ColumnsSubstreams::addSubstreamsToLastColumn(const std::vector<String> & su
         addSubstreamToLastColumn(substream);
 }
 
+void ColumnsSubstreams::setColumnSubstreams(const String & column, const std::vector<String> & substreams)
+{
+    size_t position = columns_substreams.size();
+    for (size_t i = 0; i < columns_substreams.size(); ++i)
+    {
+        if (columns_substreams[i]->column == column)
+        {
+            position = i;
+            break;
+        }
+    }
+    if (position == columns_substreams.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set substreams of column {}: it is not in ColumnsSubstreams", column);
+
+    if (columns_substreams[position].use_count() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot modify the substreams of column {}: they are shared with another data part", column);
+
+    auto & entry = const_cast<ColumnEntry &>(*columns_substreams[position]);
+    entry.substreams.clear();
+    entry.substream_to_local_position.clear();
+    entry.substreams.reserve(substreams.size());
+    entry.substream_to_local_position.reserve(substreams.size());
+    for (const auto & substream : substreams)
+    {
+        if (entry.substream_to_local_position.contains(substream))
+            continue;
+        entry.substream_to_local_position.emplace(substream, entry.substreams.size());
+        entry.substreams.push_back(substream);
+    }
+
+    total_substreams = 0;
+    for (size_t i = 0; i < columns_substreams.size(); ++i)
+    {
+        first_substream_positions[i] = static_cast<UInt32>(total_substreams);
+        total_substreams += columns_substreams[i]->substreams.size();
+    }
+}
+
 size_t ColumnsSubstreams::getSubstreamPosition(size_t column_position, const String & substream) const
 {
     if (column_position >= columns_substreams.size())

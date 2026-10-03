@@ -47,6 +47,8 @@ public:
     /// Returns the buffer that compressed data is written into.
     WriteBuffer * getNestedBuffer() const { return &out; }
 
+    void deepCopyTo(CompressedWriteBuffer & target) const;
+
 private:
     void nextImpl() override;
     /// finalize call does not affect the out buffer.

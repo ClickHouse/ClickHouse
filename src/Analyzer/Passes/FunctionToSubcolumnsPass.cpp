@@ -22,6 +22,8 @@
 #include <DataTypes/Serializations/SerializationVariant.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -61,6 +63,12 @@ namespace Setting
     extern const SettingsBool json_type_escape_dots_in_keys;
     extern const SettingsBool join_use_nulls;
     extern const SettingsBool optimize_functions_to_subcolumns;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
 }
 
 namespace
@@ -640,17 +648,94 @@ bool optimizeMapFunctionToKeys(FunctionNode & function_node, ColumnContext & ctx
     return true;
 }
 
-void optimizeFunctionMapContainsKey(QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
+/// True when this MergeTree table can contain a `with_key_columns` part.
+/// `basic` and `with_buckets` tables stay on `has(m.keys, key)` so an index on `mapKeys` still matches.
+bool tableMayStoreMapWithKeyColumns(const IStorage & storage)
 {
-    /// Replace `mapContainsKey(map_argument, argument)` with `has(map_argument.keys, argument)`.
+    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage);
+    if (!merge_tree)
+        return false;
+
+    const auto settings = merge_tree->getSettings();
+    const auto merged = (*settings)[MergeTreeSetting::map_serialization_version];
+    const auto zero_level = (*settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts];
+    return merged == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS
+        || zero_level == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+}
+
+std::optional<String> serializedConstantMapKey(const DataTypePtr & key_type, const ConstantNode & constant)
+{
+    auto tmp_key_column = key_type->createColumn();
+    if (!tmp_key_column->tryInsert(constant.getValue()))
+    {
+        /// A map with Enum keys can also be indexed by the name of the enum value.
+        if (!isEnum(key_type) || constant.getValue().getType() != Field::Types::String)
+            return {};
+
+        Field enum_value = tryConvertFieldToType(constant.getValue(), *key_type);
+        if (enum_value.isNull() || !tmp_key_column->tryInsert(enum_value))
+            return {};
+    }
+
+    WriteBufferFromOwnString buf;
+    key_type->getDefaultSerialization()->serializeText(*tmp_key_column, 0, buf, FormatSettings());
+    return buf.str();
+}
+
+/// Constant key on a table that may store `with_key_columns`: `m.exists_<serialized_key>`.
+/// Analysis resolves the subcolumn against the default serialization. The part reader then uses
+/// `SerializationMapKeyPresence` for a `with_key_columns` part and `SerializationMapKeyExists` otherwise.
+std::optional<NameAndTypePair> tryMapConstantKeyExistsSubcolumn(const FunctionNode & function_node, const ColumnContext & ctx)
+{
+    const auto & function_arguments_nodes = function_node.getArguments().getNodes();
+    if (function_arguments_nodes.size() != 2)
+        return {};
+
+    const auto * constant = function_arguments_nodes[1]->as<ConstantNode>();
+    if (!constant)
+        return {};
+
+    const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+    const auto & key_type = data_type_map.getKeyType();
+    /// LowCardinality keys compare after the wrapper is removed. Keep `has(m.keys, key)`.
+    if (WhichDataType(key_type).isLowCardinality())
+        return {};
+
+    auto storage = getStorageForColumnSource(ctx.column_source);
+    if (!storage || !tableMayStoreMapWithKeyColumns(*storage))
+        return {};
+
+    auto serialized_key = serializedConstantMapKey(key_type, *constant);
+    if (!serialized_key)
+        return {};
+
+    const String subcolumn_name = String(DataTypeMap::EXISTS_SUBCOLUMN_PREFIX) + *serialized_key;
+    NameAndTypePair column{ctx.column.name + "." + subcolumn_name, std::make_shared<DataTypeUInt8>()};
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeyExistsSubcolumn, column.type))
+        return {};
+
+    return column;
+}
+
+void optimizeFunctionMapContainsKey(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+{
+    /// Constant key on `with_key_columns`: read only `m.exists_<key>`.
+    /// A non-constant key, or any other Map serialization, stays `has(m.keys, key)`.
+    if (auto exists_subcolumn = tryMapConstantKeyExistsSubcolumn(function_node, ctx))
+    {
+        node = std::make_shared<ColumnNode>(*exists_subcolumn, ctx.column_source);
+        return;
+    }
+
     if (optimizeMapFunctionToKeys(function_node, ctx))
         resolveOrdinaryFunctionNodeByName(function_node, "has", ctx.context);
 }
 
-void optimizeFunctionHasForMap(QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
+void optimizeFunctionHasForMap(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
 {
     /// Replace `has(map_argument, argument)` and `notHas(map_argument, argument)` with the same
-    /// function over `map_argument.keys`.
+    /// function over `map_argument.keys`, unless a constant key can read `m.exists_<key>`.
     const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
 
     /// The Map implementation removes LowCardinality before comparing keys. Rewriting to the
@@ -658,6 +743,23 @@ void optimizeFunctionHasForMap(QueryTreeNodePtr &, FunctionNode & function_node,
     /// values such as a FixedString needle wider than the Map key type.
     if (WhichDataType(data_type_map.getKeyType()).isLowCardinality())
         return;
+
+    if (auto exists_subcolumn = tryMapConstantKeyExistsSubcolumn(function_node, ctx))
+    {
+        if (function_node.getFunctionName() == "notHas")
+        {
+            auto & function_arguments_nodes = function_node.getArguments().getNodes();
+            function_arguments_nodes.clear();
+            function_arguments_nodes.push_back(std::make_shared<ColumnNode>(*exists_subcolumn, ctx.column_source));
+            function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
+            function_node.markAsOperator();
+            resolveOrdinaryFunctionNodeByName(function_node, "equals", ctx.context);
+            return;
+        }
+
+        node = std::make_shared<ColumnNode>(*exists_subcolumn, ctx.column_source);
+        return;
+    }
 
     if (optimizeMapFunctionToKeys(function_node, ctx))
     {
