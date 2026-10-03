@@ -111,7 +111,8 @@ protected:
             std::unique_ptr<ReadBuffer> read_buf_,
             std::shared_ptr<ISource> source_,
             std::unique_ptr<QueryPipeline> pipeline_,
-            std::unique_ptr<PullingPipelineExecutor> reader_);
+            std::unique_ptr<PullingPipelineExecutor> reader_,
+            bool top_k_filter_applied_);
 
         ReaderHolder() = default;
         ReaderHolder(ReaderHolder && other) noexcept { *this = std::move(other); }
@@ -124,6 +125,8 @@ protected:
         ObjectInfoPtr getObjectInfo() const { return object_info; }
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
         ReadBuffer * readBuffer() const { return read_buf.get(); }
+        /// Whether the format reader of this file applies TopN dynamic filtering.
+        bool isTopKFilterApplied() const { return top_k_filter_applied; }
 
     private:
         ObjectInfoPtr object_info;
@@ -131,6 +134,7 @@ protected:
         std::shared_ptr<ISource> source;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
+        bool top_k_filter_applied = false;
     };
 
     ReaderHolder reader;
