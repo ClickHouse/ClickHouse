@@ -153,9 +153,9 @@ TEST(TreeHashCompleteness, SetQueryStandaloneFlagIsSignificant)
 {
     /// `is_standalone` is not a child, and the SQL parser fixes it per position, so no pair of
     /// queries differs by the flag alone. `readJSON` accepts it independently of the position, so a
-    /// JSON-built AST can. Every position that reads an embedded `ASTSetQuery` is a carrier.
+    /// JSON-built AST can in these carriers. Projection declarations reject the forged flag at
+    /// the JSON boundary because it makes their SQL impossible to parse; see the test below.
     const std::string queries[] = {
-        "CREATE TABLE t (a UInt64, PROJECTION p (SELECT a) WITH SETTINGS (x = 1)) ENGINE = MergeTree ORDER BY a",
         "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1",
         "CREATE TABLE t (a UInt64 SETTINGS (max_compress_block_size = 1)) ENGINE = MergeTree ORDER BY a",
         "SELECT 1 SETTINGS max_threads = 1",
@@ -180,6 +180,23 @@ TEST(TreeHashCompleteness, SetQueryStandaloneFlagIsSignificant)
     }
 
     EXPECT_NE(hashOf("SET max_threads = 1"), hashOf("SELECT 1 SETTINGS max_threads = 1"));
+}
+
+TEST(TreeHashCompleteness, ProjectionEmbeddedSetQueryCannotBeStandalone)
+{
+    const std::string query =
+        "CREATE TABLE t (a UInt64, PROJECTION p (SELECT a) WITH SETTINGS (x = 1)) ENGINE = MergeTree ORDER BY a";
+    const String json = serializeASTToJSON(*parse(query));
+    const String key = R"("type":"SetQuery",)";
+    const auto pos = json.find(key);
+    ASSERT_NE(pos, String::npos);
+    String with_flag = json;
+    with_flag.insert(pos + key.size(), "\"is_standalone\":true,");
+
+    /// A standalone SET inside `WITH SETTINGS (...)` would format as `WITH SETTINGS (SET x = 1)`,
+    /// which `ParserProjectionDeclaration` cannot produce. Reject it before accepting the AST.
+    expectJSONRejected(with_flag);
+    EXPECT_EQ(hashOfJSONRoundTrip(query), hashOf(query));
 }
 
 TEST(TreeHashCompleteness, OutputOptionFlagsAreSignificant)
