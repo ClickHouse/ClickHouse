@@ -1,0 +1,26 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>n</name>
+            <values>
+                <value>256</value>
+                <value>512</value>
+                <value>1024</value>
+                <value>2048</value>
+                <value>4096</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <drop_query>DROP TABLE IF EXISTS bench_union_corner_touch_{n}</drop_query>
+    <create_query>CREATE TABLE bench_union_corner_touch_{n} (p MultiPolygon) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO bench_union_corner_touch_{n}
+        SELECT arrayMap(i -> [[(toFloat64(i), toFloat64(i)), (toFloat64(i), i + 1.),
+            (i + 1., i + 1.), (i + 1., toFloat64(i)), (toFloat64(i), toFloat64(i))]], range({n}))
+    </fill_query>
+
+    <query>SELECT groupPolygonUnion(p) FROM bench_union_corner_touch_{n} FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS bench_union_corner_touch_{n}</drop_query>
+</test>

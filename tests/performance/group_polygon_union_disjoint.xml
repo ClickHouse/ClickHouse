@@ -1,0 +1,33 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>n</name>
+            <values>
+                <value>256</value>
+                <value>512</value>
+                <value>1024</value>
+                <value>2048</value>
+                <value>4096</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <drop_query>DROP TABLE IF EXISTS bench_union_disjoint_{n}</drop_query>
+    <create_query>CREATE TABLE bench_union_disjoint_{n} (id UInt64, p Polygon) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO bench_union_disjoint_{n}
+        SELECT number, [[
+            (3. * number, 0.), (3. * number, 1.), (3. * number + 1., 1.),
+            (3. * number + 1., 0.), (3. * number, 0.)]]
+        FROM numbers({n})
+    </fill_query>
+
+    <query>SELECT groupPolygonUnion(p) FROM bench_union_disjoint_{n} FORMAT Null SETTINGS max_threads = 1</query>
+    <query>
+        SELECT groupPolygonUnionMerge(s)
+        FROM (SELECT groupPolygonUnionState(p) AS s FROM bench_union_disjoint_{n} GROUP BY intDiv(id, 32))
+        FORMAT Null SETTINGS max_threads = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS bench_union_disjoint_{n}</drop_query>
+</test>

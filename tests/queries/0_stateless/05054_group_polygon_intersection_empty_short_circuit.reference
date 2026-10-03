@@ -1,0 +1,4 @@
+explicit_empty_then_invalid_typed_polygon
+MULTIPOLYGON()
+reduced_to_empty_then_unsupported_geometry
+MULTIPOLYGON()
