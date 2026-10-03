@@ -1,3 +1,7 @@
+SET allow_projection_column_list_in_replicated_metadata = 1;
+SET distributed_ddl_output_mode = 'none';
+SET database_replicated_always_detach_permanently = 1;
+
 -- { echo ON }
 
 DROP TABLE IF EXISTS t_agg_codecs;

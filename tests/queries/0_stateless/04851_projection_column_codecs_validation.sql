@@ -1,6 +1,9 @@
 -- Tags: no-fasttest
 -- no-fasttest: the lossy-codec validation uses SZ3, which is not registered in builds without the sz3 library.
 
+SET allow_projection_column_list_in_replicated_metadata = 1;
+SET distributed_ddl_output_mode = 'none';
+
 -- { echo ON }
 
 DROP TABLE IF EXISTS t_codec_validation;

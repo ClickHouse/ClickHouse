@@ -1,3 +1,6 @@
+SET allow_projection_column_list_in_replicated_metadata = 1;
+SET distributed_ddl_output_mode = 'none';
+
 DROP TABLE IF EXISTS t_projection_codec_type_change;
 
 -- An existing untyped declaration follows the `SELECT` output type. Changing that type must

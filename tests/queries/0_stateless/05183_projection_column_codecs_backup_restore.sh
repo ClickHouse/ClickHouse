@@ -5,6 +5,7 @@ set -euo pipefail
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none"
 
 backup="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}')"
 
@@ -20,7 +21,7 @@ cleanup()
 trap cleanup EXIT
 cleanup
 
-${CLICKHOUSE_CLIENT} --multiquery --query "
+${CLICKHOUSE_CLIENT} --allow_projection_column_list_in_replicated_metadata=1 --multiquery --query "
     CREATE TABLE projection_codec_backup_source
     (
         x UInt64,
@@ -100,7 +101,7 @@ ${CLICKHOUSE_CLIENT} --query "CHECK TABLE projection_codec_backup_restored SETTI
 # An existing destination can deliberately have a different codec for the same projection when the
 # operator opts into restoring across table-definition differences. Restored projection parts must
 # be decoded from their own frames; later parts and merges use destination metadata.
-${CLICKHOUSE_CLIENT} --multiquery --query "
+${CLICKHOUSE_CLIENT} --allow_projection_column_list_in_replicated_metadata=1 --multiquery --query "
     CREATE TABLE projection_codec_backup_existing
     (
         x UInt64,

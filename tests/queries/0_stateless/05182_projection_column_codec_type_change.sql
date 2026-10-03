@@ -1,3 +1,6 @@
+SET allow_projection_column_list_in_replicated_metadata = 1;
+SET distributed_ddl_output_mode = 'none';
+
 DROP TABLE IF EXISTS t_projection_untyped_delta;
 
 -- An untyped declaration must infer type-dependent codec arguments again when the projection's

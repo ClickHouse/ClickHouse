@@ -3,9 +3,10 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none"
 
 echo "--- a disabled codec gate makes the candidate inapplicable ---"
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT --allow_projection_column_list_in_replicated_metadata=1 -q "
     DROP TABLE IF EXISTS t_hypo_codec_gate;
     CREATE TABLE t_hypo_codec_gate (k UInt64, x UInt64) ENGINE = MergeTree ORDER BY k;
     INSERT INTO t_hypo_codec_gate SELECT number, number FROM numbers(100);
@@ -18,7 +19,7 @@ $CLICKHOUSE_CLIENT -q "
 " 2>&1 | grep -oE 'With p_gate \(normal projection, hypothetical\):|^[[:space:]]+status: +[a-z_]+|reason: +Hypothetical projection can no longer be added to this table' | awk '{$1=$1; print}'
 
 echo "--- a changed resolved type makes the candidate inapplicable ---"
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT --allow_projection_column_list_in_replicated_metadata=1 -q "
     DROP TABLE IF EXISTS t_hypo_codec_type;
     CREATE TABLE t_hypo_codec_type (k UInt64, x Float64) ENGINE = MergeTree ORDER BY k;
     INSERT INTO t_hypo_codec_type SELECT number, toFloat64(number) FROM numbers(100);
