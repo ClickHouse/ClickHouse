@@ -191,7 +191,8 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::DateTime64:
         {
-            result = orc::createPrimitiveType(orc::TypeKind::TIMESTAMP);
+            const bool instant = column_mapper && !column_mapper->isIcebergLocalTimestampPath(column_path);
+            result = orc::createPrimitiveType(instant ? orc::TypeKind::TIMESTAMP_INSTANT : orc::TypeKind::TIMESTAMP);
             break;
         }
         case TypeIndex::Int128: [[fallthrough]];

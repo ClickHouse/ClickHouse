@@ -261,8 +261,11 @@ void prepareColumnRecursive(
     const String & column_path, const IcebergOptionality & iceberg_optionality);
 
 void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::string & name,
-    const WriteOptions & options, ColumnChunkWriteStates & states, SchemaElements & schemas, std::optional<Int64> field_id)
+    const WriteOptions & options, ColumnChunkWriteStates & states, SchemaElements & schemas, std::optional<Int64> field_id,
+    const String & column_path, const IcebergOptionality & iceberg_optionality)
 {
+    const bool adjusted_to_utc = !iceberg_optionality.isLocalTimestamp(column_path);
+
     /// Add physical column info.
     auto & state = states.emplace_back();
     state.primitive_column = column;
@@ -407,7 +410,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
                 parq::TimeUnit unit;
                 unit.__set_MILLIS({});
                 parq::TimestampType tt;
-                tt.__set_isAdjustedToUTC(true);
+                tt.__set_isAdjustedToUTC(adjusted_to_utc);
                 tt.__set_unit(unit);
                 parq::LogicalType t;
                 t.__set_TIMESTAMP(tt);
@@ -448,7 +451,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             parq::TimestampType tt;
             /// (Shouldn't we check the DateTime64's timezone parameter here? No, the actual number
             /// in DateTime64 column is always in UTC, regardless of the timezone parameter.)
-            tt.__set_isAdjustedToUTC(true);
+            tt.__set_isAdjustedToUTC(adjusted_to_utc);
             tt.__set_unit(unit);
             parq::LogicalType t;
             t.__set_TIMESTAMP(tt);
@@ -879,15 +882,24 @@ void prepareColumnRecursive(
                     column->convertToFullColumnIfLowCardinality(), nested_type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality);
             else
                 /// Use nested data type, but keep ColumnLowCardinality. The encoder can deal with it.
-                preparePrimitiveColumn(column, nested_type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name));
+                preparePrimitiveColumn(
+                    column, nested_type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), column_path,
+                    iceberg_optionality);
             break;
         }
         default:
-            preparePrimitiveColumn(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name));
+            preparePrimitiveColumn(
+                column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), column_path,
+                iceberg_optionality);
             break;
     }
 }
 
+}
+
+bool IcebergOptionality::isLocalTimestamp(const String & path) const
+{
+    return mapper && mapper->isIcebergLocalTimestampPath(path);
 }
 
 bool IcebergOptionality::isOptional(const String & path) const
