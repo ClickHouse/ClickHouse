@@ -26,6 +26,9 @@ SELECT count() > 0 FROM (EXPLAIN AST SELECT * FROM azureBlobStorage('http://loca
 -- Inside `extra_credentials(...)` only `client_id` and `tenant_id` are shown.
 SELECT count() > 0 FROM (EXPLAIN AST SELECT * FROM azureBlobStorage('http://localhost:11111/visible_x1/cont/data.csv', 'sp=r&sig=SEKRIT_X1S', extra_credentials(client_id = 'visible_x1_cid', client_secret = 'SEKRIT_X1')));
 EXPLAIN AST CREATE TABLE t_x2 (x UInt8) ENGINE = AzureBlobStorage('http://localhost:11111/visible_x2', 'visible_x2_cont', 'visible_x2_blob', 'CSV', extra_credentials(tenant_id = 'visible_x2_tid', client_secret = 'SEKRIT_X2'));
+SELECT count() > 0 FROM (EXPLAIN AST SELECT * FROM azureBlobStorage('http://localhost:11111/visible_x3/cont/data.csv', 'sp=r&sig=SEKRIT_X3S', extra_credentials(client_id = 'visible_x3_cid', role_arn = 'SEKRIT_X3')));
+-- S3 shows only its own `role_arn`.
+SELECT count() > 0 FROM (EXPLAIN AST SELECT * FROM s3('http://localhost:11111/test/visible_x4.csv', extra_credentials(role_arn = 'visible_x4_arn', client_id = 'SEKRIT_X4C', tenant_id = 'SEKRIT_X4T')));
 
 -- A connection string is read part by part and a repeated key keeps its last value, so every
 -- `AccountKey` and `SharedAccessSignature` is hidden, and so is an endpoint url with a query.

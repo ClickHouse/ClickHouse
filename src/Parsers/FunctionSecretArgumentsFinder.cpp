@@ -137,8 +137,9 @@ void FunctionSecretArgumentsFinder::markSecretArgument(size_t index, bool argume
         it->second &= argument_is_named;
 }
 
-void FunctionSecretArgumentsFinder::maskNestedSecretMaps()
+void FunctionSecretArgumentsFinder::maskNestedSecretMaps(bool azure_extra_credentials)
 {
+    result.azure_extra_credentials = azure_extra_credentials;
     for (size_t i = 0, size = function->arguments->size(); i < size; ++i)
     {
         const auto f = function->arguments->at(i)->getFunction();
@@ -724,7 +725,7 @@ void FunctionSecretArgumentsFinder::findS3FunctionSecretArguments(bool is_cluste
 
 void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function)
 {
-    maskNestedSecretMaps();
+    maskNestedSecretMaps(/* azure_extra_credentials= */ true);
 
     /// A cluster function reads its first argument as the cluster name, even an `extra_credentials(...)` or `key = value`.
     if (is_cluster_function && function->arguments->size() > 0 && function->arguments->at(0)->getFunction())
@@ -1317,7 +1318,7 @@ void FunctionSecretArgumentsFinder::findS3TableEngineSecretArguments()
 
 void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArguments()
 {
-    maskNestedSecretMaps();
+    maskNestedSecretMaps(/* azure_extra_credentials= */ true);
 
    /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format, [account_name, account_key, ...])
     size_t url_arg_idx = 0;
@@ -1647,7 +1648,7 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
                     if (j > 0)
                         masked_map += ", ";
                     String cred_value;
-                    if (isNonSecretExtraCredentialsKey(cred_key)
+                    if (isNonSecretExtraCredentialsKey(cred_key, /* azure= */ false)
                         && cred_kv->arguments->at(1)->tryGetString(&cred_value, /* allow_identifier= */ true))
                         masked_map += cred_key + " = " + quoteString(cred_value);
                     else

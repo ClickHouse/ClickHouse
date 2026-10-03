@@ -79,6 +79,8 @@ public:
         /// after `format`), which a single contiguous span cannot represent without hiding the
         /// non-secret arguments in between.
         std::map<size_t, bool> masked_arguments;
+        /// Whether `extra_credentials(..)` is Azure's, whose non-secret keys differ from S3's.
+        bool azure_extra_credentials = false;
 
         bool hasSecrets() const
         {
@@ -91,17 +93,20 @@ public:
     FunctionSecretArgumentsFinder::Result getResult() const { return result; }
 
     /// Whether a key of the `extra_credentials(..)` nested map carries a non-secret identifier whose
-    /// value stays visible when the map is masked: the Azure AD `client_id` / `tenant_id`, and `role_arn`, which names the role to
+    /// value stays visible when the map is masked. Only `role_arn` qualifies: it names the role to
     /// assume, like `access_key_id` names a key. The other two keys of the assume-role triple are
     /// secrets: `external_id` is its shared secret, and `role_session_name` can be one too, because a
     /// trust policy can require a specific value through the `sts:RoleSessionName` condition (the
-    /// ClickHouse Cloud guide documents exactly this use). Any other key - unknown, malformed or an
+    /// ClickHouse Cloud guide documents exactly this use). In Azure's map only its two keys qualify, the
+    /// Azure AD identifiers `client_id` and `tenant_id`. Any other key - unknown, malformed or an
     /// expression - fails closed.
     /// The `.backup` metadata is a different matter: its `<base_backup>` locator keeps `role_session_name`
     /// on purpose, so that a role-authenticated backup chain stays restorable (see `BackupInfo.cpp`).
-    static bool isNonSecretExtraCredentialsKey(std::string_view key)
+    static bool isNonSecretExtraCredentialsKey(std::string_view key, bool azure)
     {
-        return key == "role_arn" || key == "client_id" || key == "tenant_id";
+        if (azure)
+            return key == "client_id" || key == "tenant_id";
+        return key == "role_arn";
     }
 
 protected:
@@ -136,7 +141,7 @@ protected:
     /// accept them at any position, not just at the tail. Record them so their values are hidden with
     /// the keys kept.
     /// Idempotent: each map is recorded at most once.
-    void maskNestedSecretMaps();
+    void maskNestedSecretMaps(bool azure_extra_credentials = false);
 
     /// Single source of truth for reading an S3-style argument list the way the S3 parsers do:
     /// `headers(..)` / `extra_credentials(..)` can appear at any position and are stripped before

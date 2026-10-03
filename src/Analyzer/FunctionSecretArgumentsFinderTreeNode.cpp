@@ -19,7 +19,7 @@ namespace
 
     /// Whether a nested secret map child is a `key = value` node whose value stays visible when the
     /// map is masked (the non-secret identifiers of `extra_credentials`; `headers` values are all hidden).
-    bool isNonSecretMapChild(const String & map_name, const QueryTreeNodePtr & node)
+    bool isNonSecretMapChild(const String & map_name, const QueryTreeNodePtr & node, bool azure_extra_credentials)
     {
         if (map_name != "extra_credentials")
             return false;
@@ -34,9 +34,11 @@ namespace
         const auto & key_node = function_node->getArguments().getNodes()[0];
         if (const auto * key_constant = key_node->as<ConstantNode>())
             return key_constant->getValue().getType() == Field::Types::String
-                && FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_constant->getValue().safeGet<String>());
+                && FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(
+                    key_constant->getValue().safeGet<String>(), azure_extra_credentials);
         if (const auto * key_identifier = key_node->as<IdentifierNode>())
-            return FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_identifier->getIdentifier().getFullName());
+            return FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(
+                key_identifier->getIdentifier().getFullName(), azure_extra_credentials);
         return false;
     }
 }
@@ -55,7 +57,7 @@ void forEachSecretArgumentNode(
         {
             for (auto & inner : function_node->getArguments().getNodes())
             {
-                if (!isNonSecretMapChild(function_node->getFunctionName(), inner))
+                if (!isNonSecretMapChild(function_node->getFunctionName(), inner, secret_arguments.azure_extra_credentials))
                     on_secret(n, secretValueSlot(inner));
             }
             continue;
