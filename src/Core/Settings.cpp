@@ -4841,6 +4841,19 @@ The number of keys at which the adaptive aggregator freezes a thread's local has
 The memory size at which the adaptive aggregator freezes a thread's local hash table (see `enable_adaptive_aggregator`). A table freezes at whichever of this and `adaptive_aggregator_freeze_threshold` is reached first. The size is the local table's own allocated bytes (its hash-table buffer plus its arenas), checked between blocks. The byte bound matters when the keys or the aggregation states are wide: the key-count threshold alone would let such tables outgrow the CPU caches. At the default, tables of ordinary key and state widths keep freezing by the key count. 0 disables the byte bound, so the key-count threshold alone decides.
 )", 0, \
         {"26.9", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."}) \
+    DECLARE(UInt64, shard_by_hash_input_batch_bytes, 2097152, R"(
+When `enable_sharding_aggregator = 1`, controls the number of source bytes accumulated in `BufferedShardByHashTransform` before a batch scatter-flush is performed via `DB::ColumnsScatter::scatter`.
+
+Setting this to a non-zero value enables input batching: the transform collects multiple input chunks until their total size in bytes reaches or exceeds this budget, then scatters them all at once, amortising the K×P `IColumn` allocation cost over many input chunks. Using a byte budget (rather than a row count) keeps each flush short and its per-shard buffers small for wide rows, while narrow rows still accumulate until the budget is reached.
+
+Chunks are never split; a batch may exceed the budget by at most one input chunk's bytes. The byte budget is a soft target with an internal safety cap on the number of accumulated chunks, so a flush may also happen before the budget is reached — this bounds the row count for const-heavy chunks whose physical byte size does not reflect how many rows (and partition ids) they carry.
+
+Possible values:
+
+- 0 — Disabled. Input chunks are scattered one at a time through the same `DB::ColumnsScatter::scatter` path (no batching across chunks).
+- Any positive value — Enable batching. Default: `2097152` (2 MiB).
+)", 0, \
+        {"26.10", 0, 2097152, "New setting to control input-batching in `BufferedShardByHashTransform`: accumulates this many bytes before a single `ColumnsScatter::scatter` flush, eliminating per-chunk K×P IColumn allocation overhead. Defaults to 2 MiB; set to 0 to scatter one chunk at a time."}) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 )", 0, \

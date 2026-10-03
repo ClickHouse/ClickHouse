@@ -27,7 +27,6 @@ struct ScatterByPartitionTransform : IProcessor
     bool requiresAllOutputsPushable() const override { return true; }
 
 private:
-
     void generateOutputChunks();
     /// Hands the scattered chunks to the outputs. Returns true once all of them are handed over.
     bool pushOutputChunks();
@@ -44,7 +43,8 @@ private:
     Chunk chunk;
 
     PaddedPODArray<UInt32> hash;
-    IColumn::Selector selector;
+    PaddedPODArray<UInt32> pids;
+    PaddedPODArray<UInt32> rows_per_shard;
     Chunks output_chunks;
 };
 
