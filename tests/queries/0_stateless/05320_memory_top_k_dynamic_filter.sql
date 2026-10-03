@@ -14,9 +14,9 @@ INSERT INTO t_memory_top_k SELECT number, if(number % 11 = 0, NULL, (number * 79
 INSERT INTO t_memory_top_k_compressed SELECT * FROM t_memory_top_k;
 
 SELECT '-- explain';
-SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT * FROM t_memory_top_k ORDER BY k LIMIT 5) WHERE explain LIKE '%TopN filter%';
-SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT * FROM t_memory_top_k ORDER BY k LIMIT 5 SETTINGS use_top_k_dynamic_filtering = 0) WHERE explain LIKE '%TopN filter%';
-SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT * FROM t_memory_top_k WHERE s LIKE '%7%' ORDER BY v DESC LIMIT 5) WHERE explain LIKE '%TopN filter%';
+SELECT replaceRegexpOne(explain, '^[ │├└─]*', '') FROM (EXPLAIN actions = 1 SELECT * FROM t_memory_top_k ORDER BY k LIMIT 5) WHERE explain LIKE '%TopN filter%';
+SELECT replaceRegexpOne(explain, '^[ │├└─]*', '') FROM (EXPLAIN actions = 1 SELECT * FROM t_memory_top_k ORDER BY k LIMIT 5 SETTINGS use_top_k_dynamic_filtering = 0) WHERE explain LIKE '%TopN filter%';
+SELECT replaceRegexpOne(explain, '^[ │├└─]*', '') FROM (EXPLAIN actions = 1 SELECT * FROM t_memory_top_k WHERE s LIKE '%7%' ORDER BY v DESC LIMIT 5) WHERE explain LIKE '%TopN filter%';
 
 SELECT '-- ascending';
 SELECT k, v, s FROM t_memory_top_k ORDER BY v, k LIMIT 5;
