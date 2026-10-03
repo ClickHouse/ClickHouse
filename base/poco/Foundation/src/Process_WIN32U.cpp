@@ -113,7 +113,9 @@ void ProcessImpl::timesImpl(long& userTime, long& kernelTime)
 
 static bool argNeedsEscaping(const std::string& arg)
 {
-	bool containsQuotableChar = std::string::npos != arg.find_first_of(" \t\n\v\"");
+	// An empty argument has to be quoted too, or it is serialized as just another separator and the
+	// child does not see it at all.
+	bool containsQuotableChar = arg.empty() || std::string::npos != arg.find_first_of(" \t\n\v\"");
 	// Assume args that start and end with quotes are already quoted and do not require further quoting.
 	// There is probably code out there written before launch() escaped the arguments that does its own
 	// escaping of arguments. This ensures we do not interfere with those arguments.
