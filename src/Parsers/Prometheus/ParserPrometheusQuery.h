@@ -21,6 +21,10 @@ public:
     /// Returns true if parsing failed exactly at the end of the input.
     static bool isIncompleteAtEOF(std::string_view query);
 
+    /// PromQL is parsed from the raw text by its own grammar, which has tokens such as `=~` that
+    /// the SQL lexer rejects; the SQL tokens are only used here to find the end of the statement.
+    bool consumesRawText() const override { return true; }
+
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
