@@ -517,6 +517,9 @@ struct AggregatedDataVariants : private boost::noncopyable
     bool isConvertibleToTwoLevel() const;
     static bool isConvertibleToTwoLevel(Type type);
     void convertToTwoLevel();
+    /// Replaces an empty two-level table with an empty single-level table of the same method: the reverse of
+    /// `convertToTwoLevel` for a table whose data was written to disk.
+    void resetToSingleLevel();
     bool isLowCardinality() const;
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
     bool topKHeapEverRejected() const;
