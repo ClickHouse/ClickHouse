@@ -256,6 +256,14 @@ void ASTShowTablesQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'not_like' and 'case_insensitive_like' require a 'like' pattern during AST JSON deserialization");
 
+    /// The SQL grammar requires SHOW [CHANGED] SETTINGS to have LIKE/ILIKE and does not accept NOT LIKE.
+    if (m_settings && !has_like)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`SHOW SETTINGS` requires a 'like' pattern during AST JSON deserialization");
+    if (m_settings && not_like)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'not_like' is not valid for `SHOW SETTINGS` during AST JSON deserialization");
+
     /// In the table/dictionary form, the parser accepts either a LIKE clause or a WHERE clause,
     /// never both, and `InterpreterShowTablesQuery` ignores 'where_expression' whenever 'like' is
     /// set, so the formatted SQL and the executed query would diverge.
