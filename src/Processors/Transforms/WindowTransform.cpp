@@ -171,10 +171,10 @@ void WindowTransform::advanceFrameStartRangeOffset()
         // while [frames_start] < [current_row] with offset.
         const auto * compared_column
             = blocks.blockAt(frame_start.block).materialized_columns[params.order_by_indices[0]].get();
-        if (params.range_offset_comparator(compared_column, frame_start.row,
+        if (params.range_begin_offset_comparator(compared_column, frame_start.row,
             reference_column, current_row.row,
             params.window_description.frame.begin_offset,
-            preceding)
+            preceding, params.time_zone)
                 * direction >= 0)
         {
             frame_started = true;
@@ -438,10 +438,10 @@ void WindowTransform::advanceFrameEndRangeOffset()
         // [frame_end] <= [current_row] with offset.
         const auto * compared_column
             = blocks.blockAt(frame_end.block).materialized_columns[params.order_by_indices[0]].get();
-        if (params.range_offset_comparator(compared_column, frame_end.row,
+        if (params.range_end_offset_comparator(compared_column, frame_end.row,
             reference_column, current_row.row,
             params.window_description.frame.end_offset,
-            preceding)
+            preceding, params.time_zone)
                 * direction > 0)
         {
             frame_ended = true;
