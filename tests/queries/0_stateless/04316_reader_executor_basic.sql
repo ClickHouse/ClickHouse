@@ -53,9 +53,10 @@ SELECT sum(length(s)) FROM t_reader_executor;
 
 -- Activation check: `ReadPipeline::build` logs `using ReaderExecutor ...` at
 -- DEBUG when the executor path is chosen. Confirm at least one such line was
--- emitted for the marked query (correlated by query id, scoped to this test's
--- own database so parallel tests can't interfere). Prints 1 when the executor
--- was active.
+-- emitted for the marked query or for a query it sent to a parallel replica
+-- (those have their own query id and carry the marked one as `initial_query_id`),
+-- scoped to this test's own database so parallel tests can't interfere. Prints 1
+-- when the executor was active.
 SYSTEM FLUSH LOGS query_log, text_log;
 
 SELECT count() > 0
@@ -65,9 +66,13 @@ WHERE logger_name = 'ReadPipeline'
   AND query_id IN (
       SELECT query_id
       FROM system.query_log
-      WHERE log_comment = '04316_reader_executor_probe'
-        AND type = 'QueryFinish'
-        AND current_database = currentDatabase()
+      WHERE initial_query_id IN (
+          SELECT query_id
+          FROM system.query_log
+          WHERE log_comment = '04316_reader_executor_probe'
+            AND type = 'QueryFinish'
+            AND current_database = currentDatabase()
+      )
   );
 
 DROP TABLE t_reader_executor;
