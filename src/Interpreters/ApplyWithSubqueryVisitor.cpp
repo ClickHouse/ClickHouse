@@ -58,6 +58,8 @@ bool hasOwnAliasScope(const IAST & ast)
 
 void forEachDescendantAlias(const ASTPtr & ast, const std::function<void(const String &, const ASTPtr &)> & callback)
 {
+    checkStackSize();
+
     for (const auto & child : ast->children)
     {
         if (auto alias = child->tryGetAlias(); !alias.empty())
@@ -96,12 +98,34 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
         visit(*node_select, data);
     else
     {
+        /// A lambda parameter and an alias declared in the lambda body hide an inherited alias of the same name.
+        std::optional<Data> lambda_data;
+        if (const auto * lambda = ast->as<ASTFunction>(); lambda && isASTLambdaFunction(*lambda) && !data.literals.empty())
+        {
+            std::vector<String> names;
+            for (const auto & parameter : lambda->arguments->children[0]->as<ASTFunction &>().arguments->children)
+            {
+                if (const auto * identifier = parameter->as<ASTIdentifier>())
+                    names.push_back(identifier->name());
+            }
+            forEachExpressionAlias(lambda->arguments->children[1], [&](const String & alias, const ASTPtr &) { names.push_back(alias); });
+            for (const auto & name : names)
+            {
+                if (!data.literals.contains(name))
+                    continue;
+                if (!lambda_data)
+                    lambda_data = data;
+                lambda_data->literals.erase(name);
+            }
+        }
+        const Data & scope = lambda_data ? *lambda_data : data;
+
         for (auto & child : ast->children)
-            visit(child, data);
+            visit(child, scope);
         if (auto * node_func = ast->as<ASTFunction>())
-            visit(*node_func, data);
+            visit(*node_func, scope);
         else if (auto * node_table = ast->as<ASTTableExpression>())
-            visit(*node_table, data);
+            visit(*node_table, scope);
     }
 }
 
@@ -140,10 +164,27 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
     /// ones are out of scope here.
     /// An alias this select declares itself hides an inherited one of the same name.
     std::vector<String> own_aliases;
+    auto add_own_alias = [&](const String & alias, const ASTPtr &) { own_aliases.push_back(alias); };
     for (const auto & child : ast.children)
     {
         if (child != ast.tables())
-            forEachExpressionAlias(child, [&](const String & alias, const ASTPtr &) { own_aliases.push_back(alias); });
+            forEachExpressionAlias(child, add_own_alias);
+    }
+    /// So do `ARRAY JOIN` and `JOIN ... ON`, unlike a table expression.
+    if (ast.tables())
+    {
+        for (const auto & element : ast.tables()->children)
+        {
+            const auto * table_element = element->as<ASTTablesInSelectQueryElement>();
+            if (!table_element)
+                continue;
+            if (const auto * array_join = table_element->array_join ? table_element->array_join->as<ASTArrayJoin>() : nullptr;
+                array_join && array_join->expression_list)
+                forEachExpressionAlias(array_join->expression_list, add_own_alias);
+            if (const auto * table_join = table_element->table_join ? table_element->table_join->as<ASTTableJoin>() : nullptr;
+                table_join && table_join->on_expression)
+                forEachExpressionAlias(table_join->on_expression, add_own_alias);
+        }
     }
 
     std::optional<Data> scope_data;
