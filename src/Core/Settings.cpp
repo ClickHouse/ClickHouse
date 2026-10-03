@@ -6794,6 +6794,17 @@ Possible values:
 - Any string
 )", 0, \
         {"24.8", "", "", "New setting for labeling query cache settings."}) \
+    DECLARE(Seconds, query_cache_herd_wait_timeout, 300, R"(
+Maximum time a query waits for a concurrently running, identical query to finish instead of computing the same
+result itself ("thundering herd" avoidance for the [query cache](/concepts/features/performance/caches/query-cache)).
+While waiting, the query still reacts to cancellation (e.g. `KILL QUERY`) and to `max_execution_time`.
+
+Possible values:
+
+- 0 - Disabled: concurrent identical queries are never coalesced, each computes its own result independently (this was the behavior before this setting was introduced).
+- Positive integer >= 0 - Maximum wait time in seconds.
+)", 0, \
+        {"26.10", 0, 300, "New setting bounding how long a query waits for a concurrently running, identical query to finish instead of computing the same result itself, to avoid the query cache's thundering herd effect; 0 disables coalescing."}) \
     DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \
