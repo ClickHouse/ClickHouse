@@ -108,7 +108,6 @@ def skip_create_table_head(text):
     `CREATE TABLE engine (...) ENGINE = MergeTree ...` would take the table
     name for a clause keyword.
     """
-    length = len(text)
     pos = skip_whitespace_and_comments(text, 0)
     if not any(is_word_at(text, pos, kw) for kw in ("CREATE", "ATTACH", "REPLACE")):
         return 0
