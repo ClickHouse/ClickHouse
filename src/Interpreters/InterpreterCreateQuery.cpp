@@ -878,6 +878,11 @@ void applyForceReverseOrder(ASTStorage * storage)
     {
         for (auto & child : func->arguments->children)
             forceReverse(child);
+
+        /// `ORDER BY (a, b)` is parsed as a tuple operator, while a list with `DESC` elements is parsed as a
+        /// `tuple` function. Make the rewritten key look like the parsed one, otherwise it is formatted
+        /// differently, and comparisons of key definitions (e.g. in `CLONE AS`) fail.
+        func->setIsOperator(false);
     }
     else
     {
@@ -1287,7 +1292,18 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// disagree with the data on disk, so the rewrite is skipped for these.
     if (!internal && !create.is_clone_as && !is_restore_from_backup && mode <= LoadingStrictnessLevel::CREATE
         && getContext()->getSettingsRef()[Setting::force_primary_key_reverse_order])
+    {
         applyForceReverseOrder(create.storage);
+
+        /// The engines of hidden inner tables, e.g. `CREATE MATERIALIZED VIEW ... ENGINE = ...`, are kept in
+        /// `create.targets` rather than in `create.storage`. The inner tables are created by internal queries,
+        /// which skip the rewrite, so it is applied here to the definitions they are created from.
+        if (create.targets)
+        {
+            for (auto * inner_engine : create.targets->getInnerEngines())
+                applyForceReverseOrder(inner_engine);
+        }
+    }
 
     return properties;
 }

@@ -1,12 +1,12 @@
 -- Tags: no-random-merge-tree-settings
 
 -- Test for three reverse key risk fixes:
--- 1. `ReadInOrderOptimizer` with reverse keys (still used by `StorageMerge`, `StorageBuffer` and `StorageMaterializedView`)
+-- 1. Read-in-order optimization with reverse keys
 -- 2. ALTER TABLE MODIFY ORDER BY direction change validation
 -- 3. MinMaxCount projection with explicit PRIMARY KEY + reverse sorting key
 
 -- ==========================================================================
--- Risk #1: `ReadInOrderOptimizer` must handle reverse keys correctly.
+-- Risk #1: The read-in-order optimization must handle reverse keys correctly.
 -- It must account for reverse_flags when matching sort descriptions.
 -- ==========================================================================
 
@@ -80,11 +80,14 @@ INSERT INTO t_reverse_minmax SELECT number, number * 10 FROM numbers(1, 100);
 OPTIMIZE TABLE t_reverse_minmax FINAL;
 
 -- The MinMaxCount projection should correctly handle the reversed sorting key
--- even when PRIMARY KEY is explicitly specified.
-SELECT count() FROM t_reverse_minmax;
+-- even when PRIMARY KEY is explicitly specified. Pin the settings so that the projection is
+-- actually used instead of the trivial count optimization or a scan of the base table.
+SET optimize_use_projections = 1, optimize_use_implicit_projections = 1, optimize_trivial_count_query = 0;
 
--- min/max should be correct
-SELECT min(a), max(a) FROM t_reverse_minmax;
+SELECT count() > 0 FROM (EXPLAIN SELECT count(), min(a), max(a) FROM t_reverse_minmax) WHERE explain LIKE '%_minmax_count_projection%';
+
+-- count/min/max should be correct
+SELECT count(), min(a), max(a) FROM t_reverse_minmax;
 
 DROP TABLE t_reverse_minmax;
 
@@ -115,6 +118,16 @@ SELECT x FROM t_force_reverse_single ORDER BY x ASC;
 
 INSERT INTO t_force_reverse_multi VALUES (1, 'a', '2024-01-01'), (2, 'b', '2024-01-02'), (3, 'c', '2024-01-03');
 SELECT a, b FROM t_force_reverse_multi ORDER BY a ASC;
+
+-- The engine of the inner table of a materialized view is kept apart from the main storage
+-- definition, and it should be rewritten as well.
+DROP TABLE IF EXISTS t_force_reverse_mv;
+CREATE MATERIALIZED VIEW t_force_reverse_mv ENGINE = MergeTree ORDER BY (a, b) AS SELECT a, b FROM t_force_reverse_multi;
+SELECT create_table_query LIKE '%ORDER BY tuple(a DESC, b DESC)%' FROM system.tables
+    WHERE database = currentDatabase() AND name LIKE '.inner%';
+INSERT INTO t_force_reverse_multi VALUES (4, 'd', '2024-01-04'), (5, 'e', '2024-01-05');
+SELECT a, b FROM t_force_reverse_mv ORDER BY a ASC;
+DROP TABLE t_force_reverse_mv;
 
 -- `CLONE AS` reuses the source parts, which are physically sorted in the original order,
 -- so its ORDER BY must be left alone even with the setting enabled.
