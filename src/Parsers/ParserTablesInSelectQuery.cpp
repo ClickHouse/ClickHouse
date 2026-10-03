@@ -1484,10 +1484,10 @@ Approximated query processing can be useful in the following cases:
 - Business requirements target approximate results (for cost-effectiveness, or to market exact results to premium users).
 
 <Note>
-You can only use sampling with the tables in the [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) family, and only if the sampling expression was specified during table creation (see [MergeTree engine](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table)).
+You can only use sampling with the tables in the [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) family, and only if the sampling expression was specified during table creation (see [MergeTree engine](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table)). The exception is the experimental [Bernoulli sampling](#bernoulli-sampling), enabled with the `allow_experimental_bernoulli_sample` setting, which also works on `MergeTree` tables without a sampling expression.
 </Note>
 
-The features of data sampling are listed below:
+The features of data sampling with a sampling key are listed below (they do not hold for [Bernoulli sampling](#bernoulli-sampling), which has no sampling key):
 
 - Data sampling is a deterministic mechanism. The result of the same `SELECT .. SAMPLE` query is always the same.
 - Sampling works consistently for different tables. For tables with a single sampling key, a sample with the same coefficient always selects the same subset of possible data. For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This means that you can use the sample in subqueries in the [IN](/reference/statements/in) clause. Also, you can join samples using the [JOIN](/reference/statements/select/join) clause.
