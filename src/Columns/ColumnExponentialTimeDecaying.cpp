@@ -605,7 +605,9 @@ void ColumnExponentialTimeDecaying::prepareForSquashing(
 void ColumnExponentialTimeDecaying::rollback(const ColumnCheckpoint & checkpoint)
 {
     storage->rollback(checkpoint);
-    rebuildOrderingKey();
+
+    chassert(ordering_key->size() >= checkpoint.size);
+    ordering_key->popBack(ordering_key->size() - checkpoint.size);
 }
 
 void ColumnExponentialTimeDecaying::forEachMutableSubcolumn(MutableColumnCallback callback)
