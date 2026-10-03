@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <Core/Range.h>
@@ -139,6 +140,22 @@ void generateManifestList(
     const std::vector<Int64> & entry_row_counts = {},
     const std::vector<Int64> & entry_file_counts = {});
 
+class IcebergStorageSink;
+
+/// The parallel sinks of one incremental refresh round into one table: the last one to finish commits for all of them.
+class IcebergStorageSinkGroup
+{
+public:
+    void add();
+    /// Returns all finished sinks if `sink` is the last one to finish, otherwise nothing.
+    std::vector<const IcebergStorageSink *> finish(const IcebergStorageSink * sink);
+
+private:
+    std::mutex mutex;
+    size_t unfinished = 0;
+    std::vector<const IcebergStorageSink *> finished;
+};
+
 class IcebergStorageSink final : public SinkToStorage
 {
 public:
@@ -192,6 +209,10 @@ private:
 
     /// Generated once per insert so the manifests stay valid across commit retries.
     Int64 snapshot_id = 0;
+
+    std::shared_ptr<IcebergStorageSinkGroup> sink_group;
+    /// Writers of all the sinks committed by this one.
+    std::vector<std::pair<const ChunkPartitioner::PartitionKey *, const MultipleFileWriter *>> writers_to_commit;
 
     /// Manifests are written once and reused on commit retries.
     Strings manifest_entries_in_storage;

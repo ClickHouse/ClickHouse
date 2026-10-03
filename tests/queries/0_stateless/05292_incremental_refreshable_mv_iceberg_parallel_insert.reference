@@ -1,0 +1,5 @@
+10000	10000
+15000	15000
+=== one snapshot per round ===
+APPEND	10000	2	1
+APPEND	5000	2	1
