@@ -95,6 +95,10 @@ private:
     /// Seals all blocks before block_end as having column_count physical columns.
     void appendSchemaHistoryBoundary(size_t block_end, size_t column_count, const WriteLock &);
 
+    /// Called on rollback after `FileChecker::repair`: if a failed operation registered the history file
+    /// in `sizes.json`, removes that registration and the file, so the table keeps its previous set of files.
+    void unregisterSchemaHistoryFileIfAdded(bool registered_before, const WriteLock &);
+
     /// Saves the index file.
     void saveIndices(const WriteLock &);
 

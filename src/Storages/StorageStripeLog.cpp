@@ -597,6 +597,7 @@ void StorageStripeLog::alter(
         /// Persist the old file sizes first, so an interrupted history append is rolled back on attach.
         saveFileSizes(lock);
         const size_t history_size_before_append = schema_history.size();
+        const bool history_file_registered_before_append = file_checker.contains(schema_history_file_path);
         try
         {
             /// Seal every block written with the old schema. Blocks after this boundary use the
@@ -609,6 +610,7 @@ void StorageStripeLog::alter(
         catch (...)
         {
             file_checker.repair();
+            unregisterSchemaHistoryFileIfAdded(history_file_registered_before_append, lock);
             schema_history.resize(history_size_before_append);
             throw;
         }
@@ -873,6 +875,19 @@ void StorageStripeLog::appendSchemaHistoryBoundary(
 }
 
 
+void StorageStripeLog::unregisterSchemaHistoryFileIfAdded(bool registered_before, const WriteLock & /* already locked for writing */)
+{
+    if (registered_before || !file_checker.contains(schema_history_file_path))
+        return;
+
+    /// `FileChecker::repair` has already truncated the file to its registered zero size,
+    /// so even if we stop between these steps, the leftover file is empty and harmless.
+    file_checker.remove(schema_history_file_path);
+    file_checker.save();
+    disk->removeFileIfExists(schema_history_file_path);
+}
+
+
 void StorageStripeLog::saveIndices(const WriteLock & /* already locked for writing */)
 {
     size_t num_indices = indices.blocks.size();
@@ -1063,6 +1078,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
     /// If there were no files, save zero file sizes to be able to rollback in case of error.
     saveFileSizes(lock);
     const auto schema_history_before_restore = schema_history;
+    const bool history_file_registered_before_restore = file_checker.contains(schema_history_file_path);
     const size_t restored_block_offset = indices.blocks.size();
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
@@ -1174,6 +1190,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
     {
         /// Rollback partial writes.
         file_checker.repair();
+        unregisterSchemaHistoryFileIfAdded(history_file_registered_before_restore, lock);
         removeUnsavedIndices(lock);
         schema_history = schema_history_before_restore;
         throw;
