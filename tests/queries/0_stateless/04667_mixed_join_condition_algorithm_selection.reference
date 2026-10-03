@@ -23,7 +23,10 @@ INNER ALL fsm,hash	1	20
 INNER ALL hash	1	20
 LEFT SEMI fsm,hash	1
 LEFT ANTI fsm,hash	2
--- rejection when the list has no hash family member is unchanged --
+-- rejection when the list has no capable member is unchanged --
+-- partial merge join evaluates the mixed condition itself --
+partial_merge alone	3	20
+prefer_partial_merge alone	3	20
 -- a merge algorithm is still selected where it is valid --
 equi keeps merge	1
 one-sided keeps merge	1

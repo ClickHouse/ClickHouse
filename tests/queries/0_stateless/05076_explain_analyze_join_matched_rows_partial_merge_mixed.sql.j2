@@ -1,0 +1,70 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: EXPLAIN ANALYZE rejects distributed plans (NOT_IMPLEMENTED).
+
+-- `EXPLAIN ANALYZE matches = 1` counts for the partial merge join with a mixed (cross-side
+-- non-equi) ON condition. Like the hash join, a left row must count as matched only when a
+-- candidate pair passes the condition, not on key equality alone; the `hash` rows of every
+-- section pin that both algorithms report the same numbers.
+--
+-- The condition `l.v < r.v` discriminates: it fails for many key-equal pairs, so counting on
+-- key equality alone cannot pass. The small-blocks section forces equal-key runs to span sorted
+-- right blocks and forces result cuts (continuations): a row that fails the condition in one
+-- right block and passes it in the next one must count exactly once.
+
+SET enable_analyzer = 1;
+-- Swapping the sides moves `columns_added_by_join` and flips which side owns the output filter.
+SET query_plan_join_swap_table = 0;
+-- A runtime filter would drop non-matching left rows before the probe, changing `Left: rows`.
+SET enable_join_runtime_filters = 0;
+SET join_use_nulls = 0;
+
+DROP TABLE IF EXISTS left_side;
+DROP TABLE IF EXISTS right_dup_keys;
+CREATE TABLE left_side (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE right_dup_keys (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+
+INSERT INTO left_side SELECT number % 100, number FROM numbers(439);
+INSERT INTO left_side SELECT 1000 + number, number FROM numbers(561);
+INSERT INTO right_dup_keys SELECT number % 100, number FROM numbers(521);
+INSERT INTO right_dup_keys SELECT 2000 + number, number FROM numbers(479);
+
+SELECT 'ground truth: rows, matched (key only), matched (key and condition)';
+SELECT count(),
+       countIf(k IN (SELECT k FROM right_dup_keys)),
+       countIf((k, v) IN (SELECT l.k, l.v FROM left_side AS l INNER JOIN right_dup_keys AS r ON l.k = r.k WHERE l.v < r.v))
+FROM left_side;
+SELECT count(),
+       countIf(k IN (SELECT k FROM left_side)),
+       countIf((k, v) IN (SELECT r.k, r.v FROM left_side AS l INNER JOIN right_dup_keys AS r ON l.k = r.k WHERE l.v < r.v))
+FROM right_dup_keys;
+
+{% set kinds = ['ALL LEFT', 'ALL RIGHT', 'ALL FULL', 'ANY LEFT', 'ANY INNER', 'SEMI LEFT'] -%}
+
+{% set cases = [
+    ('hash', "join_algorithm = 'hash'"),
+    ('partial_merge', "join_algorithm = 'partial_merge'"),
+    ('partial_merge, small blocks', "join_algorithm = 'partial_merge', partial_merge_join_rows_in_right_blocks = 16, max_joined_block_size_rows = 16"),
+    ('partial_merge, external', "join_algorithm = 'partial_merge', max_rows_in_join = 100, partial_merge_join_rows_in_right_blocks = 16"),
+] -%}
+
+{% for algo, settings in cases -%}
+SELECT '{{ algo }}';
+{% for kind in kinds -%}
+SELECT '{{ kind }}' AS kind,
+    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Left: rows%') AS matched_left,
+    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Right: rows%') AS matched_right
+FROM (EXPLAIN ANALYZE matches = 1 SELECT count() FROM left_side AS l {{ kind }} JOIN right_dup_keys AS r ON l.k = r.k AND l.v < r.v SETTINGS {{ settings }});
+{% endfor -%}
+{% endfor -%}
+
+-- Without `matches = 1` the derived mode must still count the matched left rows post-condition
+-- (the right side of `ALL LEFT` is `not collected` there for the partial merge join).
+SELECT 'derived mode';
+{% for algo, settings in [('hash', "join_algorithm = 'hash'"), ('partial_merge', "join_algorithm = 'partial_merge'")] -%}
+SELECT '{{ algo }}' AS algo,
+    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Left: rows%') AS matched_left
+FROM (EXPLAIN ANALYZE SELECT count() FROM left_side AS l ALL LEFT JOIN right_dup_keys AS r ON l.k = r.k AND l.v < r.v SETTINGS {{ settings }});
+{% endfor -%}
+
+DROP TABLE left_side;
+DROP TABLE right_dup_keys;

@@ -3,12 +3,16 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/IJoin.h>
+#include <Core/Defines.h>
 #include <Core/SortCursor.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/JoinUtils.h>
@@ -35,6 +39,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
+    extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
 }
 
@@ -54,7 +59,7 @@ String deriveTempName(const String & name, JoinTableSide block_side)
  * 0 converted to NULL and such rows won't be joined,
  * 1 converted to 0 (any constant non-NULL value to join)
  */
-ColumnWithTypeAndName condtitionColumnToJoinable(const Block & block, const String & src_column_name, JoinTableSide block_side)
+ColumnWithTypeAndName conditionColumnToJoinable(const Block & block, const String & src_column_name, JoinTableSide block_side)
 {
     size_t res_size = block.rows();
     auto data_col = ColumnUInt8::create(res_size, static_cast<UInt8>(0));
@@ -573,10 +578,13 @@ bool joinEquals(
     return one_more;
 }
 
+/// Emits left rows [start, end) that have no match as result rows of a LEFT/FULL join:
+/// copies the left rows (unless the left block itself is the result, as for LEFT ANY)
+/// and appends default values to every right column.
 template <bool copy_left>
-void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns,
-                      const Block & right_block, MutableColumns & right_columns,
-                      size_t start, size_t end)
+void addNotMatchedLeftRange(const Block & left_block, MutableColumns & left_columns,
+                            const Block & right_block, MutableColumns & right_columns,
+                            size_t start, size_t end)
 {
     if (end <= start)
         return;
@@ -588,6 +596,34 @@ void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns,
     for (size_t i = 0; i < right_columns.size(); ++i)
     {
         JoinCommon::addDefaultValues(*right_columns[i], right_block.getByPosition(i).type, rows_to_add);
+    }
+}
+
+/// Emits the non-matched left rows of LEFT/FULL joins when the join has a mixed ON condition.
+/// Without such a condition, the key comparison alone decides the match status, and the rows
+/// are emitted in place during the probe (addNotMatchedLeftRange call sites in leftJoin and
+/// joinSortedBlock). With such a condition, a key-matched row can still fail all candidate
+/// pairs, and its last candidate pair can be in a later right block (an equal-key run can span
+/// right blocks). Thus the decision is deferred: this pass runs once, after the whole left
+/// block was probed, and emits every row without a set flag in `left_row_matched`.
+void addNotMatchedLeftRows(const Block & left_block, MutableColumns & left_columns,
+                           const Block & right_block, MutableColumns & right_columns,
+                           const MergeJoin::LeftMatchedBitmap & left_row_matched)
+{
+    size_t rows = left_row_matched.empty() ? 0 : left_block.rows();
+    size_t i = 0;
+    while (i < rows)
+    {
+        if (left_row_matched.test(i))
+        {
+            ++i;
+            continue;
+        }
+
+        size_t run_start = i;
+        while (i < rows && !left_row_matched.test(i))
+            ++i;
+        addNotMatchedLeftRange<true>(left_block, left_columns, right_block, right_columns, run_start, i);
     }
 }
 
@@ -640,10 +676,11 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_
     if (!table_join->oneDisjunct())
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoin does not support OR in JOIN ON section");
 
-    /// This join matches rows on the equality keys only, so a mixed `ON` condition reaching here
-    /// would be dropped instead of applied.
-    if (table_join->getMixedJoinExpression())
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoin cannot evaluate a mixed JOIN ON condition");
+    if (const auto & mixed_expression = table_join->getMixedJoinExpression())
+    {
+        mixed_join_expression = mixed_expression;
+        validateMixedJoinExpression();
+    }
 
     const auto & onexpr = table_join->getOnlyClause();
     std::tie(mask_column_name_left, mask_column_name_right) = onexpr.condColumnNames();
@@ -897,8 +934,15 @@ void MergeJoin::joinBlock(Block & block, std::optional<MergeJoin::NotProcessed> 
                 lowcard_keys.push_back(column_name);
         }
 
-        ScopedSortTimer sort_timer(table_join->collectAnalyzeStats(), probe_sort_time_ns);
-        sortBlock(block, left_sort_description);
+        /// A continuation block was already sorted by the first pass. Do not sort it again:
+        /// the sort is unstable and can reorder rows with equal keys, while the continuation
+        /// state (cursor positions, per-row matched flags of the mixed condition) refers to
+        /// the previous order.
+        if (!not_processed)
+        {
+            ScopedSortTimer sort_timer(table_join->collectAnalyzeStats(), probe_sort_time_ns);
+            sortBlock(block, left_sort_description);
+        }
     }
 
     if (!not_processed && left_blocks_buffer)
@@ -943,6 +987,11 @@ void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not
     size_t skip_right = 0;
     size_t right_blocks_count = rightBlocksCount<in_memory>();
 
+    /// With a mixed JOIN ON condition: per-row flags of the sorted left block, set once a row
+    /// produces a result row. Used to emit the first passing pair only (ANY/SEMI) and to emit
+    /// non-matched rows of LEFT/FULL joins after the whole block was probed.
+    MergeJoin::LeftMatchedBitmap left_row_matched;
+
     size_t starting_right_block = 0;
     if (not_processed)
     {
@@ -951,6 +1000,7 @@ void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not
         left_key_tail = continuation.left_key_tail;
         skip_right = continuation.right_position;
         starting_right_block = continuation.right_block;
+        left_row_matched = std::move(continuation.left_row_matched);
         not_processed.reset();
     }
     else
@@ -961,6 +1011,18 @@ void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not
 
     bool with_left_inequals = (is_left && !is_semi_join) || is_full;
     size_t matched_rows = 0;
+
+    /// ALL INNER/RIGHT joins with a mixed condition do not need the flags for the join itself:
+    /// they emit neither non-matched left rows nor at-most-one-pair outputs. They still need
+    /// them under EXPLAIN ANALYZE: `matched_left_rows` counts a left row when a pair passes
+    /// the condition (bit transition), like the hash join does.
+    bool need_left_row_matched = mixed_join_expression
+        && (with_left_inequals || !is_all || table_join->collectAnalyzeStats());
+    if (need_left_row_matched && left_row_matched.empty())
+        left_row_matched.reset(block.rows());
+
+    MergeJoin::LeftMatchedBitmap * left_row_matched_ptr = need_left_row_matched ? &left_row_matched : nullptr;
+
     if (with_left_inequals)
     {
         for (size_t i = starting_right_block; i < right_blocks_count; ++i)
@@ -983,17 +1045,27 @@ void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not
             /// Use skip_right as ref. It would be updated in join.
             RightBlockInfo right_block(loadRightBlock<in_memory>(i), i, skip_right, used_rows_bitmap.get());
 
-            if (!leftJoin<is_all>(left_cursor, block, right_block, left_columns, right_columns, left_key_tail, matched_rows))
+            if (!leftJoin<is_all>(left_cursor, block, right_block, left_columns, right_columns, left_key_tail, matched_rows, left_row_matched_ptr))
             {
                 matched_left_rows.fetch_add(matched_rows, std::memory_order_relaxed);
                 not_processed = extraBlock<is_all>(block, std::move(left_columns), std::move(right_columns),
-                                                   left_cursor.position(), left_key_tail, skip_right, i);
+                                                   left_cursor.position(), left_key_tail, skip_right, i,
+                                                   std::move(left_row_matched));
                 return;
             }
         }
 
-        left_cursor.nextN(left_key_tail);
-        joinInequalsLeft<is_all>(block, left_columns, right_columns_to_add, right_columns, left_cursor.position(), left_cursor.end());
+        if (mixed_join_expression)
+        {
+            /// Non-matched rows were not emitted in place: whether a key-matched row has a pair
+            /// that passes the condition is known only after its last right block.
+            addNotMatchedLeftRows(block, left_columns, right_columns_to_add, right_columns, left_row_matched);
+        }
+        else
+        {
+            left_cursor.nextN(left_key_tail);
+            addNotMatchedLeftRange<is_all>(block, left_columns, right_columns_to_add, right_columns, left_cursor.position(), left_cursor.end());
+        }
 
         changeLeftColumns(block, std::move(left_columns));
         addRightColumns(block, std::move(right_columns));
@@ -1022,17 +1094,17 @@ void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not
 
             if constexpr (is_all)
             {
-                if (!allInnerJoin(left_cursor, block, right_block, left_columns, right_columns, left_key_tail, matched_rows))
+                if (!allInnerJoin(left_cursor, block, right_block, left_columns, right_columns, left_key_tail, matched_rows, left_row_matched_ptr))
                 {
                     matched_left_rows.fetch_add(matched_rows, std::memory_order_relaxed);
                     not_processed = extraBlock<is_all>(block, std::move(left_columns), std::move(right_columns),
-                                                       left_cursor.position(), left_key_tail, skip_right, i);
+                                                       left_cursor.position(), left_key_tail, skip_right, i,
+                                                       std::move(left_row_matched));
                     return;
                 }
             }
             else
-                semiLeftJoin(left_cursor, block, right_block, left_columns, right_columns, matched_rows);
-
+                semiLeftJoin(left_cursor, block, right_block, left_columns, right_columns, left_key_tail, matched_rows, left_row_matched_ptr);
         }
 
         left_cursor.nextN(left_key_tail);
@@ -1053,7 +1125,8 @@ static size_t maxRangeRows(size_t current_rows, size_t max_rows)
 
 template <bool is_all>
 bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                         MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows)
+                         MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows,
+                         MergeJoin::LeftMatchedBitmap * left_row_matched)
 {
     const Block & right_block = *right_block_info.block;
     MergeJoinCursor right_cursor(right_block, right_merge_description);
@@ -1077,21 +1150,37 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 
         MergeJoinEqualRange range = left_cursor.getNextEqualRange(right_cursor);
 
-        joinInequalsLeft<is_all>(left_block, left_columns, right_columns_to_add, right_columns, left_unequal_position, range.left_start);
+        /// With a mixed condition non-matched rows are emitted by addNotMatchedLeftRows instead:
+        /// key-matched rows can still end up non-matched when no candidate pair passes the condition.
+        if (!mixed_join_expression)
+            addNotMatchedLeftRange<is_all>(left_block, left_columns, right_columns_to_add, right_columns, left_unequal_position, range.left_start);
 
         if (range.empty())
             break;
 
-        if (left_unequal_position <= range.left_start)
+        /// With a mixed condition the matched left rows are counted inside the mixed helpers,
+        /// on the bit transitions of `left_row_matched`: a left row counts as matched only when
+        /// a candidate pair passes the condition, not on key equality.
+        if (!mixed_join_expression && left_unequal_position <= range.left_start)
             matched_rows += range.left_length;
 
         if constexpr (is_all)
         {
-            right_block_info.setUsed(range.right_start, range.right_length);
-
             size_t max_rows = maxRangeRows(left_columns[0]->size(), max_joined_block_rows);
 
-            if (!joinEquals<true>(left_block, r_columns_to_add, left_columns, right_columns, range, max_rows))
+            bool range_is_complete = true;
+            if (mixed_join_expression)
+            {
+                range_is_complete = joinEqualsWithMixedCondition(
+                    left_block, right_block_info, r_columns_to_add, left_columns, right_columns, range, max_rows, left_row_matched, matched_rows);
+            }
+            else
+            {
+                right_block_info.setUsed(range.right_start, range.right_length);
+                range_is_complete = joinEquals<true>(left_block, r_columns_to_add, left_columns, right_columns, range, max_rows);
+            }
+
+            if (!range_is_complete)
             {
                 right_cursor.nextN(range.right_length);
                 right_block_info.skip = right_cursor.position();
@@ -1101,7 +1190,10 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
         }
         else
         {
-            joinEqualsAnyLeft(r_columns_to_add, right_columns, range);
+            if (mixed_join_expression)
+                joinAnyWithMixedCondition(left_block, right_block, r_columns_to_add, left_columns, right_columns, range, *left_row_matched, matched_rows);
+            else
+                joinEqualsAnyLeft(r_columns_to_add, right_columns, range);
         }
 
         right_cursor.nextN(range.right_length);
@@ -1115,6 +1207,16 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
                 break;
             }
         }
+        else
+        {
+            /// Same for ANY with a mixed condition: rows of the last range may still be
+            /// non-matched here, and the equal-key run can continue in the next right block.
+            if (mixed_join_expression && right_cursor.atEnd())
+            {
+                left_key_tail = range.left_length;
+                break;
+            }
+        }
         left_cursor.nextN(range.left_length);
     }
 
@@ -1122,7 +1224,8 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 }
 
 bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                             MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows)
+                             MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows,
+                             MergeJoin::LeftMatchedBitmap * left_row_matched)
 {
     const Block & right_block = *right_block_info.block;
     MergeJoinCursor right_cursor(right_block, right_merge_description);
@@ -1143,14 +1246,26 @@ bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_b
         if (range.empty())
             break;
 
-        if (starting_position <= range.left_start)
+        /// With a mixed condition the matched left rows are counted inside the mixed helper,
+        /// on the bit transitions of `left_row_matched` (null when the stats are not collected).
+        if (!mixed_join_expression && starting_position <= range.left_start)
             matched_rows += range.left_length;
-
-        right_block_info.setUsed(range.right_start, range.right_length);
 
         size_t max_rows = maxRangeRows(left_columns[0]->size(), max_joined_block_rows);
 
-        if (!joinEquals<true>(left_block, r_columns_to_add, left_columns, right_columns, range, max_rows))
+        bool range_is_complete = true;
+        if (mixed_join_expression)
+        {
+            range_is_complete = joinEqualsWithMixedCondition(
+                left_block, right_block_info, r_columns_to_add, left_columns, right_columns, range, max_rows, left_row_matched, matched_rows);
+        }
+        else
+        {
+            right_block_info.setUsed(range.right_start, range.right_length);
+            range_is_complete = joinEquals<true>(left_block, r_columns_to_add, left_columns, right_columns, range, max_rows);
+        }
+
+        if (!range_is_complete)
         {
             right_cursor.nextN(range.right_length);
             right_block_info.skip = right_cursor.position();
@@ -1173,7 +1288,8 @@ bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_b
 }
 
 bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                             MutableColumns & left_columns, MutableColumns & right_columns, size_t & matched_rows)
+                             MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail,
+                             size_t & matched_rows, MergeJoin::LeftMatchedBitmap * left_row_matched)
 {
     const Block & right_block = *right_block_info.block;
     MergeJoinCursor right_cursor(right_block, right_merge_description);
@@ -1187,19 +1303,285 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
         if (range.empty())
             break;
 
-        matched_rows += range.left_length;
-        joinEquals<false>(left_block, r_columns_to_add, left_columns, right_columns, range, 0);
+        if (mixed_join_expression)
+        {
+            /// The helper counts one matched row for each left row that gets its first passing
+            /// pair here. Counting the range length would count the same rows again when the
+            /// equal-key run continues in the next right block (the left_key_tail revisit below).
+            joinAnyWithMixedCondition(left_block, right_block, r_columns_to_add, left_columns, right_columns, range, *left_row_matched, matched_rows);
+        }
+        else
+        {
+            matched_rows += range.left_length;
+            joinEquals<false>(left_block, r_columns_to_add, left_columns, right_columns, range, 0);
+        }
 
         right_cursor.nextN(range.right_length);
+
+        /// With a mixed condition, rows of the last range may still be non-matched here, and the
+        /// equal-key run can continue in the next right block: keep them under the left cursor.
+        if (mixed_join_expression && right_cursor.atEnd())
+        {
+            left_key_tail = range.left_length;
+            break;
+        }
         left_cursor.nextN(range.left_length);
     }
 
     return true;
 }
 
+void MergeJoin::validateMixedJoinExpression()
+{
+    Block expression_sample_block = mixed_join_expression->getSampleBlock();
+
+    if (expression_sample_block.columns() != 1)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Unexpected expression in JOIN ON section. Expected single column, got '{}', expression:\n{}",
+            expression_sample_block.dumpStructure(),
+            mixed_join_expression->dumpActions());
+    }
+
+    auto type = removeNullable(expression_sample_block.getByPosition(0).type);
+    if (!type->equals(*std::make_shared<DataTypeUInt8>()))
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Unexpected expression in JOIN ON section. Expected boolean (UInt8), got '{}'. expression:\n{}",
+            expression_sample_block.getByPosition(0).type->getName(),
+            mixed_join_expression->dumpActions());
+    }
+
+    if (mixed_join_expression->hasArrayJoin())
+    {
+        throw Exception(
+            ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+            "Non equi condition '{}' from JOIN ON section contains 'arrayJoin', which changes the number of rows. "
+            "If the expansion depends on one side only, use ARRAY JOIN in a subquery before the JOIN",
+            expression_sample_block.getByPosition(0).name);
+    }
+
+    for (const auto & input : mixed_join_expression->getRequiredColumnsWithTypes())
+    {
+        bool from_right = right_sample_block.has(input.name);
+        if (from_right)
+        {
+            /// `evaluateMixedJoinExpression` creates the column for this input with the stored
+            /// right column class and declares it with `input.type`, so resolving the input by
+            /// name alone is not enough: a same-named column of a different type would be read
+            /// through a mismatched `IColumn` interface. Fail here, where both types are known.
+            const auto & stored = right_sample_block.getByName(input.name);
+            if (!stored.type->equals(*input.type))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Column {} required by the mixed JOIN ON condition has type {}, "
+                    "but the stored right column of that name has type {}",
+                    input.name,
+                    input.type->getName(),
+                    stored.type->getName());
+        }
+        mixed_condition_columns.emplace_back(MixedConditionColumn{input.name, input.type, from_right});
+    }
+}
+
+ColumnPtr MergeJoin::evaluateMixedJoinExpression(const Block & left_block, size_t left_start, size_t left_length,
+                                                 const Block & right_block, size_t right_start, size_t right_length) const
+{
+    size_t result_rows = left_length * right_length;
+    if (!result_rows)
+        return ColumnUInt8::create();
+
+    ColumnPtr result_column;
+    if (mixed_condition_columns.empty())
+    {
+        /// A constant condition without inputs.
+        Block executed_block;
+        mixed_join_expression->execute(executed_block);
+        result_column = executed_block.getByPosition(0).column->cloneResized(result_rows);
+    }
+    else
+    {
+        /// The input columns hold the cross product of the ranges in [right][left] order:
+        /// the left range repeated for every right row, against that right row's value.
+        ColumnsWithTypeAndName inputs;
+        inputs.reserve(mixed_condition_columns.size());
+        for (const auto & required : mixed_condition_columns)
+        {
+            if (required.from_right)
+            {
+                /// Right column exists, ensured in ctor based on right sample blocks
+                const auto & src = right_block.getByName(required.name).column;
+                auto column = src->cloneEmpty();
+                column->reserve(result_rows);
+                for (size_t right_row = 0; right_row < right_length; ++right_row)
+                    column->insertManyFrom(*src, right_start + right_row, left_length);
+                inputs.emplace_back(std::move(column), required.type, required.name);
+            }
+            else
+            {
+                const auto * src = left_block.findByName(required.name);
+                if (!src)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Column {} required by the mixed JOIN ON condition is not found in the left block {}",
+                        required.name, left_block.dumpNames());
+
+                auto column = src->column->cloneEmpty();
+                column->reserve(result_rows);
+                for (size_t right_row = 0; right_row < right_length; ++right_row)
+                    column->insertRangeFrom(*src->column, left_start, left_length);
+                inputs.emplace_back(std::move(column), src->type, required.name);
+            }
+        }
+
+        Block executed_block(std::move(inputs));
+        mixed_join_expression->execute(executed_block);
+        result_column = executed_block.getByPosition(0).column;
+    }
+
+    result_column = result_column->convertToFullColumnIfConst()->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+    if (result_column->size() != result_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Unexpected size of the mixed JOIN ON condition result: {} instead of {}", result_column->size(), result_rows);
+
+    if (result_column->isNullable())
+    {
+        /// Convert Nullable(UInt8) to UInt8 ensuring that nulls are zeros.
+        /// Trying to avoid copying data, since we are the only owner of the column.
+        ColumnPtr mask_column = assert_cast<const ColumnNullable &>(*result_column).getNullMapColumnPtr();
+
+        MutableColumnPtr mutable_column;
+        {
+            ColumnPtr nested_column = assert_cast<const ColumnNullable &>(*result_column).getNestedColumnPtr();
+            result_column.reset();
+            mutable_column = IColumn::mutate(std::move(nested_column));
+        }
+
+        auto & column_data = assert_cast<ColumnUInt8 &>(*mutable_column).getData();
+        const auto & mask_column_data = assert_cast<const ColumnUInt8 &>(*mask_column).getData();
+        for (size_t i = 0; i < column_data.size(); ++i)
+        {
+            if (mask_column_data[i])
+                column_data[i] = 0;
+        }
+        return mutable_column;
+    }
+    return result_column;
+}
+
+bool MergeJoin::joinEqualsWithMixedCondition(const Block & left_block, RightBlockInfo & right_block_info,
+                                             const Columns & right_columns_to_add_, MutableColumns & left_columns,
+                                             MutableColumns & right_columns, MergeJoinEqualRange & range, size_t max_rows,
+                                             MergeJoin::LeftMatchedBitmap * left_row_matched, size_t & matched_rows)
+{
+    bool one_more = true;
+
+    /// Cap the candidate batch the same way joinEquals caps the emitted cross product:
+    /// at least one right row per call to guarantee progress.
+    size_t range_rows = range.left_length * range.right_length;
+    if (range_rows > max_rows)
+    {
+        range.right_length = max_rows / range.left_length;
+        if (!range.right_length)
+            range.right_length = 1;
+        one_more = false;
+    }
+
+    const Block & right_block = *right_block_info.block;
+    auto mask_column = evaluateMixedJoinExpression(
+        left_block, range.left_start, range.left_length, right_block, range.right_start, range.right_length);
+    const auto & mask = assert_cast<const ColumnUInt8 &>(*mask_column).getData();
+
+    size_t left_length = range.left_length;
+    for (size_t right_row = 0; right_row < range.right_length; ++right_row)
+    {
+        const UInt8 * stripe = mask.data() + right_row * left_length;
+        size_t rows_added = 0;
+
+        size_t i = 0;
+        while (i < left_length)
+        {
+            if (!stripe[i])
+            {
+                ++i;
+                continue;
+            }
+
+            size_t run_start = i;
+            while (i < left_length && stripe[i])
+                ++i;
+
+            copyLeftRange(left_block, left_columns, range.left_start + run_start, i - run_start);
+            if (left_row_matched)
+            {
+                for (size_t j = run_start; j < i; ++j)
+                    matched_rows += left_row_matched->setOnce(range.left_start + j);
+            }
+            rows_added += i - run_start;
+        }
+
+        if (rows_added)
+        {
+            copyRightRange(right_columns_to_add_, right_columns, range.right_start + right_row, rows_added);
+            right_block_info.setUsed(range.right_start + right_row, 1);
+        }
+    }
+
+    return one_more;
+}
+
+void MergeJoin::joinAnyWithMixedCondition(const Block & left_block, const Block & right_block,
+                                          const Columns & right_columns_to_add_, MutableColumns & left_columns,
+                                          MutableColumns & right_columns, const MergeJoinEqualRange & range,
+                                          MergeJoin::LeftMatchedBitmap & left_row_matched, size_t & matched_rows) const
+{
+    size_t left_length = range.left_length;
+
+    /// The output is at most one row per left row, but the mask is evaluated on candidate pairs.
+    /// Process the right rows of the range in chunks to bound the candidate batch.
+    size_t batch_cap = max_joined_block_rows ? max_joined_block_rows : DEFAULT_BLOCK_SIZE;
+    size_t right_chunk_size = std::max<size_t>(1, batch_cap / left_length);
+
+    for (size_t chunk_start = 0; chunk_start < range.right_length; chunk_start += right_chunk_size)
+    {
+        bool any_unmatched = false;
+        for (size_t i = 0; i < left_length && !any_unmatched; ++i)
+            any_unmatched = !left_row_matched.test(range.left_start + i);
+        if (!any_unmatched)
+            return;
+
+        size_t chunk_length = std::min(right_chunk_size, range.right_length - chunk_start);
+        auto mask_column = evaluateMixedJoinExpression(
+            left_block, range.left_start, left_length, right_block, range.right_start + chunk_start, chunk_length);
+        const auto & mask = assert_cast<const ColumnUInt8 &>(*mask_column).getData();
+
+        for (size_t i = 0; i < left_length; ++i)
+        {
+            if (left_row_matched.test(range.left_start + i))
+                continue;
+
+            for (size_t right_row = 0; right_row < chunk_length; ++right_row)
+            {
+                if (mask[right_row * left_length + i])
+                {
+                    copyLeftRange(left_block, left_columns, range.left_start + i, 1);
+                    copyRightRange(right_columns_to_add_, right_columns, range.right_start + chunk_start + right_row, 1);
+                    left_row_matched.set(range.left_start + i);
+                    ++matched_rows;
+                    break;
+                }
+            }
+        }
+    }
+}
+
 void MergeJoin::changeLeftColumns(Block & block, MutableColumns && columns) const
 {
-    if (is_left && is_any_join)
+    /// For LEFT ANY JOIN without a mixed condition the left block is the result as-is: right
+    /// columns are built 1:1 to it. With a mixed condition left rows are copied pairwise instead
+    /// (the first passing right row is not necessarily found in the first right block that
+    /// matches the key), so the accumulated columns replace the block like for other kinds.
+    if (is_left && is_any_join && !mixed_join_expression)
         return;
     block.setColumns(std::move(columns));
 }
@@ -1217,13 +1599,15 @@ void MergeJoin::addRightColumns(Block & block, MutableColumns && right_columns)
 template <bool is_all>
 std::optional<MergeJoin::NotProcessed> MergeJoin::extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
                                     size_t left_position [[maybe_unused]], size_t left_key_tail [[maybe_unused]],
-                                    size_t right_position [[maybe_unused]], size_t right_block_number [[maybe_unused]])
+                                    size_t right_position [[maybe_unused]], size_t right_block_number [[maybe_unused]],
+                                    MergeJoin::LeftMatchedBitmap && left_row_matched [[maybe_unused]])
 {
     std::optional<NotProcessed> not_processed;
 
     if constexpr (is_all)
     {
-        not_processed = NotProcessed{{processed.cloneEmpty()}, left_position, left_key_tail, right_position, right_block_number};
+        not_processed = NotProcessed{
+            {processed.cloneEmpty()}, left_position, left_key_tail, right_position, right_block_number, std::move(left_row_matched)};
         not_processed->block.swap(processed);
 
         changeLeftColumns(processed, std::move(left_columns));
@@ -1389,19 +1773,14 @@ void MergeJoin::addConditionJoinColumn(Block & block, JoinTableSide block_side) 
     if (needConditionJoinColumn())
     {
         if (block_side == JoinTableSide::Left)
-            block.insert(condtitionColumnToJoinable(block, mask_column_name_left, block_side));
+            block.insert(conditionColumnToJoinable(block, mask_column_name_left, block_side));
         else
-            block.insert(condtitionColumnToJoinable(block, mask_column_name_right, block_side));
+            block.insert(conditionColumnToJoinable(block, mask_column_name_right, block_side));
     }
 }
 
 bool MergeJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 {
-    /// `MergeJoin` matches rows on the equality keys only and never evaluates a mixed
-    /// (cross-side non-equi) `ON` condition, so accepting one here would silently drop it.
-    if (table_join->getMixedJoinExpression())
-        return false;
-
     return isSupported(table_join->kind(), table_join->strictness()) && table_join->oneDisjunct();
 }
 
