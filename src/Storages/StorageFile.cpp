@@ -151,6 +151,7 @@ namespace ErrorCodes
     extern const int CANNOT_STAT;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_APPEND_TO_FILE;
+    extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int CANNOT_DETECT_FORMAT;
     extern const int CANNOT_COMPILE_REGEXP;
@@ -3165,12 +3166,23 @@ SinkToStoragePtr StorageFile::write(
                 auto pos = path.find_first_of('.', path.find_last_of('/'));
                 size_t index = paths.size();
                 String new_path;
-                do
+                while (true)
                 {
                     new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
                     ++index;
+
+                    /// Claim the name atomically. Checking with `fs::exists` and opening later is racy: concurrent
+                    /// `INSERT INTO FUNCTION file` queries each get their own StorageFile, so they don't share
+                    /// the lock above and could pick the same name and overwrite each other's data.
+                    int fd = ::open(new_path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0666);
+                    if (fd >= 0)
+                    {
+                        ::close(fd);
+                        break;
+                    }
+                    if (errno != EEXIST)
+                        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, new_path, "Cannot create file {}", new_path);
                 }
-                while (fs::exists(new_path));
                 path = new_path;
                 path_to_publish = std::move(new_path);
             }
