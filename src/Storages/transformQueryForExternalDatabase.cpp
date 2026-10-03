@@ -571,8 +571,11 @@ bool isCompatible(
     if (const auto * literal = node->as<ASTLiteral>())
     {
         /// SQLite cannot represent NUL bytes in string literals, and PostgreSQL cannot store NUL
-        /// bytes in string values, so do not push such predicates down.
-        if (literal_escaping_style != LiteralEscapingStyle::Regular && fieldHasStringWithNulByte(literal->value))
+        /// bytes in string values, so do not push such predicates down. MySQL can represent every
+        /// byte through hexadecimal literals.
+        if ((literal_escaping_style == LiteralEscapingStyle::PostgreSQL
+             || literal_escaping_style == LiteralEscapingStyle::SQLite)
+            && fieldHasStringWithNulByte(literal->value))
             return false;
 
         /// The caller does not know which dialect reads the literal back (see
@@ -1229,10 +1232,10 @@ static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscap
                 "Cannot format a tuple for the external database: the row value ('x', 'y') is "
                 "only valid as an operand of a comparison or IN there. Rewrite the query passed "
                 "to the external database without it");
-        /// For PostgreSQL / SQLite the dialect field visitors reject such literals at format time
-        /// (see `FieldVisitorToStringForDialect`); the `Regular` style - used for MySQL, whose
-        /// string literals interpret backslash escapes the same way as ClickHouse - formats them
-        /// in ClickHouse-only syntax (`[...]`, `tuple(x)`) without complaint, so reject them here.
+        /// Dialect field visitors reject such literals at format time (see
+        /// `FieldVisitorToStringForDialect`); the generic `Regular` style has no dialect visitor
+        /// and formats them in ClickHouse-only syntax (`[...]`, `tuple(x)`) without complaint,
+        /// so reject them here.
         if (literal_escaping_style == LiteralEscapingStyle::Regular
             && fieldRequiresClickHouseOnlySyntax(literal->value))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
