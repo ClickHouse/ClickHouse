@@ -37,14 +37,6 @@
         v2 += v1; v1 = std::rotl(v1, 17); v1 ^= v2; v2 = std::rotl(v2, 32); \
     } while(0)
 
-/// Define macro CURRENT_BYTES_IDX for building index used in current_bytes array
-/// to ensure correct byte order on different endian machines
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#define CURRENT_BYTES_IDX(i) (7 - i)
-#else
-#define CURRENT_BYTES_IDX(i) (i)
-#endif
-
 class SipHash
 {
 private:
@@ -60,22 +52,32 @@ private:
     /// Whether it should use the reference algo for 128-bit or CH's version
     bool is_reference_128;
 
-    /// The current 8 bytes of input data.
-    union
+    /// Bytes of the current incomplete 8-byte word, little-endian. The bytes not received yet are zero.
+    UInt64 current_word;
+
+    /// Little-endian value of `size` < 8 bytes. Never assemble it with byte stores into `current_word`:
+    /// the 8-byte load that follows cannot be store-forwarded.
+    static ALWAYS_INLINE UInt64 loadTail(const char * data, size_t size)
     {
-        UInt64 current_word;
-        UInt8 current_bytes[8];
-    };
+        if (size >= 4)
+            return unalignedLoadLittleEndian<UInt32>(data)
+                | (static_cast<UInt64>(unalignedLoadLittleEndian<UInt32>(data + size - 4)) << (8 * (size - 4)));
+        if (size == 0)
+            return 0;
+        return static_cast<UInt8>(data[0])
+            | (static_cast<UInt64>(static_cast<UInt8>(data[size / 2])) << (8 * (size / 2)))
+            | (static_cast<UInt64>(static_cast<UInt8>(data[size - 1])) << (8 * (size - 1)));
+    }
 
     ALWAYS_INLINE void finalize()
     {
         /// In the last free byte, we write the remainder of the division by 256.
-        current_bytes[CURRENT_BYTES_IDX(7)] = static_cast<UInt8>(cnt);
+        const UInt64 last_word = current_word | (static_cast<UInt64>(static_cast<UInt8>(cnt)) << 56);
 
-        v3 ^= current_word;
+        v3 ^= last_word;
         SIPROUND;
         SIPROUND;
-        v0 ^= current_word;
+        v0 ^= last_word;
 
         if (is_reference_128)
             v2 ^= 0xee;
@@ -110,14 +112,12 @@ public:
         const char * end = data + size;
 
         /// We'll finish to process the remainder of the previous update, if any.
-        if (cnt & 7)
+        if (const UInt64 filled = cnt & 7)
         {
-            while (cnt & 7 && data < end)
-            {
-                current_bytes[CURRENT_BYTES_IDX(cnt & 7)] = *data;
-                ++data;
-                ++cnt;
-            }
+            const UInt64 take = size < 8 - filled ? size : 8 - filled;
+            current_word |= loadTail(data, take) << (8 * filled);
+            data += take;
+            cnt += take;
 
             /// If we still do not have enough bytes to an 8-byte word.
             if (cnt & 7)
@@ -135,31 +135,18 @@ public:
         /// 8 bytes remain points past `end`, which is undefined behavior ([expr.add]/4).
         while (end - data >= 8)
         {
-            current_word = unalignedLoadLittleEndian<UInt64>(data);
+            const UInt64 word = unalignedLoadLittleEndian<UInt64>(data);
 
-            v3 ^= current_word;
+            v3 ^= word;
             SIPROUND;
             SIPROUND;
-            v0 ^= current_word;
+            v0 ^= word;
 
             data += 8;
         }
 
-        /// Pad the remainder, which is missing up to an 8-byte word.
-        current_word = 0;
-        /// NOLINTBEGIN(clang-analyzer-security.ArrayBound)
-        switch (end - data) /// NOLINT(bugprone-switch-missing-default-case)
-        {
-            case 7: current_bytes[CURRENT_BYTES_IDX(6)] = data[6]; [[fallthrough]];
-            case 6: current_bytes[CURRENT_BYTES_IDX(5)] = data[5]; [[fallthrough]];
-            case 5: current_bytes[CURRENT_BYTES_IDX(4)] = data[4]; [[fallthrough]];
-            case 4: current_bytes[CURRENT_BYTES_IDX(3)] = data[3]; [[fallthrough]];
-            case 3: current_bytes[CURRENT_BYTES_IDX(2)] = data[2]; [[fallthrough]];
-            case 2: current_bytes[CURRENT_BYTES_IDX(1)] = data[1]; [[fallthrough]];
-            case 1: current_bytes[CURRENT_BYTES_IDX(0)] = data[0]; [[fallthrough]];
-            case 0: break;
-        }
-        /// NOLINTEND(clang-analyzer-security.ArrayBound)
+        /// Keep the remainder, which is missing up to an 8-byte word.
+        current_word = loadTail(data, end - data);
     }
 
     template <typename Transform = void, typename T>
@@ -308,5 +295,3 @@ inline UInt64 sipHash64(const std::string & s)
 {
     return sipHash64(s.data(), s.size());
 }
-
-#undef CURRENT_BYTES_IDX
