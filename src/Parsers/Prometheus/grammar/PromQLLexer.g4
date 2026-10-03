@@ -190,6 +190,7 @@ FUNCTION options {
     | 'ts_of_last_over_time'
     | 'ts_of_first_over_time'
     | 'mad_over_time'
+    | 'double_exponential_smoothing'
     | 'acos'
     | 'acosh'
     | 'asin'
