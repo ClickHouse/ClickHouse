@@ -1,5 +1,6 @@
 #include <cstddef>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/IColumn.h>
 #include <Core/Defines.h>
