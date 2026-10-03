@@ -133,18 +133,17 @@ void TopKAggregationHeapBase::freezeBase()
     trim_old_to_new = {};
 }
 
-const UInt8 * TopKAggregationHeapBase::fillSkipBitmap(const void * source_typed_data, size_t begin, size_t end)
+const UInt8 * TopKAggregationHeapBase::fillSkipBitmap(const ColumnRawPtrs & source_columns, size_t begin, size_t end)
 {
     chassert(!frozen);
-    if (!source_typed_data)
-        return nullptr;
+    const IColumn & heap_first = is_composite ? assert_cast<const ColumnTuple &>(*heap_column).getColumn(0) : *heap_column;
     const UInt8 * result = nullptr;
-    dispatchNumericKeyType(typed_key_type, [&]<typename T>()
+    dispatchNumericKeyType(heap_first.getDataType(), [&]<typename T>()
     {
         chassert(boundary_row != invalid_row);
         skip_bitmap.resize(end);
-        const auto * src = reinterpret_cast<const T *>(source_typed_data);
-        const auto & heap_data = assert_cast<const ColumnVector<T> &>(*heap_column).getData();
+        const T * src = assert_cast<const ColumnVector<T> &>(*source_columns[0]).getData().data();
+        const auto & heap_data = assert_cast<const ColumnVector<T> &>(heap_first).getData();
         const T boundary = heap_data[boundary_row];
         const int direction = directions[0];
         const int nulls_direction = nulls_directions[0];
