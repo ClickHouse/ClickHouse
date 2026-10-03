@@ -59,6 +59,7 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
@@ -736,10 +737,31 @@ bool hasNonMergeTreeTableInputs(const SelectQueryInfo & select_query_info)
     if (!query_node)
         return true;
 
-    for (const auto & table_expression : extractTableExpressions(query_node->getJoinTree(), /*add_array_join=*/ false, /*recursive=*/ true))
+    for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped(), /*add_array_join=*/ false, /*recursive=*/ true))
     {
         const auto * table_node = table_expression->as<TableNode>();
         if (!table_node || !table_node->getStorage()->isMergeTree())
+            return true;
+    }
+
+    return false;
+}
+
+/// Row policies are applied per table expression in `PlannerJoinTree`, so the query-level
+/// `SelectQueryInfo::row_level_filter` is not set here. The partial aggregate cache is shared by all users,
+/// and the policies are not represented in its key, so check the effective row policy of every table.
+bool hasRowPolicyOnTableInputs(const SelectQueryInfo & select_query_info, const ContextPtr & context)
+{
+    if (select_query_info.row_level_filter)
+        return true;
+
+    const auto * query_node = select_query_info.query_tree ? select_query_info.query_tree->as<QueryNode>() : nullptr;
+    if (!query_node)
+        return true;
+
+    for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped(), /*add_array_join=*/ false, /*recursive=*/ true))
+    {
+        if (const auto * table_node = table_expression->as<TableNode>(); table_node && getEffectiveRowPolicyFilter(*table_node->getStorage(), context))
             return true;
     }
 
@@ -756,7 +778,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
 {
     const auto & query_context = planner_context->getQueryContext();
 
-    const bool has_row_level_filter = static_cast<bool>(select_query_info.row_level_filter);
+    const bool has_row_level_filter = hasRowPolicyOnTableInputs(select_query_info, query_context);
     const bool has_additional_table_filters = !settings[Setting::additional_table_filters].value.empty();
     const bool apply_deleted_mask_value = settings[Setting::apply_deleted_mask];
     const UInt64 partial_aggregate_semantic_key = partialAggregateCacheSemanticKey(
