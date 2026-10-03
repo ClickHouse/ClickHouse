@@ -1169,6 +1169,7 @@ ClickHouse supports the following algorithms of choosing replicas:
 - [In order](#load_balancing-in_order)
 - [First or random](#load_balancing-first_or_random)
 - [Round robin](#load_balancing-round_robin)
+- [Least request](#load_balancing-least_request)
 
 See also:
 
@@ -1287,10 +1288,28 @@ load_balancing = round_robin
 ```
 
 This algorithm uses a round-robin policy across replicas with the same number of errors (only the queries with `round_robin` policy is accounted).
+
+### Least Request {#load_balancing-least_request}
+
+```sql
+load_balancing = least_request
+```
+
+Among replicas with the same number of errors, a few random replicas are sampled ("power of two choices") and the query is sent to the sampled replica with the fewest in-flight requests from the current server, i.e. the replica maximizing `1 / (in_flight_requests + 1)^bias`. This avoids sending queries to replicas that are already busy (for example, executing long-running queries), so it adapts to heterogeneous replicas and skewed workloads better than `random` or `round_robin`.
+
+The number of sampled replicas is controlled by the setting [load_balancing_least_request_choice_count](#load_balancing_least_request_choice_count), and the bias by the setting [load_balancing_least_request_active_request_bias](#load_balancing_least_request_active_request_bias).
 )", 0) \
     DECLARE(UInt64, load_balancing_first_offset, 0, R"(
 Which replica to preferably send a query when FIRST_OR_RANDOM load balancing strategy is used.
 )", 0) \
+    DECLARE(UInt64, load_balancing_least_request_choice_count, 2, R"(
+The number of distinct replicas sampled by the LEAST_REQUEST load balancing strategy ("power of two choices"). Among the sampled replicas, the one with the fewest in-flight requests is preferred. Values less than 2 are treated as 2. If the value is greater than or equal to the number of replicas, all replicas are examined and the least loaded one is preferred.
+)", 0, \
+        {"26.10", 2, 2, "New setting: the number of replicas sampled by the new `least_request` load balancing algorithm (`load_balancing = 'least_request'`)."}) \
+    DECLARE(Float, load_balancing_least_request_active_request_bias, 1.0, R"(
+The bias of the LEAST_REQUEST load balancing strategy: the sampled replica maximizing `1 / (in_flight_requests + 1)^bias` is preferred. `0` disregards the number of in-flight requests (making the choice random among the sampled replicas), and larger values prefer less loaded replicas more aggressively. Similar to `active_request_bias` of the `LEAST_REQUEST` load balancing policy of Envoy.
+)", 0, \
+        {"26.10", 1.0, 1.0, "New setting: the bias of the new `least_request` load balancing algorithm (`load_balancing = 'least_request'`)."}) \
     \
     DECLARE(TotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE, R"(
 How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.
