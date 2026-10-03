@@ -412,21 +412,38 @@ protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 
 private:
-    /// Every condition keeps the merge on one node: a non-final merge and one that must produce
-    /// buckets in order feed a consumer that reads one ordered stream; a merge without keys has
-    /// nothing to shuffle by; `GROUPING SETS` merge over subsets of the keys; an overflow row and a
-    /// global `max_rows_to_group_by` limit would be produced or checked once per node.
-    static bool isShuffleApplicable(const MergingAggregatedStep & merge_step, const Memo & memo)
+    /// Whether the merge may also run per bucket over states shuffled by the keys.
+    /// When it may not, it runs on one node.
+    static bool isShuffleApplicable(const GroupExpression & expression, const MergingAggregatedStep & merge_step, const Memo & memo)
     {
+        const auto & context = memo.getContext();
+        if (!context.distributed_plan_partial_aggregation_before_shuffle)
+            return false;
+
+        /// This setting asks for a shuffle of the input rows, not of partial states.
+        if (context.distributed_plan_force_shuffle_aggregation)
+            return false;
+
+        /// Only the merge created by the two-stage split: its group has the statistics of the
+        /// original aggregation, which the cost model needs to compare the two plans.
+        const auto & partial_expressions = memo.getGroup(expression.inputs.front().group_id)->logical_expressions;
+        if (partial_expressions.empty() || !partial_expressions.front()->is_partial_of_two_stage_aggregation)
+            return false;
+
+        /// A non-final merge, or one that must output buckets in order, feeds a consumer that reads
+        /// a single ordered stream.
+        if (!merge_step.isFinal() || merge_step.shouldProduceResultsInBucketOrder() || merge_step.memoryBoundMergingWillBeUsed())
+            return false;
+
         const auto & params = merge_step.getParams();
-        return memo.getContext().distributed_plan_partial_aggregation_before_shuffle
-            && merge_step.isFinal()
-            && !merge_step.shouldProduceResultsInBucketOrder()
-            && !merge_step.memoryBoundMergingWillBeUsed()
-            && !merge_step.isGroupingSets()
-            && !params.keys.empty()
-            && !params.overflow_row
-            && params.max_rows_to_group_by == 0;
+
+        /// Without keys there is nothing to shuffle by. `GROUPING SETS` merge over subsets of the keys.
+        if (params.keys.empty() || merge_step.isGroupingSets())
+            return false;
+
+        /// The overflow row and the `max_rows_to_group_by` limit are global: per bucket they would be
+        /// made or checked once on every node.
+        return !params.overflow_row && params.max_rows_to_group_by == 0;
     }
 };
 
@@ -455,7 +472,7 @@ std::vector<GroupExpressionPtr> MergingAggregationImplementation::applyImpl(Grou
     local->strategy = strategySingleton<LocalMergeStrategy>();
     addPhysicalToMemo(local, required_properties, memo, result);
 
-    if (!isShuffleApplicable(*merge_step, memo))
+    if (!isShuffleApplicable(*expression, *merge_step, memo))
         return result;
 
     for (size_t candidate_node_count : getCandidateNodeCounts(memo.getContext().cluster_node_count))
