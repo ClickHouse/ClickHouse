@@ -673,13 +673,30 @@ SELECT * FROM mvw2;
 
 #### Explanation {#explanation}
 
-In the above example, we have two Materialized Views `mvw1` and `mvw2` that perform similar operations but with a slight difference in how they reference the source table `t0`.
+The two materialized views above run near-identical queries, but they produce different results because they reference the source table `t0` in different ways.
 
-In `mvw1`, table `t0` is directly referenced inside a `(SELECT * FROM t0)` subquery on the right side of the JOIN. When data is inserted into `t0`, the materialized view's query is executed with the inserted block of data replacing `t0`. This means that the JOIN operation is performed only on the newly inserted rows, not the entire table.
+The rule to remember:
 
-In the second case with joining `vt0`, the view reads all the data from `t0`. This ensures that the JOIN operation considers all rows in `t0`, not just the newly inserted block.
+<Warning>
+When a materialized view is triggered by an insert, every **direct** reference to the source table is replaced by the inserted block of data. **Indirect** references (through a normal `VIEW`, a subquery that hides the name, or another table) are not substituted and read from the full table instead.
+</Warning>
 
-The key difference lies in how ClickHouse handles the source table in the materialized view's query. When a materialized view is triggered by an insert, the source table (`t0` in this case) is replaced by the inserted block of data. This behavior can be leveraged to optimize queries but also requires careful consideration to avoid unexpected results.
+- **Direct reference** — the source table name (`t0`) appears by itself somewhere in the materialized view's `SELECT`, including inside subqueries such as `(SELECT * FROM t0)`. At trigger time, each such occurrence is replaced by the just-inserted block.
+- **Indirect reference** — the source table is reached through another object, for example the view `vt0` defined as `SELECT * FROM t0`. The name `t0` doesn't appear in the materialized view query, so no substitution happens and the reference reads the full contents of `t0`.
+
+Applied to the example:
+
+| Aspect | `mvw1` (direct reference) | `mvw2` (indirect reference via `vt0`) |
+|---|---|---|
+| Right side of the JOIN | `(SELECT * FROM t0)` — names `t0` directly | `vt0` — a view that wraps `SELECT * FROM t0` |
+| Left side of the JOIN | `t0` (always the trigger, always the inserted block) | `t0` (always the trigger, always the inserted block) |
+| What the right side sees on insert | Only the newly inserted block (both `t0` references are substituted) | All rows currently in `t0` (`vt0` is not substituted) |
+| Result after `INSERT (1),(2),(3)` | `3` (3 new rows joined against the same 3 new rows) | `3` (3 new rows joined against the same 3 rows in `t0`) |
+| Result after a second `INSERT (1),(2),(3),(4),(5)` | `5` (5 new rows joined against the same 5 new rows) | `8` (5 new rows joined against all 8 rows now in `t0`) |
+
+The takeaway: writing the source table's name inside a subquery is not a way to force it to be read in full. To read the full source table from inside a materialized view, reach it indirectly, for example through a wrapper `VIEW` such as `vt0`.
+
+This substitution behavior can be leveraged to optimize queries, but it requires careful consideration to avoid unexpected results.
 
 ### Use cases and caveats {#use-cases-and-caveats}
 
