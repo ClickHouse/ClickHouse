@@ -98,7 +98,13 @@ IMergeTreeReader::IMergeTreeReader(
             serializations.emplace_back(getSerializationInPart(column));
     }
 
-    if (settings.string_value_filters && !settings.string_value_filters->empty())
+    /// On-fly `UPDATE` and `DELETE` mutations are executed as steps ahead of PREWHERE, and their
+    /// expressions (assignments and `WHERE` conditions) may read any column, so they would observe
+    /// the substituted empty strings of the rows that PREWHERE rejects afterwards: for example,
+    /// a pending `DELETE WHERE throwIf(empty(s)) = 0` would start throwing. Read the values in full then.
+    const bool has_mutations_on_fly = alter_conversions && alter_conversions->hasMutations();
+
+    if (settings.string_value_filters && !settings.string_value_filters->empty() && !has_mutations_on_fly)
     {
         /// Count how many requested columns read from each storage column
         /// (e.g. a column requested together with its subcolumn).
