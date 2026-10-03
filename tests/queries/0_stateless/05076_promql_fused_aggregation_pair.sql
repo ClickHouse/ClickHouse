@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-msan
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
 -- Tests binary operators applied to two aggregations of the same expression, e.g. `sum(m) - max(m)`,

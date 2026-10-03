@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-msan
+# Tags: no-fasttest
 # Regression tests for heap out-of-bounds reads in Arrow IPC format readers
 # (view-struct buffer and offsets-buffer readers).
 #

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-msan
 # Regression test: TRUNCATE DATABASE db TABLES LIKE pattern must pre-cancel background
 # merges for all matching tables simultaneously before entering the thread pool.
 #
