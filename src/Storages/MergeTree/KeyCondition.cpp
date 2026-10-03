@@ -3082,8 +3082,11 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
 
         ColumnPtr transformed_zeros_column;
         DataTypePtr transformed_zeros_type;
+        /// The zeros are already values of the input type of the DAG, so there is no cast to judge.
+        bool zeros_cast_is_exact = true;
         if (!applyDeterministicDagToColumn(
-                std::move(zeros_column), key_input_type, expr_name, dag, transformed_zeros_column, transformed_zeros_type))
+                std::move(zeros_column), key_input_type, expr_name, dag, transformed_zeros_column, transformed_zeros_type,
+                zeros_cast_is_exact))
             return false;
 
         const Field positive_zero = (*transformed_zeros_column)[0];
@@ -3262,6 +3265,27 @@ static bool tryPrepareSetColumnsForIndex(
         if (membership_compares_carriers && typeHasValueCarriers(*set_element_type)
             && !recursiveRemoveLowCardinality(set_element_type)->equals(*key_column_type))
             out_is_exact = false;
+
+        /// The same cast of the key into the set's type decides membership for a string-ish column the
+        /// predicate reads, and there it is a parse: many spellings map to one value, so
+        /// `s IN (SELECT toUInt8(2))` matches both `'2'` and `'02'`, and `s IN (SELECT toDateTime64(...))`
+        /// matches `'2023-02-01 12:00:00'` as well as `'2023-02-01 12:00:00.000'`. The index renders the
+        /// element into a single spelling instead and would read every other one as certainly not in the
+        /// set - a pruned row that the predicate keeps, which relaxing the atom cannot repair, because a
+        /// relaxed atom still prunes on the points it holds. The index is not used for such a set. A
+        /// `String` element is cast the other way only by padding a `FixedString` key, which keeps the
+        /// atom a superset; an element with value carriers keeps its own carrier and is handled above.
+        if (membership_compares_carriers)
+        {
+            const DataTypePtr predicate_column_type = removeLowCardinalityAndNullable(
+                set_transforming_dags[indexes_mapping_index].has_value() ? set_transforming_dags[indexes_mapping_index]->input_type
+                                                                         : key_column_type);
+            const DataTypePtr element_type = removeLowCardinalityAndNullable(set_element_type);
+
+            if (isStringOrFixedString(predicate_column_type) && !isString(element_type) && !isNothing(element_type)
+                && !element_type->equals(*predicate_column_type) && !typeHasValueCarriers(*element_type))
+                return false;
+        }
 
         if (set_transforming_dags[indexes_mapping_index].has_value())
         {

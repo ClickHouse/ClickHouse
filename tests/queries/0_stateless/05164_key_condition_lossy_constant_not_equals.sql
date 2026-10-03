@@ -171,3 +171,26 @@ SELECT count() FROM t_lossy_const_str WHERE s != '007';
 SELECT countIf(s != '007') FROM t_lossy_const_str;
 
 DROP TABLE t_lossy_const_str;
+
+-- `IN` over a subquery casts a `String` key into the type of the set, where many spellings parse to one
+-- value, while the index renders the element into a single spelling. Every other spelling would be read
+-- as certainly not in the set, so the index must not be used for such a set at all.
+SELECT 'a non-String subquery element over a String key';
+
+DROP TABLE IF EXISTS t_lossy_const_str_key;
+
+CREATE TABLE t_lossy_const_str_key (s String) ENGINE = MergeTree ORDER BY s;
+
+INSERT INTO t_lossy_const_str_key VALUES ('2023-02-01 12:00:00');
+INSERT INTO t_lossy_const_str_key VALUES ('02');
+
+SELECT count() FROM t_lossy_const_str_key WHERE s IN (SELECT toDateTime64('2023-02-01 12:00:00.000', 3, 'UTC'));
+SELECT countIf(s IN (SELECT toDateTime64('2023-02-01 12:00:00.000', 3, 'UTC'))) FROM t_lossy_const_str_key;
+SELECT count() FROM t_lossy_const_str_key WHERE s IN (SELECT toUInt8(2));
+SELECT countIf(s IN (SELECT toUInt8(2))) FROM t_lossy_const_str_key;
+SELECT count() FROM t_lossy_const_str_key WHERE s IN (SELECT toFixedString('02', 3));
+SELECT countIf(s IN (SELECT toFixedString('02', 3))) FROM t_lossy_const_str_key;
+SELECT count() FROM t_lossy_const_str_key WHERE s IN (SELECT '02');
+SELECT countIf(s IN (SELECT '02')) FROM t_lossy_const_str_key;
+
+DROP TABLE t_lossy_const_str_key;
