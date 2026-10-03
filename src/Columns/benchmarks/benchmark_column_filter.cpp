@@ -104,9 +104,10 @@ IColumn::Filter createFilter(size_t rows, FilterPattern pattern)
     return filter;
 }
 
+template <typename T>
 MutableColumnPtr createColumn(size_t rows)
 {
-    auto column = ColumnVector<UInt128>::create();
+    auto column = ColumnVector<T>::create();
     auto & data = column->getData();
     data.resize(rows);
     for (size_t i = 0; i < rows; ++i)
@@ -114,11 +115,11 @@ MutableColumnPtr createColumn(size_t rows)
     return column;
 }
 
-template <FilterPattern pattern>
+template <typename T, FilterPattern pattern>
 void BM_filter(benchmark::State & state)
 {
     const size_t rows = state.range(0);
-    auto column = createColumn(rows);
+    auto column = createColumn<T>(rows);
     auto filter = createFilter(rows, pattern);
 
     for ([[maybe_unused]] auto _ : state)
@@ -130,7 +131,7 @@ void BM_filter(benchmark::State & state)
     state.SetItemsProcessed(static_cast<int64_t>(state.iterations()) * rows);
 }
 
-template <FilterPattern pattern>
+template <typename T, FilterPattern pattern>
 void BM_filter_in_place(benchmark::State & state)
 {
     const size_t rows = state.range(0);
@@ -139,7 +140,7 @@ void BM_filter_in_place(benchmark::State & state)
     for ([[maybe_unused]] auto _ : state)
     {
         state.PauseTiming();
-        auto column = createColumn(rows);
+        auto column = createColumn<T>(rows);
         state.ResumeTiming();
 
         column->filter(filter);
@@ -155,23 +156,46 @@ void BM_filter_in_place(benchmark::State & state)
 
 }
 
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::Clustered)->Arg(1 << 20)->MinTime(1.0);
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::SelectiveRuns)->Arg(1 << 20)->MinTime(1.0);
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::Random)->Arg(1 << 20)->MinTime(1.0);
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::SparseRandom)->Arg(1 << 20)->MinTime(1.0);
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::DenseRandom)->Arg(1 << 20)->MinTime(1.0);
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::FourRuns)->Arg(1 << 20)->MinTime(1.0);
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::FiveRuns)->Arg(1 << 20)->MinTime(1.0);
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::Alternating)->Arg(1 << 20)->MinTime(1.0);
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::DenseWithHole)->Arg(1 << 20)->MinTime(1.0);
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::ShortRuns)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::Clustered)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::SelectiveRuns)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::Random)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::SparseRandom)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::DenseRandom)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::FourRuns)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::FiveRuns)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::Alternating)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::DenseWithHole)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::ShortRuns)->Arg(1 << 20)->MinTime(1.0);
 
-BENCHMARK_TEMPLATE(BM_filter_in_place, FilterPattern::Clustered)->Arg(1 << 20)->MinTime(1.0);
-BENCHMARK_TEMPLATE(BM_filter_in_place, FilterPattern::Random)->Arg(1 << 20)->MinTime(1.0);
-BENCHMARK_TEMPLATE(BM_filter_in_place, FilterPattern::SparseRandom)->Arg(1 << 20)->MinTime(1.0);
-BENCHMARK_TEMPLATE(BM_filter_in_place, FilterPattern::DenseRandom)->Arg(1 << 20)->MinTime(1.0);
-BENCHMARK_TEMPLATE(BM_filter_in_place, FilterPattern::FourRuns)->Arg(1 << 20)->MinTime(1.0);
-BENCHMARK_TEMPLATE(BM_filter_in_place, FilterPattern::FiveRuns)->Arg(1 << 20)->MinTime(1.0);
-BENCHMARK_TEMPLATE(BM_filter_in_place, FilterPattern::Alternating)->Arg(1 << 20)->MinTime(1.0);
-BENCHMARK_TEMPLATE(BM_filter_in_place, FilterPattern::DenseWithHole)->Arg(1 << 20)->MinTime(1.0);
-BENCHMARK_TEMPLATE(BM_filter_in_place, FilterPattern::ShortRuns)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::Clustered)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::Random)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::SparseRandom)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::DenseRandom)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::FourRuns)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::FiveRuns)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::Alternating)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::DenseWithHole)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::ShortRuns)->Arg(1 << 20)->MinTime(1.0);
+
+/// UInt256 exercises the same generic fallback with 32-byte rows, covering the
+/// width-sensitive insertSingle versus insertRange trade-off.
+BENCHMARK_TEMPLATE(BM_filter, UInt256, FilterPattern::Clustered)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt256, FilterPattern::SelectiveRuns)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt256, FilterPattern::Random)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt256, FilterPattern::SparseRandom)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt256, FilterPattern::DenseRandom)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt256, FilterPattern::FourRuns)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt256, FilterPattern::FiveRuns)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt256, FilterPattern::Alternating)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt256, FilterPattern::DenseWithHole)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter, UInt256, FilterPattern::ShortRuns)->Arg(1 << 20)->MinTime(1.0);
+
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt256, FilterPattern::Clustered)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt256, FilterPattern::Random)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt256, FilterPattern::SparseRandom)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt256, FilterPattern::DenseRandom)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt256, FilterPattern::FourRuns)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt256, FilterPattern::FiveRuns)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt256, FilterPattern::Alternating)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt256, FilterPattern::DenseWithHole)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt256, FilterPattern::ShortRuns)->Arg(1 << 20)->MinTime(1.0);
