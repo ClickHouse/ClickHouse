@@ -27,6 +27,8 @@
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/StringUtils.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
@@ -35,6 +37,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
+#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
@@ -385,6 +388,53 @@ Names parseTopics(String topic_list)
 String getDefaultClientId(const StorageID & table_id)
 {
     return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id.database_name, table_id.table_name);
+}
+
+String validateBrokerList(const String & broker_list, const ContextPtr & context)
+{
+    /// The remote host filter must see exactly the host and port librdkafka will dial, so the value is
+    /// not passed on as it was written: every entry is parsed here, validated, and the returned list is
+    /// rebuilt from the parsed entries. The rebuilt entries are `[SCHEME://]host:port` with an explicit
+    /// port, a form librdkafka re-parses to the same host and port.
+    ///
+    /// librdkafka reads `metadata.broker.list` as a C string, splits it on `,` and ` `, cuts an entry at
+    /// the first `/` after the `scheme://` prefix, substitutes `localhost` for an empty host, and
+    /// connects to port 9092 when none is given (`rd_kafka_broker_name_parse`). An entry which such a
+    /// re-parse could read differently - a NUL, a `/`, an empty host, a character outside printable
+    /// ASCII - is rejected instead of repaired.
+
+    if (broker_list.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka broker list must not contain NUL characters");
+
+    Names brokers;
+    boost::split(brokers, broker_list, [](char c) { return c == ',' || c == ' '; });
+
+    Names canonical_brokers;
+    canonical_brokers.reserve(brokers.size());
+
+    for (String & broker : brokers)
+    {
+        boost::trim(broker);
+        if (broker.empty())
+            continue;
+
+        String scheme;
+        if (const auto scheme_end = broker.find("://"); scheme_end != String::npos)
+        {
+            scheme = broker.substr(0, scheme_end + strlen("://"));
+            broker = broker.substr(scheme_end + strlen("://"));
+
+            /// The underscore appears in the librdkafka protocols `sasl_plaintext` and `sasl_ssl`.
+            for (const char c : scheme.substr(0, scheme_end))
+                if (!isAlphaASCII(c) && c != '_')
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid protocol in Kafka broker '{}{}'", scheme, broker);
+        }
+
+        canonical_brokers.push_back(
+            scheme + context->getRemoteHostFilter().checkAndGetCanonicalHostAndPort(broker, 9092, "Kafka broker"));
+    }
+
+    return boost::algorithm::join(canonical_brokers, ",");
 }
 
 void consumerGracefulStop(

@@ -178,7 +178,8 @@ StorageKafka::StorageKafka(
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_}
     , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_topic_list].value, macros_info)))
-    , brokers(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_broker_list].value, macros_info))
+    , brokers(StorageKafkaUtils::validateBrokerList(
+          getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_broker_list].value, macros_info), context_))
     , group(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_group_name].value, macros_info))
     , client_id(
           (*kafka_settings)[KafkaSetting::kafka_client_id].value.empty()
@@ -475,7 +476,7 @@ KafkaConsumerPtr StorageKafka::createKafkaConsumer(size_t consumer_number)
 cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr)
 {
     KafkaConfigLoader::ConsumerConfigParams params{
-        {getContext()->getConfigRef(), collection_name, topics, log},
+        {getContext()->getConfigRef(), collection_name, topics, log, getContext()},
         brokers,
         group,
         num_consumers > 1,
@@ -488,7 +489,7 @@ cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_n
 cppkafka::Configuration StorageKafka::getProducerConfiguration()
 {
     KafkaConfigLoader::ProducerConfigParams params{
-        {getContext()->getConfigRef(), collection_name, topics, log},
+        {getContext()->getConfigRef(), collection_name, topics, log, getContext()},
         brokers,
         client_id};
     return KafkaConfigLoader::getProducerConfiguration(*this, params);

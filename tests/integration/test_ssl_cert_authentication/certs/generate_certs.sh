@@ -55,3 +55,76 @@ openssl x509 -req -days 3650 -in client12-req.pem -CA ca-cert.pem -CAkey ca-key.
 
 # 6. Generate one more self-signed certificate and private key for using as wrong certificate (because it's not signed by CA)
 openssl req -newkey rsa:4096 -x509 -days 3650 -nodes -batch -keyout wrong-key.pem -out wrong-cert.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client"
+
+# 7. Generate a CA-signed certificate whose CN carries an embedded NUL byte ("client1\0.evil.com"),
+# to test that server-side CN extraction does not truncate at the NUL. User 'john' is configured with
+# <common_name>client1</common_name>, so a server that truncated the CN at the NUL would extract
+# "client1" and wrongly authenticate this certificate as 'john'; the full CN must be preserved so the
+# match fails. openssl's CLI cannot place a NUL inside a -subj field, so we build this certificate
+# with the 'cryptography' library instead.
+python3 - <<'PY'
+from cryptography import x509
+from cryptography.x509.oid import NameOID
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+import datetime
+
+with open("ca-key.pem", "rb") as f:
+    ca_key = serialization.load_pem_private_key(f.read(), password=None)
+with open("ca-cert.pem", "rb") as f:
+    ca_cert = x509.load_pem_x509_certificate(f.read())
+
+key = rsa.generate_private_key(public_exponent=65537, key_size=4096)
+subject = x509.Name([
+    x509.NameAttribute(NameOID.COUNTRY_NAME, "RU"),
+    x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "Some-State"),
+    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Internet Widgits Pty Ltd"),
+    x509.NameAttribute(NameOID.COMMON_NAME, "client1\x00.evil.com"),
+])
+now = datetime.datetime(2020, 1, 1)
+cert = (x509.CertificateBuilder()
+    .subject_name(subject).issuer_name(ca_cert.subject)
+    .public_key(key.public_key()).serial_number(x509.random_serial_number())
+    .not_valid_before(now).not_valid_after(now + datetime.timedelta(days=3650))
+    .sign(ca_key, hashes.SHA256()))
+with open("client13-key.pem", "wb") as f:
+    f.write(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL, serialization.NoEncryption()))
+with open("client13-cert.pem", "wb") as f:
+    f.write(cert.public_bytes(serialization.Encoding.PEM))
+PY
+
+# 8. Generate a CA-signed certificate whose CN and DNS SAN both carry an embedded NUL byte
+# ("evil\0.corp.example.com"), to test that wildcard matching rejects it. Users 'wildcard_cn' and
+# 'wildcard_dns' are configured with '*.corp.example.com' and 'DNS:*.corp.example.com': without an
+# explicit check, '*' would match the single "label" "evil\0" and authenticate this certificate.
+python3 - <<'PY'
+from cryptography import x509
+from cryptography.x509.oid import NameOID
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+import datetime
+
+with open("ca-key.pem", "rb") as f:
+    ca_key = serialization.load_pem_private_key(f.read(), password=None)
+with open("ca-cert.pem", "rb") as f:
+    ca_cert = x509.load_pem_x509_certificate(f.read())
+
+key = rsa.generate_private_key(public_exponent=65537, key_size=4096)
+subject = x509.Name([
+    x509.NameAttribute(NameOID.COUNTRY_NAME, "RU"),
+    x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "Some-State"),
+    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Internet Widgits Pty Ltd"),
+    x509.NameAttribute(NameOID.COMMON_NAME, "evil\x00.corp.example.com"),
+])
+now = datetime.datetime(2020, 1, 1)
+cert = (x509.CertificateBuilder()
+    .subject_name(subject).issuer_name(ca_cert.subject)
+    .public_key(key.public_key()).serial_number(x509.random_serial_number())
+    .not_valid_before(now).not_valid_after(now + datetime.timedelta(days=3650))
+    .add_extension(x509.SubjectAlternativeName([x509.DNSName("evil\x00.corp.example.com")]), critical=False)
+    .sign(ca_key, hashes.SHA256()))
+with open("client14-key.pem", "wb") as f:
+    f.write(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL, serialization.NoEncryption()))
+with open("client14-cert.pem", "wb") as f:
+    f.write(cert.public_bytes(serialization.Encoding.PEM))
+PY

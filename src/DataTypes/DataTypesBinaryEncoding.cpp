@@ -348,7 +348,7 @@ void encodeAggregateFunction(const String & function_name, const Array & paramet
         encodeDataTypeImpl<encode_for_hash_calculation>(argument_type, buf);
 }
 
-std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadBuffer & buf)
+std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadBuffer & buf, size_t & complexity, size_t max_complexity)
 {
     String function_name;
     readStringBinary(function_name, buf);
@@ -360,7 +360,7 @@ std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadB
     Array parameters;
     parameters.reserve(num_parameters);
     for (size_t i = 0; i != num_parameters; ++i)
-        parameters.push_back(decodeField(buf));
+        parameters.push_back(decodeField(buf, complexity, max_complexity));
     size_t num_arguments;
     readVarUInt(num_arguments, buf);
     if (num_arguments > MAX_ARRAY_SIZE)
@@ -830,12 +830,12 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
         {
             size_t version;
             readVarUInt(version, buf);
-            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf);
+            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf, complexity, max_complexity);
             return std::make_shared<DataTypeAggregateFunction>(function, arguments_types, parameters, version);
         }
         case BinaryTypeIndex::SimpleAggregateFunction:
         {
-            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf);
+            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf, complexity, max_complexity);
             return createSimpleAggregateFunctionType(function, arguments_types, parameters);
         }
         case BinaryTypeIndex::Nested:

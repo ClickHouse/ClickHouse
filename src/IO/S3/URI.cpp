@@ -4,11 +4,13 @@
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
 #include <Common/Exception.h>
+#include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <IO/Archives/ArchiveUtils.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/replace.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 
 
@@ -31,6 +33,41 @@ namespace ErrorCodes
 
 namespace S3
 {
+
+namespace
+{
+
+/// `Common/maskURIPassword.h` has no `maskURIUserinfo` on this release; this is the regular expression it replaced.
+bool maskURIUserinfo(String & url)
+{
+    static const re2::RE2 userinfo(R"(^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#]+@)");
+    return RE2::Replace(&url, userinfo, "\\1[HIDDEN]@");
+}
+
+/// `Poco::URI::toString` renders the userinfo (`user:password@`) and the query parameters of a presigned
+/// URL verbatim. Exception messages reach `system.query_log` and the server log, which, unlike the query
+/// text, are not masked, so a URI must not be put into them as is.
+String maskedURIString(const Poco::URI & uri)
+{
+    String result = uri.toString();
+    maskURIUserinfo(result);
+    /// With `compatibility_s3_presigned_url_query_in_path` the constructor folds the query of a presigned URL
+    /// into the path by percent-encoding its '?', which `toString` renders as `%3F`, so `maskPresignedURLParameters`
+    /// would not see the parameters. Put the '?' back: `toString` encodes '%' itself as `%25`, so a `%3F` can only
+    /// come from a '?'.
+    boost::replace_all(result, "%3F", "?");
+    maskPresignedURLParameters(result);
+    return result;
+}
+
+/// With `compatibility_s3_presigned_url_query_in_path` the query of a presigned URL ends up in the bucket or the key.
+String maskedQuotedString(String value)
+{
+    maskPresignedURLParameters(value);
+    return quoteString(value);
+}
+
+}
 
 URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters)
 {
@@ -205,8 +242,8 @@ void URI::validateBucket(const String & bucket, const Poco::URI & uri)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Bucket name length is out of bounds in virtual hosted style S3 URI: {}{}",
-            quoteString(bucket),
-            !uri.empty() ? " (" + uri.toString() + ")" : "");
+            maskedQuotedString(bucket),
+            !uri.empty() ? " (" + maskedURIString(uri) + ")" : "");
 }
 
 void URI::validateKey(const String & key, const Poco::URI & uri)
@@ -216,8 +253,8 @@ void URI::validateKey(const String & key, const Poco::URI & uri)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Invalid S3 key: {}{}",
-            quoteString(key),
-            !uri.empty() ? " (" + uri.toString() + ")" : "");
+            maskedQuotedString(key),
+            !uri.empty() ? " (" + maskedURIString(uri) + ")" : "");
     };
 
 

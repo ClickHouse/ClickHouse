@@ -3,6 +3,7 @@
 #if USE_AWS_S3
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <IO/SharedThreadPools.h>
@@ -122,6 +123,8 @@ private:
         const S3Settings & settings,
         const ContextPtr & context)
     {
+        context->getGlobalContext()->getRemoteHostFilter().checkURL(s3_uri.uri);
+
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
         HTTPHeaderEntries headers;
         if (access_key_id.empty())
