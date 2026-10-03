@@ -68,6 +68,7 @@ namespace Setting
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool async_insert_select_as_async_insert;
+    extern const SettingsDateTimeInputFormat date_time_input_format;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
     extern const SettingsBool http_allow_database_as_path;
@@ -1329,7 +1330,7 @@ void executeQueryWithParallelReplicas(
         = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
     auto modified_query_tree_for_ast = modified_query_tree->clone();
     removeGroupingFunctionSpecializations(modified_query_tree_for_ast);
-    auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree_for_ast);
+    auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree_for_ast, context);
 
     executeQueryWithParallelReplicas(
         query_plan,
@@ -1685,7 +1686,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     {
         InterpreterSelectQueryAnalyzer analyzer(query_ast.select, new_context, {});
         const auto & query_tree = analyzer.getQueryTree();
-        auto select_ast = query_tree->toAST();
+        auto select_ast = query_tree->toAST({.date_time_input_format = new_context->getSettingsRef()[Setting::date_time_input_format]});
 
         auto new_query_ast = query_ast.clone();
         auto * insert_ast = new_query_ast->as<ASTInsertQuery>();

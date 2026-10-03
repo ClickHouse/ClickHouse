@@ -285,10 +285,16 @@ bool typeNeedsExactLiteralSerialization(const IDataType & type);
 /// round-trip across distributed / serialized-plan boundaries without going through Float64 or the
 /// `DateTime` text-parsing heuristics. Values with none of those types and no `Variant` use the same
 /// representation as `getFieldFromColumnForASTLiteral`. `date_time_as_numbers` is forwarded to it.
+/// `date_time_input_format` is the format the consumer parses a `JSON` constant with (see `ConvertToASTOptions`).
 /// The active member of a `Variant` reached through `Nullable`/`Array`/`Tuple`/`Map`/`Variant`/`Dynamic` is
 /// named by its own type; under any other wrapper, and below an `Object` whose JSON text carries no
 /// discriminator, it is not.
-ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers);
+ASTPtr columnConstantToExactLiteralAST(
+    const ColumnPtr & column,
+    size_t row,
+    const DataTypePtr & type,
+    bool date_time_as_numbers,
+    FormatSettings::DateTimeInputFormat date_time_input_format);
 
 /// Wrap `value` in `_CAST(value, type_name)`, but skip the wrapping when `value` is already a
 /// `_CAST(..., type_name)` to the same type (e.g. the exact carrier produced for a scalar

@@ -759,7 +759,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
 
     auto modified_query_tree_for_ast = modified_query_tree->clone();
     removeGroupingFunctionSpecializations(modified_query_tree_for_ast);
-    ASTPtr modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree_for_ast);
+    ASTPtr modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree_for_ast, context);
 
     const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get(), context);
     if (!table_node)

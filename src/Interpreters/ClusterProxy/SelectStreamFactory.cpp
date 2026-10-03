@@ -290,10 +290,11 @@ void SelectStreamFactory::createForShard(
     /// since it is reused later for getSampleBlock / plan building.
     auto query_tree_for_ast = query_tree->clone();
     removeGroupingFunctionSpecializations(query_tree_for_ast);
+    auto query_ast = queryNodeToDistributedSelectQuery(query_tree_for_ast, context);
 
     createForShardImpl(
         shard_info,
-        queryNodeToDistributedSelectQuery(query_tree_for_ast),
+        query_ast,
         query_tree,
         main_table,
         table_func_ptr,
