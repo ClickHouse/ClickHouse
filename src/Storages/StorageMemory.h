@@ -210,6 +210,9 @@ private:
         Int32 columns_version = 0;
     };
 
+    /// Table data belongs to the server: what this drops is not credited to the query, what it keeps is left to the server.
+    void setData(std::unique_ptr<BlocksWithCounts> new_data);
+
     /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
 
     MultiVersion<BlocksWithCounts> data;

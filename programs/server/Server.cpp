@@ -111,7 +111,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
-#include <Parsers/registerStatements.h>
+#include <Parsers/registerParsers.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
@@ -147,6 +147,7 @@
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
 #include <Server/KeeperHTTPHandlerFactory.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogHandlerFactory.h>
 #include <Server/ArrowFlight/ArrowFlightServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
@@ -1341,7 +1342,7 @@ try
 #endif
 
     registerInterpreters();
-    registerStatements();
+    registerParsers();
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
@@ -4589,6 +4590,37 @@ void Server::createServers(
                 });
             }
         }
+
+        if (server_type.shouldStart(ServerType::Type::ICEBERG_REST_CATALOG) && !config.getString("iceberg_rest_catalog.port", "").empty())
+        {
+            port_name = "iceberg_rest_catalog.port";
+            HTTPRequestHandlerFactoryPtr handler_factory;
+            try
+            {
+                handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
+            }
+            catch (...)
+            {
+                LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: {}", getCurrentExceptionMessage(/*with_stacktrace*/ false));
+            }
+
+            if (handler_factory)
+            {
+                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port);
+                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "Iceberg REST catalog: http://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                });
+            }
+        }
     }
 }
 
@@ -4876,6 +4908,13 @@ void Server::updateServers(
             {
                 force_restart = true;
                 LOG_TRACE(log, "<prometheus.keeper_metrics_only> had been changed, will reload {}", server->getDescription());
+            }
+            /// The warehouse name is baked into the Iceberg REST catalog handler factory, so if
+            /// the section changes, the listener must be restarted.
+            if (port_name == "iceberg_rest_catalog.port" && !isSameConfiguration(previous_config, config, "iceberg_rest_catalog"))
+            {
+                force_restart = true;
+                LOG_TRACE(log, "<iceberg_rest_catalog> had been changed, will reload {}", server->getDescription());
             }
             /// `asynchronous_metrics_key_values_mode` decides whether the keys of the key-value asynchronous
             /// metrics are written as Prometheus labels (`device="sda"`) or mangled into the metric name. A
