@@ -488,52 +488,56 @@ function extractTopLevelFunction(js, name) {
     return js.slice(startMatch.index, nextMatch ? afterStart + nextMatch.index : js.length);
 }
 
-function checkAuthHeaderTransport(js) {
+async function checkAuthHeaderTransport(js) {
     const canSendRawSource = extractTopLevelFunction(js, 'canSendRawAuthHeader');
     const getAuthHeadersSource = extractTopLevelFunction(js, 'getAuthHeaders');
-    const getAuthServerOriginSource = extractTopLevelFunction(js, 'getAuthServerOrigin');
     const serverPredatesDefaultSessionUserSource = extractTopLevelFunction(js, 'serverPredatesDefaultSessionUser');
-    const location = { href: 'https://play.example/play' };
-    const getAuthHeaders = vm.runInNewContext(
-        `const legacyDefaultUserServers = new Set();\n${canSendRawSource}\n${getAuthServerOriginSource}\n${getAuthHeadersSource}\ngetAuthHeaders`,
-        { Headers, URL, location },
+    const getAuthProbeKeySource = extractTopLevelFunction(js, 'getAuthProbeKey');
+    const probeServerStatusSource = extractTopLevelFunction(js, 'probeServerStatus');
+    const getSharedServerStatusProbeSource = extractTopLevelFunction(js, 'getSharedServerStatusProbe');
+    const getRequestAuthHeadersSource = extractTopLevelFunction(js, 'getRequestAuthHeaders');
+
+    const makeAuthHelpers = (fetchImpl) => vm.runInNewContext(
+        `${canSendRawSource}\n${getAuthHeadersSource}\n${serverPredatesDefaultSessionUserSource}\n` +
+        `const authProbeRequests = new Map();\n${getAuthProbeKeySource}\n${probeServerStatusSource}\n` +
+        `${getSharedServerStatusProbeSource}\n${getRequestAuthHeadersSource}\n` +
+        '({ getAuthHeaders, getRequestAuthHeaders, serverPredatesDefaultSessionUser })',
+        { Headers, fetch: fetchImpl },
     );
-    const serverPredatesDefaultSessionUser = vm.runInNewContext(
-        `${serverPredatesDefaultSessionUserSource}\nserverPredatesDefaultSessionUser`,
-    );
+    const helpers = makeAuthHelpers(async () => { throw new Error('unexpected fetch'); });
     const cases = [
-        ['named-user', 'alice', 'p&?#%', 'https://play.example', false, {
+        ['named-user', 'alice', 'p&?#%', false, {
             Authorization: 'never',
             'X-ClickHouse-User': 'alice',
             'X-ClickHouse-Key': 'p&?#%',
         }],
-        ['utf8-and-spaces', 'play:юзер', '  päss 密码  ', 'https://play.example', false, {
+        ['utf8-and-spaces', 'play:юзер', '  päss 密码  ', false, {
             Authorization: 'ClickHouse-Play',
             'X-ClickHouse-User': 'play%3A%D1%8E%D0%B7%D0%B5%D1%80',
             'X-ClickHouse-Key': '%20%20p%C3%A4ss%20%E5%AF%86%E7%A0%81%20%20',
         }],
-        ['ascii-edge-spaces', 'alice', ' secret ', 'https://play.example', false, {
+        ['ascii-edge-spaces', 'alice', ' secret ', false, {
             Authorization: 'ClickHouse-Play',
             'X-ClickHouse-User': 'alice',
             'X-ClickHouse-Key': '%20secret%20',
         }],
-        ['empty-password', 'alice', '', 'https://play.example', false, {
+        ['empty-password', 'alice', '', false, {
             Authorization: 'never',
             'X-ClickHouse-User': 'alice',
         }],
-        ['default-user-modern', '', 'secret', 'https://remote.example', false, {
+        ['default-user-modern', '', 'secret', false, {
             Authorization: 'never',
             'X-ClickHouse-Key': 'secret',
         }],
-        ['default-user-legacy-probe', '', 'secret', 'https://remote.example', true, {
+        ['default-user-legacy-probe', '', 'secret', true, {
             Authorization: 'never',
             'X-ClickHouse-User': 'default',
             'X-ClickHouse-Key': 'secret',
         }],
-        ['default-credentials', '', '', 'https://play.example', false, { Authorization: 'never' }],
+        ['default-credentials', '', '', false, { Authorization: 'never' }],
     ];
-    for (const [name, user, password, server_address, force_legacy_default_user, expected] of cases) {
-        const actual = getAuthHeaders(user, password, server_address, force_legacy_default_user);
+    for (const [name, user, password, force_legacy_default_user, expected] of cases) {
+        const actual = helpers.getAuthHeaders(user, password, force_legacy_default_user);
         check('auth-header-cases', `${name} uses the expected headers`,
             JSON.stringify(actual) === JSON.stringify(expected), actual);
 
@@ -542,34 +546,104 @@ function checkAuthHeaderTransport(js) {
             Object.entries(actual).every(([header, value]) => browserHeaders.get(header) === value), actual);
     }
     check('auth-header-cases', '26.6 predates default_session_user',
-        serverPredatesDefaultSessionUser('26.6.9.1') === true);
+        helpers.serverPredatesDefaultSessionUser('26.6.9.1') === true);
     check('auth-header-cases', '26.7 supports default_session_user',
-        serverPredatesDefaultSessionUser('26.7.1.1') === false);
+        helpers.serverPredatesDefaultSessionUser('26.7.1.1') === false);
     check('auth-header-cases', 'future major supports default_session_user',
-        serverPredatesDefaultSessionUser('27.1.1.1') === false);
+        helpers.serverPredatesDefaultSessionUser('27.1.1.1') === false);
 
     const requestFunctions = [
-        ['auxiliaryQuery', 'headers: getAuthHeaders(user, password, server_address)'],
-        ['postImpl', 'headers: getAuthHeaders(user, password, server_address)'],
-        ['loadCompletions', 'headers: getAuthHeaders(user_elem.value, password_elem.value, url_elem.value)'],
+        ['auxiliaryQuery', 'headers: await getRequestAuthHeaders(user, password, server_address)'],
+        ['postImpl', 'headers: await getRequestAuthHeaders(user, password, server_address)'],
+        ['loadCompletions', 'headers: await getRequestAuthHeaders(user_elem.value, password_elem.value, url_elem.value)'],
     ];
     for (const [name, headerCall] of requestFunctions) {
         const source = extractTopLevelFunction(js, name);
-        check('auth-header-cases', `${name} uses header authentication`, source.includes(headerCall), name);
+        check('auth-header-cases', `${name} resolves header authentication before the real request`,
+            source.includes(headerCall), name);
         check('auth-header-cases', `${name} does not append credentials to its URL`,
             !/url \+= '&(?:user|password)=/.test(source), name);
     }
 
     const statusSource = extractTopLevelFunction(js, 'getServerStatus');
-    check('auth-header-cases', 'getServerStatus tries modern header authentication first',
-        statusSource.includes('request(getAuthHeaders(user, password, server_address))'));
-    check('auth-header-cases', 'getServerStatus probes the legacy default user explicitly',
-        statusSource.includes('getAuthHeaders(user, password, server_address, true)'));
-    check('auth-header-cases', 'getServerStatus gates legacy auth on the server version',
-        statusSource.includes('serverPredatesDefaultSessionUser(legacy_status.v)')
-            && statusSource.includes('legacyDefaultUserServers.add(server_origin)'));
+    check('auth-header-cases', 'getServerStatus shares the same in-flight compatibility probe',
+        statusSource.includes('getSharedServerStatusProbe(server_address, user, password)'));
     check('auth-header-cases', 'getServerStatus does not append credentials to its URL',
         !/url \+= '&(?:user|password)=/.test(statusSource));
+
+    /// Immediate-run regression: no credential-badge probe has completed first. A legacy endpoint
+    /// must resolve the explicit default user before the real query is issued.
+    const pathCalls = [];
+    const pathHelpers = makeAuthHelpers(async (url, options) => {
+        const parsed = new URL(url);
+        const explicit_default = options.headers['X-ClickHouse-User'] === 'default';
+        const legacy = parsed.pathname === '/legacy';
+        pathCalls.push({ path: parsed.pathname, headers: options.headers });
+        if (legacy && !explicit_default)
+            return { ok: false, status: 403, json: async () => ({}) };
+        return {
+            ok: true,
+            status: 200,
+            json: async () => ({ v: legacy ? '26.6.9.1' : '26.7.1.1', t: 1 }),
+        };
+    });
+    const legacyHeaders = await pathHelpers.getRequestAuthHeaders('', 'secret', 'https://remote.example/legacy');
+    check('auth-header-cases', 'an immediate legacy request resolves explicit default before the real query',
+        legacyHeaders['X-ClickHouse-User'] === 'default'
+            && pathCalls.length === 2
+            && pathCalls[0].headers['X-ClickHouse-User'] === undefined
+            && pathCalls[1].headers['X-ClickHouse-User'] === 'default',
+        { legacyHeaders, pathCalls });
+
+    const beforeModern = pathCalls.length;
+    const modernHeaders = await pathHelpers.getRequestAuthHeaders('', 'secret', 'https://remote.example/modern');
+    check('auth-header-cases', 'same-origin paths do not share legacy-default classification',
+        modernHeaders['X-ClickHouse-User'] === undefined
+            && pathCalls.length === beforeModern + 1
+            && pathCalls[pathCalls.length - 1].path === '/modern',
+        { modernHeaders, pathCalls });
+
+    /// Two consumers racing the same connection (for example checkCredentials and Run) share only
+    /// the in-flight probe. The result disappears once settled, so it cannot become a sticky mode.
+    const sharedCalls = [];
+    const sharedHelpers = makeAuthHelpers(async (url, options) => {
+        const explicit_default = options.headers['X-ClickHouse-User'] === 'default';
+        sharedCalls.push(options.headers);
+        await new Promise(resolve => setTimeout(resolve, 0));
+        if (!explicit_default)
+            return { ok: false, status: 403, json: async () => ({}) };
+        return { ok: true, status: 200, json: async () => ({ v: '26.6.9.1', t: 1 }) };
+    });
+    const [sharedA, sharedB] = await Promise.all([
+        sharedHelpers.getRequestAuthHeaders('', 'secret', 'https://remote.example/legacy'),
+        sharedHelpers.getRequestAuthHeaders('', 'secret', 'https://remote.example/legacy'),
+    ]);
+    check('auth-header-cases', 'concurrent real requests share one in-flight legacy probe',
+        sharedCalls.length === 2
+            && sharedA['X-ClickHouse-User'] === 'default'
+            && sharedB['X-ClickHouse-User'] === 'default',
+        { sharedCalls, sharedA, sharedB });
+
+    /// The same exact endpoint can change underneath an open /play page during a rolling upgrade.
+    /// Because settled probes are not cached, the next request self-heals without a reload.
+    let rollingLegacy = true;
+    const rollingHelpers = makeAuthHelpers(async (url, options) => {
+        const explicit_default = options.headers['X-ClickHouse-User'] === 'default';
+        if (rollingLegacy && !explicit_default)
+            return { ok: false, status: 403, json: async () => ({}) };
+        return {
+            ok: true,
+            status: 200,
+            json: async () => ({ v: rollingLegacy ? '26.6.9.1' : '26.7.1.1', t: 1 }),
+        };
+    });
+    const beforeUpgrade = await rollingHelpers.getRequestAuthHeaders('', 'secret', 'https://remote.example/clickhouse');
+    rollingLegacy = false;
+    const afterUpgrade = await rollingHelpers.getRequestAuthHeaders('', 'secret', 'https://remote.example/clickhouse');
+    check('auth-header-cases', 'legacy-default compatibility self-heals after an endpoint upgrade',
+        beforeUpgrade['X-ClickHouse-User'] === 'default'
+            && afterUpgrade['X-ClickHouse-User'] === undefined,
+        { beforeUpgrade, afterUpgrade });
 
     const completionUrlSource = js.match(/function buildCompletionUrl\(\) \{\n[\s\S]*?\n\}/);
     if (!completionUrlSource) throw new Error('buildCompletionUrl not found in play.html');
@@ -665,7 +739,7 @@ async function main() {
     }
     const js = extractScript(html);
     const base = 'http://127.0.0.1:8123/play';
-    checkAuthHeaderTransport(js);
+    await checkAuthHeaderTransport(js);
 
     /// Contract 1: a mixed workspace (blank + non-blank saved tabs) restores only the
     /// non-blank tabs on a plain load; the blank one is pruned from IndexedDB too.

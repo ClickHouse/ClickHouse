@@ -8297,27 +8297,14 @@ function canSendRawAuthHeader(value) {
     }
 }
 
-const legacyDefaultUserServers = new Set();
-
-function getAuthServerOrigin(server_address) {
-    try {
-        return new URL(server_address, location.href).origin;
-    } catch {
-        return null;
-    }
-}
-
-function getAuthHeaders(user, password, server_address, force_legacy_default_user = false) {
+function getAuthHeaders(user, password, force_legacy_default_user = false) {
     const send_raw = canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
     const headers = { 'Authorization': send_raw ? 'never' : 'ClickHouse-Play' };
-    const server_origin = getAuthServerOrigin(server_address);
 
     /// Before 26.7, a password with an omitted user worked only through the query-parameter
-    /// transport; X-ClickHouse-Key by itself was rejected. Once a credential check confirms such
-    /// an older server, preserve that behavior by sending its historical implicit user explicitly.
-    /// This keeps the password out of the URL while newer servers retain default_session_user.
-    const use_legacy_default_user = !user && password && send_raw
-        && (force_legacy_default_user || (server_origin && legacyDefaultUserServers.has(server_origin)));
+    /// transport; X-ClickHouse-Key by itself was rejected. A compatibility probe can request the
+    /// historical implicit user explicitly without putting either credential back into the URL.
+    const use_legacy_default_user = force_legacy_default_user && !user && password && send_raw;
     const header_user = use_legacy_default_user ? 'default' : user;
     if (header_user)
         headers['X-ClickHouse-User'] = send_raw ? header_user : encodeURIComponent(header_user);
@@ -8330,6 +8317,73 @@ function serverPredatesDefaultSessionUser(version) {
     const [major, minor] = String(version).split('.').map(Number);
     return Number.isFinite(major) && Number.isFinite(minor)
         && (major < 26 || (major === 26 && minor < 7));
+}
+
+/// Only in-flight probes are shared. Settled compatibility decisions are deliberately not cached:
+/// server_address may route different paths to different backends, and a backend may be upgraded
+/// while /play stays open, so a sticky result can authenticate a later request as the wrong user.
+const authProbeRequests = new Map();
+
+function getAuthProbeKey(server_address, user, password) {
+    return JSON.stringify([server_address, user, password]);
+}
+
+async function probeServerStatus(server_address, user, password) {
+    let url = server_address +
+        (server_address.indexOf('?') >= 0 ? '&' : '?') +
+        'add_http_cors_header=1&framing_output_format=None&default_format=JSONEachRow';
+    const request = headers => fetch(url, {
+        method: "POST",
+        body: "SELECT version() AS v, uptime() AS t",
+        headers,
+    });
+    try {
+        let response = await request(getAuthHeaders(user, password));
+        if (response.ok)
+            return { status: await response.json(), use_legacy_default_user: false };
+
+        /// A raw password-only request is the one header-auth case whose semantics changed in
+        /// 26.7. Probe the historical explicit `default` user only after the modern form fails,
+        /// and adopt it only when the successful probe itself proves the server is older than 26.7.
+        /// The probe runs only SELECT version()/uptime(), never the user's query.
+        const can_probe_legacy_default = !user && password
+            && canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
+        if (!can_probe_legacy_default)
+            return false;
+
+        response = await request(getAuthHeaders(user, password, true));
+        if (!response.ok)
+            return false;
+
+        const legacy_status = await response.json();
+        if (!serverPredatesDefaultSessionUser(legacy_status.v))
+            return false;
+
+        return { status: legacy_status, use_legacy_default_user: true };
+    } catch (e) {
+        return false;
+    }
+}
+
+function getSharedServerStatusProbe(server_address, user, password) {
+    const key = getAuthProbeKey(server_address, user, password);
+    let probe = authProbeRequests.get(key);
+    if (!probe) {
+        probe = probeServerStatus(server_address, user, password)
+            .finally(() => authProbeRequests.delete(key));
+        authProbeRequests.set(key, probe);
+    }
+    return probe;
+}
+
+async function getRequestAuthHeaders(user, password, server_address) {
+    const needs_legacy_default_probe = !user && password
+        && canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
+    if (!needs_legacy_default_probe)
+        return getAuthHeaders(user, password);
+
+    const probe = await getSharedServerStatusProbe(server_address, user, password);
+    return getAuthHeaders(user, password, !!(probe && probe.use_legacy_default_user));
 }
 
 /// `quiet` runs a background panel-maintenance query without touching the main result pane:
@@ -8362,7 +8416,7 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
 
     let response;
     try {
-        response = await fetch(url, { method: "POST", body: query, headers: getAuthHeaders(user, password, server_address) });
+        response = await fetch(url, { method: "POST", body: query, headers: await getRequestAuthHeaders(user, password, server_address) });
     } catch (e) {
         if (!quiet && belongs_to_active_connection()) {
             clear();
@@ -8390,45 +8444,8 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
 }
 
 async function getServerStatus(server_address, user, password) {
-    let url = server_address +
-        (server_address.indexOf('?') >= 0 ? '&' : '?') +
-        /// Framing is pinned off for the same reason as in `auxiliaryQuery`: the response is
-        /// parsed as JSON, not as a packet stream.
-        'add_http_cors_header=1&framing_output_format=None&default_format=JSONEachRow';
-    const request = headers => fetch(url, {
-        method: "POST",
-        body: "SELECT version() AS v, uptime() AS t",
-        headers,
-    });
-    try {
-        let response = await request(getAuthHeaders(user, password, server_address));
-        if (response.ok)
-            return await response.json();
-
-        /// A raw password-only request is the one header-auth case whose semantics changed in
-        /// 26.7. Probe the historical explicit `default` user only after the modern form fails,
-        /// and adopt it only when the successful probe itself proves the server is older than 26.7.
-        /// The probe runs only SELECT version()/uptime(), never the user's query.
-        const server_origin = getAuthServerOrigin(server_address);
-        const can_probe_legacy_default = !user && password
-            && canSendRawAuthHeader(user) && canSendRawAuthHeader(password)
-            && server_origin && !legacyDefaultUserServers.has(server_origin);
-        if (!can_probe_legacy_default)
-            return false;
-
-        response = await request(getAuthHeaders(user, password, server_address, true));
-        if (!response.ok)
-            return false;
-
-        const legacy_status = await response.json();
-        if (!serverPredatesDefaultSessionUser(legacy_status.v))
-            return false;
-
-        legacyDefaultUserServers.add(server_origin);
-        return legacy_status;
-    } catch (e) {
-        return false;
-    }
+    const probe = await getSharedServerStatusProbe(server_address, user, password);
+    return probe ? probe.status : false;
 }
 
 /// Names of databases that the user has expanded. Persisted across panel
@@ -11143,7 +11160,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             throw new Error("This page requires framing to render results; it cannot run a query that sets framing_output_format = 'None' - or to a value it cannot know upfront (DEFAULT, or a query-parameter placeholder like {fmt:String}).");
         }
 
-        const fetch_options = { method: "POST", body: query, signal: abortController.signal, headers: getAuthHeaders(user, password, server_address) };
+        const fetch_options = { method: "POST", body: query, signal: abortController.signal, headers: await getRequestAuthHeaders(user, password, server_address) };
         response = await fetch(use_framing ? framing_url : url, fetch_options);
 
         /// Detect image results (e.g. `FORMAT PNG`) by the response `Content-Type` rather than by
@@ -18052,7 +18069,7 @@ async function loadCompletions() {
         const response = await fetch(buildCompletionUrl(), {
             method: "POST",
             body: COMPLETION_QUERY,
-            headers: getAuthHeaders(user_elem.value, password_elem.value, url_elem.value),
+            headers: await getRequestAuthHeaders(user_elem.value, password_elem.value, url_elem.value),
         });
         /// The connection settings changed while loading — discard this stale result.
         if (generation !== connectionGeneration) {
