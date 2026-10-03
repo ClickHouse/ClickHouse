@@ -3068,14 +3068,15 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     /// attached per query, so all buckets take the same path). It also stands down for the lone
     /// `count()` (`bucket_top_k`), whose conversion-stage selection reads the count straight
     /// from the state during a single scan and is measurably cheaper than the value-peeking
-    /// walk; the threshold merge serves `count` when other aggregates ride along. And it stands
+    /// walk; the threshold merge serves `count` when other aggregates ride along, and when it
+    /// declines there, the ordinary path below still applies the selection. And it stands
     /// down when a throw-mode group limit is enforced at the merge (see `full_group_count`):
     /// the limit needs the bucket's true group count, which the threshold merge never learns -
     /// it stops before seeing every group. The HAVING pre-filter never coexists with it (a
     /// `HAVING` breaks the plan shape the threshold merge needs), but the ordinary conversion is
     /// the only one that applies the pre-filter, so the check is explicit.
     const bool group_limit_needs_full_count = params.max_rows_to_group_by != 0 && params.group_by_overflow_mode == OverflowMode::THROW;
-    if (final && params.threshold_top_k && !params.bucket_top_k
+    if (final && params.threshold_top_k && (!params.bucket_top_k || params.aggregates_size > 1)
         && params.having_prefilter_op == Params::HavingPrefilterOp::Disabled && !updater && !group_limit_needs_full_count)
         if (auto threshold_chunk
             = tryMergeAndConvertOneBucketToChunkThresholdTopK(variants, arena, bucket, is_cancelled, threshold_top_k_verdict))

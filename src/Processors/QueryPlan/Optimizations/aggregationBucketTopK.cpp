@@ -134,7 +134,6 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         /// count's conversion-stage selection below (a plain scan there beats the value-peeking
         /// walk) and stands down in a few other cases (single-level tables, dataflow statistics
         /// collection).
-        bool threshold_top_k_enabled = false;
         if (!description.front().collator)
         {
             const auto bound = aggregate.function->getMergedValueBound();
@@ -145,16 +144,20 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
             /// promise - and it would not pay off anyway: its threshold (the smallest head)
             /// stays at the level of the typical partial value, which for near-uniform data
             /// never rises above the candidates, so the merge would degenerate into visiting
-            /// every group. The extremum bounds are exact and converge right after the
-            /// candidate heap fills in either direction.
-            const bool bound_serves_direction = bound == MergedValueBound::Maximum || bound == MergedValueBound::Minimum
-                || (bound == MergedValueBound::Subadditive && !ascending);
+            /// every group. The extremum bounds are exact, but they converge only in the direction
+            /// of the extremum itself: `max` descending and `min` ascending, where the merged value
+            /// of a group equals its best partial value, so the walk stops right after the
+            /// candidate heap fills. In the opposite direction (`max` ascending, `min` descending)
+            /// the merged value of a group is its worst partial value, which can sit far behind
+            /// the partial values the walk pops, so the threshold stays open across several tables
+            /// and the walk degenerates into visiting most of the groups.
+            const bool bound_serves_direction = (bound == MergedValueBound::Maximum && !ascending)
+                || (bound == MergedValueBound::Minimum && ascending) || (bound == MergedValueBound::Subadditive && !ascending);
             if (bound_serves_direction && isThresholdTopKValueType(bound, aggregate.function->getResultType()))
             {
                 aggregating->enableThresholdTopK(
                     Aggregator::Params::ThresholdTopKParams{
                         .k = n, .ascending = ascending, .aggregate_index = i, .bound = bound});
-                threshold_top_k_enabled = true;
             }
         }
 
@@ -166,15 +169,13 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         if (aggregate.function->getName() != "count" || !aggregate.parameters.empty())
             return 0;
 
-        /// The conversion-stage selection by the count (`bucket_top_k`) and the threshold merge
-        /// are mutually exclusive at run time (the merge yields when `bucket_top_k` is set). For
-        /// the lone count the selection wins: a plain scan of the merged bucket beats the
-        /// value-peeking walk. But when other aggregates ride along, the threshold merge is the
-        /// better deal - it also skips merging the losers' other states - so the selection steps
-        /// aside for it (and still serves the shapes the merge does not, e.g. the ascending order).
-        if (threshold_top_k_enabled && params.aggregates.size() > 1)
-            return 0;
-
+        /// The conversion-stage selection by the count (`bucket_top_k`) is enabled alongside the
+        /// threshold merge; at run time they are mutually exclusive per bucket. For the lone count
+        /// the selection wins outright: a plain scan of the merged bucket beats the value-peeking
+        /// walk. When other aggregates ride along, the threshold merge is tried first - it also
+        /// skips merging the losers' other states - and when it declines (e.g. the groups are
+        /// split across the per-thread tables), the bucket is merged as usual and the selection
+        /// still trims its conversion.
         aggregating->enableBucketTopK(n, ascending, i);
         return 0;
     }

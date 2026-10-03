@@ -84,6 +84,12 @@ SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k HAVING c > 1 ORDER
 -- More than one ORDER BY column: dropped boundary ties would break the tiebreaker.
 SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC, k ASC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_l_two_columns' FORMAT Null;
+-- The extremum bounds against the direction of the extremum: the merged value of a group is
+-- its worst partial value, so the threshold stays open across several tables.
+SELECT k, max(u) AS m FROM threshold_top_k_events GROUP BY k ORDER BY m ASC LIMIT 10
+    SETTINGS log_comment = '05043_ttkm_o_max_ascending' FORMAT Null;
+SELECT k, min(u) AS m FROM threshold_top_k_events GROUP BY k ORDER BY m DESC LIMIT 10
+    SETTINGS log_comment = '05043_ttkm_p_min_descending' FORMAT Null;
 -- The optimization is off.
 SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_m_disabled', query_plan_aggregation_bucket_top_k = 0 FORMAT Null;

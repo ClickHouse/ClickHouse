@@ -40,8 +40,9 @@
   *    result, and the merge stops without touching the remaining groups.
   *
   * The merge and the materialization become sublinear in the number of groups. The extremum
-  * bounds of `min`/`max` converge right after the top k candidates are found for any number of
-  * tables; the summing bound of `count`/`sum`/`uniqExact` serves the single-table case (a pure
+  * bounds (`max` descending, `min` ascending - the plan does not form the opposite directions,
+  * where the threshold stays open) converge right after the top k candidates are found for any
+  * number of tables; the summing bound of `count`/`sum`/`uniqExact` serves the single-table case (a pure
   * selection - see the commit gate below for why it is not worth committing to across several
   * tables). A pop budget with a bucket-shared verdict backstops the walks that fail to converge.
   */
@@ -145,6 +146,9 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
         /// modular `UInt64` accumulators of `count` and `sum` do not provide. The plan pass
         /// never forms such a combination.
         chassert(!(values_are_uint64 && ascending));
+        /// The extremum bounds are served only in the direction of the extremum (see the plan pass).
+        chassert(top_k.bound != MergedValueBound::Maximum || !ascending);
+        chassert(top_k.bound != MergedValueBound::Minimum || ascending);
 
         using Table = std::decay_t<decltype(getDataVariant<Method>(merged_data).data.impls[bucket])>;
         using TableKey = std::decay_t<decltype(std::declval<const typename Table::cell_type &>().getKey())>;
@@ -508,9 +512,9 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
             }
         };
 
-        /// A safety net for the walks that fail to converge - e.g. `ORDER BY min(x) DESC`, where
-        /// a group's per-table partial minima can all sit far above its merged minimum, keeping
-        /// the threshold open (the favorable directions stop within about k * m pops). Once half
+        /// A safety net for the walks that fail to converge - e.g. the summing bound over the
+        /// tied tail values of a stray second table, which keeps the threshold open (the
+        /// extremum bounds stop within about k * m pops). Once half
         /// of the cells are popped with the threshold still open, this bucket finishes with a
         /// plain linear sweep - same processing, no heap traffic - and the verdict tells the
         /// remaining buckets (which see the same hash-partitioned distribution) to take the

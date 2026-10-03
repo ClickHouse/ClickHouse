@@ -2,7 +2,7 @@
     <!-- The top-K threshold merge (Fagin's Threshold Algorithm): for
          `GROUP BY k ORDER BY <count/uniqExact/min/max> LIMIT n` over many groups, the final
          merge of the per-thread aggregation states only merges and materializes the groups that
-         can rank among the top n. The extremum bounds of `min`/`max` engage for any number of
+         can rank among the top n. The extremum bounds (`max` descending, `min` ascending) engage for any number of
          per-thread tables - those queries are the wins. The summing bound of `count`/`uniqExact`
          engages only for a dominant table. The shared setting also controls conversion-stage
          selection for a lone `count`, so the disabled queries measure ordinary aggregation. -->
@@ -27,8 +27,9 @@
     <query tag="count_desc">SELECT k, count() AS c FROM threshold_top_k_hot GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS query_plan_aggregation_bucket_top_k = 1</query>
     <query tag="count_desc_baseline">SELECT k, count() AS c FROM threshold_top_k_hot GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS query_plan_aggregation_bucket_top_k = 0</query>
 
-    <!-- `count()` with other aggregates riding along: the conversion-stage selection steps aside
-         for the threshold merge, which also skips merging the losers' other states. -->
+    <!-- `count()` with other aggregates riding along: the threshold merge is tried first (it also
+         skips merging the losers' other states); when it declines, the conversion-stage
+         selection still serves the bucket. -->
     <query tag="count_riders_desc">SELECT k, count() AS c, max(u) FROM threshold_top_k_hot GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS query_plan_aggregation_bucket_top_k = 1</query>
     <query tag="count_riders_desc_baseline">SELECT k, count() AS c, max(u) FROM threshold_top_k_hot GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS query_plan_aggregation_bucket_top_k = 0</query>
 
