@@ -43,8 +43,8 @@ enum class IPCryptMode
 {
     Encrypt,
     Decrypt,
-    PfxEncrypt,
-    PfxDecrypt,
+    PrefixEncrypt,
+    PrefixDecrypt,
 };
 
 template <IPCryptMode mode>
@@ -52,13 +52,13 @@ class FunctionIPCrypt : public IFunction
 {
 public:
     static constexpr auto name
-        = mode == IPCryptMode::Encrypt      ? "ipcryptEncrypt"
-        : mode == IPCryptMode::Decrypt      ? "ipcryptDecrypt"
-        : mode == IPCryptMode::PfxEncrypt   ? "ipcryptPfxEncrypt"
-                                            : "ipcryptPfxDecrypt";
+        = mode == IPCryptMode::Encrypt       ? "ipcryptEncrypt"
+        : mode == IPCryptMode::Decrypt       ? "ipcryptDecrypt"
+        : mode == IPCryptMode::PrefixEncrypt ? "ipcryptPrefixEncrypt"
+                                             : "ipcryptPrefixDecrypt";
 
-    static constexpr bool is_pfx = (mode == IPCryptMode::PfxEncrypt || mode == IPCryptMode::PfxDecrypt);
-    static constexpr size_t required_key_bytes = is_pfx ? IPCRYPT_PFX_KEYBYTES : IPCRYPT_KEYBYTES;
+    static constexpr bool is_prefix_preserving = (mode == IPCryptMode::PrefixEncrypt || mode == IPCryptMode::PrefixDecrypt);
+    static constexpr size_t required_key_bytes = is_prefix_preserving ? IPCRYPT_PFX_KEYBYTES : IPCRYPT_KEYBYTES;
 
     static FunctionPtr create(ContextPtr context)
     {
@@ -93,8 +93,8 @@ public:
                 "Argument 2 of function {} must be String or FixedString (encryption key), got {}",
                 getName(), key_type->getName());
 
-        /// PFX modes preserve IP address class; deterministic modes return IPv6 for typed inputs, String for String input.
-        if constexpr (is_pfx)
+        /// Prefix-preserving modes preserve IP address class; deterministic modes return IPv6 for typed inputs, String for String input.
+        if constexpr (is_prefix_preserving)
         {
             if (isIPv4(ip_type))
                 return std::make_shared<DataTypeIPv4>();
@@ -127,14 +127,14 @@ public:
         parseKey(key_str, key_bytes);
 
         /// Initialize crypto context and process rows
-        if constexpr (is_pfx)
+        if constexpr (is_prefix_preserving)
         {
             IPCryptPFX ctx;
             int rc = ipcrypt_pfx_init(&ctx, key_bytes);
             if (rc != 0)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid PFX key for function {}: the two 16-byte key halves must not be identical",
+                    "Invalid prefix-preserving key for function {}: the two 16-byte key halves must not be identical",
                     getName());
             SCOPE_EXIT({ ipcrypt_pfx_deinit(&ctx); });
             return processRows(arguments, ctx, input_rows_count);
@@ -249,7 +249,7 @@ private:
     template <typename Ctx>
     ColumnPtr processIPv4(const PaddedPODArray<IPv4> & vec_in, const Ctx & ctx, size_t count) const
     {
-        if constexpr (is_pfx)
+        if constexpr (is_prefix_preserving)
         {
             auto col_res = ColumnIPv4::create(count);
             auto & vec_res = col_res->getData();
@@ -262,7 +262,7 @@ private:
                 if (!isIPv4Mapped(buf))
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "PFX transform on IPv4-mapped address produced non-IPv4-mapped result in function {}",
+                        "Prefix-preserving transform on IPv4-mapped address produced non-IPv4-mapped result in function {}",
                         getName());
 
                 vec_res[i] = IPv4(ip16ToIPv4(buf));
@@ -306,14 +306,14 @@ private:
             char tmp[IPV6_MAX_TEXT_LENGTH + 1];
             char * p = tmp;
 
-            if constexpr (is_pfx)
+            if constexpr (is_prefix_preserving)
             {
                 if (was_ipv4)
                 {
                     if (!isIPv4Mapped(buf))
                         throw Exception(
                             ErrorCodes::LOGICAL_ERROR,
-                            "PFX transform on IPv4-mapped address produced non-IPv4-mapped result in function {}",
+                            "Prefix-preserving transform on IPv4-mapped address produced non-IPv4-mapped result in function {}",
                             getName());
 
                     UInt32 ipv4_host = ip16ToIPv4(buf);
@@ -345,16 +345,16 @@ private:
 
     static void applyTransform(const IPCryptPFX & ctx, uint8_t * buf)
     {
-        if constexpr (mode == IPCryptMode::PfxEncrypt)
+        if constexpr (mode == IPCryptMode::PrefixEncrypt)
             ipcrypt_pfx_encrypt_ip16(&ctx, buf);
-        else if constexpr (mode == IPCryptMode::PfxDecrypt)
+        else if constexpr (mode == IPCryptMode::PrefixDecrypt)
             ipcrypt_pfx_decrypt_ip16(&ctx, buf);
     }
 };
 
 REGISTER_FUNCTION(IPCrypt)
 {
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::IPAddress;
 
     /// ipcryptEncrypt
@@ -399,7 +399,7 @@ IPv4/IPv6 input returns IPv6, String input returns String.
             {description, "ipcryptDecrypt(encrypted_ip, key)", arguments, {}, returned_value, examples, introduced_in, category});
     }
 
-    /// ipcryptPfxEncrypt
+    /// ipcryptPrefixEncrypt
     {
         FunctionDocumentation::Description description = R"(
 Encrypts an IP address using prefix-preserving encryption with a 32-byte key.
@@ -414,17 +414,17 @@ The return type preserves the input class: IPv4 stays IPv4, IPv6 stays IPv6.
             = {"Encrypted IP address. IPv4 input returns IPv4, IPv6 returns IPv6, String returns String.", {"IPv4", "IPv6", "String"}};
         FunctionDocumentation::Examples examples = {
             {"Prefix-preserving encryption of IPv4",
-             "SELECT ipcryptPfxEncrypt(toIPv4('192.168.1.1'), unhex('00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100'))",
+             "SELECT ipcryptPrefixEncrypt(toIPv4('192.168.1.1'), unhex('00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100'))",
              ""},
         };
-        factory.registerFunction<FunctionIPCrypt<IPCryptMode::PfxEncrypt>>(
-            {description, "ipcryptPfxEncrypt(ip, key)", arguments, {}, returned_value, examples, introduced_in, category});
+        factory.registerFunction<FunctionIPCrypt<IPCryptMode::PrefixEncrypt>>(
+            {description, "ipcryptPrefixEncrypt(ip, key)", arguments, {}, returned_value, examples, introduced_in, category});
     }
 
-    /// ipcryptPfxDecrypt
+    /// ipcryptPrefixDecrypt
     {
         FunctionDocumentation::Description description = R"(
-Decrypts an IP address previously encrypted with ipcryptPfxEncrypt using the same key.
+Decrypts an IP address previously encrypted with ipcryptPrefixEncrypt using the same key.
 The return type preserves the input class: IPv4 stays IPv4, IPv6 stays IPv6.
 )";
         FunctionDocumentation::Arguments arguments = {
@@ -435,11 +435,11 @@ The return type preserves the input class: IPv4 stays IPv4, IPv6 stays IPv6.
             = {"Decrypted IP address. IPv4 input returns IPv4, IPv6 returns IPv6, String returns String.", {"IPv4", "IPv6", "String"}};
         FunctionDocumentation::Examples examples = {
             {"Round-trip prefix-preserving encrypt then decrypt",
-             "SELECT ipcryptPfxDecrypt(ipcryptPfxEncrypt(toIPv4('192.168.1.1'), unhex('00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100')), unhex('00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100'))",
+             "SELECT ipcryptPrefixDecrypt(ipcryptPrefixEncrypt(toIPv4('192.168.1.1'), unhex('00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100')), unhex('00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100'))",
              ""},
         };
-        factory.registerFunction<FunctionIPCrypt<IPCryptMode::PfxDecrypt>>(
-            {description, "ipcryptPfxDecrypt(encrypted_ip, key)", arguments, {}, returned_value, examples, introduced_in, category});
+        factory.registerFunction<FunctionIPCrypt<IPCryptMode::PrefixDecrypt>>(
+            {description, "ipcryptPrefixDecrypt(encrypted_ip, key)", arguments, {}, returned_value, examples, introduced_in, category});
     }
 }
 
