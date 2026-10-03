@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- Regression test for the local fragment builder of plan-based parallel replicas over a view that
 -- expands to UNION ALL. For a non-aggregating projection the split sits directly above the view's
 -- UnionStep (the fragment root is the union). The local fragment builder must coordinate EVERY
