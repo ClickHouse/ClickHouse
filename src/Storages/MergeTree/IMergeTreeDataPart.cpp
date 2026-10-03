@@ -1,5 +1,6 @@
 #include <Storages/ColumnSize.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 
@@ -14,6 +15,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/PackedFilesReader.h>
@@ -32,6 +34,7 @@
 #include <Storages/MergeTree/Backup.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
@@ -893,7 +896,8 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
         /// We avoid covering the whole function with the scope so that transient work stays in the default arena (avoid contention)
         /// The shared bundle and serializations manage their own arena scopes
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        serialization_infos = new_infos;
+        /// A copy, so that the part does not keep objects the writer was charged for.
+        serialization_infos = new_infos.clone();
     }
 
     metadata_version = new_metadata_version;
@@ -968,6 +972,17 @@ SerializationPtr IMergeTreeDataPart::getSerialization(const String & column_name
 SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_name) const
 {
     return serializations->tryGet(column_name);
+}
+
+SerializationPtr LoadedMergeTreeDataPartInfoForReader::getSerialization(const NameAndTypePair & column) const
+{
+    if (auto serialization = data_part->tryGetSerialization(column.name))
+        return serialization;
+
+    if (column.isSubcolumn() && containsObjectType(*column.getTypeInStorage()))
+        return column.getTypeInStorage()->getSubcolumnSerialization(
+            column.getSubcolumnName(), data_part->getSerialization(column.getNameInStorage()));
+    return data_part->getSerialization(column.name);
 }
 
 bool IMergeTreeDataPart::isMovingPart() const
@@ -1464,8 +1479,17 @@ Estimates IMergeTreeDataPart::getEstimates() const
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
 {
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
+    /// Statistics are built from table metadata, which can name columns this part does not store:
+    /// an expired column `TTL` removes a column from the part after the statistics set is decided.
+    const auto & part_columns = getColumnsDescription();
+    Estimates stored_estimates;
+    for (const auto & [column_name, estimate] : new_estimates)
+        if (part_columns.tryGet(column_name))
+            stored_estimates.emplace(column_name, estimate);
+
     std::lock_guard lock(estimates_mutex);
-    estimates = new_estimates;
+    estimates = std::move(stored_estimates);
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)
@@ -1843,6 +1867,16 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     if (getDataPartStorage().existsFile(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME))
         result.emplace(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
 
+    if (storage.hasUniqueKey())
+    {
+        for (const auto & file : DeleteBitmapFileOps::enumerateFiles(getDataPartStorage()))
+        {
+            auto file_name = file.fileName();
+            if (!checksums.files.contains(file_name))
+                result.emplace(std::move(file_name));
+        }
+    }
+
     return result;
 }
 
@@ -1903,11 +1937,14 @@ namespace
 template <typename Storage>
 void writeInvalidatedSystemColumnsFileImpl(Storage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
 {
-    const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
-    storage.removeFileIfExists(path);
-
+    /// An empty set means the caller has nothing new to invalidate. Keep the file inherited from
+    /// the source part (it is hardlinked/copied by the clone): removing it would resurrect stale
+    /// physically stored values that were disclaimed when the source part was adopted.
     if (columns.empty())
         return;
+
+    const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
+    storage.removeFileIfExists(path);
 
     auto out = storage.writeFile(path, 4096, WriteMode::Rewrite, settings);
     IMergeTreeDataPart::writeInvalidatedSystemColumns(*out, columns);
@@ -2234,20 +2271,32 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const std:
             if ((column_size.data_compressed != 0 || getType() == MergeTreeDataPartType::Compact) && is_default_coded(part_column.name))
             {
                 String path_to_data_file;
-                getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+                if (getType() == MergeTreeDataPartType::Compact)
                 {
-                    if (path_to_data_file.empty())
+                    /// A Compact part has no per-column streams to look for: every column is written
+                    /// into the shared data file, and its first frame is what proves the default codec
+                    /// once every stored column is known to be default-coded (checked above).
+                    const String data_file_name = MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
+                    if (getDataPartStorage().existsFile(data_file_name) && getDataPartStorage().getFileSize(data_file_name) != 0)
+                        path_to_data_file = data_file_name;
+                }
+                else
+                {
+                    getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
                     {
-                        auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage(), storage.getSettings());
-                        if (!stream_name)
-                            return;
+                        if (path_to_data_file.empty())
+                        {
+                            auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage(), storage.getSettings());
+                            if (!stream_name)
+                                return;
 
-                        auto file_name = *stream_name + ".bin";
-                        /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
-                        if (getDataPartStorage().getFileSize(file_name) != 0)
-                            path_to_data_file = file_name;
-                    }
-                });
+                            auto file_name = *stream_name + ".bin";
+                            /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
+                            if (getDataPartStorage().getFileSize(file_name) != 0)
+                                path_to_data_file = file_name;
+                        }
+                    });
+                }
 
                 if (path_to_data_file.empty())
                 {
