@@ -315,6 +315,9 @@ private:
     struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext
     {
         bool need_remove_expired_values{false};
+        /// The row TTL runs but keeps the expired rows, because only a TTL merge of the whole partition may delete them.
+        /// See `rowTTLNeedsWholePartitionMerge`.
+        bool keep_rows_expired_by_ttl{false};
         bool force_ttl{false};
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes{};

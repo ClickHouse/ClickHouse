@@ -41,6 +41,7 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/ReplacingTTLCoverage.h>
 #include <Storages/MergeTree/StatisticsSerialization.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
@@ -1968,6 +1969,10 @@ struct MutationContext
     bool need_sync{};
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
 
+    /// A mutation reads one part, so it keeps the rows expired by a row TTL that needs a merge of the whole partition.
+    /// See `rowTTLNeedsWholePartitionMerge`.
+    bool keep_rows_expired_by_ttl{false};
+
     MergeTreeTransactionPtr txn;
 
     HardlinkedFiles hardlinked_files;
@@ -2799,7 +2804,8 @@ private:
                 ctx->new_data_part,
                 NamesAndTypesList{} /*expired_columns*/,
                 ctx->time_of_mutation,
-                true);
+                /*force_= */ true,
+                /*delete_expired_rows_= */ !ctx->keep_rows_expired_by_ttl);
             subqueries = transform->getSubqueries();
             builder->addTransform(std::move(transform));
         }
@@ -3241,7 +3247,8 @@ private:
                     ctx->new_data_part,
                     NamesAndTypesList{} /*expired_columns*/,
                     ctx->time_of_mutation,
-                    true);
+                    /*force_= */ true,
+                    /*delete_expired_rows_= */ !ctx->keep_rows_expired_by_ttl);
                 subqueries = transform->getSubqueries();
                 builder->addTransform(std::move(transform));
             }
@@ -4127,7 +4134,10 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("read_from_filesystem_cache_if_exists_otherwise_bypass_cache", 1);
     context_for_reading->setSetting("read_from_distributed_cache_if_exists_otherwise_bypass_cache", 1);
 
-    bool suitable_for_ttl_optimization = ctx->metadata_snapshot->hasOnlyRowsTTL() && (*ctx->data->getSettings())[MergeTreeSetting::ttl_only_drop_parts];
+    ctx->keep_rows_expired_by_ttl = rowTTLNeedsWholePartitionMerge(*ctx->metadata_snapshot, ctx->data->merging_params, *ctx->data->getSettings());
+
+    /// Replacing an expired part with an empty one would delete its rows without the rest of the partition.
+    bool suitable_for_ttl_optimization = ctx->metadata_snapshot->hasOnlyRowsTTL() && (*ctx->data->getSettings())[MergeTreeSetting::ttl_only_drop_parts] && !ctx->keep_rows_expired_by_ttl;
     MutationHelpers::splitAndModifyMutationCommands(
         ctx->source_part,
         ctx->metadata_snapshot,

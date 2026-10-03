@@ -54,6 +54,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/ReplacingTTLCoverage.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <fmt/ranges.h>
 #include <Common/DimensionalMetrics.h>
@@ -674,6 +675,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         ctx->need_remove_expired_values = false;
     }
 
+    /// On such a table only `TTLDrop` and `TTLDelete` merges include a whole partition (see `MergeSelectorApplier`), so
+    /// only they may delete rows by row TTL. The decision does not depend on `need_remove_expired_values`. A merge that
+    /// only fills a column its parts lack runs the TTL algorithms too, and must keep the rows as well. It depends only
+    /// on the merge type, the metadata and the settings, so every replica that executes the merge decides the same.
+    ctx->keep_rows_expired_by_ttl = global_ctx->future_part->merge_type != MergeType::TTLDrop
+        && global_ctx->future_part->merge_type != MergeType::TTLDelete
+        && rowTTLNeedsWholePartitionMerge(*global_ctx->metadata_snapshot, global_ctx->merging_params, *global_ctx->data_settings);
+
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
     /// Snapshot of pending mutations for the source parts, fetched once and reused for
@@ -1200,6 +1209,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     if (can_short_circuit_ttl_drop)
     {
+        /// Only `TTLDrop` merges get here, and they never keep expired rows.
+        chassert(!ctx->keep_rows_expired_by_ttl);
+
         LOG_DEBUG(ctx->log, "TTLDrop merge: skipping data pipeline, "
             "all {} source parts are fully expired", global_ctx->future_part->parts.size());
 
@@ -1427,6 +1439,10 @@ bool MergeTask::isVerticalTTLDelete(
         return false;
 
     if (!ctx.need_remove_expired_values)
+        return false;
+
+    /// The merging algorithm would drop the expired rows, which this merge must keep.
+    if (ctx.keep_rows_expired_by_ttl)
         return false;
 
     return canVerticalTTLDelete(global_ctx);
@@ -3120,12 +3136,13 @@ public:
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
         bool force_,
+        bool delete_expired_rows_,
         bool ttl_delete_applied_by_merge_)
         : ITransformingStep(input_header_, TTLTransform::addExpiredColumnsToBlock(input_header_, expired_columns_), getTraits())
     {
         transform = std::make_shared<TTLTransform>(
             context_, input_header_, storage_, metadata_snapshot_, data_part_, expired_columns_, current_time, force_,
-            ttl_delete_applied_by_merge_);
+            delete_expired_rows_, ttl_delete_applied_by_merge_);
 
         /// Build sets eagerly here rather than via addCreatingSetsStep.
         /// If they were built inside the merge pipeline, the subquery progress (rows read)
@@ -3639,6 +3656,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->merging_columns_expired_by_ttl,
             global_ctx->time_of_merge,
             ctx->force_ttl,
+            /*delete_expired_rows_= */ !ctx->keep_rows_expired_by_ttl,
             global_ctx->vertical_ttl_delete);
 
         ttl_step->setStepDescription("TTL step");

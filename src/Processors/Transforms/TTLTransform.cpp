@@ -58,8 +58,10 @@ TTLTransform::TTLTransform(
     const NamesAndTypesList & expired_columns_,
     time_t current_time_,
     bool force_,
+    bool delete_expired_rows_,
     bool ttl_delete_applied_by_merge_)
     : IAccumulatingTransform(header_, addExpiredColumnsToBlock(header_, expired_columns_))
+    , delete_expired_rows(delete_expired_rows_)
     , ttl_delete_applied_by_merge(ttl_delete_applied_by_merge_)
     , data_part(data_part_)
     , expired_columns(expired_columns_)
@@ -72,20 +74,26 @@ TTLTransform::TTLTransform(
         const auto & rows_ttl = metadata_snapshot_->getRowsTTL();
         auto algorithm = std::make_unique<TTLDeleteAlgorithm>(
             getExpressions(rows_ttl, subqueries_for_sets, context), rows_ttl,
-            old_ttl_infos.table_ttl, current_time_, force_);
+            old_ttl_infos.table_ttl, current_time_, force_, /*keep_expired_rows_= */ !delete_expired_rows);
 
         /// Skip all data if table ttl is expired for part
-        if (algorithm->isMaxTTLExpired() && !rows_ttl.where_expression_ast)
+        if (delete_expired_rows && algorithm->isMaxTTLExpired() && !rows_ttl.where_expression_ast)
             all_data_dropped = true;
 
+        delete_algorithm = algorithm.get();
+        delete_algorithms.push_back(algorithm.get());
         algorithms.emplace_back(std::move(algorithm));
-        delete_algorithm = static_cast<const TTLDeleteAlgorithm *>(algorithms.back().get());
     }
 
     for (const auto & where_ttl : metadata_snapshot_->getRowsWhereTTLs())
-        algorithms.emplace_back(std::make_unique<TTLDeleteAlgorithm>(
+    {
+        auto algorithm = std::make_unique<TTLDeleteAlgorithm>(
             getExpressions(where_ttl, subqueries_for_sets, context), where_ttl,
-            old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
+            old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_,
+            /*keep_expired_rows_= */ !delete_expired_rows);
+        delete_algorithms.push_back(algorithm.get());
+        algorithms.emplace_back(std::move(algorithm));
+    }
 
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
         algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
@@ -217,6 +225,19 @@ void TTLTransform::finalize()
     data_part->ttl_infos = {};
     for (const auto & algorithm : algorithms)
         algorithm->finalize(data_part);
+
+    if (!delete_expired_rows)
+    {
+        size_t kept{};
+        for (const auto * algorithm : delete_algorithms)
+            kept += algorithm->getNumberOfKeptExpiredRows();
+
+        if (kept)
+            LOG_DEBUG(log, "Kept {} rows with expired TTL in part {}: only a merge of the whole partition may delete them "
+                "(see the setting `replacing_ttl_whole_partition_only`)", kept, data_part->name);
+
+        return;
+    }
 
     if (delete_algorithm)
     {

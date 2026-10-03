@@ -4,13 +4,15 @@ namespace DB
 {
 
 TTLDeleteAlgorithm::TTLDeleteAlgorithm(
-    const TTLExpressions & ttl_expressions_, const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_)
+    const TTLExpressions & ttl_expressions_, const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_, bool keep_expired_rows_)
     : ITTLAlgorithm(ttl_expressions_, description_, old_ttl_info_, current_time_, force_)
+    , keep_expired_rows(keep_expired_rows_)
 {
     if (!isMinTTLExpired())
         new_ttl_info = old_ttl_info;
 
-    if (isMaxTTLExpired())
+    /// Expired rows that are kept must bring the part to a TTL merge again.
+    if (isMaxTTLExpired() && !keep_expired_rows)
         new_ttl_info.ttl_finished = true;
 }
 
@@ -36,7 +38,8 @@ void TTLDeleteAlgorithm::execute(Block & block)
     {
         Int64 cur_ttl = timestamps[i];
         bool where_filter_passed = !where_column || where_column->getBool(i);
-        bool remove = isTTLExpired(cur_ttl) && where_filter_passed;
+        bool expired = isTTLExpired(cur_ttl) && where_filter_passed;
+        bool remove = expired && !keep_expired_rows;
 
         filter[i] = !remove;
 
@@ -49,6 +52,9 @@ void TTLDeleteAlgorithm::execute(Block & block)
             /// Update ttl info only if row passes the filter.
             /// Rows that don't pass the filter should not affect TTL.
             new_ttl_info.update(cur_ttl);
+
+            if (expired)
+                ++rows_kept_expired;
         }
     }
 

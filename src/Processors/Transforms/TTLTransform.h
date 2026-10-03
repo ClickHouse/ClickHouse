@@ -23,6 +23,7 @@ public:
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
         bool force_,
+        bool delete_expired_rows_,
         bool ttl_delete_applied_by_merge_ = false
     );
 
@@ -44,7 +45,11 @@ protected:
 private:
     std::vector<TTLAlgorithmPtr> algorithms;
     const TTLDeleteAlgorithm * delete_algorithm = nullptr;
+    /// All delete algorithms, the conditional ones included.
+    std::vector<const TTLDeleteAlgorithm *> delete_algorithms;
     bool all_data_dropped = false;
+    /// If false, a row TTL only recalculates the TTL info and keeps the expired rows (see `rowTTLNeedsWholePartitionMerge`)
+    const bool delete_expired_rows{true};
     /// The merging algorithm already dropped the expired rows, so `delete_algorithm` counts none.
     const bool ttl_delete_applied_by_merge = false;
 
