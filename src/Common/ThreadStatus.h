@@ -85,6 +85,7 @@ class ThreadGroup
 public:
     using FatalErrorCallback = std::function<void()>;
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
+    ~ThreadGroup();
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -138,13 +139,19 @@ public:
     /// When new query starts, new thread group is created for it, current thread becomes master thread of the query
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
-    /// NOTE: The caller should call background_memory_tracker.adjustOnBackgroundTaskEnd() at the end (see existing callers),
-    /// and make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
+    /// NOTE: make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
     static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
     static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group);
     static ThreadGroupPtr createForExplainAnalyze(ThreadGroupPtr parent_thread_group);
+
+    /// For work a query only triggers but that outlives it (e.g. loading a dictionary): memory is accounted in the
+    /// server total, in every thread of the group, unlike `MemoryTrackerBlockerInThread`.
+    static ThreadGroupPtr createWithoutQueryMemoryTracker(ThreadGroupPtr parent);
+
+    /// Nested groups charge memory through the group above them; only a top-level one is attached to a user.
+    bool isNested() const { return parent != nullptr; }
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
@@ -173,7 +180,7 @@ private:
 
     static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
 
-    explicit ThreadGroup(ThreadGroupPtr parent_thread_group);
+    explicit ThreadGroup(ThreadGroupPtr parent_thread_group, bool charge_memory_to_parent = true);
     ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group);
 };
 
