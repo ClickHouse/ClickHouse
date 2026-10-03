@@ -595,8 +595,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 tables.clear(); // don't hold extra shared pointers
             };
 
-            /// Preparing a table for shutdown cannot be undone, so the checks that can refuse the drop of a table run for all
-            /// tables before any of them is prepared.
+            /// Preparing a table for shutdown cannot be undone, so every check that can refuse the drop runs for all tables first.
             auto check_tables = [&](const std::unordered_set<String> & skip_size_check)
             {
                 const auto & settings = getContext()->getSettingsRef();

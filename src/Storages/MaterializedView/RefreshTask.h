@@ -328,7 +328,6 @@ private:
         /// Should be writtent to zookeeper only if the refresh succeeds.
         AllDependenciesInfo dependencies;
         bool out_of_schedule = false;
-        /// Set while the `.tmp` table of the view is this attempt's, which the attempt drops itself, also when interrupted.
         std::atomic_bool temp_table_created {false};
     };
 
