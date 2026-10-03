@@ -275,6 +275,10 @@ static bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, cons
 
 bool pathStartsWith(const String & path, const String & prefix_path)
 {
+    /// A path with an embedded NUL is validated as a std::string here but truncated at the NUL by the syscall later, so it can never be validated safely - reject it.
+    if (path.contains('\0'))
+        return false;
+
     auto filesystem_path = std::filesystem::path(path);
     auto filesystem_prefix_path = std::filesystem::path(prefix_path);
 
@@ -283,6 +287,10 @@ bool pathStartsWith(const String & path, const String & prefix_path)
 
 bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path)
 {
+    /// A path with an embedded NUL is validated as a std::string here but truncated at the NUL by the syscall later, so it can never be validated safely - reject it.
+    if (path.contains('\0'))
+        return false;
+
     auto filesystem_path = std::filesystem::path(path);
     auto filesystem_prefix_path = std::filesystem::path(prefix_path);
 
