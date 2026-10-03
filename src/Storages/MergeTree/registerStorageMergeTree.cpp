@@ -83,6 +83,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString marks_compression_codec;
     extern const MergeTreeSettingsString primary_key_compression_codec;
     extern const MergeTreeSettingsString storage_policy;
+    extern const MergeTreeSettingsBool table_readonly;
 }
 
 namespace ServerSetting
@@ -100,6 +101,7 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ILLEGAL_STATISTICS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -802,29 +804,27 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.storage_def->unique_key)
         {
-            /// Gate on CREATE only; ATTACH must load existing metadata regardless of session setting.
-            if (args.mode <= LoadingStrictnessLevel::CREATE
-                && !local_settings[Setting::enable_unique_key])
+            /// Fresh definitions only; previously validated metadata loads with the setting off.
+            /// `isFreshTableDefinition` and not `mode <= CREATE`: a short-syntax ATTACH replaying
+            /// stored metadata is not a fresh definition, and gating it makes such a table
+            /// unattachable -- and therefore undroppable.
+            if (is_fresh_definition && !local_settings[Setting::enable_unique_key])
             {
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "UNIQUE KEY is an experimental feature. "
                     "Set the session setting `enable_unique_key = 1` to enable it.");
             }
 
+            if (is_fresh_definition && merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "UNIQUE KEY is only supported on the plain MergeTree engine, not on {}MergeTree",
+                    merging_params.getModeName());
+            }
+
             /// Reject expression-style elements at parse time: runtime consumers
             /// look up keys via `block.getByName(<column name>)`, so an
             /// expression-style UK passes DDL but crashes the first INSERT.
-            ///
-            /// Also reject a UK element that names a non-stored column: an existing
-            /// ALIAS / EPHEMERAL column, or a virtual column (`_part`, ...). The
-            /// INSERT-time SST write (`block.getByName(...)`) and the load-time
-            /// dense-index rebuild (`part->getColumns()`) both read the stored
-            /// block, so such a column would be absent at runtime. `getKeyFromAST`
-            /// below resolves against physical + virtual columns, so it would let a
-            /// virtual element pass DDL entirely, and reject an ALIAS/EPHEMERAL one
-            /// only with a confusing UNKNOWN_IDENTIFIER ("missing column"); this
-            /// gives a clear reason. A name that matches no column at all (not
-            /// physical, not virtual) is left for `getKeyFromAST` (UNKNOWN_IDENTIFIER).
             {
                 const ASTPtr & uk_ast = args.storage_def->unique_key->ptr();
                 auto is_plain_identifier = [](const ASTPtr & node) -> const ASTIdentifier *
@@ -1224,6 +1224,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
+        /** `table_readonly` is not supported for `ReplicatedMergeTree`, so a definition that states it
+          * is refused. Only a fresh definition is: a table that already exists has to keep loading,
+          * however its metadata came to carry the setting - which the `convert_to_replicated` flag
+          * produced before it learned to refuse such a table. That covers a short `ATTACH TABLE t`,
+          * `SECONDARY_CREATE` (`RESTORE` from a backup) and the startup levels, as well as the replays
+          * of a definition an older initiator committed. `ALTER TABLE ... RESET SETTING table_readonly`
+          * is the way out of that state.
+          */
+        if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay
+            && (*storage_settings)[MergeTreeSetting::table_readonly])
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
+
         bool need_check_table_structure = true;
         if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
             need_check_table_structure = txn->isInitialQuery();
@@ -4682,7 +4694,7 @@ If you had a `MergeTree` table that was manually replicated, you can convert it 
 
 [ATTACH TABLE ... AS REPLICATED](/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) statement allows to attach detached `MergeTree` table as `ReplicatedMergeTree`.
 
-`MergeTree` table can be automatically converted on server restart if `convert_to_replicated` flag is set at the table's data directory (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` for `Atomic` database).
+`MergeTree` table can be automatically converted on server restart if `convert_to_replicated` flag is set at the table's data directory (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` for an `Atomic` database or `/data/database_name/table_name/` for an `Ordinary` database).
 Create empty `convert_to_replicated` file and the table will be loaded as replicated on next server restart.
 
 This query can be used to get the table's data path. If table has many data paths, you have to use the first one.
@@ -4692,6 +4704,7 @@ SELECT data_paths FROM system.tables WHERE table = 'table_name' AND database = '
 ```
 
 Note that ReplicatedMergeTree table will be created with values of `default_replica_path` and `default_replica_name` settings.
+For an `Ordinary` database, the conversion generates a UUID and expands `default_replica_path` once with it. The stored path keeps no `{uuid}` macro, so the znode such a table owns is found by matching the path against `default_replica_path` again on every load; the conversion is refused when that template cannot be matched back (for example, when it expands `{uuid}` more than once). `{database}` and `{table}` in `default_replica_name` are unfolded into the stored replica name, the same way `CREATE TABLE` unfolds them, so the table can still be renamed. `{uuid}` in `default_replica_name` is not supported for any conversion.
 To create a converted table on other replicas, you will need to explicitly specify its path in the first argument of the `ReplicatedMergeTree` engine. The following query can be used to get its path.
 
 ```sql
