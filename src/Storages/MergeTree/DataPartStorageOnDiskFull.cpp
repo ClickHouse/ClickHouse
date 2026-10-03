@@ -259,4 +259,16 @@ void DataPartStorageOnDiskFull::commitTransaction()
     transaction.reset();
 }
 
+void DataPartStorageOnDiskFull::undoTransaction()
+{
+    if (!transaction)
+        return;
+
+    if (has_shared_transaction)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot undo shared transaction");
+
+    transaction->undo();
+    transaction.reset();
+}
+
 }
