@@ -211,6 +211,14 @@ bool DataTypeAggregateFunction::nameMatchesState(const String & state_type_name,
             == DataTypeAggregateFunction(function, function->getArgumentTypes(), function->getParameters(), version).getName();
 }
 
+void DataTypeAggregateFunction::checkSupportedFunctions(const AggregateFunctionPtr & function)
+{
+    if (function->isOnlyWindowFunction())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The function '{}' can only be used as a window function, not as an aggregate function, "
+                        "so its state cannot be used as a data type", function->getName());
+}
+
 void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const
 {
     hash.update(getFunctionName());
@@ -343,6 +351,8 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     AggregateFunctionProperties properties;
     AggregateFunctionPtr function = AggregateFunctionFactory::instance().get(function_name, action, argument_types, params_row, properties);
+    DataTypeAggregateFunction::checkSupportedFunctions(function);
+
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
 }
 

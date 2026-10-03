@@ -160,6 +160,7 @@ public:
     DataTypePtr getNormalizedStateType() const override;
 
     bool shouldPrintParametersWithTypes() const override;
+    bool isOnlyWindowFunction() const override;
 
     AggregateFunctionStateVariant getStateVariant() const override;
     bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override;
