@@ -1144,7 +1144,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             return false;
 
         auto key_type = key_node.getDAGNode()->result_type;
-        if (!isJSONPathFilterSafe(key_type, value_field, value_type))
+        if (!isJSONPathFilterSafe(key_type, value_field, value_type, key_node.getContext()))
             return false;
 
         out.function = RPNElement::FUNCTION_EQUALS;
