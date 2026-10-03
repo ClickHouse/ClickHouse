@@ -4,8 +4,7 @@ description: 'ClickStack 的语言 SDK - ClickHouse 可观测性技术栈'
 title: '语言 SDK'
 sidebarTitle: '概览'
 doc_type: 'guide'
-keywords: ['ClickStack SDKs', 'ClickStack 语言 SDK', 'ClickStack 的 OpenTelemetry SDKs', '应用程序插桩 SDKs
-', '遥测采集 SDKs']
+keywords: ['ClickStack SDKs', 'ClickStack 语言 SDK', 'ClickStack 的 OpenTelemetry SDKs', '应用程序插桩 SDKs', '遥测采集 SDKs']
 ---
 
 数据通常通过 **OpenTelemetry (OTel) Collector** 发送到 ClickStack，既可以直接来自语言 SDK，也可以先经过作为 agent 运行的中间 OpenTelemetry Collector，例如用于采集基础设施指标和日志。
@@ -14,17 +13,13 @@ keywords: ['ClickStack SDKs', 'ClickStack 语言 SDK', 'ClickStack 的 OpenTelem
 
 在基于浏览器的环境中，SDK 还可能负责收集 **会话数据**，包括 UI 事件、点击和导航，从而支持用户会话回放。
 
-<div id="how-it-works">
-  ## 工作原理
-</div>
+## 工作原理 {#how-it-works}
 
 1. 您的应用程序使用 ClickStack SDK (例如 Node.js、Python、Go) 。这些 SDK 基于 OpenTelemetry SDK，并提供了额外功能和更好的易用性。
 2. SDK 通过 OTLP (HTTP 或 gRPC) 收集并导出链路追踪和日志。
 3. OpenTelemetry Collector 接收遥测数据，并通过已配置的导出器将其写入 ClickHouse。
 
-<div id="supported-languages">
-  ## 支持的语言
-</div>
+## 支持的语言 {#supported-languages}
 
 <Info>
   **OpenTelemetry 兼容性**
@@ -49,9 +44,7 @@ keywords: ['ClickStack SDKs', 'ClickStack 语言 SDK', 'ClickStack 的 OpenTelem
 | React Native | React Native 移动应用        | [文档](/zh/clickstack/ingesting-data/sdks/react-native) |
 | Ruby         | Ruby on Rails 应用和 Web 服务 | [文档](/zh/clickstack/ingesting-data/sdks/ruby)         |
 
-<div id="securing-api-key">
-  ## 使用 API key 进行安全防护
-</div>
+## 使用 API key 进行安全防护 {#securing-api-key}
 
 <Info>
   **托管 ClickStack 不需要 API key**
@@ -65,17 +58,15 @@ keywords: ['ClickStack SDKs', 'ClickStack 语言 SDK', 'ClickStack 的 OpenTelem
 OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
 ```
 
-此 API 密钥由 ClickStack UI (HyperDX) 应用生成，可在应用的 `Team Settings → API Keys` 中找到。
+此 API key 由 ClickStack UI (HyperDX) 应用生成，可在应用的 `Team Settings → API Keys` 中找到。
 
 对于大多数支持 OpenTelemetry 的[语言 SDK](/zh/clickstack/ingesting-data/sdks/index)和遥测库，你只需在应用中设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 环境变量，或在 SDK 初始化时指定该端点：
 
 ```shell
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
 ```
 
-<div id="kubernetes-integration">
-  ## Kubernetes 集成
-</div>
+## Kubernetes 集成 {#kubernetes-integration}
 
 所有 SDK 都支持在 Kubernetes 环境中自动关联 Kubernetes 元数据 (pod 名称、命名空间等) 。这样您就可以：
 
