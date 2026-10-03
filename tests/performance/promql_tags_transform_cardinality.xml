@@ -1,0 +1,165 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+    </settings>
+
+    <!-- Keep the active pair-cardinality boundary, independent component reuse, sparse IDs,
+         shuffled rows, and block-size extremes. The main test covers all-unique and repeated aligned pairs. -->
+    <substitutions>
+        <substitution>
+            <name>unique_pairs</name>
+            <values>
+                <value>20000</value>
+                <value>20001</value>
+                <value>99900</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>cross_shape</name>
+            <values>
+                <value>(100000, 320, 320, 1, 1, 7919)</value>
+                <value>(50000, 250, 200, 1, 1, 7919)</value>
+                <value>(20000, 160, 125, 512, 1024, 1)</value>
+                <value>(20000, 160, 125, 1, 1024, 1)</value>
+                <value>(20000, 160, 125, 512, 1, 1)</value>
+                <value>(100000, 1, 100000, 1, 1, 1)</value>
+                <value>(100000, 100000, 1, 1, 1, 1)</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>block_rows</name>
+            <values>
+                <value>64</value>
+                <value>1048576</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>no_op_unique_pairs</name>
+            <values>
+                <value>20000</value>
+                <value>20001</value>
+                <value>50000</value>
+                <value>75000</value>
+                <value>100000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- At and just above the 20%-unique component-dedup boundary, plus a near-unique control. -->
+    <query>
+        WITH
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number, timeSeriesTagsToGroup([('dest', toString(number))]) AS group
+                    FROM numbers(100000)
+                    ORDER BY number
+                )
+            ) AS dest_groups,
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number, timeSeriesTagsToGroup([('src', toString(number))]) AS group
+                    FROM numbers(100000)
+                    ORDER BY number
+                )
+            ) AS src_groups,
+            if(number % 100000 &lt; {unique_pairs}, number % 100000, 0) AS pair_index
+        SELECT timeSeriesCopyTags(dest_groups[pair_index + 1], src_groups[pair_index + 1], ['src'])
+        FROM numbers(1000000)
+        SETTINGS max_threads = 1, max_block_size = 100000
+        FORMAT Null
+    </query>
+
+    <!-- Shape: (unique pairs, destination groups, source groups, destination stride, source stride, row permutation).
+         Non-unit strides force sparse component lookups. materialize keeps single-component inputs vectorized. -->
+    <query>
+        WITH
+            {cross_shape} AS shape,
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number, timeSeriesTagsToGroup([('dest', toString(number))]) AS group
+                    FROM numbers(shape.2 * shape.4)
+                    ORDER BY number
+                )
+            ) AS dest_groups,
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number, timeSeriesTagsToGroup([('src', toString(number))]) AS group
+                    FROM numbers(shape.3 * shape.5)
+                    ORDER BY number
+                )
+            ) AS src_groups,
+            (number * shape.6) % 100000 AS row_index,
+            if(row_index &lt; shape.1, row_index, 0) AS pair_index
+        SELECT timeSeriesCopyTags(
+            materialize(dest_groups[(pair_index % shape.2) * shape.4 + 1]),
+            materialize(src_groups[intDiv(pair_index, shape.2) * shape.5 + 1]),
+            ['src'])
+        FROM numbers(1000000)
+        SETTINGS max_threads = 1, max_block_size = 100000
+        FORMAT Null
+    </query>
+
+    <!-- A tiny pair dictionary must stay cheap at both ends of the block-size range. -->
+    <query>
+        WITH
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number, timeSeriesTagsToGroup([('dest', toString(number))]) AS group
+                    FROM numbers(32)
+                    ORDER BY number
+                )
+            ) AS dest_groups,
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number, timeSeriesTagsToGroup([('src', toString(number))]) AS group
+                    FROM numbers(32)
+                    ORDER BY number
+                )
+            ) AS src_groups
+        SELECT timeSeriesCopyTags(dest_groups[number % 32 + 1], src_groups[32 - number % 32], ['src'])
+        FROM numbers(4194304)
+        SETTINGS max_threads = 1, max_block_size = {block_rows}
+        FORMAT Null
+    </query>
+
+    <!-- copyTag can return the original tags; do not hide lookup overhead behind tag allocation.
+         Cover both sides of the component-dedup boundary, intermediate reuse, and all-unique pairs. -->
+    <query>
+        WITH
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number, timeSeriesTagsToGroup([('dest', toString(number))]) AS group
+                    FROM numbers(100000)
+                    ORDER BY number
+                )
+            ) AS dest_groups,
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number, timeSeriesTagsToGroup([('src', toString(number))]) AS group
+                    FROM numbers(100000)
+                    ORDER BY number
+                )
+            ) AS src_groups,
+            if(number % 100000 &lt; {no_op_unique_pairs}, number % 100000, 0) AS pair_index
+        SELECT timeSeriesCopyTag(dest_groups[pair_index + 1], src_groups[pair_index + 1], 'missing')
+        FROM numbers(1000000)
+        SETTINGS max_threads = 1, max_block_size = 100000
+        FORMAT Null
+    </query>
+</test>

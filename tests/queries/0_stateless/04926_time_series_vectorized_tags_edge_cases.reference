@@ -1,0 +1,28 @@
+single vectorized pair
+[('dest','a'),('src','b')]
+pair cardinality and shuffled row order
+1	100	1	0
+19	100	19	0
+20	100	20	0
+21	100	21	0
+99	100	99	0
+100	100	100	0
+crossed pairs with repeated components
+64	64	0
+mixed dense and sparse components
+0	128	16	0
+1	128	16	0
+2	128	16	0
+dense component range boundary
+0	32	4	0
+1	32	4	0
+unique inputs with identical results
+16	1	1	0
+group zero and distinct pairs with identical results
+64	1	0
+copyTag no-op preserves destination groups
+64	4	0
+vectorized single-component inputs
+64	0	0
+empty vectorized input
+0
