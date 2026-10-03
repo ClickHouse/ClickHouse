@@ -660,11 +660,13 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     modified_client_info.query_kind = query_kind;
 
     /// A distributed query must carry a known initiator version: the receiving server uses it for
-    /// version-gated compatibility decisions (e.g. whether to enable the analyzer, see `TCPHandler`).
+    /// version-gated compatibility decisions.
     /// A zero version means the initiating query context was not populated as an initial query
     /// (a real client always reports its version, and a server that (re-)initiates a query fills it
     /// with its own version). Sending zero silently triggers wrong compatibility downgrades on the
     /// remote, so fail loudly instead.
+    /// A context that this server builds for its own query fills it with `Context::setInitiatorVersionIfUnset`.
+    /// Do not fill it here instead: this check exists to catch a context that lost it.
     if (modified_client_info.client_version_major == 0
         && modified_client_info.client_version_minor == 0
         && modified_client_info.client_version_patch == 0)
@@ -689,8 +691,8 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         modified_client_info.current_roles = std::move(current_role_names);
     }
 
-    if (extension)
-        modified_client_info.collaborate_with_initiator = true;
+    /// Never inherited: a stale `true` would point the remote at a coordinator this connection lacks.
+    modified_client_info.collaborate_with_initiator = extension.has_value();
 
     // Collect all roles granted on this node and pass those to the remote node
     Strings local_granted_roles;
