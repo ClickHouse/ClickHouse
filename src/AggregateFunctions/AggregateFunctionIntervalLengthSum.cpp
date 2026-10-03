@@ -278,7 +278,7 @@ createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTyp
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of aggregate function {}, must "
-                    "be native integral type, Date/DateTime or Float", arguments.front().get()->getName(), name);
+                    "be native integral type, Date/DateTime or Float", arguments.front()->getName(), name);
 }
 
 }

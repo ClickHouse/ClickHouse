@@ -8,8 +8,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Poco/String.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -326,6 +324,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP SCHEMA CACHE", Type::CLEAR_SCHEMA_CACHE},
             {"DROP FORMAT SCHEMA CACHE", Type::CLEAR_FORMAT_SCHEMA_CACHE},
             {"DROP AVRO SCHEMA CACHE", Type::CLEAR_AVRO_SCHEMA_CACHE},
+            {"DROP TIME SERIES CACHES", Type::CLEAR_TIME_SERIES_CACHES},
             {"DROP S3 CLIENT CACHE", Type::CLEAR_S3_CLIENT_CACHE},
         };
 
@@ -413,6 +412,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::DISABLE_ALL_FAILPOINTS:
+        {
+            /// Takes no name. Listed explicitly rather than left to the `default` below,
+            /// which would accept `ON CLUSTER` - fail points are node-local state, and none
+            /// of the other `SYSTEM ... FAILPOINT` statements accept it either.
+            break;
+        }
         case Type::WAIT_FAILPOINT:
         {
             ASTPtr ast;
@@ -452,6 +458,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::WAIT_QUERY_RUNNER:
         case Type::PREWARM_MARK_CACHE:
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
+        case Type::CLEAR_TIME_SERIES_CACHES:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
@@ -1121,14 +1128,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserSystemQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementSystem(StatementFactory & factory)
-{
-    factory.registerStatement("SYSTEM",
+    documentation["SYSTEM"] =
     {
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -1301,6 +1305,14 @@ Clears the metadata cache of the specified disk.
 
 ```sql
 SYSTEM DROP DISK METADATA CACHE <disk_name>
+```
+
+## SYSTEM CLEAR|DROP TIME SERIES CACHES {#drop-time-series-caches}
+
+Clears the caches of a `TimeSeries` table which let inserts skip the rows already present in its target tables. There are two such caches: the deduplication cache of the metric families table and the deduplication cache of the tags table (used only when `store_min_time_and_max_time` is disabled), see the `metric_families_deduplication_cache_expiration_seconds` and `tags_deduplication_cache_expiration_seconds` settings of the table. The caches are local to the server and they don't notice changes made to the target tables directly. Such a difference disappears by itself when the entries expire; use the statement to make the next insert write all its rows without waiting (for example, after truncating the metric families table). `TRUNCATE TABLE` of a `TimeSeries` table clears the caches of the executing server only, so if the target tables are replicated, run the statement `ON CLUSTER` afterwards to clear the caches of the other replicas.
+
+```sql
+SYSTEM DROP TIME SERIES CACHES [ON CLUSTER cluster_name] [db.]table
 ```
 
 ## SYSTEM SYNC FILESYSTEM CACHE {#sync-filesystem-cache}
@@ -1960,6 +1972,8 @@ SYSTEM PAUSE VIEWS
 
 Trigger an immediate out-of-schedule refresh of a given view.
 
+If the view is in a Replicated or Shared database, the request is shared with all replicas: the refresh may run on another replica, e.g. if refreshing is stopped on the current one.
+
 ```sql
 SYSTEM REFRESH VIEW [db.]name
 ```
@@ -1970,7 +1984,7 @@ Waits for the running refresh to complete. If no refresh is running, returns imm
 
 Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
 
-If the view is in a Replicated or Shared database, and refresh is running on another replica, waits for that refresh to complete.
+If the view is in a Replicated or Shared database, also waits for a refresh that is running or requested on another replica.
 
 ```sql
 SYSTEM WAIT VIEW [db.]name
@@ -2041,7 +2055,7 @@ SYSTEM CANCEL ALL BACKGROUND
 
 ### SYSTEM REFRESH {#refresh-background}
 
-Run one extra cycle out of schedule. On a streaming table it runs immediately and once, even while the table is stopped or paused. On a refreshable materialized view it behaves like `SYSTEM REFRESH VIEW`: if the view is stopped, the refresh is remembered and runs once `SYSTEM START` releases it.
+Run one extra cycle out of schedule. On a streaming table it runs immediately and once, even while the table is stopped or paused. On a refreshable materialized view it behaves like `SYSTEM REFRESH VIEW`: if the view is stopped, the refresh is remembered and runs once `SYSTEM START` releases it or another replica takes it over.
 
 ```sql
 SYSTEM REFRESH [db.]table
@@ -2059,6 +2073,26 @@ Blocks until the given file has been processed or permanently failed by the give
 ```sql
 SYSTEM FLUSH OBJECT STORAGE QUEUE [db.]table_name PATH 'path'
 ```
+
+## SYSTEM ENABLE|DISABLE FAILPOINT {#failpoint}
+
+Fail points are named places in the server code where a fault can be injected on demand - an error, a delay, or a pause of the executing thread - for testing. They are listed in the [`system.fail_points`](/reference/system-tables/fail_points) table together with their current state.
+
+```sql
+SYSTEM ENABLE FAILPOINT name
+SYSTEM DISABLE FAILPOINT name
+SYSTEM DISABLE ALL FAILPOINTS
+SYSTEM WAIT FAILPOINT name [PAUSE|RESUME]
+SYSTEM NOTIFY FAILPOINT name
+```
+
+`SYSTEM ENABLE FAILPOINT` arms a single fail point; `SYSTEM DISABLE FAILPOINT` disarms it and resumes any thread blocked on it, and is a no-op if it was not enabled.
+
+`SYSTEM DISABLE ALL FAILPOINTS` disables every fail point at once and resumes every thread blocked on a pauseable one. It takes no name and is idempotent, so a test harness can use it to return the server to a state that injects nothing without knowing which fail points the previous test enabled. On a build without fail point support the statement succeeds and does nothing.
+
+`SYSTEM WAIT FAILPOINT ... PAUSE` blocks until a thread pauses on the given pauseable fail point (or the fail point is disabled), `... RESUME` blocks until the paused thread is resumed, and `SYSTEM NOTIFY FAILPOINT` resumes the paused threads without disabling the fail point.
+
+Fail points are node-local state, so none of these statements accept `ON CLUSTER`. All of them require the `SYSTEM FAILPOINT` privilege.
 )DOCS_MD",
         .syntax = R"(
 SYSTEM RELOAD CONFIG | USERS | FUNCTIONS | ASYNCHRONOUS METRICS
@@ -2078,9 +2112,14 @@ SYSTEM RESTART REPLICA | RESTORE REPLICA [db.]name
 SYSTEM REFRESH VIEW | WAIT VIEW | CANCEL VIEW [db.]name
 SYSTEM UNFREEZE WITH NAME 'backup_name'
 SYSTEM FLUSH OBJECT STORAGE QUEUE
+SYSTEM ENABLE | DISABLE FAILPOINT name
+SYSTEM DISABLE ALL FAILPOINTS
+SYSTEM WAIT FAILPOINT name [PAUSE|RESUME] | NOTIFY FAILPOINT name
 )",
         .related = {"KILL", "OPTIMIZE", "ALTER", "SHOW", "ON CLUSTER"},
-    });
+    };
+
+    return documentation;
 }
 
 }

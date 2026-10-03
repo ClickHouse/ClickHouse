@@ -4,18 +4,12 @@
 #include <deque>
 #include <memory>
 #include <vector>
+#include <IO/ByteRange.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/DequeWithMemoryTracking.h>
 
 namespace DB
 {
-
-struct ByteRange
-{
-    size_t offset = 0;
-    size_t size = 0;
-    size_t end() const { return offset + size; }
-};
 
 /// Abstract backing memory for a chain node.
 class ChainedBuffer
@@ -129,6 +123,9 @@ public:
 
     /// True when every byte in `req` is reachable from the cursor.
     bool covers(ByteRange req) const;
+
+    /// True when the byte at `offset` is reachable from the cursor.
+    bool contains(size_t offset) const { return covers(ByteRange{offset, 1}); }
 
     /// Sub-ranges of `req` not reachable. Empty iff `covers(req)`.
     VectorWithMemoryTracking<ByteRange> gaps(ByteRange req) const;
