@@ -683,7 +683,7 @@ SELECT malformed NOT IN (valid); -- { serverError BAD_ARGUMENTS }
 WITH
     CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecaying(10))') AS left_value,
     CAST([(1., 0., 20.)], 'Array(ExponentialTimeDecaying(20))') AS right_value
-SELECT left_value = right_value; -- { serverError BAD_ARGUMENTS }
+SELECT left_value = right_value; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 WITH
     CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecaying(10))') AS decaying,
