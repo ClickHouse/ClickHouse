@@ -101,15 +101,9 @@ TEST(LanceTableStateSnapshot, DataLakeVariantRoundTrip)
 
 TEST(LanceTableStateSnapshot, RejectsZeroVersion)
 {
-    Lance::TableStateSnapshot state;
-
+    /// Serializing an invalid snapshot is a `LOGICAL_ERROR`, which aborts debug and sanitizer builds,
+    /// so only the deserialization of a zero version is checked here.
     String serialized;
-    {
-        WriteBufferFromString out(serialized);
-        EXPECT_THROW(state.serialize(out), Exception);
-    }
-
-    serialized.clear();
     WriteBufferFromString zero_out(serialized);
     writeVarUInt(0, zero_out);
     zero_out.finalize();
@@ -122,23 +116,23 @@ TEST(LanceTableStateSnapshot, RejectsInvalidIdentity)
 {
     auto state = makeSnapshot(1);
     state.manifest_size = 0;
-    EXPECT_THROW(state.validate(ErrorCodes::LOGICAL_ERROR), Exception);
+    EXPECT_THROW(state.validate(ErrorCodes::INCORRECT_DATA), Exception);
 
     state = makeSnapshot(1);
     state.manifest_id.fill(0);
-    EXPECT_THROW(state.validate(ErrorCodes::LOGICAL_ERROR), Exception);
+    EXPECT_THROW(state.validate(ErrorCodes::INCORRECT_DATA), Exception);
 
     state = makeSnapshot(1);
     state.manifest_sha256.fill(0);
-    EXPECT_THROW(state.validate(ErrorCodes::LOGICAL_ERROR), Exception);
+    EXPECT_THROW(state.validate(ErrorCodes::INCORRECT_DATA), Exception);
 
     state = makeSnapshot(1);
     state.etag_sha256.fill(3);
-    EXPECT_THROW(state.validate(ErrorCodes::LOGICAL_ERROR), Exception);
+    EXPECT_THROW(state.validate(ErrorCodes::INCORRECT_DATA), Exception);
 
     state = makeSnapshot(1);
     state.has_etag = true;
-    EXPECT_THROW(state.validate(ErrorCodes::LOGICAL_ERROR), Exception);
+    EXPECT_THROW(state.validate(ErrorCodes::INCORRECT_DATA), Exception);
 }
 
 TEST(LanceTableStateSnapshot, RejectsLegacyVersionOnlyPayload)

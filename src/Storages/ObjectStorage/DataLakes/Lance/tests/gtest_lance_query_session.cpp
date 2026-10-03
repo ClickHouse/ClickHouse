@@ -270,17 +270,18 @@ TEST(LanceQuerySession, IdentityKeyStableAndSensitiveToCredentials)
     EXPECT_NE(a.identityKey(), b.identityKey());
 }
 
-TEST(LanceQuerySession, PinSnapshotRejectsConflict)
+TEST(LanceQuerySession, PinSnapshotIsIdempotent)
 {
     auto context = Context::createCopy(getContext().context);
     context->makeQueryContext();
 
+    /// Pinning a different snapshot for the same identity is a `LOGICAL_ERROR`, which aborts debug and
+    /// sanitizer builds, so it is not checked here.
     auto session = Lance::QuerySession::get(context);
     const auto snapshot = makeSnapshot(3, 1);
     session->pinSnapshot("id1", snapshot);
     session->pinSnapshot("id1", snapshot);
     EXPECT_EQ(session->getPinnedSnapshot("id1"), snapshot);
-    EXPECT_THROW(session->pinSnapshot("id1", makeSnapshot(3, 9)), Exception);
 }
 
 TEST(LanceQuerySession, GetOrOpenReusesHandleWithinSession)
