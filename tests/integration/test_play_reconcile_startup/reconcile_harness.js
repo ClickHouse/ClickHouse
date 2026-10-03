@@ -724,7 +724,7 @@ async function checkAuthHeaderTransport(js) {
         if (options.headers['X-ClickHouse-User']?.startsWith(encodedAuthPrefix)) {
             return authResponse(403, {
                 code: '516',
-                body: 'Authentication failed: encoded headers are not understood by this server',
+                body: 'Code: 516. DB::Exception: Authentication failed: encoded headers are not understood by this server. (AUTHENTICATION_FAILED) (version 26.9.4.1 (official build))',
             });
         }
         return authResponse(200, { version: '26.6.9.1' });
@@ -770,6 +770,32 @@ async function checkAuthHeaderTransport(js) {
             && !new URL(modernBadCalls[0].url).searchParams.has('password'),
         { modernBadCalls });
 
+    /// A proxy may hide the encoded-auth acknowledgement even on a new server. The ClickHouse
+    /// version in the authentication error is the positive compatibility signal: a 26.10+ server
+    /// must never resend the real credentials in the URL just because the response marker is hidden.
+    const modernHiddenMarkerCalls = [];
+    const modernHiddenMarkerHelpers = makeAuthHelpers(async (url, options) => {
+        modernHiddenMarkerCalls.push({ url, headers: options.headers });
+        return authResponse(403, {
+            code: '516',
+            body: 'Code: 516. DB::Exception: Authentication failed: password is incorrect. (AUTHENTICATION_FAILED) (version 26.10.1.1 (official build))',
+        });
+    });
+    const modernHiddenMarkerResponse = await modernHiddenMarkerHelpers.fetchWithRequestAuth(
+        'https://remote.example/modern-hidden-marker?query_kind=main',
+        { method: 'POST', body: 'SELECT 1' },
+        'https://remote.example/modern-hidden-marker',
+        encodedUser,
+        encodedPassword);
+    check('auth-header-cases', 'hidden auth marker on a modern server never falls back to URL credentials',
+        !modernHiddenMarkerResponse.ok
+            && modernHiddenMarkerCalls.length === 1
+            && modernHiddenMarkerCalls[0].headers.Authorization === 'never'
+            && modernHiddenMarkerCalls[0].headers['X-ClickHouse-User'].startsWith(encodedAuthPrefix)
+            && !new URL(modernHiddenMarkerCalls[0].url).searchParams.has('user')
+            && !new URL(modernHiddenMarkerCalls[0].url).searchParams.has('password'),
+        { modernHiddenMarkerCalls });
+
     /// The legacy URL mode is per-request, not sticky. Once the backend upgrades, the very next
     /// request retries the self-describing encoded headers and stops putting credentials in the URL.
     let rollingEncodedLegacy = true;
@@ -779,7 +805,7 @@ async function checkAuthHeaderTransport(js) {
         if (rollingEncodedLegacy && options.headers['X-ClickHouse-User']?.startsWith(encodedAuthPrefix)) {
             return authResponse(403, {
                 code: '516',
-                body: "Invalid authentication: expected 'Basic' HTTP Authorization scheme",
+                body: "Code: 516. DB::Exception: Invalid authentication: expected 'Basic' HTTP Authorization scheme. (AUTHENTICATION_FAILED) (version 26.9.4.1 (official build))",
             });
         }
         return authResponse(200, { version: '26.7.1.1' });
