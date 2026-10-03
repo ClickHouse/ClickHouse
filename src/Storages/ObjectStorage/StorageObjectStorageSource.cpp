@@ -204,6 +204,7 @@ namespace
 namespace Setting
 {
     extern const SettingsUInt64 max_download_buffer_size;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsString filesystem_cache_name;
@@ -1003,7 +1004,12 @@ Chunk StorageObjectStorageSource::generate()
 
             return chunk;
         }
-        else if (format_filter_info->condition_hash)
+        /// With TopN dynamic filtering the matched buckets depend on the running threshold, which comes
+        /// from the rows of all files the query reads: a row group can end up without a returned row
+        /// only because the threshold had excluded it. The key covers just the predicate, so such an
+        /// entry would make a later plain read, or one with another `LIMIT` or direction, skip rows.
+        /// A file the filter was not applied to (see `createReader`) is read as without TopN.
+        else if (format_filter_info->condition_hash && !reader.isTopKFilterApplied())
         {
             const auto & object_info = reader.getObjectInfo();
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
@@ -1142,6 +1148,39 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
 
+    /// TopN dynamic filtering compares the values the reader returns against a threshold made
+    /// from the values the query sorts by, so it may only be applied to a file where the two are
+    /// the same. They are not where a data lake rewrites the file's columns after the reader:
+    /// schema evolution renames and casts them (and a column of the file may carry the name
+    /// another column has in the current schema), and an identity-partitioned column takes the
+    /// value the manifest defines for it, whatever the file stores. A file with an initial schema
+    /// but no schema transform (an Iceberg file with equality deletes in the current schema) is
+    /// read under the current names, and deletes only remove rows after the reader.
+    auto is_top_k_filter_allowed = [&](const ObjectInfoPtr & object) -> bool
+    {
+        if (!format_filter_info || !format_filter_info->top_k_filter)
+            return false;
+        if (object->data_lake_metadata && object->data_lake_metadata->schema_transform)
+            return false;
+        if (configuration->getSchemaTransformer(context_, object))
+            return false;
+#if USE_AVRO
+        if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object.get()))
+        {
+            const auto & sort_column = format_filter_info->top_k_filter->column_name;
+            for (const auto & column : iceberg_info->info.identity_partition_columns)
+                if (column.first == sort_column)
+                    return false;
+        }
+#endif
+        return true;
+    };
+
+    /// Entries are only written by reads of files without TopN dynamic filtering (see `generate`), so
+    /// they apply to a file read with it as well. Such a file consults them only while
+    /// `use_query_condition_cache_for_top_k` is on: that setting makes TopK reads neither consult nor
+    /// populate the cache. A file that does not apply the filter is read as without TopN.
+    const bool use_query_condition_cache_for_top_k = context_->getSettingsRef()[Setting::use_query_condition_cache_for_top_k];
     QueryConditionCachePtr query_condition_cache;
     if (format_filter_info && format_filter_info->condition_hash)
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
@@ -1177,7 +1216,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             && object_info->getObjectMetadata()->is_size_known)
             continue;
 
-        if (query_condition_cache && !object_info->file_bucket_info)
+        if (query_condition_cache && !object_info->file_bucket_info
+            && (use_query_condition_cache_for_top_k || !is_top_k_filter_allowed(object_info)))
         {
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
             std::optional<QueryConditionCache::MatchingMarks> matching_marks;
@@ -1223,6 +1263,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     std::unique_ptr<ReadBuffer> read_buf;
 
     Names row_lineage_columns;
+    /// Whether the reader of this file applies TopN dynamic filtering, see `generate`.
+    bool top_k_filter_applied = false;
 
     auto try_get_num_rows_from_cache = [&]() -> std::optional<size_t>
     {
@@ -1351,6 +1393,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             identity_partition_columns = iceberg_info->info.identity_partition_columns;
 #endif
 
+        const bool top_k_filter_allowed = is_top_k_filter_allowed(object_info);
+
         /// Save stripped filters if we need to apply them as fallback FilterTransforms
         /// later in the pipeline when the file format doesn't support PREWHERE.
         FilterDAGInfoPtr stripped_row_level_filter;
@@ -1445,6 +1489,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /// that need to resolve query-side filter column names (e.g. GeoParquet spatial
                     /// pruning) back to a field_id.
                     result->current_schema_column_mapper = format_filter_info->column_mapper;
+                    if (top_k_filter_allowed)
+                        result->top_k_filter = format_filter_info->top_k_filter;
                     return result;
                 }
             }
@@ -1456,12 +1502,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     format_filter_info->column_mapper,
                     nullptr, nullptr);
 
-            if (filters_substituted)
-                return std::make_shared<FormatFilterInfo>(
+            if (filters_substituted || (format_filter_info->top_k_filter && !top_k_filter_allowed))
+            {
+                auto result = std::make_shared<FormatFilterInfo>(
                     format_filter_info->filter_actions_dag,
                     format_filter_info->context.lock(),
                     format_filter_info->column_mapper,
                     row_level_filter, prewhere_info);
+                if (top_k_filter_allowed)
+                    result->top_k_filter = format_filter_info->top_k_filter;
+                return result;
+            }
 
             return format_filter_info;
         }();
@@ -1479,6 +1530,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             filter_info_with_rows->rows_to_read = object_info->rows_to_read;
             filter_info = filter_info_with_rows;
         }
+
+        top_k_filter_applied = filter_info && filter_info->top_k_filter;
 
         /// When PREWHERE / row-level filter is stripped from `format_filter_info` (i.e. the
         /// actual file format doesn't support PREWHERE), the format reader will not produce
@@ -1756,7 +1809,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
 
     return ReaderHolder(
-        object_info, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader));
+        object_info, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader), top_k_filter_applied);
 }
 
 std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
@@ -2302,12 +2355,14 @@ StorageObjectStorageSource::ReaderHolder::ReaderHolder(
     std::unique_ptr<ReadBuffer> read_buf_,
     std::shared_ptr<ISource> source_,
     std::unique_ptr<QueryPipeline> pipeline_,
-    std::unique_ptr<PullingPipelineExecutor> reader_)
+    std::unique_ptr<PullingPipelineExecutor> reader_,
+    bool top_k_filter_applied_)
     : object_info(std::move(object_info_))
     , read_buf(std::move(read_buf_))
     , source(std::move(source_))
     , pipeline(std::move(pipeline_))
     , reader(std::move(reader_))
+    , top_k_filter_applied(top_k_filter_applied_)
 {
 }
 
@@ -2321,6 +2376,7 @@ StorageObjectStorageSource::ReaderHolder::operator=(ReaderHolder && other) noexc
     source = std::move(other.source);
     read_buf = std::move(other.read_buf);
     object_info = std::move(other.object_info);
+    top_k_filter_applied = other.top_k_filter_applied;
     return *this;
 }
 
