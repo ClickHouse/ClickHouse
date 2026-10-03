@@ -36,8 +36,6 @@
 #include <Common/logger_useful.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionOperatorPrettyLookup.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 #include <fmt/core.h>
 
@@ -1538,19 +1536,22 @@ public:
                 auto old_pos = pos;
 
                 if (ParserIdentifier().parse(pos, alias, expected) &&
-                    as_keyword_parser.ignore(pos, expected) &&
-                    (type_text = parseDataTypeAsText(pos, expected)) &&
-                    ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                    as_keyword_parser.ignore(pos, expected))
                 {
-                    if (!insertAlias(alias))
-                        return false;
+                    type_text = parseDataTypeAsText(pos, expected);
+                    if (type_text &&
+                        ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                    {
+                        if (!insertAlias(alias))
+                            return false;
 
-                    if (!mergeElement())
-                        return false;
+                        if (!mergeElement())
+                            return false;
 
-                    elements = {createFunctionCast(exactArgument(elements[0], *type_text, pos), std::move(*type_text))};
-                    finished = true;
-                    return true;
+                        elements = {createFunctionCast(exactArgument(elements[0], *type_text, pos), std::move(*type_text))};
+                        finished = true;
+                        return true;
+                    }
                 }
 
                 pos = old_pos;
@@ -1571,7 +1572,8 @@ public:
 
                 pos = old_pos;
 
-                if ((type_text = parseDataTypeAsText(pos, expected)) &&
+                type_text = parseDataTypeAsText(pos, expected);
+                if (type_text &&
                     ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!mergeElement())
@@ -4166,14 +4168,11 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     return Action::OPERAND;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserExpression::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementIn(StatementFactory & factory)
-{
-    factory.registerStatement("IN",
+    documentation["IN"] =
     {
         .description = R"DOCS_MD(
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
@@ -4480,7 +4479,9 @@ expr IN table | (subquery) | table_function(...)
 expr [GLOBAL] [NOT] IN ...
 )",
         .related = {"SELECT", "WHERE", "JOIN", "INTERSECT"},
-    });
+    };
+
+    return documentation;
 }
 
 }

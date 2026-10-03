@@ -52,9 +52,11 @@ namespace Setting
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool query_plan_aggregation_bucket_top_k;
+    extern const SettingsBool query_plan_aggregation_having_prefilter;
     extern const SettingsBool query_plan_convert_any_join_to_semi_or_anti_join;
     extern const SettingsBool query_plan_convert_join_to_in;
     extern const SettingsBool query_plan_convert_outer_join_to_inner_join;
+    extern const SettingsBool query_plan_convert_outer_join_to_inner_join_transitively;
     extern const SettingsBool query_plan_short_circuit_constant_false_join;
     extern const SettingsBool query_plan_direct_read_from_text_index;
     extern const SettingsBool query_plan_optimize_count_from_text_index;
@@ -62,6 +64,7 @@ namespace Setting
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsBool query_plan_execute_functions_after_sorting;
     extern const SettingsBool query_plan_filter_push_down;
+    extern const SettingsBool query_plan_filter_push_down_below_limit_by;
     extern const SettingsBool query_plan_propagate_predicate_across_join;
     extern const SettingsBool query_plan_fuse_filter_into_array_join;
     extern const SettingsBool query_plan_lower_array_join_function;
@@ -189,6 +192,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     merge_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filters];
     push_limit_by_into_sort = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_limit_by_into_sort];
     filter_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_filter_push_down];
+    /// The filter push-down pass also runs with `filter_push_down` off, once a JOIN runtime filter has been added.
+    filter_push_down_below_limit_by = from[Setting::query_plan_filter_push_down_below_limit_by];
     /// Without `use_primary_key` the copy would just be a full scan filter
     propagate_predicate_across_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_propagate_predicate_across_join]
         && from[Setting::use_primary_key];
@@ -200,6 +205,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     push_down_volume_reducing_functions
         = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_volume_reducing_functions];
     convert_outer_join_to_inner_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_outer_join_to_inner_join];
+    convert_outer_join_to_inner_join_transitively = convert_outer_join_to_inner_join && from[Setting::query_plan_convert_outer_join_to_inner_join_transitively];
     short_circuit_constant_false_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_short_circuit_constant_false_join];
     execute_functions_after_sorting = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_execute_functions_after_sorting];
     reuse_storage_ordering_for_window_functions = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_reuse_storage_ordering_for_window_functions];
@@ -214,6 +220,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     try_use_top_k_optimization = from[Setting::use_skip_indexes_for_top_k] || from[Setting::use_top_k_dynamic_filtering];
     enable_group_by_top_k_optimization
         = from[Setting::query_plan_enable_optimizations] && from[Setting::enable_group_by_top_k_optimization];
+    aggregation_having_prefilter
+        = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_aggregation_having_prefilter];
     top_k_optimization_observation_rows = from[Setting::group_by_top_k_optimization_observation_rows];
     top_k_through_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_join];
 
