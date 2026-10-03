@@ -18,8 +18,8 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Если задано `<true>` (по умолчанию), журналирование выполняется асинхронно (один фоновый поток на каждый канал вывода). В противном случае запись в журнал выполняется в потоке, вызывающем LOG.
 
-<div id="logger.async_queye_max_size">
-  ## logger.async_queye_max_size
+<div id="logger.async_queue_max_size">
+  ## logger.async_queue_max_size
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="65536" changeable_without_restart="No" />При использовании асинхронного журналирования это максимальное количество сообщений, которое будет храниться в очереди в ожидании сброса. Лишние сообщения будут отброшены. Округляется в большую сторону до следующей степени двойки (например, `100000` становится `131072`).

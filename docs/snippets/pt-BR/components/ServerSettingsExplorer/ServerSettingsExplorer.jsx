@@ -545,7 +545,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       count: 2,
       settings: [
         { name: "logger.async", path: "/logger-async#logger.async", default: "1" },
-        { name: "logger.async_queye_max_size", path: "/logger-async#logger.async_queye_max_size", default: "65536" }
+        { name: "logger.async_queue_max_size", path: "/logger-async#logger.async_queue_max_size", default: "65536" }
       ],
       children: []
     },
