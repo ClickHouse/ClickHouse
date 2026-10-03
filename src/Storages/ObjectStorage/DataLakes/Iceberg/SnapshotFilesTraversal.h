@@ -12,6 +12,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
 
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
@@ -38,24 +39,16 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
     LoggerPtr log,
     Int32 current_schema_id);
 
-struct ReachableFilesResult
+struct ReachableFilesRoot
 {
-    std::unordered_set<String> files;
     Int32 metadata_version;
     /// Resolved storage path of the metadata file the traversal was rooted at. Two distinct
     /// files can share a version number, so identity of the root is this path, not the number.
     String metadata_path;
+    Poco::JSON::Object::Ptr metadata;
 };
 
-/// Collect all files reachable through the metadata graph.
-///
-/// Traverses: metadata JSON files (from metadata-log), manifest lists (from snapshots),
-/// manifest files (from manifest lists), data/delete files (from manifest files),
-/// and statistics files. All returned paths are resolved storage paths.
-/// The root path identifies the state traversed; the version number alongside it is diagnostic.
-/// The root is the catalog's committed pointer when `catalog` is set, otherwise the most recent
-/// metadata file in storage under the configured selection policy.
-ReachableFilesResult collectReachableFiles(
+ReachableFilesRoot resolveReachableFilesRoot(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     const DataLakeStorageSettings & data_lake_settings,
@@ -63,6 +56,18 @@ ReachableFilesResult collectReachableFiles(
     LoggerPtr log,
     const std::shared_ptr<DataLake::ICatalog> & catalog = nullptr,
     const String & table_identifier = {});
+
+/// Collect all files reachable through the metadata graph.
+///
+/// Traverses: metadata JSON files (from metadata-log), manifest lists (from snapshots),
+/// manifest files (from manifest lists), data/delete files (from manifest files),
+/// and statistics files. All returned paths are resolved storage paths.
+std::unordered_set<String> collectReachableFiles(
+    const ReachableFilesRoot & root,
+    ObjectStoragePtr object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    ContextPtr context,
+    LoggerPtr log);
 
 }
 

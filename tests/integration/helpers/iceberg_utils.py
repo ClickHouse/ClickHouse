@@ -1,3 +1,4 @@
+import glob
 import logging
 import os
 import re
@@ -552,6 +553,31 @@ def default_download_directory(
         )
     else:
         raise Exception(f"Unknown iceberg storage type for downloading: {storage_type}")
+
+
+def _fix_version_hint_for_spark(table_name):
+    """Rewrite version-hint.text as a plain version number.
+    ClickHouse writes the full filename (e.g. 'v3.metadata.json');
+    Spark's Hadoop catalog expects just the number (e.g. '3').
+    """
+    metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata"
+    latest = 0
+    for filename in glob.glob(os.path.join(metadata_dir, "*.metadata.json")):
+        match = re.search(r"v(\d+)", os.path.basename(filename))
+        if match:
+            latest = max(latest, int(match.group(1)))
+    with open(os.path.join(metadata_dir, "version-hint.text"), "w") as file:
+        file.write(str(latest))
+
+
+def spark_alter_table(cluster, spark, storage_type, table_name, *sql_fragments):
+    """Execute Spark SQL ALTER TABLE on a ClickHouse-created Iceberg table."""
+    table_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/"
+    default_download_directory(cluster, storage_type, table_dir, table_dir)
+    _fix_version_hint_for_spark(table_name)
+    for fragment in sql_fragments:
+        spark.sql(f"ALTER TABLE {table_name} {fragment}")
+    default_upload_directory(cluster, storage_type, table_dir, table_dir)
 
 
 def execute_spark_query_general(
