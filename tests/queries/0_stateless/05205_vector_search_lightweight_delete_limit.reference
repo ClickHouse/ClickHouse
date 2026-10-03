@@ -5,6 +5,8 @@ without rescoring	10
 with rescoring	10
 the index answer	[1,1,1,1,1,1,1,1,1,1]
 the bruteforce answer	[1,1,1,1,1,1,1,1,1,1]
+apply_deleted_mask = 0 uses the index	1
+apply_deleted_mask = 0	[0,0,0,0,0,0,0,0,0,0]
 a deleted cluster	3
 a pending delete	10
 a delete in a patch part	10
