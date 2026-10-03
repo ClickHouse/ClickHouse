@@ -519,6 +519,13 @@ struct ConverterType
     using Type = PType;
 };
 
+/// An argument the dispatch cannot read at all raises `BAD_ARGUMENTS`, which is what the
+/// execute-time dispatch has always raised. Geometry functions no longer reach it: `geoKindOf`
+/// below classifies the same types during analysis, and `checkGeometryArgumentType` rejects the
+/// unreadable ones with `ILLEGAL_TYPE_OF_ARGUMENT` -- the code `FunctionBaseVariantAdaptor` reads
+/// as type incompatibility, so a `Variant` alternative the function refuses is skipped rather than
+/// turned into a hard analysis error. The remaining callers are `MVTEncodeGeom` and the BigQuery
+/// conversions, which dispatch without such a check.
 template <typename Point, typename F>
 static void callOnGeometryDataType(DataTypePtr type, F && f)
 {
@@ -569,6 +576,102 @@ static void callOnTwoGeometryDataTypes(DataTypePtr left_type, DataTypePtr right_
             return func(LeftConverterType(), RightConverterType());
         });
     });
+}
+
+/// The geometry kinds a function refuses, as a bit set. A function's accepted argument domain is
+/// `callOnGeometryDataType`'s dispatch minus these kinds, and stating it here lets the check run
+/// during analysis instead of from inside `executeImpl`.
+enum GeoKindBits : UInt32
+{
+    GeoKindPoint = 1u << 0,
+    GeoKindMultiPoint = 1u << 1,
+    GeoKindLineString = 1u << 2,
+    GeoKindMultiLineString = 1u << 3,
+    GeoKindRing = 1u << 4,
+    GeoKindPolygon = 1u << 5,
+    GeoKindMultiPolygon = 1u << 6,
+
+    /// `boost::geometry`'s areal algorithms (`union_`, `intersection`, `sym_difference`,
+    /// `intersects`, `within`) are defined for areal geometries only.
+    GeoKindNonAreal = GeoKindPoint | GeoKindMultiPoint | GeoKindLineString | GeoKindMultiLineString,
+};
+
+/// The geometry kind of a type, or 0 for a type the dispatch cannot read at all. Mirrors
+/// `callOnGeometryDataType`'s chain, but answers with a bit instead of calling a templated
+/// continuation, so the checks below cost no template instantiations: they are asking about the
+/// TYPE, and the converters only matter once there is a column to read.
+inline UInt32 geoKindOf(const DataTypePtr & type)
+{
+    const auto & factory = DataTypeFactory::instance();
+    const auto * custom_name = type->getCustomName();
+
+    if (factory.get("Point")->equals(*type))
+        return GeoKindPoint;
+    if (factory.get("MultiPoint")->equals(*type) && custom_name && custom_name->getName() == "MultiPoint")
+        return GeoKindMultiPoint;
+    if (factory.get("LineString")->equals(*type) && custom_name && custom_name->getName() == "LineString")
+        return GeoKindLineString;
+    if (factory.get("MultiLineString")->equals(*type) && custom_name && custom_name->getName() == "MultiLineString")
+        return GeoKindMultiLineString;
+    if (factory.get("Ring")->equals(*type))
+        return GeoKindRing;
+    if (factory.get("Polygon")->equals(*type))
+        return GeoKindPolygon;
+    if (factory.get("MultiPolygon")->equals(*type))
+        return GeoKindMultiPolygon;
+    return 0;
+}
+
+constexpr const char * geoKindBitName(UInt32 bit)
+{
+    switch (bit)
+    {
+        case GeoKindPoint: return "Point";
+        case GeoKindMultiPoint: return "MultiPoint";
+        case GeoKindLineString: return "LineString";
+        case GeoKindMultiLineString: return "MultiLineString";
+        case GeoKindRing: return "Ring";
+        case GeoKindPolygon: return "Polygon";
+        case GeoKindMultiPolygon: return "MultiPolygon";
+        default: return "";
+    }
+}
+
+/// Rejects, from the argument TYPES alone, the kinds in `rejected_kinds` plus whatever
+/// `callOnGeometryDataType` itself refuses to dispatch (any non-geometry argument).
+///
+/// Call these from `getReturnTypeImpl`, so the rejection happens during analysis, uniformly with
+/// every other function. A rejection raised from `executeImpl` instead is bound to the data path
+/// rather than to the query plan, so anything that removes every row -- an empty part, a
+/// constant-false filter, primary-key or skip-index pruning, or the `input_rows_count == 0` early
+/// return that `useDefaultImplementationForNulls` takes for a `Nullable` argument -- silently
+/// suppresses it and the function answers as if the argument had been valid.
+///
+/// `message` is a runtime format string taking the function name and the offending kind name, in that order.
+inline void checkGeometryArgumentType(
+    const DataTypePtr & type,
+    const String & function_name,
+    UInt32 rejected_kinds,
+    const char * message = "",
+    int error_code = ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+{
+    const UInt32 kind = geoKindOf(type);
+    if (kind == 0)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unknown geometry type {}", type->getName());
+    if ((kind & rejected_kinds) != 0)
+        throw Exception(error_code, "{}", fmt::format(fmt::runtime(message), function_name, geoKindBitName(kind)));
+}
+
+inline void checkGeometryArgumentTypes(
+    const DataTypePtr & left_type,
+    const DataTypePtr & right_type,
+    const String & function_name,
+    UInt32 rejected_kinds,
+    const char * message = "",
+    int error_code = ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+{
+    checkGeometryArgumentType(left_type, function_name, rejected_kinds, message, error_code);
+    checkGeometryArgumentType(right_type, function_name, rejected_kinds, message, error_code);
 }
 
 }
