@@ -99,17 +99,16 @@ def jetstream_ack_pending(nats_cluster, stream, durable):
     return asyncio.run(run())
 
 
-def jetstream_delivered(nats_cluster, stream, durable):
-    """Number of deliveries to the consumer so far, redeliveries included."""
+def jetstream_purge_stream(nats_cluster, stream):
+    """Remove all messages from the stream, so the broker cannot deliver them anymore."""
 
     async def run():
         nc = await nats_connect_ssl(nats_cluster)
         js = nc.jetstream()
-        info = await js.consumer_info(stream, durable)
+        await js.purge_stream(stream)
         await nc.close()
-        return info.delivered.consumer_seq
 
-    return asyncio.run(run())
+    asyncio.run(run())
 
 
 def setup_consuming_table(table, subject):
@@ -909,8 +908,8 @@ def test_repeated_direct_reads_do_not_return_stale_copies(nats_cluster):
     # A direct read (block size 1) buffers the whole delivered burst locally and never acks it. A later read
     # must not hand out those buffered copies again: every row it returns has to be a delivery of the
     # broker. Before the fix the stale copies were handed out again, duplicating the broker's redelivery.
-    # The read returns what it did not commit to the broker when it ends, so the broker may redeliver it
-    # at once; the delivery counter, which counts redeliveries, tells those apart from local copies.
+    # Once the burst is delivered, the stream is purged, so the broker has nothing left to deliver: any
+    # row a later read returns can only be a stale local copy.
     stream = "js_stale_stream"
     subject = "js_stale_subject"
     durable = "js_stale_durable"
@@ -946,16 +945,14 @@ def test_repeated_direct_reads_do_not_return_stale_copies(nats_cluster):
         )
     assert jetstream_ack_pending(nats_cluster, stream, durable) == n
 
-    # Further reads may only return what the broker delivers to them.
+    # Nothing is left for the broker to deliver, so further reads must return nothing.
+    jetstream_purge_stream(nats_cluster, stream)
     for _ in range(3):
-        delivered_before = jetstream_delivered(nats_cluster, stream, durable)
         res = instance.query(
-            f"SELECT key FROM test.{table} SETTINGS stream_like_engine_allow_direct_select = 1",
-            ignore_error=True,
+            f"SELECT key FROM test.{table} SETTINGS stream_like_engine_allow_direct_select = 1"
         )
         rows = len([x for x in res.split() if x.strip()])
-        delivered = jetstream_delivered(nats_cluster, stream, durable) - delivered_before
-        assert rows <= delivered, f"a direct read returned stale buffered copies ({rows} rows, {delivered} deliveries)"
+        assert rows == 0, f"a direct read returned {rows} stale buffered copies of purged messages"
 
 
 def test_system_stop_all_background(nats_cluster):
