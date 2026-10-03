@@ -27,8 +27,9 @@ SELECT sum(c) FROM (SELECT number AS g, count() AS c FROM numbers_mt(400000) GRO
 -- Repeat-dominated stream past the freeze: the thaw sampler fires and the tables thaw.
 SELECT sum(c) FROM (SELECT toUInt64(number % 20000) AS g, count() AS c FROM numbers_mt(3000000) GROUP BY g) FORMAT Null;
 
--- Too few distinct keys: the producers give up on freezing.
-SELECT sum(s) FROM (SELECT toUInt64(number % 50) AS g, sum(number) AS s FROM numbers_mt(400000) GROUP BY g) FORMAT Null;
+-- Few groups whose states own heap memory: the tables freeze at the two-level condition, and under constant
+-- memory pressure the frozen tables are written to disk.
+SELECT sum(u) FROM (SELECT toUInt64(number % 50) AS g, uniqExact(number) AS u FROM numbers_mt(2000000) GROUP BY g SETTINGS group_by_two_level_threshold_bytes = 1000000, max_bytes_before_external_group_by = 1) FORMAT Null;
 
 -- Constant memory pressure: the frozen producers spill their staged records.
 SELECT sum(c) FROM (SELECT number % 100000 AS g, count() AS c FROM numbers_mt(400000) GROUP BY g SETTINGS max_bytes_before_external_group_by = 1) FORMAT Null;
@@ -40,7 +41,7 @@ SELECT 'merge-time drained records', coalesce(sum(value), 0) > 0 FROM system.eve
 SELECT 'merge units', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationMergeUnits';
 SELECT 'probe bypasses', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationProbeBypasses';
 SELECT 'thaws', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationThaws';
-SELECT 'give-ups', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationGiveUps';
+SELECT 'frozen table spills', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationFrozenTableSpills';
 SELECT 'spills', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationSpills';
 SELECT 'spilled records', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationSpilledRecords';
 "

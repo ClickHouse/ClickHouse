@@ -8,9 +8,9 @@ Long string keys and a string argument under pressure
 1
 Partial pressure mixes spilled and in-memory records
 1
-Give-up threads spill through the baseline branch
+Frozen tables of growing states spill as ordinary parts
 1
-Learning-phase spill preserves results
+Tables frozen at the two-level condition spill exactly
 1
 Sparsely populated buckets under pressure
 1

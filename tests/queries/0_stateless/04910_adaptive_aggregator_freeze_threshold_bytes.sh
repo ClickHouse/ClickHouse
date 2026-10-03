@@ -5,8 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # The adaptive aggregator freezes a thread's local table at whichever of the key-count and the
-# byte thresholds is reached first. Each query pins both thresholds explicitly, because the
-# runner's settings randomization must not move the freeze point. The no-freeze cell runs
+# byte thresholds is reached first, or at the two-level condition, which the cells below put out of
+# reach. Each query pins both thresholds explicitly, because the runner's settings randomization
+# must not move the freeze point. The no-freeze cell runs
 # first, while the freeze counter is still zero, so every assertion can test the counter's
 # absolute value instead of a delta. Everything runs in one clickhouse-local process, so the
 # counters in `system.events` belong to these queries alone. The hash-table statistics are
@@ -16,7 +17,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_LOCAL --query "
 SET max_threads = 4;
 SET enable_adaptive_aggregator = 1;
-SET group_by_two_level_threshold = 100000;
+SET group_by_two_level_threshold = 100000000;
 SET group_by_two_level_threshold_bytes = 500000000;
 SET max_block_size = 65536;
 SET collect_hash_table_stats_during_aggregation = 0;
@@ -50,13 +51,14 @@ SELECT 'exact', count(), sum(c), sum(k % 1000 = 0 ? c : 0) FROM (
 # outgrow the bound). A table pre-sized from the hint would instead freeze at its first
 # between-blocks check with about one block of keys, failing the size assertion; a table the
 # hint initialized two-level could never freeze at all, failing the count assertion. The
-# two-level threshold is pinned below the freeze size so the two-level initialization stays
-# reachable from the recorded sizes.
+# two-level threshold is pinned above the freeze size, so that the byte bound decides the freeze,
+# and below the sum of the recorded sizes, so that the two-level initialization stays reachable
+# from them.
 warm_trace="$CLICKHOUSE_TMP/04910_warm_trace.log"
 $CLICKHOUSE_LOCAL --send_logs_level=trace --query "
 SET max_threads = 4;
 SET enable_adaptive_aggregator = 1;
-SET group_by_two_level_threshold = 30000;
+SET group_by_two_level_threshold = 50000;
 SET group_by_two_level_threshold_bytes = 500000000;
 SET max_block_size = 4096;
 SET collect_hash_table_stats_during_aggregation = 1;

@@ -5,7 +5,7 @@ merge-time drained records	1
 merge units	1
 probe bypasses	1
 thaws	1
-give-ups	1
+frozen table spills	1
 spills	1
 spilled records	1
 lazy FINAL replacement freezes	1
