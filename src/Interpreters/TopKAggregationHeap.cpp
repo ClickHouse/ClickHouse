@@ -115,8 +115,10 @@ bool TopKAggregationHeapBase::shouldFreeze() const
     if (frozen || !heap_column)
         return false;
 
-    if (profitability_window && observed_rows >= profitability_window
-        && static_cast<Float64>(skipped_rows) / static_cast<Float64>(observed_rows) < 0.1 && evicted_keys < k
+    const UInt64 window_observed = observed_rows - window_start_observed_rows;
+    const UInt64 window_skipped = skipped_rows - window_start_skipped_rows;
+    if (profitability_window && window_observed >= profitability_window
+        && static_cast<Float64>(window_skipped) / static_cast<Float64>(window_observed) < 0.1 && evicted_keys < k
         && heap_indices.size() >= k)
         return true;
 
@@ -215,6 +217,18 @@ void TopKAggregationHeapBase::exchangeSharedBoundary()
     }
 
     updateBoundaryChoice();
+
+    /// A window judged entirely on the local boundary says nothing about the shared one, which
+    /// is what lets a thread whose local keys rank poorly skip. Restart it once, when the shared
+    /// boundary first takes effect, so such a thread is not frozen right before it would pay
+    /// off. Only once: a shared boundary that keeps tightening without producing skips must not
+    /// postpone the freeze forever.
+    if (boundary_is_shared && !window_restarted_for_shared)
+    {
+        window_restarted_for_shared = true;
+        window_start_observed_rows = observed_rows;
+        window_start_skipped_rows = skipped_rows;
+    }
 }
 
 void TopKAggregationHeapBase::updateBoundaryChoice()

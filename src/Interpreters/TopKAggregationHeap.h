@@ -30,9 +30,9 @@ namespace DB
   * the publishing thread - so every thread may skip against it (the same argument that
   * makes per-replica skipping sound). Publications only ever tighten the boundary.
   *
-  * Publish and refresh both happen at most once per block per thread (a trim only marks
-  * the local boundary as pending), so a mutex around the key plus a version counter for
-  * the cheap no-change check is enough. Deferring the publications to the block boundary
+  * Publish and refresh both happen at most twice per block per thread, at its start and
+  * end (a trim only marks the local boundary as pending), so a mutex around the key plus
+  * a version counter for the cheap no-change check is enough. Deferring the publications to the block boundary
   * caps the sharing overhead when the local boundaries tighten on every trim while the
   * shared one never produces a skip - e.g. a DESC ranking over data that ascends in step
   * across all threads - at the cost of at most one block of staleness.
@@ -92,7 +92,9 @@ struct TopKAggregationHeapBase
 
     /// Publishes the local boundary if a trim tightened it since the last exchange, and
     /// re-reads the shared one if another thread has tightened it; one atomic load when
-    /// nothing changed on either side. Called once per block.
+    /// nothing changed on either side. Called before and after each block: before, so the
+    /// freeze check and the skipping see the latest shared boundary; after, so the
+    /// tightenings of a thread's last block still reach the threads that keep running.
     void exchangeSharedBoundary();
 
     /// Per-row on the paths the typed fast path does not cover (`String`, composite, and
@@ -162,6 +164,9 @@ protected:
     UInt64 skipped_rows = 0;
     UInt64 evicted_keys = 0;                /// with `skipped_rows` defines `everRejected`, which suppresses hash-table size statistics
     UInt64 profitability_window = 0;        /// rows to observe before the freeze check; 0 disables it
+    UInt64 window_start_observed_rows = 0;  /// `observed_rows` and `skipped_rows` when the freeze window last (re)started
+    UInt64 window_start_skipped_rows = 0;
+    bool window_restarted_for_shared = false; /// the window restarted once when the shared boundary first took effect
 
     /// Scratch buffers; members only to avoid per-batch/per-trim allocation.
     std::vector<UInt8> skip_bitmap;         /// per-row skip decisions for the typed batch path
