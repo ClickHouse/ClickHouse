@@ -33,6 +33,10 @@
 #      pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
+#if USE_ARM_MULTITARGET_CODE
+#    include <arm_sve.h>
+#endif
+
 namespace ProfileEvents
 {
     extern const Event RowsReadByMainReader;
@@ -1648,6 +1652,55 @@ inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, con
 }
 #endif
 
+DECLARE_ARM_SVE_SPECIFIC_CODE(
+inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
+{
+    auto * first = reinterpret_cast<uint8_t *>(first_begin);
+    const auto * second = reinterpret_cast<const uint8_t *>(second_begin);
+
+    const UInt64 size = first_end - first_begin;
+    const UInt64 vector_length_bytes = svcntb();
+    const svbool_t all_lanes = svptrue_b8();
+    const svuint8_t zeros = svdup_n_u8(0);
+
+    for (UInt64 i = 0; i < size; i += vector_length_bytes)
+    {
+        const svbool_t pg = svwhilelt_b8_u64(i, size);
+        const svuint8_t chunk = svld1_u8(pg, first + i);
+        const svbool_t nonzero_mask = svcmpne_n_u8(pg, chunk, 0);
+        const UInt64 nonzero_count = svcntp_b8(pg, nonzero_mask);
+
+        if (nonzero_count == 0)
+            continue;
+
+        const svuint8_t dense_data = svld1_u8(svwhilelt_b8_u64(0, nonzero_count), second);
+
+        if (nonzero_count == std::min(vector_length_bytes, size - i))
+        {
+            /// All active lanes are non-zero: straight dense copy.
+            svst1_u8(pg, first + i, dense_data);
+        }
+        else
+        {
+            /// SVE/SVE2 has no expand-load instruction for uint8, so we emulate it with a
+            /// table lookup plus a horizontal prefix sum.
+            /// see: https://github.com/openjdk/jdk/pull/26740
+            svuint8_t prefix_sums = svdup_n_u8_z(nonzero_mask, 1);
+            for (UInt64 shift = 1; shift < vector_length_bytes; shift <<= 1)
+            {
+                prefix_sums = svadd_u8_x(all_lanes, prefix_sums,
+                    svsplice_u8(svwhilelt_b8_u64(0, shift), zeros, prefix_sums));
+            }
+
+            const svuint8_t target_indices = svsub_n_u8_x(nonzero_mask, prefix_sums, 1);
+            svst1_u8(nonzero_mask, first + i, svtbl_u8(dense_data, target_indices));
+        }
+
+        second += nonzero_count;
+    }
+}
+) /// DECLARE_ARM_SVE_SPECIFIC_CODE
+
 /// Second filter size must be equal to number of 1s in the first filter.
 /// The result has size equal to first filter size and contains 1s only where both filters contain 1s.
 static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
@@ -1694,6 +1747,12 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     if (isArchSupported(TargetArch::x86_64_icelake))
     {
         TargetSpecific::x86_64_icelake::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
+    }
+    else
+#elif USE_ARM_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::ARM_SVE))
+    {
+        TargetSpecific::ARM_SVE::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
     }
     else
 #endif
