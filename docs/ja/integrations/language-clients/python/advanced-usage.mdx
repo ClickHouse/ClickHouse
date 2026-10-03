@@ -7,15 +7,11 @@ title: '高度な使い方'
 doc_type: 'reference'
 ---
 
-<div id="raw-api">
-  ## Raw API
-</div>
+## Raw API {#raw-api}
 
 ClickHouse のデータとネイティブまたはサードパーティのデータ型・構造との間で変換が不要なユースケースでは、ClickHouse Connect クライアントは ClickHouse 接続を直接利用するためのメソッドを提供します。
 
-<div id="client-rawquery-method">
-  ### Client `raw_query` メソッド
-</div>
+### Client `raw_query` メソッド {#client-rawquery-method}
 
 `Client.raw_query` メソッドを使用すると、クライアント接続を通じて ClickHouse の HTTP クエリインターフェイスを直接利用できます。戻り値は未処理の `bytes` オブジェクトです。このメソッドは、パラメータバインディング、エラーハンドリング、再試行、設定管理を最小限のインターフェイスで扱える便利なラッパーを提供します。
 
@@ -31,15 +27,11 @@ ClickHouse のデータとネイティブまたはサードパーティのデー
 
 結果として返される `bytes` オブジェクトの処理は呼び出し元の責任です。なお、`Client.query_arrow` は、このメソッドを ClickHouse の `Arrow` 出力フォーマットで利用するごく薄いラッパーにすぎません。
 
-<div id="client-rawstream-method">
-  ### Client `raw_stream` メソッド
-</div>
+### Client `raw_stream` メソッド {#client-rawstream-method}
 
 同期版の `Client.raw_stream` メソッドは `raw_query` と同じ API ですが、バイト chunk の `io.IOBase` ストリームを返します。処理が完了したら、ストリームを閉じてください。`AsyncClient.raw_stream` は await して使用し、`async with` と `async for` で使用する async `StreamContext` を返します。
 
-<div id="client-rawinsert-method">
-  ### Client `raw_insert` メソッド
-</div>
+### Client `raw_insert` メソッド {#client-rawinsert-method}
 
 `Client.raw_insert` メソッドを使うと、クライアント接続を介して `bytes` オブジェクトまたは `bytes` オブジェクトを生成するジェネレーターを直接 insert できます。insert payload の処理を行わないため、非常に高いパフォーマンスを発揮します。このメソッドには、settings と insert format を指定するオプションがあります。
 
@@ -55,9 +47,7 @@ ClickHouse のデータとネイティブまたはサードパーティのデー
 
 `insert_block` が指定されたフォーマットで、指定された圧縮 method を使用していることを保証する責任は呼び出し元にあります。ClickHouse Connect は、ファイルのアップロードや PyArrow Tables に対してこれらの raw insert を使用し、パースは ClickHouse server に委ねます。
 
-<div id="saving-query-results-as-files">
-  ## クエリ結果をファイルとして保存する
-</div>
+## クエリ結果をファイルとして保存する {#saving-query-results-as-files}
 
 `raw_stream` メソッドを使うと、ClickHouse からローカルファイルシステムへファイルを直接ストリーミングできます。たとえば、クエリ結果を CSV ファイルとして保存するには、次のコードスニペットを使用します。
 
@@ -93,9 +83,7 @@ if __name__ == "__main__":
 
 同様に、データは [TabSeparated](/ja/reference/formats/TabSeparated/TabSeparated) やその他のフォーマットで保存することもできます。利用可能なすべてのフォーマット オプションの概要については、[Formats for Input and Output Data](/ja/reference/formats) を参照してください。
 
-<div id="multithreaded-multiprocess-and-asyncevent-driven-use-cases">
-  ## マルチスレッド、マルチプロセス、非同期/イベント駆動のユースケース
-</div>
+## マルチスレッド、マルチプロセス、非同期/イベント駆動のユースケース {#multithreaded-multiprocess-and-asyncevent-driven-use-cases}
 
 ClickHouse Connect は、マルチスレッド、マルチプロセス、イベントループ駆動/非同期のアプリケーションでも問題なく動作します。すべてのクエリ処理と insert 処理は単一のスレッド内で行われるため、操作は通常スレッドセーフです。 (単一スレッドによる性能面の不利を補うため、将来的には一部の操作で低レベルの並列処理が導入される可能性がありますが、その場合でもスレッドセーフ性は維持されます。)
 
@@ -103,9 +91,7 @@ ClickHouse Connect は、マルチスレッド、マルチプロセス、イベ�
 
 さらに、同時に 2 つ以上のクエリや insert が「進行中」のアプリケーションでは、もう 2 つ注意すべき点があります。1 つ目はクエリ/insert に関連付けられる ClickHouse の「session」で、2 つ目は ClickHouse Connect Client のインスタンスで使用される HTTP 接続プールです。
 
-<div id="asyncclient">
-  ## AsyncClient
-</div>
+## AsyncClient {#asyncclient}
 
 ClickHouse Connect は、`asyncio` アプリケーション向けに `aiohttp` ベースのネイティブクライアントを提供しています。使用する前に、オプションの依存関係をインストールしてください。
 
@@ -134,6 +120,8 @@ asyncio.run(main())
 
 非同期クライアントは、同期クライアントと同じ query、insert、raw、Arrow、streaming のインターフェースに従います。ネットワーク I/O には aiohttp を使用します。CPU 負荷の高い Native フォーマットのパース処理は、イベントループをブロックしないように executor で実行される場合があります。
 
+非同期クライアントは、特定のイベントループ内で作成された aiohttp セッションを保持します。クライアントを別のイベントループに移す場合は、まず所有元のループ内でクライアントをクローズし、新しいループでリクエストを行う前に `await client._initialize()` を呼び出してください。所有元のループがすでにクローズされている場合は、現在のループ内で `await client.close()` を呼び出してから `await client._initialize()` を呼び出します。所有元のループがクローズされた後にクリーンアップを開始すると、aiohttp がクローズされていないトランスポートについて警告を出すことがあるため、可能な限り移行前にクローズしてください。
+
 非同期 streaming メソッドは、返されたコンテキストに入る前に await されます:
 
 ```python
@@ -146,16 +134,14 @@ async with await client.query_rows_stream(
 
 同期ファクトリーとは異なり、`get_async_client` では、同時実行するコルーチン間でクライアントを共有できるよう、デフォルトで session ID の自動生成が無効になっています。明示的な `session_id` または `autogenerate_session_id=True` を渡すのは、session 状態が必要で、かつその session 内で同時実行クエリを行わない場合に限ってください。
 
-<div id="managing-clickhouse-session-ids">
-  ## ClickHouse session ID の管理
-</div>
+## ClickHouse session ID の管理 {#managing-clickhouse-session-ids}
 
 各 ClickHouse クエリは、ClickHouse の「session」のコンテキスト内で実行されます。現在、session は次の 2 つの目的で使用されます。
 
 * 複数のクエリに特定の ClickHouse settings を関連付けるため ([ユーザー設定](/ja/reference/settings/session-settings)を参照) 。ClickHouse の `SET` コマンドは、ユーザーsessionの範囲で設定を変更するために使用されます。
 * [一時テーブル](/ja/reference/statements/create/table#temporary-tables)を追跡するため
 
-デフォルトでは、同期 `Client` は生成された session ID を使用します。そのため、`SET` ステートメントと一時テーブルは、そのクライアントからのリクエスト間で保持されます。async ファクトリーは、デフォルトでは session ID を生成しません。ClickHouse では同じ session 内でクエリを同時実行できず、これを試みるとクライアントは `ProgrammingError` を送出するため、次のいずれかのパターンを使用してください。
+デフォルトでは、同期 `Client` は生成された session ID を使用します。`SET` ステートメントと一時テーブルがそのクライアントからのリクエスト間で保持されるのは、それらのリクエストが同じ ClickHouseサーバープロセスに到達した場合に限られます。async ファクトリーは、デフォルトでは session ID を生成しません。名前付き session の状態と同一 session の重複チェックはプロセスローカルであり、クライアントはリクエスト送信前にローカルで重複を検出すると `ProgrammingError` を送出します。ClickHouse Cloud やその他のロードバランサーを介したデプロイ環境では、固定の `session_id` を分散状態や分散ミューテックスとして利用しないでください。重複が問題となる場合は、ClickHouse にリクエストを送信する前に直列化してください。次のいずれかのパターンを使用してください。
 
 1. session の分離が必要な各スレッド / プロセス / イベントハンドラーごとに、個別の `Client` インスタンスを作成します。これにより、クライアントごとの session 状態 (一時テーブルと `SET` 値) が維持されます。
 2. 共有session状態が不要な場合は、`query`、`command`、または `insert` の呼び出し時に `settings` 引数を使用して、各クエリに一意の `session_id` を指定します。
@@ -177,11 +163,11 @@ client = clickhouse_connect.get_client(
 
 この場合、ClickHouse Connect は `session_id` を送信しないため、server は個々のリクエストを同じ session に属するものとして扱いません。一時テーブルや session レベルの設定は、リクエストをまたいで保持されません。
 
-<div id="customizing-the-http-connection-pool">
-  ## HTTP接続プールのカスタマイズ
-</div>
+## HTTP接続プールのカスタマイズ {#customizing-the-http-connection-pool}
 
-ClickHouse Connect は、サーバーとの基盤となる HTTP 接続を処理するために `urllib3` の接続プールを使用します。デフォルトでは、すべてのクライアントインスタンスが同じ接続プールを共有しており、ほとんどのユースケースではこれで十分です。このデフォルトのプールでは、アプリケーションで使用される各 ClickHouse サーバーに対して、最大 8 本の HTTP Keep-Alive 接続が維持されます。
+ClickHouse Connect は、サーバーとの基盤となる HTTP 接続を処理するために `urllib3` の接続プールを使用します。デフォルトでは、プロセス内のすべての同期クライアントインスタンスが同じ接続プールを共有しており、ほとんどのユースケースではこれで十分です。multiprocessing の各ワーカーは、それぞれプロセスローカルなデフォルトのプールを持ち、そのワーカー内で作成されたクライアント間で再利用します。フォーク前に作成されたクライアントは親プロセスのプールを保持したままとなるため、子プロセスでは使用しないでください。デフォルトのプールでは、アプリケーションで使用される各 ClickHouseサーバーに対して、最大 8 本の HTTP Keep-Alive 接続が維持されます。
+
+デフォルトのソケットオプションでは、TCP キープアライブと `TCP_NODELAY` が有効になっています。ソケットの送信・受信バッファサイズは、オペレーティングシステムによって管理されます。
 
 大規模なマルチスレッドアプリケーションでは、接続プールを分けたほうが適切な場合があります。カスタマイズした接続プールは、メインの `clickhouse_connect.get_client` 関数に `pool_mgr` キーワード引数として指定できます：
 
@@ -197,4 +183,8 @@ client2 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
 
 クライアントでプールマネージャーを共有することも、各クライアントが個別のマネージャーを使用することもできます。詳細については、[`urllib3` PoolManager documentation](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#customizing-pool-behavior)を参照してください。
 
-async クライアントは `urllib3` を使用せず、aiohttp のプールを使用します。設定は、`get_async_client` の `connector_limit`、`connector_limit_per_host`、`keepalive_timeout` で行います。`await async_client.close_connections()` を呼び出すと、進行中のリクエストを中断することなくプールが入れ替わります。
+ソケットオプションを設定するには、`httputil.get_pool_manager` または `httputil.get_pool_manager_options` に `socket_options` を渡します。この場合、キープアライブのオプションや `TCP_NODELAY` を含むデフォルトのリスト全体が置き換えられます。ソケットオプションを明示的に一切指定しない場合は、`[]` または `None` を渡してください。
+
+非同期クライアントは `urllib3` を使用せず、aiohttp のプールを使用します。設定は、`get_async_client` の `connector_limit`、`connector_limit_per_host`、`keepalive_timeout` で行います。`await async_client.close_connections()` を呼び出すと、進行中のリクエストを中断することなくプールが入れ替わります。
+
+async のクエリおよび挿入では、プールの空きスロットの待機にタイムアウトはありません。ストリーミングレスポンスは、最後まで読み取るかクローズして、プールのスロットを解放してください。`connect_timeout` はスロットが利用可能になった時点から計測が始まり、DNS 名前解決、TCP および TLS のセットアップ、プロキシとのネゴシエーションが対象となります。`send_receive_timeout` はソケットからの読み取りに適用されます。プールでの待機を含む操作全体にデッドラインを設定するには、`asyncio.wait_for` を使用します。例：`await asyncio.wait_for(client.query("SELECT 13"), timeout=30)`。

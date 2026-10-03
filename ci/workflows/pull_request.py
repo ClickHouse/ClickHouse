@@ -32,8 +32,8 @@ CORE_BLOCKING_JOB_NAMES = [
     )
 ] + [
     job.name
-    for job in JobConfigs.integration_test_jobs_required
-    if "_asan_ubsan, db disk," in job.name
+    for job in JobConfigs.integration_test_targeted_pr_jobs
+    if "_asan_ubsan, db disk, targeted" in job.name
 ] + [
     job.name
     for job in JobConfigs.unittest_jobs
@@ -54,6 +54,26 @@ REGULAR_BUILD_NAMES = [job.name for job in JobConfigs.build_jobs]
 
 PLAIN_FUNCTIONAL_TEST_JOB = [
     j for j in JobConfigs.functional_tests_jobs if "amd_debug, parallel" in j.name
+][0]
+
+# Pull requests run the integration tests only in targeted jobs (the changed tests, the
+# tests covering the changed lines and the tests that failed in the PR before, each run
+# once), except for the full `arm_binary` run below and, with the `ci-coverage` label, the full
+# LLVM coverage run and the tests excluded from it.
+INTEGRATION_TARGETED_JOBS = JobConfigs.integration_test_targeted_pr_jobs
+
+# The LLVM coverage jobs run in pull requests only with the `ci-coverage` label (see
+# `should_skip_job`); by default these `arm_binary` jobs run the same configurations instead.
+# Master runs the coverage jobs on every commit.
+FUNCTIONAL_COVERAGE_REPLACEMENT_JOBS = (
+    JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+)
+INTEGRATION_COVERAGE_REPLACEMENT_JOBS = (
+    JobConfigs.integration_test_arm_binary_coverage_replacement_pr_jobs
+)
+
+PLAIN_INTEGRATION_TEST_JOB = [
+    j for j in INTEGRATION_TARGETED_JOBS if "(amd_tsan, targeted)" in j.name
 ][0]
 
 workflow = Workflow.Config(
@@ -95,7 +115,12 @@ workflow = Workflow.Config(
         # TODO: stabilize new jobs and remove set_allow_failure
         JobConfigs.lightweight_functional_tests_job,
         *[j.set_allow_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
-        JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_failure(),
+        *[
+            job.set_run_after(
+                CORE_BLOCKING_JOB_NAMES if job.name not in CORE_BLOCKING_JOB_NAMES else []
+            )
+            for job in INTEGRATION_TARGETED_JOBS
+        ],
         JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_failure(),
         JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),
         *JobConfigs.stateless_tests_flaky_pr_jobs,
@@ -137,23 +162,19 @@ workflow = Workflow.Config(
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in FUNCTIONAL_COVERAGE_REPLACEMENT_JOBS
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in INTEGRATION_COVERAGE_REPLACEMENT_JOBS
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.functional_test_llvm_coverage_jobs
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.functional_test_excluded_from_llvm_job
-        ],
-        *[
-            job.set_run_after(
-                CORE_BLOCKING_JOB_NAMES
-                if job.name not in CORE_BLOCKING_JOB_NAMES
-                else []
-            )
-            for job in JobConfigs.integration_test_jobs_required[:]
-        ],
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.integration_test_jobs_non_required
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
@@ -207,7 +228,16 @@ workflow = Workflow.Config(
             for job in JobConfigs.clickbench_jobs
         ],
         JobConfigs.llvm_coverage_job,
-        JobConfigs.promql_compliance_job,
+        # Waits for the integration jobs of this workflow, which upload the compliance results.
+        # The full `arm_binary` run (or, with `ci-coverage`, the LLVM coverage run) is the one that
+        # always runs the compliance suite.
+        JobConfigs.promql_compliance_job.set_run_after(
+            INTEGRATION_TARGETED_JOBS
+            + INTEGRATION_COVERAGE_REPLACEMENT_JOBS
+            + JobConfigs.integration_test_llvm_coverage_jobs
+            + JobConfigs.integration_test_excluded_from_llvm_job,
+            reset=True,
+        ),
         # TODO: stabilize and remove set_allow_failure
         JobConfigs.build_profile_diff_job.set_allow_failure(),
         JobConfigs.sqllogic_test_master_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
@@ -266,9 +296,8 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/check_report_messages.py",
     ],
     job_aliases={
-        "integration": JobConfigs.integration_test_jobs_non_required[
-            0
-        ].name,  # plain integration test job, no dist plan
+        # plain integration test job, no dist plan; runs `--test` as a regular job locally
+        "integration": PLAIN_INTEGRATION_TEST_JOB.name,
         "fast": "Fast test",
         "functional": PLAIN_FUNCTIONAL_TEST_JOB.name,
         "build_debug": "Build (amd_debug)",
