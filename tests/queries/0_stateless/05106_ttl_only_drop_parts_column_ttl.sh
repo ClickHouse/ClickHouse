@@ -4,6 +4,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The expired rows must reach the merge selector, which is what this test is about.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --optimize_on_insert=0"
+
 # `ttl_only_drop_parts` trades the merges that delete expired rows for dropping whole parts, but a
 # column TTL can only be honoured by rewriting the part. The setting must therefore not suppress the
 # merges that clear an expired column, and it must not clear a column whose TTL has not expired yet.

@@ -6346,6 +6346,7 @@ Possible values:
 )", 0) \
     DECLARE(Bool, optimize_on_insert, true, R"(
 Enables or disables data transformation before the insertion, as if merge was done on this block (according to table engine).
+This also applies the whole-table `TTL ... DELETE` expression of the table: a row that the TTL has already expired at insert time is not written. `TTL ... DELETE WHERE`, `TTL ... GROUP BY`, `TTL ... RECOMPRESS`, `TTL ... TO DISK/VOLUME`, and column TTLs are not applied on insert.
 
 Possible values:
 

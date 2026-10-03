@@ -42,6 +42,7 @@
 
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
+#include <Processors/TTL/TTLDeleteAlgorithm.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/CollapsingSortedAlgorithm.h>
@@ -363,6 +364,18 @@ void updateTTL(
 
     if (update_part_min_max_ttls)
         ttl_infos.updatePartMinMaxTTL(ttl_info);
+}
+
+/// Removes the rows that the whole-table TTL DELETE has already expired, as a merge would.
+void removeExpiredRows(const ContextPtr & context, const TTLDescription & rows_ttl, Block & block)
+{
+    auto expr_and_set = rows_ttl.buildExpression(context);
+    for (auto & subquery : expr_and_set.sets->getSubqueries())
+        subquery->buildSetInplace(context);
+
+    TTLDeleteAlgorithm algorithm(
+        TTLExpressions{expr_and_set.expression, nullptr}, rows_ttl, IMergeTreeDataPart::TTLInfo{}, time(nullptr), /*force_=*/ true);
+    algorithm.execute(block);
 }
 
 void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActionsPtr & expr, Block & block)
@@ -800,6 +813,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     const auto & global_settings = context->getSettingsRef();
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+
+    if (!isPatchPartitionId(partition_id) && global_settings[Setting::optimize_on_insert] && metadata_snapshot->hasRowsTTL())
+    {
+        removeExpiredRows(context, metadata_snapshot->getRowsTTL(), block);
+        if (block.rows() == 0)
+            return temp_part;
+    }
 
     /// Do not write _block_number and _block_offset for 0-level parts: block number is not known on this step.
     const auto minmax_columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
