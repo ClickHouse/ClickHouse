@@ -181,6 +181,9 @@ void AllocationQueue::purgeQueue()
     allocated = 0;
     allocations = 0;
     is_not_usable = true;
+
+    // Older hierarchy versions can retain this retired queue after its workload is destroyed.
+    workload = nullptr;
 }
 
 void AllocationQueue::propagateUpdate(ISpaceSharedNode &, Update &&)
@@ -281,7 +284,7 @@ void AllocationQueue::approveDecrease()
     }
 
     // Ordering of increasing allocations is changed - update the next increase request if needed and propagate the update
-    if (is_increasing && setIncrease())
+    if (is_increasing && setIncrease() && parent)
         propagate(Update().setIncrease(increase));
 
     // Notify allocation
@@ -322,8 +325,6 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
 
 void AllocationQueue::processActivation()
 {
-    if (!parent)
-        return; // Detached queue - nothing to do
     Update update;
     {
         std::lock_guard lock(mutex);
@@ -382,8 +383,16 @@ void AllocationQueue::processActivation()
             update.setDecrease(decrease);
     }
 
-    // Propagate update to parent
-    if (update)
+    // A queue detached by `DROP WORKLOAD` serves its surviving allocations without hierarchy limits.
+    // Approval acquires `mutex`, so drain the selected requests after releasing it above.
+    if (!parent)
+    {
+        while (decrease)
+            approveDecrease();
+        while (increase)
+            approveIncrease();
+    }
+    else if (update)
         propagate(std::move(update));
 }
 
