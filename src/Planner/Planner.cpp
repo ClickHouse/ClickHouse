@@ -935,10 +935,6 @@ bool preferGroupByTopKOverKeptKeysCutoff(const Settings & settings, UInt64 limit
     if (!settings[Setting::enable_group_by_top_k_optimization])
         return false;
 
-    /// The heap is not applied to a serialized plan; see `applyTopKPushdownToPartialAggregation`.
-    if (settings[Setting::serialize_query_plan])
-        return false;
-
     /// A user-set `max_rows_to_group_by` (already known to be looser than the cutoff here) makes
     /// both top-K entry points bail out, so the heap would not apply and must not take the
     /// cutoff away from the query.
