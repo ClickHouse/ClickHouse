@@ -1,0 +1,34 @@
+--- Bucket boundary merge ---
+5	15	4
+--- Bucket boundary no merge ---
+5	9	2
+21	25	2
+--- Chain across 3 buckets ---
+1	21	5
+--- Chain breaks ---
+1	11	3
+50	55	2
+--- Exact multiples ---
+0	30	4
+--- Exact multiples with gap ---
+0	20	3
+50	50	1
+--- Multi-key bucket boundary ---
+a	5	11	3
+b	5	9	2
+b	50	50	1
+--- Distance 1 ---
+1	3	3
+5	6	2
+10	10	1
+--- Small float distance ---
+1	1.1	3
+2	2.05	2
+--- Distance 0 duplicates ---
+1	30
+2	30
+3	90
+--- Many values one bucket ---
+0	99	100	4950
+--- Negative bucket boundary ---
+-15	0	5
