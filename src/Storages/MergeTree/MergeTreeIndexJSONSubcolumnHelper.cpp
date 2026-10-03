@@ -222,9 +222,8 @@ bool isJSONPathFilterSafe(
     if (alternative_not_recoverable)
         return false;
 
-    /// A missing path reads as the key type's default, so the granule may be skipped only when the
-    /// comparison does not hold on that default. Evaluate it: a `FixedString` default `Field` is empty
-    /// while its column reads the full width, and the key side is a vector, not a constant, at run time.
+    /// A missing path reads as the key type's default, so the granule may be skipped only when the comparison
+    /// does not hold on it. A `FixedString` default `Field` is empty, while its column reads the full width.
     ColumnsWithTypeAndName arguments{
         {key_expression_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), key_expression_type, "key"},
         {value_type->createColumnConst(1, value_field), value_type, "value"}};
