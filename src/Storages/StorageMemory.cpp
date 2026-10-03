@@ -1,5 +1,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -153,7 +155,7 @@ public:
         // append new data to modified storage table and commit
         new_data->blocks.insert(new_data->blocks.end(), new_blocks.begin(), new_blocks.end());
 
-        storage.data.set(std::move(new_data));
+        storage.setData(std::move(new_data));
     }
 
 private:
@@ -238,9 +240,19 @@ SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMet
 }
 
 
+void StorageMemory::setData(std::unique_ptr<BlocksWithCounts> new_data)
+{
+    setCurrentQueryMemoryDriftExpected();
+
+    /// The replaced blocks are dropped inside this scope, unless a reader still holds them.
+    MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+    auto replaced = data.get();
+    data.set(std::move(new_data));
+}
+
 void StorageMemory::drop()
 {
-    data.set(std::make_unique<BlocksWithCounts>());
+    setData(std::make_unique<BlocksWithCounts>());
 }
 
 static inline void updateBlockData(Block & old_block, const Block & new_block)
@@ -402,14 +414,14 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
         new_data->rows += buffer.rows();
         new_data->bytes += buffer.allocatedBytes();
     }
-    data.set(std::move(new_data));
+    setData(std::move(new_data));
 }
 
 
 void StorageMemory::truncate(
     const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
-    data.set(std::make_unique<BlocksWithCounts>());
+    setData(std::make_unique<BlocksWithCounts>());
 }
 
 void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr context, DB::IStorage::AlterLockHolder & /*alter_lock_holder*/, DB::DDLGuardPtr & /*ddl_guard*/)
@@ -456,7 +468,7 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
                 new_data->blocks.erase(new_data->blocks.begin());
             }
 
-            data.set(std::move(new_data));
+            setData(std::move(new_data));
         }
         *memory_settings = std::move(changed_settings);
     }
@@ -698,7 +710,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
     old_and_new_data->rows += new_rows;
 
     /// Finish restoring.
-    data.set(std::move(old_and_new_data));
+    setData(std::move(old_and_new_data));
 }
 
 void StorageMemory::checkAlterIsPossible(const AlterCommands & commands, ContextPtr) const
@@ -810,7 +822,7 @@ The Memory engine stores data in RAM, in uncompressed form. Data is stored in ex
 Concurrent data access is synchronized. Locks are short: read and write operations do not block each other.
 Indexes are not supported. Reading is parallelized.
 
-Reads support `PREWHERE`, including the automatic move of `WHERE` conditions controlled by the [`optimize_move_to_prewhere`](/operations/settings/settings#optimize_move_to_prewhere) setting: only the columns of the conditions are read at first, and the remaining columns are read only for the blocks where some rows pass, and only for the passing rows. This is especially beneficial together with `compress = true`, because for a selective condition, most columns are never decompressed. `SELECT count() FROM table` without a filter is served from metadata without reading the data.
+Reads support `PREWHERE`, including the automatic move of `WHERE` conditions controlled by the [`optimize_move_to_prewhere`](/operations/settings/settings#optimize_move_to_prewhere) setting: only the columns of the conditions are read at first, and the remaining columns are read only for the blocks where some rows pass, and only for the passing rows. A conjunction of conditions is evaluated in steps, like in `MergeTree` with the [`enable_multiple_prewhere_read_steps`](/operations/settings/settings#enable_multiple_prewhere_read_steps) setting: the columns of each next condition are read only for the rows that passed the previous ones. This is especially beneficial together with `compress = true`, because for a selective condition, most columns are never decompressed. `SELECT count() FROM table` without a filter is served from metadata without reading the data.
 
 Maximal productivity (over 10 GB/sec) is reached on simple queries, because there is no reading from the disk, decompressing, or deserializing data. (We should note that in many cases, the productivity of the MergeTree engine is almost as high.)
 When restarting a server, data disappears from the table and the table becomes empty.

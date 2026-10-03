@@ -849,6 +849,8 @@ static void logQueryFinishImpl(
                 query_log->add([&](QueryLogElement & e) { e = elem; });
         }
 
+        /// Already logged; `elem` lives on in a `BlockIO` callback and this snapshot would outlive the query.
+        elem.profile_counters.reset();
     }
 
     if (query_span && query_span->isTraceEnabled())

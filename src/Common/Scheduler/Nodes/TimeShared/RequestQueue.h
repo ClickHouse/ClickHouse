@@ -583,7 +583,10 @@ public:
         std::lock_guard lock(mutex);
         ResourceRequest * request = algo->pop();
         if (!request)
+        {
+            flushThroughputOnDeactivation();
             return {nullptr, false};
+        }
         // Charge attained service unconditionally: every request carries a valid per-query state,
         // stamped from its classifier link at enqueue. The declared cost is the estimate now that the
         // request is served; `finish()` corrects it to real cost later. Unread by `fifo`/`priority`.
@@ -596,7 +599,7 @@ public:
             busy_periods++;
             cancelActivation();
         }
-        incrementDequeued(request->cost);
+        incrementDequeued(request->cost, total_requests > 0);
         SCHED_DBG("{} -- dequeue(cost={}, queued={})", getPath(), request->cost, total_requests);
         return {request, total_requests > 0};
     }
