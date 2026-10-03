@@ -261,7 +261,7 @@ public:
     using Polygon = boost::geometry::model::polygon<Point, false>;
     using MultiPolygon = boost::geometry::model::multi_polygon<Polygon>;
     using Box = boost::geometry::model::box<Point>;
-    using Segment = boost::geometry::model::segment<Point>;
+    using Ring = typename Polygon::ring_type;
 
     explicit PointInPolygonWithGrid(const Polygon & polygon_, UInt16 grid_size_ = 8)
         : grid_size(std::max<UInt16>(1, grid_size_)), polygon(polygon_)
@@ -318,6 +318,14 @@ private:
         CellType type;
     };
 
+    /// Edge ring[edge] -> ring[edge + 1] of the polygon that enters a cell.
+    struct Crossing
+    {
+        const Ring * ring = nullptr;
+        size_t edge = 0;
+        Point middle{};
+    };
+
     const UInt16 grid_size;
 
     Polygon polygon;
@@ -348,17 +356,13 @@ private:
     /// Empty intersection or intersection == box.
     inline void addCell(size_t index, const Box & empty_box);
 
-    /// Intersection is a single polygon.
-    inline void addCell(size_t index, const Box & box, const Polygon & intersection);
+    /// True if the part of the segment inside the closed box has positive length and its midpoint,
+    /// returned in `middle`, is strictly inside the box.
+    static bool crossesBox(const Point & from, const Point & to, const Box & box, Point & middle);
 
-    /// Intersection is a pair of polygons.
-    inline void addCell(size_t index, const Box & box, const Polygon & first, const Polygon & second);
-
-    /// Returns a list of half-planes were formed from intersection edges without box edges.
-    inline VectorWithMemoryTracking<HalfPlane> findHalfPlanes(const Box & box, const Polygon & intersection);
-
-    /// Check that polygon.outer() is convex.
-    inline bool isConvex(const Polygon & polygon);
+    /// Sutherland-Hodgman clip of a closed ring by a box (closed or empty result). The winding number
+    /// of every point inside the box is unchanged.
+    static Ring clipRing(const Ring & ring, const Box & box);
 };
 
 
@@ -438,19 +442,70 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
             CoordinateType x_max = min_corner.x() + static_cast<CoordinateType>(col + 1) * cell_width;
             Box cell_box(Point(x_min, y_min), Point(x_max, y_max));
 
-            MultiPolygon intersection;
-            boost::geometry::intersection(polygon, cell_box, intersection);
-
             size_t cell_index = getCellIndex(row, col);
+            auto & cell = cells[cell_index];
 
-            if (intersection.empty())
+            Crossing crossings[3];
+            size_t num_crossings = 0;
+            auto add_crossings = [&](const Ring & ring)
+            {
+                for (size_t i = 0; i + 1 < ring.size() && num_crossings < std::size(crossings); ++i)
+                {
+                    Point middle;
+                    if (crossesBox(ring[i], ring[i + 1], cell_box, middle))
+                        crossings[num_crossings++] = {&ring, i, middle};
+                }
+            };
+            add_crossings(polygon.outer());
+            for (const auto & inner : polygon.inners())
+                add_crossings(inner);
+
+            /// Rings are corrected, so the interior is on the left of every edge.
+            auto half_plane = [](const Crossing & crossing)
+            {
+                return HalfPlane((*crossing.ring)[crossing.edge], (*crossing.ring)[crossing.edge + 1]);
+            };
+
+            if (num_crossings == 0)
+            {
                 addCell(cell_index, cell_box);
-            else if (intersection.size() == 1)
-                addCell(cell_index, cell_box, intersection.front());
-            else if (intersection.size() == 2)
-                addCell(cell_index, cell_box, intersection.front(), intersection.back());
+            }
+            else if (num_crossings == 1)
+            {
+                cell.type = CellType::singleLine;
+                cell.half_planes[0] = half_plane(crossings[0]);
+            }
+            else if (num_crossings == 2)
+            {
+                const Crossing & first = crossings[0];
+                const Crossing & second = crossings[1];
+                cell.half_planes[0] = half_plane(first);
+                cell.half_planes[1] = half_plane(second);
+
+                size_t edges_in_ring = first.ring->size() - 1;
+                bool first_then_second = first.ring == second.ring && (first.edge + 1) % edges_in_ring == second.edge;
+                bool second_then_first = first.ring == second.ring && (second.edge + 1) % edges_in_ring == first.edge;
+
+                if (first_then_second || second_then_first)
+                {
+                    const Crossing & in = first_then_second ? first : second;
+                    const Crossing & out = first_then_second ? second : first;
+                    const Ring & ring = *in.ring;
+                    Point in_direction(ring[in.edge + 1].x() - ring[in.edge].x(), ring[in.edge + 1].y() - ring[in.edge].y());
+                    Point out_direction(ring[out.edge + 1].x() - ring[out.edge].x(), ring[out.edge + 1].y() - ring[out.edge].y());
+                    bool left_turn = in_direction.x() * out_direction.y() - in_direction.y() * out_direction.x() >= 0;
+                    cell.type = left_turn ? CellType::pairOfLinesSingleConvexPolygon : CellType::pairOfLinesSingleNonConvexPolygons;
+                }
+                else
+                {
+                    bool strip_is_inner = cell.half_planes[0].contains(second.middle.x(), second.middle.y());
+                    cell.type = strip_is_inner ? CellType::pairOfLinesSingleConvexPolygon : CellType::pairOfLinesDifferentPolygons;
+                }
+            }
             else
+            {
                 addComplexPolygonCell(cell_index, cell_box);
+            }
         }
     }
 }
@@ -498,66 +553,97 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
 
 
 template <typename CoordinateType>
-bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGrid<CoordinateType>::Polygon & poly)
+bool PointInPolygonWithGrid<CoordinateType>::crossesBox(
+        const Point & from, const Point & to, const Box & box, Point & middle)
 {
-    const auto & outer = poly.outer();
-    /// Segment or point.
-    if (outer.size() < 4)
-        return false;
+    CoordinateType dx = to.x() - from.x();
+    CoordinateType dy = to.y() - from.y();
 
-    auto vec_product = [](const Point & from, const Point & to) { return from.x() * to.y() - from.y() * to.x(); };
-    auto get_vector = [](const Point & from, const Point & to) -> Point
+    /// Liang-Barsky: the part inside the box is from + t * (dx, dy) for t in [t_min, t_max].
+    const CoordinateType p[4] = {-dx, dx, -dy, dy};
+    const CoordinateType q[4] = {
+        from.x() - box.min_corner().x(),
+        box.max_corner().x() - from.x(),
+        from.y() - box.min_corner().y(),
+        box.max_corner().y() - from.y()};
+
+    CoordinateType t_min = 0;
+    CoordinateType t_max = 1;
+    for (size_t k = 0; k < 4; ++k)
     {
-        return Point(to.x() - from.x(), to.y() - from.y());
-    };
+        if (p[k] == 0)
+        {
+            if (q[k] < 0)
+                return false;
+            continue;
+        }
 
-    Point first = get_vector(outer[0], outer[1]);
-    Point prev = first;
-
-    for (auto i : collections::range(1, outer.size() - 1))
-    {
-        Point cur = get_vector(outer[i], outer[i + 1]);
-        if (vec_product(prev, cur) < 0)
-            return false;
-
-        prev = cur;
+        CoordinateType t = q[k] / p[k];
+        if (p[k] < 0)
+            t_min = std::max(t_min, t);
+        else
+            t_max = std::min(t_max, t);
     }
 
-    return vec_product(prev, first) >= 0;
+    if (!(t_min < t_max))
+        return false;
+
+    CoordinateType t = (t_min + t_max) / 2;
+    middle = Point(from.x() + t * dx, from.y() + t * dy);
+
+    return middle.x() > box.min_corner().x() && middle.x() < box.max_corner().x()
+        && middle.y() > box.min_corner().y() && middle.y() < box.max_corner().y();
 }
 
 template <typename CoordinateType>
-VectorWithMemoryTracking<typename PointInPolygonWithGrid<CoordinateType>::HalfPlane>
-PointInPolygonWithGrid<CoordinateType>::findHalfPlanes(
-        const PointInPolygonWithGrid<CoordinateType>::Box & box,
-        const PointInPolygonWithGrid<CoordinateType>::Polygon & intersection)
+typename PointInPolygonWithGrid<CoordinateType>::Ring
+PointInPolygonWithGrid<CoordinateType>::clipRing(const Ring & ring, const Box & box)
 {
-    VectorWithMemoryTracking<HalfPlane> half_planes;
-    const auto & outer = intersection.outer();
+    if (ring.empty())
+        return {};
 
-    for (auto i : collections::range(0, outer.size() - 1))
+    Ring points(ring.begin(), ring.end() - 1);
+    Ring clipped;
+
+    auto clip = [&](size_t axis, CoordinateType bound, bool keep_greater)
     {
-        /// Want to detect is intersection edge was formed from box edge or from polygon edge.
-        /// If section (x1, y1), (x2, y2) is on box edge, then either x1 = x2 = one of box_x or y1 = y2 = one of box_y
+        auto coordinate = [axis](const Point & point) { return axis == 0 ? point.x() : point.y(); };
+        auto inside = [&](const Point & point) { return keep_greater ? coordinate(point) >= bound : coordinate(point) <= bound; };
 
-        auto x1 = outer[i].x();
-        auto y1 = outer[i].y();
-        auto x2 = outer[i + 1].x();
-        auto y2 = outer[i + 1].y();
-
-        auto box_x1 = box.min_corner().x();
-        auto box_y1 = box.min_corner().y();
-        auto box_x2 = box.max_corner().x();
-        auto box_y2 = box.max_corner().y();
-
-        if (! ((x1 == x2 && (x1 == box_x1 || x2 == box_x2))
-            || (y1 == y2 && (y1 == box_y1 || y2 == box_y2))))
+        clipped.clear();
+        for (size_t i = 0; i < points.size(); ++i)
         {
-            half_planes.emplace_back(Point(x1, y1), Point(x2, y2));
-        }
-    }
+            const Point & from = points[i];
+            const Point & to = points[(i + 1) % points.size()];
 
-    return half_planes;
+            if (inside(from))
+                clipped.push_back(from);
+
+            if (inside(from) != inside(to))
+            {
+                CoordinateType t = (bound - coordinate(from)) / (coordinate(to) - coordinate(from));
+                Point crossing(from.x() + t * (to.x() - from.x()), from.y() + t * (to.y() - from.y()));
+                if (axis == 0)
+                    crossing.x(bound);
+                else
+                    crossing.y(bound);
+                clipped.push_back(crossing);
+            }
+        }
+
+        points.swap(clipped);
+    };
+
+    clip(0, box.min_corner().x(), true);
+    clip(0, box.max_corner().x(), false);
+    clip(1, box.min_corner().y(), true);
+    clip(1, box.max_corner().y(), false);
+
+    if (points.size() < 3)
+        return {};
+
+    points.push_back(points.front());
+    return points;
 }
 
 template <typename CoordinateType>
@@ -576,10 +662,17 @@ void PointInPolygonWithGrid<CoordinateType>::addComplexPolygonCell(
     Point max_corner(box.max_corner().x() + x_eps, box.max_corner().y() + y_eps);
     Box box_with_eps_bound(min_corner, max_corner);
 
-    MultiPolygon intersection;
-    boost::geometry::intersection(polygon, box_with_eps_bound, intersection);
+    Polygon clipped;
+    clipped.outer() = clipRing(polygon.outer(), box_with_eps_bound);
+    for (const auto & inner : polygon.inners())
+    {
+        Ring clipped_inner = clipRing(inner, box_with_eps_bound);
+        if (!clipped_inner.empty())
+            clipped.inners().push_back(std::move(clipped_inner));
+    }
 
-    polygons.push_back(intersection);
+    polygons.emplace_back();
+    polygons.back().push_back(std::move(clipped));
 }
 
 template <typename CoordinateType>
@@ -596,64 +689,6 @@ void PointInPolygonWithGrid<CoordinateType>::addCell(
     else
         cells[index].type = CellType::outer;
 
-}
-
-template <typename CoordinateType>
-void PointInPolygonWithGrid<CoordinateType>::addCell(
-        size_t index,
-        const PointInPolygonWithGrid<CoordinateType>::Box & box,
-        const PointInPolygonWithGrid<CoordinateType>::Polygon & intersection)
-{
-    if (!intersection.inners().empty())
-        addComplexPolygonCell(index, box);
-
-    auto half_planes = findHalfPlanes(box, intersection);
-
-    if (half_planes.empty())
-    {
-        addCell(index, box);
-    }
-    else if (half_planes.size() == 1)
-    {
-        cells[index].type = CellType::singleLine;
-        cells[index].half_planes[0] = half_planes[0];
-    }
-    else if (half_planes.size() == 2)
-    {
-        cells[index].type = isConvex(intersection) ? CellType::pairOfLinesSingleConvexPolygon
-                                                   : CellType::pairOfLinesSingleNonConvexPolygons;
-        cells[index].half_planes[0] = half_planes[0];
-        cells[index].half_planes[1] = half_planes[1];
-    }
-    else
-        addComplexPolygonCell(index, box);
-}
-
-template <typename CoordinateType>
-void PointInPolygonWithGrid<CoordinateType>::addCell(
-        size_t index,
-        const PointInPolygonWithGrid<CoordinateType>::Box & box,
-        const PointInPolygonWithGrid<CoordinateType>::Polygon & first,
-        const PointInPolygonWithGrid<CoordinateType>::Polygon & second)
-{
-    if (!first.inners().empty() || !second.inners().empty())
-        addComplexPolygonCell(index, box);
-
-    auto first_half_planes = findHalfPlanes(box, first);
-    auto second_half_planes = findHalfPlanes(box, second);
-
-    if (first_half_planes.empty())
-        addCell(index, box, first);
-    else if (second_half_planes.empty())
-        addCell(index, box, second);
-    else if (first_half_planes.size() == 1 && second_half_planes.size() == 1)
-    {
-        cells[index].type = CellType::pairOfLinesDifferentPolygons;
-        cells[index].half_planes[0] = first_half_planes[0];
-        cells[index].half_planes[1] = second_half_planes[0];
-    }
-    else
-        addComplexPolygonCell(index, box);
 }
 
 
