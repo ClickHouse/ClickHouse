@@ -143,9 +143,13 @@ inline size_t adaptiveCountBin(UInt64 hash)
 /// without draining them. The merge takes the buckets with the largest bounds first, so the threshold rises early.
 struct AdaptiveTopKPruning
 {
-    explicit AdaptiveTopKPruning(size_t limit_) : limit(limit_) { }
+    AdaptiveTopKPruning(size_t limit_, UInt64 floor_) : limit(limit_), floor(floor_), threshold(floor_) { }
 
+    /// The number of best counts that set the threshold, or 0 when a fixed bound alone prunes: the aggregation feeds
+    /// `HAVING count() > C`, whose rejected groups the conversion would skip anyway.
     const size_t limit;
+    /// The smallest count a group may have to be kept, below the best counts: the bound of the `HAVING`, or 0.
+    const UInt64 floor;
 
     /// A producer's bins and the largest bin of each bucket. The counters are narrow, to keep the bins of a producer in
     /// its cache, and saturate: a saturated bin bounds nothing, but it holds that many rows of one producer, so it is
@@ -166,7 +170,7 @@ struct AdaptiveTopKPruning
     /// The `limit` best exact counts converted so far, and the smallest of them once there are `limit`.
     std::mutex best_mutex;
     std::priority_queue<UInt64, std::vector<UInt64>, std::greater<>> best;
-    std::atomic<UInt64> threshold{0};
+    std::atomic<UInt64> threshold;
 };
 
 struct AdaptiveAggregationSession
