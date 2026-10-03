@@ -257,6 +257,12 @@ Toute la suite est également exécutée dans les configurations de binaires deb
 
 Exécuter les [tests d’intégration](/fr/resources/develop-contribute/contribute/tests#integration-tests).
 
+## Couverture LLVM {#llvm-coverage}
+
+À chaque commit, la branche master exécute les tests sans état, d&#39;intégration et unitaires sur une construction instrumentée pour la couverture LLVM, puis publie le rapport de couverture.
+Les pull requests n&#39;exécutent ces jobs qu&#39;avec le label `ci-coverage` : ajoutez-le pour obtenir le rapport de couverture de la pull request ainsi que la couverture des lignes modifiées.
+Sans ce label, les pull requests exécutent à la place les mêmes configurations de tests sans état et d&#39;intégration sur la construction `arm_binary` ; les tests unitaires, eux, s&#39;exécutent déjà avec les sanitizers.
+
 ## Validation des correctifs de bugs {#bugfix-validate-check}
 
 Vérifie qu&#39;il y a soit un nouveau test (fonctionnel ou d’intégration), soit des tests modifiés qui échouent avec le binaire compilé sur la branche master.

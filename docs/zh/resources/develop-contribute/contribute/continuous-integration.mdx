@@ -257,6 +257,12 @@ python -m ci.praktika run "Build (amd_debug)"
 
 运行[集成测试](/zh/resources/develop-contribute/contribute/tests#integration-tests)。
 
+## LLVM 覆盖率 {#llvm-coverage}
+
+master 分支在每次提交时，都会基于启用 LLVM 覆盖率插桩的构建版本运行无状态测试、集成测试和单元测试，并发布覆盖率报告。
+拉取请求只有添加了 `ci-coverage` 标签才会运行这些作业；添加该标签后，即可获取该拉取请求的覆盖率报告以及变更代码行的覆盖率。
+未添加该标签时，拉取请求会改为在 `arm_binary` 构建版本上运行相同的无状态测试和集成测试配置；单元测试则本来就已在启用 sanitizer 的情况下运行。
+
 ## Bugfix validate 检查 {#bugfix-validate-check}
 
 检查是否新增了测试 (功能测试或集成测试) ，或者是否有修改过的测试在基于 master 分支构建的 二进制文件 上运行失败。

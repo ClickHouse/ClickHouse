@@ -7,42 +7,42 @@
       "versionId": "c807d94da2ee4f8e793fcb38246cc1620a6229874ae3eb80f6075390c12aede6",
       "translations": {
         "ar": {
-          "updatedAt": "2026-10-02T23:45:30.865Z",
+          "updatedAt": "2026-10-03T07:01:02.752Z",
           "fileName": "docs.json",
           "postProcessHash": "24ec8ace047a89e834a0c8c619f5215f8ec75373ac7458c0401934362bf3e27d"
         },
         "zh": {
-          "updatedAt": "2026-10-02T23:45:31.068Z",
+          "updatedAt": "2026-10-03T07:01:02.554Z",
           "fileName": "docs.json",
           "postProcessHash": "24ec8ace047a89e834a0c8c619f5215f8ec75373ac7458c0401934362bf3e27d"
         },
         "es": {
-          "updatedAt": "2026-10-02T23:45:31.264Z",
+          "updatedAt": "2026-10-03T07:01:01.581Z",
           "fileName": "docs.json",
           "postProcessHash": "24ec8ace047a89e834a0c8c619f5215f8ec75373ac7458c0401934362bf3e27d"
         },
         "ja": {
-          "updatedAt": "2026-10-02T23:45:31.454Z",
+          "updatedAt": "2026-10-03T07:01:01.777Z",
           "fileName": "docs.json",
           "postProcessHash": "24ec8ace047a89e834a0c8c619f5215f8ec75373ac7458c0401934362bf3e27d"
         },
         "ru": {
-          "updatedAt": "2026-10-02T23:45:31.647Z",
+          "updatedAt": "2026-10-03T07:01:02.365Z",
           "fileName": "docs.json",
           "postProcessHash": "24ec8ace047a89e834a0c8c619f5215f8ec75373ac7458c0401934362bf3e27d"
         },
         "fr": {
-          "updatedAt": "2026-10-02T23:45:31.831Z",
+          "updatedAt": "2026-10-03T07:01:02.948Z",
           "fileName": "docs.json",
           "postProcessHash": "24ec8ace047a89e834a0c8c619f5215f8ec75373ac7458c0401934362bf3e27d"
         },
         "ko": {
-          "updatedAt": "2026-10-02T23:45:32.047Z",
+          "updatedAt": "2026-10-03T07:01:01.968Z",
           "fileName": "docs.json",
           "postProcessHash": "24ec8ace047a89e834a0c8c619f5215f8ec75373ac7458c0401934362bf3e27d"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-02T23:45:32.251Z",
+          "updatedAt": "2026-10-03T07:01:02.169Z",
           "fileName": "docs.json",
           "postProcessHash": "24ec8ace047a89e834a0c8c619f5215f8ec75373ac7458c0401934362bf3e27d"
         }
@@ -36233,47 +36233,47 @@
     },
     {
       "fileId": "401c97cd792d972ea1e7f8fcfaf5307e884650b110fc27d74a0afd1641e897bc",
-      "versionId": "364d19620559a93f9fe2e78a75906fbdd9e95e39ea819d72d329411eff8c3b81",
+      "versionId": "180924069b94c5df1d69fa2bcabe7613d0b257b6be902ddadf660b7358fa2edc",
       "translations": {
         "es": {
-          "updatedAt": "2026-10-02T03:44:43.765Z",
+          "updatedAt": "2026-10-03T07:01:04.032Z",
           "fileName": "es/guides/use-cases/data-warehousing/support-matrix.mdx",
-          "postProcessHash": "bd81647f68eb5596922c73a45d10037fea3e2b4586a7ff6169b98b605719b71c"
+          "postProcessHash": "db23d1f596b7905ef4e1d7da19521a8bcc5f3c23a52ea30d2d3913b77e9e7b0c"
         },
         "ja": {
-          "updatedAt": "2026-10-02T03:44:43.766Z",
+          "updatedAt": "2026-10-03T07:01:04.033Z",
           "fileName": "ja/guides/use-cases/data-warehousing/support-matrix.mdx",
-          "postProcessHash": "12e2c8697c6b359c570789509b3add6fe223c28b9cac5ea1d999f0a47a097f7c"
+          "postProcessHash": "b8ea8ee7ae0a35b0b7203d2ef92efa79f8b7beeb8075757b6a3a8509415d909b"
         },
         "ko": {
-          "updatedAt": "2026-10-02T03:44:43.767Z",
+          "updatedAt": "2026-10-03T07:01:04.033Z",
           "fileName": "ko/guides/use-cases/data-warehousing/support-matrix.mdx",
-          "postProcessHash": "4153a26bb9dd863d312ea06c3301f743c600af62ed8a756f6ec9fd316981ad5d"
+          "postProcessHash": "b2449e719d3d5dca5fa31f7eda0460937c6e239e6b1498e04b2cde687b435ae6"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-02T03:44:43.768Z",
+          "updatedAt": "2026-10-03T07:01:04.034Z",
           "fileName": "pt-BR/guides/use-cases/data-warehousing/support-matrix.mdx",
-          "postProcessHash": "1b43897db82c01e08f370b581cc1810f62689da692cb3de83805bf93acd4a8f3"
+          "postProcessHash": "713925fe07869d2567e7bbf73eecae2b969a4614b80ab362fd0ee8f121976687"
         },
         "ru": {
-          "updatedAt": "2026-10-02T03:44:43.768Z",
+          "updatedAt": "2026-10-03T07:01:04.034Z",
           "fileName": "ru/guides/use-cases/data-warehousing/support-matrix.mdx",
-          "postProcessHash": "024abac49b2a8c7a1b7b9bd111dab644f9aaac8404a17f17f116914d9ec462b1"
+          "postProcessHash": "a30e2969f0385d43ba2fb8ea1e422340b9a43e09d8c8a8805248133127cfc038"
         },
         "zh": {
-          "updatedAt": "2026-10-02T03:44:43.769Z",
+          "updatedAt": "2026-10-03T07:01:04.035Z",
           "fileName": "zh/guides/use-cases/data-warehousing/support-matrix.mdx",
-          "postProcessHash": "93b7067fb243903d67bab6bd5d13939fbe61a94c1f73e150e2b70932ee225261"
+          "postProcessHash": "a0e23c3fdddb655ab3444c0a9d74583735c24e55eb075115b6a42cdf652debf4"
         },
         "ar": {
-          "updatedAt": "2026-10-02T03:44:43.769Z",
+          "updatedAt": "2026-10-03T07:01:04.036Z",
           "fileName": "ar/guides/use-cases/data-warehousing/support-matrix.mdx",
-          "postProcessHash": "b542bfb551fbed30fb00251c1cabfc6df2837be035937c2496a97a762529a9ef"
+          "postProcessHash": "bcffcc638f5cabd6000f94ab80275516035bdfc5073d610ef72dbd35a9977ea4"
         },
         "fr": {
-          "updatedAt": "2026-10-02T03:44:43.770Z",
+          "updatedAt": "2026-10-03T07:01:04.036Z",
           "fileName": "fr/guides/use-cases/data-warehousing/support-matrix.mdx",
-          "postProcessHash": "38ca6c308fd60cade45c6fdeee95d8043d48985012abaf2faf09bf4a4326543a"
+          "postProcessHash": "49ec50600af10d84e28754fdead0c63ef9aa70b4f06d7b518991946820237581"
         }
       },
       "fileName": "guides/use-cases/data-warehousing/support-matrix.mdx"
@@ -70315,47 +70315,47 @@
     },
     {
       "fileId": "9b0a82027e114adff97fb0384a487b661f0fd99382c9ae76b3d5aa0affb7942e",
-      "versionId": "f63b94b82cb89ddc8f85949468e052921e4bff6bca84876cb8e6537e0c23b0f9",
+      "versionId": "58b27cab90cd22105ce7e4cdb6f8fa1bd3d3db15f04aa99bf3034cfdee0b829c",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-24T10:24:06.797Z",
-          "fileName": "es/resources/develop-contribute/contribute/continuous-integration.mdx",
-          "postProcessHash": "45558353be186d2e8ad31f149cbb9aa629305af8fef643b04ecd9f8be1c0772e"
-        },
-        "ja": {
-          "updatedAt": "2026-09-24T10:24:06.798Z",
-          "fileName": "ja/resources/develop-contribute/contribute/continuous-integration.mdx",
-          "postProcessHash": "f8998f5d4b17efaa87cfd36559261e11067e6d0133bf43c39acd41e2da59130c"
-        },
-        "ko": {
-          "updatedAt": "2026-09-24T10:24:06.798Z",
-          "fileName": "ko/resources/develop-contribute/contribute/continuous-integration.mdx",
-          "postProcessHash": "711afba378728bf5718932230714f36aadc3d0e4e581ad1e1afddb982250a65e"
+        "ru": {
+          "updatedAt": "2026-10-03T07:01:06.557Z",
+          "fileName": "ru/resources/develop-contribute/contribute/continuous-integration.mdx",
+          "postProcessHash": "4c1fa1fe5595178bbf5273e4b04a50388be8a3abb1c713bda8a1206dc4c0b41a"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-24T10:24:06.799Z",
+          "updatedAt": "2026-10-03T07:01:06.558Z",
           "fileName": "pt-BR/resources/develop-contribute/contribute/continuous-integration.mdx",
-          "postProcessHash": "cff9ebc9a01da9c96cceedee9d4f956d986d7a3cf2e1e24ca1de50bf4d09856c"
-        },
-        "ru": {
-          "updatedAt": "2026-09-24T10:24:06.799Z",
-          "fileName": "ru/resources/develop-contribute/contribute/continuous-integration.mdx",
-          "postProcessHash": "43655b45c0e82c4e0c04e82f5fcb269ddbd7d2fc15b200a8fbe878686b36e3be"
+          "postProcessHash": "e61ed6daec8c569e7402228a4b2d12d37a77408c5ec66a2b3f3e7835f83feb0a"
         },
         "zh": {
-          "updatedAt": "2026-09-24T10:24:06.800Z",
+          "updatedAt": "2026-10-03T07:01:06.559Z",
           "fileName": "zh/resources/develop-contribute/contribute/continuous-integration.mdx",
-          "postProcessHash": "2d62be986ac98d8adf2871532b55ef77d5642c2b128798c1484c11dab796f468"
+          "postProcessHash": "1faaf44fd999639eb2c0a7020346d349dabf23340016eb60bb39e49cf8b46e8a"
         },
-        "ar": {
-          "updatedAt": "2026-09-24T10:24:06.800Z",
-          "fileName": "ar/resources/develop-contribute/contribute/continuous-integration.mdx",
-          "postProcessHash": "81214c88fe061b56e2cb236ee12e68150a55eca72b31b685aa950f8da0714b45"
+        "es": {
+          "updatedAt": "2026-10-03T07:01:06.559Z",
+          "fileName": "es/resources/develop-contribute/contribute/continuous-integration.mdx",
+          "postProcessHash": "395d9a5ad82d49ee18e65d4c77371bd87426deae0b313ca748b796357c355edf"
         },
         "fr": {
-          "updatedAt": "2026-09-24T10:24:06.801Z",
+          "updatedAt": "2026-10-03T07:01:06.559Z",
           "fileName": "fr/resources/develop-contribute/contribute/continuous-integration.mdx",
-          "postProcessHash": "51f75dcdf199e7034ffa47901991d69e456de501fbf6acc58acf51c0aa7caef2"
+          "postProcessHash": "bd828b69b7f22275fe318787a8e861ce95598ddd64140e8db17f0785307cbf6d"
+        },
+        "ja": {
+          "updatedAt": "2026-10-03T07:01:06.560Z",
+          "fileName": "ja/resources/develop-contribute/contribute/continuous-integration.mdx",
+          "postProcessHash": "1579f6cdd3c2061bf860c81bb0ae7000edba4ad91dd11a8d639bbb4ac8531d28"
+        },
+        "ko": {
+          "updatedAt": "2026-10-03T07:01:06.560Z",
+          "fileName": "ko/resources/develop-contribute/contribute/continuous-integration.mdx",
+          "postProcessHash": "9a80d3ff61874e3924d43baeee026fe7b28c3d14b9581e6767e2950a6e698c5c"
+        },
+        "ar": {
+          "updatedAt": "2026-10-03T07:01:06.561Z",
+          "fileName": "ar/resources/develop-contribute/contribute/continuous-integration.mdx",
+          "postProcessHash": "a2c39b79e6f2b38d1c9d4596b07c635251a82e5058abdbb61b32b4f52a59c123"
         }
       },
       "fileName": "resources/develop-contribute/contribute/continuous-integration.mdx"
