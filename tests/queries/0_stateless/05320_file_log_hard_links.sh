@@ -198,6 +198,39 @@ ln "${logs_dir}/out3.log" "${d3}/m.log"
 printf '12\n' >> "${d3}/m.log"
 read_until file_log_symlink 5 6 7 8 9 10 11 12
 
+echo '-- a symbolic link to a symbolic link out of the directory follows that name: the name re-created is read from the start'
+printf '30\n' > "${logs_dir}/out4.log"
+ln -s ../out4.log "${d3}/q.log"
+read_until file_log_symlink 30
+ln -s q.log "${d3}/p.log"
+rm "${d3}/q.log"
+printf '31\n32\n33\n' > "${logs_dir}/out4.log"
+ln -s ../out4.log "${d3}/q.log"
+read_until file_log_symlink 31 32 33
+
+echo '-- symbolic links made while the table is detached: the link out of the directory is read, and the link to it follows its name'
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE file_log_symlink"
+printf '40\n' > "${logs_dir}/out5.log"
+ln -s ../out5.log "${d3}/u.log"
+ln -s u.log "${d3}/t.log"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log_symlink"
+read_until file_log_symlink 40
+sync_watch file_log_symlink "${d3}/sync.log"
+rm "${d3}/u.log"
+printf '41\n42\n43\n' > "${logs_dir}/out5.log"
+ln -s ../out5.log "${d3}/u.log"
+read_until file_log_symlink 41 42 43
+
+echo '-- a symbolic link out of the directory renamed over the read name: a hard link of the file reads on'
+printf '50\n' > "${logs_dir}/out6.log"
+ln "${logs_dir}/out6.log" "${d3}/e.log"
+read_until file_log_symlink 50
+ln "${d3}/e.log" "${d3}/f.log"
+ln -s ../out6.log "${d3}/tmp.sym"
+mv "${d3}/tmp.sym" "${d3}/e.log"
+printf '51\n' >> "${d3}/f.log"
+read_until file_log_symlink 51
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_create"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_symlink"

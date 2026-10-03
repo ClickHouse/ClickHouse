@@ -322,20 +322,23 @@ void StorageFileLog::loadFiles()
     /// Get files inode
     std::vector<UInt64> inodes;
     std::vector<bool> symlinks;
+    std::vector<bool> follows;
     inodes.reserve(file_infos.file_names.size());
     symlinks.reserve(file_infos.file_names.size());
+    follows.reserve(file_infos.file_names.size());
     for (const auto & file : file_infos.file_names)
     {
         inodes.push_back(getInode(getFullDataPath(file)));
         symlinks.push_back(isSymlink(getFullDataPath(file)));
+        follows.push_back(symlinks.back() && resolvesIntoDirectory(file));
     }
 
-    /// A file with several names is read under one of them: a hard link rather than a symbolic link, then the name in its meta, then the smallest.
+    /// A file with several names is read under one of them: a hard link, then a symbolic link that does not resolve through another name in the directory, then the name in its meta, then the smallest.
     auto read_key = [&](size_t i)
     {
         auto meta = file_infos.meta_by_inode.find(inodes[i]);
         const bool is_meta_name = meta != file_infos.meta_by_inode.end() && meta->second.file_name == file_infos.file_names[i];
-        return std::tuple<bool, bool, const String &>(symlinks[i], !is_meta_name, file_infos.file_names[i]);
+        return std::tuple<bool, bool, bool, const String &>(symlinks[i], follows[i], !is_meta_name, file_infos.file_names[i]);
     };
     std::unordered_map<UInt64, size_t> read_index_by_inode;
     for (size_t i = 0; i < inodes.size(); ++i)
@@ -1002,7 +1005,7 @@ Optional parameters:
 
 ## Description {#description}
 
-The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read. A file with several names in the directory (hard links, or symbolic links to it) is read once, under one of its names. When that name is removed, the file is read on from the same position under another of its names that the table has already seen. If there is none, a later name of the file counts as a new file and is read from the beginning.
+The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read. A file with several names in the directory (hard links, or symbolic links to it) is read once, under one of its names. When that name is removed, the file is read on from the same position under another of its names that the table has already seen. If there is none, a later name of the file counts as a new file and is read from the beginning. A symbolic link that resolves through another name in the directory follows that name and does not keep the file once that name is removed.
 
 `SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
 
@@ -1096,11 +1099,32 @@ bool StorageFileLog::isGone(const String & file_name, UInt64 inode) const
 bool StorageFileLog::resolvesIntoDirectory(const String & file_name) const
 {
     std::error_code ec;
-    const auto target = std::filesystem::canonical(getFullDataPath(file_name), ec);
+    const auto root = std::filesystem::canonical(root_data_path, ec);
     if (ec)
         return false;
-    const auto root = std::filesystem::canonical(root_data_path, ec);
-    return !ec && target.parent_path() == root;
+    std::filesystem::path link = getFullDataPath(file_name);
+    /// At most as many links as Linux follows.
+    for (size_t hops = 0; hops < 40 && FS::isSymlinkNoThrow(link); ++hops)
+    {
+        std::filesystem::path target;
+        try
+        {
+            target = FS::readSymlink(link);
+        }
+        catch (const std::filesystem::filesystem_error &)
+        {
+            return false;
+        }
+        if (target.is_relative())
+            target = link.parent_path() / target;
+        const auto dir = std::filesystem::canonical(target.parent_path(), ec);
+        if (ec)
+            return false;
+        if (dir == root)
+            return true;
+        link = dir / target.filename();
+    }
+    return false;
 }
 
 bool StorageFileLog::addOtherName(const String & file_name, UInt64 inode, bool is_symlink)
@@ -1110,15 +1134,16 @@ bool StorageFileLog::addOtherName(const String & file_name, UInt64 inode, bool i
     if (meta == file_infos.meta_by_inode.end())
         return false;
 
-    /// A symbolic link is not the read name while the file has a hard link in the directory.
-    bool has_hard_link = false;
+    /// A symbolic link is not the read name while the file has a hard link in the directory, or while it resolves through another name in the directory.
+    bool only_other_name = false;
     if (is_symlink)
     {
         auto other = findOtherName(inode);
-        has_hard_link = other && !other->second && !file_infos.other_names.at(other->first).is_symlink;
+        only_other_name = resolvesIntoDirectory(file_name)
+            || (other && !other->second && !file_infos.other_names.at(other->first).is_symlink);
     }
 
-    if (!has_hard_link)
+    if (!only_other_name)
     {
         if (meta->second.file_name == file_name)
             return false;
@@ -1158,7 +1183,7 @@ bool StorageFileLog::addOtherName(const String & file_name, UInt64 inode, bool i
 
 std::optional<std::pair<String, bool>> StorageFileLog::findOtherName(UInt64 inode)
 {
-    /// A hard link is a name of the file until its removal event is processed, so a gone one is kept. A symbolic link is dropped when gone, or when it resolves into the directory, where its target is a name with its own events.
+    /// A hard link is a name of the file until its removal event is processed, so a gone one is kept. A symbolic link is dropped when gone, or when it resolves through another name in the directory, which has its own events.
     /// Preferred: a name that still has the file, then a hard link, then the smallest name.
     std::optional<std::tuple<bool, bool, String>> best; /// (gone, is_symlink, name)
     for (auto it = file_infos.other_names.begin(); it != file_infos.other_names.end();)

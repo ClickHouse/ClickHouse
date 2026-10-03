@@ -216,7 +216,7 @@ private:
 
     /// Whether `file_name` provably no longer refers to `inode`.
     bool isGone(const String & file_name, UInt64 inode) const;
-    /// Whether the file `file_name` resolves to is directly in the watched directory.
+    /// Whether resolving the symbolic link `file_name` goes through a name directly in the watched directory.
     bool resolvesIntoDirectory(const String & file_name) const;
     /// Handles a new name of a file read under another name; returns whether the event is fully handled.
     bool addOtherName(const String & file_name, UInt64 inode, bool is_symlink);

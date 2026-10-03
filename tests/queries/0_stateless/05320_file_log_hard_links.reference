@@ -61,3 +61,16 @@ m.log	6
 m.log	7
 m.log	8
 m.log	9
+-- a symbolic link to a symbolic link out of the directory follows that name: the name re-created is read from the start
+q.log	30
+q.log	31
+q.log	32
+q.log	33
+-- symbolic links made while the table is detached: the link out of the directory is read, and the link to it follows its name
+u.log	40
+u.log	41
+u.log	42
+u.log	43
+-- a symbolic link out of the directory renamed over the read name: a hard link of the file reads on
+e.log	50
+f.log	51
