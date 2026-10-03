@@ -1,0 +1,16 @@
+--log-level=fatal
+0
+--log-level=trace
+many
+--logger.level=fatal
+0
+--logger.level=trace
+many
+config trace, send_logs_level=fatal
+many
+config trace, --log-level=none
+0
+config fatal, send_logs_level=fatal
+0
+config fatal, --log-level=trace
+many
