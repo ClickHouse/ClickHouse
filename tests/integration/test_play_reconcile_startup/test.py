@@ -120,23 +120,37 @@ def test_play_auth_headers_preserve_credentials_with_database_path(started_clust
                 user, password
             )
         )
-        # A scripted /play server_address may include a database path.
-        response = node.http_request(
-            "default",
-            method="POST",
-            params={
-                "add_http_cors_header": "1",
-                "http_allow_database_as_path": "1",
-                "http_allow_table_as_file": "0",
-            },
-            data="SELECT currentUser()",
-            headers={
-                "Authorization": "ClickHouse-Play",
-                "X-ClickHouse-User": quote(user),
-                "X-ClickHouse-Key": quote(password),
-            },
-        )
-        assert response.status_code == 200, response.text
-        assert response.content.decode("utf-8") == user + "\n"
+
+        encoded_headers = {
+            "X-ClickHouse-Auth-Encoding": "percent",
+            "X-ClickHouse-User": quote(user),
+            "X-ClickHouse-Key": quote(password),
+        }
+
+        # A scripted /play server_address may include a database path. The encoding marker,
+        # rather than Authorization, controls decoding, so an intermediary may strip or rewrite
+        # Authorization without corrupting UTF-8 or surrounding-space credentials.
+        for authorization in ("never", None, "Basic Zm9vOmJhcg=="):
+            headers = dict(encoded_headers)
+            if authorization is not None:
+                headers["Authorization"] = authorization
+
+            response = node.http_request(
+                "default",
+                method="POST",
+                params={
+                    "add_http_cors_header": "1",
+                    "http_allow_database_as_path": "1",
+                    "http_allow_table_as_file": "0",
+                },
+                data="SELECT currentUser()",
+                headers=headers,
+            )
+            assert response.status_code == 200, response.text
+            assert response.content.decode("utf-8") == user + "\n"
+            assert response.headers["X-ClickHouse-Auth-Encoding"] == "percent"
+            assert "x-clickhouse-auth-encoding" in response.headers[
+                "Access-Control-Expose-Headers"
+            ].lower()
     finally:
         node.query("DROP USER IF EXISTS '{}'".format(user))

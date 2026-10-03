@@ -8299,7 +8299,9 @@ function canSendRawAuthHeader(value) {
 
 function getAuthHeaders(user, password) {
     const send_raw = canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
-    const headers = { 'Authorization': send_raw ? 'never' : 'ClickHouse-Play' };
+    const headers = { 'Authorization': 'never' };
+    if (!send_raw)
+        headers['X-ClickHouse-Auth-Encoding'] = 'percent';
 
     if (user)
         headers['X-ClickHouse-User'] = send_raw ? user : encodeURIComponent(user);
@@ -8335,35 +8337,23 @@ async function responseRejectsLegacyPasswordOnlyAuth(response) {
     }
 }
 
-async function responseRejectsEncodedWebUIAuth(response, url) {
-    if (response.status === 404) {
-        /// Older path routing rejects unknown Authorization schemes before the query handler.
-        /// Probe the same path without credentials using the long-supported never sentinel.
-        /// Only a ClickHouse-specific response proves that this is a ClickHouse query endpoint;
-        /// a generic 401/404/405/200 from a proxy or unrelated application must not unlock the
-        /// credential-in-URL compatibility fallback.
-        try {
-            const route_response = await fetch(url, {
-                method: "POST",
-                body: "SELECT 1",
-                headers: { 'Authorization': 'never' },
-            });
-            return responseLooksLikeClickHouse(route_response);
-        } catch (e) {
-            return false;
-        }
-    }
-
-    if (response.headers.get('X-ClickHouse-Exception-Code') !== '516')
-        return false;
-
+async function endpointLooksLikeClickHouse(url) {
     try {
-        const body = await response.clone().text();
-        return body.includes("expected 'Basic' HTTP Authorization scheme")
-            || body.includes("Invalid authentication: 'ClickHouse-Play' HTTP Authorization scheme is not supported");
+        const response = await fetch(url, {
+            method: "POST",
+            body: "SELECT 1",
+            headers: { 'Authorization': 'never' },
+        });
+        return responseLooksLikeClickHouse(response);
     } catch (e) {
         return false;
     }
+}
+
+function responseRejectsEncodedWebUIAuth(response) {
+    if (response.headers.get('X-ClickHouse-Auth-Encoding') === 'percent')
+        return false;
+    return response.headers.get('X-ClickHouse-Exception-Code') === '516';
 }
 
 function serverPredatesDefaultSessionUser(version) {
@@ -8395,7 +8385,20 @@ async function probeLegacyPasswordOnlyAuth(server_address, password) {
 
 async function fetchWithRequestAuth(url, options, server_address, user, password) {
     const send_raw = canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
-    let response = await fetch(url, { ...options, headers: getAuthHeaders(user, password) });
+    let response;
+    try {
+        response = await fetch(url, { ...options, headers: getAuthHeaders(user, password) });
+    } catch (e) {
+        /// Older servers and custom CORS policies may reject the new encoding marker at preflight.
+        /// Before putting credentials back in the URL, prove that the target is a ClickHouse query
+        /// endpoint using a credential-free request that only uses the long-supported never sentinel.
+        if (send_raw || !await endpointLooksLikeClickHouse(url))
+            throw e;
+
+        return await fetch(
+            url + getLegacyAuthQueryParams(user, password),
+            { ...options, headers: { 'Authorization': 'never' } });
+    }
 
     if (send_raw) {
         /// Before 26.7 a password-only request implicitly meant user "default". Preserve that
@@ -8412,13 +8415,12 @@ async function fetchWithRequestAuth(url, options, server_address, user, password
         return response;
     }
 
-    if (response.ok || !await responseRejectsEncodedWebUIAuth(response, url))
+    if (response.ok || !responseRejectsEncodedWebUIAuth(response))
         return response;
 
-    /// The marker is unsupported, so this is an older ClickHouse endpoint. Retry the same request
-    /// with the historical query-parameter transport. Do not cache this mode: after a rolling
-    /// upgrade the next request immediately retries the header path instead of keeping credentials
-    /// in URLs.
+    /// The encoding marker was not acknowledged, so this is an older ClickHouse endpoint.
+    /// Retry the same request with the historical query-parameter transport. Do not cache this
+    /// mode: after a rolling upgrade the next request immediately retries the header path.
     return await fetch(
         url + getLegacyAuthQueryParams(user, password),
         { ...options, headers: { 'Authorization': 'never' } });
@@ -8435,24 +8437,21 @@ async function probeServerStatus(server_address, user, password) {
     });
     try {
         const send_raw = canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
+        if (!send_raw) {
+            const response = await fetchWithRequestAuth(
+                url,
+                { method: "POST", body: "SELECT version() AS v, uptime() AS t" },
+                server_address,
+                user,
+                password);
+            if (!response.ok)
+                return false;
+            return { status: await response.json(), use_legacy_default_user: false };
+        }
+
         let response = await request(url, getAuthHeaders(user, password));
         if (response.ok)
             return { status: await response.json(), use_legacy_default_user: false };
-
-        /// Encoded credentials need the ClickHouse-Play marker. If the endpoint proves that it
-        /// predates that marker, retry only this compatibility probe through the old URL transport.
-        if (!send_raw) {
-            if (!await responseRejectsEncodedWebUIAuth(response, url))
-                return false;
-
-            response = await request(
-                url + getLegacyAuthQueryParams(user, password),
-                { 'Authorization': 'never' });
-            if (!response.ok)
-                return false;
-
-            return { status: await response.json(), use_legacy_default_user: false };
-        }
 
         /// Before 26.7 X-ClickHouse-Key without a user was rejected before authentication.
         /// Only that exact old-server rejection may use the historical password-only URL path.

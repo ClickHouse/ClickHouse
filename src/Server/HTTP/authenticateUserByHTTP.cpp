@@ -134,8 +134,13 @@ bool authenticateUserByHTTP(
         : String(global_context->getServerSettings()[ServerSetting::default_session_user]);
 
     const std::string authorization_header = request.get("Authorization", "");
-    const bool has_encoded_web_ui_auth = authorization_header == "ClickHouse-Play";
+    const bool has_encoded_web_ui_auth = request.get("X-ClickHouse-Auth-Encoding", "") == "percent";
     const bool has_scripted_web_ui_auth = authorization_header == "never" || has_encoded_web_ui_auth;
+    if (has_encoded_web_ui_auth)
+    {
+        response.set("X-ClickHouse-Auth-Encoding", "percent");
+        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Auth-Encoding");
+    }
 
     /// The user and password can be passed by headers (similar to X-Auth-*),
     /// which is used by load balancers to pass authentication information.
@@ -162,9 +167,10 @@ bool authenticateUserByHTTP(
     bool has_credentials_in_query_params = params.has("user") || params.has("password");
 
     /// Whether the request carries an `Authorization` header that should be treated as
-    /// credentials. The `never` sentinel and the `ClickHouse-Play` marker used by scripted
-    /// Web UI requests suppress browser-provided Basic credentials. The latter also marks the
-    /// X-ClickHouse user/key headers as percent-encoded.
+    /// credentials. The `never` sentinel used by scripted Web UI requests only suppresses
+    /// browser-provided Basic credentials. Percent-encoded X-ClickHouse user/key headers are
+    /// marked independently, so decoding still works when an intermediary strips or rewrites
+    /// `Authorization`.
     const bool suppress_browser_basic_auth = has_scripted_web_ui_auth;
     bool has_authorization_header = !suppress_browser_basic_auth && request.hasCredentials();
 
@@ -178,9 +184,9 @@ bool authenticateUserByHTTP(
     /// remove headers from, such as a form submission or a download navigation. The Web UI
     /// (`play.html`) download form puts the user name and password into the URL query
     /// parameters, so without this precedence a download request would carry both the remembered
-    /// header and the parameters and be rejected. Scripted requests use special `Authorization`
-    /// values (`never` for probes and `ClickHouse-Play` for encoded credentials) to suppress
-    /// browser-provided Basic credentials; a plain navigation cannot set those values.
+    /// header and the parameters and be rejected. Scripted requests use `Authorization: never`
+    /// to suppress browser-provided Basic credentials; encoded X-ClickHouse headers carry their
+    /// own marker, while a plain navigation cannot set either header.
     ///
     /// This precedence applies only to the default authentication path. When the handler has
     /// its own configured credentials, an `Authorization` header is still rejected as a mix of

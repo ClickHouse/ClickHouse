@@ -1928,7 +1928,7 @@ void LocalServer::processConfig()
             static constexpr std::pair<const char *, const char *> default_http_options_response[]
             {
                 {"Access-Control-Allow-Origin", "*"},
-                {"Access-Control-Allow-Headers", "origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization"},
+                {"Access-Control-Allow-Headers", "origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, x-clickhouse-auth-encoding, Authorization"},
                 {"Access-Control-Allow-Methods", "POST, GET, OPTIONS"},
                 {"Access-Control-Max-Age", "86400"},
             };

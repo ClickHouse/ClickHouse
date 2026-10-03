@@ -508,12 +508,14 @@ async function checkAuthHeaderTransport(js) {
             'X-ClickHouse-Key': 'p&?#%',
         }],
         ['utf8-and-spaces', 'play:юзер', '  päss 密码  ', {
-            Authorization: 'ClickHouse-Play',
+            Authorization: 'never',
+            'X-ClickHouse-Auth-Encoding': 'percent',
             'X-ClickHouse-User': 'play%3A%D1%8E%D0%B7%D0%B5%D1%80',
             'X-ClickHouse-Key': '%20%20p%C3%A4ss%20%E5%AF%86%E7%A0%81%20%20',
         }],
         ['ascii-edge-spaces', 'alice', ' secret ', {
-            Authorization: 'ClickHouse-Play',
+            Authorization: 'never',
+            'X-ClickHouse-Auth-Encoding': 'percent',
             'X-ClickHouse-User': 'alice',
             'X-ClickHouse-Key': '%20secret%20',
         }],
@@ -536,6 +538,14 @@ async function checkAuthHeaderTransport(js) {
         check('auth-header-cases', `${name} survives browser header normalization`,
             Object.entries(actual).every(([header, value]) => browserHeaders.get(header) === value), actual);
     }
+    const proxiedEncodedHeaders = helpers.getAuthHeaders('play:юзер', '  päss 密码  ');
+    delete proxiedEncodedHeaders.Authorization;
+    check('auth-header-cases', 'encoded credentials remain self-describing if a proxy strips Authorization',
+        proxiedEncodedHeaders['X-ClickHouse-Auth-Encoding'] === 'percent'
+            && proxiedEncodedHeaders['X-ClickHouse-User'] === 'play%3A%D1%8E%D0%B7%D0%B5%D1%80'
+            && proxiedEncodedHeaders['X-ClickHouse-Key'] === '%20%20p%C3%A4ss%20%E5%AF%86%E7%A0%81%20%20',
+        proxiedEncodedHeaders);
+
     check('auth-header-cases', '26.6 predates default_session_user',
         helpers.serverPredatesDefaultSessionUser('26.6.9.1') === true);
     check('auth-header-cases', '26.7 supports default_session_user',
@@ -557,7 +567,7 @@ async function checkAuthHeaderTransport(js) {
     check('auth-header-cases', 'getServerStatus does not append credentials to its URL',
         !/url \+= '&(?:user|password)=/.test(statusSource));
 
-    const authResponse = (status, { version = null, body = '', code = null, displayName = null } = {}) => {
+    const authResponse = (status, { version = null, body = '', code = null, displayName = null, authEncoding = null } = {}) => {
         const response = {
             ok: status >= 200 && status < 300,
             status,
@@ -565,6 +575,7 @@ async function checkAuthHeaderTransport(js) {
                 get: name => {
                     if (name === 'X-ClickHouse-Exception-Code') return code;
                     if (name === 'X-ClickHouse-Server-Display-Name') return displayName;
+                    if (name === 'X-ClickHouse-Auth-Encoding') return authEncoding;
                     return null;
                 },
             },
@@ -707,10 +718,10 @@ async function checkAuthHeaderTransport(js) {
     const encodedLegacyCalls = [];
     const encodedLegacyHelpers = makeAuthHelpers(async (url, options) => {
         encodedLegacyCalls.push({ url, headers: options.headers });
-        if (options.headers.Authorization === 'ClickHouse-Play') {
+        if (options.headers['X-ClickHouse-Auth-Encoding'] === 'percent') {
             return authResponse(403, {
                 code: '516',
-                body: "Code: 516. DB::Exception: Invalid authentication: expected 'Basic' HTTP Authorization scheme",
+                body: 'Authentication failed: encoded headers are not understood by this server',
             });
         }
         return authResponse(200, { version: '26.6.9.1' });
@@ -721,45 +732,16 @@ async function checkAuthHeaderTransport(js) {
         'https://remote.example/legacy-encoded',
         encodedUser,
         encodedPassword);
-    check('auth-header-cases', 'legacy encoded credentials retry through URL only after marker rejection',
+    check('auth-header-cases', 'legacy encoded credentials retry only after ClickHouse rejects the unacknowledged marker',
         encodedLegacyResponse.ok
             && encodedLegacyCalls.length === 2
-            && encodedLegacyCalls[0].headers.Authorization === 'ClickHouse-Play'
+            && encodedLegacyCalls[0].headers.Authorization === 'never'
+            && encodedLegacyCalls[0].headers['X-ClickHouse-Auth-Encoding'] === 'percent'
             && !new URL(encodedLegacyCalls[0].url).searchParams.has('user')
             && encodedLegacyCalls[1].headers.Authorization === 'never'
             && new URL(encodedLegacyCalls[1].url).searchParams.get('user') === encodedUser
             && new URL(encodedLegacyCalls[1].url).searchParams.get('password') === encodedPassword,
         { encodedLegacyCalls });
-
-    /// Older root-path servers reject ClickHouse-Play through the generic unknown-scheme branch.
-    /// This is a distinct 516 message from the Basic-credentials mismatch above, but it proves the
-    /// same thing: the marker is unsupported, so the legacy URL transport is required.
-    const encodedUnknownSchemeCalls = [];
-    const encodedUnknownSchemeHelpers = makeAuthHelpers(async (url, options) => {
-        encodedUnknownSchemeCalls.push({ url, headers: options.headers });
-        if (options.headers.Authorization === 'ClickHouse-Play') {
-            return authResponse(403, {
-                code: '516',
-                body: "Code: 516. DB::Exception: Invalid authentication: 'ClickHouse-Play' HTTP Authorization scheme is not supported",
-            });
-        }
-        return authResponse(200, { version: '26.6.9.1' });
-    });
-    const encodedUnknownSchemeResponse = await encodedUnknownSchemeHelpers.fetchWithRequestAuth(
-        encodedRequestUrl,
-        { method: 'POST', body: 'SELECT 1' },
-        'https://remote.example/legacy-encoded',
-        encodedUser,
-        encodedPassword);
-    check('auth-header-cases', 'legacy unknown auth scheme retries encoded credentials through URL',
-        encodedUnknownSchemeResponse.ok
-            && encodedUnknownSchemeCalls.length === 2
-            && encodedUnknownSchemeCalls[0].headers.Authorization === 'ClickHouse-Play'
-            && !new URL(encodedUnknownSchemeCalls[0].url).searchParams.has('user')
-            && encodedUnknownSchemeCalls[1].headers.Authorization === 'never'
-            && new URL(encodedUnknownSchemeCalls[1].url).searchParams.get('user') === encodedUser
-            && new URL(encodedUnknownSchemeCalls[1].url).searchParams.get('password') === encodedPassword,
-        { encodedUnknownSchemeCalls });
 
     const modernBadCalls = [];
     const modernBadHelpers = makeAuthHelpers(async (url, options) => {
@@ -767,6 +749,7 @@ async function checkAuthHeaderTransport(js) {
         return authResponse(403, {
             code: '516',
             body: 'Authentication failed: password is incorrect',
+            authEncoding: 'percent',
         });
     });
     const modernBadResponse = await modernBadHelpers.fetchWithRequestAuth(
@@ -778,63 +761,72 @@ async function checkAuthHeaderTransport(js) {
     check('auth-header-cases', 'modern auth failures never fall back to URL credentials',
         !modernBadResponse.ok
             && modernBadCalls.length === 1
-            && modernBadCalls[0].headers.Authorization === 'ClickHouse-Play'
+            && modernBadCalls[0].headers.Authorization === 'never'
+            && modernBadCalls[0].headers['X-ClickHouse-Auth-Encoding'] === 'percent'
             && !new URL(modernBadCalls[0].url).searchParams.has('user')
             && !new URL(modernBadCalls[0].url).searchParams.has('password'),
         { modernBadCalls });
 
-    /// Old path routing rejects the unknown marker as 404. Verify that the path itself exists
-    /// without credentials before retrying it with legacy query-parameter authentication.
-    const encodedPathCalls = [];
-    const encodedPathHelpers = makeAuthHelpers(async (url, options) => {
+    /// An older server may reject the new request header during CORS preflight, so fetch throws
+    /// before there is an HTTP response. A credential-free probe must positively identify the
+    /// target as ClickHouse before the historical URL transport is allowed.
+    const encodedCorsCalls = [];
+    const encodedCorsHelpers = makeAuthHelpers(async (url, options) => {
         const parsed = new URL(url);
-        encodedPathCalls.push({ url, headers: options.headers });
-        if (options.headers.Authorization === 'ClickHouse-Play')
-            return authResponse(404);
+        encodedCorsCalls.push({ url, headers: options.headers });
+        if (options.headers['X-ClickHouse-Auth-Encoding'] === 'percent')
+            throw new TypeError('CORS preflight rejected X-ClickHouse-Auth-Encoding');
         if (!parsed.searchParams.has('user'))
-            return authResponse(403, { code: '516', body: 'Authentication failed' });
+            return authResponse(403, { code: '516', displayName: 'legacy-clickhouse' });
         return authResponse(200);
     });
-    const encodedPathResponse = await encodedPathHelpers.fetchWithRequestAuth(
+    const encodedCorsResponse = await encodedCorsHelpers.fetchWithRequestAuth(
         'https://remote.example/database?query_kind=main',
         { method: 'POST', body: 'SELECT 1' },
         'https://remote.example/database',
         encodedUser,
         encodedPassword);
-    check('auth-header-cases', 'legacy path routing is verified without credentials before URL fallback',
-        encodedPathResponse.ok
-            && encodedPathCalls.length === 3
-            && !new URL(encodedPathCalls[1].url).searchParams.has('user')
-            && new URL(encodedPathCalls[2].url).searchParams.get('user') === encodedUser,
-        { encodedPathCalls });
+    check('auth-header-cases', 'legacy CORS rejection is probed without credentials before URL fallback',
+        encodedCorsResponse.ok
+            && encodedCorsCalls.length === 3
+            && encodedCorsCalls[0].headers['X-ClickHouse-Auth-Encoding'] === 'percent'
+            && !new URL(encodedCorsCalls[1].url).searchParams.has('user')
+            && encodedCorsCalls[1].headers.Authorization === 'never'
+            && new URL(encodedCorsCalls[2].url).searchParams.get('user') === encodedUser,
+        { encodedCorsCalls });
 
-    const invalidPathCalls = [];
-    const invalidPathHelpers = makeAuthHelpers(async (url, options) => {
-        invalidPathCalls.push({ url, headers: options.headers });
-        if (options.headers.Authorization === 'ClickHouse-Play')
-            return authResponse(404);
+    const invalidCorsCalls = [];
+    const invalidCorsHelpers = makeAuthHelpers(async (url, options) => {
+        invalidCorsCalls.push({ url, headers: options.headers });
+        if (options.headers['X-ClickHouse-Auth-Encoding'] === 'percent')
+            throw new TypeError('generic CORS failure');
         return authResponse(405);
     });
-    const invalidPathResponse = await invalidPathHelpers.fetchWithRequestAuth(
-        'https://remote.example/not-a-clickhouse-path?query_kind=main',
-        { method: 'POST', body: 'SELECT 1' },
-        'https://remote.example/not-a-clickhouse-path',
-        encodedUser,
-        encodedPassword);
-    check('auth-header-cases', 'a generic non-404 route response does not leak credentials through fallback',
-        invalidPathResponse.status === 404
-            && invalidPathCalls.length === 2
-            && invalidPathCalls.every(call => !new URL(call.url).searchParams.has('user')
+    let invalidCorsError = null;
+    try {
+        await invalidCorsHelpers.fetchWithRequestAuth(
+            'https://remote.example/not-a-clickhouse-path?query_kind=main',
+            { method: 'POST', body: 'SELECT 1' },
+            'https://remote.example/not-a-clickhouse-path',
+            encodedUser,
+            encodedPassword);
+    } catch (e) {
+        invalidCorsError = e;
+    }
+    check('auth-header-cases', 'generic CORS failures never leak credentials through URL fallback',
+        invalidCorsError !== null
+            && invalidCorsCalls.length === 2
+            && invalidCorsCalls.every(call => !new URL(call.url).searchParams.has('user')
                 && !new URL(call.url).searchParams.has('password')),
-        { invalidPathCalls });
+        { invalidCorsCalls, invalidCorsError: String(invalidCorsError) });
 
     /// The legacy URL mode is per-request, not sticky. Once the backend upgrades, the very next
-    /// request retries ClickHouse-Play and stops putting credentials in the URL.
+    /// request retries the encoded-header marker and stops putting credentials in the URL.
     let rollingEncodedLegacy = true;
     const rollingEncodedCalls = [];
     const rollingEncodedHelpers = makeAuthHelpers(async (url, options) => {
         rollingEncodedCalls.push({ url, headers: options.headers });
-        if (rollingEncodedLegacy && options.headers.Authorization === 'ClickHouse-Play') {
+        if (rollingEncodedLegacy && options.headers['X-ClickHouse-Auth-Encoding'] === 'percent') {
             return authResponse(403, {
                 code: '516',
                 body: "Invalid authentication: expected 'Basic' HTTP Authorization scheme",
@@ -853,7 +845,7 @@ async function checkAuthHeaderTransport(js) {
     check('auth-header-cases', 'encoded legacy fallback stops immediately after a rolling upgrade',
         rollingEncodedCalls.length === 3
             && new URL(rollingEncodedCalls[1].url).searchParams.has('user')
-            && rollingEncodedCalls[2].headers.Authorization === 'ClickHouse-Play'
+            && rollingEncodedCalls[2].headers['X-ClickHouse-Auth-Encoding'] === 'percent'
             && !new URL(rollingEncodedCalls[2].url).searchParams.has('user'),
         { rollingEncodedCalls });
 
