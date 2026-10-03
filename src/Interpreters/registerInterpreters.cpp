@@ -27,6 +27,7 @@ void registerInterpreterExplainQuery(InterpreterFactory & factory);
 void registerInterpreterShowProcesslistQuery(InterpreterFactory & factory);
 void registerInterpreterAlterQuery(InterpreterFactory & factory);
 void registerInterpreterAlterNamedCollectionQuery(InterpreterFactory & factory);
+void registerInterpreterAlterSQLClusterQuery(InterpreterFactory & factory);
 void registerInterpreterCheckQuery(InterpreterFactory & factory);
 void registerInterpreterKillQueryQuery(InterpreterFactory & factory);
 void registerInterpreterSystemQuery(InterpreterFactory & factory);
@@ -40,6 +41,7 @@ void registerInterpreterCreateSettingsProfileQuery(InterpreterFactory & factory)
 void registerInterpreterDropAccessEntityQuery(InterpreterFactory & factory);
 void registerInterpreterMoveAccessEntityQuery(InterpreterFactory & factory);
 void registerInterpreterDropNamedCollectionQuery(InterpreterFactory & factory);
+void registerInterpreterDropSQLClusterQuery(InterpreterFactory & factory);
 void registerInterpreterGrantQuery(InterpreterFactory & factory);
 void registerInterpreterShowCreateAccessEntityQuery(InterpreterFactory & factory);
 void registerInterpreterShowGrantsQuery(InterpreterFactory & factory);
@@ -56,6 +58,7 @@ void registerInterpreterCreateResourceQuery(InterpreterFactory & factory);
 void registerInterpreterDropResourceQuery(InterpreterFactory & factory);
 void registerInterpreterCreateIndexQuery(InterpreterFactory & factory);
 void registerInterpreterCreateNamedCollectionQuery(InterpreterFactory & factory);
+void registerInterpreterCreateSQLClusterQuery(InterpreterFactory & factory);
 void registerInterpreterCreateHandlerQuery(InterpreterFactory & factory);
 void registerInterpreterDropHandlerQuery(InterpreterFactory & factory);
 void registerInterpreterDropIndexQuery(InterpreterFactory & factory);
@@ -95,6 +98,7 @@ void registerInterpreters()
     registerInterpreterShowProcesslistQuery(factory);
     registerInterpreterAlterQuery(factory);
     registerInterpreterAlterNamedCollectionQuery(factory);
+    registerInterpreterAlterSQLClusterQuery(factory);
     registerInterpreterCheckQuery(factory);
     registerInterpreterKillQueryQuery(factory);
     registerInterpreterSystemQuery(factory);
@@ -108,6 +112,7 @@ void registerInterpreters()
     registerInterpreterDropAccessEntityQuery(factory);
     registerInterpreterMoveAccessEntityQuery(factory);
     registerInterpreterDropNamedCollectionQuery(factory);
+    registerInterpreterDropSQLClusterQuery(factory);
     registerInterpreterGrantQuery(factory);
     registerInterpreterShowCreateAccessEntityQuery(factory);
     registerInterpreterShowGrantsQuery(factory);
@@ -124,6 +129,7 @@ void registerInterpreters()
     registerInterpreterDropResourceQuery(factory);
     registerInterpreterCreateIndexQuery(factory);
     registerInterpreterCreateNamedCollectionQuery(factory);
+    registerInterpreterCreateSQLClusterQuery(factory);
     registerInterpreterCreateHandlerQuery(factory);
     registerInterpreterDropHandlerQuery(factory);
     registerInterpreterDropIndexQuery(factory);

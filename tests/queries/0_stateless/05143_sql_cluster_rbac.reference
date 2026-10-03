@@ -1,0 +1,18 @@
+-- no grants: every statement is denied
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- CREATE CLUSTER alone: CREATE ok; ALTER/DROP denied
+OK
+ACCESS_DENIED
+ACCESS_DENIED
+-- CREATE privilege group must not unlock ALTER CLUSTER
+ACCESS_DENIED
+-- ALTER CLUSTER alone: ALTER ok; DROP denied
+OK
+ACCESS_DENIED
+-- DROP CLUSTER alone: DROP ok
+OK
+-- recreating requires CREATE again
+ACCESS_DENIED
+OK

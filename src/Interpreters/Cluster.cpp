@@ -6,6 +6,10 @@
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
+#include <Parsers/IdentifierQuotingStyle.h>
+#include <Parsers/ParserSQLClusterQuery.h>
+#include <Parsers/parseQuery.h>
 #include <base/range.h>
 #include <base/sort.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -31,6 +35,8 @@ namespace Setting
     extern const SettingsSeconds distributed_replica_error_half_life;
     extern const SettingsLoadBalancing load_balancing;
     extern const SettingsBool prefer_localhost_replica;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
 }
 
 namespace ErrorCodes
@@ -45,6 +51,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_REPLICA;
     extern const int BAD_ARGUMENTS;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int CLUSTER_ALREADY_EXISTS;
 }
 
 namespace
@@ -318,6 +325,12 @@ void Clusters::setCluster(const String & cluster_name, const std::shared_ptr<Clu
     impl[cluster_name] = cluster;
 }
 
+void Clusters::removeCluster(const String & cluster_name)
+{
+    std::lock_guard lock(mutex);
+    impl.erase(cluster_name);
+}
+
 
 void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config)
 {
@@ -347,7 +360,13 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
         for (const auto & key : deleted_keys)
         {
             if (!automatic_clusters.contains(key))
+            {
+                auto it = impl.find(key);
+                if (it != impl.end() && it->second->getSourceId() == Cluster::SourceId::SQL)
+                    continue;
+
                 impl.erase(key);
+            }
         }
     }
     else
@@ -355,7 +374,7 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
         if (!automatic_clusters.empty())
             std::erase_if(impl, [this](const auto & e) { return automatic_clusters.contains(e.first); });
         else
-            impl.clear();
+            std::erase_if(impl, [](const auto & e) { return e.second->getSourceId() != Cluster::SourceId::SQL; });
     }
 
 
@@ -373,7 +392,19 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
 
         /// If old config is set and cluster config wasn't changed, don't update this cluster.
         if (!old_config || !isSameConfiguration(new_config, *old_config, config_prefix + "." + key))
+        {
+            auto it = impl.find(key);
+            if (it != impl.end() && it->second->getSourceId() == Cluster::SourceId::SQL)
+            {
+                throw Exception(
+                    ErrorCodes::CLUSTER_ALREADY_EXISTS,
+                    "Cannot load cluster `{}` from server configuration: "
+                    "an SQL-managed cluster with the same name already exists",
+                    key);
+            }
+
             impl[key] = std::make_shared<Cluster>(new_config, settings, config_prefix, key);
+        }
     }
 }
 
@@ -391,7 +422,12 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     const Settings & settings,
     const String & config_prefix_,
     const String & cluster_name,
-    bool treat_local_port_as_remote) : name(cluster_name)
+    bool treat_local_port_as_remote,
+    SourceId source_id_,
+    String create_query_)
+    : name(cluster_name)
+    , source_id(source_id_)
+    , create_query(std::move(create_query_))
 {
     auto config_prefix = config_prefix_ + "." + cluster_name;
 
@@ -599,13 +635,32 @@ String Cluster::makeKeeperScopeKey(const String & zookeeper_name, const String &
     return toString(zookeeper_name.size()) + ':' + zookeeper_name + zookeeper_path;
 }
 
+String Cluster::formatSourceIdForSystemTable(SourceId source_id)
+{
+    switch (source_id)
+    {
+        case SourceId::CONFIG:
+            return "CONFIG";
+        case SourceId::SQL:
+            return "SQL";
+        case SourceId::DISCOVERY:
+            return "DISCOVERY";
+        case SourceId::REPLICATED_DATABASE:
+            return "REPLICATED_DATABASE";
+        case SourceId::NONE:
+            return {};
+    }
+}
+
 Cluster::Cluster(
     const Settings & settings,
     const HostsByShard & names,
     const ClusterConnectionParameters & params,
     const Strings & shard_keys,
-    const String & shard_scope_key)
-    : shard_scope_identity(
+    const String & shard_scope_key,
+    SourceId source_id_)
+    : source_id(source_id_)
+    , shard_scope_identity(
           makeShardScopeIdentity(HOSTS_BY_SHARD_SCOPE, shard_scope_key.empty() ? params.cluster_name : shard_scope_key, shard_keys))
 {
     /// A missing key would be silently taken for a shorter cluster, so a partial list is not accepted.
@@ -670,8 +725,10 @@ Cluster::Cluster(
     const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
     const ClusterConnectionParameters & params,
     bool internal_replication,
-    const String & shard_scope_key)
-    : shard_scope_identity(makeShardScopeIdentity(
+    const String & shard_scope_key,
+    SourceId source_id_)
+    : source_id(source_id_)
+    , shard_scope_identity(makeShardScopeIdentity(
           REPLICAS_BY_SHARD_SCOPE,
           shard_scope_key.empty() ? params.cluster_name : shard_scope_key,
           getShardNamesForScopeIdentity(infos)))
@@ -947,6 +1004,8 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
     secret = from.secret;
     name = from.name;
+    source_id = from.source_id;
+    create_query = from.create_query;
     /// Every replica became a shard of its own, so a shard number here denotes a different shard than the same
     /// number does in `from`. The identity is left empty, and an empty identity authenticates nothing.
 
@@ -970,6 +1029,8 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
 
     secret = from.secret;
     name = from.name;
+    source_id = from.source_id;
+    create_query = from.create_query;
     /// `shards_info.emplace_back(from_shard)` above keeps each shard's `shard_num`, so a shard number
     /// still denotes the same shard as in `from` and the identity carries over.
     shard_scope_identity = from.shard_scope_identity;
@@ -985,6 +1046,8 @@ Cluster::Cluster(Cluster::RemoteReplicasTag, const Cluster & from, const Setting
 
     secret = from.secret;
     name = from.name;
+    source_id = from.source_id;
+    create_query = from.create_query;
 
     UInt32 current_shard_num = 1;
     for (size_t shard_index : collections::range(0, from.addresses_with_failover.size()))
@@ -1090,6 +1153,32 @@ bool Cluster::maybeCrossReplication() const
                 return true;
 
     return false;
+}
+
+String Cluster::getCreateStatement(bool show_secrets) const
+{
+    if (source_id != SourceId::SQL || create_query.empty())
+        return {};
+
+    const auto context = Context::getGlobalContextInstance();
+    const auto & settings = context->getSettingsRef();
+
+    ParserCreateSQLClusterQuery parser;
+    const auto ast = parseQuery(
+        parser,
+        create_query,
+        "",
+        0,
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks]);
+
+    return ast->formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/0,
+        /*one_line=*/true,
+        show_secrets,
+        /*print_pretty_type_names=*/false,
+        IdentifierQuotingRule::WhenNecessary,
+        IdentifierQuotingStyle::Backticks);
 }
 
 }
