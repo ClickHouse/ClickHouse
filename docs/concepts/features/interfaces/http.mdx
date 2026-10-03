@@ -379,6 +379,24 @@ To insert data from a tab-separated dump, specify the corresponding format:
 $ echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
 ```
 
+The same works for any other [input format](/reference/formats), for example CSV with a header row, or one JSON object per row:
+
+```bash
+$ echo -ne 'a\n13\n14\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20CSVWithNames' --data-binary @-
+$ echo '{"a":15} {"a":16}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20JSONEachRow' --data-binary @-
+```
+
+To insert the contents of a file, pass its name to `--data-binary` with an `@` prefix:
+
+```bash
+$ echo -ne '17\n18\n' > data.csv
+$ curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20CSV' --data-binary @data.csv
+```
+
+<Warning>
+Use `--data-binary`, not `-d` (`--data`). curl's `-d @file` strips the newlines from the file, so the two rows above arrive as the single value `1718`.
+</Warning>
+
 To read the table contents:
 
 ```bash
@@ -389,6 +407,12 @@ $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 10
 11
 12
+13
+14
+15
+16
+17
+18
 1
 2
 3
@@ -408,6 +432,63 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 For successful requests that don't return a data table, an empty response body is returned.
+
+### Insert Protobuf data {#insert-protobuf}
+
+Binary formats such as [`Protobuf`](/reference/formats/Protobuf/Protobuf) are sent the same way, since `--data-binary` passes the bytes through unchanged.
+Settings the format needs, such as [`format_schema`](/reference/settings/formats/format-schema#format_schema), are passed as URL parameters next to `query`, like any other setting.
+
+The examples below use this table and the schema file `message.proto`, placed in the server's [`format_schema_path`](/reference/settings/server-settings/settings/format#format_schema_path) directory:
+
+```bash
+$ echo 'CREATE TABLE protobuf_messages (name String, surname String, birthDate UInt32, phoneNumbers Array(String)) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
+```
+
+```protobuf
+syntax = "proto3";
+
+message MessageType {
+  string name = 1;
+  string surname = 2;
+  uint32 birthDate = 3;
+  repeated string phoneNumbers = 4;
+}
+```
+
+To get a file of Protobuf messages to insert, this example has ClickHouse write one:
+
+```bash
+$ echo "SELECT 'Aisha' AS name, 'Khan' AS surname, 19920815 AS birthDate, ['(555) 247-8903', '(555) 612-3457'] AS phoneNumbers FORMAT Protobuf" | curl 'http://localhost:8123/?format_schema=message:MessageType' --data-binary @- > messages.bin
+```
+
+To insert the file, name the schema file and the message type in `format_schema`:
+
+```bash
+$ curl 'http://localhost:8123/?query=INSERT%20INTO%20protobuf_messages%20FORMAT%20Protobuf&format_schema=message:MessageType' --data-binary @messages.bin
+```
+
+When no schema file can be placed on the server, as in ClickHouse Cloud, send the schema itself with [`format_schema_source`](/reference/settings/formats/format-schema#format_schema_source) set to `string`, and name the message type in [`format_schema_message_name`](/reference/settings/formats/format-schema#format_schema_message_name).
+curl's `--url-query` option (curl 7.87 and later) URL-encodes each parameter, so the query and the schema can be written as they are:
+
+```bash
+$ curl 'http://localhost:8123/' \
+    --url-query 'query=INSERT INTO protobuf_messages FORMAT Protobuf' \
+    --url-query 'format_schema_source=string' \
+    --url-query 'format_schema=syntax = "proto3"; message MessageType { string name = 1; string surname = 2; uint32 birthDate = 3; repeated string phoneNumbers = 4; }' \
+    --url-query 'format_schema_message_name=MessageType' \
+    --data-binary @messages.bin
+```
+
+To read the table contents:
+
+```bash
+$ curl 'http://localhost:8123/?query=SELECT%20*%20FROM%20protobuf_messages'
+Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
+Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
+```
+
+`Protobuf` expects each message to be prefixed with its length as a varint.
+For a single message without the prefix, use [`ProtobufSingle`](/reference/formats/Protobuf/ProtobufSingle); for rows sent as sub-messages of one `Envelope` message, use [`ProtobufList`](/reference/formats/Protobuf/ProtobufList).
 
 ## Compression {#compression}
 
