@@ -308,7 +308,6 @@ private:
                 return true;
             }
             const libdivide::divider<Int64, libdivide::BRANCHFULL> divider(divisor);
-#pragma clang loop vectorize(disable)
             for (size_t i = 0; i != size; ++i)
             {
                 const Int64 t = whole_seconds(static_cast<Int64>(time_data[i]));

@@ -38,6 +38,14 @@ PRELIMINARY_JOBS = [
     JobNames.FAST_TEST,
 ]
 
+# The `arm_binary` jobs that run in pull requests instead of the LLVM coverage jobs
+# (see `ci/workflows/pull_request.py`).
+COVERAGE_REPLACEMENT_JOBS = [
+    j.name
+    for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+    + JobConfigs.integration_test_arm_binary_coverage_replacement_pr_jobs
+]
+
 BUILDS_FOR_TESTS = [
     j.name
     for j in JobConfigs.build_jobs
@@ -103,7 +111,8 @@ def _has_build_digest_changes(changed_files):
 # or edit a test case. `_has_build_digest_changes` only tracks whether the
 # *compiled binary* can change, so a PR that only touches one of these would
 # otherwise be auto-skipped as "tests-only" and could never exercise the
-# coverage-specific code it just modified.
+# coverage-specific code it just modified. The `arm_binary` jobs that replace the
+# coverage jobs in pull requests (`COVERAGE_REPLACEMENT_JOBS`) use the same rule.
 _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/llvm_coverage_job.py",
     "ci/jobs/functional_tests.py",
@@ -118,6 +127,9 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/newly_covered_lines.py",
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
+    # Exports per-test coverage and runs the post-export selector smoke.
+    "ci/jobs/scripts/functional_tests/export_coverage.py",
+    "ci/jobs/scripts/coverage_selection.py",
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
     # Both set LLVM_PROFILE_FILE for the servers, i.e. whether their profiles
     # are continuous-mode kill-safe.
@@ -125,6 +137,8 @@ _COVERAGE_PIPELINE_PATHS = (
     "tests/integration/helpers/cluster.py",
     "ci/defs/job_configs.py",
     "ci/defs/defs.py",
+    # Schedules the coverage jobs and their `arm_binary` replacements in pull requests.
+    "ci/workflows/pull_request.py",
     "tests/clickhouse-test",
     "tests/config/",
 )
@@ -396,6 +410,9 @@ _PIPELINE_NOTES = {
     Labels.CI_NO_COVERAGE: (
         "Label `ci-no-coverage` skips coverage jobs and the `LLVM Coverage` merge job."
     ),
+    Labels.CI_COVERAGE: (
+        "Label `ci-coverage` runs the LLVM coverage jobs and the `LLVM Coverage` merge job."
+    ),
 }
 
 
@@ -617,31 +634,43 @@ def should_skip_job(job_name):
     # Skip the whole coverage family together: the coverage build, the amd_llvm_coverage test shards, the excluded_from_llvm jobs
     # (they only run the tests the coverage shards skip, so they are pointless without them), and the final "LLVM Coverage" merge job.
     #
-    # This also fires automatically, without the label, whenever a PR has no build-digest-affecting
-    # changes (i.e. it only touches tests/docs/CI scripts) AND does not touch the coverage pipeline's
-    # own code (`_has_coverage_pipeline_changes`) - a PR fixing a bug in llvm_coverage_job.py, this
-    # hook, or the coverage-relevant parts of functional_tests.py/integration_test_job.py must still
-    # be able to run the jobs it changed, even though it changes no compiled-binary path. Coverage
-    # numbers only move when the compiled binary changes, so an ordinary tests-only PR would produce
-    # coverage identical to master - running any part of the family just burns CI time on profdata that
-    # the (also-skipped) merge job would never consume. Master itself is unaffected (pr_number gate):
+    # Pull requests run the family only with the `ci-coverage` label; by default they run the same
+    # test configurations on the `arm_binary` build instead (`COVERAGE_REPLACEMENT_JOBS`), which
+    # finds the same failures several times cheaper. Master itself is unaffected (pr_number gate):
     # its coverage runs must always publish a complete llvm_coverage.info for later PRs to compare against.
     if (
         "llvm_coverage" in job_name
         or "excluded_from_llvm" in job_name
         or job_name == JobNames.LLVM_COVERAGE
-    ) and (
-        Labels.CI_NO_COVERAGE in _info_cache.pr_labels
-        or (
-            _info_cache.pr_number > 0
-            and not _has_build_digest_changes(_info_cache.get_changed_files() or [])
-            and not _has_coverage_pipeline_changes(_info_cache.get_changed_files() or [])
-        )
     ):
         if Labels.CI_NO_COVERAGE in _info_cache.pr_labels:
             _add_pipeline_note(Labels.CI_NO_COVERAGE)
             return True, f"Skipped, labeled with '{Labels.CI_NO_COVERAGE}'"
-        return True, "Skipped: no build-affecting changes; coverage would be identical to master"
+        if _info_cache.pr_number > 0:
+            if Labels.CI_COVERAGE not in _info_cache.pr_labels:
+                return True, f"Skipped: pull requests run LLVM coverage only with the '{Labels.CI_COVERAGE}' label"
+            _add_pipeline_note(Labels.CI_COVERAGE)
+
+    # With `ci-coverage` the coverage jobs run these configurations themselves.
+    if (
+        job_name in COVERAGE_REPLACEMENT_JOBS
+        and _info_cache.pr_number > 0
+        and Labels.CI_COVERAGE in _info_cache.pr_labels
+    ):
+        return True, f"Skipped, labeled with '{Labels.CI_COVERAGE}' - the LLVM coverage jobs run this configuration"
+
+    # The replacement jobs keep the rule the coverage jobs had before they became opt-in: this also
+    # fires whenever a PR has no build-digest-affecting changes (i.e. it only touches tests/docs/CI
+    # scripts) AND does not touch the test pipeline's own code (`_has_coverage_pipeline_changes`).
+    # The changed tests themselves run in the targeted and flaky-check jobs, and rerunning the whole
+    # suite on a binary identical to master's would find nothing new.
+    if (
+        job_name in COVERAGE_REPLACEMENT_JOBS
+        and _info_cache.pr_number > 0
+        and not _has_build_digest_changes(_info_cache.get_changed_files() or [])
+        and not _has_coverage_pipeline_changes(_info_cache.get_changed_files() or [])
+    ):
+        return True, "Skipped: no build-affecting changes; the full suite would run on a binary identical to master"
 
     if not _is_bugfix_pr() and "Bugfix" in job_name:
         # Don't skip if the corresponding test job file was changed
@@ -728,16 +757,16 @@ def should_skip_job(job_name):
 
     # If only CI scripts changed (no product code), run a minimal set of tests
     # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
-    # The whole coverage family is already skipped above whenever the build is
-    # unaffected, so this only narrows down the plain (non-coverage) test jobs.
+    # The coverage family and its `arm_binary` replacements are already handled above,
+    # so this only narrows down the other plain (non-coverage) test jobs.
     if changed_files and all(
         f.startswith("ci/") and f.endswith(".py") for f in changed_files
     ):
         if JobNames.STATELESS in job_name:
             match = re.search(r"(\d)/\d", job_name)
-            if (
-                (match and match.group(1) != "1")
-                or ("sequential" in job_name and "selected tests" not in job_name)
+            if (match and match.group(1) != "1") or (
+                "sequential" in job_name
+                and "targeted" not in job_name
             ):
                 return True, "Skipped: only CI scripts changed; running stateless batch 1 only"
 
