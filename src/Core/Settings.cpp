@@ -5693,6 +5693,8 @@ Push a subcolumn read through a subquery or a CTE, so that the subquery projects
 
 For example, `WITH foo AS (SELECT * FROM t) SELECT tup.a FROM foo` reads only the `tup.a` subcolumn instead of the whole `tup` column.
 
+Only a direct subcolumn access (`tup.a`, `getSubcolumn(tup, 'a')`) is pushed. A function that is otherwise rewritten to a subcolumn read by `optimize_functions_to_subcolumns`, such as `length(arr)` or `tupleElement(tup, 'a')`, still reads the whole column from a subquery.
+
 The optimization is not applied when it would change the rows the subquery produces, for example when the subquery uses `DISTINCT`, `GROUP BY`, `LIMIT BY` or window functions.
 
 Possible values:

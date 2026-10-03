@@ -25,7 +25,7 @@ SELECT (SELECT count() FROM foo GROUP BY r HAVING r.a = 'x'), r.a FROM foo ORDER
 
 SELECT 'table function that cannot read subcolumns';
 INSERT INTO FUNCTION file(currentDatabase() || '_05257.tsv', 'TSV', 'tup Tuple(a String, b Int32), arr Array(UInt32)')
-SELECT tup, arr FROM t_subcolumn_pushdown_nested SETTINGS engine_file_truncate_on_insert = 1;
+SETTINGS engine_file_truncate_on_insert = 1 VALUES (('x', 1), [1, 2]), (('y', 2), [3]);
 SELECT countIf(explain LIKE '%column_name: tup.a,%'), countIf(explain LIKE '%column_name: arr.size0,%')
 FROM (EXPLAIN QUERY TREE SELECT tup.a, length(arr) FROM (SELECT tup, arr FROM file(currentDatabase() || '_05257.tsv', 'TSV', 'tup Tuple(a String, b Int32), arr Array(UInt32)')));
 SELECT tup.a, length(arr) FROM (SELECT tup, arr FROM file(currentDatabase() || '_05257.tsv', 'TSV', 'tup Tuple(a String, b Int32), arr Array(UInt32)')) ORDER BY ALL;

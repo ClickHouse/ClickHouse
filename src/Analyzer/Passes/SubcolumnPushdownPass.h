@@ -14,6 +14,9 @@ namespace DB
   *
   * This enables subcolumn pruning - only the needed subcolumns are read.
   *
+  * Only direct subcolumn accesses (getSubcolumn calls) are pushed. Functions that FunctionToSubcolumnsPass
+  * turns into subcolumn reads for table columns (length(arr), tupleElement(tup, 'a'), ...) are not.
+  *
   * Example:
   * WITH foo AS (SELECT * FROM table)  -- projects 'event' Tuple
   * SELECT event.class_name FROM foo   -- needs only event.class_name

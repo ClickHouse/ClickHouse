@@ -9,6 +9,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -232,6 +233,65 @@ void collectSubcolumnAccessesExposedToAggregationInAllScopes(const QueryTreeNode
         collectSubcolumnAccessesExposedToAggregationInAllScopes(child, exposed);
 }
 
+/// A column of an outer query that a subquery lists among its correlated columns must not be replaced by a
+/// subcolumn inside that subquery: the list would keep naming the whole column, and decorrelation would then
+/// look for the subcolumn in a join that carries only the whole column (`NOT_FOUND_COLUMN_IN_BLOCK`).
+/// `FunctionToSubcolumnsPass` keeps away from such columns for the same reason. Collect the `getSubcolumn`
+/// nodes whose column is a correlated column of one of the enclosing queries: those must be left alone.
+using CorrelatedColumns = std::vector<std::pair<const IQueryTreeNode *, String>>;
+
+void collectSubcolumnAccessesOfCorrelatedColumns(const QueryTreeNodePtr & node, CorrelatedColumns & correlated_columns, NodeSet & exposed)
+{
+    if (!node)
+        return;
+
+    const ListNode * node_correlated_columns = nullptr;
+    if (const auto * query_node = node->as<QueryNode>())
+        node_correlated_columns = &query_node->getCorrelatedColumns();
+    else if (const auto * union_node = node->as<UnionNode>())
+        node_correlated_columns = &union_node->getCorrelatedColumns();
+
+    size_t correlated_columns_size_before = correlated_columns.size();
+    if (node_correlated_columns)
+    {
+        for (const auto & correlated_column : node_correlated_columns->getNodes())
+        {
+            const auto * column_node = correlated_column->as<ColumnNode>();
+            if (!column_node)
+                continue;
+
+            auto column_source = column_node->getColumnSourceOrNull();
+            if (column_source)
+                correlated_columns.emplace_back(column_source.get(), column_node->getColumnName());
+        }
+    }
+
+    if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->getFunctionName() == "getSubcolumn")
+    {
+        const auto & args = function_node->getArguments().getNodes();
+        if (!args.empty())
+        {
+            if (const auto * column_node = args[0]->as<ColumnNode>())
+            {
+                auto column_source = column_node->getColumnSourceOrNull();
+                for (const auto & [correlated_column_source, correlated_column_name] : correlated_columns)
+                {
+                    if (column_source.get() == correlated_column_source && column_node->getColumnName() == correlated_column_name)
+                    {
+                        exposed.insert(node.get());
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    for (const auto & child : node->getChildren())
+        collectSubcolumnAccessesOfCorrelatedColumns(child, correlated_columns, exposed);
+
+    correlated_columns.resize(correlated_columns_size_before);
+}
+
 /// Collect all getSubcolumn calls that can be optimized, plus all columns referencing each source.
 /// Groups by source node so we can clone each source only once and update all references.
 class CollectSubcolumnAccessesVisitor : public InDepthQueryTreeVisitor<CollectSubcolumnAccessesVisitor>
@@ -266,7 +326,7 @@ public:
         if (args.size() != 2)
             return;
 
-        /// This access is evaluated after an aggregation and is not a grouping key, see above.
+        /// This access is evaluated after an aggregation and is not a grouping key, or reads a correlated column, see above.
         if (nodes_to_skip.contains(node.get()))
             return;
 
@@ -406,9 +466,12 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
     if (!context->getSettingsRef()[Setting::optimize_push_subcolumns_into_subqueries])
         return;
 
-    /// Collect all subcolumn accesses and all columns grouped by source, except those evaluated after an aggregation.
+    /// Collect all subcolumn accesses and all columns grouped by source, except those evaluated after an aggregation
+    /// and those of correlated columns.
     NodeSet nodes_to_skip;
     collectSubcolumnAccessesExposedToAggregationInAllScopes(query_tree_node, nodes_to_skip);
+    CorrelatedColumns correlated_columns;
+    collectSubcolumnAccessesOfCorrelatedColumns(query_tree_node, correlated_columns, nodes_to_skip);
     CollectSubcolumnAccessesVisitor collector(context, std::move(nodes_to_skip));
     collector.visit(query_tree_node);
 
