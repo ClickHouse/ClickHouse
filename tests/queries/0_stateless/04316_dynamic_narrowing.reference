@@ -1,0 +1,131 @@
+-- 1. homogeneous Int64 roundtrip
+1000	0	999
+-- 2. two homogeneous parts (Int64 + String)
+2000
+Int64	1000
+String	1000
+-- 3. after merge
+2000
+Int64	1000
+String	1000
+0
+1
+2
+str_0
+str_1
+str_10
+-- 4. NULLs + Int64
+900	300	600
+1	899
+-- 5. all NULLs
+100	100
+-- 6. single row
+1	42	Int64
+-- 7. empty insert
+0
+-- 8a. before detach
+500	0	499
+-- 8b. after attach
+500	0	499
+-- 9. mixed narrowed + non-narrowed parts
+200
+Int64	150
+String	50
+-- 9b. after merge
+200
+Int64	150
+String	50
+-- 10. four typed parts
+Date	100
+Float64	100
+Int64	100
+String	100
+-- 10b. after merge
+Date	100
+Float64	100
+Int64	100
+String	100
+400
+-- 11a. JSON partitioned by action_type
+3	2
+4	3
+1	10	true	12345
+2	5	false	67890
+3	10	true	11111
+4	100	5
+5	200	10
+-- 11b. JSON after reattach
+1	10	true	12345
+2	5	false	67890
+3	10	true	11111
+4	100	5
+5	200	10
+-- 12. Array(Dynamic)
+1	[1,2,3]
+2	[10,20]
+-- 13a. subcolumn matching narrowed type
+0
+1
+2
+-- 13b. subcolumn NOT matching narrowed type (all NULL)
+\N
+\N
+\N
+-- 13c. null_map subcolumn on no-null narrowed part
+100	100
+-- 13d. null_map subcolumn on with-null narrowed part
+100	25
+-- 14. mutation preserving type
+50	50
+1000
+-- 15a. no-null part substreams
+value
+value.dynamic_structure
+-- 15b. with-null part substreams
+value
+value.dynamic_structure
+value.null
+-- 16a. Tuple nested subcolumn .a
+0
+1
+2
+-- 16b. Tuple nested subcolumn .b
+s0
+s1
+s2
+-- 16c. Array .size0 subcolumn
+0
+1
+2
+3
+4
+-- 16d. Tuple .a with allow_nullable_tuple_in_extracted_subcolumns=1 (non-nullable storage)
+UInt32	0
+UInt32	1
+UInt32	2
+-- 17. JSON merge: narrowed path "a" is still a dynamic path after merge
+1	10
+2	20
+3	30
+4	40
+5	50
+-- 17b. Merged part exists
+1
+-- 18. NARROWED-with-NULLs merge
+200	59
+-- 19. Nullable narrowed Tuple nested .a
+0
+1
+2
+0
+4
+5
+-- 19b. Nullable narrowed Tuple nested .a with allow_nullable_tuple_in_extracted_subcolumns=1
+UInt32	0
+UInt32	1
+UInt32	2
+UInt32	0
+UInt32	4
+UInt32	5
+-- 20. V3 sources merged into v4 narrowed part
+200	59

@@ -1029,7 +1029,8 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
         nested_name_to_store,
         is_null_map_subcolumn,
         nullable_added_by_extraction,
-        selected_subcolumn_is_null_map);
+        selected_subcolumn_is_null_map,
+        dynamic_serialization.getSerializationInfoSettings());
 
     if (data.column)
     {
