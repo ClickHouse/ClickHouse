@@ -2,7 +2,10 @@
 #include <Columns/ColumnSparse.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/CompressionCodecQuantized.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MarkCache.h>
@@ -22,6 +25,11 @@
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool quantized_vector_one_block_per_row;
+}
 
 namespace ErrorCodes
 {
@@ -240,6 +248,20 @@ void MergeTreeDataPartWriterWide::addStreams(
             max_compress_block_size = settings.max_compress_block_size;
         /// Clamp to prevent absurd memory allocations from fuzzed or misconfigured column settings.
         max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
+
+        /// Special handling for Quantized vector columns: one full-precision vector per compressed block.
+        if ((*storage_settings)[MergeTreeSetting::quantized_vector_one_block_per_row]
+            && SerializationQuantizedVector::isVectorElementsSubstream(substream_path))
+        {
+            if (auto quantized_params = tryExtractQuantizedCodecParams(effective_codec_desc))
+            {
+                if (const auto * array_type = typeid_cast<const DataTypeArray *>(name_and_type.type.get()))
+                {
+                    if (auto payload_bytes = getFullPrecisionVectorBytesPerRow(*array_type, *quantized_params))
+                        max_compress_block_size = *payload_bytes;
+                }
+            }
+        }
 
         /// A write buffer is allocated per stream below, and a single column can own thousands of
         /// streams (a Map with many buckets, a deeply nested Array or Tuple), so the threshold is

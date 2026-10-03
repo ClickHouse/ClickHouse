@@ -15,6 +15,12 @@
 #include <Common/typeid_cast.h>
 #include <IO/SharedThreadPools.h>
 #include <Compression/CachedCompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressionCodecQuantized.h>
+#include <Compression/CompressionInfo.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
+#include <IO/ReadBufferFromMemory.h>
 
 namespace DB
 {
@@ -24,9 +30,16 @@ namespace
     constexpr auto DATA_FILE_EXTENSION = ".bin";
 }
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool quantized_vector_one_block_per_row;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int CORRUPTED_DATA;
 }
 
 MergeTreeReaderWide::MergeTreeReaderWide(
@@ -127,7 +140,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
     /// so if reading can be asynchronous, it will also be performed in parallel for all columns.
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
-        if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+        if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos) || fixed_size_lazy_reads.contains(pos))
             continue;
 
         try
@@ -164,6 +177,11 @@ size_t MergeTreeReaderWide::readRows(
         if (num_columns == 0)
             return max_rows_to_read;
 
+        if (!continue_reading)
+            fixed_size_lazy_row = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(from_mark);
+        const size_t total_rows = data_part_info_for_read->getRowCount();
+        const size_t fixed_size_lazy_rows_to_read = fixed_size_lazy_row < total_rows ? std::min(max_rows_to_read, total_rows - fixed_size_lazy_row) : 0;
+
         prefetchForAllColumns(Priority{}, num_columns, from_mark, continue_reading, /*deserialize_prefixes=*/ true);
         deserializePrefixForAllColumns(num_columns, from_mark);
 
@@ -182,6 +200,13 @@ size_t MergeTreeReaderWide::readRows(
             auto & column = res_columns[pos];
             if (!column)
                 column = column_to_read.type->createColumn(*serializations[pos]);
+
+            if (auto it = fixed_size_lazy_reads.find(pos); it != fixed_size_lazy_reads.end())
+            {
+                readFixedSizeLazyRowsByPosition(it->second, *column, fixed_size_lazy_row, fixed_size_lazy_rows_to_read);
+                read_rows = std::max(read_rows, fixed_size_lazy_rows_to_read);
+                continue;
+            }
 
             try
             {
@@ -217,6 +242,7 @@ size_t MergeTreeReaderWide::readRows(
 
         streams.clearPrefetched();
         caches.clear();
+        fixed_size_lazy_row += fixed_size_lazy_rows_to_read;
 
         /// NOTE: positions for all streams must be kept in sync.
         /// In particular, even if for some streams there are no rows to be read,
@@ -545,7 +571,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
         DeserializeBinaryBulkStateMap deserialize_state_map;
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+            if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos) || fixed_size_lazy_reads.contains(pos))
                 continue;
 
             try
@@ -782,6 +808,87 @@ std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColum
     }
 
     return column_to_streams;
+}
+
+void MergeTreeReaderWide::prepareLazyMaterialization(const PaddedPODArray<UInt64> * rows)
+{
+    lazy_rows = rows;
+    fixed_size_lazy_reads.clear();
+    if (!(*storage_settings)[MergeTreeSetting::quantized_vector_one_block_per_row])
+        return;
+    const auto & checksums = data_part_info_for_read->getChecksums();
+    const ISerialization::SubstreamPath elements_substream = SerializationQuantizedVector::vectorElementsSubstreamPath();
+
+    for (size_t pos = 0; rows && pos < columns_to_read.size(); ++pos)
+    {
+        const auto & column = columns_to_read[pos];
+        const auto * quantized = typeid_cast<const SerializationQuantizedVector *>(serializations[pos].get());
+        if (!quantized || column.isSubcolumn() || isColumnDroppedByPendingMutation(pos))
+            continue;
+
+        const auto * array_type = typeid_cast<const DataTypeArray *>(column.type.get());
+        if (!array_type)
+            continue;
+
+        const auto row_bytes = getFullPrecisionVectorBytesPerRow(*array_type, quantized->getParams());
+        if (!row_bytes)
+            continue;
+
+        const auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+            column, elements_substream, DATA_FILE_EXTENSION, checksums, storage_settings);
+        if (!stream_name)
+            continue;
+
+        const size_t block_bytes = getCompressedBlockOnDiskSize(*row_bytes);
+        const String bin_path = *stream_name + DATA_FILE_EXTENSION;
+
+        /// Parts written before the one-vector-per-block layout are read the usual way.
+        if (!isFixedPayloadSizeOneBlockPerRow(
+                data_part_info_for_read->getFileSizeOrZero(bin_path), data_part_info_for_read->getRowCount(), *row_bytes))
+            continue;
+
+        auto read_settings = settings.read_settings.adjustBufferSize(block_bytes);
+        read_settings.useForPositionalReadAt();
+        auto buf = data_part_info_for_read->getDataPartStorage()->readFile(bin_path, read_settings, block_bytes);
+        if (!buf->supportsReadAt())
+            continue;
+
+        fixed_size_lazy_reads[pos] = FixedSizeLazyRead{
+            std::move(buf),
+            quantized->getVectorElementsSerialization(),
+            quantized->getParams().dimensions,
+            std::string(block_bytes, '\0')};
+    }
+}
+
+void MergeTreeReaderWide::readFixedSizeLazyRowsByPosition(FixedSizeLazyRead & fixed_size_lazy_read, IColumn & column, size_t from_row, size_t num_rows)
+{
+    auto & column_array = assert_cast<ColumnArray &>(column);
+    auto & data = column_array.getData();
+    auto & block = fixed_size_lazy_read.block;
+
+    /// Rows that were not requested get an empty array, the reader chain filters them out.
+    const auto * wanted = std::lower_bound(lazy_rows->begin(), lazy_rows->end(), from_row);
+    for (size_t row = from_row; row < from_row + num_rows; ++row)
+    {
+        if (wanted != lazy_rows->end() && *wanted == row)
+        {
+            ++wanted;
+            if (fixed_size_lazy_read.buf->readBigAt(block.data(), block.size(), row * block.size(), {}) != block.size())
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read the vector of row {}", row);
+
+            /// Verifies the checksum and decompresses straight into the column.
+            ReadBufferFromMemory compressed(block.data(), block.size());
+            CompressedReadBuffer decompressed(compressed);
+            if (!settings.checksum_on_read)
+                decompressed.disableChecksumming();
+            const size_t size_before = data.size();
+            fixed_size_lazy_read.element_serialization->deserializeBinaryBulk(data, decompressed, fixed_size_lazy_read.dimensions, 0);
+            if (data.size() != size_before + fixed_size_lazy_read.dimensions || !decompressed.eof())
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected size of the vector block of row {}", row);
+        }
+        column_array.getOffsets().push_back(data.size());
+    }
 }
 
 }

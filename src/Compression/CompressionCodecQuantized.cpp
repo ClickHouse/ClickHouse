@@ -1,5 +1,6 @@
 #include <Compression/CompressionCodecQuantized.h>
 #include <Compression/CompressionInfo.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/registerCompressionCodecs.h>
 #include <Common/ProductQuantizer.h>
@@ -180,6 +181,15 @@ std::optional<QuantizedCodecParams> tryExtractQuantizedCodecParams(const ASTPtr 
     }
 
     return {};
+}
+
+std::optional<size_t> getFullPrecisionVectorBytesPerRow(const DataTypeArray & array_type, const QuantizedCodecParams & params)
+{
+    const size_t element_size = array_type.getNestedType()->getSizeOfValueInMemory();
+    if (!element_size || !params.dimensions)
+        return {};
+
+    return params.dimensions * element_size;
 }
 
 void registerCodecQuantized(CompressionCodecFactory & factory)

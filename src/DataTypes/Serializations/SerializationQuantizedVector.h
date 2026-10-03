@@ -33,6 +33,13 @@ public:
     /// Configured from the codec, not from the type, so the identity carries the parameters.
     String getCustomSerializationIdentity() const override;
 
+    const QuantizedCodecParams & getParams() const { return params; }
+
+    /// Nested full precision vector values substream (`ArrayElements` → `Regular`; one compressed block per vector on wide parts).
+    static bool isVectorElementsSubstream(const ISerialization::SubstreamPath & path);
+    static ISerialization::SubstreamPath vectorElementsSubstreamPath();
+    SerializationPtr getVectorElementsSerialization() const;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

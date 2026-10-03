@@ -421,6 +421,7 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
     if (lazy_materializing_rows)
     {
         part_rows = &lazy_materializing_rows->rows_in_parts[getInfo().part_index_in_query];
+        readers.main->prepareLazyMaterialization(part_rows);
     }
 
     /// Pass pre-computed text index granules to prewhere readers.
