@@ -40,11 +40,12 @@ TEST(SchedulerCPULeaseAllocation, FullPreemptionReturnsConsumedSlots)
     scheduler.start(ThreadName::TEST_SCHEDULER);
 
     constexpr ResourceCost quantum_ns = 10'000'000;
-    auto allocation = std::make_shared<CPULeaseAllocation>(
-        /*max_threads=*/ 3,
-        ResourceLink{},
-        ResourceLink{.queue = queue.get()},
-        CPULeaseSettings{.quantum_ns = quantum_ns, .report_ns = quantum_ns / 10});
+    CPULeaseSettings settings;
+    settings.quantum_ns = quantum_ns;
+    settings.report_ns = quantum_ns / 10;
+    ResourceLink worker_link;
+    worker_link.queue = queue.get();
+    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 3, ResourceLink{}, worker_link, settings);
 
     // The free master request is granted immediately, the first worker request takes the only slot,
     // and the second one waits in the queue.
