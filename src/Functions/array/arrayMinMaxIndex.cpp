@@ -53,7 +53,7 @@ struct ArrayMinMaxIndexImpl
             }
         };
 
-        const bool handled = castTypeToEither<
+        bool handled = castTypeToEither<
             ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
             ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
             ColumnFloat32, ColumnFloat64,
@@ -66,6 +66,36 @@ struct ArrayMinMaxIndexImpl
             });
             return true;
         });
+
+        if (!handled)
+        {
+            handled = castTypeToEither<
+                ColumnInt128, ColumnInt256,
+                ColumnUInt128, ColumnUInt256,
+                ColumnDecimal<Decimal128>, ColumnDecimal<Decimal256>>(mapped.get(), [&](const auto & column)
+            {
+                const auto * data = column.getData().data();
+                fill([&](size_t begin, size_t end)
+                {
+                    size_t best = begin;
+                    for (size_t i = begin + 1; i < end; ++i)
+                    {
+                        if constexpr (is_min)
+                        {
+                            if (data[i] < data[best])
+                                best = i;
+                        }
+                        else
+                        {
+                            if (data[i] > data[best])
+                                best = i;
+                        }
+                    }
+                    return best;
+                });
+                return true;
+            });
+        }
 
         if (!handled)
         {
