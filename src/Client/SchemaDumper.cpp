@@ -3551,15 +3551,35 @@ bool materializedViewMayNeedBadSelectGate(
     return selectMayOutputUnknownColumn(*create->select, target_columns);
 }
 
-void markMaterializedViewsNeedingBadSelectGate(std::vector<TableInfo> & tables, const ContextPtr & context)
+void markMaterializedViewsNeedingBadSelectGate(
+    std::vector<TableInfo> & tables, const ContextPtr & context, const std::set<String> & user_defined_functions, std::ostream & err)
 {
     std::map<std::pair<String, String>, const TableInfo *> emitted_tables;
     for (const auto & table : tables)
         if (table.emit)
             emitted_tables.emplace(std::pair(table.database, table.name), &table);
     for (auto & table : tables)
-        if (table.emit)
-            table.needs_bad_select_gate = materializedViewMayNeedBadSelectGate(table, emitted_tables, context);
+    {
+        if (!table.emit)
+            continue;
+        table.needs_bad_select_gate = materializedViewMayNeedBadSelectGate(table, emitted_tables, context);
+
+        /// The dump does not create user-defined functions; a stored CREATE still calls one only if it predates the function.
+        const ASTPtr ast = user_defined_functions.empty() ? nullptr : tryParseCreate(table.create_query);
+        std::set<String> called;
+        if (ast)
+            forEachNode(*ast, [&](const IAST & node)
+            {
+                if (const auto * function = node.as<ASTFunction>(); function && user_defined_functions.contains(function->name))
+                    called.insert(function->name);
+            });
+        for (const auto & name : called)
+            err << "Warning: " << backQuoteIfNeed(table.database) << "." << backQuoteIfNeed(table.name)
+                << " calls user-defined function " << backQuoteIfNeed(name) << ", which this dump does not create.\n";
+        /// Such a materialized view's SELECT does not analyze at replay, so it needs the gate.
+        if (!called.empty() && ast->as<ASTCreateQuery>() && ast->as<ASTCreateQuery>()->is_materialized_view)
+            table.needs_bad_select_gate = true;
+    }
 }
 
 }
@@ -3733,7 +3753,10 @@ void dumpDatabaseSchema(
         reportDependenciesOutsideDumpSet(tables, database_named_collections, target_databases, err);
         reportMaskedSecrets(tables, create_database_query_by_db, err);
         order = orderTablesByDependencies(tables);
-        markMaterializedViewsNeedingBadSelectGate(tables, context);
+        const std::vector<String> user_defined_functions = fetchStringColumn(connection, timeouts, client_info,
+            "SELECT name FROM system.functions WHERE origin != 'System'", context->getSettingsRef());
+        markMaterializedViewsNeedingBadSelectGate(
+            tables, context, std::set<String>(user_defined_functions.begin(), user_defined_functions.end()), err);
     }
 
     if (output_dir.empty())

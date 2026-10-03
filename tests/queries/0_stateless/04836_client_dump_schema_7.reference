@@ -56,6 +56,10 @@ plain views, function gates emitted: 0
 plain views, analyzer gates emitted: 0
 OK: plain views replayed
 plain views, replayed objects: 6
+view calling a later user-defined function, bad-select gate emitted: 1
+view calling a later user-defined function, warning: 1
+OK: view calling a later user-defined function replayed
+view calling a later user-defined function, replayed objects: 1
 plain projections, analyzer gates emitted: 0
 OK: plain projections replayed
 plain projections, replayed objects: 1

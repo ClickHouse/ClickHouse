@@ -231,6 +231,16 @@ CREATE VIEW ${DB}.v_param AS SELECT neighbor(x, 1) AS n FROM ${DB}.mt WHERE x > 
 echo "plain views, function gates emitted: $(grep -cE '^SET (allow_fuzz_query_functions|allow_deprecated_error_prone_window_functions|allow_hyperscan) = 1;' "$DUMP_FILE")"
 echo "plain views, analyzer gates emitted: $(grep -cE '^SET (allow_suspicious_types_in_group_by|allow_suspicious_types_in_order_by|allow_experimental_correlated_subqueries) = 1;' "$DUMP_FILE")"
 replay_local 'plain views' '%'
+# A user-defined function is expanded at CREATE, so a view still calls one only if it predates the function.
+make_dump "
+CREATE TABLE ${DB}.src (x Int64) ENGINE = MergeTree ORDER BY tuple();
+SET allow_materialized_view_with_bad_select = 1;
+CREATE MATERIALIZED VIEW ${DB}.mv_udf (y Int64) ENGINE = Memory AS SELECT later_udf(x) AS y FROM ${DB}.src;
+CREATE FUNCTION later_udf AS x -> x + 1;
+"
+echo "view calling a later user-defined function, bad-select gate emitted: $(grep -c "$BADSEL_RE" "$DUMP_FILE")"
+echo "view calling a later user-defined function, warning: $(grep -c 'calls user-defined function `later_udf`' "$ERR_FILE")"
+replay_local 'view calling a later user-defined function' 'mv%'
 # A projection's GROUP BY and ORDER BY keys can never be Variant or Dynamic, so only a window in it reads a gate.
 make_dump "
 CREATE TABLE ${DB}.proj (k UInt64, x UInt64, PROJECTION p_order (SELECT k, x ORDER BY x), PROJECTION p_group (SELECT x, count() GROUP BY x),
