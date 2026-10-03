@@ -8956,7 +8956,7 @@ async function getServerStatus(server_address, user, password) {
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
     try {
-        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t", headers: { 'Authorization': 'never' } });
+        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t, currentUser() AS u", headers: { 'Authorization': 'never' } });
         if (!response.ok) return false;
         json = await response.json();
         return json;
@@ -17728,15 +17728,41 @@ async function cancel()
     cancelTabRun(getActiveTab());
 }
 
+/// The server URL without the parameters that attach a request to an HTTP session (`session_id`,
+/// `session_check`, `session_timeout`), or `null` if the URL cannot be parsed. The other parameters
+/// are kept byte for byte. The server rejects a concurrent request in the same session with
+/// `SESSION_IS_LOCKED`, so an auxiliary request issued while a query may be running must not join it.
+function serverAddressWithoutSession(server_address) {
+    let url;
+    try { url = new URL(server_address, location.href); } catch (e) { return null; }
+    url.search = url.search.slice(1).split('&').filter(p => !/^session_(id|check|timeout)(=|$)/.test(p)).join('&');
+    return url.href;
+}
+
+/// Offer the connection's login to the browser's password manager, so it can be autofilled on the next
+/// visit. `PasswordCredential` rejects an empty `id` (as it rejects an empty password) with a
+/// `TypeError`, and the browser may not implement it at all (Firefox has no `PasswordCredential`), so
+/// both cases are checked up front instead of throwing out of every Run. An empty `user` field makes
+/// the server authenticate the request as its `default_session_user`, which is server configuration
+/// (not necessarily `default`), so the real name is asked from the server (`currentUser` in
+/// `getServerStatus`, sent without a `user` parameter) and the login is saved under it: the refilled
+/// name then selects the same account explicitly. The probe runs while the query of this Run may be in
+/// flight, so it is sent outside of the connection's HTTP session (`serverAddressWithoutSession`).
+/// Nothing is saved if the server cannot tell, which includes a server URL with a userinfo
+/// (`http://alice@host:8123/`): `fetch` refuses URLs with credentials, so such a connection does not
+/// work from this page at all. Returns a promise for tests.
 function storeCredentials() {
-    if (password_elem.value) {
-        const cred = new PasswordCredential({
-            id: user_elem.value,
-            password: password_elem.value,
-            name: url_elem.value,
-        });
-        navigator.credentials.store(cred);
-    }
+    const server_address = url_elem.value;
+    const user = user_elem.value;
+    const password = password_elem.value;
+    if (!password || typeof PasswordCredential !== 'function') return Promise.resolve();
+    const store = id => navigator.credentials.store(new PasswordCredential({ id, password, name: server_address }));
+    if (user) return store(user);
+    const probe_address = serverAddressWithoutSession(server_address);
+    if (!probe_address) return Promise.resolve();
+    return getServerStatus(probe_address, '', password).then(json => {
+        if (json && json.u) return store(json.u);
+    });
 }
 
 /// The "Run" / "Run one" button submits the form; handle it here.
