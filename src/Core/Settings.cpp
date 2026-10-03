@@ -10033,6 +10033,10 @@ Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engin
 )", EXPERIMENTAL, allow_experimental_unique_key, \
         {"26.9", false, false, "Added an alias for setting `allow_experimental_unique_key`."}, \
         {"26.5", false, false, "New setting to gate the experimental UNIQUE KEY clause on MergeTree-family tables. At the time the setting was named `allow_experimental_unique_key`, which is now an alias of it."}) \
+    DECLARE(Bool, allow_experimental_shuffle_query, false, R"(
+Allows using the experimental `LIMIT ... SHUFFLE` clause in `SELECT` queries.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to enable the experimental `LIMIT ... SHUFFLE` clause in `SELECT` queries."}) \
     DECLARE(Bool, enable_alp_codec, false, R"(
 Enables the `ALP` compression codec.
 )", BETA, \
