@@ -363,9 +363,12 @@ public:
     /// that the data survives a power loss. Can be called after the part is fully written and
     /// closed, which allows syncing many parts in one batch at the end of an INSERT instead of
     /// one part at a time as they are written.
-    /// No-op where a finalized file is already durable (object storage), like
-    /// getDirectorySyncGuard() returning nullptr there.
+    /// No-op unless supportsSyncFiles() returns true.
     virtual void syncFiles() const {}
+
+    /// Whether syncFiles() can make the files of an already finalized part durable. If not, the
+    /// part has to be synced through its write buffers as it is written.
+    virtual bool supportsSyncFiles() const { return false; }
 
     virtual void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
     virtual void copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;

@@ -703,7 +703,8 @@ When the fsync of an `INSERT` happens. Has no effect unless `fsync_after_insert`
 The same applies to the patch parts written by lightweight `UPDATE` and `DELETE`. A streaming
 `INSERT` (with `input_format_max_block_wait_ms` other than 0), which can stay open indefinitely,
 does not wait for the query to finish: with `false` it fsyncs the parts of each flushed block
-right after committing them.
+right after committing them. On disks that cannot fsync a file after it was written (object
+storage disks, including `local_blob_storage`) the parts are always synced as they are written.
 )", 0, \
         {"26.10", true, false, "New setting. With fsync_after_insert enabled, the fsync is now done once when the INSERT finishes, over the active parts covering the inserted data, instead of once per part as it is written. previous_value=true so that `compatibility` with earlier versions restores the per-part fsync."}) \
     DECLARE(Bool, fsync_part_directory, false, R"(

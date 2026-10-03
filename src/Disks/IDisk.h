@@ -516,9 +516,14 @@ public:
     /// A file that no longer exists is not an error: the caller enumerates the files from the
     /// disk, and one of them can be removed concurrently, in which case there is nothing left to
     /// make durable.
-    /// The default is a no-op, for the same reason getDirectorySyncGuard() returns nullptr by
-    /// default: on object storage a finalized file is already durable.
+    /// The default is a no-op: only disks that return true from supportsSyncFile() implement it.
     virtual void syncFile(const String & path) const;
+
+    /// Whether syncFile() really makes a finalized file durable. Disks that cannot do that (for
+    /// example object storage, including `local_blob_storage`, where the logical files are not
+    /// the files on the device) have to be synced through the write buffer while the file is
+    /// being written instead.
+    virtual bool supportsSyncFile() const { return false; }
 
     /// Applies new settings for disk in runtime.
     virtual void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map);

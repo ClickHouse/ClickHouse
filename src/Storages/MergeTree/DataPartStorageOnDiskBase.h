@@ -173,6 +173,7 @@ public:
 
     SyncGuardPtr getDirectorySyncGuard() const override;
     void syncFiles() const override;
+    bool supportsSyncFiles() const override;
     bool hasActiveTransaction() const override;
 
     bool isCaseInsensitive() const override;

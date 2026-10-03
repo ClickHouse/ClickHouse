@@ -1138,9 +1138,8 @@ void DataPartStorageOnDiskBase::syncFiles() const
 {
     auto disk = volume->getDisk();
 
-    /// On object storage a finalized file is already durable, and IDisk::syncFile() is a no-op
-    /// there - do not even walk the directory.
-    if (disk->isRemote())
+    /// Parts on such disks are synced as they are written - do not even walk the directory.
+    if (!disk->supportsSyncFile())
         return;
 
     /// The real files on disk, not the part's logical file list: for a packed part the whole part
@@ -1149,6 +1148,11 @@ void DataPartStorageOnDiskBase::syncFiles() const
     collectFilesRecursively(*disk, fs::path(root_path) / part_dir, paths);
 
     parallelSyncFiles(*disk, paths);
+}
+
+bool DataPartStorageOnDiskBase::supportsSyncFiles() const
+{
+    return volume->getDisk()->supportsSyncFile();
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskBase::writeTransactionFile(const String & txn_file_name, WriteMode mode) const
