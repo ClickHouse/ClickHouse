@@ -41,15 +41,18 @@ public:
     {
         size_t num_rows = 0;
         size_t num_defaults = 0;
-        /// Number of aggregated infos (e.g. parts) that contribute a LowCardinality kind. Used by the
-        /// per-table serialization hint to stop reporting LowCardinality once the last such part is gone.
-        /// Maintained only when aggregating infos (`SerializationInfo::add`/`remove`); not serialized.
-        size_t num_low_cardinality_parts = 0;
 
         /// True when `num_defaults` was counted exactly rather than sampled. Consumers
         /// that would produce wrong results from a sampled estimate (trivial count
         /// rewrite, sparsity pruning) must require this flag.
         bool exact_num_defaults = false;
+
+        /// Number of aggregated infos (e.g. parts) that contribute a LowCardinality kind. Used by the
+        /// per-table serialization hint to stop reporting LowCardinality once the last such part is gone.
+        /// Maintained only when aggregating infos (`SerializationInfo::add`/`remove`); not serialized.
+        /// Every column of every part holds a `Data`, so the counter is 32-bit and placed after the flag
+        /// to fit into the padding instead of growing the structure.
+        UInt32 num_low_cardinality_parts = 0;
 
         /// `exact` controls whether `num_defaults` is computed precisely (O(rows)
         /// per column, sets `exact_num_defaults`) or sampled (cheap, leaves the flag
