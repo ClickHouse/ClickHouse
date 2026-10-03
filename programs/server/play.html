@@ -10331,18 +10331,22 @@ function rememberLoginPassword(server_address, user, password) {
 ///
 /// ClickHouse authenticates before it executes the query, so the query's own error (a syntax error, an
 /// unknown table) follows a successful authentication just like a success does. A rejected login is
-/// answered with `401` or `403` (`403` also covers `ACCESS_DENIED`, which does follow a successful
-/// authentication, but the status cannot tell the two apart, so it proves nothing either way). Any
-/// other error proves the authentication only when the server itself produced it, which the
-/// `X-ClickHouse-Exception-Code` header shows: a proxy in front of the server can answer on its own.
-/// The header is not exposed to a cross-origin page, where only a successful response proves it.
+/// answered with `401` or `403`. `403` also covers `ACCESS_DENIED` (a missing privilege), which does
+/// follow a successful authentication: the `X-ClickHouse-Exception-Code` header tells it apart, so such
+/// a response proves the authentication like any other error of the query. Any other error proves the
+/// authentication only when the server itself produced it, which the same header shows: a proxy in
+/// front of the server can answer on its own. The header is not exposed to a cross-origin page, where
+/// only a successful response proves it, and a `403` without it proves nothing either way.
 ///
 /// Without the proof a non-empty password still forgets the passwordless entry: at worst the page then
 /// keeps an autofilled password it would have dropped, which is the pre-existing behaviour. An empty
 /// password is remembered only with the proof, since the entry makes the page drop a saved password.
+const ACCESS_DENIED_ERROR_CODE = '497';
 function rememberAuthenticationOutcome(response, server_address, user, password) {
-    if (response.status === 401 || response.status === 403) return;
-    if (response.ok || response.headers.get('X-ClickHouse-Exception-Code') !== null || password) {
+    const exception_code = response.headers.get('X-ClickHouse-Exception-Code');
+    if (response.status === 401) return;
+    if (response.status === 403 && exception_code?.trim() !== ACCESS_DENIED_ERROR_CODE) return;
+    if (response.ok || exception_code !== null || password) {
         rememberLoginPassword(server_address, user, password);
     }
 }
@@ -17887,6 +17891,8 @@ format_button.addEventListener('click', async (e) => {
 
     /// An error (e.g. a syntax error in the query) is shown in the result pane, as for the other queries.
     format_button.classList.add('busy');
+    /// The formatting query is a request with the live credentials (see `dropAutofilledStalePassword`).
+    dropAutofilledStalePassword();
     const json = await auxiliaryQuery(url_elem.value, user_elem.value, password_elem.value, body,
         '', false, generation);
     format_button.classList.remove('busy');

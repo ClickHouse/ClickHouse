@@ -9,7 +9,8 @@
 ///    successful response with a real password forgets it again;
 ///  - a response carrying the query's own error (a syntax error, `X-ClickHouse-Exception-Code`
 ///    set) follows a successful authentication, so it updates the entry the same way;
-///  - a rejected login (`401` / `403`) never updates the entry;
+///  - a rejected login (`401` / `403`) never updates the entry, but `ACCESS_DENIED` (also `403`,
+///    told apart by `X-ClickHouse-Exception-Code`) follows a successful authentication and does;
 ///  - an error response that did not come from the server (no `X-ClickHouse-Exception-Code`, as
 ///    from a proxy) never remembers an empty password, but a real password still forgets it.
 ///
@@ -129,6 +130,18 @@ async function main() {
         h.rememberAuthenticationOutcome(response(200), server, user, '');
         h.rememberAuthenticationOutcome(response(403, 516), server, user, 'wrong');
         check('auth-failure', '403 with a wrong password does not forget it', remembered(), true);
+        h.rememberAuthenticationOutcome(response(403), server, user, 'secret');
+        check('auth-failure', '403 without the exception code does not forget it', remembered(), true);
+    }
+
+    /// Contract 3a: `ACCESS_DENIED` (also `403`) follows a successful authentication.
+    {
+        const h = loadHelpers(js);
+        const remembered = () => h.loadPasswordlessLogins().has(h.passwordlessLoginKey(server, user));
+        h.rememberAuthenticationOutcome(response(403, 497), server, user, '');
+        check('access-denied', 'ACCESS_DENIED with an empty password remembers it', remembered(), true);
+        h.rememberAuthenticationOutcome(response(403, 497), server, user, 'secret');
+        check('access-denied', 'ACCESS_DENIED with a real password forgets it', remembered(), false);
     }
 
     /// Contract 4: an error that did not come from the server proves nothing for an empty password.

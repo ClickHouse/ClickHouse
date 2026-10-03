@@ -4,8 +4,9 @@ The Web UI remembers the logins whose last successful authentication used an emp
 drop a stale password the browser's password manager autofills for them, and forgets the entry
 once the login authenticates with a real password. The contracts pinned here: an authenticated
 request whose query itself fails (a syntax error) is still a successful authentication and updates
-the entry, a rejected login (`401` / `403`) never does, and an error response that did not come from
-the server (no `X-ClickHouse-Exception-Code`, as from a proxy) never remembers an empty password.
+the entry, a rejected login (`401` / `403`) never does while `ACCESS_DENIED` (also `403`) does, and
+an error response that did not come from the server (no `X-ClickHouse-Exception-Code`, as from a
+proxy) never remembers an empty password.
 
 The stateless suite has no JavaScript runtime, so the contracts are driven by a Node.js
 harness (`passwordless_harness.js`) executed inside the `clickhouse/mysql-js-client` container
