@@ -231,6 +231,7 @@ int main(int argc, char ** argv)
     REGISTER_E2E(UInt32, makeUInt32Columns, 4, 16384, 16);
     REGISTER_E2E(UInt32, makeUInt32Columns, 4, 16384, 256);
 
+    benchmark::MaybeReenterWithoutASLR(argc, argv);
     benchmark::Initialize(&argc, argv);
     benchmark::RunSpecifiedBenchmarks();
     return 0;
