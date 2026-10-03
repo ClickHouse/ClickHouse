@@ -2178,12 +2178,14 @@ bool StorageMergeTree::merge(
             reserved_merge_slot = merge_mutate_executor->tryReserveTaskSlots(1);
             if (reserved_merge_slot == 0)
             {
-                /// The discarded selection may have postponed the next TTL merge of the partition;
-                /// give that back, since no TTL merge is going to run for it. A single-part TTL
-                /// rewrite has no regular-merge fallback, so keeping the partition postponed would
-                /// defer the TTL cleanup or recompression until `merge_with_ttl_timeout` /
-                /// `merge_with_recompression_ttl_timeout` expires, instead of running it as soon as
-                /// a slot frees. A retried selection postpones again if it picks a TTL merge once more.
+                /// The discarded selection may have booked a TTL merge
+                /// (`max_number_of_merges_with_ttl_in_pool`) and postponed the next TTL merge of
+                /// the partition; give both back, since no TTL merge is going to run for it. A
+                /// single-part TTL rewrite has no regular-merge fallback, so keeping the partition
+                /// postponed would defer the TTL cleanup or recompression until
+                /// `merge_with_ttl_timeout` / `merge_with_recompression_ttl_timeout` expires,
+                /// instead of running it as soon as a slot frees. A retried selection books and
+                /// postpones again if it picks a TTL merge once more.
                 if (isTTLMergeType(merge_entry->future_part->merge_type))
                 {
                     std::lock_guard lock(currently_processing_in_background_mutex);
@@ -2191,8 +2193,8 @@ bool StorageMergeTree::merge(
                         merge_entry->future_part->part_info.getPartitionId(), merge_entry->future_part->merge_type);
                 }
 
-                /// Untag the parts and release the disk reservation of the discarded selection.
-                /// Destroying the entry also gives back its `max_number_of_merges_with_ttl_in_pool` slot.
+                /// Untag the parts and release the disk reservation of the discarded selection;
+                /// dropping `merge_entry` gives its TTL merge slot back.
                 merge_entry->finalize();
                 merge_entry.reset();
 
@@ -2576,7 +2578,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         bool scheduled = assignee.scheduleMergeMutateTask(task);
         /// Selecting the TTL merge postponed the next TTL merge of its partition; a merge that never
         /// starts gives that back, so the next selection can pick it up again (see `selectPartsToMerge`).
-        /// Its `max_number_of_merges_with_ttl_in_pool` slot is given back by the entry itself.
+        /// Its TTL merge slot is given back by `merge_entry` itself.
         if (!scheduled && isTTLMergeType(merge_entry->future_part->merge_type))
         {
             std::lock_guard lock(currently_processing_in_background_mutex);
