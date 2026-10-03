@@ -291,7 +291,7 @@ bool hasRowsInFilter(const IColumn & where_column)
     if (const auto * where_column_uint8 = typeid_cast<const ColumnUInt8 *>(&where_column))
         return hasRowsInFilter(*where_column_uint8);
     else
-        return hasRowsInFilter(where_column);
+        return hasRowsInFilter<IColumn>(where_column);
 }
 
 void updateTTLInfoConst(MergeTreeDataPartTTLInfo & ttl_info, const ColumnConst & ttl_column, const IColumn * where_column)
@@ -991,13 +991,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     temp_part->temporary_directory_lock = data.claimTemporaryPartDirectory(data_part_volume->getDisk(), part_dir, may_have_leftover);
 
     auto part_format = data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr);
-    /// UNIQUE KEY parts must use Full part storage: load-time rebuild of the
-    /// dense-index sidecar (`unique_key_index.sst`) calls `removeFileIfExists`
-    /// + `writeFile`, but packed storage only supports these through the writer,
-    /// which is not initialized at load/ATTACH time.
-    if (metadata_snapshot->hasUniqueKey())
-        part_format.storage_type = MergeTreeDataPartStorageType::Full;
-
     auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings(), PartDirIntent::CreateFresh)
         .withPartFormat(part_format)
         .withPartInfo(new_part_info)

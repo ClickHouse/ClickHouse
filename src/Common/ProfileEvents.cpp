@@ -50,6 +50,7 @@
     M(ASTFuzzerOracleMismatches, "Number of oracle mismatches detected by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerSkippedBackupRestore, "Number of fuzzed BACKUP/RESTORE queries the server-side AST fuzzer skipped instead of executing.", ValueType::Number) \
     M(ASTFuzzerSkippedReplicatedDDLInternal, "Number of times the server-side AST fuzzer skipped fuzzing because an internal replicated-database DDL execution (a live ZooKeeperMetadataTransaction) was in flight on the context.", ValueType::Number) \
+    M(ASTFuzzerSkippedCollaborativeWorker, "Number of times the server-side AST fuzzer skipped fuzzing because the context was executing as a collaborative worker for another node's query: a parallel replicas participant or a cluster function worker.", ValueType::Number) \
     M(QueryTimeMicroseconds, "Total time of all queries.", ValueType::Microseconds) \
     M(SelectQueryTimeMicroseconds, "Total time of SELECT queries.", ValueType::Microseconds) \
     M(InsertQueryTimeMicroseconds, "Total time of INSERT queries.", ValueType::Microseconds) \
@@ -105,7 +106,10 @@
     M(MarkCacheHits, "Number of times an entry has been found in the mark cache, so we didn't have to load a mark file.", ValueType::Number) \
     M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
     M(UniqueKeyBitmapLoadMicroseconds, "Time spent reading and deserializing UNIQUE KEY delete-bitmap sidecar files on a DeleteBitmapCache miss.", ValueType::Microseconds) \
-    M(UniqueKeyBitmapUpdates, "Number of UNIQUE KEY delete-bitmap sidecar files written (one per supersession / DELETE commit).", ValueType::Number) \
+    M(UniqueKeyMutexHoldMicroseconds, "Total wall-clock time the per-partition UNIQUE KEY mutex was held across all acquisitions on this server (sum of hold-time microseconds).", ValueType::Microseconds) \
+    M(UniqueKeyDedupProbes, "Number of new-row keys probed against existing parts on the UNIQUE KEY INSERT write-path.", ValueType::Number) \
+    M(UniqueKeyConflictOverwriteRows, "Number of new-row keys that superseded a live row in an existing part on the UNIQUE KEY INSERT write-path.", ValueType::Number) \
+    M(UniqueKeyConflictIgnoredRows, "Number of incoming rows dropped by unique_key_conflict_action = ignore because the key was already live in the partition.", ValueType::Number) \
     M(PrimaryIndexCacheHits, "Number of times an entry has been found in the primary index cache, so we didn't have to load a index file.", ValueType::Number) \
     M(PrimaryIndexCacheMisses, "Number of times an entry has not been found in the primary index cache, so we had to load a index file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
     M(IcebergMetadataFilesCacheHits, "Number of times iceberg metadata files have been found in the cache.", ValueType::Number) \
@@ -115,6 +119,10 @@
     M(PaimonMetadataFilesCacheHits, "Number of times paimon metadata files have been found in the cache.", ValueType::Number) \
     M(PaimonMetadataFilesCacheMisses, "Number of times paimon metadata files have not been found in the paimon metadata cache and had to be read from (remote) disk.", ValueType::Number) \
     M(PaimonMetadataFilesCacheWeightLost, "Approximate number of bytes evicted from the paimon metadata cache.", ValueType::Number) \
+    M(TimeSeriesMetricFamiliesDeduplicationCacheHits, "Number of rows not written to the metric families tables of TimeSeries tables because the deduplication cache already had them or the same insert had already written them.", ValueType::Number) \
+    M(TimeSeriesMetricFamiliesDeduplicationCacheMisses, "Number of rows written to the metric families tables of TimeSeries tables after they were not found in the deduplication cache.", ValueType::Number) \
+    M(TimeSeriesTagsDeduplicationCacheHits, "Number of rows not written to the tags tables of TimeSeries tables because the deduplication cache already had them or the same insert had already written them.", ValueType::Number) \
+    M(TimeSeriesTagsDeduplicationCacheMisses, "Number of rows written to the tags tables of TimeSeries tables after they were not found in the deduplication cache.", ValueType::Number) \
     M(IcebergMetadataReadWaitTimeMicroseconds, "Total time data readers spend waiting for iceberg metadata files to be read and parsed, summed across all reader threads.", ValueType::Microseconds) \
     M(ParquetMetadataCacheHits, "Number of times parquet metadata has been found in the cache.", ValueType::Number) \
     M(ParquetMetadataCacheMisses, "Number of times parquet metadata has not been found in the cache and had to be read from disk.", ValueType::Number) \
@@ -163,6 +171,7 @@
     M(TextIndexLazySegmentsBuilt, "Number of segments actually read and decoded (cache misses) in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyBruteForceIntersections, "Number of brute-force intersections performed in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyLeapfrogIntersections, "Number of leapfrog intersections performed in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazyBruteForceEarlyExits, "Number of brute-force intersections in lazy posting list mode that stopped early because one of the posting lists had no rows in the window, so the intersection is empty.", ValueType::Number) \
     M(TextIndexLazySegmentsSkippedDense, "Number of fully-dense segments padded as a whole (memset for OR, increment for AND) instead of decoding blocks, in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazySegmentsSkippedResolved, "Number of segments skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyBlocksSkippedResolved, "Number of packed blocks skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.", ValueType::Number) \
@@ -289,6 +298,9 @@
     M(ReaderExecutorLongConnectionHits, "Number of windows ReaderExecutor served by reading from an already-open long source connection.", ValueType::Number) \
     M(ReaderExecutorLongConnectionFallbacks, "Number of times ReaderExecutor wanted a long connection but fell back to a one-shot read because no slot was available.", ValueType::Number) \
     M(ReaderExecutorLongConnectionBytes, "Total bytes read through long source connections.", ValueType::Bytes) \
+    M(ReaderExecutorConcurrentDownloadWaits, "Number of times the ReaderExecutor waited for a concurrent downloader to commit a cache segment range.", ValueType::Number) \
+    M(ReaderExecutorConcurrentDownloadWaitTimeouts, "Number of those waits that came back short of the requested overlap. A short but non-empty return means the query advanced at the concurrent downloader's pace; an empty one falls back to reading from source.", ValueType::Number) \
+    M(ReaderExecutorConcurrentDownloadWaitMicroseconds, "Total time the ReaderExecutor spent blocked on concurrent downloaders of cache segments.", ValueType::Microseconds) \
     M(QueryRemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth' throttling.", ValueType::Microseconds) \
     M(QueryLocalReadThrottlerBytes, "Bytes passed through 'max_local_read_bandwidth' throttler.", ValueType::Bytes) \
@@ -370,6 +382,7 @@
     M(ZooKeeperTransactions, "Number of ZooKeeper operations, which include both read and write operations as well as multi-transactions.", ValueType::Number) \
     M(ZooKeeperList, "Number of 'list' (getChildren) requests to ZooKeeper.", ValueType::Number) \
     M(ZooKeeperListRecursive, "Number of 'listRecursive' requests to ZooKeeper.", ValueType::Number) \
+    M(ZooKeeperListWithOptions, "Number of 'listWithOptions' requests to ZooKeeper.", ValueType::Number) \
     M(ZooKeeperCreate, "Number of 'create' requests to ZooKeeper.", ValueType::Number) \
     M(ZooKeeperRemove, "Number of 'remove' requests to ZooKeeper.", ValueType::Number) \
     M(ZooKeeperExists, "Number of 'exists' requests to ZooKeeper.", ValueType::Number) \
@@ -445,6 +458,8 @@
     M(ExternalJoinUncompressedBytes, "Amount of data (uncompressed, before compression) written for JOIN in external memory.", ValueType::Bytes) \
     M(ExternalDistinctWritePart, "Number of times a temporary file was written to disk for DISTINCT in external memory.", ValueType::Number) \
     M(ExternalDistinctMerge, "Number of times temporary files were merged for DISTINCT in external memory.", ValueType::Number) \
+    M(ExternalDistinctTailSpilledRows, "Number of buffered rows selected for spilling before the final external DISTINCT merge.", ValueType::Number) \
+    M(ExternalDistinctTailKeptRows, "Number of buffered rows retained in memory for the final external DISTINCT merge.", ValueType::Number) \
     M(ExternalDistinctCompressedBytes, "Number of compressed bytes written for DISTINCT in external memory.", ValueType::Bytes) \
     M(ExternalDistinctUncompressedBytes, "Amount of data (uncompressed, before compression) written for DISTINCT in external memory.", ValueType::Bytes) \
     \
@@ -503,7 +518,6 @@
     M(DistributedIndexAnalysisScheduledReplicas, "Number of replicas (local replica will be accounted once) to which distributed index analysis has been scheduled", ValueType::Number) \
     M(DistributedIndexAnalysisReplicaUnavailable, "Number of times distributed index analysis failed on one of replicas without fallback (failed during connect)", ValueType::Number) \
     M(DistributedIndexAnalysisReplicaFallback, "Number of times distributed index analysis failed on one of replicas with fallback to local replica", ValueType::Number) \
-    M(DistributedIndexAnalysisParts, "Number of parts send for distributed index analysis", ValueType::Number) \
     M(DistributedIndexAnalysisMissingParts, "Number of missing parts during distributed index analysis that will be resolved locally", ValueType::Number) \
     \
     M(WaitMarksLoadMicroseconds, "Time spent loading marks", ValueType::Microseconds) \
@@ -685,7 +699,13 @@ The server successfully detected this situation and will download merged part fr
     M(RWLockAcquiredWriteLocks, "Number of times a write lock was acquired (in a heavy RWLock).", ValueType::Number) \
     M(RWLockReadersWaitMilliseconds, "Total time spent waiting for a read lock to be acquired (in a heavy RWLock).", ValueType::Milliseconds) \
     M(RWLockWritersWaitMilliseconds, "Total time spent waiting for a write lock to be acquired (in a heavy RWLock).", ValueType::Milliseconds) \
-    M(DNSError, "Total count of errors in DNS resolution", ValueType::Number) \
+    M(DNSError, "Total count of errors in DNS resolution. It counts both the requests that failed among the ones counted by DNSRequests and DNSReverseRequests, and the failures that happen without a request, such as a host name resolving only to addresses that are then rejected by the `dns_allow_resolve_names_to_ipv4`/`dns_allow_resolve_names_to_ipv6` filter. Use DNSRequestError and DNSReverseError to get the numerators that match the corresponding request counters.", ValueType::Number) \
+    M(DNSRequests, "Total count of forward name resolution attempts (host name to addresses) made by the server. An attempt is counted when the name is handed to the system resolver, so names answered locally, for example from `/etc/hosts` or another NSS source, and names that the resolver rejects locally without sending a query, are counted as well. Names served from the internal DNS cache and host names that are already IP address literals are not counted.", ValueType::Number) \
+    M(DNSRequestMicroseconds, "Total time spent in the forward name resolution attempts counted by DNSRequests, including the failed ones counted by DNSRequestError.", ValueType::Microseconds) \
+    M(DNSRequestError, "Total count of failed forward name resolution attempts among the attempts counted by DNSRequests. Both requests that ended with an error and requests that returned no addresses are counted. Unlike DNSError, this event has the same boundary as DNSRequests, so a failure rate can be derived from the two.", ValueType::Number) \
+    M(DNSReverseRequests, "Total count of reverse DNS requests (address to host names, PTR) sent to the resolver, for example to match a client address against a `host_regexp` in the users configuration. Requests served from the DNS cache are not counted.", ValueType::Number) \
+    M(DNSReverseRequestMicroseconds, "Total time spent in reverse DNS requests counted by DNSReverseRequests, including the failed ones counted by DNSReverseError.", ValueType::Microseconds) \
+    M(DNSReverseError, "Total count of failed reverse DNS requests among the requests counted by DNSReverseRequests. Both requests that ended with an error and requests that returned no PTR records are counted, because the resolver reports NXDOMAIN and other non-success statuses by returning an empty answer.", ValueType::Number) \
     M(PartsLockHoldMicroseconds, "Total time spent holding data parts lock in MergeTree tables", ValueType::Microseconds) \
     M(PartsLockWaitMicroseconds, "Total time spent waiting for data parts lock in MergeTree tables", ValueType::Microseconds) \
     M(PartsLocks, "Number of times data parts lock has been acquired for MergeTree tables", ValueType::Number) \
@@ -728,7 +748,6 @@ The server successfully detected this situation and will download merged part fr
     M(ParallelReplicasStealingLeftoversMicroseconds, "Time spent collecting orphaned segments", ValueType::Microseconds) \
     M(ParallelReplicasCollectingOwnedSegmentsMicroseconds, "Time spent collecting segments meant by hash", ValueType::Microseconds) \
     M(ParallelReplicasNumRequests, "Number of requests to the initiator.", ValueType::Number) \
-    M(ParallelReplicasDeniedRequests, "Number of completely denied requests to the initiator", ValueType::Number) \
     M(CacheWarmerBytesDownloaded, "Amount of data fetched into filesystem cache by dedicated background threads.", ValueType::Bytes) \
     M(CacheWarmerDataPartsDownloaded, "Number of data parts that were fully fetched by CacheWarmer.", ValueType::Number) \
     M(IgnoredColdParts, "See setting ignore_cold_parts_seconds. Number of times read queries ignored very new parts that weren't pulled into cache by CacheWarmer yet.", ValueType::Number) \
@@ -806,7 +825,7 @@ The server successfully detected this situation and will download merged part fr
     M(S3DeleteObjects, "Number of S3 API DeleteObject(s) calls.", ValueType::Number) \
     M(S3CopyObject, "Number of S3 API CopyObject calls.", ValueType::Number) \
     M(S3ListObjects, "Number of S3 API ListObjects calls.", ValueType::Number) \
-    M(S3HeadObject,  "Number of S3 API HeadObject calls.", ValueType::Number) \
+    M(S3HeadObject, "Number of S3 API HeadObject calls.", ValueType::Number) \
     M(S3GetObjectTagging, "Number of S3 API GetObjectTagging calls.", ValueType::Number) \
     M(S3CreateMultipartUpload, "Number of S3 API CreateMultipartUpload calls.", ValueType::Number) \
     M(S3UploadPartCopy, "Number of S3 API UploadPartCopy calls.", ValueType::Number) \
@@ -836,6 +855,10 @@ The server successfully detected this situation and will download merged part fr
     M(DiskPlainRewritableS3DirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableS3DirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableLegacyLayoutDiskCount, "Number of the 'plain_rewritable' disks with legacy layout.", ValueType::Number) \
+    M(DiskPlainRewritableUndoStageRetries, "Number of times a step of reversing a failed 'plain_rewritable' metadata transaction had to be repeated because object storage rejected it.", ValueType::Number) \
+    \
+    M(MetadataTransactionRollbacks, "Number of metadata transactions that failed to commit and were rolled back.", ValueType::Number) \
+    M(MetadataTransactionRollbacksFailed, "Number of metadata transaction rollbacks that did not run to completion, so the metadata keeps a part of a transaction that was reported as failed.", ValueType::Number) \
     \
     M(S3Clients, "Number of created S3 clients.", ValueType::Number) \
     M(TinyS3Clients, "Number of S3 clients copies which reuse an existing auth provider from another client.", ValueType::Number) \
@@ -855,6 +878,9 @@ The server successfully detected this situation and will download merged part fr
     M(GlobalMemoryLimitExceeded, "Number of times the global memory limit was exceeded.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheck, "Number of times memory has been allocated without checking for memory constraints.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheckBytes, "Amount of bytes that has been allocated without checking for memory constraints.", ValueType::Number) \
+    M(QueryMemoryDriftSettled, "Number of queries that ended with memory still charged to them (or over-credited). The difference is taken off the per-user tracker, so that it ends at zero for the query.", ValueType::Number) \
+    M(QueryMemoryDriftSettledBytes, "Absolute amount of bytes taken off per-user trackers when queries ended, that is, how far per-query accounting was off.", ValueType::Bytes) \
+    M(MemoryLargeAllocationTraced, "Number of times a stack trace was captured for a single charge to the global memory tracker at or above `min_allocation_size_to_log_stack_trace`.", ValueType::Number) \
     \
     M(AzureGetObject, "Number of Azure API GetObject calls.", ValueType::Number) \
     M(AzureUpload, "Number of Azure blob storage API Upload calls", ValueType::Number) \
@@ -865,6 +891,7 @@ The server successfully detected this situation and will download merged part fr
     M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.", ValueType::Number) \
     M(AzureGetProperties, "Number of Azure blob storage API GetProperties calls.", ValueType::Number) \
     M(AzureCreateContainer, "Number of Azure blob storage API CreateContainer calls.", ValueType::Number) \
+    M(AzureClients, "Number of created Azure blob storage container clients.", ValueType::Number) \
     \
     M(DiskAzureGetObject, "Number of Disk Azure API GetObject calls.", ValueType::Number) \
     M(DiskAzureUpload, "Number of Disk Azure blob storage API Upload calls", ValueType::Number) \
@@ -890,7 +917,6 @@ The server successfully detected this situation and will download merged part fr
     M(CachedReadBufferReadFromSourceBytes, "Bytes read from filesystem cache source (from remote fs, etc)", ValueType::Bytes) \
     M(CachedReadBufferPredownloadedFromSourceBytes, "Bytes read from filesystem cache source for predownload (from remote fs, etc)", ValueType::Bytes) \
     M(CachedReadBufferReadFromCacheBytes, "Bytes read from filesystem cache", ValueType::Bytes) \
-    M(CachedReadBufferPredownloadedBytes, "Bytes read from filesystem cache source. Cache segments are read from left to right as a whole, it might be that we need to predownload some part of the segment irrelevant for the current task just to get to the needed data", ValueType::Bytes) \
     M(CachedReadBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache", ValueType::Bytes) \
     M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache", ValueType::Microseconds) \
     M(CachedReadBufferCacheWriteStopped, "Number of times writing a file segment into the filesystem cache was stopped mid-download (space reservation or the cache write failed), after which the read continues bypassing the cache", ValueType::Number) \
@@ -939,7 +965,6 @@ The server successfully detected this situation and will download merged part fr
     M(FileSegmentLockMicroseconds, "Lock file segment time", ValueType::Microseconds) \
     M(FileSegmentWriteMicroseconds, "File segment write() time", ValueType::Microseconds) \
     M(FileSegmentIncreasePriorityMicroseconds, "File segment increase priority time", ValueType::Microseconds) \
-    M(FileSegmentRemoveMicroseconds, "File segment remove() time", ValueType::Microseconds) \
     M(FileSegmentHolderCompleteMicroseconds, "File segments holder complete() time", ValueType::Microseconds) \
     M(FileSegmentFailToIncreasePriority, "Number of times the priority was not increased due to a high contention on the cache lock", ValueType::Number) \
     M(FilesystemCacheFailToReserveSpaceBecauseOfLockContention, "Number of times space reservation was skipped due to a high contention on the cache lock", ValueType::Number) \
@@ -980,6 +1005,7 @@ The server successfully detected this situation and will download merged part fr
     M(SleepFunctionCalls, "Number of times a sleep function (sleep, sleepEachRow) has been called.", ValueType::Number) \
     M(SleepFunctionMicroseconds, "Time set to sleep in a sleep function (sleep, sleepEachRow).", ValueType::Microseconds) \
     M(SleepFunctionElapsedMicroseconds, "Time spent sleeping in a sleep function (sleep, sleepEachRow).", ValueType::Microseconds) \
+    M(SystemPartsEnumerationSlowdownSleeps, "Number of sleeps of the test-only failpoint 'slowdown_system_parts_enumeration' while filling the tables of the system.parts family. Always zero outside of tests.", ValueType::Number) \
     \
     M(ThreadPoolReaderPageCacheHit, "Number of times the read inside ThreadPoolReader was done from the page cache.", ValueType::Number) \
     M(ThreadPoolReaderPageCacheHitBytes, "Number of bytes read inside ThreadPoolReader when it was done from the page cache.", ValueType::Bytes) \
@@ -993,7 +1019,6 @@ The server successfully detected this situation and will download merged part fr
     M(AsynchronousRemoteReadWaitMicroseconds, "Time spent in waiting for asynchronous remote reads.", ValueType::Microseconds) \
     M(SynchronousRemoteReadWaitMicroseconds, "Time spent in waiting for synchronous remote reads.", ValueType::Microseconds) \
     \
-    M(ExternalDataSourceLocalCacheReadBytes, "Bytes read from local cache buffer in RemoteReadBufferCache", ValueType::Bytes) \
     \
     M(MainConfigLoads, "Number of times the main configuration was reloaded.", ValueType::Number) \
     \
@@ -1019,9 +1044,12 @@ The server successfully detected this situation and will download merged part fr
     M(AdaptiveAggregationSharedTableSpills, "How many times the adaptive aggregation wrote its shared drain table out because it reached the part bound under memory pressure.", ValueType::Number) \
     M(AdaptiveAggregationBucketsRetired, "Number of two-level buckets whose working memory (arena slot, staged-chunk references) was retired right after their merge-and-convert completed, ahead of the whole merge finishing.", ValueType::Number) \
     M(AggregationBucketTopKConversions, "Number of two-level buckets converted through the bucket-local Top-K selection (the aggregationBucketTopK plan optimization).", ValueType::Number) \
+    M(AggregationHavingPrefilterGroupsSkipped, "Number of groups whose key columns were not materialized while a two-level bucket of an aggregation was converted, because a HAVING bound on that group's own count() already rejected it (the aggregationHavingPrefilter plan optimization).", ValueType::Number) \
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.", ValueType::Number) \
     M(AggregationConvertedToTwoLevel, "How many times a single-level aggregation hash table was converted to two-level at runtime.", ValueType::Number) \
     M(AggregationOptimizedEqualRangesOfKeys, "For how many blocks optimization of equal ranges of keys was applied", ValueType::Number) \
+    M(AggregationSharedKeptKeysRebuilds, "Number of aggregation streams that rebuilt their hash table to the shared set of kept keys after the trivial GROUP BY LIMIT cutoff was reached (see the `optimize_trivial_group_by_limit_query` setting).", ValueType::Number) \
+    M(AggregationSharedKeptKeysSpillReseeds, "Number of times a hash table restricted to the shared set of kept keys of the trivial GROUP BY LIMIT cutoff was re-seeded with those keys after being flushed to a temporary file by external aggregation (see the `optimize_trivial_group_by_limit_query` setting).", ValueType::Number) \
     M(AggregationTopKRowsSkipped, "How many rows were skipped during aggregation because their grouping key could not enter the top-K result (see `enable_group_by_top_k_optimization`).", ValueType::Number) \
     M(AggregationTopKKeysEvicted, "How many grouping keys were evicted from the bounded top-K heap during aggregation (see `enable_group_by_top_k_optimization`).", ValueType::Number) \
     M(AggregationTopKKeysPruned, "How many evicted grouping keys were also erased from the intermediate hash table, with their aggregate states destroyed (see `enable_group_by_top_k_optimization`). Lower than `AggregationTopKKeysEvicted` when the aggregation method cannot erase keys, or when only a prefix of the key is ranked: the heap then still skips rows, but the hash table keeps every admitted group.", ValueType::Number) \
@@ -1147,6 +1175,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperGetRequest, "Number of get requests", ValueType::Number) \
     M(KeeperListRequest, "Number of list requests", ValueType::Number) \
     M(KeeperListRecursiveRequest, "Number of get children recursive requests", ValueType::Number) \
+    M(KeeperListWithOptionsRequest, "Number of list with options requests", ValueType::Number) \
     M(KeeperExistsRequest, "Number of exists requests", ValueType::Number) \
     M(KeeperSetWatchesRequest, "Number of set watches requests", ValueType::Number) \
     M(KeeperAddWatchRequest, "Number of add watches requests", ValueType::Number) \
@@ -1167,9 +1196,6 @@ The server successfully detected this situation and will download merged part fr
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.", ValueType::Number) \
     M(OverflowAny, "Number of times approximate GROUP BY was in effect: when aggregation was performed only on top of first 'max_rows_to_group_by' unique keys and other keys were ignored due to 'group_by_overflow_mode' = 'any'.", ValueType::Number) \
     \
-    M(S3QueueSetFileProcessingMicroseconds, "Time spent to set file as processing", ValueType::Microseconds) \
-    M(S3QueueSetFileProcessedMicroseconds, "Time spent to set file as processed", ValueType::Microseconds) \
-    M(S3QueueSetFileFailedMicroseconds, "Time spent to set file as failed", ValueType::Microseconds) \
     M(ObjectStorageQueueFailedFiles, "Number of files which failed to be processed", ValueType::Number) \
     M(ObjectStorageQueueProcessedFiles, "Number of files which were processed", ValueType::Number) \
     M(ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds, "Time spent to set file as failed", ValueType::Microseconds) \
@@ -1380,9 +1406,12 @@ The server successfully detected this situation and will download merged part fr
     M(DistributedPlanRemoteTasks, "Number of tasks dispatched to remote workers when executing a query with make_distributed_plan. A non-zero value means the query was actually executed distributedly.", ValueType::Number) \
     M(DistributedPlanLocalExecution, "Set to 1 when a make_distributed_plan query was executed in-process via the local executor (distributed_plan_execute_locally) instead of being dispatched to remote workers.", ValueType::Number) \
     M(DistributedPlanHostsUsed, "Number of distinct hosts that were assigned at least one task when executing a query with make_distributed_plan.", ValueType::Number) \
+    M(DistributedPlanWorkerPartsReceived, "Number of data parts the coordinator assigned to a worker of a distributed query plan, summed over the bucketed reads a query runs on that worker. A part assigned to several buckets counts once per read.", ValueType::Number) \
+    M(DistributedPlanWorkerPartsScanned, "Number of the assigned data parts the worker keeps to read.", ValueType::Number) \
+    M(DistributedPlanWorkerPartsPruned, "Number of the assigned data parts the worker's own index analysis pruned, so the worker does not read them. The coordinator selects parts without that analysis, so it can assign a part no row of the query can match. `DistributedPlanWorkerPartsReceived` is the sum of this and `DistributedPlanWorkerPartsScanned`.", ValueType::Number) \
     M(StreamingExchangeSendBytes, "Bytes written to the sockets of the streaming exchanges of a distributed query plan. `NetworkSendBytes` does not count them.", ValueType::Bytes) \
     M(StreamingExchangeReceiveBytes, "Bytes read from the sockets of the streaming exchanges of a distributed query plan. `NetworkReceiveBytes` does not count them.", ValueType::Bytes) \
-    M(StreamingExchangePacketsSent, "Data packets written whole to the sockets of streaming exchanges, one per chunk plus one end-of-stream packet per stream. The packets of a send buffer are counted when the whole buffer is written; a buffer cut short because the receiver needed no more data counts none of its packets.", ValueType::Number) \
+    M(StreamingExchangePacketsSent, "Data packets written whole to the sockets of streaming exchanges, one per chunk plus one end-of-stream packet per stream. A packet is counted when it is written whole; a packet cut short because the receiver needed no more data is not counted.", ValueType::Number) \
     M(StreamingExchangePacketsReceived, "Data packets read from streaming exchanges, one per chunk plus one end-of-stream packet per stream.", ValueType::Number) \
     M(StreamingExchangeSerializedBytes, "Bytes of the Native blocks in streaming exchange packets before compression, counted once per packet where it is serialized. Against `StreamingExchangeSendBytes` this gives the compression ratio of a shuffle or a gather; a broadcast sends every packet to each destination, so there `StreamingExchangeSendBytes` grows with the number of destinations.", ValueType::Bytes) \
     M(StreamingExchangeSerializeMicroseconds, "Time spent serializing and compressing chunks into streaming exchange packets.", ValueType::Microseconds) \
@@ -1556,6 +1585,15 @@ The server successfully detected this situation and will download merged part fr
     M(HTTPServerConnectionsExpired, "Number of expired server HTTP connections.", ValueType::Number) \
     M(HTTPServerConnectionsClosed, "Number of closed server HTTP connections. Keep alive has not been negotiated", ValueType::Number) \
     M(HTTPServerConnectionsReset, "Number of reset server HTTP connections. Server closes connection", ValueType::Number) \
+    M(HTTPServerConnectionsErrors, "Number of server HTTP connections terminated by an error: a network error, a malformed request, or an exception that escaped the request handler. A client that closes a kept-alive connection without sending another request is not an error and is not counted here.", ValueType::Number) \
+    \
+    M(TLSHandshakes, "Number of TLS handshakes completed for outgoing (client) connections, for example to object storage, to the target of a `url` table function, or to another ClickHouse server. Only the connections that use the Poco TLS implementation are counted; protocols carrying their own TLS stack, such as gRPC or the MySQL, PostgreSQL and Kafka client libraries, are not. Session resumption still performs a handshake and is counted here.", ValueType::Number) \
+    M(TLSHandshakeMicroseconds, "Total time spent performing TLS handshakes for outgoing (client) connections, including the failed ones counted by TLSHandshakeErrors. For a non-blocking socket a handshake is retried until it completes, and the time of all its attempts is summed up here.", ValueType::Microseconds) \
+    M(TLSHandshakeErrors, "Number of failed TLS handshakes for outgoing (client) connections, for example because of an untrusted or expired peer certificate, a protocol or cipher mismatch, or the peer closing the connection mid-handshake.", ValueType::Number) \
+    \
+    M(TLSServerHandshakes, "Number of TLS handshakes completed for incoming (server) connections, across the server protocols that use the Poco TLS implementation: native TCP, HTTPS, MySQL and PostgreSQL. gRPC carries its own TLS stack and is not counted. Session resumption still performs a handshake and is counted here.", ValueType::Number) \
+    M(TLSServerHandshakeMicroseconds, "Total time spent performing TLS handshakes for incoming (server) connections, including the failed ones counted by TLSServerHandshakeErrors. For a non-blocking socket a handshake is retried until it completes, and the time of all its attempts is summed up here.", ValueType::Microseconds) \
+    M(TLSServerHandshakeErrors, "Number of failed TLS handshakes for incoming (server) connections, for example because of a rejected client certificate, a protocol or cipher mismatch, or the client closing the connection mid-handshake. Port scanners and health checks that open a TCP connection to a secure port and close it are counted here as well.", ValueType::Number) \
     \
     M(AddressesDiscovered, "Total count of new addresses in DNS resolve results for HTTP connections", ValueType::Number) \
     M(AddressesExpired, "Total count of expired addresses which is no longer presented in DNS resolve results for HTTP connections", ValueType::Number) \
@@ -1618,7 +1656,6 @@ The server successfully detected this situation and will download merged part fr
     M(WasmGuestExecuteMicroseconds, "Time spent executing WebAssembly code", ValueType::Microseconds) \
     M(WasmTotalExecuteMicroseconds, "Time spent executing WebAssembly code", ValueType::Microseconds) \
     M(WasmModuleInstatiate, "Number of WebAssembly compartments created", ValueType::Number) \
-    M(WasmMemoryAllocated, "Total memory allocated for WebAssembly compartments", ValueType::Bytes) \
     \
     M(ExecutableUserDefinedFunctionInvocations, "Number of executable and executable_pool user-defined function invocations.", ValueType::Number) \
     M(ExecutableUserDefinedFunctionElapsedMicroseconds, "Wall clock time spent executing executable and executable_pool user-defined functions, in microseconds.", ValueType::Microseconds) \
@@ -1648,6 +1685,9 @@ The server successfully detected this situation and will download merged part fr
     M(IndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the index marks", ValueType::Number) \
     M(IndexGenericExclusionSearchStepLimitReached, "Number of times the generic exclusion search over the index marks reached merge_tree_generic_exclusion_search_max_steps and accepted the remaining mark ranges without further splitting", ValueType::Number) \
     M(ParallelReplicasQueryCount, "Number of (sub)queries executed using parallel replicas during a query execution", ValueType::Number) \
+    \
+    M(AutomaticParallelReplicasProbePlansBuilt, "Number of times automatic parallel replicas built a candidate plan with parallel replicas to compare against the single-node plan. Not every such plan is used: it is built to be costed, and is discarded when the single-node plan wins", ValueType::Number) \
+    \
     M(DistributedConnectionReconnectCount, "Number of reconnects to other servers done during distributed query execution. It can happen when a stale connection has been acquired from connection pool", ValueType::Number) \
     M(DistributedConnectionConnectCount, "Number of connects to other servers done during distributed query execution. Happens when new connection is established instead of using existing from pool.", ValueType::Number) \
     \
