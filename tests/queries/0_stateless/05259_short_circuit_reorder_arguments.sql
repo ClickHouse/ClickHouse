@@ -61,3 +61,18 @@ SELECT log_comment, ProfileEvents['ShortCircuitArgumentsReordered'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05259_reorder_%'
 ORDER BY log_comment;
+
+-- A heavy argument with observable side effects (`sleepEachRow`) is not executed on fewer rows than in the original order,
+-- neither in `and` nor in the AND chain in `WHERE`. `number % 100` prevents `numbers` from using the condition as a range.
+SELECT sum(sleepEachRow(0.001) = 0 AND number % 100 = 5) FROM numbers(100)
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1, max_block_size = 10,
+    log_comment = '05259_sleep_select';
+SELECT count() FROM numbers(100) WHERE sleepEachRow(0.001) = 0 AND number % 100 = 5
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1, max_block_size = 10,
+    log_comment = '05259_sleep_where';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, ProfileEvents['SleepFunctionMicroseconds']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05259_sleep_%'
+ORDER BY log_comment;

@@ -342,6 +342,24 @@ static bool isCheapForShortCircuitEvaluation(const ActionsDAG::Node * node, std:
     return res;
 }
 
+/// Does the node contain functions that are stateful or have observable side effects (like `sleep`)?
+/// Such a node must not be executed on fewer rows than in the original order.
+static bool hasStatefulOrObservableFunctions(const ActionsDAG::Node * node, std::unordered_map<const ActionsDAG::Node *, bool> & cache)
+{
+    if (auto it = cache.find(node); it != cache.end())
+        return it->second;
+
+    bool res = false;
+    if (node->type == ActionsDAG::ActionType::FUNCTION
+        && (node->function_base->isStateful() || node->function_base->hasObservableSideEffects()))
+        res = true;
+    else
+        res = std::ranges::any_of(node->children, [&](const auto * child) { return hasStatefulOrObservableFunctions(child, cache); });
+
+    cache[node] = res;
+    return res;
+}
+
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(
     const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation, bool reorder_arguments)
 {
@@ -353,6 +371,7 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
     /// Firstly, find all short-circuit functions and get their settings.
     std::unordered_map<const ActionsDAG::Node *, IFunctionBase::ShortCircuitSettings> short_circuit_nodes;
     std::unordered_map<const ActionsDAG::Node *, bool> is_cheap_cache;
+    std::unordered_map<const ActionsDAG::Node *, bool> has_observable_functions_cache;
     for (const auto & node : nodes)
     {
         IFunctionBase::ShortCircuitSettings short_circuit_settings;
@@ -364,12 +383,15 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
             /// It is safe: the cheap argument is executed on all rows anyway (it is not lazy), and the heavy one is
             /// executed on a subset of the rows it was executed on before.
             /// In the `force_enable` mode all arguments are lazy, so there is no cheap argument that is executed anyway.
+            /// The heavy argument must not contain stateful functions or functions with observable side effects (like `sleep`),
+            /// because executing them on fewer rows changes what an observer sees.
             if (reorder_arguments
                 && short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::ENABLE
                 && short_circuit_settings.arguments_are_commutative
                 && short_circuit_settings.arguments_with_disabled_lazy_execution.size() == 1
                 && short_circuit_settings.arguments_with_disabled_lazy_execution.contains(0)
-                && !isCheapForShortCircuitEvaluation(node.children[0], is_cheap_cache))
+                && !isCheapForShortCircuitEvaluation(node.children[0], is_cheap_cache)
+                && !hasStatefulOrObservableFunctions(node.children[0], has_observable_functions_cache))
             {
                 for (size_t i = 1; i < node.children.size(); ++i)
                 {

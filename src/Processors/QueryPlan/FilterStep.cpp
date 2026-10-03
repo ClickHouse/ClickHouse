@@ -251,6 +251,27 @@ static bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
     return true;
 }
 
+/// Does the atom contain stateful functions or functions with observable side effects (like `sleep`)?
+/// Such an atom must not be evaluated on fewer rows than in the original order, so no atom can be moved in front of it.
+static bool hasStatefulOrObservableFunctions(const ActionsDAG::Node * node)
+{
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(node);
+    while (!nodes.empty())
+    {
+        node = nodes.top();
+        nodes.pop();
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && (node->function_base->isStateful() || node->function_base->hasObservableSideEffects()))
+            return true;
+
+        for (const auto * child : node->children)
+            nodes.push(child);
+    }
+    return false;
+}
+
 /// Try to split the left most AND atom to a separate DAG.
 /// With `reorder`, the left most atom that can be moved to the front of the chain is preferred.
 static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, const std::string & filter_name, bool reorder)
@@ -293,8 +314,12 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
     if (reorder)
     {
         for (const auto * atom : atoms)
+        {
             if (canBeMovedToTheFrontOfAndChain(atom))
                 return splitSingleAndFilter(dag, atom);
+            if (hasStatefulOrObservableFunctions(atom))
+                break;
+        }
     }
 
     return splitSingleAndFilter(dag, atoms.front());
