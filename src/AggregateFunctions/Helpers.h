@@ -169,6 +169,7 @@ static IAggregateFunction * createWithNumericBasedType(const IDataType & argumen
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<UInt16, bool_param>(args...);
     if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<UInt32, bool_param>(args...);
+    if (which.idx == TypeIndex::Time) return new AggregateFunctionTemplate<Int32, bool_param>(args...);
     if (which.idx == TypeIndex::UUID) return new AggregateFunctionTemplate<UUID, bool_param>(args...);
     if (which.idx == TypeIndex::IPv4) return new AggregateFunctionTemplate<IPv4, bool_param>(args...);
     if (which.idx == TypeIndex::IPv6) return new AggregateFunctionTemplate<IPv6, bool_param>(args...);
