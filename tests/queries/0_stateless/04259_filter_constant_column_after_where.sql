@@ -19,7 +19,8 @@ INSERT INTO 04259_filter_constant_column_after_where VALUES
 SET query_plan_merge_filters = 0,
     query_plan_optimize_lazy_materialization = 0,
     query_plan_remove_unused_columns = 0,
-    query_plan_optimize_prewhere = 0;
+    query_plan_optimize_prewhere = 0,
+    optimize_move_to_prewhere = 0;
 
 SELECT dumpColumnStructure(x), count(), sum(y)
 FROM 04259_filter_constant_column_after_where
