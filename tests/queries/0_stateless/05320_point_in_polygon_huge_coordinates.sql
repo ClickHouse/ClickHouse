@@ -1,9 +1,9 @@
 -- Tags: no-parallel-replicas
 -- Provenance: https://s3.amazonaws.com/clickhouse-test-reports/praktika.html?REF=master&sha=782be4dcec24970dad336d1af4f321c7ff53da40&name_0=MasterCI&name_1=AST%20fuzzer%20%28amd_release%2C%20oracle%29
 
--- A polygon with a coordinate beyond 1e100 in absolute value is rejected, constant or not: both point-in-polygon
--- algorithms returned wrong results for such polygons, and the exact primary key analysis then dropped rows the
--- function matched.
+-- A polygon with a coordinate beyond 1e100 in absolute value is rejected: a constant array polygon always, other
+-- polygons when such a coordinate is on an edge evaluated for the point. Both point-in-polygon algorithms returned
+-- wrong results for such polygons, and the exact primary key analysis then dropped rows the function matched.
 
 DROP TABLE IF EXISTS pip_pk;
 DROP TABLE IF EXISTS pip_nopk;
@@ -22,7 +22,7 @@ SELECT pointInPolygon((0.9, 5.), [(0., 0.), (1.1920928955078125e-7, 1.7976931348
 -- Also when the primary key excludes every granule.
 SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., -10.), (0.5, -1e160), (1., -10.)]); -- { serverError BAD_ARGUMENTS }
 
--- Every ring is checked: a hole, and one polygon of a multipolygon.
+-- Every ring is checked: a hole, a degenerate polygon, and one polygon of a multipolygon.
 SET validate_polygons = 0;
 SELECT pointInPolygon((0.5, 0.5), [(0., 0.), (1., 0.), (1., 1.), (0., 1.)], [(0.2, 0.2), (0.3, 0.2), (0.3, 1e200)]); -- { serverError BAD_ARGUMENTS }
 SELECT pointInPolygon((1., 0.), [(0., 0.), (1e200, 0.), (2e200, 0.)]); -- { serverError BAD_ARGUMENTS }
@@ -39,7 +39,8 @@ SELECT pointInPolygon((9e199, 5e199), materialize([(0., 0.), (1e200, 0.), (0., 1
 SELECT pointInPolygon((0.9, 0.5), CAST(CAST([(0., 0.), (1., 0.), (0., 1.)] AS Ring) AS Geometry)), pointInPolygon((0.9, 0.5), materialize([(0., 0.), (1., 0.), (0., 1.)]));
 
 -- Up to 1e100 the polygon is evaluated, and primary key analysis prunes and agrees with the function.
-SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (1.1920928955078125e-7, 1e100), (0.9999, 1e100), (1.0001, 0.)]) SETTINGS max_rows_to_read = 2000;
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (1.1920928955078125e-7, 1e100), (0.9999, 1e100), (1.0001, 0.)]) SETTINGS max_rows_to_read = 2000, use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (1.1920928955078125e-7, 1e100), (0.9999, 1e100), (1.0001, 0.)]) SETTINGS max_rows_to_read = 2000, use_lightweight_primary_key_index_analysis = 1;
 SELECT count() FROM pip_nopk WHERE pointInPolygon((x, y), [(0., 0.), (1.1920928955078125e-7, 1e100), (0.9999, 1e100), (1.0001, 0.)]);
 SELECT pointInPolygon((1e-9, 1e99), [(0., 0.), (1.1920928955078125e-7, 1e100), (0.9999, 1e100), (1.0001, 0.)]),
        pointInPolygon((0.9, 5.), [(0., 0.), (1.1920928955078125e-7, 1e100), (0.9999, 1e100), (1.0001, 0.)]);
