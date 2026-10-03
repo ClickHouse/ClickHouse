@@ -4427,7 +4427,7 @@ void Aggregator::mergeDeferredLargeStates(DeferredMerges & deferred, Arena * are
         std::vector<size_t> order(num_pairs);
         for (size_t j = 0; j < num_pairs; ++j)
             order[j] = j;
-        ::sort(order.begin(), order.end(), [&](size_t lhs, size_t rhs) { return pairs.dst_places[lhs] < pairs.dst_places[rhs]; });
+        ::sort(order.begin(), order.end(), [&](size_t lhs, size_t rhs) { return std::less<AggregateDataPtr>{}(pairs.dst_places[lhs], pairs.dst_places[rhs]); });
 
         /// Sources at sorted positions below this index have been destroyed.
         size_t destroyed_prefix = 0;
