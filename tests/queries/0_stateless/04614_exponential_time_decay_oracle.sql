@@ -222,7 +222,7 @@ CREATE MATERIALIZED VIEW time_decay_mv_time64_blocked
     value Time64(3)
 )
 ENGINE = Memory
-AS SELECT now64(3); -- { serverError ILLEGAL_COLUMN }
+AS SELECT now64(3) AS value; -- { serverError ILLEGAL_COLUMN }
 
 SET allow_experimental_nullable_tuple_type = 0;
 CREATE MATERIALIZED VIEW time_decay_mv_nullable_tuple_blocked
