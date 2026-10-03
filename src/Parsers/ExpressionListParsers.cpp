@@ -36,8 +36,6 @@
 #include <Common/logger_useful.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionOperatorPrettyLookup.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 #include <fmt/core.h>
 
@@ -1529,6 +1527,8 @@ public:
         /// expr AS type
         if (state == 0)
         {
+            rememberLiteralArgument(pos);
+
             std::optional<String> type_text;
 
             if (as_keyword_parser.ignore(pos, expected))
@@ -1536,19 +1536,22 @@ public:
                 auto old_pos = pos;
 
                 if (ParserIdentifier().parse(pos, alias, expected) &&
-                    as_keyword_parser.ignore(pos, expected) &&
-                    (type_text = parseDataTypeAsText(pos, expected)) &&
-                    ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                    as_keyword_parser.ignore(pos, expected))
                 {
-                    if (!insertAlias(alias))
-                        return false;
+                    type_text = parseDataTypeAsText(pos, expected);
+                    if (type_text &&
+                        ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                    {
+                        if (!insertAlias(alias))
+                            return false;
 
-                    if (!mergeElement())
-                        return false;
+                        if (!mergeElement())
+                            return false;
 
-                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
-                    finished = true;
-                    return true;
+                        elements = {createFunctionCast(exactArgument(elements[0], *type_text, pos), std::move(*type_text))};
+                        finished = true;
+                        return true;
+                    }
                 }
 
                 pos = old_pos;
@@ -1569,13 +1572,14 @@ public:
 
                 pos = old_pos;
 
-                if ((type_text = parseDataTypeAsText(pos, expected)) &&
+                type_text = parseDataTypeAsText(pos, expected);
+                if (type_text &&
                     ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!mergeElement())
                         return false;
 
-                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
+                    elements = {createFunctionCast(exactArgument(elements[0], *type_text, pos), std::move(*type_text))};
                     finished = true;
                     return true;
                 }
@@ -1604,13 +1608,56 @@ public:
                 if (elements.size() != 2)
                     return false;
 
-                elements = {makeASTFunction(toString(toStringView(Keyword::CAST)), elements[0], elements[1])};
+                ASTPtr argument = elements[0];
+
+                /// The functional form carries the type as an ordinary argument, so the type is only
+                /// known here when it is spelled out as a string.
+                if (const auto * type_literal = elements[1]->as<ASTLiteral>();
+                    type_literal && type_literal->value.getType() == Field::Types::String)
+                    argument = exactArgument(argument, type_literal->value.safeGet<String>(), pos);
+
+                elements = {makeASTFunction(toString(toStringView(Keyword::CAST)), std::move(argument), elements[1])};
                 finished = true;
                 return true;
             }
         }
 
         return true;
+    }
+
+private:
+    /// The first argument, when it is a literal, kept as text. `CAST(0.1 AS Decimal256(76))` is exact
+    /// because the `Decimal` reads those digits itself, instead of `0.1` being read as a `Float64`
+    /// and rounded on the way. Which types read the text this way is only known once the type has
+    /// been parsed, which is after the argument - hence keeping the text around.
+    std::optional<LiteralAsText> literal_argument;
+
+    /// Peeks at the first argument, without consuming it, before it is parsed as an expression. Only
+    /// a whole argument can be replaced by its text, so the literal has to be followed by the end of
+    /// the argument - the `AS` of `CAST(x AS T)` or of an alias, or the comma of `CAST(x, T)`.
+    void rememberLiteralArgument(IParser::Pos pos)
+    {
+        if (!elements.empty() || !isCurrentElementEmpty())
+            return;
+
+        LiteralAsText literal;
+        if (!parseLiteralAsText(pos, literal))
+            return;
+
+        /// An `Expected` of its own: this only looks ahead, and what it finds is not what the query
+        /// is expected to hold at that position.
+        Expected lookahead;
+        if (pos->type != TokenType::Comma && !ParserKeyword(Keyword::AS).checkWithoutMoving(pos, lookahead))
+            return;
+
+        literal_argument = std::move(literal);
+    }
+
+    /// `argument` put back as text, when it is a literal and the target type reads the text more
+    /// precisely - see `exactCastArgument`.
+    ASTPtr exactArgument(const ASTPtr & argument, const String & type_text, const IParser::Pos & pos) const
+    {
+        return exactCastArgument(argument, literal_argument, type_text, pos);
     }
 };
 
@@ -4100,6 +4147,14 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         if (!type_text)
             return Action::NONE;
 
+        /// Nothing binds tighter than `::`, so its operand is complete: when it is a literal the
+        /// type reads more precisely as text - `(0.1)::Decimal256(76)`, `0xFF::UInt128` - it goes
+        /// as text, the way `ParserCastOperator` sends a literal written plainly.
+        ASTPtr argument;
+        if (!layers.back()->popOperand(argument))
+            return Action::NONE;
+        layers.back()->pushOperand(exactCastArgument(argument, std::nullopt, *type_text, pos));
+
         layers.back()->pushOperand(make_intrusive<ASTLiteral>(std::move(*type_text)));
         return Action::OPERATOR;
     }
@@ -4113,14 +4168,11 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     return Action::OPERAND;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserExpression::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementIn(StatementFactory & factory)
-{
-    factory.registerStatement("IN",
+    documentation["IN"] =
     {
         .description = R"DOCS_MD(
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
@@ -4427,7 +4479,9 @@ expr IN table | (subquery) | table_function(...)
 expr [GLOBAL] [NOT] IN ...
 )",
         .related = {"SELECT", "WHERE", "JOIN", "INTERSECT"},
-    });
+    };
+
+    return documentation;
 }
 
 }
