@@ -160,8 +160,6 @@ void ApplyWithSubqueryVisitor::visitWithExpression(ASTPtr & ast, Data & data, bo
 
 void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
 {
-    /// The elements this select declares itself are registered below either way: only the inherited
-    /// ones are out of scope here.
     /// An alias this select declares itself hides an inherited one of the same name.
     std::vector<String> own_aliases;
     auto add_own_alias = [&](const String & alias, const ASTPtr &) { own_aliases.push_back(alias); };
@@ -193,6 +191,8 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
         }
     }
 
+    /// The elements this select declares itself are registered below either way: only the inherited
+    /// ones are out of scope here.
     std::optional<Data> scope_data;
     if (data.context || std::ranges::any_of(own_aliases, [&](const String & alias) { return data.literals.contains(alias); }))
     {

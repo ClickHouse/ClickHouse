@@ -85,6 +85,12 @@ SELECT 'view lambda parameter', r FROM v_lambda_parameter;
 SELECT 'live lambda alias', (WITH tuple([7] AS nested) AS wrapper SELECT arrayMap(x -> toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 + toUInt8(6 IN nested) + x * length([6] AS nested), [0])[1]);
 CREATE VIEW v_lambda_alias AS WITH tuple([7] AS nested) AS wrapper SELECT arrayMap(x -> toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 + toUInt8(6 IN nested) + x * length([6] AS nested), [0])[1] AS r;
 SELECT 'view lambda alias', r FROM v_lambda_alias;
+-- A lambda keeps its aliases, also inside a table function argument, so outside it the name is a table of the view's database.
+SELECT 'live table function lambda', toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 FROM numbers(arrayMap(x -> x + length([6] AS nested), [0])[1]);
+CREATE VIEW v_table_function_lambda AS SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 AS r FROM numbers(arrayMap(x -> x + length([6] AS nested), [0])[1]);
+USE system;
+SELECT 'view table function lambda', r FROM ${CLICKHOUSE_DATABASE}.v_table_function_lambda;
+USE ${CLICKHOUSE_DATABASE};
 
 -- An alias the analyzer does not collect - declared inside a lambda, and inside a nested query -
 -- is a table name in the nested \`SELECT\`, in the live query and in the stored command alike.
