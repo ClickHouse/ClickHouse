@@ -42,6 +42,29 @@ wait_for_log_rows()
     echo "timed out waiting for ${expected} rows in system.${log_table}, got ${LOG_ROW_COUNT}"
 }
 
+# Drains the block query `$1` queued for table `$2`, before the table is dropped. A query killed or timed out
+# before its SELECT finished queued nothing (`AsyncInsertQuery` = 0), so there is nothing to wait for.
+drain_queued_insert()
+{
+    local query_id=$1 && shift
+    local table=$1 && shift
+
+    local queued
+    queued=$(${CLICKHOUSE_CLIENT} -q "
+        SELECT sum(ProfileEvents['AsyncInsertQuery'])
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND event_time >= now() - 600
+          AND current_database = currentDatabase() AND type != 'QueryStart'
+          AND query_id = '$query_id'
+    ")
+    wait_for_log_rows asynchronous_insert_log "$queued" "
+        SELECT count()
+        FROM system.asynchronous_insert_log
+        WHERE event_date >= yesterday() AND event_time >= now() - 600
+          AND database = currentDatabase() AND table = '$table'
+    "
+}
+
 # Case 1: the routed insert and the same insert on the synchronous route report the same write.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_04633_acc"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE test_04633_acc (n UInt64) ENGINE = MergeTree ORDER BY n"
@@ -278,14 +301,9 @@ ${CLICKHOUSE_CLIENT} -q "
       AND query_id = '$KILL_ID'
 "
 
-# The block was queued before the kill landed, so the queue still flushes it in the background:
-# cancelling stops the wait, not the write. Drain it before dropping the table.
-wait_for_log_rows asynchronous_insert_log 1 "
-    SELECT count()
-    FROM system.asynchronous_insert_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600
-      AND database = currentDatabase() AND table = 'test_04633_kill'
-"
+# A block queued before the kill landed is still flushed in the background: cancelling stops the wait, not the
+# write. Drain it before dropping the table.
+drain_queued_insert "$KILL_ID" test_04633_kill
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_04633_kill"
 
 # Case 7: `max_execution_time` expires in the same poll window as the flush completes. A ready
@@ -315,12 +333,7 @@ wait_for_log_rows query_log 1 "
 "
 echo "$LOG_ROW_COUNT"
 
-# The block was queued before the limit expired, so the flush may still commit it: not asserted,
-# drained only to keep the queue off a dropped table.
-wait_for_log_rows asynchronous_insert_log 1 "
-    SELECT count()
-    FROM system.asynchronous_insert_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600
-      AND database = currentDatabase() AND table = 'test_04633_ready_race'
-"
+# A block queued before the limit expired may still be committed by the flush: not asserted, drained only to
+# keep the queue off a dropped table.
+drain_queued_insert "$RACE_ID" test_04633_ready_race
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_04633_ready_race"
