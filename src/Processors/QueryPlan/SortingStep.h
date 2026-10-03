@@ -109,6 +109,8 @@ public:
     /// The sort must not stop its input early: the whole stream is needed (`WITH TOTALS`, or
     /// `exact_rows_before_limit` counting the rows before the `LIMIT`).
     bool alwaysReadTillEnd() const { return always_read_till_end; }
+    /// A `LIMIT BY` above the sort must drain its input (the hint set by `updateLimitByHint`).
+    bool limitByAlwaysReadTillEnd() const { return limit_by_always_read_till_end; }
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 
