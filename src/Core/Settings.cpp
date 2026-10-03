@@ -3744,6 +3744,29 @@ use `max_bytes_before_external_distinct`, leaving room for additional memory usa
 )", 0, \
         {"26.9", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."}) \
     \
+    DECLARE(UInt64, max_bytes_before_external_set, 0, R"(
+Query memory threshold, in bytes, for moving the set of `IN` with a subquery to disk while the set is
+being built. Actual memory usage can exceed this threshold. A set that takes less memory than this
+threshold or 16 MiB, whichever is smaller, stays in memory.
+
+`0` disables this threshold. If `max_bytes_ratio_before_external_set` also provides a threshold, the
+smaller is used. Set both settings to `0` to disable spilling.
+
+See [IN in external memory](/reference/statements/in#in-in-external-memory).
+)", 0, \
+        {"26.10", 0, 0, "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_set` applies."}) \
+    DECLARE(Double, max_bytes_ratio_before_external_set, 0., R"(
+Fraction of available server or user memory used to calculate the threshold for moving the set of `IN`
+with a subquery to disk, at the start of execution. For example, `0.5` uses half of the available memory.
+
+Values must be at least `0` and less than `1`. `0` disables this threshold. Without an applicable
+server or user memory limit, the ratio has no effect.
+
+`max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
+use `max_bytes_before_external_set`, leaving room for additional memory usage.
+)", 0, \
+        {"26.10", 0., 0., "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_set` applies."}) \
+    \
     DECLARE(UInt64, max_result_rows, 0, R"(
 Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
 No limit is applied when the value is `0`.
