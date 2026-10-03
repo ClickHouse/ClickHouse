@@ -84,22 +84,27 @@ std::string TablesStatusRequest::getAuthDigest() const
     return data;
 }
 
-void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision)
+void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision, TablesStatusRequestSource source)
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "method TablesStatusRequest::read is called for unsupported client revision");
 
+    /// An authenticated client keeps the generic limits it had before these bounds existed.
+    static constexpr TablesStatusRequestLimits client_limits{DEFAULT_MAX_STRING_SIZE, DEFAULT_MAX_STRING_SIZE};
+    const TablesStatusRequestLimits & limits
+        = source == TablesStatusRequestSource::InterserverPeer ? INTERSERVER_TABLES_STATUS_REQUEST_LIMITS : client_limits;
+
     size_t size = 0;
     readVarUInt(size, in);
 
-    if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large collection size.");
+    if (size > limits.max_tables)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large collection size (maximum: {}).", limits.max_tables);
 
     for (size_t i = 0; i < size; ++i)
     {
         QualifiedTableName table_name;
-        readBinary(table_name.database, in);
-        readBinary(table_name.table, in);
+        readStringBinary(table_name.database, in, limits.max_name_size);
+        readStringBinary(table_name.table, in, limits.max_name_size);
         tables.emplace(std::move(table_name));
     }
 }

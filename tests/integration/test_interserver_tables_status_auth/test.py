@@ -16,6 +16,11 @@ from helpers.cluster import ClickHouseCluster
 #  * `Data` before any `Query` -> rejected without the Native block being read.
 #
 # The legitimate authenticated path is covered by `test_distributed_inter_server_secret`.
+#
+# An interserver `TablesStatusRequest` whose body *is* read before the peer is authenticated - the
+# signed one, whose hash covers the body, and an unsigned one that is answered rather than refused -
+# is bounded in how much it can make the server deserialize. That bound, and its absence for an
+# ordinary authenticated client, is covered at the end of the file.
 
 cluster = ClickHouseCluster(__file__)
 node_a = cluster.add_instance("node_a", main_configs=["configs/secret_a.xml"])
@@ -27,6 +32,11 @@ node_b = cluster.add_instance("node_b", main_configs=["configs/secret_b.xml"])
 OLD_REVISION = 54449
 USER_INTERSERVER_MARKER = " INTERSERVER SECRET "
 
+# `INTERSERVER_TABLES_STATUS_REQUEST_LIMITS` in `src/Interpreters/TablesStatus.h`. A legitimate
+# interserver request asks about exactly one table, so these only bound a hostile one.
+MAX_TABLES = 64
+MAX_NAME_SIZE = 4096
+
 # A type name no other test can produce, so the log assertions below cannot be crossed.
 BOGUS_TYPE = "NoSuchTypeGroeneAI"
 BOGUS_TYPE_READ = f"Unknown data type family: {BOGUS_TYPE}"
@@ -34,6 +44,10 @@ BOGUS_TYPE_READ = f"Unknown data type family: {BOGUS_TYPE}"
 # before then is reported as an authentication failure (an ordinary client gets
 # `UNEXPECTED_PACKET_FROM_CLIENT`); matching that wording also proves interserver mode was reached.
 DATA_REJECTED = "Unexpected data packet received before interserver authentication"
+
+# `interserver_tables_status_require_auth` is off here, so an unsigned interserver
+# `TablesStatusRequest` reaches the deserialization step the bounds below apply to.
+node_c = cluster.add_instance("node_c", main_configs=["configs/secret_c.xml"])
 
 
 @pytest.fixture(scope="module")
@@ -274,3 +288,144 @@ def test_data_packet_before_query_is_not_deserialized(started_cluster):
         "the Data packet was not rejected on its packet type alone, so a payload byte "
         "was required"
     )
+
+
+def open_ordinary_connection(node):
+    """Connect and complete an ordinary (non-interserver) handshake, which is authenticated
+    and therefore not subject to the interserver request bounds."""
+    hello = (
+        varuint(0)
+        + varstring("test")           # client name
+        + varuint(24)                 # version major
+        + varuint(3)                  # version minor
+        + varuint(OLD_REVISION)       # tcp protocol revision
+        + varstring("default")        # default database
+        + varstring("default")        # user
+        + varstring("")               # password
+    )
+    sock = socket.create_connection((node.ip_address, 9000), timeout=20)
+    sock.settimeout(20)
+    sock.sendall(hello)
+    read_varuint(sock)      # packet type (Hello)
+    read_varstring(sock)    # server name
+    read_varuint(sock)      # version major
+    read_varuint(sock)      # version minor
+    read_varuint(sock)      # revision
+    read_varstring(sock)    # timezone
+    read_varstring(sock)    # display name
+    read_varuint(sock)      # version patch
+    return sock
+
+
+def tables_status_request(tables):
+    """A `TablesStatusRequest` (client packet 5) without an authentication hash, as a peer
+    below DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS sends it."""
+    body = varuint(len(tables))
+    for database, table in tables:
+        body += varstring(database) + varstring(table)
+    return varuint(5) + body
+
+
+def read_tables_status_response(sock):
+    """Read a `TablesStatusResponse` (server packet 9), asserting that the server answered at
+    all, into {(database, table): status}."""
+    packet_type = read_varuint(sock)
+    assert packet_type == 9, f"expected TablesStatusResponse (9), got packet {packet_type}"
+    states = {}
+    for _ in range(read_varuint(sock)):
+        database = read_varstring(sock).decode()
+        table = read_varstring(sock).decode()
+        is_replicated = recv_exact(sock, 1)[0]
+        status = {"is_replicated": is_replicated, "absolute_delay": 0}
+        if is_replicated:
+            status["absolute_delay"] = read_varuint(sock)
+            # `is_readonly` is written only from TABLE_READ_ONLY_CHECK (v54467) on, and
+            # OLD_REVISION is below it.
+        states[(database, table)] = status
+    return states
+
+
+def recv_any(sock):
+    """Whatever the server sent back, or `b""` if it closed the connection instead."""
+    try:
+        return sock.recv(4096)
+    except ConnectionResetError:
+        return b""
+
+
+def test_interserver_request_table_count_is_bounded(started_cluster):
+    """An interserver peer's request body is deserialized before the peer is authenticated, so
+    the number of tables it may ask about is capped at
+    `INTERSERVER_TABLES_STATUS_REQUEST_LIMITS.max_tables`. At the cap the request is still
+    answered; one table above it the connection is closed without a response (any exception on
+    an unauthenticated interserver connection closes it silently)."""
+    sock = open_interserver_connection(node_c)
+    try:
+        sock.sendall(tables_status_request([("default", f"t{i}") for i in range(MAX_TABLES)]))
+        # The point is that a `TablesStatusResponse` comes back rather than the connection
+        # being dropped on `TOO_LARGE_ARRAY_SIZE`. Which tables it reports is not what this
+        # bound is about, and depends on how an unsigned request is answered.
+        read_tables_status_response(sock)
+    finally:
+        sock.close()
+
+    sock = open_interserver_connection(node_c)
+    try:
+        sock.sendall(
+            tables_status_request([("default", f"t{i}") for i in range(MAX_TABLES + 1)])
+        )
+        assert not recv_any(sock), (
+            "server answered an interserver TablesStatusRequest that exceeds the table-count "
+            "bound"
+        )
+    finally:
+        sock.close()
+
+
+def test_interserver_request_name_length_is_bounded(started_cluster):
+    """The table count alone does not bound the request: `readStringBinary` reserves the
+    declared size of a name before reading its bytes, so without a name cap a peer could make
+    the server reserve an arbitrary size. Names are capped as well, and the request is refused
+    on the declared length, before any of it is reserved.
+
+    The declared length is one byte over the cap rather than something huge on purpose. A huge
+    one would also be refused by the memory tracker on an unfixed server, so the test would
+    pass without the cap existing; one byte over is accepted by every other bound, so only the
+    cap can reject it."""
+    sock = open_interserver_connection(node_c)
+    try:
+        # Only the length is sent, never the bytes.
+        sock.sendall(
+            varuint(5) + varuint(1) + varstring("default") + varuint(MAX_NAME_SIZE + 1)
+        )
+        try:
+            data = sock.recv(4096)
+        except ConnectionResetError:
+            data = b""
+        except TimeoutError:
+            pytest.fail(
+                "server neither answered nor closed the connection, so it accepted the "
+                "declared name length and is waiting for bytes that never arrive"
+            )
+        assert not data, (
+            "server answered an interserver TablesStatusRequest declaring an oversized table "
+            "name"
+        )
+    finally:
+        sock.close()
+
+
+def test_ordinary_client_request_is_not_bounded_by_the_interserver_limit(started_cluster):
+    """The bound applies to the interserver path only: an ordinary authenticated client can
+    still ask about more tables than `INTERSERVER_TABLES_STATUS_REQUEST_LIMITS.max_tables`, as
+    it could before. None of the tables exist, so the response is empty - the point is that it
+    is a response and not a `TOO_LARGE_ARRAY_SIZE` error."""
+    sock = open_ordinary_connection(node_c)
+    try:
+        sock.sendall(
+            tables_status_request([("default", f"t{i}") for i in range(MAX_TABLES + 1)])
+        )
+        states = read_tables_status_response(sock)
+    finally:
+        sock.close()
+    assert states == {}, f"unexpected table states for tables that do not exist: {states}"
