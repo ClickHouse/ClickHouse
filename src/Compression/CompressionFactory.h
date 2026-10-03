@@ -196,4 +196,8 @@ private:
 /// Returns true if `codec` compresses any substream of `type` lossily.
 bool isLossyCodecForType(const ASTPtr & codec, const DataTypePtr & type);
 
+/// Type-specific codecs read a compressed block as a sequence of values, so a block must not end or begin in the middle of a value.
+/// Rounds the block size down to a multiple of the value size, but not below one value.
+size_t roundCompressBlockSizeToWholeValues(size_t block_size, const IDataType & type);
+
 }
