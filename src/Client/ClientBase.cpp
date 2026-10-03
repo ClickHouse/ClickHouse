@@ -4306,10 +4306,17 @@ bool ClientBase::processAIChat(const String & text_)
     }
 
     /// A known `/`-command runs as the command itself, without involving the agent (and works
-    /// even when no AI provider is configured). Anything else - including an unknown `/...` - is
-    /// a question for the agent.
-    if (isClientSlashCommand(trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
+    /// even when no AI provider is configured). A misspelled one, or one given an argument it does
+    /// not take, is reported here as in the SQL mode: sending it to the model as a question would
+    /// leak the typo to the provider and could cost a billed turn. A lone `/` is not a command.
+    const String command_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
+    if (isClientSlashCommand(command_input))
         return processQueryText(text);
+    if (command_input.size() > 1)
+    {
+        if (auto slash_command_error = diagnoseClientSlashCommand(command_input))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", *slash_command_error);
+    }
 
     /// The assistant emits ClickHouse SQL. With `readonly = 1`, the session refuses the dialect
     /// pin that both visible and internal assistant queries need, so fail before probing a
@@ -6267,7 +6274,20 @@ void ClientBase::runInteractive()
         {
             /// `last_input` is not updated: it feeds the `.` / `/` repeat aliases of the SQL
             /// mode, which must keep repeating the last SQL query, not an AI question.
-            processAIChat(input);
+            try
+            {
+                processAIChat(input);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::USER_EXPIRED)
+                    break;
+
+                /// A misspelled `/`-command, or a failure of a `/`-command run from this mode, is
+                /// reported like in the SQL mode below instead of ending the session.
+                error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+                client_exception.reset(e.clone());
+            }
             continue;
         }
 #endif

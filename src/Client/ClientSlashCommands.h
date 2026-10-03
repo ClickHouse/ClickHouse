@@ -34,7 +34,7 @@ std::optional<String> diagnoseClientSlashCommand(std::string_view trimmed_input)
 
 /// Whether the input (trimmed of whitespace and `;`) is one of the `/`-commands, with or without
 /// its argument. In the AI-chat mode such a line runs as the command itself instead of being sent
-/// to the agent; unknown `/...` input is left for the agent.
+/// to the agent, and a misspelled one is diagnosed with `diagnoseClientSlashCommand`.
 bool isClientSlashCommand(std::string_view trimmed_input);
 
 /// The `/`-commands matching what is being typed; see `matchClientSlashCommandPrefix`.
