@@ -328,7 +328,8 @@ test_params_laion_5b_10m_quantized_rabitq = {
     TRUTH_SET_COUNT: 100,
     RECALL_K: 100,
     NEW_TRUTH_SET_FILE: "laion_10m_100_rabitq",
-    MERGE_TREE_SETTINGS: None,
+    # One full-precision vector per compressed block, so the rescore point-reads each candidate.
+    MERGE_TREE_SETTINGS: "quantized_vector_one_block_per_row = 1",
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: False,
     USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
@@ -350,7 +351,8 @@ test_params_laion_5b_10m_quantized_turboquant = {
     TRUTH_SET_COUNT: 100,
     RECALL_K: 100,
     NEW_TRUTH_SET_FILE: "laion_10m_100_turboquant",
-    MERGE_TREE_SETTINGS: None,
+    # One full-precision vector per compressed block, so the rescore point-reads each candidate.
+    MERGE_TREE_SETTINGS: "quantized_vector_one_block_per_row = 1",
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: False,
     USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
