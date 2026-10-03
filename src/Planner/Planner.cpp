@@ -1353,9 +1353,13 @@ void addClusterMergingStepIfNeeded(QueryPlan & query_plan,
     if (!aggregation_analysis_result.cluster_key_info.has_value())
         return;
 
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
+
     auto aggregator_params = getAggregatorParams(planner_context,
         aggregation_analysis_result,
         query_analysis_result,
+        settings,
         true /*aggregate_descriptions_remove_arguments*/);
 
     const auto & cluster_info = *aggregation_analysis_result.cluster_key_info;
