@@ -186,6 +186,9 @@ class _TeeStream:
         return getattr(self._terminal, name)
 
 class Runner:
+    # The reason for a failed pre-run, reported instead of the generic error when set.
+    _pre_run_error = None
+
     @staticmethod
     def generate_local_run_environment(workflow, job, pr=None, sha=None, branch=None):
         print("WARNING: Generate dummy env for local test")
@@ -370,6 +373,7 @@ class Runner:
                 )
             else:
                 prefixes = [env.get_s3_prefix()] * len(required_artifacts)
+            missing_artifacts = []
             for artifact, prefix in zip(required_artifacts, prefixes):
                 if artifact.compress_zst:
                     assert not isinstance(
@@ -392,15 +396,34 @@ class Runner:
                         assert "*" in include_pattern
                     else:
                         s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
-                    S3.copy_file_from_s3(
+                    downloaded = S3.copy_file_from_s3(
                         s3_path=s3_path,
                         local_path=Settings.INPUT_DIR,
                         recursive=recursive,
                         include_pattern=include_pattern,
                     )
+                    if not downloaded:
+                        # A missing artifact report is tolerated: its consumers check
+                        # whether the file exists. A missing build artifact means the
+                        # providing job did not finish (e.g. its runner was lost), and
+                        # running the job without it only fails later with a misleading
+                        # error, so fail the pre-run right away.
+                        if artifact.type == Artifact.Type.S3 and not artifact.optional:
+                            missing_artifacts.append(
+                                f"[{artifact.name}] from [{artifact._provided_by}] at [{s3_path}]"
+                            )
+                        continue
 
                     if artifact.compress_zst:
                         Utils.decompress_file(Path(Settings.INPUT_DIR) / artifact_path)
+
+            if missing_artifacts:
+                self._pre_run_error = (
+                    "Required artifacts are not found in S3, the job that provides them"
+                    " probably did not finish: " + ", ".join(missing_artifacts)
+                )
+                print(f"ERROR: {self._pre_run_error}")
+                return 1
 
         if not local_job_run and job.needs_submodules and Settings.ENABLE_SUBMODULE_CACHE:
             self._restore_submodule_cache()
@@ -815,7 +838,7 @@ class Runner:
                 status=Result.Status.ERROR,
                 start_time=Utils.timestamp(),
                 duration=0.0,
-            ).add_error(ResultInfo.PRE_JOB_FAILED).dump()
+            ).add_error(self._pre_run_error or ResultInfo.PRE_JOB_FAILED).dump()
         elif not result_exist:
             if enable_exit_code_result:
                 status = Result.Status.OK if run_exit_code == 0 else Result.Status.FAIL
@@ -1089,7 +1112,7 @@ class Runner:
         # always in the end
         if workflow.enable_cache:
             print("Run CI cache hook")
-            if result.is_ok():
+            if result.is_ok() and not result.do_not_cache():
                 CacheRunnerHooks.post_run(workflow, job)
 
         if workflow.enable_open_issues_check:

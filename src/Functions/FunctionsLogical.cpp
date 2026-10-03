@@ -20,6 +20,7 @@
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <base/TypeLists.h>
 
 #include <cstring>
 #include <algorithm>
@@ -709,7 +710,7 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
             has_nullable_arguments = arg_type->isNullable();
             if (has_nullable_arguments && !Impl::specialImplementationForNulls())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of argument for function \"{}\": "
-                    " argument {} is of type {}", getName(), i + 1, arg_type->getName());
+                    "argument {} is of type {}", getName(), i + 1, arg_type->getName());
         }
 
         if (!(isNativeNumber(arg_type)
@@ -755,26 +756,11 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
 
     executeColumnIfNeeded(arguments[0]);
 
-    /// Let's denote x_i' = maskedExecute(x_i, mask).
-    /// 1) AND(x_0, x_1, x_2, ..., x_n)
-    /// We will support mask_i = x_0 & x_1 & ... & x_i.
-    /// Base:
-    /// mask_0 is 1 everywhere, x_0' = x_0.
-    /// Iteration:
-    /// mask_i = extractMask(mask_{i - 1}, x_{i - 1}')
-    /// x_i' = maskedExecute(x_i, mask)
-    /// Also we will treat NULL as 1 if x_i' is Nullable
-    /// to support ternary logic.
-    /// The result is mask_n.
-    ///
-    /// 1) OR(x_0, x_1, x_2, ..., x_n)
-    /// We will support mask_i = !x_0 & !x_1 & ... & !x_i.
-    /// mask_0 is 1 everywhere, x_0' = x_0.
-    /// mask = extractMask(mask, !x_{i - 1}')
-    /// x_i' = maskedExecute(x_i, mask)
-    /// Also we will treat NULL as 0 if x_i' is Nullable
-    /// to support ternary logic.
-    /// The result is !mask_n.
+    /// A set mask bit means that the row still needs evaluation: it has not encountered
+    /// false for `and`, or true for `or`. `NULL` does not decide either operation, so it leaves
+    /// the row active and is remembered separately. A later decisive value clears the
+    /// `NULL` state in `applyTernaryLogic`; otherwise the final result remains `NULL`.
+    /// The `or` mask contains inverted values and is inverted once at the end.
 
     bool inverted = Name::name != NameAnd::name;
     UInt8 null_value = static_cast<UInt8>(Name::name == NameAnd::name);
@@ -786,20 +772,14 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (result_type->isNullable())
         nulls = std::make_unique<IColumn::Filter>(arguments[0].column->size(), 0);
 
-    MaskInfo mask_info{};
-    for (size_t i = 1; i <= arguments.size(); ++i)
+    MaskInfo mask_info{.has_ones = true, .has_zeros = false};
+    for (const auto & argument : arguments)
     {
-        if (inverted)
-            mask_info = extractInvertedMask(mask, arguments[i - 1].column, nulls.get(), null_value);
-        else
-            mask_info = extractMask(mask, arguments[i - 1].column, nulls.get(), null_value);
+        mask_info = maskedExecuteAndUpdateMask(argument, mask, mask_info, inverted, nulls.get(), null_value);
 
-        /// If mask doesn't have ones, we don't need to execute the rest arguments,
-        /// because the result won't change.
-        if (!mask_info.has_ones || i == arguments.size())
+        /// Stop when every row has a decisive result.
+        if (!mask_info.has_ones)
             break;
-
-        maskedExecute(arguments[i], mask, mask_info);
     }
     /// For OR function we need to inverse mask to get the resulting column.
     if (inverted)
@@ -969,17 +949,14 @@ template <template <typename> class Impl, typename Name>
 ColumnPtr FunctionUnaryLogical<Impl, Name>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
 {
     ColumnPtr res;
-    if (!((res = functionUnaryExecuteType<Impl, UInt8>(arguments))
-        || (res = functionUnaryExecuteType<Impl, UInt16>(arguments))
-        || (res = functionUnaryExecuteType<Impl, UInt32>(arguments))
-        || (res = functionUnaryExecuteType<Impl, UInt64>(arguments))
-        || (res = functionUnaryExecuteType<Impl, Int8>(arguments))
-        || (res = functionUnaryExecuteType<Impl, Int16>(arguments))
-        || (res = functionUnaryExecuteType<Impl, Int32>(arguments))
-        || (res = functionUnaryExecuteType<Impl, Int64>(arguments))
-        || (res = functionUnaryExecuteType<Impl, Float32>(arguments))
-        || (res = functionUnaryExecuteType<Impl, Float64>(arguments))))
-       throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+    TypeListUtils::forEach(TypeListNativeNumber{}, [&]<typename T>(TypeList<T>)
+    {
+        if (!res)
+            res = functionUnaryExecuteType<Impl, T>(arguments);
+    });
+
+    if (!res)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Illegal column {} of argument of function {}",
             arguments[0].column->getName(),
             getName());
