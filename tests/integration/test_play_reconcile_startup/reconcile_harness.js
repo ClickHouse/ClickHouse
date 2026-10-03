@@ -491,6 +491,9 @@ function extractTopLevelFunction(js, name) {
 async function checkAuthHeaderTransport(js) {
     const canSendRawSource = extractTopLevelFunction(js, 'canSendRawAuthHeader');
     const getAuthHeadersSource = extractTopLevelFunction(js, 'getAuthHeaders');
+    const getLegacyAuthQueryParamsSource = extractTopLevelFunction(js, 'getLegacyAuthQueryParams');
+    const responseRejectsEncodedWebUIAuthSource = extractTopLevelFunction(js, 'responseRejectsEncodedWebUIAuth');
+    const fetchWithRequestAuthSource = extractTopLevelFunction(js, 'fetchWithRequestAuth');
     const serverPredatesDefaultSessionUserSource = extractTopLevelFunction(js, 'serverPredatesDefaultSessionUser');
     const getAuthProbeKeySource = extractTopLevelFunction(js, 'getAuthProbeKey');
     const probeServerStatusSource = extractTopLevelFunction(js, 'probeServerStatus');
@@ -499,10 +502,11 @@ async function checkAuthHeaderTransport(js) {
     const invalidateRequestAuthOnFailureSource = extractTopLevelFunction(js, 'invalidateRequestAuthOnFailure');
 
     const makeAuthHelpers = (fetchImpl) => vm.runInNewContext(
-        `${canSendRawSource}\n${getAuthHeadersSource}\n${serverPredatesDefaultSessionUserSource}\n` +
+        `${canSendRawSource}\n${getAuthHeadersSource}\n${getLegacyAuthQueryParamsSource}\n` +
+        `${responseRejectsEncodedWebUIAuthSource}\n${fetchWithRequestAuthSource}\n${serverPredatesDefaultSessionUserSource}\n` +
         `const authProbeRequests = new Map();\nconst authProbeResults = new Map();\n${getAuthProbeKeySource}\n${probeServerStatusSource}\n` +
         `${getSharedServerStatusProbeSource}\n${getRequestAuthHeadersSource}\n${invalidateRequestAuthOnFailureSource}\n` +
-        '({ getAuthHeaders, getRequestAuthHeaders, invalidateRequestAuthOnFailure, serverPredatesDefaultSessionUser })',
+        '({ getAuthHeaders, getRequestAuthHeaders, fetchWithRequestAuth, invalidateRequestAuthOnFailure, serverPredatesDefaultSessionUser })',
         { Headers, fetch: fetchImpl },
     );
     const helpers = makeAuthHelpers(async () => { throw new Error('unexpected fetch'); });
@@ -554,20 +558,20 @@ async function checkAuthHeaderTransport(js) {
         helpers.serverPredatesDefaultSessionUser('27.1.1.1') === false);
 
     const requestFunctions = [
-        ['auxiliaryQuery', 'headers: await getRequestAuthHeaders(user, password, server_address)',
+        ['auxiliaryQuery', 'fetchWithRequestAuth(',
             'invalidateRequestAuthOnFailure(response, server_address, user, password)'],
-        ['postImpl', 'headers: await getRequestAuthHeaders(user, password, server_address)',
+        ['postImpl', 'fetchWithRequestAuth(',
             'invalidateRequestAuthOnFailure(response, server_address, user, password)'],
-        ['loadCompletions', 'headers: await getRequestAuthHeaders(user, password, server_address)',
+        ['loadCompletions', 'fetchWithRequestAuth(',
             'invalidateRequestAuthOnFailure(response, server_address, user, password)'],
     ];
-    for (const [name, headerCall, invalidationCall] of requestFunctions) {
+    for (const [name, authFetchCall, invalidationCall] of requestFunctions) {
         const source = extractTopLevelFunction(js, name);
-        check('auth-header-cases', `${name} resolves header authentication before the real request`,
-            source.includes(headerCall), name);
-        check('auth-header-cases', `${name} invalidates a disproved auth classification`,
+        check('auth-header-cases', `${name} routes scripted requests through auth compatibility`,
+            source.includes(authFetchCall), name);
+        check('auth-header-cases', `${name} invalidates a disproved raw-default classification`,
             source.includes(invalidationCall), name);
-        check('auth-header-cases', `${name} does not append credentials to its URL`,
+        check('auth-header-cases', `${name} does not append credentials directly to its URL`,
             !/url \+= '&(?:user|password)=/.test(source), name);
     }
 
@@ -669,6 +673,145 @@ async function checkAuthHeaderTransport(js) {
             && afterUpgrade['X-ClickHouse-User'] === undefined
             && rollingCalls.length === callsBeforeReprobe + 1,
         { beforeUpgrade, cachedAfterUpgrade, afterUpgrade, rollingCalls });
+
+    const authResponse = (status, { version = null, body = '', code = null } = {}) => {
+        const response = {
+            ok: status >= 200 && status < 300,
+            status,
+            headers: { get: name => name === 'X-ClickHouse-Exception-Code' ? code : null },
+            json: async () => ({ v: version, t: 1 }),
+            text: async () => body,
+        };
+        response.clone = () => response;
+        return response;
+    };
+
+    /// Encoded credentials try the new marker on the real request first. Only a response that
+    /// proves the marker is unsupported may retry with credentials in the URL.
+    const encodedUser = 'play:юзер';
+    const encodedPassword = '  päss 密码  ';
+    const encodedRequestUrl = 'https://remote.example/legacy-encoded?query_kind=main';
+
+    const encodedLegacyCalls = [];
+    const encodedLegacyHelpers = makeAuthHelpers(async (url, options) => {
+        encodedLegacyCalls.push({ url, headers: options.headers });
+        if (options.headers.Authorization === 'ClickHouse-Play') {
+            return authResponse(403, {
+                code: '516',
+                body: "Code: 516. DB::Exception: Invalid authentication: expected 'Basic' HTTP Authorization scheme",
+            });
+        }
+        return authResponse(200, { version: '26.6.9.1' });
+    });
+    const encodedLegacyResponse = await encodedLegacyHelpers.fetchWithRequestAuth(
+        encodedRequestUrl,
+        { method: 'POST', body: 'SELECT 1' },
+        'https://remote.example/legacy-encoded',
+        encodedUser,
+        encodedPassword);
+    check('auth-header-cases', 'legacy encoded credentials retry through URL only after marker rejection',
+        encodedLegacyResponse.ok
+            && encodedLegacyCalls.length === 2
+            && encodedLegacyCalls[0].headers.Authorization === 'ClickHouse-Play'
+            && !new URL(encodedLegacyCalls[0].url).searchParams.has('user')
+            && encodedLegacyCalls[1].headers.Authorization === 'never'
+            && new URL(encodedLegacyCalls[1].url).searchParams.get('user') === encodedUser
+            && new URL(encodedLegacyCalls[1].url).searchParams.get('password') === encodedPassword,
+        { encodedLegacyCalls });
+
+    const modernBadCalls = [];
+    const modernBadHelpers = makeAuthHelpers(async (url, options) => {
+        modernBadCalls.push({ url, headers: options.headers });
+        return authResponse(403, {
+            code: '516',
+            body: 'Authentication failed: password is incorrect',
+        });
+    });
+    const modernBadResponse = await modernBadHelpers.fetchWithRequestAuth(
+        'https://remote.example/modern?query_kind=main',
+        { method: 'POST', body: 'SELECT 1' },
+        'https://remote.example/modern',
+        encodedUser,
+        encodedPassword);
+    check('auth-header-cases', 'modern auth failures never fall back to URL credentials',
+        !modernBadResponse.ok
+            && modernBadCalls.length === 1
+            && modernBadCalls[0].headers.Authorization === 'ClickHouse-Play'
+            && !new URL(modernBadCalls[0].url).searchParams.has('user')
+            && !new URL(modernBadCalls[0].url).searchParams.has('password'),
+        { modernBadCalls });
+
+    /// Old path routing rejects the unknown marker as 404. Verify that the path itself exists
+    /// without credentials before retrying it with legacy query-parameter authentication.
+    const encodedPathCalls = [];
+    const encodedPathHelpers = makeAuthHelpers(async (url, options) => {
+        const parsed = new URL(url);
+        encodedPathCalls.push({ url, headers: options.headers });
+        if (options.headers.Authorization === 'ClickHouse-Play')
+            return authResponse(404);
+        if (!parsed.searchParams.has('user'))
+            return authResponse(403, { code: '516', body: 'Authentication failed' });
+        return authResponse(200);
+    });
+    const encodedPathResponse = await encodedPathHelpers.fetchWithRequestAuth(
+        'https://remote.example/database?query_kind=main',
+        { method: 'POST', body: 'SELECT 1' },
+        'https://remote.example/database',
+        encodedUser,
+        encodedPassword);
+    check('auth-header-cases', 'legacy path routing is verified without credentials before URL fallback',
+        encodedPathResponse.ok
+            && encodedPathCalls.length === 3
+            && !new URL(encodedPathCalls[1].url).searchParams.has('user')
+            && new URL(encodedPathCalls[2].url).searchParams.get('user') === encodedUser,
+        { encodedPathCalls });
+
+    const invalidPathCalls = [];
+    const invalidPathHelpers = makeAuthHelpers(async (url, options) => {
+        invalidPathCalls.push({ url, headers: options.headers });
+        return authResponse(404);
+    });
+    const invalidPathResponse = await invalidPathHelpers.fetchWithRequestAuth(
+        'https://remote.example/not-a-clickhouse-path?query_kind=main',
+        { method: 'POST', body: 'SELECT 1' },
+        'https://remote.example/not-a-clickhouse-path',
+        encodedUser,
+        encodedPassword);
+    check('auth-header-cases', 'an invalid path does not leak credentials through fallback',
+        invalidPathResponse.status === 404
+            && invalidPathCalls.length === 2
+            && invalidPathCalls.every(call => !new URL(call.url).searchParams.has('user')
+                && !new URL(call.url).searchParams.has('password')),
+        { invalidPathCalls });
+
+    /// The legacy URL mode is per-request, not sticky. Once the backend upgrades, the very next
+    /// request retries ClickHouse-Play and stops putting credentials in the URL.
+    let rollingEncodedLegacy = true;
+    const rollingEncodedCalls = [];
+    const rollingEncodedHelpers = makeAuthHelpers(async (url, options) => {
+        rollingEncodedCalls.push({ url, headers: options.headers });
+        if (rollingEncodedLegacy && options.headers.Authorization === 'ClickHouse-Play') {
+            return authResponse(403, {
+                code: '516',
+                body: "Invalid authentication: expected 'Basic' HTTP Authorization scheme",
+            });
+        }
+        return authResponse(200, { version: '26.7.1.1' });
+    });
+    const rollingEncodedUrl = 'https://remote.example/rolling?query_kind=main';
+    await rollingEncodedHelpers.fetchWithRequestAuth(
+        rollingEncodedUrl, { method: 'POST', body: 'SELECT 1' },
+        'https://remote.example/rolling', encodedUser, encodedPassword);
+    rollingEncodedLegacy = false;
+    await rollingEncodedHelpers.fetchWithRequestAuth(
+        rollingEncodedUrl, { method: 'POST', body: 'SELECT 1' },
+        'https://remote.example/rolling', encodedUser, encodedPassword);
+    check('auth-header-cases', 'encoded legacy fallback stops immediately after a rolling upgrade',
+        rollingEncodedCalls.length === 3
+            && new URL(rollingEncodedCalls[1].url).searchParams.has('user')
+            && rollingEncodedCalls[2].headers.Authorization === 'ClickHouse-Play'
+            && !new URL(rollingEncodedCalls[2].url).searchParams.has('user'),
+        { rollingEncodedCalls });
 
     const completionUrlSource = js.match(/function buildCompletionUrl\(\) \{\n[\s\S]*?\n\}/);
     if (!completionUrlSource) throw new Error('buildCompletionUrl not found in play.html');

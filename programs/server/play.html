@@ -8313,6 +8313,60 @@ function getAuthHeaders(user, password, force_legacy_default_user = false) {
     return headers;
 }
 
+function getLegacyAuthQueryParams(user, password) {
+    let params = '';
+    if (user)
+        params += '&user=' + encodeURIComponent(user);
+    if (password)
+        params += '&password=' + encodeURIComponent(password);
+    return params;
+}
+
+async function responseRejectsEncodedWebUIAuth(response, url) {
+    if (response.status === 404) {
+        /// Older path routing rejects unknown Authorization schemes before the query handler.
+        /// Probe the same path without credentials using the long-supported never sentinel. A
+        /// non-404 response proves that the marker, rather than the path, caused the rejection.
+        try {
+            const route_response = await fetch(url, {
+                method: "POST",
+                body: "SELECT 1",
+                headers: { 'Authorization': 'never' },
+            });
+            return route_response.status !== 404;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    if (response.headers.get('X-ClickHouse-Exception-Code') !== '516')
+        return false;
+
+    try {
+        return (await response.clone().text()).includes(
+            "expected 'Basic' HTTP Authorization scheme");
+    } catch (e) {
+        return false;
+    }
+}
+
+async function fetchWithRequestAuth(url, options, server_address, user, password) {
+    const headers = await getRequestAuthHeaders(user, password, server_address);
+    let response = await fetch(url, { ...options, headers });
+
+    const send_raw = canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
+    if (send_raw || response.ok || !await responseRejectsEncodedWebUIAuth(response, url))
+        return response;
+
+    /// The marker is unsupported, so this is an older endpoint. Retry the same request with the
+    /// historical query-parameter transport. Do not cache this mode: after a rolling upgrade the
+    /// next request should immediately retry the header path instead of keeping credentials in URLs.
+    response = await fetch(
+        url + getLegacyAuthQueryParams(user, password),
+        { ...options, headers: { 'Authorization': 'never' } });
+    return response;
+}
+
 function serverPredatesDefaultSessionUser(version) {
     const [major, minor] = String(version).split('.').map(Number);
     return Number.isFinite(major) && Number.isFinite(minor)
@@ -8333,26 +8387,42 @@ async function probeServerStatus(server_address, user, password) {
     let url = server_address +
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
         'add_http_cors_header=1&framing_output_format=None&default_format=JSONEachRow';
-    const request = headers => fetch(url, {
+    const request = (request_url, headers) => fetch(request_url, {
         method: "POST",
         body: "SELECT version() AS v, uptime() AS t",
         headers,
     });
     try {
-        let response = await request(getAuthHeaders(user, password));
+        const send_raw = canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
+        let response = await request(url, getAuthHeaders(user, password));
         if (response.ok)
             return { status: await response.json(), use_legacy_default_user: false };
 
+        /// Encoded credentials need the ClickHouse-Play marker. If the endpoint proves that it
+        /// predates that marker, retry only this compatibility probe through the old URL transport.
+        /// This mode is deliberately not cached; real requests independently retry the header path.
+        if (!send_raw) {
+            if (!await responseRejectsEncodedWebUIAuth(response, url))
+                return false;
+
+            response = await request(
+                url + getLegacyAuthQueryParams(user, password),
+                { 'Authorization': 'never' });
+            if (!response.ok)
+                return false;
+
+            return { status: await response.json(), use_legacy_default_user: false };
+        }
+
         /// A raw password-only request is the one header-auth case whose semantics changed in
-        /// 26.7. Probe the historical explicit `default` user only after the modern form fails,
+        /// 26.7. Probe the historical explicit default user only after the modern form fails,
         /// and adopt it only when the successful probe itself proves the server is older than 26.7.
         /// The probe runs only SELECT version()/uptime(), never the user's query.
-        const can_probe_legacy_default = !user && password
-            && canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
+        const can_probe_legacy_default = !user && password;
         if (!can_probe_legacy_default)
             return false;
 
-        response = await request(getAuthHeaders(user, password, true));
+        response = await request(url, getAuthHeaders(user, password, true));
         if (!response.ok)
             return false;
 
@@ -8435,7 +8505,12 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
 
     let response;
     try {
-        response = await fetch(url, { method: "POST", body: query, headers: await getRequestAuthHeaders(user, password, server_address) });
+        response = await fetchWithRequestAuth(
+            url,
+            { method: "POST", body: query },
+            server_address,
+            user,
+            password);
         invalidateRequestAuthOnFailure(response, server_address, user, password);
     } catch (e) {
         if (!quiet && belongs_to_active_connection()) {
@@ -11180,8 +11255,13 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             throw new Error("This page requires framing to render results; it cannot run a query that sets framing_output_format = 'None' - or to a value it cannot know upfront (DEFAULT, or a query-parameter placeholder like {fmt:String}).");
         }
 
-        const fetch_options = { method: "POST", body: query, signal: abortController.signal, headers: await getRequestAuthHeaders(user, password, server_address) };
-        response = await fetch(use_framing ? framing_url : url, fetch_options);
+        const fetch_options = { method: "POST", body: query, signal: abortController.signal };
+        response = await fetchWithRequestAuth(
+            use_framing ? framing_url : url,
+            fetch_options,
+            server_address,
+            user,
+            password);
         invalidateRequestAuthOnFailure(response, server_address, user, password);
 
         /// Detect image results (e.g. `FORMAT PNG`) by the response `Content-Type` rather than by
@@ -11202,7 +11282,12 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         /// a plain-HTTP error, and blindly resubmitting the whole request could duplicate its effect.
         if (use_framing && !response.ok && !content_type.startsWith('text/event-stream') && await queryIsReadOnly(query)) {
             use_framing = false;
-            response = await fetch(url, fetch_options);
+            response = await fetchWithRequestAuth(
+                url,
+                fetch_options,
+                server_address,
+                user,
+                password);
             invalidateRequestAuthOnFailure(response, server_address, user, password);
             content_type = response.headers.get('Content-Type') ?? '';
         }
@@ -11231,7 +11316,12 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 && await queryIsReadOnly(query)) {
                 framed_error_stream = null;
                 use_framing = false;
-                response = await fetch(url, fetch_options);
+                response = await fetchWithRequestAuth(
+                    url,
+                    fetch_options,
+                    server_address,
+                    user,
+                    password);
                 invalidateRequestAuthOnFailure(response, server_address, user, password);
                 content_type = response.headers.get('Content-Type') ?? '';
             }
@@ -18092,11 +18182,15 @@ async function loadCompletions() {
     const password = password_elem.value;
 
     try {
-        const response = await fetch(buildCompletionUrl(), {
-            method: "POST",
-            body: COMPLETION_QUERY,
-            headers: await getRequestAuthHeaders(user, password, server_address),
-        });
+        const response = await fetchWithRequestAuth(
+            buildCompletionUrl(),
+            {
+                method: "POST",
+                body: COMPLETION_QUERY,
+            },
+            server_address,
+            user,
+            password);
         invalidateRequestAuthOnFailure(response, server_address, user, password);
         /// The connection settings changed while loading — discard this stale result.
         if (generation !== connectionGeneration) {
