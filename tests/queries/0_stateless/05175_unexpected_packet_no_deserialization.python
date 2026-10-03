@@ -430,6 +430,28 @@ def undecodableDataScenario():
         print("undecodable data packet: not drained, connection closed")
 
 
+def truncatedPacketTypeScenario():
+    # A lone `0x80` is the first byte of a multi-byte packet type with the rest of it missing. The
+    # client then shuts down its side of the connection, so the server hits the end of the input in
+    # the middle of the `VarUInt`, before it knows the packet type. It must not drain from there, but
+    # close the connection right away.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        connectAndHandshake(s)
+        startInsert(s)
+
+        s.sendall(bytes([0x80]))
+        s.shutdown(socket.SHUT_WR)
+
+        # Whatever the server manages to send before closing (the exception about the end of the
+        # input) is irrelevant here; only the prompt close is asserted.
+        try:
+            while s.recv(4096):
+                pass
+        except ConnectionResetError:
+            pass
+        print("truncated multi-byte packet type during an insert: connection closed")
+
+
 def dataAfterFailedInsertScenario():
     # The one place where a data packet of a doomed query is still deserialized: a client that keeps
     # streaming rows for an insert that has already failed. Those blocks are read only to find where
@@ -470,6 +492,7 @@ def main():
     leftoverBytesScenario()
     queryPlanDuringDrainScenario()
     undecodableDataScenario()
+    truncatedPacketTypeScenario()
     # The counterweight to the two above: a failure *after* a complete packet still drains the rest
     # and keeps the connection.
     dataAfterFailedInsertScenario()

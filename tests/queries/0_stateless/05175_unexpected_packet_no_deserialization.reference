@@ -9,5 +9,6 @@ IgnoredPartUUIDs during an insert: UNEXPECTED_PACKET_FROM_CLIENT, connection clo
 leftover bytes after a rejected packet: not parsed, connection closed
 query plan during the drain: rejected, connection closed
 undecodable data packet: not drained, connection closed
+truncated multi-byte packet type during an insert: connection closed
 data after a failed insert: discarded, connection preserved
 server alive	0
