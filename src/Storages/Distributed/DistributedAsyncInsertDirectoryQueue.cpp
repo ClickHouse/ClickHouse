@@ -697,7 +697,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, 
 
 void DistributedAsyncInsertDirectoryQueue::markAsBroken(const std::string & file_path)
 {
-    const String & broken_file_path = pathToGenericString(fs::path(broken_path) / fs::path(file_path).filename());
+    const String & broken_file_path = pathToGenericString(pathFromString(broken_path) / pathFromString(file_path).filename());
 
     auto dir_sync_guard = getDirectorySyncGuard(relative_path);
     auto broken_dir_sync_guard = getDirectorySyncGuard(broken_relative_path);
@@ -705,7 +705,7 @@ void DistributedAsyncInsertDirectoryQueue::markAsBroken(const std::string & file
     {
         std::lock_guard status_lock(status_mutex);
 
-        size_t file_size = fs::file_size(file_path);
+        size_t file_size = fs::file_size(pathFromString(file_path));
 
         --status.files_count;
         status.bytes_count -= file_size;
@@ -717,7 +717,7 @@ void DistributedAsyncInsertDirectoryQueue::markAsBroken(const std::string & file
         metric_broken_bytes.add(file_size);
     }
 
-    fs::rename(file_path, broken_file_path);
+    fs::rename(pathFromString(file_path), pathFromString(broken_file_path));
     LOG_ERROR(log, "Renamed `{}` to `{}`", file_path, broken_file_path);
 }
 

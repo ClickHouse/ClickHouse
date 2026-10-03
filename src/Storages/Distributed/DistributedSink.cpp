@@ -943,8 +943,8 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         const std::string path(disk_path + data_path + *it);
         const std::string tmp_path(path + "/tmp/");
 
-        fs::create_directory(path);
-        fs::create_directory(tmp_path);
+        fs::create_directory(pathFromString(path));
+        fs::create_directory(pathFromString(tmp_path));
 
         const std::string file_name(toString(storage.file_names_increment.get()) + ".bin");
 
@@ -1040,10 +1040,10 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
                 out.sync();
         }
 
-        file_size = fs::file_size(first_file_tmp_path);
+        file_size = fs::file_size(pathFromString(first_file_tmp_path));
 
         // Create hardlink here to reuse increment number
-        auto bin_file = (fs::path(path) / file_name).string();
+        auto bin_file = pathToGenericString(pathFromString(path) / file_name);
         auto directory_queue = storage.getDirectoryQueue(disk, *it);
         {
             createHardLink(first_file_tmp_path, bin_file);
@@ -1056,10 +1056,10 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     /// Make hardlinks
     for (; it != dir_names.end(); ++it)
     {
-        const std::string path(pathToGenericString(fs::path(disk_path) / (data_path + *it)));
-        fs::create_directory(path);
+        const std::string path(pathToGenericString(pathFromString(disk_path) / pathFromString(data_path + *it)));
+        fs::create_directory(pathFromString(path));
 
-        auto bin_file = (fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin")).string();
+        auto bin_file = pathToGenericString(pathFromString(path) / (toString(storage.file_names_increment.get()) + ".bin"));
         auto directory_queue = storage.getDirectoryQueue(disk, *it);
         {
             createHardLink(first_file_tmp_path, bin_file);
@@ -1070,7 +1070,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
 
     /// remove the temporary file, enabling the OS to reclaim inode after all threads
     /// have removed their corresponding files
-    fs::remove(first_file_tmp_path);
+    fs::remove(pathFromString(first_file_tmp_path));
 }
 
 }
