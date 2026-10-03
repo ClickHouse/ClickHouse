@@ -1,5 +1,3 @@
--- Tags: no-darwin
--- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- A broadcast join keeps every left-side row on its node, so a left input partitioned by a key
 -- still satisfies a downstream requirement for that key. Without the keyed broadcast alternative
