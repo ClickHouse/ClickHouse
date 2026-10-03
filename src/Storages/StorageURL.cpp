@@ -1480,9 +1480,9 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     /// Enforce <http_forbid_headers> before any network access. This is the single funnel for
     /// schema inference (StorageURL ctor, StorageURLCluster, TableFunctionURL analysis), so the
     /// check here also covers the DESCRIBE / INSERT..SELECT / format-detection paths that never
-    /// reach the StorageURL ctor body. checkAndNormalizeHeaders mutates, so validate a copy.
+    /// reach the StorageURL ctor body. The check takes a mutable reference, so validate a copy.
     HTTPHeaderEntries headers_to_check(headers);
-    context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_to_check);
+    context->getHTTPHeaderFilter().checkHeaders(headers_to_check);
 
     Poco::Net::HTTPBasicCredentials credentials;
 
@@ -1648,7 +1648,7 @@ void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromURL::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
+    info = updateFormatPrewhereInfo(info, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
     /// `optimizePrewhere` can attach the filter after this source step was constructed.
     /// The count-only format path returns metadata rows without applying `PREWHERE`.
@@ -1679,15 +1679,16 @@ void IStorageURLBase::read(
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
-    if (query_info.prewhere_info || query_info.row_level_filter)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+    if (query_info.prewhere_info)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
     /// A row-level filter or storage `PREWHERE` must disable the count-only shortcut even when
     /// `optimize_trivial_count` is set: the format's count-only path returns the metadata row count
     /// without applying the filters.
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
-        && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter
+        && !read_from_format_info.prewhere_info
         && local_context->getSettingsRef()[Setting::optimize_count_from_files]
+        && !query_info.row_level_filter
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto read_post_data_callback = getReadPOSTDataCallback(
@@ -1792,7 +1793,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
-        filter_actions_dag,
+        info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag,
         context,
         nullptr,
         query_info.row_level_filter,
@@ -1864,15 +1865,16 @@ void StorageURLWithFailover::read(
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
-    if (query_info.prewhere_info || query_info.row_level_filter)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+    if (query_info.prewhere_info)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
     /// A row-level filter or storage `PREWHERE` must disable the count-only shortcut even when
     /// `optimize_trivial_count` is set: the format's count-only path returns the metadata row count
     /// without applying the filters.
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
-        && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter
+        && !read_from_format_info.prewhere_info
         && local_context->getSettingsRef()[Setting::optimize_count_from_files]
+        && !query_info.row_level_filter
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto read_post_data_callback = getReadPOSTDataCallback(
@@ -2010,7 +2012,7 @@ StorageURL::StorageURL(
         distributed_processing_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
-    context_->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
+    context_->getHTTPHeaderFilter().checkHeaders(headers);
 }
 
 
@@ -2703,6 +2705,7 @@ public:
     }
 
     StoragePtr getNested() const override { return nested; }
+    StoragePtr tryGetNested() const override { return nested; }
     /// The table was created with `ENGINE = URL(...)`; report it as such for consistency with
     /// `SHOW CREATE TABLE` and `system.tables`, even though reads/writes go to the delegate.
     String getName() const override { return "URL"; }
@@ -2912,7 +2915,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
     /// and must stay loadable after a revoke; every other statement introduces one to check.
     const bool from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
     if (!from_existing_metadata)
-        context->checkAccess(AccessType::TABLE_ENGINE, String(engine_name));
+        context->checkAccess(AccessType::TABLE_ENGINE, engine_name);
 
     const auto & storages = StorageFactory::instance().getAllStorages();
     auto it = storages.find(engine_name);
@@ -2954,6 +2957,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
         /// `format = auto` that would force re-inference (and external I/O) on every `ATTACH`/restart.
         if (const auto * file = typeid_cast<const StorageFile *>(delegate_storage.get()))
             resolved_format = file->getFormatName();
+        /// NOLINT(storage-cast): the delegate is created right here, it never comes from the catalog.
         else if (const auto * object_storage = typeid_cast<const StorageObjectStorage *>(delegate_storage.get()))
             resolved_format = object_storage->getFormatName();
         else

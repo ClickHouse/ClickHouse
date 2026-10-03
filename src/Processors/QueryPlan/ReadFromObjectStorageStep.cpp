@@ -98,7 +98,7 @@ void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
+    info = updateFormatPrewhereInfo(info, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
     /// `optimizePrewhere` can attach the filter after this source step was constructed.
     /// The count-only format path returns metadata rows without applying `PREWHERE`.
@@ -127,7 +127,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
-        filter_actions_dag,
+        info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag,
         context,
         configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
         query_info.row_level_filter,
@@ -263,12 +263,10 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
 
 std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names)
 {
-    /// `StorageObjectStorage::read` propagates a bare row policy (no PREWHERE) into
-    /// `info.row_level_filter`, which the split pins to the main pass; keep this guard in case a
-    /// caller constructs the step without that propagation, since the source would still evaluate
-    /// the filter in the main pass via `FormatFilterInfo`.
+    /// A row policy is not part of `info`, but the source evaluates it in the main pass via
+    /// `FormatFilterInfo`, so its input columns must not be deferred to the lazy branch.
     NameSet names_to_keep = required_names;
-    if (!info.row_level_filter && query_info.row_level_filter)
+    if (query_info.row_level_filter)
         for (const auto & column : query_info.row_level_filter->actions.getRequiredColumns())
             names_to_keep.insert(column.name);
 

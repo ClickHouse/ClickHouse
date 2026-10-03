@@ -77,25 +77,6 @@ void addRetainedActionInputs(
     }
 }
 
-Block applyRowLevelFilterHeaderActions(
-    Block header,
-    const FilterDAGInfoPtr & row_level_filter,
-    const NameSet & requested_input_names)
-{
-    addRequiredColumnsToHeader(header, row_level_filter->actions);
-    const Block header_before_actions = header;
-    header = SourceStepWithFilter::applyPrewhereActions(std::move(header), row_level_filter, nullptr);
-    addRetainedActionInputs(
-        header,
-        header_before_actions,
-        row_level_filter->actions,
-        requested_input_names,
-        row_level_filter->do_remove_column ? std::optional<String>{row_level_filter->column_name} : std::nullopt,
-        false);
-
-    return header;
-}
-
 Block applyPrewhereHeaderActions(
     Block header,
     const PrewhereInfoPtr & prewhere_info,
@@ -126,16 +107,6 @@ void addInternalFilterInputColumns(Block & filter_input_header, const Block & fo
 
         filter_input_header.insert({col.type, col.name});
     }
-}
-
-NameSet getRemovedFilterColumns(const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info)
-{
-    NameSet result;
-    if (row_level_filter && row_level_filter->do_remove_column)
-        result.insert(row_level_filter->column_name);
-    if (prewhere_info && prewhere_info->remove_prewhere_column)
-        result.insert(prewhere_info->prewhere_column_name);
-    return result;
 }
 
 void addRetainedFilterOutputs(
@@ -254,10 +225,15 @@ ReadFromFormatInfo prepareReadingFromFormat(
             columns_to_read = std::move(new_columns_to_read);
         }
 
-        /// If only virtual columns were requested, just read the smallest column.
+        /// If only virtual or hive partition columns were requested, just read the smallest column.
+        /// Prefer a non-partition column: partition columns are dropped from the format header below.
         if (columns_to_read.empty())
         {
-            columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
+            NamesAndTypesList candidates;
+            for (const auto & column : columns_in_data_file)
+                if (!hive_parameters.hive_partition_columns_to_read_from_file_path_map.contains(column.name))
+                    candidates.push_back(column);
+            columns_to_read.push_back(ExpressionActions::getSmallestColumn(candidates.empty() ? columns_in_data_file : candidates).name);
         }
 
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
@@ -276,6 +252,11 @@ ReadFromFormatInfo prepareReadingFromFormat(
         if (!hive_parameters.hive_partition_columns_to_read_from_file_path_map.contains(column.name))
             info.format_header.insert(ColumnWithTypeAndName{column.type, column.name});
     }
+
+    /// A structure of only hive partition columns: read them, an empty header yields no rows.
+    if (info.format_header.columns() == 0)
+        for (const auto & column : info.columns_description)
+            info.format_header.insert(ColumnWithTypeAndName{column.type, column.name});
 
     info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
 
@@ -492,66 +473,46 @@ NameSet getSupportedPrewhereColumnsForFormat(
     return names;
 }
 
-ReadFromFormatInfo updateFormatPrewhereInfo(
-    const ReadFromFormatInfo & info,
-    const FilterDAGInfoPtr & row_level_filter,
-    const PrewhereInfoPtr & prewhere_info)
+ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const PrewhereInfoPtr & prewhere_info)
 {
-    chassert(prewhere_info || row_level_filter);
+    chassert(prewhere_info);
 
     if (info.prewhere_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "updateFormatPrewhereInfo called more than once");
 
     ReadFromFormatInfo new_info = info;
     new_info.prewhere_info = prewhere_info;
-    new_info.row_level_filter = row_level_filter;
 
     /// `ActionsDAG::updateHeader` removes columns used as inputs unless they are outputs.
     /// Keep requested input columns explicitly and put filter-only inputs into
     /// `format_filter_input_header`.
+    /// The row-level filter is not applied, see the comment for `ReadFromFormatInfo::prewhere_info`.
     Block format_header = info.format_header;
     const NameSet requested_input_names = info.requested_columns.getNameSet();
-    const FilterDAGInfoPtr row_level_filter_to_apply = row_level_filter && !info.row_level_filter ? row_level_filter : nullptr;
 
-    if (row_level_filter_to_apply)
-        format_header = applyRowLevelFilterHeaderActions(std::move(format_header), row_level_filter_to_apply, requested_input_names);
-    if (prewhere_info)
-    {
-        /// `Parquet` can defer `PREWHERE` on `VARIANT` subcolumns until after chunk delivery.
-        /// Those inputs must stay in `format_header`, because `format_filter_input_header` is not delivered in that chunk.
-        format_header = applyPrewhereHeaderActions(std::move(format_header), prewhere_info, requested_input_names);
-    }
-    new_info.format_header = std::move(format_header);
+    /// `Parquet` can defer `PREWHERE` on `VARIANT` subcolumns until after chunk delivery.
+    /// Those inputs must stay in `format_header`, because `format_filter_input_header` is not delivered in that chunk.
+    new_info.format_header = applyPrewhereHeaderActions(std::move(format_header), prewhere_info, requested_input_names);
 
     new_info.format_filter_input_header = {};
-    if (row_level_filter)
-        addInternalFilterInputColumns(new_info.format_filter_input_header, new_info.format_header, row_level_filter->actions);
-    if (prewhere_info)
-        addInternalFilterInputColumns(new_info.format_filter_input_header, new_info.format_header, prewhere_info->prewhere_actions);
+    addInternalFilterInputColumns(new_info.format_filter_input_header, new_info.format_header, prewhere_info->prewhere_actions);
 
-    const auto removed_filter_columns = getRemovedFilterColumns(row_level_filter, prewhere_info);
+    const std::optional<String> removed_prewhere_column
+        = prewhere_info->remove_prewhere_column ? std::optional<String>{prewhere_info->prewhere_column_name} : std::nullopt;
     new_info.requested_columns = {};
     for (const auto & column : info.requested_columns)
     {
-        if (removed_filter_columns.contains(column.name))
+        if (removed_prewhere_column && column.name == *removed_prewhere_column)
             continue;
         if (canExtractColumnFromFormatHeader(new_info.format_header, column))
             new_info.requested_columns.push_back(column);
     }
 
-    if (row_level_filter)
-        addRetainedFilterOutputs(
-            new_info.requested_columns,
-            new_info.format_header,
-            row_level_filter->actions,
-            row_level_filter->do_remove_column ? std::optional<String>{row_level_filter->column_name} : std::nullopt);
-
-    if (prewhere_info)
-        addRetainedFilterOutputs(
-            new_info.requested_columns,
-            new_info.format_header,
-            prewhere_info->prewhere_actions,
-            prewhere_info->remove_prewhere_column ? std::optional<String>{prewhere_info->prewhere_column_name} : std::nullopt);
+    addRetainedFilterOutputs(
+        new_info.requested_columns,
+        new_info.format_header,
+        prewhere_info->prewhere_actions,
+        removed_prewhere_column);
 
     new_info.source_header = buildSourceHeader(
         new_info.requested_columns,
@@ -588,6 +549,14 @@ SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMet
     }
 
     return res;
+}
+
+bool ReadFromFormatInfo::formatReadsHivePartitionColumns() const
+{
+    for (const auto & column : hive_partition_columns_to_read_from_file_path)
+        if (format_header.has(column.name))
+            return true;
+    return false;
 }
 
 void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
@@ -701,12 +670,10 @@ size_t clampClusterFunctionNumStreams(UInt64 num_streams)
 
 std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromFormatInfo & info, const NameSet & required_names)
 {
-    /// Columns that the PREWHERE / row-level filter needs as inputs must stay in the main read
-    /// because filtering happens there.
+    /// Columns that the PREWHERE needs as inputs must stay in the main read because filtering
+    /// happens there. The inputs of the row-level filter must be in `required_names`: it is not
+    /// part of `info`, but the source applies it in the main read as well.
     NameSet columns_to_keep = required_names;
-    if (info.row_level_filter)
-        for (const auto & column : info.row_level_filter->actions.getRequiredColumns())
-            columns_to_keep.insert(column.name);
     if (info.prewhere_info)
         for (const auto & column : info.prewhere_info->prewhere_actions.getRequiredColumns())
             columns_to_keep.insert(column.name);
@@ -721,8 +688,6 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
             if (output->type != ActionsDAG::ActionType::INPUT)
                 columns_to_keep.insert(output->result_name);
     };
-    if (info.row_level_filter)
-        keep_filter_outputs(info.row_level_filter->actions);
     if (info.prewhere_info)
         keep_filter_outputs(info.prewhere_info->prewhere_actions);
 
@@ -825,13 +790,10 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
     for (const auto & column : info.source_header)
         if (columns_to_keep.contains(column.name))
             seed_defaulted_column(column.name);
-    /// A defaulted column consumed only by the PREWHERE / row-level filter is stripped from
-    /// `info.source_header` by `updateFormatPrewhereInfo`, but the main branch still reads it and
-    /// `AddingDefaultsTransform` evaluates its expression there before the filter runs - so it
-    /// pins the inputs of its expression to the main branch just like a visible column.
-    if (info.row_level_filter)
-        for (const auto & column : info.row_level_filter->actions.getRequiredColumns())
-            seed_defaulted_column(column.name);
+    /// A defaulted column consumed only by the PREWHERE is stripped from `info.source_header` by
+    /// `updateFormatPrewhereInfo`, but the main branch still reads it and `AddingDefaultsTransform`
+    /// evaluates its expression there before the filter runs - so it pins the inputs of its
+    /// expression to the main branch just like a visible column.
     if (info.prewhere_info)
         for (const auto & column : info.prewhere_info->prewhere_actions.getRequiredColumns())
             seed_defaulted_column(column.name);

@@ -232,7 +232,9 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
     while (pos < uncompressed_size)
     {
         decompressor->set(out + pos, uncompressed_size - pos);
-        decompressor->next();
+        if (!decompressor->next())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Unexpected end of compressed page: decompressed {} of {} bytes", pos, uncompressed_size);
         chassert(decompressor->position() == out + pos);
         size_t n = decompressor->available();
         chassert(n <= uncompressed_size - pos);
@@ -247,7 +249,7 @@ void Reader::init(const ReadOptions & options_, const Block & sample_block_, For
     format_filter_info = format_filter_info_;
 }
 
-parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
+parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher, size_t footer_read_size)
 {
     /// Parquet file ends with:
     ///  * serialized FileMetaData struct,
@@ -258,9 +260,14 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     if (file_size <= 8)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet file too short: {} bytes", file_size);
 
-    /// Read the last 64 KiB in hopes that FileMetaData is smaller than that.
-    /// This is usually enough for files smaller than a few hundred MB.
-    size_t initial_read_size = std::min(file_size, 64ul << 10);
+    /// Read a tail sized to the file (1%, clamped to [128 KiB, 2 MiB]) so it usually covers the whole
+    /// footer - FileMetaData for wider range of layouts - in one read. A non-zero
+    /// `footer_read_size` overrides this adaptive size with a fixed read size.
+    if (footer_read_size == 0)
+        footer_read_size = std::clamp<size_t>(file_size / 100, 128ul << 10, 2ul << 20);
+    /// The read must cover at least the 8-byte trailer (metadata size + magic) so the offsets below
+    /// don't underflow; an explicit `footer_read_size` smaller than that is bumped up to 8.
+    size_t initial_read_size = std::min(file_size, std::max<size_t>(footer_read_size, 8));
     PODArray<char> buf(initial_read_size);
     prefetcher.readSync(buf.data(), initial_read_size, file_size - initial_read_size);
 
@@ -369,10 +376,23 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
                 continue;
             }
 
-            if (column_meta.statistics.__isset.min_value)
-                column_info.decoder.decodeField(column_meta.statistics.min_value, /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
-            if (column_meta.statistics.__isset.max_value)
-                column_info.decoder.decodeField(column_meta.statistics.max_value, /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
+            const bool has_min = column_meta.statistics.__isset.min_value;
+            const bool has_max = column_meta.statistics.__isset.max_value;
+            const auto & converter = column_info.decoder.fixed_size_converter;
+            if ((!has_min || !has_max) && converter && converter->statsNeedBothBounds())
+                continue;
+
+            bool stats_usable = true;
+            if (has_min)
+                stats_usable = column_info.decoder.decodeField(column_meta.statistics.min_value, /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
+            if (stats_usable && has_max)
+                stats_usable = column_info.decoder.decodeField(column_meta.statistics.max_value, /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
+
+            if (!stats_usable)
+            {
+                range = Range::createWholeUniverse();
+                continue;
+            }
 
             adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
         }
@@ -588,16 +608,25 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// i.e. the very same raw name `geo_meta` already carries. Translating them to the query-side
     /// name (as an earlier version of this code did) breaks the match against
     /// `primitive_columns[i].name` for any bbox sub-column that was itself renamed.
-    std::unordered_map<String, String> clickhouse_to_parquet_name;
-    const auto * query_side_column_mapper = format_filter_info->current_schema_column_mapper
-        ? format_filter_info->current_schema_column_mapper.get()
-        : format_filter_info->column_mapper.get();
-    if (query_side_column_mapper && format_filter_info->column_mapper)
-        clickhouse_to_parquet_name =
-            query_side_column_mapper->makeMapping(format_filter_info->column_mapper->getFieldIdToClickHouseName()).first;
+    std::optional<std::unordered_map<String, String>> clickhouse_to_parquet_name;
+    auto get_clickhouse_to_parquet_name = [&]() -> const std::unordered_map<String, String> &
+    {
+        if (!clickhouse_to_parquet_name)
+        {
+            clickhouse_to_parquet_name.emplace();
+            const auto * query_side_column_mapper = format_filter_info->current_schema_column_mapper
+                ? format_filter_info->current_schema_column_mapper.get()
+                : format_filter_info->column_mapper.get();
+            if (query_side_column_mapper && format_filter_info->column_mapper)
+                *clickhouse_to_parquet_name
+                    = query_side_column_mapper->makeMapping(format_filter_info->column_mapper->getFieldIdToClickHouseName()).first;
+        }
+        return *clickhouse_to_parquet_name;
+    };
     auto resolve_geo_meta = [&](const String & ch_name) -> std::unordered_map<String, DB::GeoColumnMetadata>::const_iterator
     {
-        if (auto it = clickhouse_to_parquet_name.find(ch_name); it != clickhouse_to_parquet_name.end())
+        const auto & mapping = get_clickhouse_to_parquet_name();
+        if (auto it = mapping.find(ch_name); it != mapping.end())
             return geo_meta->find(it->second);
         return geo_meta->find(ch_name);
     };
@@ -609,7 +638,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// pruning.
     auto to_raw_geometry_name = [&](const String & ch_name) -> String
     {
-        if (auto it = clickhouse_to_parquet_name.find(ch_name); it != clickhouse_to_parquet_name.end())
+        const auto & mapping = get_clickhouse_to_parquet_name();
+        if (auto it = mapping.find(ch_name); it != mapping.end())
             return it->second;
         return ch_name;
     };
@@ -1868,7 +1898,7 @@ bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes
         bool miss = false;
         for (size_t i = 0; i < 8; ++i)
         {
-            size_t bit_idx = UInt32(UInt32(h) * salt[i]) >> 27;
+            size_t bit_idx = (UInt32(h) * salt[i]) >> 27;
             UInt32 word = unalignedLoad<UInt32>(data.data() + i * 4);
             if (!(word & (1u << bit_idx)))
             {
@@ -2298,10 +2328,14 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             }
             else
             {
-                column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
-                column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
+                const bool stats_usable
+                    = column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left)
+                    && column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
 
-                adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
+                if (stats_usable)
+                    adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
+                else
+                    range = Range::createWholeUniverse();
             }
 
             /// All conjunctive predicates on this column (e.g. two `pointInPolygon` calls sharing
