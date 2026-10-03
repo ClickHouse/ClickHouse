@@ -121,7 +121,6 @@
 
 #if USE_FILELOG
 #include <Storages/FileLog/StorageFileLog.h>
-#include <Storages/StorageProxy.h>
 #endif
 
 #if USE_JEMALLOC
@@ -2633,8 +2632,7 @@ void InterpreterSystemQuery::resetFileLog([[maybe_unused]] ASTSystemQuery & quer
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESET_FILELOG, table_id);
 #if USE_FILELOG
-    auto table = unwrapStorageProxy(DatabaseCatalog::instance().getTable(table_id, getContext()));
-    auto * file_log = dynamic_cast<StorageFileLog *>(table.get());
+    auto file_log = castStorage<StorageFileLog>(DatabaseCatalog::instance().getTable(table_id, getContext()), DeferredTable::Load);
     if (!file_log)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not a FileLog table", table_id.getNameForLogs());
     std::optional<UInt64> offset = 0;
