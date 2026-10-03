@@ -141,13 +141,13 @@ public:
         /// https://github.com/ClickHouse/ClickHouse/pull/52973
         if ((single_level_set_num > 0 && single_level_set_num < places.size()) || ((all_single_hash_size/places.size()) > 6000))
         {
+            /// The wait covers this call's tasks alone: concurrent merges of other groups may share the pool.
+            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::UNIQ_EXACT_CONVERT);
             try
             {
                 auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
-                auto thread_func = [&places, &accessor, data_vec_atomic_index, &is_cancelled, thread_group = getCurrentThreadGroup()]()
+                auto thread_func = [&places, &accessor, data_vec_atomic_index, &is_cancelled]()
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::UNIQ_EXACT_CONVERT);
-
                     while (true)
                     {
                         if (is_cancelled.load(std::memory_order_seq_cst))
@@ -161,15 +161,14 @@ public:
                     }
                 };
                 for (size_t i = 0; i < std::min<size_t>(thread_pool.getMaxThreads(), single_level_set_num); ++i)
-                    thread_pool.scheduleOrThrowOnError(thread_func);
-
-                thread_pool.wait();
+                    runner.enqueueAndKeepTrack(thread_func, Priority{});
             }
             catch (...)
             {
-                thread_pool.wait();
+                is_cancelled.store(true);
                 throw;
             }
+            runner.waitForAllToFinishAndRethrowFirstError();
         }
     }
 
