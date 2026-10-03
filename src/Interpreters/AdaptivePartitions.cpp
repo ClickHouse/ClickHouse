@@ -5,6 +5,7 @@
 #include <new>
 
 #include <Common/Allocator.h>
+#include <Common/memory.h>
 
 namespace DB
 {
@@ -69,7 +70,10 @@ char * AdaptivePartitionBuffers::startChunk(size_t partition, size_t bytes)
     if (chain.last)
         chain.last->used = static_cast<UInt32>(cursor.pos - chain.last->records());
 
-    const size_t needed = sizeof(ChunkHeader) + bytes + tail_padding_bytes;
+    /// A chunk is sized in multiples of the header's alignment, so the chunk carved after it in the block starts
+    /// aligned: the records are 4-byte aligned only, and a chunk for a record larger than the doubled capacity is
+    /// sized by that record.
+    const size_t needed = ::Memory::alignUp(sizeof(ChunkHeader) + bytes + tail_padding_bytes, alignof(ChunkHeader));
     size_t capacity = 0;
     char * data = nullptr;
     Block * block = nullptr;
