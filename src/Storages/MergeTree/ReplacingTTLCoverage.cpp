@@ -61,7 +61,7 @@ bool isPositiveInterval(const ASTPtr & ast)
 }
 
 /// `version + INTERVAL n unit [+ INTERVAL m unit ...]`, the arguments of `plus` in any order.
-/// A positive interval keeps the value away from 0, which a `TTL` treats as "no TTL", and addit it keeps the order of
+/// A positive interval keeps the value away from 0, which a `TTL` treats as "no TTL", and adding it keeps the order of
 /// version, except that an interval of a day or longer is added in local time, so around the hour that repeats when
 /// clocks go back, a `DateTime` version can get a `TTL` up to that hour later than a newer version.
 bool isVersionPlusPositiveIntervals(const ASTPtr & ast, const String & version_column)
@@ -80,7 +80,7 @@ bool isVersionPlusPositiveIntervals(const ASTPtr & ast, const String & version_c
 
     const auto & lhs = function->arguments->children[0];
     const auto & rhs = function->arguments->children[1];
-    return (is_version_term(lhs) && isPositiveInterval(rhs)) || (isPositiveInterval(lhs) && is_version_term(rhs)); 
+    return (is_version_term(lhs) && isPositiveInterval(rhs)) || (isPositiveInterval(lhs) && is_version_term(rhs));
 }
 
 /// True if an older version of a key has expired by `ttl` whenever a newer version has.
