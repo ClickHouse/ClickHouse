@@ -556,6 +556,43 @@ def test_relative_path_static_handler():
         )
 
 
+def test_symlink_and_escape_static_handler():
+    """On a plain `user_files_path` (no `user_files_policy`) containment is lexical, like for every
+    other `user_files` consumer: an admin-managed symlink inside `user_files` pointing elsewhere is
+    served, while a `..` segment that leaves `user_files` is refused."""
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__, "test_symlink_and_escape_static_handler"),
+            "static_handler",
+            "test_static_handler",
+        )
+    ) as cluster:
+        cluster.instance.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "mkdir -p /mnt/shared_static"
+                " && echo '<html><body>Symlinked File</body></html>' > /mnt/shared_static/index.html"
+                " && ln -sfn /mnt/shared_static /var/lib/clickhouse/user_files/link"
+                " && echo 'escaped' > /var/lib/clickhouse/escape_static_handler.html",
+            ],
+            privileged=True,
+            user="root",
+        )
+
+        response = cluster.instance.http_request(
+            "test_get_symlink_static_handler", method="GET", headers={"XXX": "xxx"}
+        )
+        assert response.status_code == 200
+        assert response.content == b"<html><body>Symlinked File</body></html>\n"
+
+        response = cluster.instance.http_request(
+            "test_get_escape_static_handler", method="GET", headers={"XXX": "xxx"}
+        )
+        assert b"escaped" not in response.content
+        assert b"is not inside user files path" in response.content
+
+
 def test_defaults_http_handlers():
     with contextlib.closing(
         SimpleCluster(

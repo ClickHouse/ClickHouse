@@ -678,7 +678,6 @@ inline String directoryPath(const String & path)
     return fs::path(path).parent_path() / "";
 }
 
-
 }
 
 template <>
