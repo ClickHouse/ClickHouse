@@ -1028,6 +1028,17 @@ if args.queries_to_run:
 
 # Run test queries.
 profile_total_seconds = 0
+# With `--long`, a failed query is reported by a `run-error` line and skipped; the test still exits non-zero.
+failed_queries = []
+
+
+def fail_query(query_index, server, e):
+    summary = getattr(e, "message", None) or str(e)
+    print(f"run-error\t{query_index}\t{server}\t{tsv_escape(summary.splitlines()[0])}")
+    sys.stdout.flush()
+    failed_queries.append(query_index)
+
+
 for query_index in queries_to_run:
     q_item = test_queries[query_index]
     query_prefix = f"{test_name}.query{query_index}"
@@ -1056,6 +1067,7 @@ for query_index in queries_to_run:
     query_error_on_connection = list(setup_error_on_connection)
     # With `--long`, the censored time of each server whose prewarm timed out.
     prewarm_timeouts = {}
+    prewarm_exceptions = {}
     for conn_index, c in enumerate(all_connections):
         if query_error_on_connection[conn_index]:
             continue
@@ -1106,6 +1118,7 @@ for query_index in queries_to_run:
             # FIXME the driver reconnects on error and we lose settings, so this
             # might lead to further errors or unexpected behavior.
             query_error_on_connection[conn_index] = traceback.format_exc()
+            prewarm_exceptions[conn_index] = e
             continue
 
     # Report all errors that occurred during prewarm and decide what to do next.
@@ -1132,13 +1145,10 @@ for query_index in queries_to_run:
             for i, elapsed in prewarm_timeouts.items():
                 print(f"query\t{query_index}\t{prewarm_id}\t{i}\t{elapsed}")
             continue
-        for i in range(1, len(all_connections)):
-            if i in prewarm_timeouts:
-                raise Exception(f"asymmetric timeout: query {query_index} timed out on the tested server only")
-            if query_error_on_connection[i]:
-                print(f"run-error\t{query_index}\t{i}\t{tsv_escape(query_error_on_connection[i])}")
-                sys.stdout.flush()
-                raise Exception(f"Query {query_prefix} failed on the tested server {i}, see the 'run-error' line")
+        tested_failure = next((i for i in range(1, len(all_connections)) if query_error_on_connection[i]), None)
+        if tested_failure is not None:
+            fail_query(query_index, tested_failure, prewarm_exceptions[tested_failure])
+            continue
 
     # A shell-script query is a benchmark we control end to end, so -- unlike an
     # SQL query that may legitimately use a function missing from the old server
@@ -1184,6 +1194,10 @@ for query_index in queries_to_run:
     profile_seconds = 0
     threshold_seconds = 0.0
     run = 0
+    failed_run = None
+    # With `--long`, the rows of a query that failed midway must not reach the analysis.
+    query_rows = []
+    emit_row = query_rows.append if args.long else print
 
     # Arrays of run times for each connection.
     all_server_times = []
@@ -1227,6 +1241,9 @@ for query_index in queries_to_run:
                 except Exception as e:
                     elapsed = censored_elapsed(e, args.max_query_seconds)
                     if elapsed is None:
+                        if args.long:
+                            failed_run = (server_index, e)
+                            break
                         raise Exception(f"{run_id}: {e}")
                     timeouts.append(server_index)
             else:
@@ -1240,6 +1257,9 @@ for query_index in queries_to_run:
                 except clickhouse_driver.errors.Error as e:
                     elapsed = censored_elapsed(e, args.max_query_seconds)
                     if elapsed is None:
+                        if args.long:
+                            failed_run = (server_index, e)
+                            break
                         # Add query id to the exception to make debugging easier.
                         e.args = (run_id, *e.args)
                         e.message = run_id + ": " + e.message
@@ -1249,7 +1269,7 @@ for query_index in queries_to_run:
             all_server_times[conn_index].append(elapsed)
 
             server_seconds += elapsed
-            print(f"query\t{query_index}\t{run_id}\t{conn_index}\t{elapsed}")
+            emit_row(f"query\t{query_index}\t{run_id}\t{conn_index}\t{elapsed}")
 
             if elapsed > args.max_query_seconds:
                 # Do not stop processing pathologically slow queries,
@@ -1259,11 +1279,14 @@ for query_index in queries_to_run:
                     file=sys.stderr,
                 )
 
+        if failed_run:
+            break
         if len(timeouts) == len(all_connections):
             print(f"double-timeout\t{query_index}")
             break
         if any(i != 0 for i in timeouts):
-            raise Exception(f"asymmetric timeout: query {query_index} timed out on the tested server only")
+            failed_run = (next(i for i in timeouts if i != 0), "asymmetric timeout: timed out on the tested server only")
+            break
 
         # Be careful with the counter, after this line it's the next iteration
         # already.
@@ -1309,6 +1332,12 @@ for query_index in queries_to_run:
             )
         if not is_fast_query or run >= args.cap_fast:
             break
+
+    if failed_run:
+        fail_query(query_index, *failed_run)
+        continue
+    if query_rows:
+        print("\n".join(query_rows))
 
     client_seconds = time.perf_counter() - start_seconds - threshold_seconds
     print(f"client-time\t{query_index}\t{client_seconds}\t{server_seconds}")
@@ -1424,3 +1453,7 @@ if not args.long and not args.keep_created_tables and not args.use_existing_tabl
             print(f"drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}")
 
     reportStageEnd("drop-2")
+
+if failed_queries:
+    print(f"{len(failed_queries)} queries failed, see the 'run-error' lines", file=sys.stderr)
+    sys.exit(1)

@@ -15,6 +15,7 @@ Job sets, 4 batches each over the sorted test list, `calibration.xml` in every b
 Red: any tested-side error (query, setup, missing binary, dataset or reference, test wall clock, required report or
 upload), a tested-only timeout, or a non-timeout error in a measured run on either server. Not red: reference-only
 errors in settings, setup or prewarm, reference-only timeouts, double timeouts (censored rows).
+A failing query is reported as its own run error and skipped; the rest of its test is still measured.
 A test whose teardown did not complete stops the batch. Changes do not gate and are unconfirmed (no confirmation reruns).
 
 Rerun: `gh workflow run NightlyExtendedPerformance` (`--ref <branch>` runs are excluded from the nightly history).
