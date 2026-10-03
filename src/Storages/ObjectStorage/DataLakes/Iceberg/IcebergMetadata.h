@@ -245,7 +245,7 @@ private:
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
     const DB::Iceberg::PersistentTableComponents persistent_components;
-    const DataLakeStorageSettings & data_lake_settings;
+    const DataLakeStorageSettingsPtr data_lake_settings;
     MultiVersion<String> explicit_metadata_file_path;
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;
