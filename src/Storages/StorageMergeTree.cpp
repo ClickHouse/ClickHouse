@@ -111,9 +111,14 @@ namespace FailPoints
     extern const char mt_alter_readonly_pause_after_metadata_commit[];
     extern const char mt_alter_readonly_throw_in_start_background_workers[];
     extern const char mt_alter_throw_after_mutation_registered[];
+    extern const char mt_throw_after_mutation_entry_inserted[];
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_pause_before_register_mutation[];
     extern const char mt_alter_throw_in_durable_rollback[];
+    extern const char mt_alter_pause_before_durable_rollback[];
+    extern const char mt_optimize_pause_after_reservation_snapshot[];
+    extern const char mt_optimize_pause_before_reading_patches[];
+    extern const char mt_mutation_pause_before_block_allocation[];
     extern const char mt_lightweight_update_pause_after_block_allocation[];
 }
 
@@ -739,6 +744,8 @@ void StorageMergeTree::alter(
             /// `prepareMutationEntry` writes the file but leaves `is_registered == false`,
             /// so `~MergeTreeMutationEntry` removes it on unwinding. Writing it before the
             /// durable commit keeps durable metadata and the mutation file in lockstep. See #80648.
+            /// `prepared->block_holder` keeps the rename's block reserved through a rollback: merges across it are
+            /// refused and updates above it wait.
             std::optional<PreparedMutationEntry> prepared;
             try
             {
@@ -777,7 +784,6 @@ void StorageMergeTree::alter(
             /// a `lock_guard` would be destroyed during unwinding and leak a race window
             /// where another thread observes `new_metadata` without the pending mutation.
             std::unique_lock background_lock(currently_processing_in_background_mutex);
-            bool mutation_registered = false;
             try
             {
                 fiu_do_on(FailPoints::mt_alter_throw_in_start_mutation,
@@ -791,8 +797,7 @@ void StorageMergeTree::alter(
                 if (prepared)
                 {
                     mutation_version = prepared->version;
-                    addPreparedMutationEntry(std::move(*prepared));
-                    mutation_registered = true;
+                    addPreparedMutationEntry(*prepared);
                 }
 
                 fiu_do_on(FailPoints::mt_alter_throw_after_mutation_registered,
@@ -822,11 +827,10 @@ void StorageMergeTree::alter(
                     /// run the rename against the old schema and reopen the #80648 data loss.
                     try
                     {
-                        if (!mutation_registered && prepared)
+                        if (prepared && !current_mutations_by_version.contains(prepared->version))
                         {
                             mutation_version = prepared->version;
-                            addPreparedMutationEntry(std::move(*prepared));
-                            mutation_registered = true;
+                            addPreparedMutationEntry(*prepared);
                         }
                         setProperties(new_metadata, old_metadata, false, local_context);
                     }
@@ -834,6 +838,8 @@ void StorageMergeTree::alter(
                     {
                         tryLogCurrentException(log, "Failed to bring in-memory metadata in sync with durable metadata; server may be inconsistent until restart");
                     }
+                    if (prepared)
+                        prepared->block_holder.reset();
                     background_lock.unlock();
                     /// Settings stay at `new_metadata` to match the durable commit; do not revert.
                 }
@@ -857,24 +863,25 @@ void StorageMergeTree::alter(
 
                     std::optional<MergeTreeMutationEntry> held_entry;
                     Int64 held_version = -1;
-                    if (mutation_registered)
+                    if (prepared)
                     {
-                        auto it = current_mutations_by_version.find(mutation_version);
-                        if (it != current_mutations_by_version.end())
+                        /// `prepared->entry` is intact unless `addPreparedMutationEntry` got past its insert.
+                        held_version = prepared->version;
+                        if (auto it = current_mutations_by_version.find(held_version); it != current_mutations_by_version.end())
                         {
                             decrementMutationsCounters(mutation_counters, *it->second.commands);
-                            held_version = it->first;
                             held_entry.emplace(std::move(it->second));
                             current_mutations_by_version.erase(it);
                         }
-                    }
-                    else if (prepared)
-                    {
-                        held_version = prepared->version;
-                        held_entry.emplace(std::move(prepared->entry));
+                        else
+                        {
+                            held_entry.emplace(std::move(prepared->entry));
+                        }
                     }
 
                     background_lock.unlock();
+
+                    FailPointInjection::pauseFailPoint(FailPoints::mt_alter_pause_before_durable_rollback);
 
                     bool durable_rolled_back = false;
                     try
@@ -917,10 +924,13 @@ void StorageMergeTree::alter(
                         /// rename mutation (if any) and republish `new_metadata` so a merge
                         /// applies the rename consistently. Settings stay new to match durable.
                         std::lock_guard relock(currently_processing_in_background_mutex);
+                        if (prepared)
+                            prepared->block_holder.reset();
                         try
                         {
                             if (held_entry)
                             {
+                                chassert(held_entry->commands);
                                 auto [it, inserted] = current_mutations_by_version.try_emplace(held_version, std::move(*held_entry));
                                 if (inserted)
                                 {
@@ -939,6 +949,10 @@ void StorageMergeTree::alter(
                 }
                 throw;
             }
+
+            /// Released under the mutex so that the scheduler run triggered by the registration never sees the block as pending.
+            if (prepared)
+                prepared->block_holder.reset();
         }
 
         /// Schema is committed and the mutation (if any) is queued; don't hold DDLGuard across
@@ -1124,6 +1138,9 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
     }
 
     MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+
+    FailPointInjection::pauseFailPoint(FailPoints::mt_mutation_pause_before_block_allocation);
+
     auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
     Int64 version = block_holder->block.number;
@@ -1146,7 +1163,7 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
     return {std::move(entry), version, std::move(mutation_id), std::move(additional_info), std::move(block_holder)};
 }
 
-void StorageMergeTree::addPreparedMutationEntry(PreparedMutationEntry prepared)
+void StorageMergeTree::addPreparedMutationEntry(PreparedMutationEntry & prepared)
 {
     auto [it, inserted] = current_mutations_by_version.try_emplace(prepared.version, std::move(prepared.entry));
     if (!inserted)
@@ -1157,6 +1174,11 @@ void StorageMergeTree::addPreparedMutationEntry(PreparedMutationEntry prepared)
     it->second.is_registered = true;
 
     incrementMutationsCounters(mutation_counters, *it->second.commands);
+
+    fiu_do_on(FailPoints::mt_throw_after_mutation_entry_inserted,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the prepared mutation was inserted");
+    });
 
     LOG_INFO(log, "Added mutation: {}{}", prepared.mutation_id, prepared.additional_info);
     background_operations_assignee.trigger();
@@ -1177,7 +1199,9 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     std::optional<MergeTreeMutationEntry> rolled_back_entry;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
-        addPreparedMutationEntry(std::move(prepared));
+        addPreparedMutationEntry(prepared);
+        /// Released after the insert and under the mutex, so a selection never sees a registered version as pending.
+        prepared.block_holder.reset();
         /// A mutation that has no parts to process (e.g. on a table without parts) is completed
         /// right at creation. Do not mark from `addPreparedMutationEntry`: the `alter` path
         /// registers entries through it and its rollback assumes they are not done yet.
@@ -1374,11 +1398,15 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
     {
         /// It's important to serialize order of mutations with alter queries because
         /// they can depend on each other.
-        if (auto alter_lock = tryLockForAlter(query_context->getSettingsRef()[Setting::lock_acquire_timeout]); alter_lock == std::nullopt)
+        /// Held until registration: mutations registered out of order would leave a part mutated past a lower
+        /// version that is then reported done.
+        auto alter_lock = tryLockForAlter(query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        if (alter_lock == std::nullopt)
         {
             throw Exception(
                 ErrorCodes::TIMEOUT_EXCEEDED,
-                "Cannot start mutation in {}ms because some metadata-changing ALTER (MODIFY|RENAME|ADD|DROP) is currently executing. "
+                "Cannot start mutation in {}ms because some metadata-changing ALTER (MODIFY|RENAME|ADD|DROP) "
+                "or another mutation is currently starting. "
                 "You can change this timeout with `lock_acquire_timeout` setting",
                 query_context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
         }
@@ -1835,7 +1863,7 @@ void StorageMergeTree::loadMutations()
 }
 
 std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::selectPartsToMerge(
-    const StorageMetadataPtr & metadata_snapshot,
+    StorageMetadataPtr & metadata_snapshot,
     bool aggressive,
     const String & partition_id,
     bool final,
@@ -1858,8 +1886,13 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             .explanation = PreformattedMessage::create("Merges are disabled for UNIQUE KEY tables"),
         });
 
-    auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, txn, lock);
-    auto parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate);
+    /// Owned here and handed to the predicate, the collector and `getMutationVersionForMergedPart`.
+    auto reservations = getCommittingBlocksSnapshot();
+    /// Test hook: the reservations are copied under `lock`, the patch parts are not read yet. Only explicit `OPTIMIZE` reaches here.
+    if (!partition_id.empty())
+        FailPointInjection::pauseFailPoint(FailPoints::mt_optimize_pause_before_reading_patches);
+    auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, txn, lock, reservations);
+    auto parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate, reservations.lastAllocatedBlock());
 
     const auto is_background_memory_usage_ok = []() -> std::expected<void, PreformattedMessage>
     {
@@ -1902,14 +1935,15 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// the new metadata and registers the rename mutation under, so the mutations read here
             /// match the `metadata_snapshot` this merge writes its result with.
             auto mutation_version = getMutationVersionForMergedPart(
-                future_part->part_info.getDataVersion(), future_part->part_info.getPartitionId(), lock);
+                future_part->part_info.getDataVersion(), future_part->part_info.getPartitionId(), reservations, lock);
 
             if (!mutation_version)
                 return std::unexpected(SelectMergeFailure{
                     .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
                     .explanation = PreformattedMessage::create(
                         "Merging {} would materialize a pending RENAME COLUMN that the result part cannot record, "
-                        "because an earlier pending mutation is not materialized by the merge", future_part->name),
+                        "because an earlier mutation is not materialized by the merge, or an earlier mutation or lightweight update "
+                        "version is allocated but not visible yet", future_part->name),
                 });
 
             if (*mutation_version > future_part->part_info.getDataVersion())
@@ -2017,8 +2051,12 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
     const auto select_in_partition = [&]() -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
+        size_t attempt = 0;
         while (true)
         {
+            /// `PAUSEABLE_ONCE`: a retry never pauses again, so enable it before `OPTIMIZE` starts.
+            FailPointInjection::pauseFailPoint(FailPoints::mt_optimize_pause_after_reservation_snapshot);
+
             auto timeout = saturatedMilliseconds((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations].totalMilliseconds());
             auto timeout_ms = timeout.count();
 
@@ -2042,6 +2080,18 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                         .explanation = std::move(memory_check.error()),
                     });
             }
+
+            /// The wait released the mutex: reservations, last allocated block and metadata are stale. A stale bound
+            /// would drop parts inserted meanwhile, and a rename published meanwhile would be missed.
+            if (attempt > 0)
+            {
+                auto metadata_snapshot_handle = getInMemoryMetadataPtr(getContext(), false);
+                metadata_snapshot = metadata_snapshot_handle;
+                reservations = getCommittingBlocksSnapshot();
+                merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, txn, lock, reservations);
+                parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate, reservations.lastAllocatedBlock());
+            }
+            ++attempt;
 
             auto select_result = merger_mutator.selectAllPartsToMergeWithinPartition(
                 metadata_snapshot,
@@ -2260,13 +2310,9 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
     CurrentlyMergingPartsTaggerPtr tagger;
 
-    auto mutations_end_it = current_mutations_by_version.end();
-
-    /// The block numbers of the lightweight updates that have not written their patch part yet, read
-    /// once for the whole selection: it only has to be a snapshot no older than the parts below.
-    CommittingBlocksSet committing_blocks_snapshot;
-    if (supportsLightweightUpdate())
-        committing_blocks_snapshot = getCommittingBlocks();
+    /// Read once for the whole selection. A version allocated after it cannot register while this mutex is held,
+    /// so it cuts off no mutation that this selection could apply.
+    const auto reservations = getCommittingBlocksSnapshot();
 
     for (const auto & part : getDataPartsVectorForInternalUsage())
     {
@@ -2281,8 +2327,28 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             continue;
 
         auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
+        auto mutations_end_it = current_mutations_by_version.end();
+        bool had_registered_mutation_above = mutations_begin_it != mutations_end_it;
+
+        /// An allocated version that is not visible yet is a boundary: only registered mutations below it
+        /// apply now, or the part would be rewritten at a version the pending patch no longer applies to.
+        auto reservation = reservations.firstReservationAfter(part->info.getDataVersion());
+        if (reservation)
+            mutations_end_it = current_mutations_by_version.lower_bound(static_cast<UInt64>(reservation->number));
+
         if (mutations_begin_it == mutations_end_it)
+        {
+            if (reservation && had_registered_mutation_above && reservation->op == CommittingBlock::Op::Update)
+            {
+                LOG_DEBUG(
+                    log,
+                    "Will not mutate part {} yet because the lightweight update with block number {} is not committed",
+                    part->name,
+                    reservation->number);
+                current_parts_postpone_reasons[part->name] = PostponeReasons::PENDING_LIGHTWEIGHT_UPDATE;
+            }
             continue;
+        }
 
         fiu_do_on(FailPoints::mt_select_parts_to_mutate_max_part_size, { max_source_part_size = 1; });
         if (max_source_part_size < part->getBytesOnDisk())
@@ -2436,37 +2502,6 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         {
             auto new_part_info = part->info;
             new_part_info.mutation = last_mutation_to_apply->first;
-
-            /** A lightweight update allocates its block number before it writes its patch part, and a
-              * mutation whose version is above that number has to see the update. Mutating the part
-              * now would read it without the patch and write a part at a higher data version, which
-              * the patch no longer applies to: the acknowledged update would be silently lost. Leave
-              * the part for a later round, exactly as `havePendingPatchPartsForMutation` postpones the
-              * entry on a replicated table.
-              */
-            std::optional<Int64> pending_update_block;
-            for (const auto & block : committing_blocks_snapshot)
-            {
-                if (block.number > new_part_info.getDataVersion())
-                    break;
-
-                if (block.op == CommittingBlock::Op::Update)
-                {
-                    pending_update_block = block.number;
-                    break;
-                }
-            }
-
-            if (pending_update_block.has_value())
-            {
-                LOG_DEBUG(
-                    log,
-                    "Will not mutate part {} yet because the lightweight update with block number {} is not committed",
-                    part->name,
-                    *pending_update_block);
-                current_parts_postpone_reasons[part->name] = PostponeReasons::PENDING_LIGHTWEIGHT_UPDATE;
-                continue;
-            }
 
             future_part->parts.push_back(part);
             future_part->part_info = new_part_info;
@@ -2754,6 +2789,7 @@ static bool isMaterializedByMerge(
 std::optional<Int64> StorageMergeTree::getMutationVersionForMergedPart(
     Int64 sources_data_version,
     const String & partition_id,
+    const CommittingBlocksSnapshot & reservations,
     std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
 {
     auto first_pending = current_mutations_by_version.upper_bound(sources_data_version);
@@ -2774,10 +2810,16 @@ std::optional<Int64> StorageMergeTree::getMutationVersionForMergedPart(
     if (!std::ranges::any_of(pending, has_metadata_mutation))
         return sources_data_version;
 
+    /// A reservation above the sources' data version bounds the recorded version: claiming one at or above
+    /// it would leave the reservation's own effect unapplied once it becomes visible.
+    auto record_end_it = current_mutations_by_version.end();
+    if (auto reservation = reservations.firstReservationAfter(sources_data_version))
+        record_end_it = current_mutations_by_version.lower_bound(static_cast<UInt64>(reservation->number));
+
     Int64 version = sources_data_version;
 
     auto it = first_pending;
-    for (; it != current_mutations_by_version.end(); ++it)
+    for (; it != record_end_it; ++it)
     {
         if (!isMaterializedByMerge(*this, *it->second.commands, partition_id, getContext()))
             break;
@@ -4533,7 +4575,7 @@ void StorageMergeTree::removeCommittingBlock(CommittingBlock block)
     {
         std::lock_guard lock(committing_blocks_mutex);
         committing_blocks.erase(block);
-        committing_blocks_cv.notify_one();
+        committing_blocks_cv.notify_all();
     }
 
     /// `selectPartsToMutate` leaves a part alone while a lightweight update with a lower block number is
@@ -4573,15 +4615,20 @@ void StorageMergeTree::waitForCommittingInsertsAndMutations(Int64 max_block_numb
     };
 
     std::unique_lock lock(committing_blocks_mutex);
+
+    if (!all_committed())
+        LOG_DEBUG(log, "Waiting for committing blocks below {} to be released", max_block_number);
+
     bool res = committing_blocks_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms), all_committed);
 
     if (!res)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to wait ({} ms) for inserts and mutations to commit up to block number {}", timeout_ms, max_block_number);
 }
 
-CommittingBlocksSet StorageMergeTree::getCommittingBlocks() const
+CommittingBlocksSnapshot StorageMergeTree::getCommittingBlocksSnapshot() const
 {
+    /// `allocateBlockNumber` increments and inserts under this mutex, so a block is either in the copy or above the last allocated block.
     std::lock_guard lock(committing_blocks_mutex);
-    return committing_blocks;
+    return CommittingBlocksSnapshot(committing_blocks, static_cast<Int64>(increment.value.load()));
 }
 }

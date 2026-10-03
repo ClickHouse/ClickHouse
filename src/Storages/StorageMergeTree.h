@@ -174,7 +174,7 @@ private:
     void removeCommittingBlock(CommittingBlock block);
     std::unique_ptr<PlainCommittingBlockHolder> allocateBlockNumber(CommittingBlock::Op op);
     void waitForCommittingInsertsAndMutations(Int64 max_block_number, size_t timeout_ms) const;
-    CommittingBlocksSet getCommittingBlocks() const;
+    CommittingBlocksSnapshot getCommittingBlocksSnapshot() const;
 
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};
@@ -247,8 +247,9 @@ private:
 
     /// Register a prepared mutation in `current_mutations_by_version` and
     /// increment `mutation_counters`. Caller must hold
-    /// `currently_processing_in_background_mutex`.
-    void addPreparedMutationEntry(PreparedMutationEntry prepared);
+    /// `currently_processing_in_background_mutex`. `prepared.entry` is moved only by the insert;
+    /// the caller releases `prepared.block_holder` after this call.
+    void addPreparedMutationEntry(PreparedMutationEntry & prepared);
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version, bool wait_for_another_mutation);
     void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;
@@ -259,8 +260,10 @@ private:
     friend class MergeTreeMergePredicate;
     friend struct PlainCommittingBlockHolder;
 
+    /// `metadata_snapshot` is read again when `OPTIMIZE FINAL` retries after waiting for running merges;
+    /// the caller builds the merge task with the snapshot it gets back.
     std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> selectPartsToMerge(
-        const StorageMetadataPtr & metadata_snapshot,
+        StorageMetadataPtr & metadata_snapshot,
         bool aggressive,
         const String & partition_id,
         bool final,
@@ -288,10 +291,12 @@ private:
     /// mutation version the result part has to carry so that those mutations are not applied to it a
     /// second time, or `nullopt` when the merge must not run at all. `partition_id` is the partition
     /// of the result part: a pending command scoped to another partition is never applied to it and
-    /// so does not stand in the way. See #111001.
+    /// so does not stand in the way. See #111001. The recorded version stays below the first reservation
+    /// in `reservations` above `sources_data_version`.
     std::optional<Int64> getMutationVersionForMergedPart(
         Int64 sources_data_version,
         const String & partition_id,
+        const CommittingBlocksSnapshot & reservations,
         std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
     /// Returns the maximum level and the maximum mutation version of the outdated parts in a range

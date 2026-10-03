@@ -1,0 +1,6 @@
+--- a mutation that fails after its file is written stops being a boundary
+FAULT_INJECTED
+active parts:	1
+mutations:	0
+--- KILL MUTATION of a registered mutation leaves a later pending one intact
+v after the second mutation:	2	100
