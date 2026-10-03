@@ -723,7 +723,20 @@ void addCatchAllQueryHandlerFactory(
             /// `NotFoundHandler` fallback returns a plain 404 the S3 client is already prepared to
             /// handle as non-retriable. Supported schemes (Basic, Negotiate) still get the
             /// dynamic-handler treatment.
-            if (request.has("Authorization"))
+            ///
+            /// Scripted /play requests are an exception: proxies may rewrite Authorization while
+            /// the request still carries X-ClickHouse credentials. Honor the same proxy-stable
+            /// markers as authenticateUserByHTTP so the request reaches authentication instead of
+            /// becoming a routing-time 404.
+            static constexpr std::string_view encoded_web_ui_auth_prefix = "ClickHouse-Play-Percent:";
+            const auto user = request.get("X-ClickHouse-User", "");
+            const auto password = request.get("X-ClickHouse-Key", "");
+            const bool has_encoded_web_ui_auth
+                = user.starts_with(encoded_web_ui_auth_prefix) && password.starts_with(encoded_web_ui_auth_prefix);
+            const bool has_scripted_web_ui_auth
+                = request.get("X-Requested-With", "") == "ClickHouse-Play" || has_encoded_web_ui_auth;
+
+            if (!has_scripted_web_ui_auth && request.has("Authorization"))
             {
                 const auto & auth_header = request.get("Authorization");
                 std::string_view scheme = auth_header;
