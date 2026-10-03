@@ -4523,7 +4523,7 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// The static validation judges what is written in the query; the tables it only collects,
         /// because a name says nothing about what reading it does. Resolve them and check their
         /// engines - this is a round trip, so it is skipped when the query names no tables.
-        checkNamedTablesForAIReadOnlyTool(collectNamedTablesForAIAgent(*ast));
+        checkNamedTablesForAIReadOnlyTool(collectNamedTablesForAIAgent(*ast), allow_schema_access);
 
         /// The format-schema settings are interpreted after this validation: with
         /// `format_schema_source = 'query'` the schema is another query, executed through a FORMAT
@@ -4979,7 +4979,7 @@ String ClientBase::aiSessionRestrictions()
     return readonly == 1 ? AIPrompts::SESSION_READONLY_NOTE : AIPrompts::SESSION_READ_ONLY_QUERIES_NOTE;
 }
 
-void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTableReference> & tables)
+void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTableReference> & tables, bool allow_schema_access)
 {
     if (tables.empty())
         return;
@@ -5086,6 +5086,14 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
         /// by name, because their engines are one per table (`SystemTables`, `SystemNumbers`, ...).
         if (isServerOwnedDatabaseForAIAgent(database))
         {
+            /// The static check of `validateReadOnlyQueryForAIAgent` only sees the database written
+            /// in the query; an unqualified name reaches a server-owned database through the current
+            /// database (e.g. after a confirmed `USE system`), which is only known here.
+            if (!allow_schema_access)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Schema access is disabled for the read-only tool. Use the run_query tool for this query");
+
             if (!reference.table.empty() && !isAllowedServerOwnedTableForAIAgent(database, reference.table))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,

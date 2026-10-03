@@ -298,8 +298,9 @@ protected:
     /// server - see `isAllowedTableEngineForAIAgent`. A name is only a name; what reading it does
     /// is decided by the engine it resolves to, and that takes a query to the server, which the
     /// static validation cannot make. Throws Exception(BAD_ARGUMENTS) with a message for the
-    /// model when a table does not qualify.
-    void checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTableReference> & tables);
+    /// model when a table does not qualify. Without `allow_schema_access`, a name resolving to a
+    /// database the server owns is refused as well, including through the current database.
+    void checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTableReference> & tables, bool allow_schema_access);
 
     /// Record an error of the current or just-failed query into the AI context buffer.
     void recordErrorForAIContext(std::string_view query_or_input);
