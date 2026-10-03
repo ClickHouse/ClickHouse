@@ -481,8 +481,10 @@ namespace
 /// tuples (by name), keeping the interpreted `VALUES` path consistent with it: without it a nested
 /// tuple such as `tuple('n')(tuple('b', 'a')(1, 2))` inserted into `Tuple(n Tuple(a Int32, b Int32))`
 /// would keep `(1, 2)` positional. `src_type` is updated in place to reflect the new element order
-/// and names. Tuples that are not named on both sides, or whose names do not match one-to-one, are
-/// left untouched (and converted positionally by the subsequent `convertFieldToType`).
+/// and names. Tuples that are not named on both sides, or whose names are disjoint, keep their order
+/// at this level (and are converted positionally by the subsequent `convertFieldToType`), but their
+/// elements are still processed recursively. Tuples whose names overlap only partially are left
+/// untouched.
 static void reorderNamedTupleValueToDestinationOrder(Field & value, DataTypePtr & src_type, const IDataType & dst_type)
 {
     if (value.getType() != Field::Types::Tuple)
@@ -490,35 +492,62 @@ static void reorderNamedTupleValueToDestinationOrder(Field & value, DataTypePtr 
 
     const auto * src_tuple_type = typeid_cast<const DataTypeTuple *>(src_type.get());
     const auto * dst_tuple_type = typeid_cast<const DataTypeTuple *>(&dst_type);
-    if (!src_tuple_type || !dst_tuple_type || !src_tuple_type->hasExplicitNames() || !dst_tuple_type->hasExplicitNames())
-        return;
-
-    const auto & src_names = src_tuple_type->getElementNames();
-    const auto & dst_names = dst_tuple_type->getElementNames();
-    if (src_names.size() != dst_names.size())
+    if (!src_tuple_type || !dst_tuple_type)
         return;
 
     auto & src_value = value.safeGet<Tuple>();
-    if (src_value.size() != src_names.size())
+    const auto & src_element_types = src_tuple_type->getElements();
+    const auto & dst_element_types = dst_tuple_type->getElements();
+    if (src_value.size() != src_element_types.size())
         return;
+
+    /// This level is converted positionally (as `CAST` does when a side is unnamed or the name sets
+    /// are disjoint), but nested tuples may still be matched by name, so keep descending.
+    auto reorder_elements_positionally = [&]
+    {
+        if (src_element_types.size() != dst_element_types.size())
+            return;
+
+        DataTypes element_types = src_element_types;
+        for (size_t i = 0; i < element_types.size(); ++i)
+            reorderNamedTupleValueToDestinationOrder(src_value[i], element_types[i], *dst_element_types[i]);
+
+        src_type = src_tuple_type->hasExplicitNames()
+            ? std::make_shared<DataTypeTuple>(element_types, src_tuple_type->getElementNames())
+            : std::make_shared<DataTypeTuple>(element_types);
+    };
+
+    if (!src_tuple_type->hasExplicitNames() || !dst_tuple_type->hasExplicitNames())
+    {
+        reorder_elements_positionally();
+        return;
+    }
+
+    const auto & src_names = src_tuple_type->getElementNames();
+    const auto & dst_names = dst_tuple_type->getElementNames();
 
     std::unordered_map<std::string_view, size_t> src_positions;
     for (size_t i = 0; i < src_names.size(); ++i)
         src_positions[src_names[i]] = i;
 
-    /// Every destination name must be present in the source exactly once, otherwise we cannot reorder
-    /// by name and leave the conversion to `convertFieldToType`.
-    std::vector<size_t> dst_to_src(dst_names.size());
-    for (size_t i = 0; i < dst_names.size(); ++i)
+    size_t common_names_count = 0;
+    for (const auto & dst_name : dst_names)
+        common_names_count += src_positions.contains(dst_name);
+
+    if (common_names_count == 0)
     {
-        auto it = src_positions.find(dst_names[i]);
-        if (it == src_positions.end())
-            return;
-        dst_to_src[i] = it->second;
+        reorder_elements_positionally();
+        return;
     }
 
-    const auto & src_element_types = src_tuple_type->getElements();
-    const auto & dst_element_types = dst_tuple_type->getElements();
+    /// Every destination name must be present in the source exactly once, otherwise we cannot reorder
+    /// by name and leave the conversion to `convertFieldToType`.
+    if (src_names.size() != dst_names.size() || common_names_count != dst_names.size())
+        return;
+
+    std::vector<size_t> dst_to_src(dst_names.size());
+    for (size_t i = 0; i < dst_names.size(); ++i)
+        dst_to_src[i] = src_positions.at(dst_names[i]);
 
     Tuple reordered_value(dst_names.size());
     DataTypes reordered_types(dst_names.size());
@@ -548,8 +577,26 @@ static void checkNamedTupleConversionDoesNotLoseFields(const DataTypePtr & src_t
 {
     const auto * src_tuple_type = typeid_cast<const DataTypeTuple *>(src_type.get());
     const auto * dst_tuple_type = typeid_cast<const DataTypeTuple *>(&dst_type);
-    if (!src_tuple_type || !dst_tuple_type || !src_tuple_type->hasExplicitNames() || !dst_tuple_type->hasExplicitNames())
+    if (!src_tuple_type || !dst_tuple_type)
         return;
+
+    const auto & src_element_types = src_tuple_type->getElements();
+    const auto & dst_element_types = dst_tuple_type->getElements();
+
+    /// A positional level loses nothing by itself, but its nested tuples may, so keep descending.
+    auto check_elements_positionally = [&]
+    {
+        if (src_element_types.size() != dst_element_types.size())
+            return;
+        for (size_t i = 0; i < src_element_types.size(); ++i)
+            checkNamedTupleConversionDoesNotLoseFields(src_element_types[i], *dst_element_types[i]);
+    };
+
+    if (!src_tuple_type->hasExplicitNames() || !dst_tuple_type->hasExplicitNames())
+    {
+        check_elements_positionally();
+        return;
+    }
 
     const auto & src_names = src_tuple_type->getElementNames();
     const auto & dst_names = dst_tuple_type->getElementNames();
@@ -562,9 +609,12 @@ static void checkNamedTupleConversionDoesNotLoseFields(const DataTypePtr & src_t
     for (const auto & dst_name : dst_names)
         common_names_count += src_positions.contains(dst_name);
 
-    /// Disjoint name sets: positional conversion, nothing is lost.
+    /// Disjoint name sets: positional conversion, nothing is lost at this level.
     if (common_names_count == 0)
+    {
+        check_elements_positionally();
         return;
+    }
 
     if (common_names_count < src_names.size())
         throw Exception(
@@ -574,10 +624,12 @@ static void checkNamedTupleConversionDoesNotLoseFields(const DataTypePtr & src_t
             src_type->getName(),
             dst_type.getName());
 
-    const auto & src_element_types = src_tuple_type->getElements();
-    const auto & dst_element_types = dst_tuple_type->getElements();
     for (size_t i = 0; i < dst_names.size(); ++i)
-        checkNamedTupleConversionDoesNotLoseFields(src_element_types[src_positions[dst_names[i]]], *dst_element_types[i]);
+    {
+        auto it = src_positions.find(dst_names[i]);
+        if (it != src_positions.end())
+            checkNamedTupleConversionDoesNotLoseFields(src_element_types[it->second], *dst_element_types[i]);
+    }
 }
 
 
