@@ -1,3 +1,6 @@
+-- Tags: no-random-settings
+-- Randomized statistics settings change the join tree checked by EXPLAIN.
+
 DROP TABLE IF EXISTS t0;
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
