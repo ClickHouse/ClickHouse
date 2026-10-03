@@ -1,0 +1,238 @@
+---
+sidebarTitle: 'Delegated access with JWT'
+slug: /cloud/security/jwt-impersonation
+title: 'Delegated access with JWT'
+description: 'Use an identity-provider-issued JWT to run ClickHouse Cloud queries as the intended application or user identity'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'JWT', 'impersonation', 'identity provider', 'database users']
+---
+
+Use delegated JWT access when an application needs to run a ClickHouse Cloud query on behalf of another application or user identity. Instead of authenticating as one database user and switching identities in SQL, have your identity provider issue a JWT whose subject represents the identity that should run the query. Map that identity to ClickHouse roles or JWT grants.
+
+<Note>
+`EXECUTE AS` is not supported in ClickHouse Cloud, including BYOC. Do not use `IMPERSONATE` grants or create a target database user for this pattern. The identity provider, not ClickHouse, decides which identities an application may act on behalf of.
+</Note>
+
+## How this differs from `EXECUTE AS` {#how-this-differs-from-execute-as}
+
+`EXECUTE AS` is database-side impersonation: a connection authenticated as one ClickHouse user uses SQL to switch query execution to another existing database user. The connection user needs the `IMPERSONATE` privilege, and ClickHouse evaluates the target user's grants and row policies.
+
+Delegated JWT access does not switch database users. The application connects with a newly issued JWT that represents the intended subject, and ClickHouse applies the roles or grants in that token to its ephemeral `JWT::` identity. Your identity provider or application must decide whether a caller may receive a token for a particular subject and role; ClickHouse enforces the permissions carried by the valid token.
+
+## Before you begin {#before-you-begin}
+
+You need:
+
+- An Enterprise-plan service running ClickHouse version 26.4 or later.
+- An identity provider such as Auth0, Okta, or Microsoft Entra ID that can issue access tokens for an application, sign them with an RSA key (`RS256`), and publish its public keys at a publicly reachable HTTPS JWKS URL. Services on version 26.8 or later can also use EC signing keys.
+- Permission to manage the service's security settings and configure the application in your identity provider.
+- The Native connection details for the service's `default` database user: hostname, port, and password. Cloud SQL Console sessions use a temporary `sql-console:<email>` user instead of `default`.
+- A non-production service for this walkthrough. The SQL below creates a database and table.
+
+Do not use a ClickHouse Cloud console sign-in token for this guide. Create or reuse an application in your own identity provider, so it can issue a short-lived token with custom claims for this test.
+
+## Configure the JWT provider {#configure-the-jwt-provider}
+
+If you are starting with a new service, set up this provider before running the SQL walkthrough. You can use any OpenID Connect-compatible identity provider that meets the requirements above. The provider is for your **application**, not for ClickHouse Cloud console users.
+
+<Steps>
+<Step title="Create an application in your identity provider" id="create-an-application-in-your-identity-provider">
+
+Create an application, service application, or equivalent in your identity provider. Configure it to issue short-lived JWT access tokens signed with `RS256`, and note these three values:
+
+- The token issuer (`iss`), for example `https://id.example.com/`.
+- The audience (`aud`) you will use for this guide, for example `https://clickhouse-jwt-delegated-access-guide`.
+- The public HTTPS JWKS URL, for example `https://id.example.com/.well-known/jwks.json`.
+
+The JWKS URL must be reachable from ClickHouse Cloud. It must publish the public key whose `kid` matches the key used to sign your test token; never publish the private signing key.
+
+</Step>
+<Step title="Complete the New provider form" id="complete-the-new-provider-form">
+
+In the Cloud console, open the service, go to **Settings → Security**, select **Set up JWT providers**, and complete the **New provider** form with these values:
+
+| Field | Value for this guide |
+|-------|----------------------|
+| **Name** | `jwt-delegated-access-guide` |
+| **Issuer** | The exact `iss` value from the token, such as `https://id.example.com/` |
+| **Audience** | `https://clickhouse-jwt-delegated-access-guide`, or the audience you configured in the identity provider |
+| **JWKS URL** | Your public HTTPS JWKS URL |
+| **Roles claim (optional)** | Leave blank; ClickHouse then uses the default `clickhouse:roles` claim used by this guide |
+
+Select **Save**. ClickHouse validates the JWKS URL immediately. For screenshots and fuller field descriptions, see [JWT authentication setup](/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup#add-a-jwt-provider).
+
+<Note>
+The issuer must match the token's `iss` claim character for character. If your identity provider issues `https://id.example.com/`, include the trailing `/` in the **Issuer** field. Omitting it causes authentication to fail.
+</Note>
+
+</Step>
+</Steps>
+
+## Try it in a non-production service {#try-it-in-a-non-production-service}
+
+This example models an online store. The storefront service can read the product catalog but must not see supplier costs. The pricing service can read both tables. One JWT provider issues tokens for both services.
+
+<Steps>
+<Step title="Create two test tables" id="create-two-test-tables">
+
+Connect as the service's `default` database user and run the following SQL:
+
+```sql
+CREATE DATABASE IF NOT EXISTS jwt_guide;
+
+CREATE TABLE IF NOT EXISTS jwt_guide.product_catalog
+(
+    sku String,
+    detail String
+)
+ENGINE = MergeTree
+ORDER BY sku;
+
+INSERT INTO jwt_guide.product_catalog VALUES ('SKU-001', 'Trail shoes');
+
+CREATE TABLE IF NOT EXISTS jwt_guide.supplier_costs
+(
+    sku String,
+    detail String
+)
+ENGINE = MergeTree
+ORDER BY sku;
+
+INSERT INTO jwt_guide.supplier_costs VALUES ('SKU-001', 'Supplier cost: 45.00');
+```
+
+The next step creates the service roles: the storefront role can read the product catalog only, while the pricing role can read both tables.
+
+</Step>
+
+<Step title="Create roles for the two access levels" id="create-roles-for-the-two-access-levels">
+
+Connect as the service's `default` database user and run the following SQL:
+
+```sql
+CREATE ROLE IF NOT EXISTS jwt_guide_storefront_reader_role;
+GRANT SELECT ON jwt_guide.product_catalog TO jwt_guide_storefront_reader_role;
+
+CREATE ROLE IF NOT EXISTS jwt_guide_pricing_reader_role;
+GRANT SELECT ON jwt_guide.product_catalog TO jwt_guide_pricing_reader_role;
+GRANT SELECT ON jwt_guide.supplier_costs TO jwt_guide_pricing_reader_role;
+```
+
+</Step>
+<Step title="Issue a token for each service" id="issue-a-token-for-each-service">
+
+Configure the same identity-provider application setup to issue two fresh tokens with values that match your JWT provider's issuer and audience:
+
+- For the storefront service, use a subject such as `storefront-service` and add this claim:
+
+```json
+{
+  "clickhouse:roles": [
+    "jwt_guide_storefront_reader_role"
+  ]
+}
+```
+
+- For the pricing service, use a different subject such as `pricing-service` and add this claim:
+
+```json
+{
+  "clickhouse:roles": [
+    "jwt_guide_pricing_reader_role"
+  ]
+}
+```
+
+The tokens also need the standard JWT claims, including `iss`, `sub`, `aud`, `iat`, and `exp`. See [JWT Authentication](/concepts/features/security/external-authenticators/jwt#token-claims) for the complete token requirements.
+
+Before continuing, decode each token and confirm that its `sub` identifies the expected identity and its `clickhouse:roles` claim has the expected role. For a test token, paste it into the [JWT.io debugger](https://www.jwt.io/) to view its claims.
+
+<Warning>
+JWTs are credentials. Do not paste a production token into an external website; use a local decoder or a disposable test token instead.
+</Warning>
+
+</Step>
+<Step title="Try to read both tables with the storefront token" id="try-to-read-both-tables-with-the-storefront-token">
+
+Set `JWT_STOREFRONT` to the token for the storefront service, then use the service hostname from the Cloud console. Pass only the hostname to `--host`: omit `https://` and `:8443`. `clickhouse-client` uses the native secure endpoint on port `9440`, not the HTTPS endpoint on port `8443`.
+
+```bash
+clickhouse-client \
+    --host <your-service-host>.clickhouse.cloud \
+    --port 9440 \
+    --secure \
+    --jwt "$JWT_STOREFRONT" \
+    --format Vertical \
+    --query "
+        SELECT
+            currentUser() AS running_as,
+            authenticatedUser() AS authenticated_as,
+            detail
+        FROM jwt_guide.product_catalog
+        UNION ALL
+        SELECT
+            currentUser() AS running_as,
+            authenticatedUser() AS authenticated_as,
+            detail
+        FROM jwt_guide.supplier_costs
+    "
+```
+
+The query should be denied because it includes `jwt_guide.supplier_costs`, which `jwt_guide_storefront_reader_role` cannot read. A query must have access to every table it references. You should receive an error similar to:
+
+```response
+Code: 497. DB::Exception: JWT::<identity-details>: Not enough privileges. To execute this query, it's necessary to have the grant SELECT ON jwt_guide.supplier_costs. (ACCESS_DENIED)
+```
+
+</Step>
+<Step title="Read both tables with the pricing token" id="read-both-tables-with-the-pricing-token">
+
+Set `JWT_PRICING` to the token with `jwt_guide_pricing_reader_role`, then run the same query. It succeeds because that role has `SELECT` on both tables:
+
+```bash
+clickhouse-client \
+    --host <your-service-host>.clickhouse.cloud \
+    --port 9440 \
+    --secure \
+    --jwt "$JWT_PRICING" \
+    --format Vertical \
+    --query "
+        SELECT
+            currentUser() AS running_as,
+            authenticatedUser() AS authenticated_as,
+            detail
+        FROM jwt_guide.product_catalog
+        UNION ALL
+        SELECT
+            currentUser() AS running_as,
+            authenticatedUser() AS authenticated_as,
+            detail
+        FROM jwt_guide.supplier_costs
+    "
+```
+
+The result contains both `Trail shoes` and `Supplier cost: 45.00`:
+
+```response
+Row 1:
+──────
+running_as:       JWT::<identity-details>
+authenticated_as: JWT::<identity-details>
+detail:           Trail shoes
+
+Row 2:
+──────
+running_as:       JWT::<identity-details>
+authenticated_as: JWT::<identity-details>
+detail:           Supplier cost: 45.00
+```
+
+This shows how one JWT provider can serve multiple services: the token's role claim determines the ClickHouse permissions. Identities issued the same role have the same table access. For different table or row access, issue different roles and place the corresponding grants or row policies on each role.
+
+</Step>
+</Steps>
+
+## Related {#related}
+
+- [JWT authentication setup](/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) — configure a custom JWT provider for the service.
+- [JWT Authentication](/concepts/features/security/external-authenticators/jwt) — token claims and ephemeral-user behavior.
