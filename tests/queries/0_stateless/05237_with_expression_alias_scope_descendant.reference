@@ -15,6 +15,14 @@ live shadowed	1
 view shadowed	1
 live shadowed top-level	1
 view shadowed top-level	1
+live shadowed array join	1
+view shadowed array join	1
+live shadowed join on	1
+view shadowed join on	1
+live lambda parameter	1
+view lambda parameter	1
+live lambda alias	1
+view lambda alias	1
 live lambda	10
 mutation lambda	10
 live subquery	10
