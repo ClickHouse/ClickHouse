@@ -775,17 +775,17 @@ def should_skip_merge_queue_job(job_name):
     PR does not need to claim a large runner for it. And the flaky check reruns
     the PR's new/changed stateless tests as a drift guard, so a PR that changes
     no stateless tests has nothing for it to do. Filter it out here, at config
-    time, so such a PR does not schedule the runner, restore `CH_AMD_BINARY`, and enter the test container
-    only to exit `SKIPPED`. This is the merge-queue counterpart to the `flaky`
-    branch of `should_skip_job`, kept deliberately minimal so it cannot skip the
-    build/style/fast-test/docs-examples jobs the queue always needs. The skip
-    condition matches the in-job selection in `functional_tests.py` (both rely
-    on `Targeting.get_changed_tests`), so the early exit and the config-time
-    skip never disagree. `get_changed_tests` resolves data fixtures (a
-    `.parquet`/`.tsv` under `tests/queries/0_stateless/`, even one nested in a
-    subdirectory) back to the tests that consume them, so a fixture-only PR
-    still reruns the affected test surface instead of being skipped here as
-    "no changed tests".
+    time, so such a PR does not schedule the runner, restore `CH_AMD_BINARY`,
+    and enter the test container only to exit `SKIPPED`. This is the merge-queue
+    counterpart to the `flaky` branch of `should_skip_job`, kept deliberately
+    minimal so it cannot skip the build/style/fast-test/docs-examples jobs the
+    queue always needs. The skip condition matches the in-job selection in
+    `functional_tests.py` (both rely on `Targeting.get_changed_tests`), so the
+    early exit and the config-time skip never disagree. `get_changed_tests`
+    resolves data fixtures (a `.parquet`/`.tsv` under
+    `tests/queries/0_stateless/`, even one nested in a subdirectory) back to the
+    tests that consume them, so a fixture-only PR still reruns the affected test
+    surface instead of being skipped here as "no changed tests".
     """
     global _info_cache
     if _info_cache is None:
