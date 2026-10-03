@@ -77,6 +77,11 @@ static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists)
     return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name) : DatabaseCatalog::instance().getDatabase(database_name);
 }
 
+static bool isRefreshTempTableName(const String & name)
+{
+    return name.starts_with(".tmp.inner_id.") || name.starts_with(".tmp.inner.");
+}
+
 
 InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_)
 {
@@ -596,7 +601,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
             /// Preparing a table for shutdown cannot be undone, so the checks that can refuse the drop of a table run for all
             /// tables before any of them is prepared.
-            auto check_tables = [&]
+            auto check_tables = [&](bool skip_size_of_refresh_temp_tables)
             {
                 const auto & settings = getContext()->getSettingsRef();
                 bool check_ref_deps = settings[Setting::check_referential_table_dependencies];
@@ -611,7 +616,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     if (query_for_table.kind != ASTDropQuery::Kind::Drop)
                         continue;
                     DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, /*is_drop_database=*/ true);
-                    if (!table->isDictionary() && !tables_with_checked_size.contains(table))
+                    if (!table->isDictionary() && !tables_with_checked_size.contains(table)
+                        && !(skip_size_of_refresh_temp_tables && isRefreshTempTableName(table_id.table_name)))
                         tables_to_check_size.push_back(std::move(table));
                 }
                 /// Last, because it may consume the `force_drop_table` flag.
@@ -623,7 +629,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             };
 
             collect_tables();
-            check_tables();
 
             /// If there are refreshable materialized views, we need to stop them before getting the
             /// final list of tables to drop.
@@ -636,6 +641,10 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                         tables_to_prepare_early.push_back(table_ptr);
                 }
             }
+
+            /// Stopping a refreshable view drops the temporary table of its refresh without a size check.
+            check_tables(/*skip_size_of_refresh_temp_tables=*/ !tables_to_prepare_early.empty());
+
             if (!tables_to_prepare_early.empty())
             {
                 tables_to_prepare.clear();
@@ -644,7 +653,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 prepare_tables(tables_to_prepare_early);
 
                 collect_tables();
-                check_tables();
+                check_tables(/*skip_size_of_refresh_temp_tables=*/ false);
             }
 
             prepare_tables(tables_to_prepare);
@@ -694,8 +703,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     /// and `dropInnerTableIfAny` drops those too, so they must also be classified as inner.
                     auto is_inner_table_name = [](const String & name)
                     {
-                        return name.starts_with(".inner_id.") || name.starts_with(".inner.")
-                            || name.starts_with(".tmp.inner_id.") || name.starts_with(".tmp.inner.");
+                        return name.starts_with(".inner_id.") || name.starts_with(".inner.") || isRefreshTempTableName(name);
                     };
                     bool a_is_inner = is_inner_table_name(a.first.table_name);
                     bool b_is_inner = is_inner_table_name(b.first.table_name);

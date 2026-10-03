@@ -1,6 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -124,3 +125,22 @@ def test_drop_database(started_cluster, engine):
     assert "is greater than max" in node.query_and_get_error(f"DROP DATABASE {db}")
     assert_tables_usable(db, ["rmt", "mt"])
     node.query(f"DROP DATABASE {db} SYNC SETTINGS max_table_size_to_drop = 0")
+
+
+def test_drop_database_during_refresh(started_cluster):
+    # The temporary table of a refresh in progress is dropped by stopping the view, without a size check.
+    node.query("CREATE DATABASE d4 ENGINE=Atomic")
+    node.query(
+        "CREATE MATERIALIZED VIEW d4.rmv REFRESH EVERY 1 YEAR (x UInt64) ENGINE=MergeTree ORDER BY x AS "
+        "SELECT number + sleepEachRow(0.1) AS x FROM numbers(3000) "
+        "SETTINGS max_block_size = 1, max_threads = 1, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1"
+    )
+    assert_eq_with_retry(
+        node,
+        "SELECT count() > 0 FROM system.parts WHERE database = 'd4' AND table LIKE '.tmp.inner_id.%' AND active",
+        "1",
+        retry_count=120,
+        sleep_time=0.5,
+    )
+    node.query("DROP DATABASE d4 SYNC")
+    assert node.query("SELECT count() FROM system.databases WHERE name = 'd4'") == "0\n"
