@@ -2122,6 +2122,41 @@ honoured by rewriting the part, so the merges that clear expired columns are
 still assigned when this setting is enabled. Such a merge rewrites the part
 anyway, and therefore also removes the rows that have expired in it.
 )", 0) \
+    DECLARE(Bool, replacing_ttl_whole_partition_only, true, R"(
+For `ReplacingMergeTree`, delete rows by a row `TTL` only in merges that include
+every part of a partition.
+
+`ReplacingMergeTree` keeps the row with the higest version among the stored rows
+with the same sorting key. A merge or a mutation applies a row `TTL` to the rows
+that it reads. If they include the newest version of a key and an older version
+of the key is stored in another part, deleting the newest version makes the older
+version visible again. With this settting, the rows that sucha `TTL` has expired
+are kept by merges that do not include the whole partition and by mutations. A
+background `TTL` merge of the whole partition, or `OPTIMIZE TABLE ... FINAL`
+deletes them.
+
+The setting does not affect a `TTL` whose expression and `WHERE` condition read
+only columns of the sorting key or columns that are the partition key or its
+elements, and a `TTL` of the form `ver + INTERVAL ...`, where `ver` is the
+version column of a date or time type, with a `WHERE` condition, if any, on such
+columns. For them, an older version of a key expires no later than a newer one.
+
+A partition larger than `max_bytes_to_merge_at_max_space_in_pool`, or with more
+parts than `max_parts_to_merge_at_once`, is not merged whole in the background,
+so its expired rows are kept until `OPTIMIZE TABLE ... FINAL` or until merge
+reduces it.
+
+Possible values:
+- `true` - delete rows by such a `TTL` only in merges of whole partitions.
+- `false` - delete expired rows in every merge and mutation, as before version
+  26.10. An older version of a key can become visible again unless the columns
+  that the `TTL` reads have the same values in all versions of a key.
+
+`ALTER TABLE ... MODIFY SETTING` is not replicated, so set the same value on every
+replica. Replicas with different values produce different parts from the same merge,
+and then one of them fetches the part of the other.
+)", 0 \
+        {"26.10", false, true, "Row TTL of ReplacingMergeTree no longer deletes the newest version of a key while an older version is stored in another part of the partition"}) \
     DECLARE(Bool, materialize_ttl_recalculate_only, false, R"(
 Only recalculate ttl info when MATERIALIZE TTL
 )", 0) \
