@@ -17,6 +17,7 @@
 #include <Common/checkStackSize.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
+#include <sstream>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Interpreters/Context.h>
@@ -263,7 +264,7 @@ std::pair<Poco::Dynamic::Var, std::string> UnityV2Catalog::getJSONRequest(
 
 std::pair<Poco::Dynamic::Var, std::string> UnityV2Catalog::postJSONRequest(
     const std::string & route,
-    std::function<void(std::ostream &)> out_stream_callback) const
+    std::function<void(DB::WriteBuffer &)> out_stream_callback) const
 {
     /// `out_stream_callback` is copied, not moved: the retry has to send the same body again.
     return requestWithRetry([&](bool force_refresh)
@@ -402,9 +403,15 @@ void UnityV2Catalog::createTable(
 
     LOG_DEBUG(log, "Creating table {}.{}.{} at `{}` in Unity catalog", warehouse, namespace_name, table_name, table_location);
 
+    std::ostringstream body_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    body_str.exceptions(std::ios::failbit);
+    body->stringify(body_str);
+
     try
     {
-        auto response = postJSONRequest(TABLES_ENDPOINT, [&](std::ostream & os) { body->stringify(os); });
+        auto response = postJSONRequest(
+            TABLES_ENDPOINT,
+            [body_serialized = body_str.str()](DB::WriteBuffer & out) { DB::writeString(body_serialized, out); });
         LOG_TEST(log, "Unity createTable response: {}", response.second);
     }
     catch (...)
@@ -639,7 +646,11 @@ std::shared_ptr<IStorageCredentials> UnityV2Catalog::getDeltaCredentials(
     /// TODO: Change to READ_WRITE. (Be careful to not break any existing users with READ but not READ_WRITE permissions.)
     request_body.set("operation", "READ");
 
-    auto callback = [&request_body](std::ostream & os) { request_body.stringify(os); };
+    std::ostringstream request_body_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    request_body_str.exceptions(std::ios::failbit);
+    request_body.stringify(request_body_str);
+
+    auto callback = [body_serialized = request_body_str.str()](DB::WriteBuffer & out) { DB::writeString(body_serialized, out); };
 
     auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
     const Poco::JSON::Object::Ptr & response = json.extract<Poco::JSON::Object::Ptr>();

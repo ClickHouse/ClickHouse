@@ -1,13 +1,14 @@
 #include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 
 #include <Interpreters/Context.h>
+#include <IO/HTTP/HTTPClientIO.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Core/Types.h>
 #include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/RemoteHostFilter.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Poco/StreamCopier.h>
 #include <Poco/Net/HTTPRequest.h>
 
 namespace DB::ErrorCodes
@@ -44,7 +45,7 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
     const Poco::URI::QueryParameters & params,
     const DB::HTTPHeaderEntries & headers,
     const std::string & method,
-    std::function<void(std::ostream &)> out_stream_callaback)
+    std::function<void(DB::WriteBuffer &)> out_stream_callaback)
 {
     validateBearerToken(context, bearer_token);
 
@@ -74,7 +75,7 @@ std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
     const Poco::URI::QueryParameters & params,
     const DB::HTTPHeaderEntries & headers,
     const std::string & method,
-    std::function<void(std::ostream &)> out_stream_callaback)
+    std::function<void(DB::WriteBuffer &)> out_stream_callaback)
 {
     fiu_do_on(DB::FailPoints::check_database_datalake_negative,
     {
@@ -116,13 +117,15 @@ AccessToken requestOAuthToken(const DB::ContextPtr & context, const Poco::URI & 
     request.setContentLength(body.size());
     request.set("Accept", "application/json");
 
-    session->sendRequest(request) << body;
+    auto request_body = DB::sendHTTPRequest(*session, request);
+    DB::writeString(body, *request_body);
+    request_body->finalize();
 
     Poco::Net::HTTPResponse response;
-    std::istream & rs = session->receiveResponse(response);
+    auto response_body = DB::receiveHTTPResponse(*session, response);
 
     std::string json_str;
-    Poco::StreamCopier::copyToString(rs, json_str);
+    DB::readStringUntilEOF(json_str, *response_body);
 
     /// The body of a failed response is an OAuth error object, safe to show.
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)

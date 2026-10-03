@@ -2,6 +2,7 @@
 
 #include <Access/resolveSetting.h>
 #include <IO/HTTPCommon.h>
+#include <IO/ReadHelpers.h>
 
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -10,7 +11,7 @@ namespace DB
 {
 
 SettingsAuthResponseParser::Result
-SettingsAuthResponseParser::parse(const Poco::Net::HTTPResponse & response, std::istream * body_stream) const
+SettingsAuthResponseParser::parse(const Poco::Net::HTTPResponse & response, ReadBuffer * body) const
 {
     Result result;
 
@@ -18,7 +19,7 @@ SettingsAuthResponseParser::parse(const Poco::Net::HTTPResponse & response, std:
         return result;
     result.is_ok = true;
 
-    if (!body_stream)
+    if (!body)
         return result;
 
     Poco::JSON::Parser parser;
@@ -26,7 +27,9 @@ SettingsAuthResponseParser::parse(const Poco::Net::HTTPResponse & response, std:
 
     try
     {
-        Poco::Dynamic::Var json = parser.parse(*body_stream);
+        String body_text;
+        readStringUntilEOF(body_text, *body);
+        Poco::Dynamic::Var json = parser.parse(body_text);
         const Poco::JSON::Object::Ptr & obj = json.extract<Poco::JSON::Object::Ptr>();
         Poco::JSON::Object::Ptr settings_obj = obj->getObject(settings_key);
 

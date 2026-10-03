@@ -261,12 +261,45 @@ void HTTPClientSession::setLastRequest(Poco::Timestamp time)
 }
 
 
+namespace
+{
+
+/// Whether a message body handed out as an `std::iostream` by `sendRequest`/`receiveResponse` was
+/// transferred to the end. A body that ends with the connection (HTTPStreamBuf) is never considered
+/// complete: there is no way to tell the end of it from a truncated transfer, so the connection
+/// must not be reused.
+bool isBodyStreamComplete(std::ostream * stream)
+{
+	if (auto * fixed_length_stream = dynamic_cast<HTTPFixedLengthOutputStream *>(stream))
+		return fixed_length_stream->isComplete();
+	if (auto * chunked_stream = dynamic_cast<HTTPChunkedOutputStream *>(stream))
+		return chunked_stream->isComplete();
+	return false;
+}
+
+bool isBodyStreamComplete(std::istream * stream)
+{
+	if (auto * fixed_length_stream = dynamic_cast<HTTPFixedLengthInputStream *>(stream))
+		return fixed_length_stream->isComplete();
+	if (auto * chunked_stream = dynamic_cast<HTTPChunkedInputStream *>(stream))
+		return chunked_stream->isComplete();
+	return false;
+}
+
+}
+
+
 std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request, uint64_t * connect_time, uint64_t * first_byte_time)
 {
 	_pRequestStream = 0;
     _pResponseStream = 0;
 	clearException();
 	_responseReceived = false;
+	/// A new exchange starts: nothing of it has been transferred yet. The flags are only
+	/// consulted while there is no body stream to inspect (see isRequestBodyComplete), but they
+	/// must not keep the value left by a previous exchange on this session.
+	_requestBodyComplete = false;
+	_responseBodyComplete = false;
 
     _keepAliveCurrentRequest += 1;
 
@@ -340,10 +373,167 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request, uint64_t * co
 }
 
 
+HTTPClientSession::BodyInfo HTTPClientSession::sendRequestHeaders(HTTPRequest& request, uint64_t * connect_time, uint64_t * first_byte_time)
+{
+	/// Keep in sync with sendRequest() above: this is the same method without the iostream layer.
+	_pRequestStream = 0;
+	_pResponseStream = 0;
+	clearException();
+	_responseReceived = false;
+	_requestBodyComplete = false;
+	_responseBodyComplete = false;
+
+	_keepAliveCurrentRequest += 1;
+
+	bool keepAlive = getKeepAlive();
+	if (((connected() && !keepAlive) || mustReconnect()) && !_host.empty())
+	{
+		close();
+		_mustReconnect = false;
+	}
+	Stopwatch first_byte_watch;
+	try
+	{
+		if (!connected())
+			reconnect(connect_time);
+		if (!request.has(HTTPMessage::CONNECTION))
+			request.setKeepAlive(keepAlive);
+		if (keepAlive && !request.getSuppressKeepAliveHeader() && !request.has(HTTPMessage::CONNECTION_KEEP_ALIVE)
+			&& _keepAliveTimeout.totalSeconds() > 0)
+			request.setKeepAliveTimeout(_keepAliveTimeout.totalSeconds(), _keepAliveMaxRequests);
+		if (!request.has(HTTPRequest::HOST) && !_host.empty())
+			request.setHost(_host, _port);
+		if (!_proxyConfig.host.empty() && !bypassProxy())
+		{
+			request.setURI(proxyRequestPrefix() + request.getURI());
+			proxyAuthenticate(request);
+		}
+		_reconnect = keepAlive;
+		_expectResponseBody = request.getMethod() != HTTPRequest::HTTP_HEAD;
+		const std::string& method = request.getMethod();
+
+		BodyInfo body;
+		if (request.getChunkedTransferEncoding())
+		{
+			body.encoding = BodyEncoding::Chunked;
+		}
+		else if (request.hasContentLength())
+		{
+			body.encoding = BodyEncoding::ContentLength;
+			body.content_length = static_cast<Poco::UInt64>(request.getContentLength64());
+		}
+		else if ((method != HTTPRequest::HTTP_PUT && method != HTTPRequest::HTTP_POST && method != HTTPRequest::HTTP_PATCH) || request.has(HTTPRequest::UPGRADE))
+		{
+			body.encoding = BodyEncoding::NoBody;
+		}
+		else
+		{
+			body.encoding = BodyEncoding::UntilEOF;
+		}
+
+		first_byte_watch.restart();
+
+		std::string header;
+		request.write(header);
+		writeAllRaw(header.data(), static_cast<std::streamsize>(header.size()));
+
+		if (first_byte_time)
+			*first_byte_time = first_byte_watch.elapsed();
+		_lastRequest.update();
+		_requestBodyComplete = body.encoding == BodyEncoding::NoBody;
+		return body;
+	}
+	catch (Exception&)
+	{
+		if (first_byte_time)
+			*first_byte_time = first_byte_watch.elapsed();
+		close();
+		throw;
+	}
+}
+
+
+HTTPClientSession::BodyInfo HTTPClientSession::onResponseHeadersReceived(const HTTPResponse& response)
+{
+	/// Keep in sync with the second half of receiveResponse() above.
+	_responseReceived = true;
+
+	_mustReconnect = getKeepAlive() && !response.getKeepAlive();
+
+	if (!_mustReconnect)
+	{
+		/// when server sends its keep alive timeout, client has to follow that value
+		auto timeout = response.getKeepAliveTimeout();
+		if (timeout > 0)
+			_keepAliveTimeout = std::min(_keepAliveTimeout, Poco::Timespan(timeout, 0));
+		auto max_requests = response.getKeepAliveMaxRequests();
+		if (max_requests > 0)
+			_keepAliveMaxRequests = std::min(_keepAliveMaxRequests, max_requests);
+	}
+
+	BodyInfo body;
+	if (!_expectResponseBody || response.getStatus() < 200 || response.getStatus() == HTTPResponse::HTTP_NO_CONTENT
+		|| response.getStatus() == HTTPResponse::HTTP_NOT_MODIFIED)
+	{
+		body.encoding = BodyEncoding::NoBody;
+	}
+	else if (response.getChunkedTransferEncoding())
+	{
+		body.encoding = BodyEncoding::Chunked;
+	}
+	else if (response.hasContentLength())
+	{
+		body.encoding = BodyEncoding::ContentLength;
+		body.content_length = static_cast<Poco::UInt64>(response.getContentLength64());
+	}
+	else
+	{
+		body.encoding = BodyEncoding::UntilEOF;
+	}
+
+	_responseBodyComplete = body.encoding == BodyEncoding::NoBody;
+	return body;
+}
+
+
 void HTTPClientSession::flushRequest()
 {
+	if (_pRequestStream)
+	{
+		/// Flush here and not in the stream's destructor, which swallows the exception.
+		_pRequestStream->flush();
+
+		if (auto * chunked_stream = dynamic_cast<HTTPChunkedOutputStream *>(_pRequestStream.get()))
+			chunked_stream->rdbuf()->close(); /// Writes the terminating chunk.
+
+		/// The stream is about to be destroyed, so take the completeness of the request body from
+		/// it while it is still alive.
+		_requestBodyComplete = isBodyStreamComplete(_pRequestStream.get());
+	}
 	_pRequestStream = 0;
 	if (networkException()) networkException()->rethrow();
+}
+
+
+bool HTTPClientSession::isRequestBodyComplete()
+{
+	/// The iostream-based path (sendRequest) does not report the completion of the body, so it
+	/// has to be taken from the stream itself as long as it is alive. flushRequest stores it into
+	/// _requestBodyComplete before dropping the stream, and the iostream-free path
+	/// (sendRequestHeaders) maintains the flag directly.
+	if (_pRequestStream)
+		return isBodyStreamComplete(_pRequestStream.get());
+	return _requestBodyComplete;
+}
+
+
+bool HTTPClientSession::isResponseBodyComplete()
+{
+	/// Same as isRequestBodyComplete, for the response side. The response stream stays alive
+	/// until the next request or until the session is destroyed, so there is nothing to snapshot.
+	if (_pResponseStream)
+		return isBodyStreamComplete(_pResponseStream.get());
+	return _responseBodyComplete;
 }
 
 
@@ -429,6 +619,9 @@ bool HTTPClientSession::peekResponse(HTTPResponse& response)
 
 void HTTPClientSession::reset()
 {
+	/// No request is in flight anymore, so nothing is left half-sent or half-received.
+	_requestBodyComplete = true;
+	_responseBodyComplete = true;
 	close();
 }
 

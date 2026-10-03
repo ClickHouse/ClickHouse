@@ -174,6 +174,37 @@ int HTTPSession::read(char* buffer, std::streamsize length)
 }
 
 
+int HTTPSession::getCharRaw()
+{
+	return get();
+}
+
+
+int HTTPSession::readRaw(char* buffer, std::streamsize length)
+{
+	return read(buffer, length);
+}
+
+
+int HTTPSession::writeRaw(const char* buffer, std::streamsize length)
+{
+	return write(buffer, length);
+}
+
+
+void HTTPSession::writeAllRaw(const char* buffer, std::streamsize length)
+{
+	std::streamsize offset = 0;
+	while (offset < length)
+	{
+		int written = write(buffer + offset, length - offset);
+		if (written <= 0)
+			throw MessageException("Failed to write to the socket");
+		offset += written;
+	}
+}
+
+
 int HTTPSession::write(const char* buffer, std::streamsize length)
 {
 	try

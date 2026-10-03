@@ -13,7 +13,9 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <Poco/StreamCopier.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/HTTPCommon.h>
 #include <Poco/URI.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
@@ -242,12 +244,14 @@ void JWTProvider::deviceCodeLogin()
     applyClientAuthentication(device_code_request, device_code_request_body);
 
     device_code_request.setContentLength(device_code_request_body.length());
-    device_code_session->sendRequest(device_code_request) << device_code_request_body;
+    auto device_code_out = sendHTTPRequest(*device_code_session, device_code_request);
+    writeString(device_code_request_body, *device_code_out);
+    device_code_out->finalize();
 
     Poco::Net::HTTPResponse device_code_response;
-    std::istream & device_code_rs = device_code_session->receiveResponse(device_code_response);
+    auto device_code_rs = receiveHTTPResponse(*device_code_session, device_code_response);
     std::string device_code_response_body;
-    Poco::StreamCopier::copyToString(device_code_rs, device_code_response_body);
+    readStringUntilEOF(device_code_response_body, *device_code_rs);
 
     if (device_code_response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
     {
@@ -318,12 +322,14 @@ void JWTProvider::deviceCodeLogin()
             applyClientAuthentication(token_request, token_request_body);
 
             token_request.setContentLength(token_request_body.length());
-            token_session->sendRequest(token_request) << token_request_body;
+            auto token_out = sendHTTPRequest(*token_session, token_request);
+            writeString(token_request_body, *token_out);
+            token_out->finalize();
 
             Poco::Net::HTTPResponse token_response;
-            std::istream & token_rs = token_session->receiveResponse(token_response);
+            auto token_rs = receiveHTTPResponse(*token_session, token_response);
             std::string response_body;
-            Poco::StreamCopier::copyToString(token_rs, response_body);
+            readStringUntilEOF(response_body, *token_rs);
 
             if (token_response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
             {
@@ -406,12 +412,14 @@ void JWTProvider::refreshIdPAccessToken()
     applyClientAuthentication(request, request_body);
 
     request.setContentLength(request_body.length());
-    session->sendRequest(request) << request_body;
+    auto request_out = sendHTTPRequest(*session, request);
+    writeString(request_body, *request_out);
+    request_out->finalize();
 
     Poco::Net::HTTPResponse response;
-    std::istream & rs = session->receiveResponse(response);
+    auto rs = receiveHTTPResponse(*session, response);
     std::string response_body;
-    Poco::StreamCopier::copyToString(rs, response_body);
+    readStringUntilEOF(response_body, *rs);
 
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
     {
@@ -431,12 +439,12 @@ std::string JWTProvider::httpGet(const Poco::URI & uri)
     auto session = createHTTPSession(uri);
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     request.set("Accept", "application/json");
-    session->sendRequest(request);
+    sendHTTPRequest(*session, request)->finalize();
 
     Poco::Net::HTTPResponse response;
-    std::istream & rs = session->receiveResponse(response);
+    auto rs = receiveHTTPResponse(*session, response);
     std::string body;
-    Poco::StreamCopier::copyToString(rs, body);
+    readStringUntilEOF(body, *rs);
 
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
     {

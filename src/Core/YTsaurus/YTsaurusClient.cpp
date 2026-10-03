@@ -4,7 +4,6 @@
 
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <Formats/formatBlock.h>
 #include <Core/Block.h>
 #include <Formats/FormatFactory.h>
@@ -140,14 +139,12 @@ ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const Colu
 ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Block & lookup_block_input)
 {
     YTsaurusQueryPtr lookup_rows_query(new YTsaurusLookupRows(cypress_path));
-    auto out_callback = [lookup_block_input, this](std::ostream & ostr)
+    auto out_callback = [lookup_block_input, this](WriteBuffer & out)
     {
         FormatSettings format_settings;
         format_settings.json.quote_64bit_integers = false;
-        WriteBufferFromOStream out_buffer(ostr);
-        auto output_format = context->getOutputFormat("JSONEachRow", out_buffer, lookup_block_input.cloneEmpty(), format_settings);
+        auto output_format = context->getOutputFormat("JSONEachRow", out, lookup_block_input.cloneEmpty(), format_settings);
         formatBlock(output_format, lookup_block_input);
-        out_buffer.finalize();
     };
     return executeQuery(lookup_rows_query, std::move(out_callback));
 }

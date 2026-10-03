@@ -59,7 +59,7 @@ private:
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const override;
 
-    std::function<void(std::ostream &)> getReadPOSTDataCallback(
+    std::function<void(WriteBuffer &)> getReadPOSTDataCallback(
         const Names & column_names,
         const ColumnsDescription & columns_description,
         const SelectQueryInfo & query_info,
