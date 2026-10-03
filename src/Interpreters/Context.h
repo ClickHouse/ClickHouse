@@ -635,8 +635,8 @@ protected:
     /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
     /// not on the initiator).
     bool is_view_inner_query = false;
-    /// Set for the query of a `SQL SECURITY DEFINER` / `NONE` view or materialized view. It must not initiate task-based
-    /// parallel replicas: a replica cannot run a shipped read with the privileges of that query.
+    /// Set for the query of a `SQL SECURITY DEFINER` / `NONE` view or materialized view. It must not ship its reads as SQL to
+    /// parallel replicas or a `-Cluster` storage: a replica cannot run them with its privileges. Plan-based reads stay allowed.
     bool is_sql_security_overridden_body = false;
     /// True when positional arguments in the outer query have already been resolved by the
     /// initiator node. Set by distributed/parallel-replicas local plan builders to prevent
