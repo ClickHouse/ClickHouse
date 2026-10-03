@@ -145,18 +145,10 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
     , data_settings(data.getSettings(projection ? &projection->settings_changes : nullptr))
     , log(getLogger(data.getLogName() + " (SelectExecutor)"))
 {
-    /// Reading a projection part bypasses the parent table's delete-bitmap filter, so
-    /// logically-deleted rows would resurface. This is the single point every projection
-    /// read passes through (optimizer estimate/read and the explicit projection table
-    /// function), so fail closed here regardless of how the combination came to exist
-    /// (CREATE/ALTER reject it, but SECONDARY_CREATE/ATTACH still load it).
-    if (projection)
-    {
-        auto metadata_snapshot = data.getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
-        if (metadata_snapshot->hasUniqueKey())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "UNIQUE KEY tables do not support reading via projections");
-    }
+    /// TODO(unique-key): support reading via projections.
+    if (projection && data.hasUniqueKey())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "UNIQUE KEY tables do not support reading via projections");
 }
 
 /// Maps each primary-key column position to the slot of the matching column in a part's partition
@@ -2383,6 +2375,41 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         };
     }
 
+    /// A key value that holds a NULL nested in a `Tuple` is not comparable in `Field` order the way the
+    /// key column is stored: the key stores a nested NULL above every value of its element (the same
+    /// `+inf` a flat `Nullable` NULL is mapped to), while `Field` orders `Null` below every value. Such a
+    /// bound therefore comes out in `Field` order below where the key stores it. For the lower bound in
+    /// value space this only widens the range. The upper bound is widened to `+inf` by `KeyCondition`
+    /// where it is compared in `Field` order (a set is compared in the key's own order and needs no
+    /// widening). That is not enough where a granule spans the boundary between non-NULL and NULL
+    /// values: the upper bound then comes out below the lower one, and the range of the granule looks
+    /// empty before any comparison is made. Only such a pair is replaced - by the extremes of its own
+    /// sides, which claim nothing about the column. Returns whether the pair was replaced: a replaced
+    /// pair no longer stands for the equal boundaries `equal_boundaries_mask` reports.
+    /// Set once an upper bound holds a nested NULL: the mark ranges then no longer follow the
+    /// condition's own continuity, because a granule the condition describes as wholly matching may
+    /// hold rows the filter rejects. Only the exactness of the analysis is affected - a widened bound
+    /// claims nothing about the column, so it can only widen `can_be_true`.
+    bool boundary_pair_inexact = false;
+
+    auto repair_boundary_pair = [&key_order, &boundary_pair_inexact](size_t column, FieldRef & left, FieldRef & right)
+    {
+        /// Boundaries follow the storage order of the column: values ascend unless the column does not.
+        const bool reversed = key_order.isReversed(column);
+        if (!KeyCondition::fieldHasNullInside(reversed ? left : right))
+            return false;
+
+        boundary_pair_inexact = true;
+
+        const bool ordered = reversed ? !(left < right) : !(right < left);
+        if (ordered)
+            return false;
+
+        left = key_order.physicalStartExtreme(column);
+        right = key_order.physicalEndExtreme(column);
+        return true;
+    };
+
     /// For index columns that are also covered by the part's partition minmax index, use minmax bounds
     /// instead of (-inf, +inf). The same bounds are consulted by the full and the sparse key representation.
     /// Indexed by full primary key position (not by sparse position), so the sparse path can look up the
@@ -2446,6 +2473,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         const size_t key_col = used_key_indices[sparse_pos];
                         create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
                         sparse_key_right[sparse_pos] = key_order.physicalEndExtreme(key_col);
+                        /// On a descending column the upper bound is the left one, which can hold a nested NULL.
+                        if (unlikely(repair_boundary_pair(key_col, sparse_key_left[sparse_pos], sparse_key_right[sparse_pos]))
+                            && key_col < equal_boundaries_mask.size())
+                            equal_boundaries_mask[key_col] = false;
                     }
                 }
                 else
@@ -2468,6 +2499,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         const size_t key_col = used_key_indices[sparse_pos];
                         create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
                         create_field_ref(range.end, key_col, sparse_key_right[sparse_pos]);
+                        if (unlikely(repair_boundary_pair(key_col, sparse_key_left[sparse_pos], sparse_key_right[sparse_pos]))
+                            && key_col < equal_boundaries_mask.size())
+                            equal_boundaries_mask[key_col] = false;
                     }
                 }
 
@@ -2490,6 +2524,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         create_field_ref(range.begin, i, index_left[i]);
                         /// The value at the unknown physical end of the part is the directional extreme.
                         index_right[i] = key_order.physicalEndExtreme(i);
+                        repair_boundary_pair(i, index_left[i], index_right[i]);
                     }
                     else
                     {
@@ -2509,6 +2544,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     {
                         create_field_ref(range.begin, i, index_left[i]);
                         create_field_ref(range.end, i, index_right[i]);
+                        repair_boundary_pair(i, index_left[i], index_right[i]);
                     }
                     else
                     {
@@ -2712,8 +2748,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                             /// range is then simply dropped, the same as in a release build.
                             /// TODO: Remove the #ifndef and always throw after
                             ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
+                            /// An upper bound holding a nested NULL breaks the same assumption in its own
+                            /// way: it is widened to `+inf`, so an interior granule of a continuous range
+                            /// is no longer claimed to match wholly.
 #ifndef NDEBUG
-                            if (used_key_prefix_loaded_in_memory)
+                            if (used_key_prefix_loaded_in_memory && !boundary_pair_inexact)
                             {
                                 auto describe_condition = [](const KeyCondition & condition)
                                 {

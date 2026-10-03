@@ -1922,16 +1922,18 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         if (updater)
             updater->recordAggregationStateSizes(dest, bucket);
 
-        /// Filled by the top-K conversion when the statistics ask for it: the untruncated key bytes, because the
-        /// truncated chunk carries only the kept groups.
-        UInt64 topk_full_key_bytes = 0;
-        auto chunk = convertOneBucketToChunk(dest, arena, final, bucket, updater ? &topk_full_key_bytes : nullptr, /*keep_table_buffer=*/true);
+        /// Filled by a conversion that materializes only some of the unit's groups - the top-K one or the HAVING
+        /// pre-filter - when the statistics ask for it: the untruncated key bytes, because the chunk carries only the
+        /// kept groups, and a bounded sample of those keys for when it carries none at all.
+        UntruncatedAggregationKeys untruncated_keys;
+        auto chunk = convertOneBucketToChunk(dest, arena, final, bucket, updater ? &untruncated_keys : nullptr, /*keep_table_buffer=*/true);
         if (count_first)
             std::swap(table, best_groups_table);
         if (updater)
         {
-            if (topk_full_key_bytes)
-                updater->recordAggregationKeySizes(chunk.chunk, keys_positions, key_types, topk_full_key_bytes);
+            if (untruncated_keys.bytes)
+                updater->recordAggregationKeySizes(
+                    chunk.chunk, keys_positions, key_types, untruncated_keys.bytes, untruncated_keys.sample_columns);
             else
                 updater->recordAggregationKeySizes(chunk.chunk, keys_positions, key_types);
         }
