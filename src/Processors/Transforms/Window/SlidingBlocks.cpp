@@ -1,7 +1,5 @@
 #include <Processors/Transforms/Window/SlidingBlocks.h>
 
-#include <DataTypes/DataTypeLowCardinality.h>
-
 #include <base/arithmeticOverflow.h>
 
 namespace DB

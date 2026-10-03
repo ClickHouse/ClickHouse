@@ -30,28 +30,10 @@ bool isPartitionFirstRow(const WindowTransform * transform)
 
 bool isPartitionLastRow(const WindowTransform * transform)
 {
-    /// This is for fast check.
     if (!transform->partition.bounds().fully_visible)
         return false;
 
-    auto current_row = transform->current.location;
-    /// isPartitionLastRow is called on each row, also move on current_row.row here.
-    current_row.row++;
-    const RowNumber partition_end_row = transform->partition.bounds().end;
-
-    /// The partition end is reached, when following is true
-    /// - current row is the partition end row,
-    /// - or current row is the last row of all input.
-    if (current_row != partition_end_row)
-    {
-        /// when current row is not the partition end row, we need to check whether it's the last
-        /// input row.
-        if (current_row.row < transform->blocks.blockAt(current_row.block).rows_count)
-            return false;
-        if (partition_end_row.block != current_row.block + 1 || partition_end_row.row)
-            return false;
-    }
-    return true;
+    return transform->blocks.next(transform->current.location) == transform->partition.bounds().end;
 }
 
 }
