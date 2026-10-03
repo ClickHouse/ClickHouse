@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
@@ -43,6 +44,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char prefetched_reader_pool_failpoint[];
+    extern const char prefetch_refiner_after_refine[];
 }
 
 bool MergeTreePrefetchedReadPool::TaskHolder::operator<(const TaskHolder & other) const
@@ -71,13 +73,20 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     , readers(std::move(readers_))
     , prefetch_runner(pool, ThreadName::PREFETCH_READER)
 {
+    CurrentThread::checkIfNotCancelled();
     prefetch_runner.enqueueAndKeepTrack(read_prefetch.createPrefetchedTask(readers.main.get(), priority_));
 
     for (const auto & reader : readers.prewhere)
+    {
+        CurrentThread::checkIfNotCancelled();
         prefetch_runner.enqueueAndKeepTrack(read_prefetch.createPrefetchedTask(reader.get(), priority_));
+    }
 
     for (const auto & patch_reader : readers.patches)
+    {
+        CurrentThread::checkIfNotCancelled();
         prefetch_runner.enqueueAndKeepTrack(read_prefetch.createPrefetchedTask(patch_reader->getReader(), priority_));
+    }
 
     fiu_do_on(FailPoints::prefetched_reader_pool_failpoint,
     {
@@ -97,10 +106,14 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     /// the prefetch thread pool. Ranges dropped by the refiner are never prefetched.
     /// Both the task and the pool outlive this job: the task owns this object through
     /// readers_future and waits for the job in its destructor.
+    CurrentThread::checkIfNotCancelled();
     prefetch_runner.enqueueAndKeepTrack([this, &task, &read_prefetch, current_component = Coordination::getCurrentComponent()]
     {
         auto component_guard = Coordination::setCurrentComponent(current_component);
+        CurrentThread::checkIfNotCancelled();
         task.ranges = read_prefetch.refineReadRanges(*task.read_info, std::move(task.ranges));
+        FailPointInjection::pauseFailPoint(FailPoints::prefetch_refiner_after_refine);
+        CurrentThread::checkIfNotCancelled();
         if (task.ranges.empty())
         {
             task.pruned_by_refiner = true;
@@ -192,8 +205,9 @@ std::function<void()> MergeTreePrefetchedReadPool::createPrefetchedTask(IMergeTr
     /// only inside this MergeTreePrefetchedReadPool, where read tasks are created and distributed,
     /// and we cannot block either, therefore make prefetch inside the pool and put the future
     /// into the thread task. When a thread calls getTask(), it will wait for it is not ready yet.
-    return [=, context = getContext()]() mutable
+    return [reader, priority, context = getContext()]() mutable
     {
+        CurrentThread::checkIfNotCancelled();
         /// For async read metrics in system.query_log.
         PrefetchIncrement watch(context->getAsyncReadCounters());
         reader->prefetchBeginOfRange(priority);
@@ -202,6 +216,7 @@ std::function<void()> MergeTreePrefetchedReadPool::createPrefetchedTask(IMergeTr
 
 void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & task)
 {
+    CurrentThread::checkIfNotCancelled();
     if (task.isValidReadersFuture())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Task already has a reader");
 
@@ -238,6 +253,7 @@ void MergeTreePrefetchedReadPool::startPrefetches()
 
     while (!prefetch_queue.empty())
     {
+        CurrentThread::checkIfNotCancelled();
         const auto & top = prefetch_queue.top();
         createPrefetchedReadersForTask(*top.task);
 #ifndef NDEBUG
@@ -264,6 +280,8 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
 
         {
             std::lock_guard lock(mutex);
+
+            CurrentThread::checkIfNotCancelled();
 
             if (per_thread_tasks.empty())
                 return nullptr;
@@ -304,7 +322,10 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
         }
         else if (ranges_refiner)
         {
+            CurrentThread::checkIfNotCancelled();
             thread_task->ranges = refineReadRanges(*thread_task->read_info, std::move(thread_task->ranges));
+            FailPointInjection::pauseFailPoint(FailPoints::prefetch_refiner_after_refine);
+            CurrentThread::checkIfNotCancelled();
             if (thread_task->ranges.empty())
                 continue;
 
@@ -414,9 +435,16 @@ MergeTreePrefetchedReadPool::ThreadTaskPtr MergeTreePrefetchedReadPool::stealTas
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::createTask(ThreadTask & task, MergeTreeReadTask * previous_task)
 {
     if (task.isValidReadersFuture())
-        return MergeTreeReadPoolBase::createTask(task.read_info, task.readers_future->get(), task.ranges, task.patches_ranges, updater);
-    else
-        return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task, updater);
+    {
+        auto readers = task.readers_future->get();
+        /// Preserve a real prefetch error if it raced with query cancellation: `get` must rethrow
+        /// the background exception before the mutable cancellation state is checked.
+        CurrentThread::checkIfNotCancelled();
+        return MergeTreeReadPoolBase::createTask(task.read_info, std::move(readers), task.ranges, task.patches_ranges, updater);
+    }
+
+    CurrentThread::checkIfNotCancelled();
+    return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task, updater);
 }
 
 void MergeTreePrefetchedReadPool::fillPerPartStatistics()

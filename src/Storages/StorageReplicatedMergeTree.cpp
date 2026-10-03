@@ -10687,7 +10687,8 @@ std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidat
         catch (const Exception & ex)
         {
             /// A transient error does not prove the part is broken; rethrow so the CHECK query fails and can be retried.
-            if (isRetryableException(std::current_exception()))
+            const auto exception = std::current_exception();
+            if (CurrentThread::isQueryCancellationException(exception) || isRetryableException(exception))
                 throw;
 
             tryLogCurrentException(log, __PRETTY_FUNCTION__);

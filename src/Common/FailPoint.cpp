@@ -87,6 +87,9 @@ static struct InitFiu
     REGULAR(patch_part_index_write_empty) \
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
+    PAUSEABLE_ONCE(s3_read_before_get_object) \
+    PAUSEABLE_ONCE(s3_read_before_retry) \
+    PAUSEABLE_ONCE(check_data_part_before_projection_read) \
     REGULAR(s3_read_inject_etag_mismatch) \
     REGULAR(file_read_inject_version_token_mismatch) \
     REGULAR(azure_inject_forbidden_response) \
@@ -151,8 +154,12 @@ static struct InitFiu
     REGULAR(database_replicated_throw_on_stop_replication) \
     REGULAR(database_catalog_shutdown_sleep_per_table) \
     REGULAR(dummy_failpoint) \
+    ONCE(query_status_cancel_with_injected_exception) \
     ONCE(system_log_pipeline_fail_after_smt_restore) \
     REGULAR(prefetched_reader_pool_failpoint) \
+    PAUSEABLE_ONCE(prefetch_refiner_after_refine) \
+    PAUSEABLE_ONCE(merge_tree_reader_pause_before_report_broken) \
+    PAUSEABLE_ONCE(merge_tree_sink_after_commit_part) \
     REGULAR(taskstats_counters_reset_throw) \
     REGULAR(shared_set_sleep_during_update) \
     REGULAR(smt_outdated_parts_exception_response) \
