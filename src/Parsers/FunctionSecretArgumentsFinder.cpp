@@ -66,6 +66,16 @@ namespace
         return AzureConnectionValue::PlainStorageAccountURL;
     }
 
+    /// The keys an Azure named collection accepts (`StorageAzureConfiguration`). An override with any
+    /// other key, which can name any credential, is rejected only after the statement is logged.
+    bool isAzureCollectionKey(std::string_view key)
+    {
+        static const std::unordered_set<std::string_view> keys = {"blob_path", "container", "format", "compression", "structure",
+            "compression_method", "account_name", "account_key", "connection_string", "storage_account_url", "partition_strategy",
+            "partition_columns_in_data_file", "client_id", "tenant_id"};
+        return keys.contains(key);
+    }
+
     /// The backup engines whose locator names a destination with no credential in it, each with the
     /// argument count it accepts. `BackupFactory` registers exactly these plus `S3` and `AzureBlobStorage`.
     std::optional<size_t> credentialFreeBackupEngineArity(const String & engine_name)
@@ -894,8 +904,9 @@ bool FunctionSecretArgumentsFinder::azureCollectionArgumentsAreShowable(size_t s
         {
             /// A key this rule cannot read hides which credential the override carries; a value that is
             /// no plain literal or identifier can nest one (`headers('Authorization' = '...')`).
+            String key;
             if (argument_function->arguments && argument_function->arguments->size() == 2
-                && tryGetStringFromArgument(*argument_function->arguments->at(0), nullptr)
+                && tryGetStringFromArgument(*argument_function->arguments->at(0), &key) && isAzureCollectionKey(key)
                 && (tryGetStringFromArgument(*argument_function->arguments->at(1), nullptr)
                     || argument_function->arguments->at(1)->tryGetLiteralText(nullptr)))
                 continue;
