@@ -103,6 +103,24 @@ ${CLICKHOUSE_CLIENT} -q "
 "
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${db}' AND name = 'user_drop'"
 
+echo '-- a refresh requested while stopped: SYSTEM WAIT VIEW checks the target table'
+
+# `SYSTEM WAIT VIEW` checks that the target here is the one a refresh on a stopped view produced. A replica lagging
+# behind the `EXCHANGE` needs two replicas, so the target is exchanged away behind the stopped view's back instead.
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "
+    CREATE TABLE ${db_repl}.tgt (x UInt64) ENGINE = ReplicatedMergeTree ORDER BY x;
+    CREATE TABLE ${db_repl}.decoy (x UInt64) ENGINE = ReplicatedMergeTree ORDER BY x;
+    CREATE MATERIALIZED VIEW ${db_repl}.wv
+        REFRESH EVERY 1 YEAR TO ${db_repl}.tgt EMPTY AS SELECT 1 AS x;
+
+    SYSTEM STOP VIEW ${db_repl}.wv;
+    SYSTEM REFRESH VIEW ${db_repl}.wv;
+    SYSTEM WAIT VIEW ${db_repl}.wv;
+"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${db_repl}.tgt"
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "EXCHANGE TABLES ${db_repl}.tgt AND ${db_repl}.decoy"
+${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT VIEW ${db_repl}.wv" 2>&1 | grep -q 'TABLE_UUID_MISMATCH' && echo 'stale_target_reported'
+
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${db}"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${db_fail}"
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "DROP DATABASE ${db_repl}"

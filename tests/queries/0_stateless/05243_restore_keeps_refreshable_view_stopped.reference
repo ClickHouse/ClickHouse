@@ -1,0 +1,5 @@
+BACKUP_CREATED
+1. held back while the restore is still running:
+Disabled
+2. the stop survives the finished restore, target untouched:
+Disabled	0
