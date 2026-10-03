@@ -52,6 +52,10 @@ constexpr size_t adaptive_spill_min_buffer_bytes = 4 << 10;
 /// table, grown to hold them, stays in the cache while the unit is drained and converted; a bucket smaller than a
 /// unit is merged as one, which spares a small bucket the fixed cost of every further unit.
 constexpr size_t adaptive_merge_unit_records = 16'384;
+/// A group whose state many producers hold merges their states on the pool, bucket by bucket of the states (see
+/// `Aggregator::mergeAdaptiveSourceStates`), once it has this many source states: a merge of a few states gains nothing
+/// from the pool, and the states that can be giant sets are held by most producers.
+constexpr size_t adaptive_parallel_merge_min_sources = 8;
 /// The count bins of the top-K pruning (see `AdaptiveTopKPruning`) sit on the hash bits 14..31, the bucket's and the
 /// ten right below them, so every bucket owns 1024 consecutive bins and every partition or merge unit a run of them. A
 /// bin then holds a few hundred rows of a hundred-million-row aggregation, which keeps the bounds of most bins below
@@ -208,6 +212,10 @@ struct AdaptiveMergeScratch
 {
     PaddedPODArray<AggregateDataPtr> places;
     PaddedPODArray<AggregateDataPtr> source_places;
+    /// The merges of `source_places` into `places` ordered by their destination, and one destination's states, for the
+    /// pool-parallel merge of a group many producers hold (see `Aggregator::mergeAdaptiveSourceStates`).
+    PaddedPODArray<UInt32> merge_order;
+    AggregateDataPtrs merge_group;
     RowStorePointers records;
     AdaptiveRecordRanges ranges;
     std::vector<std::pair<UInt64, UInt64>> best_counts_and_hashes;

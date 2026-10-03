@@ -214,6 +214,66 @@ AggregatedDataVariantsPtr Aggregator::createAdaptiveExternalMergeDestination() c
     return destination;
 }
 
+void Aggregator::mergeAdaptiveSourceStates(AdaptiveMergeScratch & scratch, Arena * arena, std::atomic<bool> & is_cancelled) const
+{
+    auto & places = scratch.places;
+    auto & source_places = scratch.source_places;
+    const size_t merges = places.size();
+
+    auto & order = scratch.merge_order;
+    bool ordered = false;
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        const IAggregateFunction & function = *aggregate_functions[i];
+        const size_t offset = offsets_of_aggregate_states[i];
+        if (!function.isAbleToParallelizeMerge() || !function.isParallelizeMergePrepareNeeded())
+        {
+            function.mergeAndDestroyBatch(places.data(), source_places.data(), merges, offset, *thread_pool, is_cancelled, arena);
+            continue;
+        }
+
+        /// The merges of one destination are contiguous in this order. A giant set of the merge is the state of a group
+        /// most producers hold, merged pairwise in one task: the tail of the whole merge. Merged together, the sets are
+        /// converted to two-level in parallel where they are large (`parallelizeMergePrepare`), and each of their
+        /// buckets is merged on the pool (`parallelizeMergeMulti`).
+        if (!ordered)
+        {
+            order.resize(merges);
+            std::iota(order.begin(), order.end(), 0);
+            std::ranges::stable_sort(order, [&](UInt32 lhs, UInt32 rhs) { return places[lhs] < places[rhs]; });
+            ordered = true;
+        }
+        auto & group = scratch.merge_group;
+        for (size_t begin = 0; begin < merges;)
+        {
+            size_t end = begin + 1;
+            while (end < merges && places[order[end]] == places[order[begin]])
+                ++end;
+            if (end - begin < adaptive_parallel_merge_min_sources)
+            {
+                for (size_t k = begin; k < end; ++k)
+                {
+                    AggregateDataPtr destination = places[order[k]];
+                    AggregateDataPtr source = source_places[order[k]];
+                    function.mergeAndDestroyBatch(&destination, &source, 1, offset, *thread_pool, is_cancelled, arena);
+                }
+            }
+            else
+            {
+                group.clear();
+                group.push_back(places[order[begin]] + offset);
+                for (size_t k = begin; k < end; ++k)
+                    group.push_back(source_places[order[k]] + offset);
+                function.parallelizeMergePrepare(group, *thread_pool, is_cancelled);
+                function.parallelizeMergeMulti(group, *thread_pool, is_cancelled, arena);
+                for (size_t k = begin; k < end; ++k)
+                    function.destroy(source_places[order[k]] + offset);
+            }
+            begin = end;
+        }
+    }
+}
+
 bool Aggregator::adaptiveMayThaw(const AdaptiveAggregationSession & shared) const
 {
     /// Under the top-K pruning the frozen tables pay even for a repetitive stream: the merge skips the units whose

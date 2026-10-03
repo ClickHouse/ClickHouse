@@ -782,6 +782,11 @@ private:
     /// perform the identical transition.
     void freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const;
 
+    /// Merges the source states of a merge unit into their destinations (`scratch.places` and `scratch.source_places`)
+    /// and destroys the sources. A function whose states can be giant sets (`uniqExact`) merges the states of a group
+    /// many producers hold on the pool, bucket by bucket of the sets, instead of one source after another.
+    void mergeAdaptiveSourceStates(AdaptiveMergeScratch & scratch, Arena * arena, std::atomic<bool> & is_cancelled) const;
+
     /// Whether a frozen producer of the session may thaw at all: not with `adaptive_aggregator_disable_thaw`, and not
     /// under the top-K pruning.
     bool adaptiveMayThaw(const AdaptiveAggregationSession & shared) const;

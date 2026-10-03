@@ -1782,9 +1782,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                     }
                     source_place = nullptr;
                 }
-                for (size_t i = 0; i < params.aggregates_size; ++i)
-                    aggregate_functions[i]->mergeAndDestroyBatch(
-                        places.data(), source_places.data(), places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
+                mergeAdaptiveSourceStates(scratch, arena, is_cancelled);
                 for (size_t partition = unit_first_partition; partition < unit_first_partition + partitions_per_unit; ++partition)
                 {
                     collectPartitionRecords(session, spilled, partition, partition - first_partition, scratch.ranges);
@@ -1841,9 +1839,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                     }
                     source_place = nullptr;
                 }
-                for (size_t i = 0; i < params.aggregates_size; ++i)
-                    aggregate_functions[i]->mergeAndDestroyBatch(
-                        places.data(), source_places.data(), places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
+                mergeAdaptiveSourceStates(scratch, arena, is_cancelled);
             }
             else
             {
