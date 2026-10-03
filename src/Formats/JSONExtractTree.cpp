@@ -1852,7 +1852,11 @@ public:
                     /// (e.g. an empty array into `Array(JSON(...))`) keep the merge-compatible reuse.
                     /// Only exact-storage variants can textually accept such elements, so the inferred
                     /// type is computed only when one is considered.
+                    /// A variant that is an object or an array of objects of the type inferred for objects
+                    /// by this node is what an element textually insertable into it is inferred as, so it
+                    /// needs no check. This keeps the common case of nested objects inference-free.
                     if (typeRequiresExactStorageMatch(*variant_types[i])
+                        && !isInferredObjectType(*variant_types[i])
                         && typeRequiresExactStorageMatch(*get_inferred_element_type())
                         && !areDynamicStorageTypesCompatible(variant_types[i], get_inferred_element_type()))
                         continue;
@@ -1888,7 +1892,7 @@ public:
         /// (e.g. a nested-object `JSON(...)` with reduced parameters) may only reuse a
         /// storage-compatible variant, not any merge-compatible one.
         auto global_discriminator = column_dynamic.findVariantDiscriminatorForType(
-            element_type, /*require_storage_compatible=*/ typeRequiresExactStorageMatch(*element_type));
+            element_type, element_type_name, /*require_storage_compatible=*/ typeRequiresExactStorageMatch(*element_type));
         DataTypePtr variant_type_for_insert;
         if (global_discriminator)
             variant_type_for_insert = variant_types[*global_discriminator];
@@ -2015,6 +2019,15 @@ private:
             case ElementType::OBJECT:
                 return object_type;
         }
+    }
+
+    /// True for `object_type` and arrays of it at any depth.
+    bool isInferredObjectType(const IDataType & type) const
+    {
+        const IDataType * current = &type;
+        while (const auto * array_type = typeid_cast<const DataTypeArray *>(current))
+            current = array_type->getNestedType().get();
+        return current->equals(*object_type);
     }
 
     DataTypePtr object_type;

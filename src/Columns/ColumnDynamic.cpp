@@ -31,6 +31,7 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <algorithm>
 #include <array>
 
 namespace DB
@@ -86,6 +87,24 @@ bool mappingCollapsesDiscriminators(const VectorWithMemoryTracking<ColumnVariant
     }
 
     return false;
+}
+
+/// True if the field has an `Object` at any level. Only such a field can be inferred as a type with `JSON`.
+bool fieldContainsObject(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Object:
+            return true;
+        case Field::Types::Array:
+            return std::ranges::any_of(field.safeGet<Array>(), fieldContainsObject);
+        case Field::Types::Tuple:
+            return std::ranges::any_of(field.safeGet<Tuple>(), fieldContainsObject);
+        case Field::Types::Map:
+            return std::ranges::any_of(field.safeGet<Map>(), fieldContainsObject);
+        default:
+            return false;
+    }
 }
 
 bool canMergeTypeIntoExistingDynamicVariant(const DataTypePtr & existing_type, const DataTypePtr & inserted_type)
@@ -367,9 +386,11 @@ void ColumnDynamic::insert(const Field & x)
     auto shared_variant_discr = getSharedVariantDiscriminator();
     /// Use LeastSupertypeOnError::Dynamic so that arrays with incompatible element types (e.g. ["text", {"k":1}])
     /// are typed as Array(Dynamic) rather than throwing NO_COMMON_TYPE. Dynamic can hold any element value.
-    auto field_data_type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Dynamic>(), x);
-    auto field_data_type_name = field_data_type->getName();
-    const bool inserted_type_requires_exact_storage = typeRequiresExactStorageMatch(*field_data_type);
+    /// The type is needed before the loop below only for a field with an object, which can be inferred as `JSON`.
+    DataTypePtr field_data_type;
+    if (fieldContainsObject(x))
+        field_data_type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Dynamic>(), x);
+    const bool inserted_type_requires_exact_storage = field_data_type && typeRequiresExactStorageMatch(*field_data_type);
     const auto & variants = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
     /// Check if we can insert field into existing variants and avoid Variant extension.
     for (ColumnVariant::Discriminator i = 0; i != variant_col.getNumVariants(); ++i)
@@ -385,6 +406,9 @@ void ColumnDynamic::insert(const Field & x)
     }
 
     /// If we cannot insert field into current variant column, extend it with new variant for this field from its type.
+    if (!field_data_type)
+        field_data_type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Dynamic>(), x);
+    auto field_data_type_name = field_data_type->getName();
     if (addNewVariant(field_data_type, field_data_type_name))
     {
         /// Insert this field into newly added variant.
@@ -420,10 +444,21 @@ bool ColumnDynamic::tryInsert(const Field & x)
 
 std::optional<ColumnVariant::Discriminator> ColumnDynamic::findVariantDiscriminatorForType(const DataTypePtr & type, bool require_storage_compatible) const
 {
-    const auto & variant_type = assert_cast<const DataTypeVariant &>(*variant_info.variant_type);
-    if (auto discr = variant_type.tryGetVariantDiscriminator(type->getName()))
-        return discr;
+    return findVariantDiscriminatorForType(type, type->getName(), require_storage_compatible);
+}
 
+std::optional<ColumnVariant::Discriminator> ColumnDynamic::findVariantDiscriminatorForType(
+    const DataTypePtr & type, const String & type_name, bool require_storage_compatible) const
+{
+    if (auto it = variant_info.variant_name_to_discriminator.find(type_name); it != variant_info.variant_name_to_discriminator.end())
+        return it->second;
+
+    /// A variant of another name can be compatible only through a nested `JSON` type
+    /// (see `areDynamicSubcolumnTypesCompatible`), skip the scan over the variants otherwise.
+    if (!typeRequiresExactStorageMatch(*type))
+        return std::nullopt;
+
+    const auto & variant_type = assert_cast<const DataTypeVariant &>(*variant_info.variant_type);
     auto shared_variant_discr = variant_type.tryGetVariantDiscriminator(ColumnDynamic::getSharedVariantTypeName());
     const auto & variants = variant_type.getVariants();
     for (ColumnVariant::Discriminator discr = 0; discr != variants.size(); ++discr)
@@ -452,7 +487,7 @@ void ColumnDynamic::insertTypedValueFrom(const IColumn & src, const DataTypePtr 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert typed value into `ColumnDynamic` without data type");
 
     const auto type_name = type->getName();
-    if (auto discr = findVariantDiscriminatorForType(type, /*require_storage_compatible=*/ true))
+    if (auto discr = findVariantDiscriminatorForType(type, type_name, /*require_storage_compatible=*/ true))
     {
         insertValueIntoVariantFrom(*discr, src, n);
         return;
@@ -563,7 +598,7 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
         /// `typeRequiresExactStorageMatch`), so for them only a storage-compatible variant is reused;
         /// otherwise the value goes through the typed value path below and stays in the shared
         /// variant or gets a new exact variant.
-        if (auto discr = findVariantDiscriminatorForType(type, /*require_storage_compatible=*/ typeRequiresExactStorageMatch(*type)))
+        if (auto discr = findVariantDiscriminatorForType(type, type_name, /*require_storage_compatible=*/ typeRequiresExactStorageMatch(*type)))
         {
             if (variant_info.variant_names[*discr] == type_name)
             {
@@ -587,17 +622,8 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
         return;
     }
 
-    if (src_global_discr != ColumnVariant::NULL_DISCRIMINATOR)
-    {
-        auto variant_type = assert_cast<const DataTypeVariant &>(*dynamic_src.variant_info.variant_type).getVariants()[src_global_discr];
-        if (auto discr = findVariantDiscriminatorForType(variant_type, /*require_storage_compatible=*/ true))
-        {
-            insertValueIntoVariantFrom(*discr, src_variant_col.getVariantByGlobalDiscriminator(src_global_discr), src_offset);
-            return;
-        }
-    }
-
     /// If variants are different, we need to extend our variant with new variants.
+    /// `combineVariants` maps each source variant to an existing storage-compatible variant when there is one.
     if (auto * global_discriminators_mapping = combineVariants(dynamic_src.variant_info))
     {
         variant_col.insertFrom(*dynamic_src.variant_column, n, *global_discriminators_mapping);
@@ -615,6 +641,13 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
     }
 
     auto variant_type = assert_cast<const DataTypeVariant &>(*dynamic_src.variant_info.variant_type).getVariants()[src_global_discr];
+    if (auto discr = findVariantDiscriminatorForType(
+            variant_type, dynamic_src.variant_info.variant_names[src_global_discr], /*require_storage_compatible=*/ true))
+    {
+        insertValueIntoVariantFrom(*discr, src_variant_col.getVariantByGlobalDiscriminator(src_global_discr), src_offset);
+        return;
+    }
+
     if (addNewVariant(variant_type))
     {
         auto discr = variant_info.variant_name_to_discriminator[dynamic_src.variant_info.variant_names[src_global_discr]];
@@ -655,7 +688,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
 
         /// Exact-storage types (e.g. `JSON(...)`) may only reuse a storage-compatible variant,
         /// otherwise the caller keeps the value in the shared variant or adds a new exact variant.
-        auto discr = findVariantDiscriminatorForType(type, /*require_storage_compatible=*/ typeRequiresExactStorageMatch(*type));
+        auto discr = findVariantDiscriminatorForType(type, type_name, /*require_storage_compatible=*/ typeRequiresExactStorageMatch(*type));
         if (!discr)
             return false;
 
@@ -692,7 +725,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
     for (size_t i = 0; i != src_variants.size(); ++i)
     {
         if (!variant_info.variant_name_to_discriminator.contains(dynamic_src.variant_info.variant_names[i])
-            && findVariantDiscriminatorForType(src_variants[i], /*require_storage_compatible=*/ true))
+            && findVariantDiscriminatorForType(src_variants[i], dynamic_src.variant_info.variant_names[i], /*require_storage_compatible=*/ true))
         {
             has_compatible_new_variant = true;
             break;
@@ -950,7 +983,7 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
         /// Check if we have a compatible variant and deserialize value into it from shared variant data.
         /// Exact-storage types (e.g. `JSON(...)`) may only reuse a storage-compatible variant, see
         /// `typeRequiresExactStorageMatch`.
-        if (auto discr = findVariantDiscriminatorForType(type, /*require_storage_compatible=*/ typeRequiresExactStorageMatch(*type)))
+        if (auto discr = findVariantDiscriminatorForType(type, type_name, /*require_storage_compatible=*/ typeRequiresExactStorageMatch(*type)))
         {
             /// Deserialize value into temporary column and use it in insertManyIntoVariantFrom.
             auto tmp_column = type->createColumn();
@@ -975,17 +1008,8 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
         return;
     }
 
-    if (src_global_discr != ColumnVariant::NULL_DISCRIMINATOR)
-    {
-        auto variant_type = assert_cast<const DataTypeVariant &>(*dynamic_src.variant_info.variant_type).getVariants()[src_global_discr];
-        if (auto discr = findVariantDiscriminatorForType(variant_type, /*require_storage_compatible=*/ true))
-        {
-            variant_col.insertManyIntoVariantFrom(*discr, src_variant_col.getVariantByGlobalDiscriminator(src_global_discr), src_offset, length);
-            return;
-        }
-    }
-
     /// If variants are different, we need to extend our variant with new variants.
+    /// `combineVariants` maps each source variant to an existing storage-compatible variant when there is one.
     if (auto * global_discriminators_mapping = combineVariants(dynamic_src.variant_info))
     {
         variant_col.insertManyFrom(*dynamic_src.variant_column, position, length, *global_discriminators_mapping);
@@ -1001,6 +1025,13 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
     }
 
     auto variant_type = assert_cast<const DataTypeVariant &>(*dynamic_src.variant_info.variant_type).getVariants()[src_global_discr];
+    if (auto discr = findVariantDiscriminatorForType(
+            variant_type, dynamic_src.variant_info.variant_names[src_global_discr], /*require_storage_compatible=*/ true))
+    {
+        variant_col.insertManyIntoVariantFrom(*discr, src_variant_col.getVariantByGlobalDiscriminator(src_global_discr), src_offset, length);
+        return;
+    }
+
     if (addNewVariant(variant_type))
     {
         auto discr = variant_info.variant_name_to_discriminator[dynamic_src.variant_info.variant_names[src_global_discr]];

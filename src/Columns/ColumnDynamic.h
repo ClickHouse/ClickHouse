@@ -226,6 +226,9 @@ public:
     bool tryInsert(const Field & x) override;
     void insertTypedValueFrom(const IColumn & src, const DataTypePtr & type, size_t n);
     std::optional<ColumnVariant::Discriminator> findVariantDiscriminatorForType(const DataTypePtr & type, bool require_storage_compatible = false) const;
+    /// Same, with the precomputed name of `type`.
+    std::optional<ColumnVariant::Discriminator> findVariantDiscriminatorForType(
+        const DataTypePtr & type, const String & type_name, bool require_storage_compatible = false) const;
     void insertValueIntoVariantFrom(ColumnVariant::Discriminator discriminator, const IColumn & src, size_t n);
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

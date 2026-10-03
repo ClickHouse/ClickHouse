@@ -567,21 +567,71 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
         }
     }
 
-    for (size_t i = 0; i != limit; ++i)
+    /// Index of the variant reader that has the value of the row, if any.
+    auto find_reader_for_row = [&](size_t row) -> std::optional<size_t>
     {
-        bool inserted = false;
         for (size_t reader_index = 0; reader_index != dynamic_element_state->variant_readers.size(); ++reader_index)
         {
             const auto & null_map = assert_cast<const ColumnUInt8 &>(*variant_readers_data[reader_index].null_map).getData();
-            if (!null_map[i])
+            if (!null_map[row])
+                return reader_index;
+        }
+        return std::nullopt;
+    };
+
+    /// A run of consecutive rows from the same reader is inserted with a single `insertRangeFrom`
+    /// when no conversion between `Nullable` / `LowCardinality` is needed (see `insertSourceValueIntoColumn`).
+    auto can_insert_range_from = [&](const IColumn & src)
+    {
+        return (typeid_cast<const ColumnNullable *>(variant_column.get()) != nullptr) == (typeid_cast<const ColumnNullable *>(&src) != nullptr)
+            && (typeid_cast<const ColumnLowCardinality *>(variant_column.get()) != nullptr)
+                == (typeid_cast<const ColumnLowCardinality *>(&src) != nullptr);
+    };
+
+    /// The common case: one variant has the values of all rows, insert them without an intermediate column.
+    if (limit != 0)
+    {
+        if (auto reader_index = find_reader_for_row(0))
+        {
+            const auto & src = *variant_reader_columns[*reader_index];
+            if (can_insert_range_from(src))
             {
-                insertSourceValueIntoColumn(variant_column, *variant_reader_columns[reader_index], i);
-                inserted = true;
-                break;
+                size_t run_end = 1;
+                while (run_end != limit && find_reader_for_row(run_end) == reader_index)
+                    ++run_end;
+
+                if (run_end == limit)
+                {
+                    result_column.insertRangeFrom(src, 0, limit);
+                    return;
+                }
             }
         }
+    }
 
-        if (!inserted && !shared_variant_result_null_map[i])
+    for (size_t i = 0; i != limit;)
+    {
+        bool inserted = false;
+        if (auto reader_index = find_reader_for_row(i))
+        {
+            const auto & src = *variant_reader_columns[*reader_index];
+            size_t run_end = i + 1;
+            if (can_insert_range_from(src))
+            {
+                while (run_end != limit && find_reader_for_row(run_end) == reader_index)
+                    ++run_end;
+            }
+
+            if (run_end - i > 1)
+                variant_column->insertRangeFrom(src, i, run_end - i);
+            else
+                insertSourceValueIntoColumn(variant_column, src, i);
+
+            i = run_end;
+            continue;
+        }
+
+        if (!shared_variant_result_null_map[i])
         {
             insertSourceValueIntoColumn(variant_column, *shared_variant_result_column, i);
             inserted = true;
@@ -597,6 +647,8 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
             else
                 variant_column->insertDefault();
         }
+
+        ++i;
     }
 
     result_column.insertRangeFrom(*variant_column, 0, variant_column->size());
