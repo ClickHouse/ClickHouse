@@ -15,6 +15,10 @@ next.log	8
 -- the read name is replaced by another file: the other name reads on, the new file is read from the start
 keep.log	10
 next.log	9
+-- a hard link re-linked to another file: a write through it is read under that file
+keep.log	12
+keep.log	13
+next.log	14
 -- a hard link made while the table is detached
 keep.log	11
 -- hard links and a symbolic link that exist when the table is created

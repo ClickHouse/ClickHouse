@@ -1162,7 +1162,10 @@ bool StorageFileLog::addOtherName(const String & file_name, UInt64 inode, bool i
             const String link = read->first;
             /// A file previously read under `file_name` moves its meta file away before this one moves in.
             untrackReadName(file_name);
+            /// Until its meta file has moved, `file_name` is another name of the file, so a failed move leaves it tracked.
+            file_infos.other_names.emplace(file_name, OtherName{.inode = inode, .is_symlink = is_symlink});
             moveMetaFile(link, file_name);
+            file_infos.other_names.erase(file_name);
             file_infos.context_by_name.erase(link);
             std::erase(file_infos.file_names, link);
             file_infos.other_names.emplace(link, OtherName{.inode = inode, .is_symlink = true});
@@ -1174,6 +1177,8 @@ bool StorageFileLog::addOtherName(const String & file_name, UInt64 inode, bool i
 
     untrackReadName(file_name);
     file_infos.other_names.emplace(file_name, OtherName{.inode = inode, .is_symlink = is_symlink});
+    /// The watcher keeps one modification event per name and batch, so a write through this name may have none.
+    markReadNameUpdated(inode);
     return true;
 }
 
@@ -1245,6 +1250,16 @@ void StorageFileLog::untrackReadName(const String & file_name)
     releaseInode(file_name, it->second.inode); /// May rehash `context_by_name`, so `it` is invalid after it.
     file_infos.context_by_name.erase(file_name);
     std::erase(file_infos.file_names, file_name);
+}
+
+void StorageFileLog::markReadNameUpdated(UInt64 inode)
+{
+    auto meta = file_infos.meta_by_inode.find(inode);
+    if (meta == file_infos.meta_by_inode.end())
+        return;
+    if (auto read = file_infos.context_by_name.find(meta->second.file_name);
+        read != file_infos.context_by_name.end() && read->second.status != FileStatus::REMOVED)
+        read->second.status = FileStatus::UPDATED;
 }
 
 bool StorageFileLog::updateFileInfos()
@@ -1320,7 +1335,10 @@ bool StorageFileLog::updateFileInfos()
                         {
                             /// A file previously read under `file_name` moves its meta file away before this one moves in.
                             untrackReadName(file_name);
+                            /// Until its meta file has moved, `file_name` is another name of the file, so a failed move leaves it tracked.
+                            file_infos.other_names.emplace(file_name, OtherName{.inode = inode, .is_symlink = is_symlink});
                             moveMetaFile(read_name, file_name);
+                            file_infos.other_names.erase(file_name);
                         }
                         onFileAppeared(file_name, inode, is_symlink);
                         file_infos.meta_by_inode.at(inode).file_name = file_name;
@@ -1353,14 +1371,7 @@ bool StorageFileLog::updateFileInfos()
                     it->second.status = FileStatus::UPDATED;
                 /// A write through another name updates the name the file is read under.
                 else if (auto other = file_infos.other_names.find(file_name); other != file_infos.other_names.end())
-                {
-                    if (auto meta = file_infos.meta_by_inode.find(other->second.inode); meta != file_infos.meta_by_inode.end())
-                    {
-                        if (auto read = file_infos.context_by_name.find(meta->second.file_name);
-                            read != file_infos.context_by_name.end() && read->second.status != FileStatus::REMOVED)
-                            read->second.status = FileStatus::UPDATED;
-                    }
-                }
+                    markReadNameUpdated(other->second.inode);
                 break;
             }
 

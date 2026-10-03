@@ -99,6 +99,16 @@ mv "${tmp}" "${d1}/next.log"
 printf '10\n' >> "${d1}/keep.log"
 read_until file_log 9 10
 
+echo '-- a hard link re-linked to another file: a write through it is read under that file'
+ln "${d1}/keep.log" "${d1}/x.log"
+printf '12\n' >> "${d1}/x.log"
+read_until file_log 12
+printf '13\n' >> "${d1}/x.log"
+rm "${d1}/x.log"
+ln "${d1}/next.log" "${d1}/x.log"
+printf '14\n' >> "${d1}/x.log"
+read_until file_log 13 14
+
 echo '-- a hard link made while the table is detached'
 ${CLICKHOUSE_CLIENT} -q "DETACH TABLE file_log"
 ln "${d1}/keep.log" "${d1}/a2.log"
