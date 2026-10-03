@@ -8,7 +8,9 @@
 
 #include <Core/Settings.h>
 
+#include <Columns/ColumnsNumber.h>
 #include <Columns/FilterDescription.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/Context.h>
@@ -29,9 +31,11 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Sources/NullSource.h>
 
+#include <algorithm>
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <numeric>
 
 #include <fmt/ranges.h>
 
@@ -84,17 +88,45 @@ struct MemorySourceFilter
 
 using MemorySourceFilterPtr = std::shared_ptr<const MemorySourceFilter>;
 
+static constexpr auto global_row_index_column_name = "__global_row_index";
+
+/// The number of the first row of each block in the snapshot, for the global row index of lazy materialization.
+using BlockStartRows = std::vector<UInt64>;
+using BlockStartRowsPtr = std::shared_ptr<const BlockStartRows>;
+
+static BlockStartRowsPtr makeBlockStartRows(const Blocks & blocks)
+{
+    auto res = std::make_shared<BlockStartRows>();
+    res->reserve(blocks.size());
+    UInt64 num_rows = 0;
+    for (const auto & block : blocks)
+    {
+        res->push_back(num_rows);
+        num_rows += block.rows();
+    }
+    return res;
+}
+
+static ColumnPtr readColumnFromBlock(const Block & src, const NameAndTypePair & name_and_type)
+{
+    if (name_and_type.isSubcolumn())
+        return tryGetSubcolumnFromBlock(src, name_and_type.getTypeInStorage(), name_and_type);
+    return tryGetColumnFromBlock(src, name_and_type);
+}
+
 class MemorySource : public ISource
 {
     using InitializerFunc = std::function<void(std::shared_ptr<const Blocks> &)>;
 
-    static Block getHeader(const NamesAndTypesList & physical, const NamesAndTypesList & virtuals)
+    static Block getHeader(const NamesAndTypesList & physical, const NamesAndTypesList & virtuals, bool with_global_row_index)
     {
         Block res;
         for (const auto & name_type : physical)
             res.insert({name_type.type->createColumn(), name_type.type, name_type.name});
         for (const auto & name_type : virtuals)
             res.insert({name_type.type->createColumn(), name_type.type, name_type.name});
+        if (with_global_row_index)
+            res.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), global_row_index_column_name});
         return res;
     }
 
@@ -107,8 +139,9 @@ public:
         InitializerFunc initializer_func_ = {},
         MaterializedCTEPtr materialized_cte_ = {},
         MemorySourceFilterPtr filter_ = {},
-        SharedHeader filtered_header_ = {})
-        : ISource(filter_ ? filtered_header_ : std::make_shared<const Block>(getHeader(physical_columns_, virtual_columns_)))
+        SharedHeader filtered_header_ = {},
+        BlockStartRowsPtr block_start_rows_ = {})
+        : ISource(filter_ ? filtered_header_ : std::make_shared<const Block>(getHeader(physical_columns_, virtual_columns_, block_start_rows_ != nullptr)))
         , physical_columns(std::move(physical_columns_))
         , virtual_columns(std::move(virtual_columns_))
         , data(data_)
@@ -116,6 +149,7 @@ public:
         , initializer_func(std::move(initializer_func_))
         , materialized_cte(std::move(materialized_cte_))
         , filter(std::move(filter_))
+        , block_start_rows(std::move(block_start_rows_))
     {
         if (filter && !virtual_columns.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual columns: '{}'", virtual_columns.getNames());
@@ -160,7 +194,7 @@ protected:
 
             if (filter)
             {
-                if (auto chunk = generateFiltered(src))
+                if (auto chunk = generateFiltered(src, current_index))
                     return std::move(*chunk);
 
                 /// Every row of this block was filtered out; move on to the next block
@@ -179,6 +213,14 @@ protected:
             if (!columns.empty())
                 fillVirtualColumns(columns, num_rows);
 
+            if (block_start_rows)
+            {
+                num_rows = src.rows();
+                auto global_row_index = ColumnUInt64::create(num_rows);
+                std::iota(global_row_index->getData().begin(), global_row_index->getData().end(), (*block_start_rows)[current_index]);
+                columns.push_back(std::move(global_row_index));
+            }
+
             return Chunk(std::move(columns), num_rows);
         }
     }
@@ -194,17 +236,10 @@ private:
         return execution_index++;
     }
 
-    static ColumnPtr readColumn(const Block & src, const NameAndTypePair & name_and_type)
-    {
-        if (name_and_type.isSubcolumn())
-            return tryGetSubcolumnFromBlock(src, name_and_type.getTypeInStorage(), name_and_type);
-        return tryGetColumnFromBlock(src, name_and_type);
-    }
-
     void fillPhysicalColumns(const Block & src, Columns & result_columns) const
     {
         for (const auto & name_and_type : physical_columns)
-            result_columns.emplace_back(readColumn(src, name_and_type));
+            result_columns.emplace_back(readColumnFromBlock(src, name_and_type));
 
         fillMissingColumns(result_columns, src.rows(), physical_columns, physical_columns, {}, nullptr);
         chassert(std::all_of(result_columns.begin(), result_columns.end(), [](const auto & column) { return column != nullptr; }));
@@ -221,7 +256,7 @@ private:
     ///
     /// The layout of the block after the steps depends on how the steps were split, so the result
     /// is assembled by name in the order of the output header, as in `MergeTreeSelectProcessor`.
-    std::optional<Chunk> generateFiltered(const Block & src)
+    std::optional<Chunk> generateFiltered(const Block & src, size_t block_index)
     {
         const size_t num_src_rows = src.rows();
 
@@ -250,7 +285,7 @@ private:
             Columns columns;
             columns.reserve(missing.size());
             for (const auto & name_and_type : missing)
-                columns.emplace_back(readColumn(src, name_and_type));
+                columns.emplace_back(readColumnFromBlock(src, name_and_type));
 
             fillMissingColumns(columns, num_src_rows, missing, missing, {}, nullptr);
 
@@ -320,6 +355,19 @@ private:
 
         read_missing_columns(filter->output_columns);
 
+        if (block_start_rows)
+        {
+            const UInt64 block_start_row = (*block_start_rows)[block_index];
+            auto global_row_index = ColumnUInt64::create();
+            auto & global_row_index_data = global_row_index->getData();
+            global_row_index_data.reserve(num_rows);
+            for (size_t row = 0; row < num_src_rows; ++row)
+                if (combined_mask.empty() || combined_mask[row])
+                    global_row_index_data.push_back(block_start_row + row);
+            chassert(global_row_index_data.size() == num_rows);
+            block.insert({std::move(global_row_index), std::make_shared<DataTypeUInt64>(), global_row_index_column_name});
+        }
+
         progress(num_src_rows, num_read_bytes);
 
         const auto & header = getPort().getHeader();
@@ -345,6 +393,204 @@ private:
     InitializerFunc initializer_func;
     MaterializedCTEPtr materialized_cte;
     MemorySourceFilterPtr filter;
+    /// Set if the source produces the `__global_row_index` column for lazy materialization.
+    BlockStartRowsPtr block_start_rows;
+};
+
+/// The rows of one block of the snapshot to read in the lazy branch of lazy materialization.
+struct MemoryLazyBlockRows
+{
+    size_t block_index = 0;
+    /// `ColumnUInt64` with the numbers of the rows in the block, in ascending order.
+    ColumnPtr rows_in_block;
+};
+
+/// Reads the columns deferred by lazy materialization for the given rows of a range of blocks
+/// and returns them as a single chunk.
+class LazyReadFromMemoryBlocksSource final : public ISource
+{
+public:
+    LazyReadFromMemoryBlocksSource(
+        SharedHeader header,
+        NamesAndTypesList columns_,
+        std::shared_ptr<const Blocks> data_,
+        std::vector<MemoryLazyBlockRows> block_rows_)
+        : ISource(std::move(header))
+        , columns(std::move(columns_))
+        , data(std::move(data_))
+        , block_rows(std::move(block_rows_))
+    {
+    }
+
+    String getName() const override { return "LazyReadFromMemoryBlocks"; }
+
+protected:
+    Chunk generate() override
+    {
+        if (block_rows.empty())
+            return {};
+
+        MutableColumns result_columns = getPort().getHeader().cloneEmptyColumns();
+        size_t num_rows = 0;
+
+        for (const auto & [block_index, rows_in_block] : block_rows)
+        {
+            const Block & src = (*data)[block_index];
+
+            Columns block_columns;
+            block_columns.reserve(columns.size());
+            for (const auto & name_and_type : columns)
+                block_columns.emplace_back(readColumnFromBlock(src, name_and_type));
+
+            fillMissingColumns(block_columns, src.rows(), columns, columns, {}, nullptr);
+
+            for (size_t i = 0; i < block_columns.size(); ++i)
+                result_columns[i]->insertRangeFrom(*block_columns[i]->index(*rows_in_block, 0), 0, rows_in_block->size());
+
+            num_rows += rows_in_block->size();
+        }
+
+        block_rows.clear();
+        return Chunk(std::move(result_columns), num_rows);
+    }
+
+private:
+    const NamesAndTypesList columns;
+    std::shared_ptr<const Blocks> data;
+    std::vector<MemoryLazyBlockRows> block_rows;
+};
+
+/// The source of the lazy branch of lazy materialization for the `Memory` storage.
+/// The rows to read become known only at run time, after the main branch of the query (with the `LIMIT`)
+/// is fully executed. Until then, `prepare` reports `UpdatePipeline`: the executor calls `updatePipeline`
+/// when the downstream `LazyMaterializingTransform` starts pulling from this processor, which happens
+/// strictly after it has filled `MemoryLazyMaterializingRows`.
+///
+/// The rows usually come from different blocks, and for a table with `compress = true` every block
+/// decompresses each deferred column as a whole, so the blocks are read in parallel: by several
+/// `LazyReadFromMemoryBlocksSource`, each for a contiguous range of them, whose chunks are passed on
+/// in the order of the ranges, which is the order of the global row index.
+class LazyReadFromMemorySource final : public IProcessor
+{
+public:
+    LazyReadFromMemorySource(
+        SharedHeader header,
+        NamesAndTypesList columns_,
+        std::shared_ptr<const Blocks> data_,
+        MemoryLazyMaterializingRowsPtr lazy_materializing_rows_,
+        size_t num_streams_)
+        : IProcessor({}, {std::move(header)})
+        , columns(std::move(columns_))
+        , data(std::move(data_))
+        , lazy_materializing_rows(std::move(lazy_materializing_rows_))
+        , num_streams(num_streams_)
+    {
+    }
+
+    String getName() const override { return "LazyReadFromMemory"; }
+
+    Status prepare() override
+    {
+        auto & output = outputs.front();
+        if (output.isFinished())
+        {
+            for (auto & input : inputs)
+                input.close();
+            return Status::Finished;
+        }
+
+        if (!output.canPush())
+            return Status::PortFull;
+
+        if (lazy_materializing_rows)
+            return Status::UpdatePipeline;
+
+        for (; current_input != inputs.end(); ++current_input)
+        {
+            if (current_input->isFinished())
+                continue;
+
+            if (!current_input->hasData())
+                return Status::NeedData;
+
+            output.push(current_input->pull());
+            return Status::PortFull;
+        }
+
+        output.finish();
+        return Status::Finished;
+    }
+
+    PipelineUpdate updatePipeline() override
+    {
+        const auto rows = std::move(lazy_materializing_rows);
+        lazy_materializing_rows.reset();
+
+        std::vector<MemoryLazyBlockRows> block_rows = groupRowsByBlock(rows->rows);
+
+        Processors sources;
+        const size_t num_sources = std::min(std::max<size_t>(num_streams, 1), block_rows.size());
+        for (size_t i = 0; i < num_sources; ++i)
+        {
+            std::vector<MemoryLazyBlockRows> source_block_rows(
+                std::make_move_iterator(block_rows.begin() + i * block_rows.size() / num_sources),
+                std::make_move_iterator(block_rows.begin() + (i + 1) * block_rows.size() / num_sources));
+
+            auto source = std::make_shared<LazyReadFromMemoryBlocksSource>(
+                outputs.front().getSharedHeader(), columns, data, std::move(source_block_rows));
+
+            auto & source_output = source->getOutputs().front();
+            inputs.emplace_back(source_output.getHeader(), this);
+            connect(source_output, inputs.back());
+            /// All at once, so that the sources run in parallel.
+            inputs.back().setNeeded();
+            sources.push_back(std::move(source));
+        }
+
+        current_input = inputs.begin();
+        return PipelineUpdate{.to_add = std::move(sources), .to_remove = {}};
+    }
+
+private:
+    std::vector<MemoryLazyBlockRows> groupRowsByBlock(const PaddedPODArray<UInt64> & rows) const
+    {
+        std::vector<MemoryLazyBlockRows> res;
+        if (rows.empty())
+            return res;
+
+        const auto block_start_rows = makeBlockStartRows(*data);
+        size_t next_row = 0;
+        while (next_row < rows.size())
+        {
+            /// The block of the row is the last one that starts not after it.
+            const UInt64 row = rows[next_row];
+            const auto it = std::upper_bound(block_start_rows->begin(), block_start_rows->end(), row);
+            if (it == block_start_rows->begin())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected global row index {} in an empty Memory table", row);
+
+            const size_t block_index = it - block_start_rows->begin() - 1;
+            const UInt64 block_start_row = (*block_start_rows)[block_index];
+            const UInt64 block_end_row = block_start_row + (*data)[block_index].rows();
+            if (row >= block_end_row)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Global row index {} is out of range of the Memory table snapshot with {} rows", row, block_end_row);
+
+            auto rows_in_block = ColumnUInt64::create();
+            auto & rows_in_block_data = rows_in_block->getData();
+            for (; next_row < rows.size() && rows[next_row] < block_end_row; ++next_row)
+                rows_in_block_data.push_back(rows[next_row] - block_start_row);
+
+            res.push_back({block_index, std::move(rows_in_block)});
+        }
+
+        return res;
+    }
+
+    const NamesAndTypesList columns;
+    std::shared_ptr<const Blocks> data;
+    MemoryLazyMaterializingRowsPtr lazy_materializing_rows;
+    const size_t num_streams;
+    InputPorts::iterator current_input = inputs.end();
 };
 
 ReadFromMemoryStorageStep::ReadFromMemoryStorageStep(
@@ -414,9 +660,23 @@ void ReadFromMemoryStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
     filters_applied = true;
 }
 
+void ReadFromMemoryStorageStep::rebuildOutputHeader()
+{
+    Block header = SourceStepWithFilter::applyPrewhereActions(
+        storage_snapshot->getSampleBlockForColumns(required_source_columns),
+        query_info.row_level_filter,
+        query_info.prewhere_info);
+
+    if (read_global_row_index)
+        header.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), global_row_index_column_name});
+
+    output_header = std::make_shared<const Block>(std::move(header));
+}
+
 void ReadFromMemoryStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     SourceStepWithFilter::updatePrewhereInfo(prewhere_info_value);
+    rebuildOutputHeader();
 
     /// `optimizePrewhere` runs after `applyFilters`, so a condition with `IN (subquery)` that it moves
     /// into `PREWHERE` still needs its set built in place, for the reason given in `applyFilters`.
@@ -454,6 +714,61 @@ void ReadFromMemoryStorageStep::describeActions(JSONBuilder::JSONMap & map) cons
     SourceStepWithFilter::describeActions(map);
     if (top_k_filter)
         map.add("TopN Filter Column", top_k_filter->column_name);
+}
+
+bool ReadFromMemoryStorageStep::canUseLazyMaterialization() const
+{
+    /// A read for a global subquery takes the blocks of the storage when it starts, and the lazy branch
+    /// could not see the same ones.
+    return !delay_read_for_global_sub_queries && !read_global_row_index;
+}
+
+std::unique_ptr<LazilyReadFromMemoryStorage> ReadFromMemoryStorageStep::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names)
+{
+    if (!canUseLazyMaterialization())
+        return {};
+
+    /// The in-source filters run in the main branch.
+    NameSet names_to_keep = required_names;
+    if (query_info.row_level_filter)
+        for (const auto & column : query_info.row_level_filter->actions.getRequiredColumns())
+            names_to_keep.insert(column.name);
+    if (query_info.prewhere_info)
+        for (const auto & column : query_info.prewhere_info->prewhere_actions.getRequiredColumns())
+            names_to_keep.insert(column.name);
+    if (top_k_filter)
+        names_to_keep.insert(top_k_filter->column_name);
+
+    const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+    Names main_columns;
+    NamesAndTypesList lazy_columns;
+    for (const auto & column_name : columns_to_read)
+    {
+        /// The global row index would be confused with a column of the same name.
+        if (column_name == global_row_index_column_name)
+            return {};
+
+        auto column = storage_snapshot->tryGetColumn(options, column_name);
+        if (column && !names_to_keep.contains(column_name) && output_header->has(column_name))
+            lazy_columns.push_back(*column);
+        else
+            main_columns.push_back(column_name);
+    }
+
+    if (lazy_columns.empty())
+        return {};
+
+    columns_to_read = main_columns;
+    required_source_columns = std::move(main_columns);
+    read_global_row_index = true;
+    rebuildOutputHeader();
+
+    Block lazy_header;
+    for (const auto & column : lazy_columns)
+        lazy_header.insert({column.type->createColumn(), column.type, column.name});
+
+    return std::make_unique<LazilyReadFromMemoryStorage>(
+        std::make_shared<const Block>(std::move(lazy_header)), std::move(lazy_columns), storage_snapshot, num_streams);
 }
 
 MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAndTypesList & physical_columns) const
@@ -613,16 +928,72 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     Pipes pipes;
 
     auto parallel_execution_index = std::make_shared<std::atomic<size_t>>(0);
+    auto block_start_rows = read_global_row_index ? makeBlockStartRows(*current_data) : nullptr;
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
         auto source = std::make_shared<MemorySource>(
-            physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, source_filter, output_header);
+            physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, source_filter, output_header, block_start_rows);
         if (stream == 0)
             source->addTotalRowsApprox(snapshot_data.rows);
         pipes.emplace_back(std::move(source));
     }
     return Pipe::unitePipes(std::move(pipes));
+}
+
+LazilyReadFromMemoryStorage::LazilyReadFromMemoryStorage(
+    SharedHeader header, NamesAndTypesList columns_, StorageSnapshotPtr storage_snapshot_, size_t num_streams_)
+    : ISourceStep(std::move(header))
+    , columns(std::move(columns_))
+    , storage_snapshot(std::move(storage_snapshot_))
+    , num_streams(num_streams_)
+{
+}
+
+void LazilyReadFromMemoryStorage::setLazyMaterializingRows(MemoryLazyMaterializingRowsPtr lazy_materializing_rows_)
+{
+    lazy_materializing_rows = std::move(lazy_materializing_rows_);
+}
+
+void LazilyReadFromMemoryStorage::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+{
+    if (!lazy_materializing_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LazilyReadFromMemoryStorage: lazy_materializing_rows is not set");
+
+    /// The same snapshot as the main branch has, so the global row indexes refer to the same blocks.
+    const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
+    auto source = std::make_shared<LazyReadFromMemorySource>(
+        getOutputHeader(), columns, snapshot_data.blocks, lazy_materializing_rows, num_streams);
+
+    processors.emplace_back(source);
+    pipeline.init(Pipe(std::move(source)));
+}
+
+void LazilyReadFromMemoryStorage::describeActions(FormatSettings & settings) const
+{
+    settings.out << settings.detail_prefix << "Lazily read columns: ";
+
+    bool first = true;
+    for (const auto & column : *getOutputHeader())
+    {
+        if (!first)
+            settings.out << ", ";
+        first = false;
+
+        settings.out << column.name;
+    }
+
+    settings.out << '\n';
+}
+
+void LazilyReadFromMemoryStorage::describeActions(JSONBuilder::JSONMap & map) const
+{
+    auto json_array = std::make_unique<JSONBuilder::JSONArray>();
+
+    for (const auto & column : *getOutputHeader())
+        json_array->add(column.name);
+
+    map.add("Lazily read columns", std::move(json_array));
 }
 
 }
