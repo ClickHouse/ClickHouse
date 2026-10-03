@@ -2589,7 +2589,12 @@ void registerStorageLance(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
-        });
+        },
+        Documentation{
+            .description = "Provides a read-only integration with existing Lance datasets stored in Amazon S3 or S3-compatible object storage. "
+                "This engine is experimental: enable it with the `allow_experimental_lance` setting.",
+            .syntax = "ENGINE = LanceS3(url [, NOSIGN | access_key_id, secret_access_key [, session_token]])",
+            .related = {"LanceLocal", "IcebergS3", "DeltaLakeS3", "PaimonS3"}});
 #endif
 
     factory.registerStorage(
@@ -2626,7 +2631,12 @@ void registerStorageLance(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
-        });
+        },
+        Documentation{
+            .description = "Provides a read-only integration with existing Lance datasets stored on the local filesystem. "
+                "This engine is experimental: enable it with the `allow_experimental_lance` setting.",
+            .syntax = "ENGINE = LanceLocal(path)",
+            .related = {"LanceS3", "IcebergLocal", "DeltaLakeLocal", "PaimonLocal"}});
 }
 #endif
 
