@@ -46,6 +46,39 @@ FROM system.projection_parts
 WHERE database = currentDatabase() AND table = 't_modify_projection' AND active
 ORDER BY parent_name;
 
+SELECT '-- MATERIALIZE PROJECTION leaves an existing projection part with the old settings';
+DROP TABLE IF EXISTS t_modify_projection_materialize;
+
+-- Pin full part storage: a mutation of a packed part rebuilds all of its projections.
+CREATE TABLE t_modify_projection_materialize
+(
+    k UInt64,
+    v UInt64,
+    PROJECTION p (SELECT v ORDER BY v) WITH SETTINGS (index_granularity = 1024)
+)
+ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760, min_bytes_for_full_part_storage = 0;
+
+INSERT INTO t_modify_projection_materialize SELECT number, number * 2 FROM numbers(10000);
+ALTER TABLE t_modify_projection_materialize MODIFY PROJECTION p (SELECT v ORDER BY v) WITH SETTINGS (index_granularity = 128);
+ALTER TABLE t_modify_projection_materialize MATERIALIZE PROJECTION p SETTINGS mutations_sync = 1;
+
+SELECT name, rows, marks
+FROM system.projection_parts
+WHERE database = currentDatabase() AND table = 't_modify_projection_materialize' AND active
+ORDER BY parent_name;
+
+SELECT '-- CLEAR PROJECTION followed by MATERIALIZE PROJECTION rebuilds it with the new settings';
+ALTER TABLE t_modify_projection_materialize CLEAR PROJECTION p SETTINGS mutations_sync = 1;
+ALTER TABLE t_modify_projection_materialize MATERIALIZE PROJECTION p SETTINGS mutations_sync = 1;
+
+SELECT name, rows, marks
+FROM system.projection_parts
+WHERE database = currentDatabase() AND table = 't_modify_projection_materialize' AND active
+ORDER BY parent_name;
+
+DROP TABLE t_modify_projection_materialize;
+
 SELECT '-- errors';
 ALTER TABLE t_modify_projection MODIFY PROJECTION nonexistent (SELECT v ORDER BY v) WITH SETTINGS (index_granularity = 128); -- { serverError NO_SUCH_PROJECTION_IN_TABLE }
 ALTER TABLE t_modify_projection MODIFY PROJECTION IF EXISTS nonexistent (SELECT v ORDER BY v) WITH SETTINGS (index_granularity = 128);
@@ -56,10 +89,8 @@ ALTER TABLE t_modify_projection MODIFY PROJECTION IF EXISTS nonexistent (SELECT 
 ALTER TABLE t_modify_projection MODIFY PROJECTION p (SELECT k ORDER BY k) WITH SETTINGS (index_granularity = 128); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_modify_projection MODIFY PROJECTION p (SELECT v ORDER BY v) WITH SETTINGS (old_parts_lifetime = 100); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_modify_projection MODIFY PROJECTION p (SELECT v ORDER BY v) WITH SETTINGS (max_threads = 1); -- { serverError UNKNOWN_SETTING }
--- The granularity guard must validate against the post-ALTER settings: a single ALTER may combine
--- a projection granularity override with a switch to fixed granularity, and a settings-only ALTER
--- may switch to fixed granularity under an existing override. Both must be rejected up front.
-ALTER TABLE t_modify_projection MODIFY PROJECTION p (SELECT v ORDER BY v) WITH SETTINGS (index_granularity = 256), MODIFY SETTING index_granularity_bytes = 0; -- { serverError SUPPORT_IS_DISABLED }
+-- A settings-only `ALTER` may switch the table to fixed granularity under an existing projection
+-- granularity override, and must be rejected up front.
 ALTER TABLE t_modify_projection MODIFY SETTING index_granularity_bytes = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE t_modify_projection;

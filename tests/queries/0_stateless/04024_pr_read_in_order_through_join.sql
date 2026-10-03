@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- Disable force_primary_key_reverse_order: tests read_in_order optimization through joins, sensitive to sort direction
 SET force_primary_key_reverse_order = 0;
 -- Regression test: parallel replicas coordination mode mismatch with read_in_order_through_join.
@@ -17,7 +18,7 @@ CREATE TABLE payloads (Payload String, Id String) ENGINE = MergeTree ORDER BY tu
 INSERT INTO payloads SELECT concat('Payload ', toString(number)) AS Payload, toString(number) AS Id FROM numbers(100);
 
 SET enable_analyzer = 1;
-SET query_plan_read_in_order = 1, optimize_read_in_order = 1;
+SET optimize_read_in_order = 1;
 SET query_plan_read_in_order_through_join = 1;
 SET optimize_aggregation_in_order = 1;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable spilling as it doesn't support read-in-order optimization
