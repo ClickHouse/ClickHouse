@@ -1587,8 +1587,8 @@ The following [comparison operators](/reference/operators/index#comparison-opera
 | `a LIKE s` | `like(a, b)` | Pattern matching (case-sensitive) | `name LIKE '%top%'` |
 | `a NOT LIKE s` | `notLike(a, b)` | Pattern not matching (case-sensitive) | `name NOT LIKE '%top%'` |
 | `a ILIKE s` | `ilike(a, b)` | Pattern matching (case-insensitive) | `name ILIKE '%LAPTOP%'` |
-| `a SIMILAR TO s` | `similarTo(a, b)` | SQL-standard pattern matching (case-sensitive) | `name SIMILAR TO 'Lap(top\|dog)'` |
-| `a NOT SIMILAR TO s` | `notSimilarTo(a, b)` | SQL-standard pattern not matching (case-sensitive) | `name NOT SIMILAR TO 'Lap(top\|dog)'` |
+| `a SIMILAR TO s` | `similarTo(a, b)` | SQL-standard pattern matching (case-sensitive) | `name SIMILAR TO 'Lap(top)?'` |
+| `a NOT SIMILAR TO s` | `notSimilarTo(a, b)` | SQL-standard pattern not matching (case-sensitive) | `name NOT SIMILAR TO 'Lap(top)?'` |
 | `a BETWEEN b AND c` | `a >= b AND a <= c` | Range check (inclusive) | `price BETWEEN 100 AND 500` |
 | `a NOT BETWEEN b AND c` | `a < b OR a > c` | Outside range check | `price NOT BETWEEN 100 AND 500` |
 
@@ -1600,7 +1600,7 @@ Beyond comparison operators, you can use pattern matching and conditional expres
 | ----------- | ------------------------------ | -------------- | ----------- | ------------------------------ |
 | `LIKE`      | `col LIKE '%pattern%'`         | Yes            | Fast        | Exact case pattern matching    |
 | `ILIKE`     | `col ILIKE '%pattern%'`        | No             | Slower      | Case-insensitive searching     |
-| `SIMILAR TO`| `col SIMILAR TO 'p(a\|b)%'`     | Yes            | Slower      | SQL-standard patterns with regular expression metacharacters |
+| `SIMILAR TO`| `col SIMILAR TO 'p[ab]+%'`      | Yes            | Slower      | SQL-standard patterns with regular expression metacharacters |
 | `if()`      | `if(cond, a, b)`               | N/A            | Fast        | Simple binary conditions       |
 | `multiIf()` | `multiIf(c1, r1, c2, r2, def)` | N/A            | Fast        | Multiple conditions            |
 | `CASE`      | `CASE WHEN ... THEN ... END`   | N/A            | Fast        | SQL-standard conditional logic |
