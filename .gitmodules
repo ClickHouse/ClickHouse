@@ -465,3 +465,6 @@
 [submodule "contrib/spdlog"]
 	path = contrib/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "contrib/lexbor"]
+	path = contrib/lexbor
+	url = https://github.com/lexbor/lexbor.git

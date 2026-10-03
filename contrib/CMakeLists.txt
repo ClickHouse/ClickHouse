@@ -206,6 +206,8 @@ if (ENABLE_NLP)
     add_contrib (cld2-cmake cld2)
 endif()
 
+add_contrib (lexbor-cmake lexbor)
+
 option(ENABLE_MECAB "Enable MeCab (Japanese morphological analyzer) support" ${ENABLE_LIBRARIES})
 if (ENABLE_MECAB)
     add_contrib (MeCab-cmake MeCab)
