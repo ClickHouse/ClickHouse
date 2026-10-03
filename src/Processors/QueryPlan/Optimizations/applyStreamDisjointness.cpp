@@ -210,8 +210,12 @@ static std::optional<StreamDisjointnessProperty> applyStreamDisjointness(
         /// `max_rows_to_group_by` is a global `GROUP BY` limit, enforced during the merge phase in normal
         /// aggregation. Skipping the merge would enforce it against each stream's own hash table instead
         /// of the combined groups, so the merge must remain when this limit is set.
-        if (settings.aggregate_partitions_independently && !aggregating->isGroupingSets()
-            && aggregating->getParams().max_rows_to_group_by == 0 && partitionDeterminedByKeys(*property, aggregating->getParams().keys))
+        /// Aggregation without keys returns one row for every stream, even an empty one. A constant
+        /// partition key, such as the scatter of a window `PARTITION BY 'c'`, is determined by no keys,
+        /// so the empty key set must be rejected explicitly.
+        const auto & keys = aggregating->getParams().keys;
+        if (settings.aggregate_partitions_independently && !aggregating->isGroupingSets() && !keys.empty()
+            && aggregating->getParams().max_rows_to_group_by == 0 && partitionDeterminedByKeys(*property, keys))
         {
             aggregating->skipMerging();
         }
