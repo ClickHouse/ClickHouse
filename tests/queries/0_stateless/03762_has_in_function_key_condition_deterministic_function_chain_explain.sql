@@ -9,7 +9,6 @@ SET optimize_and_compare_chain = 1;
 SET optimize_extract_common_expressions = 0;
 SET optimize_rewrite_has_to_in = 0;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 
 -- { echoOn }
 DROP TABLE IF EXISTS table_basic;
