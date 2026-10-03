@@ -9,6 +9,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/Config/parseConnectionCredentials.h>
+#include <Common/PortUtils.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/scope_guard_safe.h>
@@ -676,7 +677,11 @@ void Client::connect()
             if (detect_transport)
             {
                 const auto plain_port = connection_parameters.port;
-                const auto secure_port = static_cast<UInt16>(config().getInt("tcp_port_secure", DBMS_DEFAULT_SECURE_PORT));
+                /// Derived from the server-side `tcp_port_secure` like the plain port (see
+                /// `ConnectionParameters::getPortFromConfig`), so it is shifted by the same `port_offset`.
+                const auto secure_port = applyPortOffset(
+                    static_cast<UInt16>(config().getInt("tcp_port_secure", DBMS_DEFAULT_SECURE_PORT)),
+                    getPortOffsetFromConfig(config()));
 
                 /// The addresses of a port are attempted one at a time, this much apart, so that a host
                 /// that resolves to several reachable backends is not connected to on all of them at once
