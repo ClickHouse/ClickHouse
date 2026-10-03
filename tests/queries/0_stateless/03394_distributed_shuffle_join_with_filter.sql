@@ -6,7 +6,6 @@ SET max_rows_to_group_by = 0;
 SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
 SET distributed_plan_optimize_exchanges = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET query_plan_remove_unused_columns = 1;
 CREATE TABLE test(src_ip UInt32, dst_ip UInt32, bytes UInt64) ENGINE MergeTree() ORDER BY src_ip settings auto_statistics_types='';
 

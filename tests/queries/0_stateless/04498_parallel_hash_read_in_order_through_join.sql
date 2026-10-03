@@ -14,8 +14,7 @@ INSERT INTO r SELECT number::UInt8 FROM numbers(8);
 -- happens with read-in-order enabled, the join sides unswapped and the join not spilling.
 SELECT a, count() FROM l LEFT JOIN r ON l.j = r.j GROUP BY a ORDER BY a
 SETTINGS join_algorithm = 'parallel_hash', max_threads = 8, optimize_aggregation_in_order = 1,
-         optimize_read_in_order = 1, query_plan_read_in_order = 1,
-         query_plan_read_in_order_through_join = 1, query_plan_join_swap_table = 'false',
+         optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1, query_plan_join_swap_table = 'false',
          max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
          enable_parallel_replicas = 0;
 
