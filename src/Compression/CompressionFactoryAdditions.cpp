@@ -127,7 +127,10 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                 {
                     ++num_substreams;
                     chassert(!substream_path.empty());
-                    has_non_float_special_substream |= !isFloat(substream_path.back().data.type);
+                    const auto & substream_type = substream_path.back().data.type;
+                    /// Object and Dynamic structure streams have no data type, so they cannot
+                    /// establish that a floating-point codec is suitable for every stream.
+                    has_non_float_special_substream |= !substream_type || !isFloat(substream_type);
                 }
             };
             column_type->getDefaultSerialization()->enumerateStreams(count_callback, column_type);

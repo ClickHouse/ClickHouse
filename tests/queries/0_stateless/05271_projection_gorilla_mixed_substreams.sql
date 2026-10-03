@@ -79,3 +79,25 @@ WHERE database = currentDatabase() AND table = 't_projection_gorilla_substreams'
 
 DROP TABLE t_projection_gorilla_substreams;
 DROP TABLE t_projection_gorilla_substreams_copy;
+
+-- JSON and Dynamic have structure streams without a data type. Generic codecs
+-- must still work, while those streams cannot justify a float-only codec.
+CREATE TABLE t_projection_gorilla_substreams
+(k UInt64, j JSON(a Float64) CODEC(NONE), d Dynamic CODEC(NONE))
+ENGINE = MergeTree ORDER BY k;
+
+INSERT INTO t_projection_gorilla_substreams (k, j, d) VALUES (1, '{"a":1.5}', 7);
+SELECT count() FROM t_projection_gorilla_substreams;
+
+DETACH TABLE t_projection_gorilla_substreams;
+ATTACH TABLE t_projection_gorilla_substreams;
+SELECT count() FROM t_projection_gorilla_substreams;
+
+DROP TABLE t_projection_gorilla_substreams;
+
+CREATE TABLE t_projection_gorilla_substreams
+(k UInt64, j JSON(a Float64) CODEC(Gorilla))
+ENGINE = MergeTree ORDER BY k; -- { serverError BAD_ARGUMENTS }
+
+SELECT count() FROM system.tables
+WHERE database = currentDatabase() AND name = 't_projection_gorilla_substreams';
