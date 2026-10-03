@@ -61,7 +61,7 @@ INSERT INTO t05288_events
 SELECT 'view_before', count()
 FROM system.query_log
 WHERE event_date >= yesterday() AND is_initial_query = 0 AND has(databases, currentDatabase())
-  AND has(tables, currentDatabase() || '.t05288_view_src');
+  AND has(tables, currentDatabase() || '.t05288_view');
 INSERT INTO t05288_events
 SELECT 'plain_before', count()
 FROM system.query_log
@@ -304,7 +304,7 @@ SELECT 'cluster_no_internal_workers',
                                      AND current_database = currentDatabase())) = 0;
 
 -- A read through an `SQL SECURITY NONE` view, executed in a separately built context: the read succeeds
--- and its workers, which read the view's source, are skipped too.
+-- and its workers, which expand the view, are skipped too.
 CREATE VIEW t05288_view SQL SECURITY NONE AS SELECT id, v FROM t05288_view_src;
 
 INSERT INTO t05288_events
@@ -323,6 +323,7 @@ SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
          parallel_replicas_for_non_replicated_merge_tree = 1,
          parallel_replicas_local_plan = 0,
+         parallel_replicas_allow_view_over_mergetree = 1,
          automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks',
          ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1;
 
@@ -331,7 +332,7 @@ INSERT INTO t05288_events
 SELECT 'view_after', count()
 FROM system.query_log
 WHERE event_date >= yesterday() AND is_initial_query = 0 AND has(databases, currentDatabase())
-  AND has(tables, currentDatabase() || '.t05288_view_src');
+  AND has(tables, currentDatabase() || '.t05288_view');
 
 SELECT 'view_workers_ran',
       (SELECT workers FROM t05288_events WHERE label = 'view_after')
@@ -352,7 +353,7 @@ SELECT 'view_not_fuzzed',
             (SELECT uniqExact(normalized_query_hash) AS shapes
              FROM system.query_log
              WHERE event_date >= yesterday() AND is_initial_query = 0 AND has(databases, currentDatabase())
-               AND has(tables, currentDatabase() || '.t05288_view_src')
+               AND has(tables, currentDatabase() || '.t05288_view')
                AND initial_query_id IN (SELECT query_id FROM system.query_log
                                         WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 0
                                           AND current_database = currentDatabase())
@@ -367,7 +368,7 @@ SELECT 'view_no_internal_workers',
        (SELECT count() FROM system.query_log
         WHERE event_date >= yesterday() AND is_initial_query = 0 AND is_internal = 1
           AND has(databases, currentDatabase())
-          AND has(tables, currentDatabase() || '.t05288_view_src')
+          AND has(tables, currentDatabase() || '.t05288_view')
           AND initial_query_id IN (SELECT query_id FROM system.query_log
                                    WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 0
                                      AND current_database = currentDatabase())) = 0;

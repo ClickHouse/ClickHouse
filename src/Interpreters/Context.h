@@ -635,6 +635,9 @@ protected:
     /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
     /// not on the initiator).
     bool is_view_inner_query = false;
+    /// Set for the query of a `SQL SECURITY DEFINER` / `NONE` view or materialized view. It must not initiate task-based
+    /// parallel replicas: a replica cannot run a shipped read with the privileges of that query.
+    bool is_sql_security_overridden_body = false;
     /// True when positional arguments in the outer query have already been resolved by the
     /// initiator node. Set by distributed/parallel-replicas local plan builders to prevent
     /// double-resolution. Unlike disabling enable_positional_arguments, this flag is a context
@@ -1940,6 +1943,9 @@ public:
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
+
+    bool isSQLSecurityOverriddenBody() const { return is_sql_security_overridden_body; }
+    void setSQLSecurityOverriddenBody(bool value) { is_sql_security_overridden_body = value; }
 
     bool isPositionalArgumentsAlreadyResolved() const { return positional_arguments_already_resolved; }
     void setPositionalArgumentsAlreadyResolved(bool value) { positional_arguments_already_resolved = value; }

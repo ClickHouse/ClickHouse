@@ -20,6 +20,16 @@ visible
 --- nor in a distributed query plan, which is built for the view's plan on its own
 visible
 1
+--- nor on parallel replicas, which would run the view's reads as another user
+visible
+visible
+alice
+bob
+alice
+bob
+visible
+visible
+1
 --- an outer predicate does not skip data by the values of the hidden rows
 0
 0
