@@ -3,9 +3,16 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/registerCompressionCodecs.h>
 #include <zstd.h>
+#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ObjectPool.h>
+#include <Common/PerCPU.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
+#include <base/unit.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ZstdContext.h>
 
 namespace DB
 {
@@ -33,11 +40,37 @@ UInt32 CompressionCodecZSTD::getMaxCompressedDataSize(UInt32 uncompressed_size) 
 }
 
 
+namespace
+{
+
+template <typename ContextPtr>
+SimpleObjectPool<ContextPtr> & contextPool()
+{
+    static const size_t num_pools = PerCPU::getNumCPUs();
+    static auto * pools = new SimpleObjectPool<ContextPtr>[num_pools];
+    return pools[static_cast<size_t>(PerCPU::getCurrentCPU()) % num_pools];
+}
+
+}
+
 UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
-    ZSTD_CCtx * cctx = ZSTD_createCCtx();
-    if (!cctx)
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ZSTD codec: failed to create compression context");
+    static std::atomic<size_t> num_contexts = 0;
+    /// Pooled contexts outlive queries, so they are accounted only in the global memory tracker, and returning one to its
+    /// pool happens in a destructor, which must not throw `MEMORY_LIMIT_EXCEEDED`.
+    MemoryTrackerBlockerInThread blocker;
+    LockMemoryExceptionInThread lock(VariableContext::Global);
+    auto holder = contextPool<ZstdCCtxPtr>().get([]
+    {
+        ZstdCCtxPtr ctx(ZSTD_createCCtx());
+        if (!ctx)
+            throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ZSTD codec: failed to create compression context");
+        ++num_contexts;
+        return new ZstdCCtxPtr(std::move(ctx));
+    });
+    ZSTD_CCtx * cctx = holder->get();
+    /// The previous user may have set other parameters or failed mid-frame.
+    ZSTD_CCtx_reset(cctx, ZSTD_reset_session_and_parameters);
     ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
     if (enable_long_range)
     {
@@ -45,7 +78,12 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
         ZSTD_CCtx_setParameter(cctx, ZSTD_c_windowLog, window_log); // NB zero window_log means "use default" for libzstd
     }
     size_t compressed_size = ZSTD_compress2(cctx, dest, ZSTD_compressBound(source_size), source, source_size);
-    ZSTD_freeCCtx(cctx);
+    /// Pool at most two contexts per usable core (threads may roam over more CPUs) and none with a large workspace.
+    if (num_contexts > 2 * getNumberOfCPUCoresToUse() || ZSTD_sizeof_CCtx(cctx) > 2_MiB)
+    {
+        delete holder.release();
+        --num_contexts;
+    }
 
     if (ZSTD_isError(compressed_size))
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ZSTD codec: {}", ZSTD_getErrorName(compressed_size));
@@ -56,7 +94,16 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
 
 UInt32 CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
-    size_t res = ZSTD_decompress(dest, uncompressed_size, source, source_size);
+    MemoryTrackerBlockerInThread blocker;
+    LockMemoryExceptionInThread lock(VariableContext::Global);
+    auto holder = contextPool<ZstdDCtxPtr>().get([]
+    {
+        ZstdDCtxPtr ctx(ZSTD_createDCtx());
+        if (!ctx)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZSTD-encoded data: failed to create decompression context");
+        return new ZstdDCtxPtr(std::move(ctx));
+    });
+    size_t res = ZSTD_decompressDCtx(holder->get(), dest, uncompressed_size, source, source_size);
 
     if (ZSTD_isError(res))
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZSTD-encoded data: {}", std::string(ZSTD_getErrorName(res)));
