@@ -807,9 +807,8 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
     const bool managed_by_shared_catalog = false;
 #endif
 
-    /// Must be opened before the destructive shutdown()/drop() below, which for
-    /// DatabaseReplicated already drops the Keeper metadata: while it is still only this open
-    /// that can fail, the database can be reattached.
+    /// Opening can throw, so it must precede `shutdown()`/`drop()`: once `DatabaseReplicated`
+    /// has dropped its Keeper metadata there, the database can no longer be reattached.
     SyncGuardPtr metadata_dir_sync_guard;
     if (drop && !managed_by_shared_catalog && local_context->getSettingsRef()[Setting::fsync_metadata])
     {
@@ -1669,8 +1668,6 @@ void DatabaseCatalog::undropTable(StorageID table_id, bool fsync_metadata, std::
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
 
-        /// The move below changes an entry in both the source (`metadata_dropped`) and the
-        /// target (the database metadata) directory.
         std::vector<SyncGuardPtr> dir_sync_guards;
         if (fsync_metadata)
         {

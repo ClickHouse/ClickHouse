@@ -464,8 +464,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     bool added = false;
     bool renamed = false;
-    /// Held across both the metadata commit rename and its rollback deletion below, so whichever
-    /// one wins is durable. tmp and final share one directory.
+    /// Held across both the commit rename and its rollback below; tmp and final share one directory.
     SyncGuardPtr metadata_dir_sync_guard;
     if (need_write_metadata && getContext()->getSettingsRef()[Setting::fsync_metadata])
         metadata_dir_sync_guard = default_db_disk->getDirectorySyncGuard(metadata_file_path.parent_path().string());

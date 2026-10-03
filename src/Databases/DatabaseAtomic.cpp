@@ -38,9 +38,7 @@ namespace Setting
 
 namespace
 {
-    /// Each returned guard fdatasyncs one of `dirs` on destruction, so the caller must hold them
-    /// across the rename whose directory entries must become durable. Opening the fds here keeps
-    /// a failure before the caller's commit point. Empty for disks without directory sync support.
+    /// Each guard syncs one of the distinct `dirs` on destruction. Empty on disks without directory sync.
     std::vector<SyncGuardPtr> makeDirectorySyncGuards(const DiskPtr & disk, const std::vector<String> & dirs)
     {
         std::vector<SyncGuardPtr> guards;
@@ -252,9 +250,7 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
         const String dropped_dir = parentDir(table_metadata_path_drop);
         db_disk->createDirectories(dropped_dir);
 
-        /// The rename below changes an entry in all three directories: the source loses the
-        /// table `.sql`, `metadata_dropped` gains it, and `metadata_dropped`'s own entry may
-        /// itself not be durable yet, so syncing only its contents could still lose it.
+        /// The parent of `metadata_dropped` too: `createDirectories` above may have just created it.
         std::vector<SyncGuardPtr> dir_sync_guards;
         if (fsync_metadata)
             dir_sync_guards = makeDirectorySyncGuards(
@@ -419,9 +415,6 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     /// Table renaming actually begins here
     auto db_disk = getDisk();
 
-    /// Make the RENAME/EXCHANGE commit durable: sync the source and target directories (see
-    /// makeDirectorySyncGuards). Same-database renames dedup to one directory; cross-database
-    /// ones sync both.
     std::vector<SyncGuardPtr> dir_sync_guards;
     if (local_context->getSettingsRef()[Setting::fsync_metadata])
         dir_sync_guards = makeDirectorySyncGuards(db_disk, {parentDir(old_metadata_path), parentDir(new_metadata_path)});
@@ -432,7 +425,6 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
 
     /// NOTE: replica will be lost if server crashes before the following rename
     /// TODO better detection and recovery
-
     if (exchange)
         db_disk->renameExchange(old_metadata_path, new_metadata_path);
     else
@@ -479,10 +471,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         assertDetachedTableNotInUse(query.uuid);
         chassert(DatabaseCatalog::instance().hasUUIDMapping(query.uuid));
 
-        /// The file content is already fsynced by the writer; make the .tmp -> .sql commit
-        /// rename durable too (see makeDirectorySyncGuards; tmp and final share one directory).
-        /// Opened before the ZooKeeper commit so an open failure is cleaned up by the catch
-        /// below without having committed to ZooKeeper.
+        /// Opening can throw, so it must precede the ZooKeeper commit.
         std::vector<SyncGuardPtr> dir_sync_guards;
         if (query_context->getSettingsRef()[Setting::fsync_metadata])
             dir_sync_guards = makeDirectorySyncGuards(db_disk, {parentDir(table_metadata_path)});
@@ -525,10 +514,7 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
     if (table_id.uuid != actual_table_id.uuid)
         throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot alter table because it was renamed");
 
-    /// As in commitCreateTable: make the .tmp -> .sql commit rename durable (see
-    /// makeDirectorySyncGuards; tmp and final share one directory). Opened before the ZooKeeper
-    /// commit so an open failure is cleaned up by the SCOPE_EXIT above without having committed
-    /// to ZooKeeper.
+    /// Opening can throw, so it must precede the ZooKeeper commit.
     std::vector<SyncGuardPtr> dir_sync_guards;
     if (query_context->getSettingsRef()[Setting::fsync_metadata])
         dir_sync_guards = makeDirectorySyncGuards(db_disk, {parentDir(table_metadata_path)});
@@ -843,7 +829,6 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     auto old_metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
     auto new_metadata_file_path = DatabaseCatalog::getMetadataFilePath(new_name);
     auto default_db_disk = getContext()->getDatabaseDisk();
-    /// Both database `.sql` files live in the same directory, which dedups to a single guard.
     std::vector<SyncGuardPtr> db_dir_sync_guards;
     if (query_context->getSettingsRef()[Setting::fsync_metadata])
         db_dir_sync_guards = makeDirectorySyncGuards(
