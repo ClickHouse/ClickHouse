@@ -1,0 +1,5 @@
+the mutation is postponed:	['Lightweight update with a lower block number is not committed yet']
+the lightweight update survived	20000
+and the mutation applied	20000
+rows	20000
+pending mutations	0
