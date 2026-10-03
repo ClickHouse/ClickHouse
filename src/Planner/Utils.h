@@ -45,6 +45,9 @@ void addConvertingToCommonHeaderActionsIfNeeded(
 /// Convert query node to ASTSelectQuery
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subquery_cte_name = true);
 
+/// Remove the aliases a remote analyzer would reject as bound to two different bodies.
+void deduplicateProjectionAliasesRecursive(const ASTPtr & ast);
+
 /// Convert query node to ASTSelectQuery for distributed processing
 ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node);
 

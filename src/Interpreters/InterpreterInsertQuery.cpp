@@ -1523,6 +1523,8 @@ BlockIO InterpreterInsertQuery::execute()
             }
             if (!res.pipeline.initialized())
             {
+                /// The route above may have expanded the CTEs in place; this one analyzes the user's SELECT.
+                query.select = saved_select->clone();
                 auto pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
                 if (pipeline)
                     res.pipeline = std::move(*pipeline);
