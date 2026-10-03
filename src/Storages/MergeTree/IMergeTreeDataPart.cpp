@@ -1,5 +1,6 @@
 #include <Storages/ColumnSize.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 
@@ -33,7 +34,6 @@
 #include <Storages/MergeTree/Backup.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
@@ -895,7 +895,8 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
         /// We avoid covering the whole function with the scope so that transient work stays in the default arena (avoid contention)
         /// The shared bundle and serializations manage their own arena scopes
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        serialization_infos = new_infos;
+        /// A copy, so that the part does not keep objects the writer was charged for.
+        serialization_infos = new_infos.clone();
     }
 
     metadata_version = new_metadata_version;
@@ -1865,16 +1866,6 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     if (getDataPartStorage().existsFile(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME))
         result.emplace(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
 
-    if (storage.hasUniqueKey())
-    {
-        for (const auto & file : DeleteBitmapFileOps::enumerateFiles(getDataPartStorage()))
-        {
-            auto file_name = file.fileName();
-            if (!checksums.files.contains(file_name))
-                result.emplace(std::move(file_name));
-        }
-    }
-
     return result;
 }
 
@@ -2269,20 +2260,32 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const std:
             if ((column_size.data_compressed != 0 || getType() == MergeTreeDataPartType::Compact) && is_default_coded(part_column.name))
             {
                 String path_to_data_file;
-                getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+                if (getType() == MergeTreeDataPartType::Compact)
                 {
-                    if (path_to_data_file.empty())
+                    /// A Compact part has no per-column streams to look for: every column is written
+                    /// into the shared data file, and its first frame is what proves the default codec
+                    /// once every stored column is known to be default-coded (checked above).
+                    const String data_file_name = MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
+                    if (getDataPartStorage().existsFile(data_file_name) && getDataPartStorage().getFileSize(data_file_name) != 0)
+                        path_to_data_file = data_file_name;
+                }
+                else
+                {
+                    getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
                     {
-                        auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage(), storage.getSettings());
-                        if (!stream_name)
-                            return;
+                        if (path_to_data_file.empty())
+                        {
+                            auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage(), storage.getSettings());
+                            if (!stream_name)
+                                return;
 
-                        auto file_name = *stream_name + ".bin";
-                        /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
-                        if (getDataPartStorage().getFileSize(file_name) != 0)
-                            path_to_data_file = file_name;
-                    }
-                });
+                            auto file_name = *stream_name + ".bin";
+                            /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
+                            if (getDataPartStorage().getFileSize(file_name) != 0)
+                                path_to_data_file = file_name;
+                        }
+                    });
+                }
 
                 if (path_to_data_file.empty())
                 {
@@ -3222,7 +3225,9 @@ void IMergeTreeDataPart::checkConsistencyBase() const
         auto check_file_not_empty = [this](const String & file_path)
         {
             UInt64 file_size = 0;
-            if (!getDataPartStorage().existsFile(file_path) || (file_size = getDataPartStorage().getFileSize(file_path)) == 0)
+            if (getDataPartStorage().existsFile(file_path))
+                file_size = getDataPartStorage().getFileSize(file_path);
+            if (file_size == 0)
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                     "Part {} is broken: {} is empty",
