@@ -432,11 +432,13 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
 
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const String & function_name,
-    const RPNBuilderTreeNode & key_node,
+    const RPNBuilderTreeNode & wrapped_key_node,
     const DataTypePtr & value_type,
     const Field & value_field,
     RPNElement & out)
 {
+    const auto key_node = unwrapLosslessConversion(wrapped_key_node);
+
     /// Try JSON subcolumn detection early, before the string-type check.
     /// JSON path comparison values may not be strings (e.g., json.a.b = 1 where value is UInt8),
     /// but we tokenize the *path* string against the JSONAllPaths index, not the value.
@@ -775,14 +777,14 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
 
         for (size_t i = 0; i < left_argument_function_node_arguments_size; ++i)
         {
-            if (const auto key = getKeyIndex(left_argument_function_node.getArgumentAt(i).getColumnName()))
+            if (const auto key = getKeyIndex(unwrapLosslessConversion(left_argument_function_node.getArgumentAt(i)).getColumnName()))
             {
                 key_tuple_mapping.emplace_back(i, *key);
                 data_types.push_back(index_data_types[*key]);
             }
         }
     }
-    else if (const auto key = getKeyIndex(left_argument.getColumnName()))
+    else if (const auto key = getKeyIndex(unwrapLosslessConversion(left_argument).getColumnName()))
     {
         key_tuple_mapping.emplace_back(0, *key);
         data_types.push_back(index_data_types[*key]);
