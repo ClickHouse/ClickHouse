@@ -693,6 +693,8 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"any_join_distinct_right_table_keys", trueOrFalseSetting},
     {"apply_deleted_mask", trueOrFalseSettingNoOracle},
     {"apply_mutations_on_fly", trueOrFalseSettingNoOracle},
+    {"apply_ttl_on_fly", trueOrFalseSettingNoOracle},
+
     {"apply_patch_parts", trueOrFalseSetting},
     {"apply_patch_parts_join_cache_buckets",
      CHSetting(

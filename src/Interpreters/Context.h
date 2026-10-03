@@ -1087,6 +1087,7 @@ public:
     void increaseDistributedDepth();
     const OpenTelemetry::TracingContext & getClientTraceContext() const { return client_info.client_trace_context; }
     OpenTelemetry::TracingContext & getClientTraceContext() { return client_info.client_trace_context; }
+    time_t getInitialQueryStartTime() const;
     void setClientTraceContext(const OpenTelemetry::TracingContext & trace_context);
 
     enum StorageNamespace

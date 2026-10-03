@@ -8,6 +8,10 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Interpreters/Context.h>
 #include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -2338,8 +2342,9 @@ CursorPromotersMap ReplicatedMergeTreeQueue::buildPromoters(zkutil::ZooKeeperPtr
     return constructPromoters(std::move(committing_block_numbers), std::move(partition_ranges));
 }
 
-ReplicatedMergeTreeQueue::MutationsSnapshot::MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByPartititon mutations_by_partition_, DataPartsVector patches_)
-    : MergeTreeData::MutationsSnapshotBase(std::move(params_), std::move(counters_), std::move(patches_))
+ReplicatedMergeTreeQueue::MutationsSnapshot::MutationsSnapshot(Params params_,
+    MutationCounters counters_, MutationsByPartititon mutations_by_partition_, DataPartsVector patches_, std::vector<ASTPtr> ttl_asts_)
+    : MergeTreeData::MutationsSnapshotBase(std::move(params_), std::move(counters_), std::move(patches_), std::move(ttl_asts_))
     , mutations_by_partition(std::move(mutations_by_partition_))
 {
 }
@@ -2398,6 +2403,28 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
     return result;
 }
 
+MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCommandsForTTL(const ContextPtr & query_context) const
+{
+    MutationCommands commands;
+    for (const auto & ttl_expr : ttl_asts)
+    {
+        ASTPtr ast = make_intrusive<ASTAlterCommand>();
+        auto * command = ast->as<ASTAlterCommand>();
+        command->type = ASTAlterCommand::DELETE;
+        auto time = query_context->getInitialQueryStartTime();
+
+        auto where_expr = makeASTFunction(
+            "less",
+            ttl_expr,
+            make_intrusive<ASTLiteral>(Field(UInt32(time)))
+        );
+        command->predicate = where_expr.get();
+        auto mutation = MutationCommand::parse(*command);
+        commands.push_back(*mutation);
+    }
+    return commands;
+}
+
 NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getAllUpdatedColumns() const
 {
     NameSet res = getColumnsUpdatedInPatches();
@@ -2420,13 +2447,26 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
     DataPartsVector patch_parts;
     MutationCounters mutations_snapshot_counters;
     MutationsSnapshot::MutationsByPartititon mutations_snapshot;
+    std::vector<ASTPtr> ttl_asts;
+
+    if (params.need_ttl_mutations)
+        ttl_asts = storage.getAllTTLAsts();
 
     if (params.need_patch_parts)
         patch_parts = storage.getPatchPartsVectorForInternalUsage();
 
     std::shared_lock lock(state_mutex);
-    if (!params.need_data_mutations && !params.need_alter_mutations && params.min_part_metadata_version >= params.metadata_version)
-        return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
+    if (!params.need_data_mutations
+        && !params.need_alter_mutations
+        && !params.need_ttl_mutations
+        && params.min_part_metadata_version >= params.metadata_version)
+            return std::make_shared<MutationsSnapshot>(
+                params,
+                std::move(mutations_snapshot_counters),
+                std::move(mutations_snapshot),
+                std::move(patch_parts),
+                std::move(ttl_asts)
+            );
 
     for (const auto & [partition_id, mutations] : mutations_by_partition)
     {
@@ -2490,7 +2530,13 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
         }
     }
 
-    return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
+    return std::make_shared<MutationsSnapshot>(
+        params,
+        std::move(mutations_snapshot_counters),
+        std::move(mutations_snapshot),
+        std::move(patch_parts),
+        std::move(ttl_asts)
+    );
 }
 
 MutationCounters ReplicatedMergeTreeQueue::getMutationCounters() const

@@ -288,6 +288,7 @@ namespace Setting
     extern const SettingsUInt64 max_table_size_to_drop;
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
+    extern const SettingsBool apply_ttl_on_fly;
     extern const SettingsBool use_partition_pruning;
     extern const SettingsBool optimize_mutations_with_partition_pruning;
     extern const SettingsBool use_constant_folding_in_index_analysis;
@@ -724,10 +725,12 @@ bool MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(const Para
     return false;
 }
 
-MergeTreeData::MutationsSnapshotBase::MutationsSnapshotBase(Params params_, MutationCounters counters_, DataPartsVector patches_)
+MergeTreeData::MutationsSnapshotBase::MutationsSnapshotBase(
+    Params params_, MutationCounters counters_, DataPartsVector patches_, std::vector<ASTPtr> ttl_asts_)
     : params(std::move(params_))
     , counters(std::move(counters_))
     , patches_by_partition(getPatchPartsByPartition(patches_, params.max_mutation_versions))
+    , ttl_asts(std::move(ttl_asts_))
 {
 }
 
@@ -11162,6 +11165,23 @@ DataPartsVector MergeTreeData::getPatchPartsVectorForInternalUsage() const
     return getDataPartsVectorForInternalUsage({DataPartState::Active}, {DataPartKind::Patch}, lock);
 }
 
+std::vector<ASTPtr> MergeTreeData::getAllTTLAsts() const
+{
+    std::vector<ASTPtr> ttls;
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
+    auto new_column_ttls = metadata_snapshot->column_ttls_by_name;
+    auto table_ttl = metadata_snapshot->table_ttl;
+    for (const auto & [name, ttl_description] : new_column_ttls)
+        ttls.push_back(ttl_description.expression_ast);
+
+    for (const auto & ttl_element_ptr : table_ttl.definition_ast->children)
+    {
+        if (ttl_element_ptr != nullptr)
+            ttls.push_back(ttl_element_ptr->children.front()->clone());
+    }
+    return ttls;
+}
+
 DataPartsVector MergeTreeData::getPatchPartsVectorForPartition(const String & partition_id, const DataPartsAnyLock & /*lock*/) const
 {
     DataPartsVector res;
@@ -13920,6 +13940,10 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     auto commands = mutations->getOnFlyMutationCommandsForPart(part);
     auto patches = mutations->getPatchesForPart(part);
     PatchPartsForReader patches_for_reader;
+    MutationCommands ttl_mutations;
+
+    if (query_context->getSettingsRef()[Setting::apply_ttl_on_fly])
+        ttl_mutations = mutations->getOnFlyMutationCommandsForTTL(query_context);
 
     /// Apply masking policies to the part
 #if CLICKHOUSE_CLOUD
@@ -13959,7 +13983,7 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
             .stored_sorting_key_columns = std::move(patch.stored_sorting_key_columns),
         });
     }
-
+    commands.insert(commands.end(), ttl_mutations.begin(), ttl_mutations.end());
     return std::make_shared<AlterConversions>(commands, patches_for_reader, query_context);
 }
 
@@ -14611,7 +14635,7 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
 
     bool apply_mutations_on_fly = query_context->getSettingsRef()[Setting::apply_mutations_on_fly];
     bool apply_patch_parts = query_context->getSettingsRef()[Setting::apply_patch_parts];
-
+    bool apply_ttl_on_fly = query_context->getSettingsRef()[Setting::apply_ttl_on_fly];
     IMutationsSnapshot::Params params
     {
         .metadata_version = metadata_snapshot->getMetadataVersion(),
@@ -14621,6 +14645,7 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
         .need_data_mutations = apply_mutations_on_fly,
         .need_alter_mutations = apply_mutations_on_fly || apply_patch_parts,
         .need_patch_parts = apply_patch_parts,
+        .need_ttl_mutations = apply_ttl_on_fly,
         .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
     };
 
