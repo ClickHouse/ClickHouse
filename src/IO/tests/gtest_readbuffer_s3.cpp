@@ -110,6 +110,20 @@ public:
 
     bool supportsExternalBufferMode() const override { return true; }
 
+    /// Like the body of a real response, reads straight into the memory of the caller: this
+    /// buffer has no memory of its own, so the default `readBig` would see an empty buffer.
+    size_t readBig(char * to, size_t n) override
+    {
+        size_t copied = std::min(available(), n);
+        memcpy(to, position(), copied);
+        position() += copied;
+
+        const size_t rest = std::min(n - copied, data.size() - position_in_data);
+        memcpy(to + copied, data.data() + position_in_data, rest);
+        position_in_data += rest;
+        return copied + rest;
+    }
+
 private:
     bool nextImpl() override
     {
