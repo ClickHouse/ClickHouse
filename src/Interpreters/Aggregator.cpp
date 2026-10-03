@@ -1685,8 +1685,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
             if constexpr (prefetch && !top_k && std::is_same_v<KeyHolder, ArenaPackedStringHolder>)
             {
-                /// A packed key carries the content hash computed while it is built, so the keys the
-                /// look-ahead builds for the prefetch are kept until their rows are counted.
+                /// Building a packed key computes its hash, so the keys built for the prefetch are reused by the insert.
                 static constexpr size_t ring_size = 64; /// A power of two above the maximum look-ahead.
                 PackedStringRef ring[ring_size]{};
                 size_t built_end = row_begin;
