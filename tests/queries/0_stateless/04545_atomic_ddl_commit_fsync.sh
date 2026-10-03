@@ -30,8 +30,8 @@ if [[ "$probe" == "1" ]]; then
     exit 0
 fi
 
-# DirectorySync per query_id; an unset entry means no query_log row was found.
-declare -A directory_sync
+# DirectorySync and FileSync per query_id; an unset entry means no query_log row was found.
+declare -A directory_sync file_sync
 
 # `system flush logs` is server-wide and serializes against every concurrently running test,
 # so a whole batch of query_ids is read through a single flush.
@@ -40,12 +40,17 @@ collect_directory_sync() {
     for id in "$@"; do ids+=",'$id'"; done
     ids+="]"
 
-    local query_id got
-    while IFS=$'\t' read -r query_id got; do
-        [[ -n "$query_id" ]] && directory_sync["$query_id"]="$got"
+    local query_id got_dir got_file
+    while IFS=$'\t' read -r query_id got_dir got_file; do
+        if [[ -n "$query_id" ]]; then
+            directory_sync["$query_id"]="$got_dir"
+            file_sync["$query_id"]="$got_file"
+        fi
     done < <($CLICKHOUSE_CLIENT -m --param_ids "$ids" -q "
         system flush logs query_log;
-        select query_id, argMax(ProfileEvents['DirectorySync'], event_time_microseconds)
+        select query_id,
+            argMax(ProfileEvents['DirectorySync'], event_time_microseconds),
+            argMax(ProfileEvents['FileSync'], event_time_microseconds)
         from system.query_log
         where
             event_date >= yesterday() and event_time >= now() - 600 and
@@ -60,11 +65,22 @@ collect_directory_sync() {
     ")
 }
 
+# The checks below read DirectorySync unless their optional last argument is FileSync.
+sync_count() {
+    local query_id="$1" event="$2"
+    if [[ "$event" == "FileSync" ]]; then
+        echo "${file_sync[$query_id]-}"
+    else
+        echo "${directory_sync[$query_id]-}"
+    fi
+}
+
 check_ge() {
-    local query_id="$1" expected="$2" what="$3"
-    local got="${directory_sync[$query_id]-}"
+    local query_id="$1" expected="$2" what="$3" event="${4:-DirectorySync}"
+    local got
+    got=$(sync_count "$query_id" "$event")
     if [[ "${got:--1}" -lt "$expected" ]]; then
-        echo "$what: DirectorySync=$got, expected >= $expected" >&2
+        echo "$what: $event=$got, expected >= $expected" >&2
         return 1
     fi
     return 0
@@ -87,6 +103,7 @@ rename_xdb_id="rename_xdb_${tag}"
 create_db_id="create_db_${tag}"
 rename_db_id="rename_db_${tag}"
 altercomment_db_id="altercomment_db_${tag}"
+altersetting_db_id="altersetting_db_${tag}"
 drop_db_id="drop_db_${tag}"
 # Negative path: every commit rename/unlink is gated on fsync_metadata; with it off none may sync.
 # Cover one query from each INDEPENDENT gate so making any single gate unconditional fails here.
@@ -97,6 +114,7 @@ nofsync_alter_id="nofsync_alter_${tag}"
 nofsync_undrop_id="nofsync_undrop_${tag}"
 nofsync_createdb_id="nofsync_createdb_${tag}"
 nofsync_altercommentdb_id="nofsync_altercommentdb_${tag}"
+nofsync_altersettingdb_id="nofsync_altersettingdb_${tag}"
 nofsync_renamedb_id="nofsync_renamedb_${tag}"
 nofsync_dropdb_id="nofsync_dropdb_${tag}"
 
@@ -154,6 +172,9 @@ $CLICKHOUSE_CLIENT --query_id "$create_db_id" --fsync_metadata 1 -q \
 # ALTER DATABASE MODIFY COMMENT: commits a metadata update via a tmp -> `<db>.sql` replace.
 $CLICKHOUSE_CLIENT --query_id "$altercomment_db_id" --fsync_metadata 1 -q \
     "alter database db_${tag} modify comment 'c'"
+# ALTER DATABASE MODIFY SETTING: rewrites `<db>.sql` through its own tmp -> `<db>.sql` replace.
+$CLICKHOUSE_CLIENT --query_id "$altersetting_db_id" --fsync_metadata 1 -q \
+    "alter database db_${tag} modify setting max_tables = 100"
 # RENAME DATABASE: `<db>.sql` moves within the metadata directory (single directory).
 $CLICKHOUSE_CLIENT --query_id "$rename_db_id" --fsync_metadata 1 -q \
     "rename database db_${tag} to db2_${tag}"
@@ -170,8 +191,8 @@ $CLICKHOUSE_CLIENT --query_id "$rename_xdb_id" --fsync_metadata 1 -q \
     "rename table dbsrc_${tag}.x to ${CLICKHOUSE_DATABASE}.x_${tag}"
 
 collect_directory_sync "$create_id" "$alter_id" "$rename_id" "$exchange_id" "$drop_id" \
-    "$undrop_id" "$create_db_id" "$altercomment_db_id" "$rename_db_id" "$drop_db_id" \
-    "$rename_xdb_id"
+    "$undrop_id" "$create_db_id" "$altercomment_db_id" "$altersetting_db_id" "$rename_db_id" \
+    "$drop_db_id" "$rename_xdb_id"
 
 check_ge "$create_id"          1 "CREATE"            || exit 2
 check_ge "$alter_id"           1 "ALTER"             || exit 3
@@ -184,15 +205,21 @@ check_ge "$altercomment_db_id" 1 "ALTER DATABASE"    || exit 10
 check_ge "$rename_db_id"       1 "RENAME DATABASE"   || exit 11
 check_ge "$drop_db_id"         1 "DROP DATABASE"     || exit 16
 check_ge "$rename_xdb_id"      2 "RENAME CROSS-DB"   || exit 21
+check_ge "$altersetting_db_id" 1 "ALTER DATABASE SETTING" || exit 22
+# These writers fsync the new `.sql` content under their own fsync_metadata read, apart from the rename.
+check_ge "$alter_id"           1 "ALTER"                  FileSync || exit 23
+check_ge "$altercomment_db_id" 1 "ALTER DATABASE"         FileSync || exit 26
+check_ge "$altersetting_db_id" 1 "ALTER DATABASE SETTING" FileSync || exit 27
 
 # Every commit rename above is gated on fsync_metadata; with it off none of them must force a
 # directory sync. Cover a representative rename from each guarded family (not just DROP) so that
 # silently dropping any one of the `if (fsync_metadata)` gates later fails this test.
 check_nofsync() {
-    local query_id="$1" what="$2"
-    local got="${directory_sync[$query_id]-}"
+    local query_id="$1" what="$2" event="${3:-DirectorySync}"
+    local got
+    got=$(sync_count "$query_id" "$event")
     if [[ "$got" != "0" ]]; then
-        echo "fsync_metadata=0 not honored on $what: DirectorySync=$got" >&2
+        echo "fsync_metadata=0 not honored on $what: $event=$got" >&2
         return 1
     fi
     return 0
@@ -210,13 +237,15 @@ $CLICKHOUSE_CLIENT --query_id "$nofsync_drop_id" --fsync_metadata 0 \
     "drop table c2_${tag}"
 $CLICKHOUSE_CLIENT --query_id "$nofsync_undrop_id" --fsync_metadata 0 -q \
     "undrop table c2_${tag}"
-# Database-metadata gates: CREATE, ALTER COMMENT, RENAME, DROP DATABASE. These commit via the
+# Database-metadata gates: CREATE, ALTER COMMENT, ALTER SETTING, RENAME, DROP DATABASE. These commit via the
 # database-catalog metadata-update / rename / unlink paths, which historically read the global
 # setting -- assert each honors the query-level fsync_metadata.
 $CLICKHOUSE_CLIENT --query_id "$nofsync_createdb_id" --fsync_metadata 0 -q \
     "create database db3_${tag} engine=Atomic"
 $CLICKHOUSE_CLIENT --query_id "$nofsync_altercommentdb_id" --fsync_metadata 0 -q \
     "alter database db3_${tag} modify comment 'c'"
+$CLICKHOUSE_CLIENT --query_id "$nofsync_altersettingdb_id" --fsync_metadata 0 -q \
+    "alter database db3_${tag} modify setting max_tables = 100"
 $CLICKHOUSE_CLIENT --query_id "$nofsync_renamedb_id" --fsync_metadata 0 -q \
     "rename database db3_${tag} to db4_${tag}"
 $CLICKHOUSE_CLIENT --query_id "$nofsync_dropdb_id" --fsync_metadata 0 -q \
@@ -224,7 +253,8 @@ $CLICKHOUSE_CLIENT --query_id "$nofsync_dropdb_id" --fsync_metadata 0 -q \
 
 collect_directory_sync "$nofsync_create_id" "$nofsync_alter_id" "$nofsync_rename_id" \
     "$nofsync_drop_id" "$nofsync_undrop_id" "$nofsync_createdb_id" \
-    "$nofsync_altercommentdb_id" "$nofsync_renamedb_id" "$nofsync_dropdb_id"
+    "$nofsync_altercommentdb_id" "$nofsync_altersettingdb_id" "$nofsync_renamedb_id" \
+    "$nofsync_dropdb_id"
 
 check_nofsync "$nofsync_create_id"         "CREATE"                 || exit 12
 check_nofsync "$nofsync_alter_id"          "ALTER"                  || exit 17
@@ -235,6 +265,10 @@ check_nofsync "$nofsync_createdb_id"       "CREATE DATABASE"        || exit 14
 check_nofsync "$nofsync_altercommentdb_id" "ALTER DATABASE COMMENT" || exit 15
 check_nofsync "$nofsync_renamedb_id"       "RENAME DATABASE"        || exit 19
 check_nofsync "$nofsync_dropdb_id"         "DROP DATABASE"          || exit 20
+check_nofsync "$nofsync_altersettingdb_id" "ALTER DATABASE SETTING" || exit 24
+check_nofsync "$nofsync_alter_id"          "ALTER"                  FileSync || exit 25
+check_nofsync "$nofsync_altercommentdb_id" "ALTER DATABASE COMMENT" FileSync || exit 28
+check_nofsync "$nofsync_altersettingdb_id" "ALTER DATABASE SETTING" FileSync || exit 29
 
 $CLICKHOUSE_CLIENT -m -q "
     drop table if exists t2_${tag} sync;
