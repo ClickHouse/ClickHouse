@@ -65,7 +65,7 @@ public:
     /// `parts_ranges.getDescriptions()` but with per-part `min_marks_per_task` filled in from
     /// `per_part_infos`. The caller (ReadFromMergeTree) sends the announcement via the
     /// `ParallelReadingExtension` it constructed before passing into the pool.
-    RangesInDataPartsDescription buildAnnouncementDescriptions() const;
+    virtual RangesInDataPartsDescription buildAnnouncementDescriptions() const;
 
     /// Must be called before the pipeline starts to call getTask. Not every pool applies the
     /// refiner: see refineReadRanges calls in getTask of the concrete pools.
