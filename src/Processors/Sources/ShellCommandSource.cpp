@@ -28,7 +28,6 @@
 #include <IO/ReadBufferFromMemory.h>
 
 #include <Common/SharedMemoryRegion.h>
-#include <Common/DoubleBufferedProducer.h>
 #include <Formats/formatBlock.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -54,6 +53,7 @@
 namespace CurrentMetrics
 {
     extern const Metric ExecutableUDFSharedMemoryPooledBytes;
+    extern const Metric MemoryTrackingUnmeasured;
 }
 
 namespace ProfileEvents
@@ -93,10 +93,10 @@ static constexpr size_t UNENFORCED_GROWTH_STEP = 1024 * 1024;
 /// version and answer with an error status.
 static constexpr UInt64 SHARED_MEMORY_PROTOCOL_VERSION = 1;
 
-/// The descriptor number under which the command's process inherits shared-memory region 0; region
-/// `i` is at this plus `i`. Chosen above the three standard streams, and the shared-memory transport
-/// admits no extra pipes (it takes exactly one input), so nothing else in the child is numbered here.
-static constexpr int SHARED_MEMORY_FIRST_CHILD_FD = 3;
+/// The descriptor number under which the command's process inherits the shared-memory region.
+/// Chosen above the three standard streams, and the shared-memory transport admits no extra pipes
+/// (it takes exactly one input), so nothing else in the child is numbered here.
+static constexpr int SHARED_MEMORY_CHILD_FD = 3;
 
 /// Identifies one request, and has to be unguessable rather than merely unique.
 ///
@@ -892,7 +892,7 @@ class ShellCommandHolder
 {
 public:
     /// Builds the process. It is given the descriptors the child has to inherit - the shared-memory
-    /// regions, as `{child_fd, parent_fd}` - which is why the regions have to exist before the
+    /// region, as `{child_fd, parent_fd}` - which is why the region has to exist before the
     /// process does: a `memfd` has no name a process could open later, so the only way for the
     /// command to reach it is to have been started with it.
     using ShellCommandBuilderFunc = std::function<std::unique_ptr<ShellCommand>(const std::vector<std::pair<int, int>> & inherited_fds)>;
@@ -903,8 +903,8 @@ public:
 
     ~ShellCommandHolder()
     {
-        /// The idle worker goes first, before the regions and their charge: it holds a descriptor to
-        /// every region, so the pages stay resident for as long as it lives, and a member is only
+        /// The idle worker goes first, before the region and its charge: it holds a descriptor to
+        /// the region, so the pages stay resident for as long as it lives, and a member is only
         /// destroyed after this body - which would drop the charge while the worker still holds
         /// the pages, for the whole wait `~ShellCommand` starts with. Its stdin is closed first,
         /// so that a worker written to exit on EOF does so at once rather than sitting out
@@ -914,11 +914,20 @@ public:
         /// `docs/reference/functions/regular-functions/udf.mdx`.
         if (returned_command)
         {
-            returned_command->closeInputs();
+            /// `closeInputs` flushes and closes the pipes and throws on failure; this destructor
+            /// must not, and it still has to release the process, the region and its charge.
+            try
+            {
+                returned_command->closeInputs();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ShellCommandHolder");
+            }
             returned_command.reset();
         }
 
-        shared_memory = {};
+        shared_memory.reset();
 
         if (persistent_memory_charge)
             unchargePersistentMemory(persistent_memory_charge);
@@ -930,8 +939,8 @@ public:
     bool hasReturnedCommand() const { return returned_command != nullptr; }
 
     /// Hands back the process that served the previous borrow, or starts a new one. A new one
-    /// inherits the regions this holder owns at that moment, so they have to have been created
-    /// already (see `ensureSharedMemory`); a returned one inherited them when it was started.
+    /// inherits the region this holder owns at that moment, so it has to have been created
+    /// already (see `getOrCreateSharedMemory`); a returned one inherited it when it was started.
     std::unique_ptr<ShellCommand> buildCommand()
     {
         if (returned_command)
@@ -940,14 +949,13 @@ public:
         return func(inheritedRegionFds());
     }
 
-    /// The descriptors a process started now has to inherit: region `i` under child descriptor
-    /// `SHARED_MEMORY_FIRST_CHILD_FD + i`, which is also the number its request names it by.
+    /// The descriptors a process started now has to inherit: the region under child descriptor
+    /// `SHARED_MEMORY_CHILD_FD`, which is also the number its request names it by.
     std::vector<std::pair<int, int>> inheritedRegionFds() const
     {
         std::vector<std::pair<int, int>> fds;
-        for (size_t i = 0; i < shared_memory.size(); ++i)
-            if (shared_memory[i])
-                fds.emplace_back(SHARED_MEMORY_FIRST_CHILD_FD + static_cast<int>(i), shared_memory[i]->fd());
+        if (shared_memory)
+            fds.emplace_back(SHARED_MEMORY_CHILD_FD, shared_memory->fd());
         return fds;
     }
 
@@ -959,8 +967,8 @@ public:
     /// The process that served the previous borrow, still held here, or null if the next
     /// `buildCommand` would start a fresh one. For the probes a borrow runs on a reused worker
     /// before it builds anything on it: they read its pipes, and what they decide - keep it, drop
-    /// it, or drop it together with its regions - has to be decided before the regions are taken
-    /// over, because taking them over is what a dropped worker's regions must not survive.
+    /// it, or drop it together with its region - has to be decided before the region is taken
+    /// over, because taking it over is what a dropped worker's region must not survive.
     ShellCommand * returnedCommand() const { return returned_command.get(); }
 
     /// Who borrowed this worker last: the user, and the roles the query ran with.
@@ -969,7 +977,7 @@ public:
     /// user: what one query left in the region, the command can read while serving the next.
     /// Over the pipes a command only ever saw what it was sent. The borrower's identity is what
     /// tells "the next query" from "a query of somebody else": a borrow by a different one scrubs
-    /// the regions (`scrubRegionsForBorrower`), a borrow by the same one does not pay for it. The
+    /// the region (`scrubRegionForBorrower`), a borrow by the same one does not pay for it. The
     /// identity is the user's id and the current roles, not the user's name, for the reasons the
     /// query result cache keys its entries by the same pair (`QueryResultCache::Key`): a user
     /// created under the name of a dropped one is not the dropped one, and the roles of one user
@@ -991,26 +999,24 @@ public:
     /// process wrote for an earlier one - and an earlier one can belong to an earlier borrow.
     UInt64 nextRequestId() const { return generateRequestId(); }
 
-    /// Shared-memory region(s) for this process, created once and reused across pool borrows.
-    /// `index` selects the buffer: index 0 is used by the plain (synchronous) transport; the
-    /// pipelined transport additionally uses index 1 for double buffering.
+    /// The shared-memory region for this process, created once and reused across pool borrows.
     ///
-    /// Creating and growing regions does not charge any memory tracker here: while the holder is
+    /// Creating and growing the region does not charge any memory tracker here: while the holder is
     /// borrowed, the borrowing query owns the charge (see `releaseChargeToBorrower`).
-    SharedMemoryRegionPtr getOrCreateSharedMemory(size_t size, size_t index, bool & created)
+    SharedMemoryRegionPtr getOrCreateSharedMemory(size_t size, bool & created)
     {
-        if (!shared_memory[index])
+        if (!shared_memory)
         {
-            shared_memory[index] = std::make_shared<SharedMemoryRegion>(size);
+            shared_memory = std::make_shared<SharedMemoryRegion>(size);
             created = true;
         }
         else
             created = false;
 
-        return shared_memory[index];
+        return shared_memory;
     }
 
-    /// What the region at `index` costs - its footprint, re-read now - or zero if it has not been
+    /// What the region costs - its footprint, re-read now - or zero if it has not been
     /// created yet. Lets the borrower charge its query memory tracker for the right number of
     /// bytes BEFORE the region is created or reused, because creating one commits its pages. The
     /// footprint rather than the mapped size: a growth that reserved its pages but could not map
@@ -1018,49 +1024,54 @@ public:
     /// pages past its end, all leave the region costing more than the mapping shows, and those
     /// pages cost what any others do (`SharedMemoryRegion::refreshFootprint`). Re-read at every
     /// borrow, so that whatever the command added is charged from the next borrow on.
-    size_t getSharedMemorySize(size_t index) const
+    size_t getSharedMemorySize() const
     {
-        return shared_memory[index] ? shared_memory[index]->refreshFootprint() : 0;
+        return shared_memory ? shared_memory->refreshFootprint() : 0;
     }
 
-    void growSharedMemory(size_t index, size_t new_size)
+    void growSharedMemory(size_t new_size)
     {
-        shared_memory[index]->grow(new_size);
+        shared_memory->grow(new_size);
     }
 
-    void resetSharedMemory(size_t index)
+    void resetSharedMemory()
     {
-        shared_memory[index].reset();
+        shared_memory.reset();
     }
 
-    /// A region over the cap - re-read now (`SharedMemoryRegion::isOverTheCap`) - or null if
-    /// there is none. What a borrow checks before it builds anything on the worker.
+    /// The region if it is over the cap - re-read now (`SharedMemoryRegion::isOverTheCap`) - or
+    /// null otherwise. What a borrow checks before it builds anything on the worker.
     SharedMemoryRegion * sharedMemoryRegionOverTheCap(size_t max_size) const
     {
-        for (const auto & region : shared_memory)
-        {
-            if (!region)
-                continue;
-            region->refreshFootprint();
-            if (region->isOverTheCap(max_size))
-                return region.get();
-        }
+        if (!shared_memory)
+            return nullptr;
+        shared_memory->refreshFootprint();
+        if (shared_memory->isOverTheCap(max_size))
+            return shared_memory.get();
         return nullptr;
     }
 
-    /// Drops the returned process and its regions together, so that the next `buildCommand` starts
-    /// a fresh process with fresh regions. A process and its regions live and die together - the
-    /// process reached them by inheriting their descriptors at `exec` - so there is no dropping
-    /// one without the other. Called while the holder is borrowed and its charge is with the
-    /// borrower, so nothing is uncharged here.
-    void discardWorkerAndRegions()
+    /// Drops the returned process and its region together, so that the next `buildCommand` starts
+    /// a fresh process with a fresh region. A process and its region live and die together - the
+    /// process reached it by inheriting its descriptor at `exec` - so there is no dropping
+    /// one without the other.
+    ///
+    /// A borrow can discard the worker before it has taken the region's charge over
+    /// (`releaseChargeToBorrower`), while the holder still charges it globally. The charge is
+    /// dropped only after both are gone: destroying the process can take up to
+    /// `command_termination_timeout`, and the region stays resident for all of that time, so it
+    /// has to stay counted. Once the borrower has taken the charge over there is nothing left here
+    /// to drop, and the borrower's own charge covers the region until it is gone.
+    void discardWorkerAndRegion()
     {
         returned_command.reset();
-        for (auto & region : shared_memory)
-            region.reset();
+        shared_memory.reset();
 
-        /// The regions the next borrow creates are fresh, zero-filled files with nobody's data in
-        /// them: there is no previous borrower to scrub them for, and a `memset` of a region that
+        if (persistent_memory_charge)
+            unchargePersistentMemory(persistent_memory_charge);
+
+        /// The region the next borrow creates is a fresh, zero-filled file with nobody's data in
+        /// it: there is no previous borrower to scrub it for, and a `memset` of a region that
         /// is already zero would be a wasted write of its whole size.
         last_borrower.reset();
     }
@@ -1074,25 +1085,27 @@ public:
     /// same bytes twice there and let a handful of pooled workers exhaust
     /// `max_server_memory_usage` on paper.
     ///
-    /// The global tracker's charge lasts only until the next tick of `MemoryWorker` when
-    /// `memory_worker_correct_memory_tracker` is on (the default): the tracker is then replaced
-    /// with a measurement, which includes the region's pages when it is the cgroup usage and does
-    /// not when it is jemalloc's resident size or a sanitizer's allocator statistic. The charge is
-    /// still made, for the tracker kept without that correction and for
-    /// `ExecutableUDFSharedMemoryPooledBytes`, which reports it in every case.
+    /// With `memory_worker_correct_memory_tracker` on (the default) `MemoryWorker` replaces the
+    /// global tracker's value with a measurement on every tick, and no measurement it uses sees the
+    /// region's pages (they are `shmem`). So every charge for a region, the query's and the
+    /// holder's alike, is also counted in `MemoryTrackingUnmeasured`, which the worker adds to the
+    /// measurement: the charge survives the correction and keeps counting towards
+    /// `max_server_memory_usage`.
     ///
-    /// Called by the borrower right after it takes the holder from the pool, before it creates,
-    /// grows or charges anything.
+    /// Called by the borrower right before it charges its query for the region, after it has
+    /// inspected the returned worker and discarded it if it had to: a discarded worker takes its
+    /// charge with it (`discardWorkerAndRegion`), so the region stays counted while the process
+    /// is being destroyed.
     void releaseChargeToBorrower()
     {
         if (persistent_memory_charge)
             unchargePersistentMemory(persistent_memory_charge);
     }
 
-    /// Called by the borrower once it has finished with the regions and is about to drop its own
+    /// Called by the borrower once it has finished with the region and is about to drop its own
     /// (query-level) charge, so that whatever survives the borrow is accounted again. Charges the
-    /// regions the holder actually still owns, which may be fewer than at the start of the borrow
-    /// (a discarded worker drops them) or larger (they may have grown).
+    /// region the holder actually still owns, which may be gone since the start of the borrow
+    /// (a discarded worker drops it) or larger (it may have grown).
     ///
     /// A region is sealed against shrinking, so its file can only be longer than the server last
     /// saw it - after a growth of the server's own, or after the command extended it, which the
@@ -1114,26 +1127,30 @@ public:
     void acquireChargeFromBorrower(size_t cap) noexcept
     {
         size_t bytes = 0;
-        for (const auto & region : shared_memory)
+        if (shared_memory)
         {
-            if (!region)
-                continue;
             try
             {
-                bytes += std::min(region->refreshFootprint(), cap);
+                bytes = std::min(shared_memory->refreshFootprint(), cap);
             }
             catch (...)
             {
                 tryLogCurrentException("ShellCommandHolder", "Cannot re-read the size of a pooled shared-memory region; charging the footprint last seen");
-                bytes += std::min(region->footprint(), cap);
+                bytes = std::min(shared_memory->footprint(), cap);
             }
         }
 
-        if (!bytes)
+        /// A borrow that failed before it took the charge over (`releaseChargeToBorrower`) leaves
+        /// the holder still charging the region, so the charge is brought to the new figure rather
+        /// than added on top of what is there.
+        if (bytes == persistent_memory_charge)
             return;
 
         LockMemoryExceptionInThread block_exceptions(VariableContext::Global);
-        chargePersistentMemory(bytes);
+        if (bytes > persistent_memory_charge)
+            chargePersistentMemory(bytes - persistent_memory_charge);
+        else
+            unchargePersistentMemory(persistent_memory_charge - bytes);
     }
 
 private:
@@ -1144,6 +1161,7 @@ private:
         [[maybe_unused]] auto trace = CurrentMemoryTracker::alloc(static_cast<Int64>(bytes));
         CurrentThread::flushUntrackedMemory();
         persistent_memory_charge += bytes;
+        CurrentMetrics::add(CurrentMetrics::MemoryTrackingUnmeasured, static_cast<Int64>(bytes));
 
         /// The same bytes, reported on their own. The server-wide tracker they were just added to
         /// carries everything else the server allocates as well, so it cannot answer how much of it
@@ -1160,13 +1178,14 @@ private:
         [[maybe_unused]] auto trace = CurrentMemoryTracker::free(static_cast<Int64>(bytes));
         CurrentThread::flushUntrackedMemory();
         persistent_memory_charge -= bytes;
+        CurrentMetrics::sub(CurrentMetrics::MemoryTrackingUnmeasured, static_cast<Int64>(bytes));
 
         CurrentMetrics::sub(CurrentMetrics::ExecutableUDFSharedMemoryPooledBytes, static_cast<Int64>(bytes));
     }
 
     std::unique_ptr<ShellCommand> returned_command;
     ShellCommandBuilderFunc func;
-    std::array<SharedMemoryRegionPtr, 2> shared_memory;
+    SharedMemoryRegionPtr shared_memory;
     std::optional<BorrowerIdentity> last_borrower;
     size_t persistent_memory_charge = 0;
 };
@@ -1553,6 +1572,15 @@ namespace
 
                 if (wait_for_command && (check_exit_code || timeout_command_out.stderrIsObserved()))
                 {
+                    /// The worker is about to exit - on the EOF the inputs are closed for below, or
+                    /// at the latest when the wait after that reaps it - and `/proc/<pid>` goes
+                    /// with it: a zombie has no `VmHWM` left, and a reaped pid has nothing at all.
+                    /// The borrow's CPU and peak resident set have to be read before either, or
+                    /// this - a discarded worker, which is the case the accounting is most wanted
+                    /// for - reports zeros. A no-op off the pool path, and idempotent, so `cleanup`
+                    /// can call the same thing for every path that does not come through here.
+                    recordPooledResourceUsageNoThrow();
+
                     /// A pooled worker keeps its stdin open across borrows - the send task leaves
                     /// it so, for the next request - and this one is not going back: it answered
                     /// short, or the query finished with it early. The wait below is bounded by
@@ -1578,13 +1606,6 @@ namespace
                     /// under that thread. Destroying the executor joins it first. `cleanup` does
                     /// the same for the paths that never reach here, and both are idempotent.
                     stopReadingCommandOutput();
-
-                    /// The wait below reaps the worker, and `/proc/<pid>` goes with it. The
-                    /// borrow's CPU and peak resident set have to be read before that, or this - a
-                    /// discarded worker, which is the case the accounting is most wanted for -
-                    /// reports zeros. A no-op off the pool path, and idempotent, so `cleanup` can
-                    /// call the same thing for every path that does not come through here.
-                    recordPooledResourceUsageNoThrow();
 
                     try
                     {
@@ -2115,7 +2136,6 @@ namespace
             Pipe input_pipe_,
             size_t shared_memory_size_,
             size_t shared_memory_max_size_,
-            bool pipeline_mode_,
             bool is_pooled_,
             const ShellCommandSourceConfiguration & configuration_,
             std::unique_ptr<ShellCommandHolder> && command_holder_,
@@ -2126,43 +2146,43 @@ namespace
             , sample_block(sample_block_)
             , configuration(configuration_)
             , is_pooled(is_pooled_)
+            , stderr_throws(stderr_reaction == ExternalCommandStderrReaction::THROW)
             , shared_memory_max_size(shared_memory_max_size_)
             , shared_memory_max_footprint(SharedMemoryRegion::roundUpToPages(shared_memory_max_size_))
-            , pipeline_mode(pipeline_mode_)
             , process_pool(process_pool_)
             , check_exit_code(check_exit_code_)
             , command_holder(std::move(command_holder_))
         {
             try
             {
-                /// Create the region(s) here (not in the caller) so that any failure — creating the
+                /// Create the region here (not in the caller) so that any failure — creating the
                 /// `memfd`, reserving its storage, sealing or mapping it — is cleaned up by this
                 /// constructor, which returns the borrowed process holder to the pool. On the
-                /// pool path a region is created once and reused across borrows. The pipelined
-                /// transport uses two regions for double buffering.
+                /// pool path a region is created once and reused across borrows.
                 ///
-                /// The regions are charged to this query's memory tracker for the whole borrow, so
+                /// The region is charged to this query's memory tracker for the whole borrow, so
                 /// they count against its memory limit; the charge is released on the same (query)
                 /// thread in cleanup(), including when region creation below throws. A pooled region
                 /// outlives the borrow, so the charge for it is handed over from the holder here and
                 /// handed back in cleanup(); the holder accounts it globally while the worker sits
                 /// idle in the pool. Exactly one tracker holds it at any moment — see
-                /// `ShellCommandHolder::releaseChargeToBorrower`.
-                if (command_holder)
-                    command_holder->releaseChargeToBorrower();
+                /// `ShellCommandHolder::releaseChargeToBorrower`. The hand-over happens only right
+                /// before the query is charged: the checks below may discard the worker, destroying
+                /// it can take up to `command_termination_timeout`, and its region stays resident
+                /// until then, so it stays charged globally until `discardWorkerAndRegion` drops it.
 
-                /// Before anything is built on a reused worker, and before its regions are taken
-                /// over: what these probes find decides whether the regions survive with it.
+                /// Before anything is built on a reused worker, and before its region is taken
+                /// over: what these probes find decides whether the region survives with it.
                 inspectPooledWorkerBeforeTheBorrow();
 
-                /// A worker whose regions have outgrown `shared_memory_max_size` is not built on.
+                /// A worker whose region has outgrown `shared_memory_max_size` is not built on.
                 /// The cap is what an administrator sized the pool by - `pool_size` regions of at
                 /// most that - and the server's own growth never exceeds it, but the seals do not
                 /// stop the command from extending the file (`ftruncate` past the end is not
                 /// shrinking), and a file it stretched to a terabyte would be charged to this
                 /// query, mapped, and - for a borrow by another user - zeroed page by page. So the
                 /// file's length is read before anything else, and a worker over the cap goes,
-                /// with its regions; this borrow starts a fresh one. The same check runs where the
+                /// with its region; this borrow starts a fresh one. The same check runs where the
                 /// worker is handed back (`commandIsReused`), so this is the second line, for a
                 /// hand-back that could not run it.
                 ///
@@ -2181,65 +2201,59 @@ namespace
                             getLogger("ShellCommandSharedMemorySource"),
                             "The process of an executable UDF has grown its shared-memory region to {} bytes "
                             "(its length, the pages it committed, or what it would hold once mapped whole), past "
-                            "shared_memory_max_size ({} bytes); the process and its regions are discarded and this "
+                            "shared_memory_max_size ({} bytes); the process and its region are discarded and this "
                             "borrow starts a fresh one",
                             std::max(over->backingSize(), over->costOnceMappedWhole()), shared_memory_max_size);
-                        command_holder->discardWorkerAndRegions();
+                        command_holder->discardWorkerAndRegion();
                     }
                 }
 
                 /// May throw MEMORY_LIMIT_EXCEEDED.
-                size_t region_count = pipeline_mode ? 2 : 1;
-                for (size_t i = 0; i < region_count; ++i)
+                if (command_holder)
                 {
-                    bool region_created = false;
-                    if (command_holder)
-                    {
-                        /// Charge before the region is created: creating it commits its pages, so
-                        /// a query that is already at its memory limit has to be rejected first
-                        /// (the non-pooled branch below does the same). A region that survived a
-                        /// previous borrow may have grown, so charge what it actually holds - its
-                        /// committed size; a missing one is created at exactly shared_memory_size_.
-                        size_t existing_size = command_holder->getSharedMemorySize(i);
-                        if (existing_size > shared_memory_max_footprint)
-                            failBorrowOnRegionOverTheCap(existing_size);
-                        /// Whole pages: what a fresh region of `shared_memory_size_` bytes holds.
-                        chargeQueryMemory(existing_size ? existing_size : SharedMemoryRegion::roundUpToPages(shared_memory_size_));
-                        regions[i] = command_holder->getOrCreateSharedMemory(shared_memory_size_, i, region_created);
-                        regions_created_by_this_borrow[i] = region_created;
+                    /// Charge before the region is created: creating it commits its pages, so
+                    /// a query that is already at its memory limit has to be rejected first
+                    /// (the non-pooled branch below does the same). A region that survived a
+                    /// previous borrow may have grown, so charge what it actually holds - its
+                    /// committed size; a missing one is created at exactly shared_memory_size_.
+                    size_t existing_size = command_holder->getSharedMemorySize();
+                    if (existing_size > shared_memory_max_footprint)
+                        failBorrowOnRegionOverTheCap(existing_size);
+                    command_holder->releaseChargeToBorrower();
+                    /// Whole pages: what a fresh region of `shared_memory_size_` bytes holds.
+                    chargeQueryMemory(existing_size ? existing_size : SharedMemoryRegion::roundUpToPages(shared_memory_size_));
+                    shared_memory_region = command_holder->getOrCreateSharedMemory(shared_memory_size_, region_created_by_this_borrow);
 
-                        if (!region_created)
-                            takeOverReusedRegion(i, existing_size);
-                    }
-                    else
-                    {
-                        chargeQueryMemory(SharedMemoryRegion::roundUpToPages(shared_memory_size_));
-                        regions[i] = std::make_shared<SharedMemoryRegion>(shared_memory_size_);
-                        region_created = true;
-                        regions_created_by_this_borrow[i] = region_created;
-                    }
-
-                    /// In whole pages, like the charge above and every growth (`ensureRegionFits`):
-                    /// a region is committed in pages, and a counter that mixed bytes here with
-                    /// pages there would not add up to what the memory trackers report.
-                    if (region_created)
-                        ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryAllocatedBytes, regions[i]->footprint());
+                    if (!region_created_by_this_borrow)
+                        takeOverReusedRegion(existing_size);
+                }
+                else
+                {
+                    chargeQueryMemory(SharedMemoryRegion::roundUpToPages(shared_memory_size_));
+                    shared_memory_region = std::make_shared<SharedMemoryRegion>(shared_memory_size_);
+                    region_created_by_this_borrow = true;
                 }
 
+                /// In whole pages, like the charge above and every growth (`ensureRegionFits`):
+                /// a region is committed in pages, and a counter that mixed bytes here with
+                /// pages there would not add up to what the memory trackers report.
+                if (region_created_by_this_borrow)
+                    ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryAllocatedBytes, shared_memory_region->footprint());
+
                 if (command_holder)
-                    scrubRegionsForBorrower();
+                    scrubRegionForBorrower();
 
                 /// Only now the process. A `memfd` has no name a process could open later, so the
-                /// command reaches its regions by having inherited their descriptors at `exec` -
-                /// which is why the regions above had to come first. A pooled worker that served an
-                /// earlier borrow inherited them when it was started; `buildCommand` hands it back
+                /// command reaches its region by having inherited its descriptor at `exec` -
+                /// which is why the region above had to come first. A pooled worker that served an
+                /// earlier borrow inherited it when it was started; `buildCommand` hands it back
                 /// as it is. `command` is the last thing this constructor takes on for the reason
                 /// given at its declaration.
                 if (command_holder)
                 {
                     /// Whether this is a worker that has already served a borrow is decided by
                     /// what the holder still has after the probes above: one they discarded is
-                    /// gone, and `buildCommand` starts a fresh process on the regions the holder
+                    /// gone, and `buildCommand` starts a fresh process on the region the holder
                     /// owns now.
                     worker_is_reused = command_holder->hasReturnedCommand();
                     command = command_holder->buildCommand();
@@ -2260,10 +2274,7 @@ namespace
                 }
                 else
                 {
-                    std::vector<std::pair<int, int>> inherited_fds;
-                    for (size_t i = 0; i < region_count; ++i)
-                        inherited_fds.emplace_back(SHARED_MEMORY_FIRST_CHILD_FD + static_cast<int>(i), regions[i]->fd());
-                    command = build_command_(inherited_fds);
+                    command = build_command_({{SHARED_MEMORY_CHILD_FD, shared_memory_region->fd()}});
 
                     if (configuration.sampler)
                         configuration.sampler->recordExecutablePid(command->getPid());
@@ -2294,21 +2305,6 @@ namespace
                 input_pipe_.resize(1);
                 input_pipeline = QueryPipeline(std::move(input_pipe_));
                 input_executor = std::make_unique<PullingPipelineExecutor>(input_pipeline);
-
-                /// In pipelined mode a background thread serializes the next input chunk into the
-                /// other region while the current chunk is being processed by the child. It inherits
-                /// this query's thread group for correct CPU/memory accounting and is joined in
-                /// cleanup() before any shared state is torn down.
-                ///
-                /// Note that the prefetch only pays off when input_pipe_ yields more than one block.
-                /// The executable-UDF caller builds it from a single SourceFromSingleChunk, so today
-                /// the producer serializes one chunk and then reports exhaustion: the machinery is
-                /// exercised but nothing overlaps. See docs/reference/functions/regular-functions/udf.mdx.
-                if (pipeline_mode)
-                    producer.start(
-                        CurrentThread::getGroup(),
-                        ThreadName::SEND_TO_SHELL_CMD,
-                        [this](size_t index) { return serializeInto(index); });
 
                 constructor_finished = true;
             }
@@ -2393,14 +2389,6 @@ namespace
                             QueryPipeline discarded = std::move(output_pipeline);
                         }
                         output_read_buffer.reset();
-
-                        /// The current buffer is fully drained; hand it back to the producer so it
-                        /// can serialize the next-but-one chunk into it.
-                        if (pipeline_mode && holding_buffer)
-                        {
-                            producer.release(active_index);
-                            holding_buffer = false;
-                        }
                     }
 
                     /// On the pool path we cannot rely on stdin EOF; stop once enough rows were produced.
@@ -2411,8 +2399,7 @@ namespace
                         return {};
                     }
 
-                    bool sent = pipeline_mode ? sendNextRequestPipelined() : sendNextRequest();
-                    if (!sent)
+                    if (!sendNextRequest())
                     {
                         assertEnoughRowsRead();
                         return {};
@@ -2424,7 +2411,7 @@ namespace
                 /// A failure while the next input is being prepared - the input pipeline itself, a
                 /// region that cannot grow to hold the serialized block, an exceeded memory limit -
                 /// never reached the child: no request was sent, so a pooled worker is still at a
-                /// clean protocol boundary and it, together with its regions, can be reused by the
+                /// clean protocol boundary and it, together with its region, can be reused by the
                 /// next borrow. Any other failure either leaves the child's state unknown (a
                 /// partially written request, an unread response) or proves that it misbehaves, so
                 /// the worker has to be discarded.
@@ -2442,11 +2429,6 @@ namespace
 
             if (status == Status::Finished)
             {
-                /// Join the background producer: generate() stops taking items from it as soon as
-                /// enough rows were read, so a failure of the producer after that point is still
-                /// unobserved here and is rethrown below.
-                stopProducer();
-
                 /// Decided once and used twice below: the answer includes a probe of the child's
                 /// stdout, so asking again could give a different one, and closing stdin for a
                 /// worker that is then not reaped - or reaping one whose stdin was left open, which
@@ -2553,10 +2535,6 @@ namespace
                         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                             "Executable generates stderr: {}", timeout_command_out->getStderr());
                 }
-
-                /// A producer error (a failing input pipeline, an exceeded memory limit) must not be
-                /// swallowed just because the consumer no longer needed the chunk it was preparing.
-                producer.rethrowIfFailed();
             }
 
             return status;
@@ -2575,23 +2553,9 @@ namespace
             }
         }
 
-        /// Stops the background producer and joins it. The callback gives up between blocks once
-        /// the stop is requested; a callback that is inside `pull` is waited for. That wait is
-        /// bounded by the input: today's single-block input never blocks in `pull`, and a source
-        /// that can - one waiting for data that is not coming - is unblocked by the query's own
-        /// cancellation, which `pull` honours through the process list element. It is not
-        /// cancelled from here: `PullingPipelineExecutor` creates its executor on the first `pull`
-        /// and `cancel` reads that pointer, so a `cancel` from this thread racing the producer's
-        /// first `pull` would be a data race, not an interruption. Idempotent.
-        void stopProducer() noexcept
-        {
-            producer.stop();
-        }
-
-        /// Pulls the next non-empty input block and serializes it into regions[index] (growing the
+        /// Pulls the next non-empty input block and serializes it into the region (growing the
         /// region on demand). Returns the serialized size, or std::nullopt when input is exhausted.
-        /// In pipelined mode this runs on the background producer thread; otherwise inline.
-        std::optional<size_t> serializeInto(size_t index)
+        std::optional<size_t> serializeInput()
         {
             /// A function without arguments has nothing to serialize: its input block has no
             /// columns, so it has no rows either, whatever the query asked for, and the pipeline
@@ -2611,11 +2575,7 @@ namespace
 
             Block input_block;
             bool have_input = false;
-            /// A teardown (cancellation, or the consumer having read all the rows it needs) waits
-            /// for this callback to return, so give up between blocks instead of pulling the input
-            /// pipeline dry first. In synchronous mode the producer was never started and this is
-            /// always false.
-            while (!producer.isStopRequested() && input_executor->pull(input_block))
+            while (input_executor->pull(input_block))
             {
                 if (input_block.rows() != 0)
                 {
@@ -2634,11 +2594,11 @@ namespace
             /// the stack unwinds, which holds nothing back (everything written is already in the
             /// region), and a `finalize` from a destructor could not report a problem anyway.
             WriteBufferToSharedMemoryRegion write_buffer(
-                *regions[index],
+                *shared_memory_region,
                 /// The input is serialized straight into the region, so its total size is known only
                 /// once it is over: every request for room is a lower bound on what it needs.
-                [this, index](size_t required)
-                { ensureRegionFits(index, required, "The serialized input", /*required_is_lower_bound=*/ true); });
+                [this](size_t required)
+                { ensureRegionFits(required, "The serialized input", /*required_is_lower_bound=*/ true); });
 
             auto output_format = context->getOutputFormat(format, write_buffer, input_header);
             formatBlock(output_format, input_block);
@@ -2654,11 +2614,11 @@ namespace
         }
 
         /// Request to the child: protocol version, file path, input offset, input size.
-        void sendRequest(size_t index, size_t input_size, UInt64 request_id)
+        void sendRequest(size_t input_size, UInt64 request_id)
         {
             writeVarUInt(SHARED_MEMORY_PROTOCOL_VERSION, *timeout_command_in);
             writeVarUInt(request_id, *timeout_command_in);
-            writeStringBinary(SharedMemoryRegion::pathForChildFd(SHARED_MEMORY_FIRST_CHILD_FD + static_cast<int>(index)), *timeout_command_in);
+            writeStringBinary(SharedMemoryRegion::pathForChildFd(SHARED_MEMORY_CHILD_FD), *timeout_command_in);
             writeVarUInt(static_cast<UInt64>(0), *timeout_command_in);
             writeVarUInt(static_cast<UInt64>(input_size), *timeout_command_in);
             timeout_command_in->next();
@@ -2674,12 +2634,10 @@ namespace
             return generateRequestId();
         }
 
-        /// Sends the request for regions[index] to the child and sets up output_executor over the
-        /// response. The region must already hold `input_size` bytes of serialized input at offset 0.
-        void exchange(size_t index, size_t input_size)
+        /// Sends the request to the child and sets up output_executor over the response. The region
+        /// must already hold `input_size` bytes of serialized input at offset 0.
+        void exchange(size_t input_size)
         {
-            /// Counted here rather than in serializeInto: the producer thread runs ahead of the
-            /// consumer, so a prefetched chunk that is never sent must not count as a call.
             ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryCalls);
             ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryInputBytes, input_size);
 
@@ -2689,7 +2647,7 @@ namespace
             while (true)
             {
                 const UInt64 request_id = nextRequestId();
-                sendRequest(index, input_size, request_id);
+                sendRequest(input_size, request_id);
 
                 /// Response from the child: the id of the request it is answering, a status varint,
                 /// and then either the output location (on success), the size it needs (when the
@@ -2729,15 +2687,15 @@ namespace
                     UInt64 requested_size = 0;
                     readVarUInt(requested_size, *timeout_command_out);
 
-                    if (requested_size <= regions[index]->size())
+                    if (requested_size <= shared_memory_region->size())
                         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                             "Executable UDF asked for a shared-memory region of {} bytes, which is not larger "
                             "than the current one ({} bytes)",
-                            requested_size, regions[index]->size());
+                            requested_size, shared_memory_region->size());
 
                     try
                     {
-                        ensureRegionFits(index, requested_size, "The region size requested by the command");
+                        ensureRegionFits(requested_size, "The region size requested by the command");
                     }
                     catch (...)
                     {
@@ -2772,7 +2730,7 @@ namespace
                 break;
             }
 
-            auto & region = *regions[index];
+            auto & region = *shared_memory_region;
 
             if (output_offset > region.size() || output_size > region.size() - output_offset)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -2794,11 +2752,11 @@ namespace
             output_executor = std::make_unique<PullingPipelineExecutor>(output_pipeline);
         }
 
-        /// Synchronous transport: serialize the next chunk into region 0 and exchange it.
+        /// Serializes the next chunk into the region and exchanges it.
         bool sendNextRequest()
         {
             preparing_input = true;
-            auto input_size = serializeInto(0);
+            auto input_size = serializeInput();
             preparing_input = false;
 
             if (!input_size)
@@ -2806,52 +2764,32 @@ namespace
                 closeStdinIfNeeded(is_pooled);
                 return false;
             }
-            exchange(0, *input_size);
-            return true;
-        }
-
-        /// Pipelined transport: take the next chunk that the background producer has already
-        /// serialized into one of the two regions, and exchange it. The buffer stays held until its
-        /// output is fully drained in generate(), which then releases it back to the producer.
-        bool sendNextRequestPipelined()
-        {
-            preparing_input = true;
-            auto item = producer.next(); /// blocks for the prefetched chunk; rethrows producer errors
-            preparing_input = false;
-
-            if (!item)
-            {
-                closeStdinIfNeeded(is_pooled);
-                return false;
-            }
-
-            active_index = item->index;
-            holding_buffer = true;
-            exchange(active_index, item->size);
+            exchange(*input_size);
             return true;
         }
 
         /// Looks over the worker this borrow would be built on, before anything is built on it -
-        /// and, above all, before its regions are taken over.
+        /// and, above all, before its region is taken over.
         ///
         /// Two states disqualify it: a process that hung up its stdout while it sat in the pool,
         /// and one that has written to its stdout since its last answer. The second one's bytes
         /// are an earlier borrow's - this one has sent nothing yet - and read as the beginning of
-        /// *this* answer they are a plausible response frame, so the worker has to go.
+        /// *this* answer they are a plausible response frame, so the worker has to go. Under
+        /// `stderr_reaction` `throw`, so does one that has written to its stderr (see below).
         ///
-        /// Either way it goes together with its regions, and this borrow starts on fresh ones. A
+        /// Either way it goes together with its region, and this borrow starts on a fresh one. A
         /// hung-up stdout says the process closed it, not that the process is gone - it may have
         /// closed it and carried on - and even a process that has exited may have left a
-        /// descendant holding the descriptors to the regions it inherited. Handing those regions
+        /// descendant holding the descriptor to the region it inherited. Handing that region
         /// to a replacement would leave this query reading a mapping something else can still
         /// write into: the destructor gives the process the termination timeout and then a signal
-        /// it may ignore, and a descendant nothing at all. So a process and its regions live and
-        /// die together, as everywhere else that drops a worker. What that costs is the regions a
+        /// it may ignore, and a descendant nothing at all. So a process and its region live and
+        /// die together, as everywhere else that drops a worker. What that costs is the region a
         /// worker that died in the pool had grown, which the replacement grows again if it needs
-        /// them.
+        /// it.
         ///
-        /// Both run here rather than after `buildCommand` for the same reason: once the regions
-        /// have been taken over and charged to this query, dropping them is no longer a matter of
+        /// Both run here rather than after `buildCommand` for the same reason: once the region
+        /// has been taken over and charged to this query, dropping it is no longer a matter of
         /// letting them go.
         void inspectPooledWorkerBeforeTheBorrow()
         {
@@ -2871,13 +2809,13 @@ namespace
                     LOG_DEBUG(
                         getLogger("ShellCommandSharedMemorySource"),
                         "The process of an executable UDF (pid {}) exited while it was idle in the pool; "
-                        "it is discarded, with its regions, and a replacement is started for this borrow.",
+                        "it is discarded, with its region, and a replacement is started for this borrow.",
                         worker->getPid());
                 else
                     LOG_WARNING(
                         getLogger("ShellCommandSharedMemorySource"),
                         "The process of an executable UDF (pid {}) exited while it was idle in the pool, "
-                        "after writing to its stderr; it is discarded, with its regions, and a replacement is "
+                        "after writing to its stderr; it is discarded, with its region, and a replacement is "
                         "started for this borrow. Stderr: {}",
                         worker->getPid(),
                         leftover_stderr);
@@ -2885,45 +2823,72 @@ namespace
                 /// Closed before the process is dropped, so that one that only closed its stdout and
                 /// exits on EOF does so at once rather than sitting out the termination timeout.
                 worker->closeInputs();
-                command_holder->discardWorkerAndRegions();
+                command_holder->discardWorkerAndRegion();
                 return;
             }
 
-            if (!TimeoutReadBufferFromFileDescriptor::pipeHasPendingOutput(worker->out.getFD()))
+            if (TimeoutReadBufferFromFileDescriptor::pipeHasPendingOutput(worker->out.getFD()))
+            {
+                const String leftover_stderr = readLeftoverStderrOfExitedProcess(*worker);
+                LOG_WARNING(
+                    getLogger("ShellCommandSharedMemorySource"),
+                    "The process of an executable UDF (pid {}) had unread output on its stdout when it was "
+                    "borrowed, so it wrote after the response of an earlier invocation; it is discarded, with its "
+                    "region, and a replacement is started for this borrow. The command must write nothing but the "
+                    "response frame.{}{}",
+                    worker->getPid(),
+                    leftover_stderr.empty() ? "" : " Stderr: ",
+                    leftover_stderr);
+                ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryDirtyChannelDiscards);
+
+                /// Closed before the process is dropped, so that a worker written to exit on EOF does
+                /// so at once rather than sitting out the termination timeout in the destructor.
+                worker->closeInputs();
+                command_holder->discardWorkerAndRegion();
+                return;
+            }
+
+            /// Under `throw`, stderr found here goes as well. It is an earlier borrow's, and it can
+            /// be taken off the pipe without the reaction (`discardStderrLeftByAPreviousBorrow`) -
+            /// but nothing tells when the command has finished writing it. A command in the middle
+            /// of a burst, blocked in `write` on a full pipe, writes the rest once room is made,
+            /// and how soon depends on when the kernel schedules it: on a loaded machine that comes
+            /// after any drain of a fixed length, in the middle of this borrow's request, and the
+            /// query fails for a diagnostic it did not cause. A worker that is not at a known
+            /// boundary is not built on, so it is discarded with its region. Under every other
+            /// reaction stray stderr only lands in a log line, and the worker is kept.
+            if (!stderr_throws || !TimeoutReadBufferFromFileDescriptor::pipeHasPendingOutput(worker->err.getFD()))
                 return;
 
             const String leftover_stderr = readLeftoverStderrOfExitedProcess(*worker);
             LOG_WARNING(
                 getLogger("ShellCommandSharedMemorySource"),
-                "The process of an executable UDF (pid {}) had unread output on its stdout when it was "
-                "borrowed, so it wrote after the response of an earlier invocation; it is discarded, with its "
-                "regions, and a replacement is started for this borrow. The command must write nothing but the "
-                "response frame.{}{}",
+                "The process of an executable UDF (pid {}) had unread output on its stderr when it was "
+                "borrowed under stderr_reaction 'throw', so it wrote after the response of an earlier invocation "
+                "and may still be writing; it is discarded, with its region, and a replacement is started for "
+                "this borrow. Stderr: {}",
                 worker->getPid(),
-                leftover_stderr.empty() ? "" : " Stderr: ",
                 leftover_stderr);
             ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryDirtyChannelDiscards);
 
-            /// Closed before the process is dropped, so that a worker written to exit on EOF does
-            /// so at once rather than sitting out the termination timeout in the destructor.
+            /// Closed before the process is dropped, like above. A worker blocked writing its stderr
+            /// does not wait out the termination timeout either: the destructor closes the read end
+            /// of the pipe before it waits, and the blocked `write` fails.
             worker->closeInputs();
-            command_holder->discardWorkerAndRegions();
+            command_holder->discardWorkerAndRegion();
         }
 
-        /// Charge/uncharge the query memory tracker for the mmap'd shared-memory region(s).
+        /// Charge/uncharge the query memory tracker for the mmap'd shared-memory region.
         ///
         /// These are synthetic charges: the region is a mapped `memfd`, not a heap allocation at a known
         /// address. We therefore intentionally do NOT emit allocation-profiler samples
         /// (AllocationTrace::onAlloc / onFree) for them — a sample carrying a fake pointer would only
-        /// pollute allocation profiles, and in pipelined mode a single free could not honestly name
-        /// two separate regions. The memory-tracker counter (used for the memory limit) is still
-        /// updated by alloc() / free() regardless. chargeQueryMemory may throw MEMORY_LIMIT_EXCEEDED
-        /// before it records the charge, leaving query_memory_charge unchanged.
-        ///
-        /// In pipelined mode both the query thread (growing the active region in `exchange`) and the
-        /// background producer thread (growing the other region in `serializeInto`) charge memory,
-        /// so the running total is atomic: a lost update would make the final uncharge in cleanup()
-        /// release the wrong amount and permanently skew the memory trackers.
+        /// pollute allocation profiles. The memory-tracker counter (used for the memory limit) is
+        /// still updated by alloc() / free() regardless, and so is `MemoryTrackingUnmeasured`: the
+        /// pages are not in the measurement `MemoryWorker` corrects the global tracker with, and
+        /// without it the share of this charge that reaches the global tracker would be gone on its
+        /// next tick. chargeQueryMemory may throw MEMORY_LIMIT_EXCEEDED before it records the charge,
+        /// leaving query_memory_charge unchanged.
         void chargeQueryMemory(size_t bytes)
         {
             [[maybe_unused]] auto trace = CurrentMemoryTracker::alloc(static_cast<Int64>(bytes));
@@ -2942,7 +2907,8 @@ namespace
                 throw;
             }
 
-            query_memory_charge.fetch_add(bytes, std::memory_order_relaxed);
+            query_memory_charge += bytes;
+            CurrentMetrics::add(CurrentMetrics::MemoryTrackingUnmeasured, static_cast<Int64>(bytes));
         }
 
         /// Same, for a path that is already unwinding. The bytes are committed whatever happens to
@@ -2972,7 +2938,8 @@ namespace
         {
             [[maybe_unused]] auto trace = CurrentMemoryTracker::free(static_cast<Int64>(bytes));
             CurrentThread::flushUntrackedMemory();
-            query_memory_charge.fetch_sub(bytes, std::memory_order_relaxed);
+            query_memory_charge -= bytes;
+            CurrentMetrics::sub(CurrentMetrics::MemoryTrackingUnmeasured, static_cast<Int64>(bytes));
         }
 
         /// Ensures the region can hold `required` bytes, growing it (up to shared_memory_max_size)
@@ -2980,9 +2947,9 @@ namespace
         /// requirement this is, for the exception raised when the region cannot grow that far. The
         /// added bytes are charged to the query memory tracker like the rest of the region; for a
         /// pooled region cleanup() hands that charge over to the holder together with the region.
-        void ensureRegionFits(size_t index, size_t required, std::string_view what, bool required_is_lower_bound = false)
+        void ensureRegionFits(size_t required, std::string_view what, bool required_is_lower_bound = false)
         {
-            auto & region = *regions[index];
+            auto & region = *shared_memory_region;
             if (required <= region.size())
                 return;
 
@@ -3047,7 +3014,7 @@ namespace
 
             /// Never past the cap, in pages like the footprint: the server's own growth is what
             /// the cap is a promise about (the command's own commits are checked where the worker
-            /// changes hands - see `regionsAreWithinTheCap`). A region the command has filled with
+            /// changes hands - see `regionIsWithinTheCap`). A region the command has filled with
             /// pages far past the end has no room left for the growth, and a worker in that state
             /// is not one to keep: the next chunk would fail the same way.
             if (footprint_before + expected > shared_memory_max_footprint)
@@ -3076,7 +3043,7 @@ namespace
             try
             {
                 if (command_holder)
-                    command_holder->growSharedMemory(index, new_size);
+                    command_holder->growSharedMemory(new_size);
                 else
                     region.grow(new_size);
             }
@@ -3141,9 +3108,9 @@ namespace
         /// would hold - the command keeps its descriptor and can punch again at any instant - and
         /// `SharedMemoryRegion` explains why no check can even tell. A hole costs the server a page
         /// allocation on its next access, which is that function's own slowness, and nothing more.
-        void takeOverReusedRegion(size_t index, size_t charged_size)
+        void takeOverReusedRegion(size_t charged_size)
         {
-            auto & region = *regions[index];
+            auto & region = *shared_memory_region;
 
             /// Re-read, and compared with the cap again, because this is the figure the growth
             /// below commits with `posix_fallocate` and maps: the constructor's check was a moment
@@ -3158,7 +3125,7 @@ namespace
             /// The query was charged for the footprint read a moment earlier; a region that grew
             /// in between - within the cap - is charged for the rest before it is mapped, so that
             /// what this borrow holds is what it is charged for. May throw the memory limit, in
-            /// which case nothing has been touched yet and the worker keeps its regions.
+            /// which case nothing has been touched yet and the worker keeps its region.
             ///
             /// And for what mapping the file whole is about to commit, at most: the growth below
             /// `posix_fallocate`s the file up to its length, and the pages between the length the
@@ -3180,7 +3147,7 @@ namespace
                 }
                 catch (...)
                 {
-                    dropRegionsAndWorker();
+                    dropRegionAndWorker();
                     throw;
                 }
 
@@ -3215,34 +3182,31 @@ namespace
             }
         }
 
-        /// Drops this borrow's view of the regions together with the holder's worker and regions:
-        /// what a borrow does when it finds the worker's regions unusable after it has begun.
-        void dropRegionsAndWorker()
+        /// Drops this borrow's view of the region together with the holder's worker and region:
+        /// what a borrow does when it finds the worker's region unusable after it has begun.
+        void dropRegionAndWorker()
         {
-            for (size_t i = 0; i < regions.size(); ++i)
-            {
-                regions[i].reset();
-                regions_created_by_this_borrow[i] = false;
-            }
-            command_holder->discardWorkerAndRegions();
+            shared_memory_region.reset();
+            region_created_by_this_borrow = false;
+            command_holder->discardWorkerAndRegion();
         }
 
-        /// A region's file found over `shared_memory_max_size` after the constructor's check let
+        /// The region's file found over `shared_memory_max_size` after the constructor's check let
         /// the borrow begin: the command extended it in between. Fail closed - the worker and its
-        /// regions go, and so does this query - rather than carry on with a figure the cap was
+        /// region go, and so does this query - rather than carry on with a figure the cap was
         /// meant to rule out. The next query starts a fresh worker. (`cleanup` sees no worker in
         /// the holder afterwards, so it does not mistake this for a borrow that never touched it.)
         [[noreturn]] void failBorrowOnRegionOverTheCap(size_t backing)
         {
-            dropRegionsAndWorker();
+            dropRegionAndWorker();
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "The process of an executable UDF extended its shared-memory region to {} bytes, past "
                 "shared_memory_max_size ({} bytes), while the region was being borrowed; the process and "
-                "its regions are discarded",
+                "its region are discarded",
                 backing, shared_memory_max_size);
         }
 
-        /// Clears the regions when this borrow belongs to a different user, or to the same user
+        /// Clears the region when this borrow belongs to a different user, or to the same user
         /// under different roles, than the previous one (`ShellCommandHolder::BorrowerIdentity`).
         /// What a query wrote into a pooled region stays there until overwritten, and the command
         /// serving the next query can read it - over the pipes it only ever saw what it was sent.
@@ -3252,60 +3216,61 @@ namespace
         /// zeroing everything says anything about all of it - and by now the whole file is mapped
         /// (`takeOverReusedRegion`), so the region is the file. Zeroed rather than freed: a freed
         /// page would come back on the next write, at the cost of an allocation on the hot path.
-        void scrubRegionsForBorrower()
+        void scrubRegionForBorrower()
         {
             ShellCommandHolder::BorrowerIdentity borrower{context->getUserID(), context->getCurrentRoles()};
-            if (command_holder->lastBorrower() && *command_holder->lastBorrower() != borrower)
+            /// A region this borrow created is a fresh, zero-filled file with nobody's data in it:
+            /// the discarded worker's region went with it (`resetSharedMemory` in `cleanup`), and
+            /// zeroing a new one would be a wasted write of its size.
+            if (command_holder->lastBorrower() && *command_holder->lastBorrower() != borrower
+                && shared_memory_region && !region_created_by_this_borrow)
             {
-                for (size_t i = 0; i < regions.size(); ++i)
-                {
-                    /// A region this borrow created is a fresh, zero-filled file with nobody's
-                    /// data in it: the discarded worker's regions went with it (`resetSharedMemory`
-                    /// in `cleanup`), and zeroing a new one would be a wasted write of its size.
-                    const auto & region = regions[i];
-                    if (!region || regions_created_by_this_borrow[i])
-                        continue;
-
-                    memset(region->data(), 0, region->size());
-                    ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryScrubbedBytes, region->size());
-                }
+                memset(shared_memory_region->data(), 0, shared_memory_region->size());
+                ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryScrubbedBytes, shared_memory_region->size());
             }
             command_holder->recordBorrower(std::move(borrower));
         }
 
-        /// Whether every region's file is still within `shared_memory_max_size` - the one property
-        /// of a worker's regions that the worker cannot be handed back to the pool without. The
+        /// Whether the region's file is still within `shared_memory_max_size` - the one property
+        /// of a worker's region that the worker cannot be handed back to the pool without. The
         /// server's own growth stops at the cap; the command's extension of the file does not
         /// (see the constructor), and a worker whose file has passed it is discarded here rather
         /// than charged to the server at that size and handed to the next query. Never throws: a
         /// file whose length cannot be read is not one to build the next borrow on either.
-        bool regionsAreWithinTheCap() noexcept
+        bool regionIsWithinTheCap() noexcept
         {
-            for (const auto & region : regions)
+            if (!shared_memory_region)
+                return true;
+
+            try
             {
-                if (!region)
-                    continue;
+                shared_memory_region->refreshFootprint();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ShellCommandSharedMemorySource", "Cannot re-read the size of a shared-memory region; the process will not be reused");
+                return false;
+            }
 
+            if (shared_memory_region->isOverTheCap(shared_memory_max_size))
+            {
+                /// Inside a handler, all of it: `LOG_WARNING` obtains the logger before its own one,
+                /// and that allocates - a memory limit refusing it must cost the worker its place in
+                /// the pool, not terminate the server from a `noexcept` function.
                 try
-                {
-                    region->refreshFootprint();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("ShellCommandSharedMemorySource", "Cannot re-read the size of a shared-memory region; the process will not be reused");
-                    return false;
-                }
-
-                if (region->isOverTheCap(shared_memory_max_size))
                 {
                     LOG_WARNING(
                         getLogger("ShellCommandSharedMemorySource"),
                         "The process of an executable UDF has grown its shared-memory region to {} bytes "
                         "(its length, the pages it committed, or what it would hold once mapped whole), past "
                         "shared_memory_max_size ({} bytes); the process will not be reused",
-                        std::max(region->backingSize(), region->costOnceMappedWhole()), shared_memory_max_size);
-                    return false;
+                        std::max(shared_memory_region->backingSize(), shared_memory_region->costOnceMappedWhole()), shared_memory_max_size);
                 }
+                catch (...)
+                {
+                    tryLogCurrentException("ShellCommandSharedMemorySource");
+                }
+                return false;
             }
             return true;
         }
@@ -3349,7 +3314,7 @@ namespace
         /// saw a request from this borrow, or one that answered every request in full. A protocol
         /// failure, a dead child and an invocation cut short (query cancellation, an exception
         /// downstream) all leave its state unknown, so it is discarded instead - which also means
-        /// its stdin must be closed and its shared-memory regions released.
+        /// its stdin must be closed and its shared-memory region released.
         ///
         /// Only meaningful once the source is being torn down: while it is still running, a pooled
         /// worker that has not produced all its rows yet is not being discarded.
@@ -3495,7 +3460,7 @@ namespace
                 && (command_can_be_reused
                     || (configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read))
                 && controlChannelIsClean()
-                && regionsAreWithinTheCap();
+                && regionIsWithinTheCap();
         }
 
 
@@ -3589,14 +3554,9 @@ namespace
 
         void cleanup()
         {
-            /// Stop and join the background producer before touching any state it shares (the input
-            /// pipeline, the serialize buffer and the regions). Idempotent and a no-op if it was
-            /// never started (synchronous mode or a failure early in the constructor).
-            stopProducer();
-
             /// Tear down the output pipeline first. Its parsing threads (input_format_parallel_parsing)
             /// read straight out of the shared-memory region through output_read_buffer, so they must be
-            /// joined before the child is reaped and before the regions are unmapped below. generate()
+            /// joined before the child is reaped and before the region is unmapped below. generate()
             /// does this in order on the normal path; here it also covers the destructor path (query
             /// cancellation, an exception downstream) where the pipeline is still alive.
             output_executor.reset();
@@ -3610,30 +3570,26 @@ namespace
             /// The reuse decision, made once and used for everything below.
             bool keep_command = commandIsReused();
 
-            /// A process and its regions live and die together: the process reached them by
-            /// inheriting their descriptors at `exec`, and a region created for it cannot be
+            /// A process and its region live and die together: the process reached it by
+            /// inheriting its descriptor at `exec`, and a region created for it cannot be
             /// swapped for another one behind its back - it would go on opening the descriptor it
-            /// was given. So a borrow that failed after creating regions does not keep the process
-            /// either. It is a fresh one in that case (a returned process comes with its regions
-            /// already there), so nothing of value is lost.
-            bool regions_created_by_this_borrow_exist = false;
-            for (bool created : regions_created_by_this_borrow)
-                regions_created_by_this_borrow_exist |= created;
-
-            if (!constructor_finished && regions_created_by_this_borrow_exist)
+            /// was given. So a borrow that failed after creating the region does not keep the
+            /// process either. It is a fresh one in that case (a returned process comes with its
+            /// region already there), so nothing of value is lost.
+            if (!constructor_finished && region_created_by_this_borrow)
                 keep_command = false;
 
             /// The converse of the same rule. A borrow that failed before it took the worker out of
-            /// the holder - the constructor charging the worker's regions to a query that is at its
-            /// memory limit, say - touched neither the process nor its regions: no request reached
-            /// it, and it is still sitting in the holder with the very descriptors it was started
+            /// the holder - the constructor charging the worker's region to a query that is at its
+            /// memory limit, say - touched neither the process nor its region: no request reached
+            /// it, and it is still sitting in the holder with the very descriptor it was started
             /// with. `keep_command` is false here only because there is no `command` in this
-            /// object to keep. Its regions have to stay with it all the same: dropping them and
-            /// keeping the process would have the next borrow create new regions that the worker
+            /// object to keep. Its region has to stay with it all the same: dropping it and
+            /// keeping the process would have the next borrow create a new region that the worker
             /// has never heard of, and read its answers out of memory the worker never writes to.
             const bool worker_untouched = command == nullptr
                 && command_holder && command_holder->hasReturnedCommand()
-                && !regions_created_by_this_borrow_exist;
+                && !region_created_by_this_borrow;
 
             reportDirtyChannelDiscard();
 
@@ -3703,9 +3659,9 @@ namespace
                 if (!keep_command && !worker_untouched)
                 {
                     /// The worker process is being discarded (protocol failure, child death,
-                    /// overproduction, cancellation, etc.). Its pooled shared-memory regions belong
-                    /// to that process, so release all of them, including any created by an earlier
-                    /// borrow, instead of leaving the regions and their persistent memory charge
+                    /// overproduction, cancellation, etc.). Its pooled shared-memory region belongs
+                    /// to that process, so release it, even when it was created by an earlier
+                    /// borrow, instead of leaving the region and its persistent memory charge
                     /// pinned on the reused holder for a replacement process - which could not use
                     /// them anyway, since it is the process that inherits a region's descriptor at
                     /// `exec`, and a replacement gets its own. resetSharedMemory drops the holder's
@@ -3729,18 +3685,15 @@ namespace
                     /// `docs/reference/functions/regular-functions/udf.mdx`).
                     command = nullptr;
 
-                    for (size_t i = 0; i < regions.size(); ++i)
-                    {
-                        regions[i].reset();
-                        command_holder->resetSharedMemory(i);
-                        regions_created_by_this_borrow[i] = false;
-                    }
+                    shared_memory_region.reset();
+                    command_holder->resetSharedMemory();
+                    region_created_by_this_borrow = false;
                 }
                 else
                 {
-                    /// The regions stay with the worker (kept, or never taken out), at whatever size
-                    /// this borrow grew them to. They are sealed against shrinking, so there is no
-                    /// trimming them back to `shared_memory_size` for the idle time;
+                    /// The region stays with the worker (kept, or never taken out), at whatever size
+                    /// this borrow grew it to. It is sealed against shrinking, so there is no
+                    /// trimming it back to `shared_memory_size` for the idle time;
                     /// `shared_memory_max_size` is what a pooled worker may hold, and the holder
                     /// charges the server for exactly that.
                 }
@@ -3752,10 +3705,10 @@ namespace
             /// between this read and the charge below cannot be closed (the command can extend the
             /// file at any instant), which is why the charge is capped as well. It cannot come after
             /// the borrow's charge is released: a worker found over the cap is destroyed
-            /// here, which can take up to `command_termination_timeout`, and its regions stay
-            /// mapped until then - they are to be counted against the query for all of that time,
+            /// here, which can take up to `command_termination_timeout`, and its region stays
+            /// mapped until then - it is to be counted against the query for all of that time,
             /// not left uncounted by every tracker.
-            if (keep_command && command_holder && !regionsAreWithinTheCap())
+            if (keep_command && command_holder && !regionIsWithinTheCap())
             {
                 keep_command = false;
                 /// The stdin was left open above, for a worker that was going back to the pool.
@@ -3764,20 +3717,16 @@ namespace
                 /// on a child that is blocked reading its next request.
                 closeStdinNoThrow(/*command_is_reused=*/ false);
                 command = nullptr;
-                for (size_t i = 0; i < regions.size(); ++i)
-                {
-                    regions[i].reset();
-                    command_holder->resetSharedMemory(i);
-                    regions_created_by_this_borrow[i] = false;
-                }
+                shared_memory_region.reset();
+                command_holder->resetSharedMemory();
+                region_created_by_this_borrow = false;
             }
 
-            /// Release the per-borrow memory charge on the query thread. The producer thread is
-            /// joined above, so this total is final.
-            if (size_t charge = query_memory_charge.load(std::memory_order_relaxed))
-                unchargeQueryMemory(charge);
+            /// Release the per-borrow memory charge on the query thread.
+            if (query_memory_charge)
+                unchargeQueryMemory(query_memory_charge);
 
-            /// Whatever regions the holder still owns outlive this borrow, so they are charged
+            /// A region the holder still owns outlives this borrow, so it is charged
             /// again - globally this time - now that the borrow's charge is gone. There is no way
             /// to move a charge between trackers atomically, so one of the two orders has to be
             /// picked: this one leaves the bytes uncounted for the moment in between, the other
@@ -3810,19 +3759,13 @@ namespace
         SharedHeader sample_block;
         Block input_header;
 
-        /// Whether the one request a function without arguments makes has been made. Touched only
-        /// by whichever thread serializes the input - the producer thread in pipelined mode, the
-        /// query thread otherwise - and never by both.
+        /// Whether the one request a function without arguments makes has been made.
         bool zero_argument_request_sent = false;
 
         ShellCommandSourceConfiguration configuration;
 
-        /// regions[0] is used by both transports; regions[1] is the second double-buffer used only
-        /// in pipelined mode. active_index is the buffer the consumer currently exchanges/reads.
-        std::array<SharedMemoryRegionPtr, 2> regions;
-        std::array<bool, 2> regions_created_by_this_borrow{};
-        size_t active_index = 0;
-        bool holding_buffer = false;
+        SharedMemoryRegionPtr shared_memory_region;
+        bool region_created_by_this_borrow = false;
         bool constructor_finished = false;
 
         /// Set while the input for the next request is being serialized, before that request is
@@ -3837,12 +3780,14 @@ namespace
         /// Whether the process served an earlier borrow (and may have left output on its pipes),
         /// as opposed to one started for this borrow or as a replacement during it.
         bool worker_is_reused = false;
+        /// Whether the command's stderr fails the query (`stderr_reaction` `throw`). Known before
+        /// the reader is built, for `inspectPooledWorkerBeforeTheBorrow`.
+        bool stderr_throws;
         size_t shared_memory_max_size;
         /// The cap in the unit footprints come in - whole pages: a region of 16 bytes holds a page,
         /// and a cap of 16 bytes has to mean that page, not fail it on every borrow.
         size_t shared_memory_max_footprint;
-        bool pipeline_mode;
-        std::atomic<size_t> query_memory_charge = 0;
+        size_t query_memory_charge = 0;
 
         std::unique_ptr<TimeoutReadBufferFromFileDescriptor> timeout_command_out;
         std::unique_ptr<TimeoutWriteBufferFromFileDescriptor> timeout_command_in;
@@ -3873,20 +3818,7 @@ namespace
         QueryPipeline output_pipeline;
         std::unique_ptr<PullingPipelineExecutor> output_executor;
 
-        std::atomic<bool> command_is_invalid {false};
-
-
-        /// Background prefetcher for pipelined mode. Its thread reads the input pipeline and
-        /// serializes into the regions, so it is declared after both and is therefore destroyed
-        /// before them; its destructor stops and joins the thread.
-        ///
-        /// The two members below - the process and its holder - are destroyed before this one, and
-        /// the thread does reach the holder: growing a region on demand goes through it
-        /// (`ensureRegionFits` -> `growSharedMemory`). What makes that safe is not the declaration
-        /// order but `cleanup`, whose first statement is `stopProducer` - it joins the thread
-        /// before anything else is touched, and it is `noexcept`, so no path leaves the thread
-        /// running into the destructors. Keep it first.
-        DoubleBufferedProducer producer;
+        bool command_is_invalid = false;
 
         /// The worker process and its pool holder are taken over after EVERY other member, because
         /// every other member has to be able to throw without costing a healthy pooled worker: until
@@ -3895,7 +3827,7 @@ namespace
         /// members allocate in their default constructor, so this is not a theoretical ordering.
         ///
         /// Being last also makes them the first members destroyed, which is safe: `cleanup` runs
-        /// before any of that and has already stopped the producer, torn the pipelines down and
+        /// before any of that and has already torn the pipelines down and
         /// handed the command back, and ~TimeoutReadBufferFromFileDescriptor deliberately does not
         /// touch the descriptors the command owns.
         std::unique_ptr<ShellCommand> command;
@@ -3977,7 +3909,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
     bool is_executable_pool = (process_pool != nullptr);
 
     /// How a process is started. It is given the descriptors the child has to inherit - the
-    /// shared-memory regions, if any - so that the same builder serves both transports: the pipe
+    /// shared-memory region, if any - so that the same builder serves both transports: the pipe
     /// transport passes none.
     const bool execute_direct = configuration.execute_direct;
     command_config.collect_resource_usage = !is_executable_pool && source_configuration.sampler != nullptr;
@@ -4013,8 +3945,8 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 
     if (configuration.use_shared_memory)
     {
-        /// The regions and the process are both created inside the source, in that order: the
-        /// process inherits the regions' descriptors at `exec`, so they have to exist first. Doing
+        /// The region and the process are both created inside the source, in that order: the
+        /// process inherits the region's descriptor at `exec`, so it has to exist first. Doing
         /// it there also means a failure anywhere along the way - reserving a region, charging its
         /// memory, starting the process - is handled by the source's constructor cleanup, which
         /// returns the borrowed holder to the pool instead of permanently shrinking its capacity.
@@ -4030,7 +3962,6 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             std::move(input_pipes[0]),
             configuration.shared_memory_size,
             configuration.shared_memory_max_size,
-            configuration.shared_memory_pipeline,
             is_executable_pool,
             source_configuration,
             std::move(process_holder),

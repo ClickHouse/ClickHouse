@@ -1,0 +1,44 @@
+--- a worker that died in the pool has its last words reported
+1
+1
+2
+1
+1
+--- a worker that leaves a byte on its stdout is discarded
+Key 1
+Key 1
+Key 1
+3
+1
+--- a byte written after the hand-back probe does not reach the next query
+Key 1
+1
+Key 2
+1
+1	0
+1
+--- stderr a previous borrow left is not thrown at the next query
+1
+1
+3	3
+2
+1
+--- under none, a worker flooding stderr is never left blocked
+1
+1
+3	1
+3	1
+3	1
+--- a line on stderr with the answer under log_last keeps the worker
+3	1
+3
+--- a worker flooding its stdout after the answer is discarded without hanging
+3	3
+3
+1
+--- a worker discarded for its stdout does not fail a query under throw
+1
+1
+--- a command may close its stderr
+3	1
+0

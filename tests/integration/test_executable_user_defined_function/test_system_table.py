@@ -203,8 +203,7 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
             name,
             use_shared_memory,
             shared_memory_size,
-            shared_memory_max_size,
-            shared_memory_pipeline
+            shared_memory_max_size
         FROM system.user_defined_functions
         WHERE name IN ('test_working_udf', 'test_working_pool_udf')
         ORDER BY name
@@ -213,8 +212,8 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
     )
 
     assert TSV(result) == TSV([
-        ["test_working_pool_udf", 0, 0, 0, 0],
-        ["test_working_udf", 0, 0, 0, 0],
+        ["test_working_pool_udf", 0, 0, 0],
+        ["test_working_udf", 0, 0, 0],
     ])
 
     # What the function does about the command's stderr and exit code is part of its contract, and
@@ -348,7 +347,6 @@ def test_system_user_defined_functions_columns(started_cluster):
         "use_shared_memory",
         "shared_memory_size",
         "shared_memory_max_size",
-        "shared_memory_pipeline",
     ]
 
     actual_columns = result.strip().split('\n')

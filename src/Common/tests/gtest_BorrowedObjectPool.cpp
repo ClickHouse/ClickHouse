@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <thread>
@@ -386,4 +387,34 @@ TEST(BorrowedObjectPool, FailedHandoverOfAPooledObjectWakesWaitingBorrower)
     EXPECT_EQ(successful_borrows.load(), 1);
     EXPECT_EQ(pool.allocatedObjectsSize(), 1);
     EXPECT_EQ(pool.borrowedObjectsSize(), 0);
+}
+
+/// A timeout meant as "wait forever" - a huge `max_command_execution_time` - must still wait. Added
+/// to the clock without a bound it overflows the clock's counter, the deadline lands in the past, and
+/// a full pool fails the call at once.
+TEST(BorrowedObjectPool, HugeTimeoutWaits)
+{
+    BorrowedObjectPool<int> pool(1);
+
+    int object = 0;
+    ASSERT_TRUE(pool.tryBorrowObject(object, [] { return 1; }));
+
+    std::atomic<bool> borrowed = false;
+    std::thread borrower(
+        [&]
+        {
+            int borrowed_object = 0;
+            if (pool.tryBorrowObject(borrowed_object, [] { return 2; }, std::numeric_limits<size_t>::max() / 2))
+            {
+                borrowed = true;
+                pool.returnObject(std::move(borrowed_object));
+            }
+        });
+
+    /// The borrower is asleep on the full pool rather than failed at once.
+    EXPECT_TRUE(waitUntilWaitingBorrowers(pool, 1));
+
+    pool.returnObject(std::move(object));
+    borrower.join();
+    EXPECT_TRUE(borrowed.load());
 }

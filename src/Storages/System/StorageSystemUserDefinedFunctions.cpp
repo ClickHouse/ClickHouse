@@ -92,9 +92,9 @@ ColumnsDescription StorageSystemUserDefinedFunctions::getColumnsDescription()
             "Empty when the function failed to load."},
         {"check_exit_code", std::make_shared<DataTypeUInt8>(),
             "Whether the exit status of the command is held against the query (boolean). A non-zero "
-            "exit code fails it, and so does an exit status that could not be read: a command that "
-            "has finished writing its output is waited for up to `command_termination_timeout` "
-            "seconds, and a command that has not exited by then fails the query and is signalled."},
+            "exit code fails it. An `executable` command is waited for until it exits; an `executable_pool` "
+            "worker that is discarded is waited for up to `command_termination_timeout` seconds, and one "
+            "that has not exited by then fails the query and is signalled."},
         {"use_shared_memory", std::make_shared<DataTypeUInt8>(),
             "Whether the data is exchanged with the command through a shared-memory file instead of "
             "the `stdin`/`stdout` pipes (boolean)."},
@@ -102,10 +102,7 @@ ColumnsDescription StorageSystemUserDefinedFunctions::getColumnsDescription()
             "Initial size in bytes of the shared-memory region. 0 when `use_shared_memory` is disabled."},
         {"shared_memory_max_size", std::make_shared<DataTypeUInt64>(),
             "Size in bytes the shared-memory region may grow to on demand. Equal to `shared_memory_size` "
-            "when the region may not grow; 0 when `use_shared_memory` is disabled."},
-        {"shared_memory_pipeline", std::make_shared<DataTypeUInt8>(),
-            "Whether the next input block is serialized into a second shared-memory region on a "
-            "background thread while the command is still processing the current one (boolean)."}
+            "when the region may not grow; 0 when `use_shared_memory` is disabled."}
     };
 }
 
@@ -210,7 +207,6 @@ void StorageSystemUserDefinedFunctions::fillData(
             res_columns[i++]->insert(exec_config.use_shared_memory ? 1 : 0);
             res_columns[i++]->insert(exec_config.shared_memory_size);
             res_columns[i++]->insert(exec_config.shared_memory_max_size);
-            res_columns[i++]->insert(exec_config.shared_memory_pipeline ? 1 : 0);
         }
         else
         {
@@ -218,9 +214,8 @@ void StorageSystemUserDefinedFunctions::fillData(
             // Config fields: type, command, format, return_type, return_name, argument_types, argument_names,
             // max_command_execution_time, command_termination_timeout, command_read_timeout, command_write_timeout,
             // command_pipe_capacity, pool_size, send_chunk_header, execute_direct, lifetime, deterministic,
-            // stderr_reaction, check_exit_code, use_shared_memory, shared_memory_size, shared_memory_max_size,
-            // shared_memory_pipeline
-            constexpr size_t config_fields_count = 23;
+            // stderr_reaction, check_exit_code, use_shared_memory, shared_memory_size, shared_memory_max_size
+            constexpr size_t config_fields_count = 22;
             for (size_t j = 0; j < config_fields_count; ++j)
                 res_columns[i++]->insertDefault();
         }

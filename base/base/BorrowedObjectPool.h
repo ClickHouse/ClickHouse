@@ -69,7 +69,15 @@ public:
         /// One deadline for the whole call: the wait below can be entered more than once (a slot
         /// that frees up wakes this thread, and another thread may take it first), and restarting
         /// the timeout each time would let the call outlast the timeout it was given.
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_in_milliseconds);
+        ///
+        /// Saturated at the clock's maximum rather than added blindly: a timeout meant as "wait
+        /// forever" (a huge `max_command_execution_time`) would overflow the clock's counter and put
+        /// the deadline in the past, failing the call at once instead of waiting.
+        const auto now = std::chrono::steady_clock::now();
+        const auto max_wait = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::time_point::max() - now);
+        const auto deadline = timeout_in_milliseconds >= static_cast<uint64_t>(max_wait.count())
+            ? std::chrono::steady_clock::time_point::max()
+            : now + std::chrono::milliseconds(timeout_in_milliseconds);
 
         while (true)
         {

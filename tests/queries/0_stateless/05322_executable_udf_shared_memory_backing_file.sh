@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-msan
+# Tags: no-msan, no-darwin
 # - no-msan: Memory Sanitizer cannot work with vfork, which starts the command
+# - no-darwin: shared-memory regions for executable UDFs are supported only on Linux
 
 # A command holds a writable descriptor to its shared-memory region, and the seals stop it only from
 # shrinking the file: it can extend the file, commit pages past its end (`fallocate` with

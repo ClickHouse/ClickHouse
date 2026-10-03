@@ -31,12 +31,11 @@ using ShellCommandHolderPtr = std::unique_ptr<ShellCommandHolder>;
 
 /// The configuration options that only the shared-memory transport understands. `use_shared_memory`
 /// comes first: it is the one that turns the transport on, and the rest only qualify it.
-inline constexpr std::array<std::string_view, 4> SHARED_MEMORY_CONFIGURATION_KEYS
+inline constexpr std::array<std::string_view, 3> SHARED_MEMORY_CONFIGURATION_KEYS
 {
     "use_shared_memory",
     "shared_memory_size",
     "shared_memory_max_size",
-    "shared_memory_pipeline",
 };
 
 /// Throws if any of the options above appears under `config_prefix`. For a surface that does not
@@ -126,11 +125,6 @@ public:
         /// Upper bound in bytes to which the region may grow on demand. When it equals
         /// shared_memory_size the region never grows. Valid only if use_shared_memory = true.
         size_t shared_memory_max_size = 0;
-
-        /// Overlap serialization of the next chunk with the child's processing of the current one
-        /// using two regions and a background thread. Doubles the region memory. Valid only if
-        /// use_shared_memory = true.
-        bool shared_memory_pipeline = false;
 
 
     };

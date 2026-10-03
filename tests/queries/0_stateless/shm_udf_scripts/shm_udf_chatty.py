@@ -29,7 +29,7 @@ def read_varint(stream):
         shift += 7
 
 
-def write_varint(stream, value):
+def encode_varint(value):
     out = bytearray()
     while True:
         byte = value & 0x7F
@@ -39,7 +39,7 @@ def write_varint(stream, value):
         else:
             out.append(byte)
             break
-    stream.write(bytes(out))
+    return bytes(out)
 
 
 def main():
@@ -77,12 +77,19 @@ def main():
         finally:
             region.close()
 
-        write_varint(stdout, request_id)
-        write_varint(stdout, STATUS_OK)
-        write_varint(stdout, output_offset)
-        write_varint(stdout, len(output))
-        # The response is over; this byte is not part of it and not part of anything else.
-        stdout.write(b"\n")
+        # The response frame, and after it a byte that is not part of it and not part of anything
+        # else - in one write, so that the byte is in the pipe by the time the server has read the
+        # frame out of it. Written field by field, it would go out in separate writes wherever
+        # `stdout` is unbuffered (`PYTHONUNBUFFERED`, set in CI), and the server could finish the
+        # invocation and pronounce the worker clean before this process wrote the byte. A worker
+        # discarded for that only at its next borrow is not counted by a query that never comes.
+        stdout.write(
+            encode_varint(request_id)
+            + encode_varint(STATUS_OK)
+            + encode_varint(output_offset)
+            + encode_varint(len(output))
+            + b"\n"
+        )
         stdout.flush()
 
 

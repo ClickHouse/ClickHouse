@@ -1,27 +1,22 @@
 #!/usr/bin/python3
 
-# Misbehaving pooled UDF: it answers every request correctly and then, a moment later, writes a line
-# to its `stderr`. Nothing in this invocation notices - stderr is read together with the response,
-# and by the time this line is written that read is over. The next request on the same process is
-# the one that drains it and reports it as *its* output; under `stderr_reaction` `throw` that next
-# query fails, for something a previous query's arguments caused. The server must therefore refuse
-# to return this worker to the pool.
+# A pooled UDF that writes a line to its `stderr` with every answer: after it has computed the
+# answer, and before it sends the response frame. The line is therefore on the pipe before the
+# server has the whole frame, and the server, which polls stderr together with stdout while it
+# waits for the response, takes it off the pipe within the same invocation - so it is attributed to
+# the query that caused it, whatever the reaction is, and never to the next one.
 #
-# The pause before the write is what makes the misbehaviour reproducible rather than accidental. A
-# line written immediately after the response does not leak at all: the server is asleep in `poll`
-# waiting for that response, and a woken `poll` re-scans the descriptors it was given, so a line
-# written within the thread's wake-up latency - microseconds - is reported ready along with the
-# response and drained into the query that earned it. Only a command that writes later, once that
-# read is over, leaves anything behind. This one waits long enough to be sure it is that command,
-# and briefly enough to still be inside the borrow (the server is parsing the answer, which the test
-# makes take far longer than this).
+# A line written after the frame is a different case, and not one a test can pin down: once the
+# server has the response it no longer waits for the command, so whether the line is in time for
+# the check before the worker goes back to the pool is up to the scheduler. A line that misses that
+# check is found by the next borrow, which is tested with a command that waits for it
+# (`shm_udf_stderr_flood_after_gap.py`).
 #
 # It answers with its own pid, so a test can tell a fresh worker from a reused one.
 
 import mmap
 import os
 import sys
-import time
 
 PROTOCOL_VERSION = 1
 STATUS_OK = 0
@@ -41,7 +36,7 @@ def read_varint(stream):
         shift += 7
 
 
-def write_varint(stream, value):
+def encode_varint(value):
     out = bytearray()
     while True:
         byte = value & 0x7F
@@ -51,7 +46,7 @@ def write_varint(stream, value):
         else:
             out.append(byte)
             break
-    stream.write(bytes(out))
+    return bytes(out)
 
 
 def main():
@@ -90,17 +85,18 @@ def main():
         finally:
             region.close()
 
-        write_varint(stdout, request_id)
-        write_varint(stdout, STATUS_OK)
-        write_varint(stdout, output_offset)
-        write_varint(stdout, len(output))
-        stdout.flush()
-
-        # Too late: the response above is what the server was waiting for, and it has long stopped
-        # reading by now, so this belongs to nobody until the next borrow picks it up.
-        time.sleep(0.002)
+        # Before the frame, so that the server is still waiting for this response when the line is
+        # on the pipe.
         stderr.write(b"done\n")
         stderr.flush()
+
+        stdout.write(
+            encode_varint(request_id)
+            + encode_varint(STATUS_OK)
+            + encode_varint(output_offset)
+            + encode_varint(len(output))
+        )
+        stdout.flush()
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-msan
+# Tags: no-msan, no-darwin
 # - no-msan: Memory Sanitizer cannot work with vfork, which starts the command
+# - no-darwin: shared-memory regions for executable UDFs are supported only on Linux
 
 # The shared-memory options of an executable UDF are checked when its configuration is loaded: a
 # function with an invalid combination is never created, the loader says why, and the functions
@@ -25,8 +26,8 @@ function shm_function()
     shm_function shm_ok executable "<use_shared_memory>1</use_shared_memory><shared_memory_size>1048576</shared_memory_size>"
     shm_function shm_grow executable \
         "<use_shared_memory>1</use_shared_memory><shared_memory_size>16</shared_memory_size><shared_memory_max_size>1048576</shared_memory_max_size>"
-    shm_function shm_pipeline_pool executable_pool \
-        "<use_shared_memory>1</use_shared_memory><shared_memory_size>1048576</shared_memory_size><shared_memory_pipeline>1</shared_memory_pipeline>"
+    shm_function shm_pool executable_pool \
+        "<use_shared_memory>1</use_shared_memory><shared_memory_size>1048576</shared_memory_size>"
 
     shm_function bad_chunk_header executable \
         "<use_shared_memory>1</use_shared_memory><shared_memory_size>1048576</shared_memory_size><send_chunk_header>1</send_chunk_header>"
@@ -34,9 +35,8 @@ function shm_function()
     # function that was explicitly configured for shared memory run over the pipes instead. The
     # rejection is on the key being present, not on its value - a knob written out at its own
     # default says just as clearly that its author believed the function used shared memory.
-    shm_function bad_pipeline_no_shm executable "<shared_memory_pipeline>1</shared_memory_pipeline>"
-    shm_function bad_pipeline_default_no_shm executable "<shared_memory_pipeline>0</shared_memory_pipeline>"
     shm_function bad_size_no_shm executable "<shared_memory_size>1048576</shared_memory_size>"
+    shm_function bad_max_size_default_no_shm executable "<shared_memory_max_size>0</shared_memory_max_size>"
     shm_function bad_max_size_no_shm executable "<shared_memory_max_size>1048576</shared_memory_max_size>"
     shm_function bad_max_lt_size executable \
         "<use_shared_memory>1</use_shared_memory><shared_memory_size>1048576</shared_memory_size><shared_memory_max_size>524288</shared_memory_max_size>"
@@ -51,9 +51,6 @@ function shm_function()
     # is the next page boundary, one past the signed range.
     shm_function bad_int64_max executable \
         "<use_shared_memory>1</use_shared_memory><shared_memory_size>9223372036854775807</shared_memory_size>"
-    # The pipelined mode maps two regions, and it is their sum that has to stay in range.
-    shm_function bad_pipeline_huge executable \
-        "<use_shared_memory>1</use_shared_memory><shared_memory_size>9223372036854775807</shared_memory_size><shared_memory_pipeline>1</shared_memory_pipeline>"
 } | shm_functions
 
 shm_local "
@@ -68,20 +65,18 @@ shm_local "
     SELECT name, load_status,
         multiIf(
             loading_error_message LIKE '%\`use_shared_memory\` is incompatible with \`send_chunk_header\`%', 'chunk header',
-            loading_error_message LIKE '%\`shared_memory_pipeline\` requires \`use_shared_memory\`%', 'pipeline without shm',
             loading_error_message LIKE '%\`shared_memory_size\` requires \`use_shared_memory\`%', 'size without shm',
             loading_error_message LIKE '%\`shared_memory_max_size\` requires \`use_shared_memory\`%', 'max size without shm',
             loading_error_message LIKE '%\`shared_memory_max_size\` (524288) must not be smaller%', 'max size below size',
             loading_error_message LIKE '%\`shared_memory_size\` must be greater than zero%', 'no size',
             loading_error_message LIKE '%\`shared_memory_size\` (18446744073709551615) must not exceed%', 'past Int64',
-            loading_error_message LIKE '%total shared-memory charge (1 regions of up to 9223372036854775808 bytes, rounded up to whole pages) must not exceed 9223372036854775807%', 'Int64 max in pages',
-            loading_error_message LIKE '%total shared-memory charge (2 regions of up to%', 'two regions past Int64',
+            loading_error_message LIKE '%shared-memory charge (up to 9223372036854775808 bytes, rounded up to whole pages) must not exceed 9223372036854775807%', 'Int64 max in pages',
             loading_error_message)
     FROM system.user_defined_functions WHERE name LIKE 'bad\\_%' ORDER BY name;
 
     -- What the transport is configured with is answerable from SQL. A region that may grow reports
     -- the bound it may grow to, not the raw \`0\` the configuration uses for \"it may not\"; a function
     -- the loader refused has no configuration at all, so its columns are at their defaults.
-    SELECT name, load_status, use_shared_memory, shared_memory_size, shared_memory_max_size, shared_memory_pipeline
-    FROM system.user_defined_functions WHERE name IN ('shm_ok', 'shm_grow', 'shm_pipeline_pool', 'bad_size_no_shm') ORDER BY name;
+    SELECT name, load_status, use_shared_memory, shared_memory_size, shared_memory_max_size
+    FROM system.user_defined_functions WHERE name IN ('shm_ok', 'shm_grow', 'shm_pool', 'bad_size_no_shm') ORDER BY name;
 "

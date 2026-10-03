@@ -103,7 +103,7 @@ def main():
             time.sleep(1)
             stdout.write(b"\x00")
             stdout.flush()
-            with open("/tmp/shm_udf_stray_byte_written", "w"):
+            with open(sys.argv[sys.argv.index("--marker") + 1], "w"):
                 pass
 
         threading.Thread(target=litter, daemon=True).start()

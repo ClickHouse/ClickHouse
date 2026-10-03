@@ -238,7 +238,6 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     bool use_shared_memory = config.getBool(key_in_config + ".use_shared_memory", false);
     size_t shared_memory_size = config.getUInt64(key_in_config + ".shared_memory_size", 0);
     size_t shared_memory_max_size = config.getUInt64(key_in_config + ".shared_memory_max_size", 0);
-    bool shared_memory_pipeline = config.getBool(key_in_config + ".shared_memory_pipeline", false);
 
     if (use_shared_memory)
     {
@@ -273,14 +272,13 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
 
         /// What gets charged is the footprint, which is measured in whole pages: a cap of
         /// `INT64_MAX` bytes passes the checks above and rounds up to a figure the tracker cannot
-        /// represent. So the rounded figure is the one that has to fit, with all regions summed.
-        UInt64 shared_memory_region_count = shared_memory_pipeline ? 2 : 1;
+        /// represent. So the rounded figure is the one that has to fit.
         UInt64 shared_memory_max_footprint = SharedMemoryRegion::roundUpToPages(shared_memory_max_size);
-        if (shared_memory_max_footprint > max_shared_memory_size / shared_memory_region_count)
+        if (shared_memory_max_footprint > max_shared_memory_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Executable user defined function {}: total shared-memory charge ({} regions of up to {} bytes, "
+                "Executable user defined function {}: shared-memory charge (up to {} bytes, "
                 "rounded up to whole pages) must not exceed {}",
-                name, shared_memory_region_count, shared_memory_max_footprint, max_shared_memory_size);
+                name, shared_memory_max_footprint, max_shared_memory_size);
 
         /// Validate platform support (`memfd_create` with sealing) while loading the function, so
         /// an unusable platform is rejected once instead of failing every invocation.
@@ -292,7 +290,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
         /// configuration that spells one out without enabling that transport is a mistake: the
         /// function silently runs over the pipes instead, which is the one outcome whoever wrote
         /// that line did not intend. Reject on the key being present rather than on its value -
-        /// `<shared_memory_pipeline>0</shared_memory_pipeline>` says just as clearly that its
+        /// `<shared_memory_size>0</shared_memory_size>` says just as clearly that its
         /// author believed this function used shared memory, and it is just as wrong.
         for (const auto & shared_memory_key : SHARED_MEMORY_CONFIGURATION_KEYS)
         {
@@ -395,8 +393,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
         .is_user_defined_function = true,
         .use_shared_memory = use_shared_memory,
         .shared_memory_size = shared_memory_size,
-        .shared_memory_max_size = shared_memory_max_size,
-        .shared_memory_pipeline = shared_memory_pipeline
+        .shared_memory_max_size = shared_memory_max_size
     };
 
     auto coordinator = std::make_shared<ShellCommandSourceCoordinator>(shell_command_coordinator_configration);
