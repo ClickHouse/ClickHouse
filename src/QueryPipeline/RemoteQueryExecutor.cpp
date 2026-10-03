@@ -36,7 +36,6 @@
 #include <base/scope_guard.h>
 
 #include <Access/AccessControl.h>
-#include <Access/EnabledQuota.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 
@@ -1005,10 +1004,11 @@ void RemoteQueryExecutor::processProfileEventsPacket(Block block)
 {
     /// The local counters of the query do not include what the remote servers do for it, so their
     /// reports are collected for the quotas over profile events, which are charged at the end of the
-    /// query with both. Only when such limits govern the query: otherwise nothing reads them.
-    if (auto quota = context->getQuota(); quota && quota->hasProfileEventLimits())
-        if (auto process_list_elem = context->getProcessListElementSafe())
-            process_list_elem->addRemoteProfileEvents(block);
+    /// query with both. They are collected regardless of whether such limits govern the query now:
+    /// a limit installed by `ALTER QUOTA` while the query runs applies to the whole query at its end,
+    /// and the reports received before that could not be reconstructed.
+    if (auto process_list_elem = context->getProcessListElementSafe())
+        process_list_elem->addRemoteProfileEvents(block);
 
     /// Pass profile events from remote server to client
     if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())

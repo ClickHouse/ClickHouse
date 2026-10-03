@@ -129,8 +129,8 @@ protected:
     Progress progress_out;
 
     /// Profile events reported by the remote servers executing parts of this query. They are not
-    /// part of the local counters of `thread_group` and are collected only for the quotas over
-    /// profile events; allocated on the first report.
+    /// part of the local counters of `thread_group` and are collected for the quotas over profile
+    /// events; allocated on the first report.
     mutable std::mutex remote_profile_events_mutex;
     std::unique_ptr<ProfileEvents::Counters> remote_profile_events TSA_GUARDED_BY(remote_profile_events_mutex);
 

@@ -981,7 +981,8 @@ void logQueryException(
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     bool internal,
     bool log_as_internal,
-    bool log_error)
+    bool log_error,
+    bool charge_quota_profile_events)
 {
     const Settings & settings = context->getSettingsRef();
     auto log_queries = settings[Setting::log_queries];
@@ -1006,7 +1007,8 @@ void logQueryException(
     /// The resources the failed query consumed, including the failure itself (`FailedQuery` and
     /// friends), count against the quotas over profile events. Like the predefined `errors`
     /// counter, only the outer query of an internal one is charged (see `chargesQuotaProfileEvents`).
-    if (chargesQuotaProfileEvents(query_ast, internal))
+    /// A query exempt from quotas (see `IInterpreter::ignoreQuota`) is not charged.
+    if (charge_quota_profile_events && chargesQuotaProfileEvents(query_ast, internal))
         usedQuotaProfileEvents(context->getQuota(), process_list_elem, elem.normalized_query_hash);
 
     QueryStatusInfoPtr info;
@@ -1063,7 +1065,8 @@ void logExceptionBeforeStart(
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     UInt64 elapsed_milliseconds,
     bool internal,
-    bool log_as_internal)
+    bool log_as_internal,
+    bool charge_quota_profile_events)
 {
     auto query_end_time = std::chrono::system_clock::now();
 
@@ -1149,7 +1152,8 @@ void logExceptionBeforeStart(
 
     QueryStatusPtr process_list_elem = context->getProcessListElementSafe();
 
-    if (chargesQuotaProfileEvents(ast, internal))
+    /// A query exempt from quotas (see `IInterpreter::ignoreQuota`) is not charged.
+    if (charge_quota_profile_events && chargesQuotaProfileEvents(ast, internal))
     {
         if (process_list_elem)
             usedQuotaProfileEvents(quota, process_list_elem, normalized_query_hash);
@@ -2753,6 +2757,10 @@ static BlockIO executeQueryImpl(
     String query_database;
     String query_table;
 
+    /// Whether the interpreter has exempted the query from quotas (see `IInterpreter::ignoreQuota`).
+    /// Such a query is not charged against the quotas over profile events on failure either.
+    bool quota_ignored = false;
+
     try
     {
         if (auto txn = context->getCurrentTransaction())
@@ -3229,7 +3237,10 @@ static BlockIO executeQueryImpl(
                 if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
                     interpreter_with_analyzer->getQueryPlan();
 
-                if (!(interpreter && interpreter->ignoreQuota()) && !quota_checked)
+                if (interpreter && interpreter->ignoreQuota())
+                    quota_ignored = true;
+
+                if (!quota_ignored && !quota_checked)
                 {
                     quota = context->getQuota();
                     if (quota)
@@ -3458,7 +3469,7 @@ static BlockIO executeQueryImpl(
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), quota_ignored, normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
             {
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -3477,7 +3488,7 @@ static BlockIO executeQueryImpl(
                 }
 
                 /// Also charges the quotas over profile events with what the failed query consumed.
-                logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error);
+                logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error, /* charge_quota_profile_events = */ !quota_ignored);
             };
 
             res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
@@ -3496,7 +3507,7 @@ static BlockIO executeQueryImpl(
             txn->onException();
         }
 
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal, /* charge_quota_profile_events = */ !quota_ignored);
 
         throw;
     }
