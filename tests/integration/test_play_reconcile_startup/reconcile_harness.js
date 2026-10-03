@@ -489,24 +489,15 @@ function extractTopLevelFunction(js, name) {
 }
 
 async function checkAuthHeaderTransport(js) {
-    const canSendRawSource = extractTopLevelFunction(js, 'canSendRawAuthHeader');
-    const getAuthHeadersSource = extractTopLevelFunction(js, 'getAuthHeaders');
-    const getLegacyAuthQueryParamsSource = extractTopLevelFunction(js, 'getLegacyAuthQueryParams');
-    const responseRejectsEncodedWebUIAuthSource = extractTopLevelFunction(js, 'responseRejectsEncodedWebUIAuth');
-    const fetchWithRequestAuthSource = extractTopLevelFunction(js, 'fetchWithRequestAuth');
-    const serverPredatesDefaultSessionUserSource = extractTopLevelFunction(js, 'serverPredatesDefaultSessionUser');
-    const getAuthProbeKeySource = extractTopLevelFunction(js, 'getAuthProbeKey');
-    const probeServerStatusSource = extractTopLevelFunction(js, 'probeServerStatus');
-    const getSharedServerStatusProbeSource = extractTopLevelFunction(js, 'getSharedServerStatusProbe');
-    const getRequestAuthHeadersSource = extractTopLevelFunction(js, 'getRequestAuthHeaders');
-    const invalidateRequestAuthOnFailureSource = extractTopLevelFunction(js, 'invalidateRequestAuthOnFailure');
+    const authStart = js.indexOf('function canSendRawAuthHeader(value) {');
+    const authEnd = js.indexOf('/// `quiet` runs a background panel-maintenance query', authStart);
+    if (authStart === -1 || authEnd === -1)
+        throw new Error('Web UI auth helper block not found in play.html');
+    const authSource = js.slice(authStart, authEnd);
 
     const makeAuthHelpers = (fetchImpl) => vm.runInNewContext(
-        `${canSendRawSource}\n${getAuthHeadersSource}\n${getLegacyAuthQueryParamsSource}\n` +
-        `${responseRejectsEncodedWebUIAuthSource}\n${fetchWithRequestAuthSource}\n${serverPredatesDefaultSessionUserSource}\n` +
-        `const authProbeRequests = new Map();\nconst authProbeResults = new Map();\n${getAuthProbeKeySource}\n${probeServerStatusSource}\n` +
-        `${getSharedServerStatusProbeSource}\n${getRequestAuthHeadersSource}\n${invalidateRequestAuthOnFailureSource}\n` +
-        '({ getAuthHeaders, getRequestAuthHeaders, fetchWithRequestAuth, invalidateRequestAuthOnFailure, serverPredatesDefaultSessionUser })',
+        authSource +
+        '\n({ getAuthHeaders, fetchWithRequestAuth, serverPredatesDefaultSessionUser })',
         { Headers, fetch: fetchImpl },
     );
     const helpers = makeAuthHelpers(async () => { throw new Error('unexpected fetch'); });
@@ -534,7 +525,7 @@ async function checkAuthHeaderTransport(js) {
             Authorization: 'never',
             'X-ClickHouse-Key': 'secret',
         }],
-        ['default-user-legacy-probe', '', 'secret', true, {
+        ['default-user-legacy-retry', '', 'secret', true, {
             Authorization: 'never',
             'X-ClickHouse-User': 'default',
             'X-ClickHouse-Key': 'secret',
@@ -557,128 +548,149 @@ async function checkAuthHeaderTransport(js) {
     check('auth-header-cases', 'future major supports default_session_user',
         helpers.serverPredatesDefaultSessionUser('27.1.1.1') === false);
 
-    const requestFunctions = [
-        ['auxiliaryQuery', 'fetchWithRequestAuth(',
-            'invalidateRequestAuthOnFailure(response, server_address, user, password)'],
-        ['postImpl', 'fetchWithRequestAuth(',
-            'invalidateRequestAuthOnFailure(response, server_address, user, password)'],
-        ['loadCompletions', 'fetchWithRequestAuth(',
-            'invalidateRequestAuthOnFailure(response, server_address, user, password)'],
-    ];
-    for (const [name, authFetchCall, invalidationCall] of requestFunctions) {
+    const requestFunctions = ['auxiliaryQuery', 'postImpl', 'loadCompletions'];
+    for (const name of requestFunctions) {
         const source = extractTopLevelFunction(js, name);
-        check('auth-header-cases', `${name} routes scripted requests through auth compatibility`,
-            source.includes(authFetchCall), name);
-        check('auth-header-cases', `${name} invalidates a disproved raw-default classification`,
-            source.includes(invalidationCall), name);
-        check('auth-header-cases', `${name} does not append credentials directly to its URL`,
+        check('auth-header-cases', name + ' routes scripted requests through auth compatibility',
+            source.includes('fetchWithRequestAuth('), name);
+        check('auth-header-cases', name + ' does not append credentials directly to its URL',
             !/url \+= '&(?:user|password)=/.test(source), name);
     }
-
     const statusSource = extractTopLevelFunction(js, 'getServerStatus');
-    check('auth-header-cases', 'getServerStatus shares the same in-flight compatibility probe',
+    check('auth-header-cases', 'getServerStatus shares in-flight compatibility probes',
         statusSource.includes('getSharedServerStatusProbe(server_address, user, password)'));
     check('auth-header-cases', 'getServerStatus does not append credentials to its URL',
         !/url \+= '&(?:user|password)=/.test(statusSource));
 
-    /// Immediate-run regression: no credential-badge probe has completed first. A legacy endpoint
-    /// must resolve the explicit default user before the real query is issued.
-    const pathCalls = [];
-    const pathHelpers = makeAuthHelpers(async (url, options) => {
-        const parsed = new URL(url);
-        const explicit_default = options.headers['X-ClickHouse-User'] === 'default';
-        const legacy = parsed.pathname === '/legacy';
-        pathCalls.push({ path: parsed.pathname, headers: options.headers });
-        if (legacy && !explicit_default)
-            return { ok: false, status: 403, json: async () => ({}) };
+    /// Healthy modern password-only connections must not run a hidden compatibility query first.
+    const modernRawCalls = [];
+    const modernRawHelpers = makeAuthHelpers(async (url, options) => {
+        modernRawCalls.push({ url, body: options.body, headers: options.headers });
         return {
-            ok: true,
-            status: 200,
-            json: async () => ({ v: legacy ? '26.6.9.1' : '26.7.1.1', t: 1 }),
+            ok: true, status: 200, headers: { get: () => null },
+            json: async () => ({ v: '26.7.1.1', t: 1 }),
         };
     });
-    const legacyHeaders = await pathHelpers.getRequestAuthHeaders('', 'secret', 'https://remote.example/legacy');
-    check('auth-header-cases', 'an immediate legacy request resolves explicit default before the real query',
-        legacyHeaders['X-ClickHouse-User'] === 'default'
-            && pathCalls.length === 2
-            && pathCalls[0].headers['X-ClickHouse-User'] === undefined
-            && pathCalls[1].headers['X-ClickHouse-User'] === 'default',
-        { legacyHeaders, pathCalls });
+    const modernRawResponse = await modernRawHelpers.fetchWithRequestAuth(
+        'https://remote.example/query?query_kind=main',
+        { method: 'POST', body: 'SELECT currentUser()' },
+        'https://remote.example/query', '', 'secret');
+    check('auth-header-cases', 'modern password-only requests run without a compatibility probe',
+        modernRawResponse.ok
+            && modernRawCalls.length === 1
+            && modernRawCalls[0].headers['X-ClickHouse-User'] === undefined,
+        { modernRawCalls });
 
-    const beforeModern = pathCalls.length;
-    const modernHeaders = await pathHelpers.getRequestAuthHeaders('', 'secret', 'https://remote.example/modern');
-    check('auth-header-cases', 'same-origin paths do not share legacy-default classification',
-        modernHeaders['X-ClickHouse-User'] === undefined
-            && pathCalls.length === beforeModern + 1
-            && pathCalls[pathCalls.length - 1].path === '/modern',
-        { modernHeaders, pathCalls });
-
-    const beforeModernReuse = pathCalls.length;
-    const modernHeadersAgain = await pathHelpers.getRequestAuthHeaders('', 'secret', 'https://remote.example/modern');
-    check('auth-header-cases', 'settled modern compatibility is reused without another status probe',
-        modernHeadersAgain['X-ClickHouse-User'] === undefined
-            && pathCalls.length === beforeModernReuse,
-        { modernHeadersAgain, pathCalls });
-
-    /// Two consumers racing the same connection (for example checkCredentials and Run) share one
-    /// in-flight probe, and the settled endpoint classification is then reused by later requests.
-    const sharedCalls = [];
-    const sharedHelpers = makeAuthHelpers(async (url, options) => {
-        const explicit_default = options.headers['X-ClickHouse-User'] === 'default';
-        sharedCalls.push(options.headers);
-        await new Promise(resolve => setTimeout(resolve, 0));
-        if (!explicit_default)
-            return { ok: false, status: 403, json: async () => ({}) };
-        return { ok: true, status: 200, json: async () => ({ v: '26.6.9.1', t: 1 }) };
+    /// Pre-26.7 password-only connections retry the real request as default only after a
+    /// ClickHouse authentication failure and a harmless version probe proves the endpoint old.
+    const legacyRawCalls = [];
+    const legacyRawHelpers = makeAuthHelpers(async (url, options) => {
+        const explicitDefault = options.headers['X-ClickHouse-User'] === 'default';
+        legacyRawCalls.push({ url, body: options.body, headers: options.headers });
+        if (options.body === 'SELECT version() AS v, uptime() AS t') {
+            return {
+                ok: true, status: 200, headers: { get: () => null },
+                json: async () => ({ v: '26.6.9.1', t: 1 }),
+            };
+        }
+        if (!explicitDefault) {
+            return {
+                ok: false, status: 403,
+                headers: { get: name => name === 'X-ClickHouse-Exception-Code' ? '516' : null },
+                json: async () => ({}),
+            };
+        }
+        return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({}) };
     });
-    const [sharedA, sharedB] = await Promise.all([
-        sharedHelpers.getRequestAuthHeaders('', 'secret', 'https://remote.example/legacy'),
-        sharedHelpers.getRequestAuthHeaders('', 'secret', 'https://remote.example/legacy'),
-    ]);
-    check('auth-header-cases', 'concurrent real requests share one in-flight legacy probe',
-        sharedCalls.length === 2
-            && sharedA['X-ClickHouse-User'] === 'default'
-            && sharedB['X-ClickHouse-User'] === 'default',
-        { sharedCalls, sharedA, sharedB });
+    const legacyRawResponse = await legacyRawHelpers.fetchWithRequestAuth(
+        'https://remote.example/query?query_kind=main',
+        { method: 'POST', body: 'SELECT currentUser()' },
+        'https://remote.example/query', '', 'secret');
+    check('auth-header-cases', 'legacy password-only retry requires an old-version proof',
+        legacyRawResponse.ok
+            && legacyRawCalls.length === 3
+            && legacyRawCalls[0].headers['X-ClickHouse-User'] === undefined
+            && legacyRawCalls[1].body === 'SELECT version() AS v, uptime() AS t'
+            && legacyRawCalls[1].headers['X-ClickHouse-User'] === 'default'
+            && legacyRawCalls[2].headers['X-ClickHouse-User'] === 'default',
+        { legacyRawCalls });
 
-    /// Keep a successful endpoint classification until a real authentication failure disproves it.
-    /// The next request must then re-probe, so a backend change can self-heal without a reload.
-    let rollingLegacy = true;
-    const rollingCalls = [];
-    const rollingHelpers = makeAuthHelpers(async (url, options) => {
-        const explicit_default = options.headers['X-ClickHouse-User'] === 'default';
-        rollingCalls.push(options.headers);
-        if (rollingLegacy && !explicit_default)
-            return { ok: false, status: 403, json: async () => ({}) };
+    /// A modern auth failure may probe default harmlessly, but must not retry the user query as default.
+    const modernBadRawCalls = [];
+    const modernBadRawHelpers = makeAuthHelpers(async (url, options) => {
+        modernBadRawCalls.push({ url, body: options.body, headers: options.headers });
+        if (options.body === 'SELECT version() AS v, uptime() AS t') {
+            return {
+                ok: true, status: 200, headers: { get: () => null },
+                json: async () => ({ v: '26.7.1.1', t: 1 }),
+            };
+        }
         return {
-            ok: true,
-            status: 200,
-            json: async () => ({ v: rollingLegacy ? '26.6.9.1' : '26.7.1.1', t: 1 }),
+            ok: false, status: 403,
+            headers: { get: name => name === 'X-ClickHouse-Exception-Code' ? '516' : null },
+            json: async () => ({}),
         };
     });
-    const rollingAddress = 'https://remote.example/clickhouse';
-    const beforeUpgrade = await rollingHelpers.getRequestAuthHeaders('', 'secret', rollingAddress);
-    rollingLegacy = false;
-    const cachedAfterUpgrade = await rollingHelpers.getRequestAuthHeaders('', 'secret', rollingAddress);
-    const authFailure = {
-        ok: false,
-        headers: { get: name => name === 'X-ClickHouse-Exception-Code' ? '516' : null },
-    };
-    rollingHelpers.invalidateRequestAuthOnFailure(authFailure, rollingAddress, '', 'secret');
-    const callsBeforeReprobe = rollingCalls.length;
-    const afterUpgrade = await rollingHelpers.getRequestAuthHeaders('', 'secret', rollingAddress);
-    check('auth-header-cases', 'auth failure invalidates the endpoint classification and re-probes it',
-        beforeUpgrade['X-ClickHouse-User'] === 'default'
-            && cachedAfterUpgrade['X-ClickHouse-User'] === 'default'
-            && afterUpgrade['X-ClickHouse-User'] === undefined
-            && rollingCalls.length === callsBeforeReprobe + 1,
-        { beforeUpgrade, cachedAfterUpgrade, afterUpgrade, rollingCalls });
+    const modernBadRawResponse = await modernBadRawHelpers.fetchWithRequestAuth(
+        'https://remote.example/query?query_kind=main',
+        { method: 'POST', body: 'DROP TABLE should_not_retry' },
+        'https://remote.example/query', '', 'secret');
+    check('auth-header-cases', 'modern auth failures do not retry the user query as default',
+        !modernBadRawResponse.ok
+            && modernBadRawCalls.length === 2
+            && modernBadRawCalls[0].headers['X-ClickHouse-User'] === undefined
+            && modernBadRawCalls[1].body === 'SELECT version() AS v, uptime() AS t'
+            && modernBadRawCalls[1].headers['X-ClickHouse-User'] === 'default',
+        { modernBadRawCalls });
 
-    const authResponse = (status, { version = null, body = '', code = null } = {}) => {
+    /// No legacy classification is cached. A rolling upgrade uses omitted-user semantics immediately.
+    let rollingRawLegacy = true;
+    const rollingRawCalls = [];
+    const rollingRawHelpers = makeAuthHelpers(async (url, options) => {
+        const explicitDefault = options.headers['X-ClickHouse-User'] === 'default';
+        rollingRawCalls.push({ url, body: options.body, headers: options.headers, legacy: rollingRawLegacy });
+        if (!rollingRawLegacy)
+            return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({}) };
+        if (options.body === 'SELECT version() AS v, uptime() AS t') {
+            return {
+                ok: true, status: 200, headers: { get: () => null },
+                json: async () => ({ v: '26.6.9.1', t: 1 }),
+            };
+        }
+        if (!explicitDefault) {
+            return {
+                ok: false, status: 403,
+                headers: { get: name => name === 'X-ClickHouse-Exception-Code' ? '516' : null },
+                json: async () => ({}),
+            };
+        }
+        return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({}) };
+    });
+    const rollingRawUrl = 'https://remote.example/rolling-raw?query_kind=main';
+    await rollingRawHelpers.fetchWithRequestAuth(
+        rollingRawUrl, { method: 'POST', body: 'SELECT currentUser()' },
+        'https://remote.example/rolling-raw', '', 'secret');
+    rollingRawLegacy = false;
+    const callsBeforeRawUpgrade = rollingRawCalls.length;
+    await rollingRawHelpers.fetchWithRequestAuth(
+        rollingRawUrl, { method: 'POST', body: 'SELECT currentUser()' },
+        'https://remote.example/rolling-raw', '', 'secret');
+    const afterRawUpgrade = rollingRawCalls.slice(callsBeforeRawUpgrade);
+    check('auth-header-cases', 'rolling upgrade stops explicit-default auth on the next request',
+        afterRawUpgrade.length === 1
+            && afterRawUpgrade[0].headers['X-ClickHouse-User'] === undefined,
+        { rollingRawCalls });
+    const authResponse = (status, { version = null, body = '', code = null, displayName = null } = {}) => {
         const response = {
             ok: status >= 200 && status < 300,
             status,
-            headers: { get: name => name === 'X-ClickHouse-Exception-Code' ? code : null },
+            headers: {
+                get: name => {
+                    if (name === 'X-ClickHouse-Exception-Code') return code;
+                    if (name === 'X-ClickHouse-Server-Display-Name') return displayName;
+                    return null;
+                },
+            },
             json: async () => ({ v: version, t: 1 }),
             text: async () => body,
         };
@@ -769,7 +781,9 @@ async function checkAuthHeaderTransport(js) {
     const invalidPathCalls = [];
     const invalidPathHelpers = makeAuthHelpers(async (url, options) => {
         invalidPathCalls.push({ url, headers: options.headers });
-        return authResponse(404);
+        if (options.headers.Authorization === 'ClickHouse-Play')
+            return authResponse(404);
+        return authResponse(405);
     });
     const invalidPathResponse = await invalidPathHelpers.fetchWithRequestAuth(
         'https://remote.example/not-a-clickhouse-path?query_kind=main',
@@ -777,7 +791,7 @@ async function checkAuthHeaderTransport(js) {
         'https://remote.example/not-a-clickhouse-path',
         encodedUser,
         encodedPassword);
-    check('auth-header-cases', 'an invalid path does not leak credentials through fallback',
+    check('auth-header-cases', 'a generic non-404 route response does not leak credentials through fallback',
         invalidPathResponse.status === 404
             && invalidPathCalls.length === 2
             && invalidPathCalls.every(call => !new URL(call.url).searchParams.has('user')
