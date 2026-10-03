@@ -20,7 +20,6 @@
 SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
 SET optimize_read_in_order = 1;
-SET query_plan_read_in_order = 1;
 SET query_plan_read_in_order_through_join = 1;
 SET query_plan_join_swap_table = false;
 SET query_plan_max_limit_for_top_k_optimization = 0;
