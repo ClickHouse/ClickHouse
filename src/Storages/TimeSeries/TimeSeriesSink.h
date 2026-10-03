@@ -7,6 +7,7 @@
 #include <Parsers/ASTViewTargets.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/BlockIO.h>
+#include <Storages/TimeSeries/TimeSeriesDeduplicationCache.h>
 
 #include <string_view>
 #include <unordered_map>
@@ -112,6 +113,14 @@ private:
 
     /// Oldest timestamp the recent samples table keeps, in the units of its `timestamp` column.
     Int64 min_recent_sample_timestamp = 0;
+
+    /// Skip the rows already written to the "tags" and "metric families" tables, null if the corresponding cache is disabled.
+    TimeSeriesDeduplicationCachePtr tags_deduplication_cache;
+    TimeSeriesDeduplicationCachePtr metric_families_deduplication_cache;
+
+    /// Rows of the "tags" and "metric families" tables which this insert is going to write, they are marked as written when the insert is finished.
+    TimeSeriesDeduplicationCache::PendingRows pending_tags;
+    TimeSeriesDeduplicationCache::PendingRows pending_metric_families;
 };
 
 }

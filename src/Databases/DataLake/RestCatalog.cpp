@@ -160,6 +160,27 @@ String encodeNamespaceForURI(const String & namespace_name)
     return encoded;
 }
 
+/// A 404 status alone does not separate a namespace that is gone from an endpoint the catalog does
+/// not serve: both answer the same status. Only the Iceberg REST error `type` names the cause, so a
+/// body that is absent, unparseable or typed as anything else is not a vanished namespace.
+bool isNamespaceNotFound(const DB::HTTPException & e)
+{
+    if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+        return false;
+
+    try
+    {
+        Poco::JSON::Parser parser;
+        const auto response = parser.parse(e.getResponseBody()).extract<Poco::JSON::Object::Ptr>();
+        const auto error = response->getObject("error");
+        return error && error->getValue<String>("type") == "NoSuchNamespaceException";
+    }
+    catch (...) /// Ok: `false` leaves the 404 to be reported by the caller.
+    {
+        return false;
+    }
+}
+
 std::unordered_set<std::string> getAllowedBigLakeMetadataServiceHosts(
     const Poco::Util::AbstractConfiguration & config)
 {
@@ -296,7 +317,7 @@ void RestCatalog::validateAuthHeaders(const DB::HTTPHeaderEntry & header) const
     /// here, before `loadConfig` issues any request. Mirrors the CREATE-path check: a copy is
     /// validated and the original parsed header is kept.
     DB::HTTPHeaderEntries header_to_check{header};
-    getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_to_check);
+    getContext()->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(header_to_check);
 }
 
 DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(const CatalogState & catalog_state, bool update_token) const
@@ -1242,6 +1263,9 @@ void RestCatalog::getNamespacesRecursive(
     checkStackSize();
 
     auto namespaces = listChildNamespaces(base_namespace);
+    /// A namespace whose own child listing has since vanished stays in the result: an empty listing
+    /// is indistinguishable from a genuinely childless namespace, so dropping it here would also
+    /// drop leaf namespaces. Listing its tables yields nothing either way.
     result.reserve(result.size() + namespaces.size());
     result.insert(result.end(), namespaces.begin(), namespaces.end());
 
@@ -1350,12 +1374,25 @@ RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & bas
     }
     catch (const DB::HTTPException & e)
     {
+        /// A namespace listed by its parent a moment ago may already be dropped, and then has no
+        /// children. Only a descent can race: the root listing names no namespace, so nothing it
+        /// reports as missing was dropped from under this call.
+        if (!base_namespace.empty() && isNamespaceNotFound(e))
+        {
+            LOG_DEBUG(log, "Namespace `{}` disappeared while listing its children: {}", base_namespace, e.displayText());
+            return {};
+        }
+
         std::string message = fmt::format(
             "Received error while fetching list of namespaces from iceberg catalog `{}`. ",
             warehouse);
 
         if (!base_namespace.empty() && e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
-            message += "Namespace provided in the `parent` query parameter is not found. ";
+            message += fmt::format(
+                "The catalog returned 404 without a `NoSuchNamespaceException` error body, so either the "
+                "namespace `{}` provided in the `parent` query parameter is gone, or the sub-namespace "
+                "listing endpoint is not served at this route (for example by a proxy). ",
+                base_namespace);
 
         if (!base_namespace.empty()
             && (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_BAD_REQUEST
@@ -1468,45 +1505,59 @@ DB::Names RestCatalog::listTablesInNamespace(const std::string & base_namespace,
     /// any revisit triggers a duplicate `insert`.
     std::unordered_set<String> seen_tokens;
 
-    while (true)
+    try
     {
-        /// The Iceberg REST OpenAPI spec uses `pageToken` (request) / `next-page-token` (response)
-        /// for paginating the list-tables endpoint. Without this loop we silently return only the
-        /// first page when the catalog server (e.g. OneLake / BigLake / Microsoft Fabric) caps the
-        /// page size — making tables on later pages invisible to `SHOW TABLES` and `system.tables`.
-        Poco::URI::QueryParameters params;
-        if (!page_token.empty())
-            params.push_back({"pageToken", page_token});
+        while (true)
+        {
+            /// The Iceberg REST OpenAPI spec uses `pageToken` (request) / `next-page-token` (response)
+            /// for paginating the list-tables endpoint. Without this loop we silently return only the
+            /// first page when the catalog server (e.g. OneLake / BigLake / Microsoft Fabric) caps the
+            /// page size — making tables on later pages invisible to `SHOW TABLES` and `system.tables`.
+            Poco::URI::QueryParameters params;
+            if (!page_token.empty())
+                params.push_back({"pageToken", page_token});
 
-        auto buf = createReadBuffer(
-            *state_snapshot, state_snapshot->config.prefix / endpoint, params, /* headers */ {}, /* auth_headers */ std::nullopt);
+            auto buf = createReadBuffer(
+                *state_snapshot, state_snapshot->config.prefix / endpoint, params, /* headers */ {}, /* auth_headers */ std::nullopt);
 
-        /// Pass through the remaining limit so that single-page short-circuiting still works
-        /// when the caller is in `empty()` (limit=1) and the first page already contains a row.
-        const size_t remaining_limit = (limit == 0) ? 0 : (limit > tables.size() ? limit - tables.size() : 0);
-        String next_page_token;
-        auto page_tables = parseTables(*buf, base_namespace, remaining_limit, next_page_token);
+            /// Pass through the remaining limit so that single-page short-circuiting still works
+            /// when the caller is in `empty()` (limit=1) and the first page already contains a row.
+            const size_t remaining_limit = (limit == 0) ? 0 : (limit > tables.size() ? limit - tables.size() : 0);
+            String next_page_token;
+            auto page_tables = parseTables(*buf, base_namespace, remaining_limit, next_page_token);
 
-        tables.insert(
-            tables.end(),
-            std::make_move_iterator(page_tables.begin()),
-            std::make_move_iterator(page_tables.end()));
+            tables.insert(
+                tables.end(),
+                std::make_move_iterator(page_tables.begin()),
+                std::make_move_iterator(page_tables.end()));
 
-        if (limit && tables.size() >= limit)
-            break;
-        if (next_page_token.empty())
-            break;
-        /// Cycle guard: if the catalog returns a `next-page-token` we have already seen
-        /// on this request, iterating further would loop forever. Treat it as a malformed
-        /// catalog response rather than hanging `SHOW TABLES` / `system.tables`. This
-        /// covers immediate repeats (`A -> A`) and longer cycles (`A -> B -> A`, etc.).
-        if (!seen_tokens.insert(next_page_token).second)
-            throw DB::Exception(
-                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-                "Iceberg REST catalog returned a `next-page-token` (`{}`) already seen on this "
-                "request while listing tables in namespace `{}` — refusing to loop.",
-                next_page_token, base_namespace);
-        page_token = std::move(next_page_token);
+            if (limit && tables.size() >= limit)
+                break;
+            if (next_page_token.empty())
+                break;
+            /// Cycle guard: if the catalog returns a `next-page-token` we have already seen
+            /// on this request, iterating further would loop forever. Treat it as a malformed
+            /// catalog response rather than hanging `SHOW TABLES` / `system.tables`. This
+            /// covers immediate repeats (`A -> A`) and longer cycles (`A -> B -> A`, etc.).
+            if (!seen_tokens.insert(next_page_token).second)
+                throw DB::Exception(
+                    DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                    "Iceberg REST catalog returned a `next-page-token` (`{}`) already seen on this "
+                    "request while listing tables in namespace `{}` — refusing to loop.",
+                    next_page_token, base_namespace);
+            page_token = std::move(next_page_token);
+        }
+    }
+    catch (const DB::HTTPException & e)
+    {
+        /// The namespace was dropped between being listed and being read; it has no tables. The
+        /// error names the namespace, so no page collected so far is trustworthy: report none.
+        if (isNamespaceNotFound(e))
+        {
+            LOG_DEBUG(log, "Namespace `{}` disappeared while listing its tables: {}", base_namespace, e.displayText());
+            return {};
+        }
+        throw;
     }
 
     return tables;
@@ -1749,7 +1800,7 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
         wb->ignoreAll();
 }
 
-void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
+void RestCatalog::createNamespaceIfNotExists(const String & namespace_name) const
 {
     const auto state_snapshot = state.get();
 
@@ -1770,16 +1821,18 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT).generic_string();
 
+    /// The request body takes the namespace as a list of levels, unlike the URL form above.
+    /// No `location` property is sent. The catalog applies its warehouse default instead.
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
+        std::vector<String> levels;
+        /// TODO: a level that contains a dot cannot be expressed. The levels are joined with a dot
+        /// in `parseNamespaces`, so this split mirrors that join and `encodeNamespaceForURI`.
+        splitInto<'.'>(levels, namespace_name);
         Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
+        for (const auto & level : levels)
+            namespaces->add(level);
         request_body->set("namespace", namespaces);
-    }
-    {
-        Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
-        properties->set("location", location);
-        request_body->set("properties", properties);
     }
 
     try
@@ -1811,18 +1864,21 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
     request_body->set("partition-spec", metadata_content->getArray("partition-specs")->get(0));
 
-    {
-        Poco::JSON::Object::Ptr write_order = new Poco::JSON::Object;
-        write_order->set("order-id", 0);
-        Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
-        write_order->set("fields", fields);
-        request_body->set("write-order", write_order);
-    }
+    /// The local metadata serializes ORDER BY into sort-orders[0].
+    request_body->set("write-order", metadata_content->getArray("sort-orders")->get(0));
     request_body->set("stage-create", false);
     Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
 
     if (metadata_content->has("format-version"))
         properties->set("format-version", std::to_string(metadata_content->getValue<int>("format-version")));
+
+    /// Forward the table properties, such as the metadata compression codec.
+    if (metadata_content->has("properties"))
+    {
+        Poco::JSON::Object::Ptr table_properties = metadata_content->getObject("properties");
+        for (const auto & [key, value] : *table_properties)
+            properties->set(key, value);
+    }
 
     request_body->set("properties", properties);
 
@@ -1982,7 +2038,9 @@ bool RestCatalog::updateSchema(
 void RestCatalog::dropTable(const String & namespace_name, const String & table_name, bool /*delete_data*/) const
 {
     const auto state_snapshot = state.get();
-    const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}?purgeRequested=False", base_url, namespace_name, table_name);
+    const std::string endpoint
+        = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string()
+        + "?purgeRequested=False";
 
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
