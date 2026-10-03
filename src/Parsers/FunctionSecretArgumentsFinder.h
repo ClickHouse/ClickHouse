@@ -91,9 +91,8 @@ public:
     FunctionSecretArgumentsFinder::Result getResult() const { return result; }
 
     /// Whether a key of the `extra_credentials(..)` nested map carries a non-secret identifier whose
-    /// value stays visible when the map is masked. `role_arn` names the role to assume, like
-    /// `access_key_id` names a key; `client_id` / `tenant_id` are the Azure AD identifiers Azure's
-    /// `extra_credentials` reads (not secrets). The other two keys of the assume-role triple are
+    /// value stays visible when the map is masked: the Azure AD `client_id` / `tenant_id`, and `role_arn`, which names the role to
+    /// assume, like `access_key_id` names a key. The other two keys of the assume-role triple are
     /// secrets: `external_id` is its shared secret, and `role_session_name` can be one too, because a
     /// trust policy can require a specific value through the `sts:RoleSessionName` condition (the
     /// ClickHouse Cloud guide documents exactly this use). Any other key - unknown, malformed or an
@@ -187,19 +186,15 @@ protected:
     void findXDBCSecretArguments();
     void findS3FunctionSecretArguments(bool is_cluster_function);
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function);
-    /// The raw indexes of the arguments the explicit form assigns positional slots to: all but
-    /// `extra_credentials(...)` and `key = value`. Hides every `key = value` value the explicit form
-    /// does not read, and every argument when the slots cannot be established.
+    /// Raw indexes of the arguments with a positional slot: all but `extra_credentials(...)` and `key = value`.
+    /// Also hides the value of every key the explicit form does not read, or every argument if the slots are ambiguous.
     std::vector<size_t> azurePositionalArguments();
-    /// The explicit-url form of the Azure table functions and the `AzureBlobStorage`/`AzureQueue`
-    /// engines, `url` at slot `url_slot`.
     void findAzurePositionalSecretArguments(size_t url_slot);
     bool maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0);
-    /// Whether the arguments an `AzureBlobStorage(named_collection, ...)` destination, table or table
-    /// function takes from `start` can be shown: only an argument written here can carry a credential,
-    /// and each has to be readable enough to tell that it does not. `positional_limit` bounds the plain
-    /// literals read beside the overrides: one filename for a backup locator, none for a table engine
-    /// or a table function.
+    /// Whether the arguments an `AzureBlobStorage(named_collection, ...)` destination or table takes
+    /// from `start` can be shown: only an argument written here can carry a credential, and each has
+    /// to be readable enough to tell that it does not. `positional_limit` bounds the plain literals
+    /// read beside the overrides: one filename for a backup locator, none for a table engine or table function.
     bool azureCollectionArgumentsAreShowable(size_t start, size_t positional_limit);
     /// Masks the secrets of every URL form (`url`/`urlCluster` table functions, the `URL` table
     /// engine, and their named-collection variants): the userinfo password of the url positional or a

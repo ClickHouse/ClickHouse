@@ -11,8 +11,7 @@
 namespace DB
 {
 
-/** Hides, in every `;`-separated `key=value` part of an Azure connection string, the value of `AccountKey` and
-  * `SharedAccessSignature` (any case) and any value containing a '?' or an '@'. Returns whether anything was hidden.
+/** Hides the values of `AccountKey`, `SharedAccessSignature` (any case) and any value with '?' or '@' in an Azure connection string.
   */
 inline bool maskAzureConnectionStringSecrets(std::string & str)
 {

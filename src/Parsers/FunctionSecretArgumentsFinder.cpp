@@ -726,7 +726,7 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
 {
     maskNestedSecretMaps();
 
-    /// The cluster function reads its first argument as the cluster name, but `azurePositionalArguments` would not count a function call there as a slot.
+    /// A cluster function reads its first argument as the cluster name, even an `extra_credentials(...)` or `key = value`.
     if (is_cluster_function && function->arguments->size() > 0 && function->arguments->at(0)->getFunction())
     {
         maskEveryArgument();
@@ -814,7 +814,8 @@ void FunctionSecretArgumentsFinder::findAzurePositionalSecretArguments(size_t ur
         return;
 
     /// We should check other arguments first because we don't need to do any replacement in case of
-    /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
+    /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
+    /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
     bool fourth_argument_is_format = false;
     if ((url_slot + 4 <= count) && (count <= url_slot + 7))
     {
