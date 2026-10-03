@@ -288,7 +288,8 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*enable_packed_string_keys_=*/settings[Setting::enable_packed_string_keys_in_aggregation],
             /*enable_adaptive_aggregator_=*/settings[Setting::enable_adaptive_aggregator],
             /*adaptive_aggregator_freeze_threshold_=*/settings[Setting::adaptive_aggregator_freeze_threshold],
-            /*adaptive_aggregator_freeze_threshold_bytes_=*/settings[Setting::adaptive_aggregator_freeze_threshold_bytes]);
+            /*adaptive_aggregator_freeze_threshold_bytes_=*/settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
+            /*group_by_each_block_no_merge_=*/false);
 
         auto merge_threads = settings[Setting::max_threads];
         auto temporary_data_merge_threads = settings[Setting::aggregation_memory_efficient_merge_threads]

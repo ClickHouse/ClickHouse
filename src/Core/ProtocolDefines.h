@@ -127,6 +127,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// needs the new contract is not serialized for such a peer at all.
 /// Version 20 also registers the `BlocksMarshalling` step, so a plan fragment that pre-serializes its
 /// result blocks can be shipped. A peer below it does not know the name and rejects the whole plan.
+/// Version 20 also knows the `group_by_each_block_no_merge` plan setting name on `AggregatingStep`.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -200,6 +201,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DI
 /// correctness cannot be shipped to a peer below this version: the peer would ignore the bit and
 /// rebuild the read with the cache enabled, so `ReadFromMergeTree::serialize` rejects it instead.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG = 19;
+/// First query-plan serialization version that knows the `group_by_each_block_no_merge` plan setting
+/// name. `AggregatingStep::serializeSettings` writes the name only towards a peer at this version or
+/// later, and refuses to ship an enabled step towards an older peer (see the comment there).
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_EACH_BLOCK_NO_MERGE = 20;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

@@ -444,6 +444,14 @@ public:
             const bool memory_efficient_aggregation = optimization_settings.distributed_aggregation_memory_efficient
                 && grouping_sets_params.empty() && !aggregating_step->getOutputHeader()->has("__grouping_set");
 
+            /// The per-block streaming flush of `group_by_each_block_no_merge` cannot produce the bucket-ordered
+            /// partial result the memory-efficient merge consumes (see `AggregatingStep::transformPipeline`).
+            /// Leave the split below the aggregation: the replicas return the rows they read, and the
+            /// aggregation with its per-block flush runs on the initiator, as it does without parallel replicas.
+            if (aggregator_params.group_by_each_block_no_merge
+                && (should_produce_results_in_order_of_bucket_number || memory_efficient_aggregation))
+                return;
+
             /// The memory-efficient merge consumes each input as a stream of buckets in ascending
             /// order, so the partial aggregation must produce its result in bucket order.
             auto & partial_aggregation_node = nodes.emplace_back();
