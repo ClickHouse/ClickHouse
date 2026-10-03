@@ -24,6 +24,8 @@ public:
 
     ASTPtr recompression_codec;
 
+    String index_name;
+
     ASTTTLElement()
         : mode(TTLMode::DELETE)
         , destination_type(DataDestinationType::DELETE)

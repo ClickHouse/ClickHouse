@@ -119,8 +119,11 @@ struct StorageInMemoryMetadata
     /// Sets projections
     void setProjections(ProjectionsDescription projections_);
 
-    /// Set common table TTLs
+    /// Sets table-level TTL actions.
     void setTableTTLs(const TTLTableDescription & table_ttl_);
+
+    /// Validate that table TTLs which target secondary indices refer to existing indices.
+    void validateTTLIndexClearTargets() const;
 
     /// TTLs for separate columns
     void setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_);
@@ -170,13 +173,13 @@ struct StorageInMemoryMetadata
     /// Has at least one projection
     bool hasProjections() const;
 
-    /// Returns true if there is set table TTL, any column TTL or any move TTL.
+    /// Returns true if any column or table-level TTL is set.
     bool hasAnyTTL() const { return hasAnyColumnTTL() || hasAnyTableTTL(); }
 
     /// Returns true if only rows TTL is set, not even rows where.
     bool hasOnlyRowsTTL() const;
 
-    /// Common tables TTLs (for rows and moves).
+    /// Table-level TTL actions.
     TTLTableDescription getTableTTLs() const;
     bool hasAnyTableTTL() const;
 
@@ -200,9 +203,13 @@ struct StorageInMemoryMetadata
     TTLDescriptions getRecompressionTTLs() const;
     bool hasAnyRecompressionTTL() const;
 
-    // Just wrapper for table TTLs, return info about recompression ttl
+    // Just wrapper for table TTLs, return info about group-by ttl
     TTLDescriptions getGroupByTTLs() const;
     bool hasAnyGroupByTTL() const;
+
+    /// Returns the `CLEAR INDEX` table-level TTL actions.
+    TTLDescriptions getIndexClearTTLs() const;
+    bool hasAnyIndexClearTTL() const;
 
     using HasDependencyCallback = std::function<bool(const String &, ColumnDependency::Kind)>;
 

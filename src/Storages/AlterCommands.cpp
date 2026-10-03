@@ -1925,7 +1925,7 @@ void AlterCommands::apply(
     {
         try
         {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(
+            auto new_ttl_entry = TTLDescription::getTTLForColumnFromAST(
                 ast,
                 metadata_copy.columns,
                 context,
@@ -1958,6 +1958,8 @@ void AlterCommands::apply(
             throw Exception(exception.code(), "Cannot apply ALTER because it breaks the TTL of the table: {}", exception.message());
         }
     }
+
+    metadata_copy.validateTTLIndexClearTargets();
 
     metadata = std::move(metadata_copy);
 }
