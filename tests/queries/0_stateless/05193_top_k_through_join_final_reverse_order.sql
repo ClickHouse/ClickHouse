@@ -231,6 +231,24 @@ FROM ( EXPLAIN actions = 1
         parallel_replicas_for_non_replicated_merge_tree = 1
 );
 
+-- Without FINAL the plan-based parallel replicas may expand the Merge read into its tables, after which
+-- the second pass does not see it, so `topKThroughJoin` keeps its own Sort + Limit. It does so only when
+-- the expansion is possible (`ReadFromMerge::getExpandableReads`): the children are not replicated, so
+-- with the default `parallel_replicas_for_non_replicated_merge_tree = 0` they cannot be shipped, the
+-- Merge read stays in the plan, and `topKThroughJoin` defers to reading in reverse order as without
+-- parallel replicas.
+SELECT 'plan_merge_no_final_parallel_replicas_not_shippable' AS label,
+       countIf(explain LIKE '%Sorting%') AS sort_count,
+       countIf(explain LIKE '%InReverseOrder%') AS reverse_reads
+FROM ( EXPLAIN actions = 1
+    SELECT l.k, r.v FROM t_merge AS l LEFT JOIN t_right AS r ON r.k = l.k
+    ORDER BY l.k DESC LIMIT 10
+    SETTINGS query_plan_top_k_through_join = 1,
+        enable_parallel_replicas = 1, parallel_replicas_plan_based = 1, parallel_replicas_allow_merge_tables = 1,
+        max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+        parallel_replicas_for_non_replicated_merge_tree = 0
+);
+
 SELECT 'rows_merge_reverse_on' AS label, groupArray((k, src, v)) FROM (
     SELECT l.k AS k, l.src AS src, r.v AS v FROM t_merge AS l FINAL LEFT JOIN t_right AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10

@@ -103,7 +103,7 @@ static JoinSide coordinatedJoinSide(const QueryPlan::Node * node)
 }
 
 /// Can this MergeTree read be part of a shipped fragment?
-static bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
+bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
 {
     /// A refreshable MaterializedView that swaps its target on each refresh (non-APPEND) must stay
     /// local: the target read is shipped by name and re-resolved per replica without RefreshTask's

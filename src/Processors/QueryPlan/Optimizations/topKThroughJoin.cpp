@@ -449,10 +449,14 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
             /// (`ReadFromMerge::requestReadingInOrder`), so the probe asks them all the same way.
             /// The plan-based parallel replicas may expand the `Merge` read into its tables later
             /// (`applyParallelReplicas` runs right before pass 2), after which pass 2 does not see this
-            /// step any more, so keep the explicit `Sort + Limit` then. A `FINAL` read, or any read with
-            /// `parallel_replicas_allow_merge_tables = 0`, is never expanded, and the classic parallel
-            /// replicas read every child without them, so pass 2 still sees this step in those cases.
-            if (!settings.enable_parallel_replicas || !merge->mayBeExpandedForParallelReplicas())
+            /// step any more, so keep the explicit `Sort + Limit` then. The read is never expanded when
+            /// `getExpandableReads` rejects it (a `FINAL` read, `parallel_replicas_allow_merge_tables = 0`,
+            /// a child which is not a plain `MergeTree` read, or a read `mergeTreeReadCanBeShipped` refuses,
+            /// such as a non-replicated table with `parallel_replicas_for_non_replicated_merge_tree = 0`),
+            /// and the classic parallel replicas read every child without them, so pass 2 still sees this
+            /// step in those cases. A read which passes these checks may still stay unexpanded because of
+            /// the rest of the plan; the explicit `Sort + Limit` is then kept, which is correct, only slower.
+            if (!settings.enable_parallel_replicas || !merge->mayBeExpandedForParallelReplicas(mergeTreeReadCanBeShipped))
             {
                 const auto order_info = getInputOrderIfReadInOrderIsUseful(
                     probe_sort_step,
