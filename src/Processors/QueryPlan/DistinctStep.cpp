@@ -54,6 +54,10 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsOverflowMode distinct_overflow_mode;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_distinct;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_in_distinct;
+    extern const QueryPlanSerializationSettingsUInt64 distinct_set_limit_for_enabling_bloom_filter;
+    extern const QueryPlanSerializationSettingsUInt64 distinct_bloom_filter_bytes;
+    extern const QueryPlanSerializationSettingsDouble distinct_pass_ratio_threshold_for_disabling_bloom_filter;
+    extern const QueryPlanSerializationSettingsDouble distinct_bloom_filter_max_ratio_of_set_bits;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 prefer_external_sort_block_bytes;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_distinct;
@@ -68,7 +72,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
+
+/// Distinct bloom filter should be small and fast otherwise it is pointless
+static constexpr UInt64 MAX_DISTINCT_BLOOM_FILTER_BYTES = 16 * 1024 * 1024;
+static constexpr UInt64 DEFAULT_DISTINCT_BLOOM_FILTER_BYTES = 512 * 1024;
 
 bool preliminaryDistinctIsUseful(size_t max_threads)
 {
@@ -187,7 +196,11 @@ DistinctStep::DistinctStep(
     Settings settings_,
     UInt64 limit_hint_,
     const Names & columns_,
-    bool pre_distinct_)
+    bool pre_distinct_,
+    UInt64 set_limit_for_enabling_bloom_filter_,
+    UInt64 bloom_filter_bytes_,
+    Float64 pass_ratio_threshold_for_disabling_bloom_filter_,
+    Float64 max_ratio_of_set_bits_in_bloom_filter_)
     : ITransformingStep(
             input_header_,
             input_header_,
@@ -196,7 +209,18 @@ DistinctStep::DistinctStep(
     , limit_hint(limit_hint_)
     , columns(columns_)
     , pre_distinct(pre_distinct_)
+    , set_limit_for_enabling_bloom_filter(set_limit_for_enabling_bloom_filter_)
+    , bloom_filter_bytes(bloom_filter_bytes_)
+    , pass_ratio_threshold_for_disabling_bloom_filter(pass_ratio_threshold_for_disabling_bloom_filter_)
+    , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
 {
+    if (!bloom_filter_bytes)
+        bloom_filter_bytes = DEFAULT_DISTINCT_BLOOM_FILTER_BYTES;
+    if (bloom_filter_bytes > MAX_DISTINCT_BLOOM_FILTER_BYTES)
+        throw Exception(
+            ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Specified distinct bloom filter size {} is too big, maximum: {}",
+            bloom_filter_bytes, MAX_DISTINCT_BLOOM_FILTER_BYTES);
 }
 
 void DistinctStep::updateLimitHint(UInt64 hint)
@@ -283,6 +307,15 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     /// hint is set: an abandoned transform cannot count the distinct rows to stop the input early.
     const bool allow_abandoning = pre_distinct && build_settings.allow_preliminary_distinct_abandoning && limit_hint == 0;
 
+    /// The final `DISTINCT` may probe its two-level hash set in parallel on a thread pool of its own.
+    /// `getNumThreads` is the budget of the whole pipeline, while `addSimpleTransform` creates one
+    /// transform per stream: after `resize(1)` that is a single transform, but with
+    /// `skip_stream_merging` every surviving stream gets its own pool, so share the budget between
+    /// them instead of letting the query run `streams * max_threads` workers.
+    size_t threads = pipeline.getNumThreads();
+    if (!pre_distinct && skip_stream_merging)
+        threads = std::max<size_t>(1, threads / std::max<size_t>(1, pipeline.getNumStreams()));
+
     pipeline.addSimpleTransform(
         [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
@@ -290,8 +323,19 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                 return nullptr;
 
             return std::make_shared<DistinctTransform>(
-                header, settings.set_size_limits, limit_hint, columns,
-                allow_abandoning, /*skip_null_keys_=*/ false, pass_through_threshold);
+                header,
+                settings.set_size_limits,
+                limit_hint,
+                columns,
+                allow_abandoning,
+                /*skip_null_keys_=*/false,
+                pass_through_threshold,
+                pre_distinct,
+                set_limit_for_enabling_bloom_filter,
+                bloom_filter_bytes,
+                pass_ratio_threshold_for_disabling_bloom_filter,
+                max_ratio_of_set_bits_in_bloom_filter,
+                threads);
         });
 }
 
@@ -345,6 +389,11 @@ void DistinctStep::updateOutputHeader()
 void DistinctStep::serializeSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const
 {
     settings.updatePlanSettings(plan_settings, version);
+
+    plan_settings[QueryPlanSerializationSetting::distinct_set_limit_for_enabling_bloom_filter] = set_limit_for_enabling_bloom_filter;
+    plan_settings[QueryPlanSerializationSetting::distinct_bloom_filter_bytes] = bloom_filter_bytes;
+    plan_settings[QueryPlanSerializationSetting::distinct_pass_ratio_threshold_for_disabling_bloom_filter] = pass_ratio_threshold_for_disabling_bloom_filter;
+    plan_settings[QueryPlanSerializationSetting::distinct_bloom_filter_max_ratio_of_set_bits] = max_ratio_of_set_bits_in_bloom_filter;
 }
 
 void DistinctStep::serialize(Serialization & ctx) const
@@ -375,8 +424,21 @@ QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_disti
     if (ctx.step_version >= 1)
         readBinary(preserve_input_order, ctx.in);
 
+    const UInt64 set_limit_for_enabling_bloom_filter = ctx.settings[QueryPlanSerializationSetting::distinct_set_limit_for_enabling_bloom_filter];
+    const UInt64 bloom_filter_bytes = ctx.settings[QueryPlanSerializationSetting::distinct_bloom_filter_bytes];
+    const Float64 pass_ratio_threshold_for_disabling = ctx.settings[QueryPlanSerializationSetting::distinct_pass_ratio_threshold_for_disabling_bloom_filter];
+    const Float64 max_ratio_of_set_bits_in_bloom_filter = ctx.settings[QueryPlanSerializationSetting::distinct_bloom_filter_max_ratio_of_set_bits];
+
     auto step = std::make_unique<DistinctStep>(
-        ctx.input_headers.front(), Settings(ctx.settings), 0, column_names, pre_distinct_);
+        ctx.input_headers.front(),
+        Settings(ctx.settings),
+        0,
+        column_names,
+        pre_distinct_,
+        set_limit_for_enabling_bloom_filter,
+        bloom_filter_bytes,
+        pass_ratio_threshold_for_disabling,
+        max_ratio_of_set_bits_in_bloom_filter);
     if (preserve_input_order)
         step->preserveInputOrder();
     return step;

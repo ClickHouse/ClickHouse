@@ -9,6 +9,10 @@ SET max_bytes_ratio_before_external_distinct = 0;
 SET prefer_external_sort_block_bytes = DEFAULT;
 
 -- Preliminary `DISTINCT` keeps deduplicating mostly unique input when spilling is disabled, preserving
--- the memory pressure needed to distinguish the in-memory and external algorithms.
+-- the memory pressure needed to distinguish the in-memory and external algorithms. The bloom filter
+-- would stop the preliminary set from growing past twice `distinct_set_limit_for_enabling_bloom_filter`
+-- keys and remove that pressure, so it is disabled.
+SET distinct_set_limit_for_enabling_bloom_filter = 0;
+
 SELECT count() FROM (SELECT DISTINCT number % 8000000 AS k FROM numbers(16000000)) SETTINGS max_memory_usage = '120M', max_bytes_before_external_distinct = 0, allow_preliminary_distinct_abandoning = 0; -- { serverError MEMORY_LIMIT_EXCEEDED }
 SELECT count() FROM (SELECT DISTINCT number % 8000000 AS k FROM numbers(16000000)) SETTINGS max_memory_usage = '120M', max_bytes_before_external_distinct = '30M', allow_preliminary_distinct_abandoning = 0;

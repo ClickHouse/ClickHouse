@@ -119,6 +119,10 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsUInt64 distinct_set_limit_for_enabling_bloom_filter;
+    extern const SettingsUInt64 distinct_bloom_filter_bytes;
+    extern const SettingsDouble distinct_pass_ratio_threshold_for_disabling_bloom_filter;
+    extern const SettingsDouble distinct_bloom_filter_max_ratio_of_set_bits;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool query_cache_for_subqueries;
@@ -1415,7 +1419,11 @@ void addDistinctStep(QueryPlan & query_plan,
         DistinctStep::Settings(settings),
         limit_hint_for_distinct,
         column_names,
-        pre_distinct);
+        pre_distinct,
+        settings[Setting::distinct_set_limit_for_enabling_bloom_filter],
+        settings[Setting::distinct_bloom_filter_bytes],
+        settings[Setting::distinct_pass_ratio_threshold_for_disabling_bloom_filter],
+        settings[Setting::distinct_bloom_filter_max_ratio_of_set_bits]);
 
     if (pre_distinct)
         distinct_step->setStepDescription("Preliminary DISTINCT");
@@ -2576,7 +2584,11 @@ void Planner::buildPlanForUnionNode()
                 distinct_settings,
                 0 /*limit hint*/,
                 query_plan.getCurrentHeader()->getNames(),
-                true /*pre distinct*/);
+                true /*pre distinct*/,
+                settings[Setting::distinct_set_limit_for_enabling_bloom_filter],
+                settings[Setting::distinct_bloom_filter_bytes],
+                settings[Setting::distinct_pass_ratio_threshold_for_disabling_bloom_filter],
+                settings[Setting::distinct_bloom_filter_max_ratio_of_set_bits]);
             pre_distinct_step->setStepDescription("Preliminary DISTINCT");
             query_plan.addStep(std::move(pre_distinct_step));
         }
@@ -2586,7 +2598,11 @@ void Planner::buildPlanForUnionNode()
             std::move(distinct_settings),
             0 /*limit hint*/,
             query_plan.getCurrentHeader()->getNames(),
-            false /*pre distinct*/);
+            false /*pre distinct*/,
+            settings[Setting::distinct_set_limit_for_enabling_bloom_filter],
+            settings[Setting::distinct_bloom_filter_bytes],
+            settings[Setting::distinct_pass_ratio_threshold_for_disabling_bloom_filter],
+            settings[Setting::distinct_bloom_filter_max_ratio_of_set_bits]);
         if (add_pre_distinct)
             distinct_step->setStepDescription("DISTINCT");
         query_plan.addStep(std::move(distinct_step));

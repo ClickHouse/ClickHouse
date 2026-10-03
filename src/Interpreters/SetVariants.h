@@ -2,6 +2,8 @@
 
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
+#include <base/arithmeticOverflow.h>
+#include <limits>
 #include <Interpreters/AggregationCommon.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashSet.h>
@@ -230,6 +232,40 @@ struct SetMethodHashed
     }
 };
 
+/// A two-level set of 128 bit key hashes for the parallel final `DISTINCT` (see `DistinctTransform`).
+/// Adds the growth estimate that `SetVariants` requires from every set.
+struct TwoLevelHashSetForDistinct : public TwoLevelHashSet<UInt128, UInt128TrivialHash>
+{
+    /// Assumes the new keys are spread evenly over the buckets. Saturates at the maximum of `size_t`.
+    size_t estimateGrowthMemory(size_t additional_keys) const noexcept
+    {
+        const size_t keys_per_bucket = additional_keys / NUM_BUCKETS + 1;
+        size_t res = 0;
+        for (const auto & impl : impls)
+            if (common::addOverflow(res, impl.estimateGrowthMemory(keys_per_bucket), res))
+                return std::numeric_limits<size_t>::max();
+        return res;
+    }
+};
+
+/// For other cases. 128 bit hash from the key.
+template <typename TData>
+struct SetMethodHashedTwoLevel
+{
+    using Data = TData;
+    using Key = typename Data::key_type;
+
+    Data data;
+
+    using State = ColumnsHashing::HashMethodHashed<typename Data::value_type, void>;
+
+    /// Appends the retained fingerprint to a `UInt128` comparison column.
+    static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    {
+        key_columns[0]->insertData(reinterpret_cast<const char *>(&key), sizeof(key));
+    }
+};
+
 /** Different implementations of the set.
   */
 struct NonClearableSet
@@ -262,6 +298,8 @@ struct NonClearableSet
       * This is done because `hashed` method, although slower, but in this case, uses less RAM.
       *  since when you use it, the key values themselves are not stored.
       */
+
+    std::unique_ptr<SetMethodHashedTwoLevel<TwoLevelHashSetForDistinct>>                  hashed_two_level;
 };
 
 struct ClearableSet
@@ -286,6 +324,8 @@ struct ClearableSet
       * This is done because `hashed` method, although slower, but in this case, uses less RAM.
       *  since when you use it, the key values themselves are not stored.
       */
+
+    std::unique_ptr<SetMethodHashed<ClearableHashSet<UInt128, UInt128TrivialHash>>>                  hashed_two_level;
 };
 
 /// Like NonClearableSet, but each distinct key carries a UInt64 occurrence count (a multiset),
@@ -309,6 +349,11 @@ struct CountingSet
     std::unique_ptr<SetMethodKeysFixed<HashMap<UInt256, Count, UInt256HashCRC32>>>                   keys256;
     std::unique_ptr<SetMethodHashed<HashMap<UInt128, Count, UInt128TrivialHash>>>                    hashed;
 
+    /// Present only to satisfy APPLY_FOR_SET_VARIANTS (the pre-DISTINCT bloom-filter feature added
+    /// `hashed_two_level` to every set variant). INTERSECT ALL / EXCEPT ALL never selects it because
+    /// `SetVariants::chooseMethod` does not return `hashed_two_level`; it mirrors `hashed`.
+    std::unique_ptr<SetMethodHashed<HashMap<UInt128, Count, UInt128TrivialHash>>>                    hashed_two_level;
+
     std::unique_ptr<SetMethodKeysFixed<HashMap<UInt128, Count, UInt128HashCRC32>, true>>             nullable_keys128;
     std::unique_ptr<SetMethodKeysFixed<HashMap<UInt256, Count, UInt256HashCRC32>, true>>             nullable_keys256;
 };
@@ -331,7 +376,8 @@ struct SetVariantsTemplate: public Variant
         M(keys256)              \
         M(nullable_keys128)     \
         M(nullable_keys256)     \
-        M(hashed)
+        M(hashed)               \
+        M(hashed_two_level)
 
     #define M(NAME) using Variant::NAME;
         APPLY_FOR_SET_VARIANTS(M)
