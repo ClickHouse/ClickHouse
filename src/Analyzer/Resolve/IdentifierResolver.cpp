@@ -375,7 +375,18 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     storage->updateExternalDynamicMetadataIfExists(context);
     const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
-    auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
+
+    /// When a materialized view's SELECT is executed for an inserted block, the context carries the block as
+    /// the view source, and every reference to the source table is replaced by it after the query tree
+    /// is built (see `replaceStorageInQueryTree`). The real table is needed only for its metadata, so skip
+    /// taking a snapshot of its data. For `MergeTree` tables that snapshot covers all active parts, and
+    /// taking it for every block and every view is expensive on tables with many parts.
+    StorageSnapshotPtr storage_snapshot;
+    const auto view_source = context->getViewSource();
+    if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
+        storage_snapshot = storage->getStorageSnapshotWithoutData(metadata_snapshot, context);
+    else
+        storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
     /// Pass the user-requested storage_id explicitly instead of letting the
     /// TableNode ctor read storage->getStorageID(), which can be mutated by
     /// a concurrent renameInMemory between tryGetTable and this point.
