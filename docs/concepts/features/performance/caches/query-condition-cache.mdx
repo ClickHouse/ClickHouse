@@ -56,6 +56,8 @@ Subsequent executions of the same query, also with parameter `use_query_conditio
 
 Queries which use the TopK optimization (`ORDER BY <column> LIMIT n`, accelerated by dynamic filtering or by a minmax skip index on the sort column) use the query condition cache as well.
 TopK reads can skip granules based on a threshold that changes while the query runs, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read: only a query with the same plan over the same parts reuses them.
+This also applies to TopK reads of Parquet files through the `File` table engine: there, the cache remembers the row groups which held no row of the result, and the entries are partitioned by the TopK plan parameters, the filter condition (if any), and the set of files read together with their versions, so that a modification of any of the files leads to a fresh entry.
+Unlike other reads, such a TopK read uses the cache even without a filter condition, e.g. `SELECT * FROM hits ORDER BY EventTime LIMIT 10`.
 Such reads can be kept out of the cache entirely with the setting [`use_query_condition_cache_for_top_k`](/reference/settings/session-settings/use-query) (default: enabled), which only takes effect if `use_query_condition_cache` is also enabled.
 
 ## Administration {#administration}

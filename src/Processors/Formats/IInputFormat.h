@@ -3,6 +3,7 @@
 #include <Formats/ColumnMapping.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
+#include <Core/Field.h>
 #include <Core/Names.h>
 #include <Common/PODArray.h>
 #include <IO/WriteBuffer.h>
@@ -135,6 +136,11 @@ public:
     virtual void needOnlyCount() { need_only_count = true; }
 
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
+
+    /// TopN dynamic filtering with `FormatTopKFilterInfo::track_row_group_best_values`: for the buckets
+    /// which returned rows, the best value of the sort column among these rows, in the query's order.
+    /// A bucket whose best value is beyond the final threshold holds no row of the result.
+    virtual std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const { return {}; }
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
