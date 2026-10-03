@@ -273,9 +273,13 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(
 
             LOG_DEBUG(log, "Path {} already exists. Will remove it and clone again",
                 fullPath(disk, path_to_clone + relative_path));
+            /// The prelude mutates the shared `moving/` namespace before the per-chunk hook of the
+            /// fallback copy is reached, so apply the same fence right before each mutation.
+            cancellation_hook();
             disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
         }
 
+        cancellation_hook();
         disk->createDirectories(path_to_clone);
 
         /// TODO: Make it possible to fetch only zero-copy part without fallback to fetching a full-copy one
