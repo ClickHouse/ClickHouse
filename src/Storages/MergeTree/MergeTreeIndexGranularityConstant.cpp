@@ -1,5 +1,6 @@
 #include <Common/Exception.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
+#include <algorithm>
 
 namespace DB
 {
@@ -102,19 +103,15 @@ size_t MergeTreeIndexGranularityConstant::getRowsCountInRange(size_t begin, size
     if (end > getMarksCount())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get marks in range [{}; {}), while size is {}", begin, end, getMarksCount());
 
-    if (end == 0)
+    /// The final mark has no rows.
+    end = std::min(end, num_marks_without_final);
+    if (begin >= end)
         return 0;
 
-    size_t total_rows = 0;
-    if (end >= num_marks_without_final)
-    {
-        total_rows += last_mark_granularity;
-        end = num_marks_without_final - 1;
-    }
-
-    if (end > begin)
-        total_rows += constant_granularity * (end - begin);
-    return total_rows;
+    /// All marks before the last non-final one have constant granularity.
+    if (end == num_marks_without_final)
+        return constant_granularity * (end - 1 - begin) + last_mark_granularity;
+    return constant_granularity * (end - begin);
 }
 
 size_t MergeTreeIndexGranularityConstant::getMarkUpperBoundForRow(size_t row_index) const
