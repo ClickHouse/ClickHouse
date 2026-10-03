@@ -78,8 +78,8 @@ from synchronizer_utils import SYNC_PR_PREFIX
 # The siblings above resolve through `sys.path[0]`, which is this script's own
 # directory; `ci.praktika` needs the repo root on the path as well.
 sys.path.append(str(Path(__file__).resolve().parents[2]))
+from ci.praktika.git import Git  # noqa: E402
 from ci.praktika.s3 import S3  # noqa: E402
-from ci.praktika.utils import Shell  # noqa: E402
 
 
 class BackportException(Exception):
@@ -217,22 +217,8 @@ close it.
         """
         return f"backport/{name}/{pr_number}"
 
-    @staticmethod
-    def _is_ancestor(commit: str, ref: str) -> bool:
-        """
-        True if `commit` is an ancestor of `ref`. A negative answer is an ordinary result
-        here rather than a failure, so it must not be logged as an error; git's own
-        diagnostics are passed through unchanged.
-        """
-        rc, _, err = Shell.get_res_stdout_stderr(
-            f"git merge-base --is-ancestor {commit} {ref}"
-        )
-        if err:
-            print(err)
-        return rc == 0
-
     def pre_check(self):
-        self._backported = self._is_ancestor(
+        self._backported = Git.is_ancestor(
             self.pr.merge_commit_sha, f"{self.REMOTE}/{self.name}"
         )
         if self._backported:
@@ -540,7 +526,7 @@ close it.
                 self.cherrypick_pr.number,
             )
             return False
-        if not self._is_ancestor(base_parents[0], remote_release):
+        if not Git.is_ancestor(base_parents[0], remote_release):
             logging.info(
                 "Retry of cherry-pick PR #%s skipped: its base is not built on %s",
                 self.cherrypick_pr.number,
