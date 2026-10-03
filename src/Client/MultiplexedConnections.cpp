@@ -118,6 +118,17 @@ void MultiplexedConnections::sendQueryPlan(const QueryPlan & query_plan)
     }
 }
 
+bool MultiplexedConnections::supportsQueryPlanSerializationVersion(UInt64 version) const
+{
+    for (const ReplicaState & state : replica_states)
+    {
+        if (state.connection && state.connection->getQueryPlanSerializationVersion() < version)
+            return false;
+    }
+
+    return true;
+}
+
 void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
     std::lock_guard lock(cancel_mutex);
