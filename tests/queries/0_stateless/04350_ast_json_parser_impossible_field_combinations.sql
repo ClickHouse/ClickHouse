@@ -44,7 +44,7 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SELECT count() OVER (ORDER BY x ROW
 -- `getPartitionOrPartitionID` executes against the partition only.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('CHECK TABLE t PARTITION 1'), '"partition":', '"part_name":"all_1_1_0","partition":')); -- { serverError BAD_ARGUMENTS }
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('CHECK TABLE t PART \\'all_1_1_0\\''), '"part_name":"all_1_1_0"', '"part_name":""')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CHECK TABLE t PART \'all_1_1_0\''), '"part_name":"all_1_1_0"', '"part_name":""')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
 -- KILL: `SYNC`, `ASYNC` and `TEST` are mutually exclusive modes, so `sync` and `test` cannot both
