@@ -8306,7 +8306,7 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
         /// document, so a framing carried by the connection URL or by the HTTP session behind it
         /// would turn it into a packet stream that no panel query can read.
         'add_http_cors_header=1&framing_output_format=None&default_format=JSON' + url_params;
-    url += userUrlParam(server_address, user);
+    if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
 
     /// Whether this request still belongs to the active connection. Re-evaluated after the
@@ -8349,7 +8349,7 @@ async function getServerStatus(server_address, user, password) {
         /// Framing is pinned off for the same reason as in `auxiliaryQuery`: the response is
         /// parsed as JSON, not as a packet stream.
         'add_http_cors_header=1&framing_output_format=None&default_format=JSONEachRow';
-    url += userUrlParam(server_address, user);
+    if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
     try {
         let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t, currentUser() AS u", headers: { 'Authorization': 'never' } });
@@ -10931,7 +10931,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
         /// Ask server to allow cross-domain requests.
         'add_http_cors_header=1';
-    url += userUrlParam(server_address, user);
+    if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
     url += '&enable_http_compression=1';
     /// We will put the result in the query cache, so it can be used when download is initiated later.
@@ -14672,34 +14672,15 @@ function sameServerAddress(a, b) {
 /// `http://alice@host:8123/` and `http://bob@host:8123/` look like the same server there and must be
 /// separated by their user. The field takes precedence over the userinfo, mirroring how the request
 /// is built. The userinfo may be percent-encoded, so decode it (falling back to the raw value on a
-/// malformed escape) before comparing. With neither a field user nor a userinfo the result is an empty
-/// string: the server then authenticates the request as its `default_session_user`, which is server
-/// configuration (not necessarily `default`) and cannot be derived here.
+/// malformed escape) before comparing.
 function effectiveConnectionUser(serverAddress, fieldUser) {
-    return fieldUser || urlUserinfoUser(serverAddress);
-}
-
-/// The user embedded in the server URL's userinfo (`http://alice@host:8123/` -> `alice`), decoded, or
-/// an empty string when there is none or the URL cannot be parsed.
-function urlUserinfoUser(serverAddress) {
+    if (fieldUser) return fieldUser;
     try {
         const raw = new URL(serverAddress, location.href).username;
         try { return decodeURIComponent(raw); } catch (e) { return raw; }
     } catch (e) {
         return '';
     }
-}
-
-/// The `user` URL parameter of a request to `server_address` for the given `user` field value, or an
-/// empty string when no parameter is needed. The parameter is omitted for an empty field and for a
-/// field holding the user embedded in the server URL's userinfo, so a field refilled by the password
-/// manager with the userinfo user (`storeCredentials` remembers that name) builds exactly the request
-/// an empty field builds. A field naming any other user, `default` included, is sent and takes
-/// precedence over the userinfo, as before. Every request URL of this page goes through here so the
-/// rule cannot drift between them.
-function userUrlParam(server_address, user) {
-    if (!user || user === urlUserinfoUser(server_address)) return '';
-    return '&user=' + encodeURIComponent(user);
 }
 
 /// Has the live target moved away from the connection/selection the query that produced this run
@@ -15715,25 +15696,39 @@ async function cancel()
     progressEl.clear();
 }
 
+/// The server URL without the parameters that attach a request to an HTTP session (`session_id`,
+/// `session_check`, `session_timeout`), or `null` if the URL cannot be parsed. The other parameters
+/// are kept byte for byte. The server rejects a concurrent request in the same session with
+/// `SESSION_IS_LOCKED`, so an auxiliary request issued while a query may be running must not join it.
+function serverAddressWithoutSession(server_address) {
+    let url;
+    try { url = new URL(server_address, location.href); } catch (e) { return null; }
+    url.search = url.search.slice(1).split('&').filter(p => !/^session_(id|check|timeout)(=|$)/.test(p)).join('&');
+    return url.href;
+}
+
 /// Offer the connection's login to the browser's password manager, so it can be autofilled on the next
 /// visit. `PasswordCredential` rejects an empty `id` (as it rejects an empty password) with a
 /// `TypeError`, and the browser may not implement it at all (Firefox has no `PasswordCredential`), so
-/// both cases are checked up front instead of throwing out of every Run. An empty `user` field
-/// authenticates as the user embedded in the server URL's userinfo (`http://alice@host:8123/`), and
-/// the login is saved under that name; `userUrlParam` omits the `user` parameter for a field equal to
-/// it, so the refilled login builds the same request. Without a userinfo, the server authenticates
-/// the request as its `default_session_user`, which is server configuration (not necessarily
-/// `default`), so the real name is asked from the server (`currentUser` in `getServerStatus`, sent
-/// without a `user` parameter) and the login is saved under it: the refilled name then selects the
-/// same account explicitly. Nothing is saved if the server cannot tell. Returns a promise for tests.
+/// both cases are checked up front instead of throwing out of every Run. An empty `user` field makes
+/// the server authenticate the request as its `default_session_user`, which is server configuration
+/// (not necessarily `default`), so the real name is asked from the server (`currentUser` in
+/// `getServerStatus`, sent without a `user` parameter) and the login is saved under it: the refilled
+/// name then selects the same account explicitly. The probe runs while the query of this Run may be in
+/// flight, so it is sent outside of the connection's HTTP session (`serverAddressWithoutSession`).
+/// Nothing is saved if the server cannot tell, which includes a server URL with a userinfo
+/// (`http://alice@host:8123/`): `fetch` refuses URLs with credentials, so such a connection does not
+/// work from this page at all. Returns a promise for tests.
 function storeCredentials() {
     const server_address = url_elem.value;
+    const user = user_elem.value;
     const password = password_elem.value;
     if (!password || typeof PasswordCredential !== 'function') return Promise.resolve();
     const store = id => navigator.credentials.store(new PasswordCredential({ id, password, name: server_address }));
-    const user = effectiveConnectionUser(server_address, user_elem.value);
     if (user) return store(user);
-    return getServerStatus(server_address, '', password).then(json => {
+    const probe_address = serverAddressWithoutSession(server_address);
+    if (!probe_address) return Promise.resolve();
+    return getServerStatus(probe_address, '', password).then(json => {
         if (json && json.u) return store(json.u);
     });
 }
@@ -17971,7 +17966,7 @@ function buildCompletionUrl() {
     const password = password_elem.value;
     const server_address = url_elem.value;
     let url = server_address + (server_address.indexOf('?') >= 0 ? '&' : '?') + 'add_http_cors_header=1';
-    url += userUrlParam(server_address, user);
+    if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
     /// Framing is pinned off (not merely unset): the completion response is read as plain
     /// `TSVRaw` text, so a framing carried by the connection URL or by the HTTP session would
@@ -19964,7 +19959,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         '&framing_output_format=None' +
         '&default_format=' + encodeURIComponent(format) +
         '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(extension)}"'}`);
-    url += userUrlParam(server_address, user);
+    if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
     if (last_database_for_download) url += '&database=' + encodeURIComponent(last_database_for_download);
     url += last_shape_for_download;

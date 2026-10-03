@@ -1,25 +1,22 @@
 #!/usr/bin/env node
 /// Executable regression harness for the Web UI's password-manager round trip: `storeCredentials`
-/// (what name a login is remembered under), `effectiveConnectionUser` (the connection identity) and
-/// `userUrlParam` (the `user` parameter of every request URL).
+/// (what name a login is remembered under) and the request URLs built for the remembered login.
 ///
-/// The contract under test: an empty `user` field authenticates implicitly - as the user embedded in
-/// the server URL's userinfo (`http://alice@host:8123/`), or else as the server's
+/// The contract under test: an empty `user` field makes the server authenticate the request as its
 /// `default_session_user`, which is server configuration (not necessarily `default`). The login is
-/// remembered under the real name, so the password manager refills it into the field on the next
-/// visit, and the refilled name must select the same account:
-/// - with a userinfo, the request URL built for a field holding the userinfo user must be
-///   byte-identical to the one built for an empty field (no forced `user=` that would override the
-///   URL userinfo), and the connection identity must compare equal;
-/// - without a userinfo, the name is `currentUser` as reported by the server for a request without a
-///   `user` parameter (never a hard-coded `default`), and nothing is stored if the server cannot tell.
-/// A field naming a DIFFERENT user still takes precedence over the userinfo, as before.
+/// remembered under the name the server reports as `currentUser` for a request without a `user`
+/// parameter (never a hard-coded `default`), so the password manager refills it into the field on the
+/// next visit and the refilled name selects the same account explicitly. Nothing is stored if the
+/// server cannot tell - including for a server URL with a userinfo (`http://alice@host:8123/`), which
+/// `fetch` refuses to send. The probe is sent outside of the connection's HTTP session, because it
+/// runs concurrently with the query of the Run and the server rejects concurrent requests in one
+/// session with `SESSION_IS_LOCKED`.
 ///
 /// So that the suite proves the production wiring rather than a re-statement of it, the scenarios
 /// run the REAL functions extracted from the served `play.html`: `storeCredentials` against a fake
 /// `PasswordCredential` / `navigator.credentials`, and the real request builders (`getServerStatus`
-/// with a stubbed `fetch`, `buildCompletionUrl`) for the wire URL. A source-level check pins that no
-/// request builder appends `&user=` on its own, bypassing `userUrlParam`.
+/// with a stubbed `fetch` that, like the browser, rejects URLs with credentials, and
+/// `buildCompletionUrl`) for the wire URL.
 ///
 /// The stateless suite has no JavaScript runtime, so the contract is driven by this Node.js harness
 /// executed inside the `clickhouse/mysql-js-client` container (node:22-alpine) against the `/play`
@@ -102,6 +99,8 @@ function makeContext() {
     };
     ctx.navigator = { credentials: { store(cred) { ctx.stored.push(cred); return Promise.resolve(cred); } } };
     ctx.fetch = async (url, options) => {
+        /// Mirrors the browser: `fetch` refuses a URL with credentials before sending anything.
+        if (new URL(url).username) throw new TypeError(`Request cannot be constructed from a URL that includes credentials: ${url}`);
         ctx.fetched.push({ url, options });
         if (ctx.implicit_user === null) return { ok: false, json: async () => ({}) };
         const m = url.match(/[?&]user=([^&]*)/);
@@ -112,7 +111,7 @@ function makeContext() {
     return ctx;
 }
 
-const FUNCTIONS = ['effectiveConnectionUser', 'urlUserinfoUser', 'userUrlParam', 'storeCredentials', 'getServerStatus', 'buildCompletionUrl'];
+const FUNCTIONS = ['effectiveConnectionUser', 'serverAddressWithoutSession', 'storeCredentials', 'getServerStatus', 'buildCompletionUrl'];
 
 function boot(js, { withPasswordCredential = true } = {}) {
     const ctx = makeContext();
@@ -125,7 +124,7 @@ function boot(js, { withPasswordCredential = true } = {}) {
 async function requestUrls(ctx) {
     ctx.fetched.length = 0;
     await vm.runInContext('getServerStatus(url_elem.value, user_elem.value, password_elem.value)', ctx);
-    const status_url = ctx.fetched[0].url;
+    const status_url = ctx.fetched.length ? ctx.fetched[0].url : null;
     const completion_url = vm.runInContext('buildCompletionUrl()', ctx);
     return { status_url, completion_url };
 }
@@ -148,38 +147,7 @@ async function store(ctx) {
     await vm.runInContext('storeCredentials()', ctx);
 }
 
-/// Run once with an empty field on a server URL with a userinfo, then simulate the password manager
-/// refilling the remembered login, and require the refilled state to be the same connection on the
-/// wire and in identity.
-async function roundTrip(ctx, server, expected_id) {
-    ctx.url_elem.value = server;
-    ctx.user_elem.value = '';
-    ctx.password_elem.value = 'secret';
-    const before = await requestUrls(ctx);
-    const identity_before = connectionIdentity(ctx);
-    await store(ctx);
-    assertEqual(ctx.fetched.length, 0, 'no server round trip needed to name a userinfo login');
-    assertEqual(ctx.stored.length, 1, 'one credential stored');
-    assertEqual(ctx.stored[0].id, expected_id, 'remembered id');
-    assertEqual(ctx.stored[0].password, 'secret', 'remembered password');
-    assertEqual(ctx.stored[0].name, server, 'remembered name is the server URL');
-    if (!before.status_url.includes('user=') && !before.completion_url.includes('user=')) {
-        /// The implicit-auth request carries no `user` parameter at all.
-    } else {
-        throw new Error(`the empty-field request unexpectedly carries a user parameter: ${before.status_url}`);
-    }
-
-    /// The password manager refills the remembered login into the fields on the next visit.
-    ctx.user_elem.value = ctx.stored[0].id;
-    ctx.password_elem.value = ctx.stored[0].password;
-    const after = await requestUrls(ctx);
-    assertEqual(after.status_url, before.status_url, 'status request URL after refill');
-    assertEqual(after.completion_url, before.completion_url, 'completion request URL after refill');
-    assertEqual(connectionIdentity(ctx), identity_before, 'connection identity after refill');
-    if (after.status_url.includes('user=')) throw new Error(`refilled implicit login forced a user parameter: ${after.status_url}`);
-}
-
-/// Without a userinfo, an empty field authenticates as the server's `default_session_user`. The login
+/// An empty field authenticates as the server's `default_session_user`. The login
 /// must be remembered under the name the server reports for exactly that request (no `user`
 /// parameter), and the refilled name must then select that account explicitly.
 async function implicitRoundTrip(ctx, server, implicit_user) {
@@ -252,29 +220,32 @@ scenario('implicit-user-unknown-nothing-stored', async js => {
     assertEqual(ctx.stored.length, 0, 'nothing stored when the server does not report the user');
 });
 
-scenario('userinfo-round-trip', async js => {
-    const ctx = boot(js);
-    await roundTrip(ctx, 'http://alice@host:8123/', 'alice');
-});
-
-scenario('percent-encoded-userinfo-round-trip', async js => {
-    const ctx = boot(js);
-    await roundTrip(ctx, 'http://a%40corp@host:8123/', 'a@corp');
-});
-
-/// A refilled `default` on a userinfo connection is NOT the implicit login of that connection: it
-/// must keep overriding the userinfo, exactly as a typed `default` did before.
-scenario('explicit-default-overrides-userinfo', async js => {
+/// `fetch` refuses a URL with credentials, so a userinfo connection cannot be used from the page, and
+/// nothing is stored for it rather than a name the page cannot authenticate with.
+scenario('userinfo-nothing-stored', async js => {
     const ctx = boot(js);
     ctx.url_elem.value = 'http://alice@host:8123/';
-    ctx.user_elem.value = 'default';
+    ctx.user_elem.value = '';
     ctx.password_elem.value = 'secret';
-    const { status_url, completion_url } = await requestUrls(ctx);
-    if (!status_url.includes('&user=default&')) throw new Error(`explicit default not sent: ${status_url}`);
-    if (!completion_url.includes('&user=default&')) throw new Error(`explicit default not sent: ${completion_url}`);
-    assertEqual(connectionIdentity(ctx), 'default', 'field takes precedence over userinfo');
     await store(ctx);
-    assertEqual(ctx.stored[0].id, 'default', 'remembered under the explicit name');
+    assertEqual(ctx.stored.length, 0, 'nothing stored for a userinfo connection');
+});
+
+/// The probe runs concurrently with the query of the Run, so it must not join the connection's HTTP
+/// session (`SESSION_IS_LOCKED`); the other parameters of the server URL are kept as they are.
+scenario('probe-outside-of-session', async js => {
+    const ctx = boot(js);
+    ctx.url_elem.value = 'http://host:8123/?session_id=abc&session_check=1&x=a+b%20c&session_timeout=60&session_ids=keep';
+    ctx.user_elem.value = '';
+    ctx.password_elem.value = 'secret';
+    await store(ctx);
+    assertEqual(ctx.fetched.length, 1, 'one probe');
+    const probe = ctx.fetched[0].url;
+    if (!probe.startsWith('http://host:8123/?x=a+b%20c&session_ids=keep&'))
+        throw new Error(`probe URL does not drop exactly the session parameters: ${probe}`);
+    if (probe.includes('user=')) throw new Error(`probe carries a user parameter: ${probe}`);
+    assertEqual(ctx.stored[0].id, 'default', 'remembered id');
+    assertEqual(ctx.stored[0].name, ctx.url_elem.value, 'remembered name is the original server URL');
 });
 
 scenario('explicit-user-sent-and-remembered', async js => {
@@ -319,26 +290,14 @@ scenario('no-password-credential-api-skips', async js => {
     assertEqual(ctx.fetched.length, 0, 'no probe without the API');
 });
 
-scenario('malformed-server-url-asks-server', async js => {
+scenario('malformed-server-url-nothing-stored', async js => {
     const ctx = boot(js);
     ctx.url_elem.value = 'http://[bad';
     ctx.user_elem.value = '';
     ctx.password_elem.value = 'secret';
-    assertEqual(connectionIdentity(ctx), '', 'identity of an unparsable server URL');
     await store(ctx);
-    assertEqual(ctx.stored.length, 1, 'stored');
-    assertEqual(ctx.stored[0].id, 'default', 'remembered id');
-});
-
-/// Every request URL of the page must obtain its `user` parameter from `userUrlParam`; a builder
-/// appending `&user=` by hand would reintroduce the forced `user=default` after a refill.
-scenario('no-request-builder-bypasses-userUrlParam', async js => {
-    const occurrences = [...js.matchAll(/&user=/g)].length;
-    const inside_helper = [...extractFunction(js, 'userUrlParam').matchAll(/&user=/g)].length;
-    assertEqual(inside_helper, 1, '`userUrlParam` appends the parameter once');
-    assertEqual(occurrences, inside_helper, 'occurrences of `&user=` outside `userUrlParam`');
-    const users = [...js.matchAll(/userUrlParam\(server_address, user\)/g)].length;
-    if (users < 5) throw new Error(`expected at least 5 request builders to call userUrlParam, found ${users}`);
+    assertEqual(ctx.fetched.length, 0, 'no probe to an unparsable server URL');
+    assertEqual(ctx.stored.length, 0, 'nothing stored');
 });
 
 /// ----- Runner ---------------------------------------------------------------------
