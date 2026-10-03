@@ -13,6 +13,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
+#include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTableProxy.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -75,11 +76,6 @@ namespace FailPoints
 static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists)
 {
     return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name) : DatabaseCatalog::instance().getDatabase(database_name);
-}
-
-static bool isRefreshTempTableName(const String & name)
-{
-    return name.starts_with(".tmp.inner_id.") || name.starts_with(".tmp.inner.");
 }
 
 
@@ -601,7 +597,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
             /// Preparing a table for shutdown cannot be undone, so the checks that can refuse the drop of a table run for all
             /// tables before any of them is prepared.
-            auto check_tables = [&](bool skip_size_of_refresh_temp_tables)
+            auto check_tables = [&](const std::unordered_set<String> & skip_size_check)
             {
                 const auto & settings = getContext()->getSettingsRef();
                 bool check_ref_deps = settings[Setting::check_referential_table_dependencies];
@@ -617,7 +613,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                         continue;
                     DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, /*is_drop_database=*/ true);
                     if (!table->isDictionary() && !tables_with_checked_size.contains(table)
-                        && !(skip_size_of_refresh_temp_tables && isRefreshTempTableName(table_id.table_name)))
+                        && !skip_size_check.contains(table_id.table_name))
                         tables_to_check_size.push_back(std::move(table));
                 }
                 /// Last, because it may consume the `force_drop_table` flag.
@@ -642,8 +638,16 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 }
             }
 
-            /// Stopping a refreshable view drops the temporary table of its refresh without a size check.
-            check_tables(/*skip_size_of_refresh_temp_tables=*/ !tables_to_prepare_early.empty());
+            /// Stopping a refreshable view drops the temporary table of its running refresh without a size check.
+            std::unordered_set<String> running_refresh_tables;
+            for (const StoragePtr & view : tables_to_prepare_early)
+            {
+                StorageID view_id = view->getStorageID();
+                for (const auto & task : getContext()->getRefreshSet().findTasks(view_id))
+                    if (task->getInfo().state == RefreshState::Running)
+                        running_refresh_tables.insert(".tmp" + StorageMaterializedView::generateInnerTableName(view_id));
+            }
+            check_tables(running_refresh_tables);
 
             if (!tables_to_prepare_early.empty())
             {
@@ -653,7 +657,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 prepare_tables(tables_to_prepare_early);
 
                 collect_tables();
-                check_tables(/*skip_size_of_refresh_temp_tables=*/ false);
+                check_tables({});
             }
 
             prepare_tables(tables_to_prepare);
@@ -703,7 +707,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     /// and `dropInnerTableIfAny` drops those too, so they must also be classified as inner.
                     auto is_inner_table_name = [](const String & name)
                     {
-                        return name.starts_with(".inner_id.") || name.starts_with(".inner.") || isRefreshTempTableName(name);
+                        return name.starts_with(".inner_id.") || name.starts_with(".inner.")
+                            || name.starts_with(".tmp.inner_id.") || name.starts_with(".tmp.inner.");
                     };
                     bool a_is_inner = is_inner_table_name(a.first.table_name);
                     bool b_is_inner = is_inner_table_name(b.first.table_name);
