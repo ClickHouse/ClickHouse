@@ -1,9 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 
 #include <algorithm>
-#include <ranges>
-
-#include <fmt/ranges.h>
 
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
@@ -41,18 +38,6 @@ namespace QueryPlanOptimizations
 
 namespace
 {
-
-String dumpStatsForLogs(const RelationStats & stats)
-{
-    return fmt::format(
-        "{}: {} rows, columns: [{}]",
-        stats.table_name.empty() ? "<unknown>" : stats.table_name,
-        stats.estimated_rows ? toString(stats.estimated_rows.value()) : "unknown",
-        fmt::join(
-            stats.column_stats
-                | std::views::transform([](const auto & p) { return fmt::format("{}: {}", p.first, p.second.num_distinct_values); }),
-            ", "));
-}
 
 RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
 {
@@ -174,7 +159,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     .column_stats = relation_profile.column_stats,
                     .table_name = table_display_name,
                     .source = RowEstimateSource::Statistics};
-                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
+                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", ::DB::dumpRelationStatsForLogs(stats));
                 return stats;
             }
         }
@@ -241,7 +226,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     /// which is not linked to current module
     if (step->getName() == "ReadFromSystemOne")
     {
-        /// system.one always produces exactly one row — used to implement constant SELECTs like `SELECT 1`.
+        /// system.one always produces exactly one row - used to implement constant SELECTs like `SELECT 1`.
         return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
     }
 

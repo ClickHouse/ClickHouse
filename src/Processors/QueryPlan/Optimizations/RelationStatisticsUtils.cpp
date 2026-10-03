@@ -1,9 +1,11 @@
 #include <memory>
 #include <ranges>
+
 #include <Core/Block.h>
 #include <Core/Joins.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
+#include <fmt/ranges.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -26,6 +28,18 @@
  */
 namespace DB
 {
+
+String dumpRelationStatsForLogs(const RelationStats & stats)
+{
+    return fmt::format(
+        "{}: {} rows, columns: [{}]",
+        stats.table_name.empty() ? "<unknown>" : stats.table_name,
+        stats.estimated_rows ? fmt::format("{}", stats.estimated_rows.value()) : "unknown",
+        fmt::join(
+            stats.column_stats
+                | std::views::transform([](const auto & p) { return fmt::format("{}: {}", p.first, p.second.num_distinct_values); }),
+            ", "));
+}
 
 /* Read a table statistics hint from the query parameter.
  * The parameter should be a JSON object with the following structure:

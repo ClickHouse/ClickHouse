@@ -1,6 +1,5 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
-#include <Common/assert_cast.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
@@ -17,12 +16,13 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
