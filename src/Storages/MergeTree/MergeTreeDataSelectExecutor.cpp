@@ -1567,11 +1567,6 @@ MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits
         && !query_info.input_order_info)
         row_limits.limits = SizeLimits(settings[Setting::max_rows_to_read], 0, settings[Setting::read_overflow_mode]);
 
-    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
-        && settings[Setting::max_rows_to_read_leaf]
-        && !query_info.input_order_info)
-        row_limits.leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], 0, settings[Setting::read_overflow_mode_leaf]);
-
     return row_limits;
 }
 
