@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
     extern const int DELTA_KERNEL_ERROR;
+    extern const int DATALAKE_DATABASE_ERROR;
 }
 
 namespace FailPoints
@@ -626,12 +627,12 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
 
 SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     SharedHeader sample_block,
-    const StorageID & /* table_id */,
+    const StorageID & table_id,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
-    std::shared_ptr<DataLake::ICatalog> /* catalog */)
+    std::shared_ptr<DataLake::ICatalog> catalog)
 {
     if (!context->getSettingsRef()[Setting::allow_delta_lake_writes])
     {
@@ -654,14 +655,30 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
             "Writing to DeltaLake tables with column mapping enabled is not supported");
     }
 
-    auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper, snapshot->getTableSchema());
+    auto write_object_storage = object_storage_;
+    auto write_kernel_helper = kernel_helper;
+    if (catalog && object_storage_->hasCredentialsRefreshCallback())
+    {
+        if (auto write_credentials_callback = catalog->getWriteCredentialsConfigurationCallback(table_id))
+        {
+            write_object_storage = configuration->createObjectStorage(context, /* is_readonly */ false, write_credentials_callback);
+            if (!write_object_storage->tryRefreshCredentialsViaCallback())
+                throw Exception(
+                    ErrorCodes::DATALAKE_DATABASE_ERROR,
+                    "The catalog did not vend storage credentials for writing into table {}",
+                    table_id.getNameForLogs());
+            write_kernel_helper = DB::getKernelHelper(configuration, write_object_storage);
+        }
+    }
+
+    auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(write_kernel_helper, snapshot->getTableSchema());
     delta_transaction->create(partition_columns);
 
     if (partition_columns.empty())
     {
         return std::make_shared<DeltaLakeSink>(
             delta_transaction,
-            object_storage_,
+            write_object_storage,
             context,
             sample_block,
             format_settings,
@@ -672,7 +689,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     return std::make_shared<DeltaLakePartitionedSink>(
         delta_transaction,
         partition_columns,
-        object_storage_,
+        write_object_storage,
         context,
         sample_block,
         format_settings,
