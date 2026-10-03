@@ -3,6 +3,7 @@
 #include <Common/MemoryTracker.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/MergeList.h>
 #include <Storages/MutationCommands.h>
 
 namespace DB
@@ -86,6 +87,9 @@ struct MergeMutateSelectedEntry
     /// scheduler must run the merge with this exact value rather than re-derive it from the live settings.
     /// Unused (false) for a mutation entry.
     bool cleanup{false};
+    /// Taken by `StorageMergeTree::selectPartsToMerge` when the selected merge is a merge with TTL,
+    /// and given back when this entry dies - which happens whether the merge ran or was dropped.
+    MergeList::TTLMergeSlot ttl_merge_slot;
     bool finalized{false};
     MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_,
                              MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR,
