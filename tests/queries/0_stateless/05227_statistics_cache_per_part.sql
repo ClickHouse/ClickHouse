@@ -9,6 +9,8 @@
 SET enable_analyzer = 1;
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;
+-- One part per insert: a merge of the parts of one insert between the queries would make a new part, a cache miss.
+SET max_insert_threads = 1;
 SET collect_hash_table_stats_during_joins = 0;
 SET query_plan_optimize_join_order_limit = 10;
 -- The join estimates below must come from the statistics, not from the randomized fuzzing of the join order.
