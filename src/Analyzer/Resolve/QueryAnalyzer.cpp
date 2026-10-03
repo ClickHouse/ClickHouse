@@ -42,6 +42,7 @@
 
 #include <Core/Settings.h>
 
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -4246,6 +4247,23 @@ void expandTuplesInList(QueryTreeNodes & key_list)
     key_list = std::move(expanded_keys);
 }
 
+bool isTupleOperator(const QueryTreeNodePtr & node)
+{
+    const auto * function = node->as<FunctionNode>();
+    if (!function || function->getFunctionName() != "tuple")
+        return false;
+
+    const auto & original_ast = function->getOriginalAST();
+    const auto * ast_function = original_ast ? original_ast->as<ASTFunction>() : nullptr;
+    return ast_function && ast_function->name == "tuple" && ast_function->isOperator();
+}
+
+void expandParenthesizedKeyList(QueryTreeNodes & key_list)
+{
+    if (key_list.size() == 1 && isTupleOperator(key_list.front()))
+        expandTuplesInList(key_list);
+}
+
 bool nodeSupportsConvertToNullable(const QueryTreeNodePtr & node)
 {
     auto node_type = node->getNodeType();
@@ -4389,11 +4407,14 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
 
         // Remove redundant calls to `tuple` function for ordinary GROUP BY. It simplifies checking if expression
         // is an aggregation key and is required to support queries like: SELECT number FROM numbers(3)
-        // GROUP BY (number, number % 2). For ROLLUP and CUBE, a tuple is one logical grouping key and must be
-        // kept intact.
+        // GROUP BY (number, number % 2). For ROLLUP and CUBE, preserve tuple-valued keys but keep the historical
+        // singleton `GROUP BY (a, b) WITH ...` shorthand as two grouping keys. Expand that wrapper only here,
+        // after positional arguments have already been handled.
         auto & group_by_list = query_node_typed.getGroupBy().getNodes();
         if (!query_node_typed.isGroupByWithRollup() && !query_node_typed.isGroupByWithCube())
             expandTuplesInList(group_by_list);
+        else
+            expandParenthesizedKeyList(group_by_list);
 
         for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
         {
