@@ -76,24 +76,6 @@ void CompressionCodecFactory::validateCodecString(
 namespace
 {
 
-bool innerDataTypeIsFloat(const DataTypePtr & type)
-{
-    if (isFloat(type))
-        return true;
-    if (const DataTypeNullable * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
-        return innerDataTypeIsFloat(type_nullable->getNestedType());
-    if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type.get()))
-        return innerDataTypeIsFloat(type_array->getNestedType());
-    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
-    {
-        for (const auto & subtype : type_tuple->getElements())
-            if (innerDataTypeIsFloat(subtype))
-                return true;
-        return false;
-    }
-    return false;
-}
-
 bool typeContainsMap(const DataTypePtr & type)
 {
     if (typeid_cast<const DataTypeMap *>(type.get()))
@@ -136,12 +118,17 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
         /// A codec that depends on the data type resolves differently per substream, and every
         /// substream is compressed with its own chain, so there is one chain per substream.
         size_t num_substreams = 0;
+        bool has_non_float_special_substream = false;
         if (column_type)
         {
             ISerialization::StreamCallback count_callback = [&](const auto & substream_path)
             {
                 if (ISerialization::isSpecialCompressionAllowed(substream_path))
+                {
                     ++num_substreams;
+                    chassert(!substream_path.empty());
+                    has_non_float_special_substream |= !isFloat(substream_path.back().data.type);
+                }
             };
             column_type->getDefaultSerialization()->enumerateStreams(count_callback, column_type);
         }
@@ -375,9 +362,10 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                     "Cannot validate floating-point time series codec {} without a column type",
                     codec_description);
 
-            /// Floating-point time series codecs are not supposed to compress non-floating-point data
+            /// Floating-point time series codecs must suit every stream they compress. A tuple
+            /// with one float and one integer cannot use such a codec on its integer stream.
             if (last_floating_point_time_series_codec_pos.has_value()
-                    && column_type && !innerDataTypeIsFloat(column_type))
+                    && column_type && has_non_float_special_substream)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "The combination of compression codecs {} is meaningless,"
                     " because it does not make sense to apply a floating-point time series codec to non-floating-point columns"
