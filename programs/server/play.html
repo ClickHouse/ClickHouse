@@ -8339,16 +8339,35 @@ async function responseRejectsLegacyPasswordOnlyAuth(response) {
     }
 }
 
-function responseRejectsEncodedWebUIAuth(response) {
-    if (response.headers.get('X-ClickHouse-Auth-Encoding') === 'percent')
-        return false;
-    return response.headers.get('X-ClickHouse-Exception-Code') === '516';
+function serverVersionBefore(version, expected_major, expected_minor) {
+    const [major, minor] = String(version).split('.').map(Number);
+    return Number.isFinite(major) && Number.isFinite(minor)
+        && (major < expected_major || (major === expected_major && minor < expected_minor));
 }
 
 function serverPredatesDefaultSessionUser(version) {
-    const [major, minor] = String(version).split('.').map(Number);
-    return Number.isFinite(major) && Number.isFinite(minor)
-        && (major < 26 || (major === 26 && minor < 7));
+    return serverVersionBefore(version, 26, 7);
+}
+
+function serverPredatesEncodedWebUIAuth(version) {
+    return serverVersionBefore(version, 26, 10);
+}
+
+async function responseProvesLegacyEncodedWebUIAuth(response) {
+    if (response.headers.get('X-ClickHouse-Auth-Encoding') === 'percent')
+        return false;
+    if (response.headers.get('X-ClickHouse-Exception-Code') !== '516')
+        return false;
+
+    try {
+        const body = await response.clone().text();
+        if (!body.includes('DB::Exception'))
+            return false;
+        const version_match = body.match(/\bversion\s+(\d+\.\d+(?:\.\d+){0,2})\b/i);
+        return version_match !== null && serverPredatesEncodedWebUIAuth(version_match[1]);
+    } catch (e) {
+        return false;
+    }
 }
 
 async function probeLegacyPasswordOnlyAuth(server_address, password) {
@@ -8391,12 +8410,12 @@ async function fetchWithRequestAuth(url, options, server_address, user, password
         return response;
     }
 
-    if (response.ok || !responseRejectsEncodedWebUIAuth(response))
+    if (response.ok || !await responseProvesLegacyEncodedWebUIAuth(response))
         return response;
 
-    /// An older ClickHouse server treats the prefixed header values as ordinary credentials and
-    /// rejects them without acknowledging the encoding. Retry through the historical URL
-    /// transport, but do not cache this mode so a rolling upgrade returns to headers immediately.
+    /// Only a ClickHouse auth error that identifies a pre-26.10 server may reach this path.
+    /// A missing or unreadable response marker alone is not proof that URL fallback is safe.
+    /// Do not cache this mode so a rolling upgrade returns to headers immediately.
     return await fetch(
         url + getLegacyAuthQueryParams(user, password),
         { ...options, headers: { 'Authorization': 'never' } });
