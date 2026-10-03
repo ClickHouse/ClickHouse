@@ -172,9 +172,10 @@ public:
         return res;
     }
 
-    /// Null-safe comparison for types that have no least common supertype (e.g.
-    /// `Nullable(UInt64)` vs `Nullable(Int64)`).
-    ColumnPtr executeNullableWithoutSupertype(const ColumnsWithTypeAndName & columns_with_type_and_name, size_t input_rows_count) const
+    /// Peel off the null maps and compare the nested values with the regular comparison kernel, so
+    /// `<=>` agrees with `=` on non-NULL values. `IColumn::compareAt` cannot be used instead: it
+    /// implements the total order used for sorting and indexing, where `NaN` equals `NaN`.
+    ColumnPtr executeNullableByNullMap(const ColumnsWithTypeAndName & columns_with_type_and_name, size_t input_rows_count) const
     {
         auto extract_nested_column_info = [](const ColumnWithTypeAndName & arg, ColumnPtr & null_map, ColumnWithTypeAndName & nested)
         {
@@ -290,23 +291,20 @@ public:
             // To address: Nullable vs Nullable
             if (c0_converted->isNullable() && c1_converted->isNullable())
             {
-                auto c_res = ColumnUInt8::create();
-                ColumnUInt8::Container & vec_res = c_res->getData();
-                vec_res.resize(arguments[0].column->size());
-                c0_converted = c0_converted->convertToFullColumnIfConst();
-                c1_converted = c1_converted->convertToFullColumnIfConst();
+                /// `NULL <=> NULL`: `Nullable(Nothing)` carries no values to compare.
+                if (isNothing(removeLowCardinalityAndNullable(common_type)))
+                    return result_type->createColumnConst(input_rows_count, UInt8(is_equal_mode ? 1 : 0));
 
-                for (size_t i = 0; i < input_rows_count ; i++)
-                    vec_res[i] = c0_converted->compareAt(i, i, *c1_converted, 1) == 0 ? is_equal_mode : !is_equal_mode;
-
-                return c_res;
+                return executeNullableByNullMap(
+                    ColumnsWithTypeAndName{{c0_converted, common_type, ""}, {c1_converted, common_type, ""}},
+                    input_rows_count);
             }
         }
         else if ((type_and_name_left_col.type->isNullable() || type_and_name_right_col.type->isNullable()) && !has_string_vs_non_string)
         {
             // No common supertype and at least one side is Nullable (e.g. `Nullable(UInt64)` vs
             // `Nullable(Int64)`).
-            return executeNullableWithoutSupertype(arguments, input_rows_count);
+            return executeNullableByNullMap(arguments, input_rows_count);
         }
 
         // To address regular case (also covers types with no common supertype that are not Nullable,
