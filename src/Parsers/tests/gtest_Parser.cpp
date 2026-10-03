@@ -190,6 +190,22 @@ TEST(ParserQueryWithOutput, CloneOwnsItsChildren)
     }
 }
 
+TEST(ParserShowFunctionsQuery, PreserveEmptyLike)
+{
+    const std::vector<String> queries = {
+        "SHOW FUNCTIONS LIKE ''",
+        "SHOW FUNCTIONS ILIKE ''",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+        EXPECT_EQ(query, ast->formatWithSecretsOneLine()) << "query: " << query;
+    }
+}
+
 /// `ASTIndexDeclaration` carries a `part_of_create_index_query` flag that switches its formatting
 /// between the `CREATE INDEX` form (`(expr) TYPE ...`, with the extra wrapper this PR restores for
 /// parenthesized expressions) and the column-list form (`name expr TYPE ...`). `clone()` must carry
@@ -518,8 +534,8 @@ TEST(ParserCreateQuery, MaskKafkaTableEngineCredentials)
 
     EXPECT_EQ(first_arg_masked.find("plain_first_password"), String::npos);
     EXPECT_NE(first_arg_masked.find("kafka_sasl_password = '[HIDDEN]'"), String::npos);
-    /// The positional argument beside it is not a secret and stays visible.
-    EXPECT_NE(first_arg_masked.find("'clickhouse'"), String::npos);
+    /// A positional argument after a named one has an unknowable slot, so it is hidden.
+    EXPECT_EQ(first_arg_masked.find("'clickhouse'"), String::npos);
 
     /// The `SETTINGS` clause form is masked by `Kafka::SETTINGS_TO_HIDE` and must agree.
     const String settings_query =

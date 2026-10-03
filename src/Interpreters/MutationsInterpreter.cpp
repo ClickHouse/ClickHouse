@@ -15,6 +15,7 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageSet.h>
@@ -149,7 +150,7 @@ void checkNoRowPolicyForSetOperands(
                         DDLLogEntry::INITIATOR_USER_VERSION);
 
                 auto * table_node = resolved.resolved_identifier ? resolved.resolved_identifier->as<TableNode>() : nullptr;
-                if (auto * storage_set = table_node ? dynamic_cast<StorageSet *>(table_node->getStorage().get()) : nullptr)
+                if (auto * storage_set = table_node ? castStorage<StorageSet>(table_node->getStorage(), DeferredTable::Load).get() : nullptr)
                     storage_set->checkNoRowPolicy(context);
             }
         }
@@ -362,8 +363,9 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     ASTPtr partition_predicate_as_ast_func;
     if (alter && alter->partitions)
     {
-        auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
-        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
+        auto resolved_storage = resolveStorageProxyLoading(storage);
+        auto storage_merge_tree = castStorage<MergeTreeData>(resolved_storage, DeferredTable::Load);
+        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(resolved_storage);
 
         auto func = makeASTFunction("in");
         func->arguments->children.push_back(make_intrusive<ASTIdentifier>("_partition_id"));
@@ -386,8 +388,9 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     {
         String partition_id;
 
-        auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
-        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
+        auto resolved_storage = resolveStorageProxyLoading(storage);
+        auto storage_merge_tree = castStorage<MergeTreeData>(resolved_storage, DeferredTable::Load);
+        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(resolved_storage);
         if (storage_merge_tree)
             partition_id = storage_merge_tree->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
         else if (storage_from_merge_tree_data_part)
@@ -415,7 +418,9 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     return predicate_ast;
 }
 
-MutationsInterpreter::Source::Source(StoragePtr storage_) : storage(std::move(storage_))
+/// A mutation reads and rewrites parts, so it needs the real storage rather than the proxy a lazily
+/// loaded table is reached through.
+MutationsInterpreter::Source::Source(StoragePtr storage_) : storage(resolveStorageProxyLoading(storage_))
 {
 }
 
@@ -457,7 +462,7 @@ const MergeTreeData * MutationsInterpreter::Source::getMergeTreeData() const
     if (data)
         return data;
 
-    return dynamic_cast<const MergeTreeData *>(storage.get());
+    return castStorage<MergeTreeData>(storage, DeferredTable::Load).get();
 }
 
 MergeTreeData::DataPartPtr MutationsInterpreter::Source::getMergeTreeDataPart() const
@@ -538,7 +543,7 @@ MutationsInterpreter::MutationsInterpreter(
         std::move(available_columns_),
         std::move(context_), std::move(settings_))
 {
-    if (settings.can_execute && !settings.return_mutated_rows && dynamic_cast<const MergeTreeData *>(source.getStorage().get()))
+    if (settings.can_execute && !settings.return_mutated_rows && castStorage<MergeTreeData>(source.getStorage(), DeferredTable::Load))
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -1440,6 +1445,42 @@ void MutationsInterpreter::prepare(bool dry_run)
                     dependencies.emplace(elem.first, ColumnDependency::TTL_TARGET);
                     new_updated_columns.insert(elem.first);
                 }
+
+                /// A column TTL resets its column to the default, which makes every `MATERIALIZED`
+                /// column derived from it stale. `TTLTransform` recomputes those, but only the ones
+                /// that are in the block, so they have to be read and written here - and this command
+                /// is the one that repairs a part no later merge is going to touch.
+                NameSet recomputed_columns;
+                NameSet columns_read_to_recompute;
+                for (const auto & column : columns_desc)
+                {
+                    if (!available_columns_set.contains(column.name))
+                        continue;
+
+                    const auto & columns_to_read
+                        = materialized_dependencies.findColumnsToRecalculate(column.name, new_updated_columns);
+                    if (columns_to_read.empty())
+                        continue;
+
+                    recomputed_columns.insert(column.name);
+                    columns_read_to_recompute.insert(columns_to_read.begin(), columns_to_read.end());
+                }
+
+                for (const auto & name : recomputed_columns)
+                    dependencies.emplace(name, ColumnDependency::TTL_TARGET);
+
+                /// The expression of a recomputed column also reads columns no TTL touches - `y` of
+                /// `m MATERIALIZED x + y`. Without them in the block `TTLTransform` cannot evaluate the
+                /// expression and skips the column, so the command would rewrite it with the stale value.
+                for (const auto & name : columns_read_to_recompute)
+                    if (!recomputed_columns.contains(name) && !new_updated_columns.contains(name))
+                        dependencies.emplace(name, ColumnDependency::TTL_EXPRESSION);
+
+                /// The recompute changes these columns as surely as the TTL changes its own target, so
+                /// the closure below has to be keyed on them too: a skip index, a projection or a
+                /// statistic reading a recomputed column is rebuilt, and the columns it reads next to
+                /// that one enter the block instead of being filled with a type default.
+                new_updated_columns.insert(recomputed_columns.begin(), recomputed_columns.end());
 
                 auto all_columns_vec = all_columns.getNames();
                 auto all_columns_set = NameSet(all_columns_vec.begin(), all_columns_vec.end());
