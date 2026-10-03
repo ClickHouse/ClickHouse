@@ -224,6 +224,8 @@ private:
     std::optional<std::pair<String, bool>> findOtherName(UInt64 inode);
     /// `file_name` no longer has `inode`: hands the file over to one of its other names, or drops its meta.
     void releaseInode(const String & file_name, UInt64 inode);
+    /// Stops reading `file_name`, releasing its inode first.
+    void untrackReadName(const String & file_name);
     void moveMetaFile(const String & from, const String & to) const;
 
     size_t getTableDependentCount() const;

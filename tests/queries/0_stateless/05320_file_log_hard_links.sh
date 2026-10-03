@@ -51,7 +51,7 @@ function read_until()
 }
 
 printf '1\n2\n' > "${d1}/app.log"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log (id UInt64) ENGINE = FileLog('${d1}/', 'TSV')"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log (id UInt64) ENGINE = FileLog('${d1}/', 'TSV') SETTINGS poll_timeout_ms = 100"
 read_log file_log
 sync_watch file_log "${d1}/app.log"
 
@@ -110,7 +110,7 @@ echo '-- hard links and a symbolic link that exist when the table is created'
 printf '1\n2\n' > "${logs_dir}/d2/a.log"
 ln "${logs_dir}/d2/a.log" "${logs_dir}/d2/b.log"
 ln -s a.log "${logs_dir}/d2/0.log"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_create (id UInt64) ENGINE = FileLog('${logs_dir}/d2/', 'TSV')"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_create (id UInt64) ENGINE = FileLog('${logs_dir}/d2/', 'TSV') SETTINGS poll_timeout_ms = 100"
 read_log file_log_create
 
 echo '-- a symbolic link that exists when the table is created'
@@ -118,7 +118,7 @@ d3=${logs_dir}/d3
 printf '1\n' > "${d3}/a.log"
 ln -s a.log "${d3}/s1.log"
 : > "${d3}/sync.log"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_symlink (id UInt64) ENGINE = FileLog('${d3}/', 'TSV')"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_symlink (id UInt64) ENGINE = FileLog('${d3}/', 'TSV') SETTINGS poll_timeout_ms = 100"
 read_log file_log_symlink
 sync_watch file_log_symlink "${d3}/sync.log"
 

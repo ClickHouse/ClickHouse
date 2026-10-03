@@ -1160,23 +1160,19 @@ bool StorageFileLog::addOtherName(const String & file_name, UInt64 inode, bool i
                 return false;
             }
             const String link = read->first;
-            file_infos.context_by_name.erase(read);
+            /// A file previously read under `file_name` moves its meta file away before this one moves in.
+            untrackReadName(file_name);
+            moveMetaFile(link, file_name);
+            file_infos.context_by_name.erase(link);
             std::erase(file_infos.file_names, link);
             file_infos.other_names.emplace(link, OtherName{.inode = inode, .is_symlink = true});
             onFileAppeared(file_name, inode, is_symlink);
-            auto & read_meta = file_infos.meta_by_inode.at(inode);
-            moveMetaFile(read_meta.file_name, file_name);
-            read_meta.file_name = file_name;
+            file_infos.meta_by_inode.at(inode).file_name = file_name;
             return true;
         }
     }
 
-    if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-    {
-        releaseInode(file_name, it->second.inode); /// May rehash `context_by_name`, so `it` is invalid after it.
-        file_infos.context_by_name.erase(file_name);
-        std::erase(file_infos.file_names, file_name);
-    }
+    untrackReadName(file_name);
     file_infos.other_names.emplace(file_name, OtherName{.inode = inode, .is_symlink = is_symlink});
     return true;
 }
@@ -1222,22 +1218,33 @@ void StorageFileLog::releaseInode(const String & file_name, UInt64 inode)
     auto meta = file_infos.meta_by_inode.find(inode);
     if (meta == file_infos.meta_by_inode.end() || meta->second.file_name != file_name)
         return;
+    /// The meta file is moved or removed before the maps change, so that a throw leaves them as they were.
     auto other = findOtherName(inode);
     if (!other)
     {
-        file_infos.meta_by_inode.erase(meta);
         disk->removeFileIfExists(getFullMetaPath(file_name));
+        file_infos.meta_by_inode.erase(meta);
         return;
     }
     const auto & [other_name, gone] = *other;
+    moveMetaFile(file_name, other_name);
     const bool is_symlink = file_infos.other_names.at(other_name).is_symlink;
     file_infos.other_names.erase(other_name);
     meta->second.file_name = other_name;
-    moveMetaFile(file_name, other_name);
     /// A gone name is not read: its pending removal hands the file on.
     file_infos.context_by_name.emplace(
         other_name, FileContext{.status = gone ? FileStatus::NO_CHANGE : FileStatus::OPEN, .inode = inode, .is_symlink = is_symlink});
     file_infos.file_names.push_back(other_name);
+}
+
+void StorageFileLog::untrackReadName(const String & file_name)
+{
+    auto it = file_infos.context_by_name.find(file_name);
+    if (it == file_infos.context_by_name.end())
+        return;
+    releaseInode(file_name, it->second.inode); /// May rehash `context_by_name`, so `it` is invalid after it.
+    file_infos.context_by_name.erase(file_name);
+    std::erase(file_infos.file_names, file_name);
 }
 
 bool StorageFileLog::updateFileInfos()
@@ -1307,15 +1314,20 @@ bool StorageFileLog::updateFileInfos()
                     /// Checked before `onFileAppeared`, which may release a meta.
                     const bool kept_other_name = file_infos.meta_by_inode.contains(inode) && findOtherName(inode).has_value();
 
-                    onFileAppeared(file_name, inode, is_symlink);
-
                     if (kept_other_name)
                     {
-                        auto & meta = file_infos.meta_by_inode.at(inode);
-                        moveMetaFile(meta.file_name, file_name);
-                        meta.file_name = file_name;
+                        if (const String read_name = file_infos.meta_by_inode.at(inode).file_name; read_name != file_name)
+                        {
+                            /// A file previously read under `file_name` moves its meta file away before this one moves in.
+                            untrackReadName(file_name);
+                            moveMetaFile(read_name, file_name);
+                        }
+                        onFileAppeared(file_name, inode, is_symlink);
+                        file_infos.meta_by_inode.at(inode).file_name = file_name;
                         break;
                     }
+
+                    onFileAppeared(file_name, inode, is_symlink);
 
                     /// An added file is read from offset 0, so any on-disk meta
                     /// under this name is stale. Drop it to stay consistent with
@@ -1400,22 +1412,33 @@ bool StorageFileLog::updateFileInfos()
     names.swap(file_infos.file_names);
 
     /// Remove file infos with REMOVE status
-    for (const auto & file_name : names)
+    size_t i = 0;
+    try
     {
-        auto it = file_infos.context_by_name.find(file_name);
-        if (it == file_infos.context_by_name.end())
-            continue;
-        if (it->second.status != FileStatus::REMOVED)
+        for (; i < names.size(); ++i)
         {
-            file_infos.file_names.push_back(file_name);
-            continue;
+            const String & file_name = names[i];
+            auto it = file_infos.context_by_name.find(file_name);
+            if (it == file_infos.context_by_name.end())
+                continue;
+            if (it->second.status != FileStatus::REMOVED)
+            {
+                file_infos.file_names.push_back(file_name);
+                continue;
+            }
+            /// If the inode is now held by another name (mv), its meta names that one and is kept.
+            releaseInode(file_name, it->second.inode); /// May rehash `context_by_name`, so `it` is invalid after it.
+            file_infos.context_by_name.erase(file_name);
+            disk->removeFileIfExists(getFullMetaPath(file_name));
         }
-        const UInt64 inode = it->second.inode;
-        /// Erased before `releaseInode`, which may rehash `context_by_name`.
-        file_infos.context_by_name.erase(it);
-        /// If the inode is now held by another name (mv), its meta names that one and is kept.
-        releaseInode(file_name, inode);
-        disk->removeFileIfExists(getFullMetaPath(file_name));
+    }
+    catch (...)
+    {
+        /// A name whose release failed is still tracked: it and the names after it stay, and the next call retries.
+        for (; i < names.size(); ++i)
+            if (file_infos.context_by_name.contains(names[i]))
+                file_infos.file_names.push_back(names[i]);
+        throw;
     }
 
     /// These file infos should always have same size(one for one)
