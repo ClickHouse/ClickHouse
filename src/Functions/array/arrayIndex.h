@@ -131,14 +131,26 @@ private:
 
             if (found)
             {
+#if defined(__x86_64__)
+                /// On x86 the rescan of a whole block becomes branchless code that reuses the comparisons above.
                 if constexpr (std::is_same_v<ConcreteAction, HasAction>)
                     return 1;
                 else
                     return findScalar(data + i, elements_per_block, value, offset + i);
+#else
+                /// Elsewhere it keeps the comparisons above from being vectorized for 4- and 8-byte elements
+                /// (checked on ARM), so only `break` here and rescan after the loop.
+                break;
+#endif
             }
         }
 
-        return findScalar(data + i, size - i, value, offset + i);
+        if constexpr (std::is_same_v<ConcreteAction, HasAction>)
+            if (size - i >= elements_per_block)
+                return 1;
+
+        /// The first match, if any, is in the block at `i` or, if no block matched, in the tail.
+        return findScalar(data + i, std::min(size - i, elements_per_block), value, offset + i);
     }
 
     static ALWAYS_INLINE ResultType find(const T * data, size_t size, T value)
@@ -860,12 +872,16 @@ private:
 
     ColumnPtr executeOnNonNullable(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
-        ColumnPtr res;
-        if (!((res = executeNothing(arguments))
-              || (res = executeIntegral<INTEGRAL_PACK>(arguments))
-              || (res = executeConst(arguments, result_type))
-              || (res = executeString(arguments))
-              || (res = executeGeneric(arguments))))
+        ColumnPtr res = executeNothing(arguments);
+        if (!res)
+            res = executeIntegral<INTEGRAL_PACK>(arguments);
+        if (!res)
+            res = executeConst(arguments, result_type);
+        if (!res)
+            res = executeString(arguments);
+        if (!res)
+            res = executeGeneric(arguments);
+        if (!res)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
 
         return res;

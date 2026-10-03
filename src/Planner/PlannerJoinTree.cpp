@@ -574,7 +574,7 @@ bool applyTrivialCountIfPossible(
     if (aggregates.size() != 1)
         return false;
 
-    const auto & function_node = aggregates.front().get()->as<const FunctionNode &>();
+    const auto & function_node = aggregates.front()->as<const FunctionNode &>();
     chassert(function_node.getAggregateFunction() != nullptr);
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
     if (!count_func)
@@ -718,7 +718,7 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     QueryTreeNodes aggregates = collectAggregateFunctionNodes(query_tree);
     if (aggregates.size() != 1)
         return false;
-    const auto & function_node = aggregates.front().get()->as<const FunctionNode &>();
+    const auto & function_node = aggregates.front()->as<const FunctionNode &>();
     chassert(function_node.getAggregateFunction() != nullptr);
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
     if (!count_func)
@@ -1585,6 +1585,10 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
     }
 
     if (!table_ptr->isMergeTree())
+        return false;
+
+    /// TODO(unique-key): support parallel replicas.
+    if (table_ptr->hasUniqueKey())
         return false;
 
     if (!table_ptr->supportsReplication() && !query_settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
