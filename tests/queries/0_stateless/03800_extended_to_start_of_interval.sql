@@ -1,3 +1,6 @@
+-- The comparison relies on the result types that depend on the interval unit, as for `toStartOfX`.
+SET to_start_of_interval_preserves_argument_type = 0;
+
 SET enable_extended_results_for_datetime_functions = 1;
 -- We want toStartOfInterval to give exactly the same results as toStartOfX, where X is any type of interval
 
