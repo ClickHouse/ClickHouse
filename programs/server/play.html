@@ -18087,14 +18087,17 @@ async function loadCompletions() {
     }
     completionsLoadStarted = true;
     const generation = connectionGeneration;
+    const server_address = url_elem.value;
+    const user = user_elem.value;
+    const password = password_elem.value;
 
     try {
         const response = await fetch(buildCompletionUrl(), {
             method: "POST",
             body: COMPLETION_QUERY,
-            headers: await getRequestAuthHeaders(user_elem.value, password_elem.value, url_elem.value),
+            headers: await getRequestAuthHeaders(user, password, server_address),
         });
-        invalidateRequestAuthOnFailure(response, url_elem.value, user_elem.value, password_elem.value);
+        invalidateRequestAuthOnFailure(response, server_address, user, password);
         /// The connection settings changed while loading — discard this stale result.
         if (generation !== connectionGeneration) {
             return;
