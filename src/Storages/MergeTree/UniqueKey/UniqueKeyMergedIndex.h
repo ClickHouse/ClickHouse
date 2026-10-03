@@ -38,7 +38,7 @@ public:
 
 private:
     /// Resolved once: `toMergedRow` runs per index entry and per late kill.
-    std::vector<ConstDeleteBitmapPtr> snapshot_bitmaps;
+    std::vector<ConstDeleteBitmapPtr> source_bitmaps;
     const MergedPartOffsets & merged_part_offsets;
     /// Each source's first merged row, used when the merge appends the sources in order.
     std::vector<UInt64> merged_start;

@@ -38,11 +38,11 @@ UniqueKeyMergeRowMap::UniqueKeyMergeRowMap(
 {
     chassert(merged_part_offsets.isFinalized());
 
-    snapshot_bitmaps.reserve(sources.size());
+    source_bitmaps.reserve(sources.size());
     for (size_t i = 0; i < sources.size(); ++i)
     {
-        snapshot_bitmaps.push_back(read_snapshot.bitmapAt(sources[i]->info));
-        const UInt64 live_at_snapshot = sources[i]->rows_count - snapshot_bitmaps[i]->cardinality();
+        source_bitmaps.push_back(read_snapshot.bitmapAt(sources[i]->info));
+        const UInt64 live_at_snapshot = sources[i]->rows_count - source_bitmaps[i]->cardinality();
         if (merged_part_offsets.isMappingEnabled() && merged_part_offsets.getPartRowsCount(i) != live_at_snapshot)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "UNIQUE KEY merge: mapped {} row(s) of source part {}, which had {} live at the snapshot",
@@ -62,11 +62,11 @@ UniqueKeyMergeRowMap::UniqueKeyMergeRowMap(
 /// each lookup one read.
 std::optional<UInt64> UniqueKeyMergeRowMap::toMergedRow(size_t source_index, UInt64 source_row) const
 {
-    const DeleteBitmap & snapshot_bitmap = *snapshot_bitmaps[source_index];
-    if (snapshot_bitmap.contains(source_row))
+    const DeleteBitmap & source_bitmap = *source_bitmaps[source_index];
+    if (source_bitmap.contains(source_row))
         return std::nullopt;
 
-    const UInt64 live_index = source_row - snapshot_bitmap.rangeCardinality(0, source_row);
+    const UInt64 live_index = source_row - source_bitmap.rangeCardinality(0, source_row);
     if (merged_part_offsets.isMappingEnabled())
         return merged_part_offsets[source_index, live_index];
     return merged_start[source_index] + live_index;

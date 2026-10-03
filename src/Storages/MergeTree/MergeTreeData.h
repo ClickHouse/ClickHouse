@@ -1088,6 +1088,7 @@ public:
 
     size_t clearEmptyParts();
 
+    ReadSnapshotPtr makeUniqueKeyReadSnapshot(const MergeTreeTransactionPtr & txn) const;
     ReadSnapshotPtr makeUniqueKeyReadSnapshot(const ContextPtr & local_context) const;
 
     UniqueKeyTxnManager & uniqueKeyTxnManager() const;

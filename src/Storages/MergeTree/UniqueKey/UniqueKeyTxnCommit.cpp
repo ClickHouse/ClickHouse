@@ -15,6 +15,7 @@
 #include <Storages/MergeTree/UniqueKey/BlockAllocation.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
+#include <Storages/MergeTree/UniqueKey/ReadSnapshot.h>
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyMergedIndex.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeySSTProbe.h>

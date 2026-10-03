@@ -4959,11 +4959,16 @@ size_t MergeTreeData::clearPartsFromFilesystemAndRollbackIfError(const DataParts
 
 /// ----- UNIQUE KEY -----
 
+ReadSnapshotPtr MergeTreeData::makeUniqueKeyReadSnapshot(const MergeTreeTransactionPtr & txn) const
+{
+    return std::make_shared<const ReadSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), txn->getSnapshot(), txn->tid);
+}
+
 ReadSnapshotPtr MergeTreeData::makeUniqueKeyReadSnapshot(const ContextPtr & local_context) const
 {
     /// An explicit transaction, or `implicit_transaction=1`, is already the pin.
     if (auto txn = local_context->getCurrentTransaction())
-        return std::make_shared<const ReadSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), txn->getSnapshot(), txn->tid);
+        return makeUniqueKeyReadSnapshot(txn);
 
     /// Otherwise this read pins its own snapshot for as long as the returned value lives. Not
     /// autocommit: nothing is written, and the holder's destructor rolls it back, which for a

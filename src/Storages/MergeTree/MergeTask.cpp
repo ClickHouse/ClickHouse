@@ -56,7 +56,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyMergedIndex.h>
-#include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
 #include <fmt/ranges.h>
 #include <Common/DimensionalMetrics.h>
 #include <Common/ErrorCodes.h>
@@ -659,13 +658,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->is_unique_key_merge = global_ctx->metadata_snapshot->hasUniqueKey();
 
     if (global_ctx->is_unique_key_merge)
-    {
-        if (global_ctx->txn)
-            global_ctx->unique_key_read_snapshot = std::make_shared<const ReadSnapshot>(
-                global_ctx->data->uniqueKeyTxnManager().deleteBitmapStore(), global_ctx->txn->getSnapshot(), global_ctx->txn->tid);
-        else
-            global_ctx->unique_key_read_snapshot = global_ctx->data->makeUniqueKeyReadSnapshot(global_ctx->context);
-    }
+        global_ctx->unique_key_read_snapshot = global_ctx->txn
+            ? global_ctx->data->makeUniqueKeyReadSnapshot(global_ctx->txn)
+            : global_ctx->data->makeUniqueKeyReadSnapshot(global_ctx->context);
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
@@ -2120,7 +2115,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         /// Skips the rows the horizontal stage skipped, so the column lines up with `rows_sources`.
         RangesInDataPart part_ranges(global_ctx->future_part->parts[part_num], nullptr, part_num, part_starting_offset);
         if (global_ctx->is_unique_key_merge)
-            part_ranges.delete_bitmap = global_ctx->unique_key_read_snapshot->bitmapAt(global_ctx->future_part->parts[part_num]->info);
+            part_ranges.delete_bitmap = global_ctx->unique_key_read_snapshot->bitmapAt(part_ranges.data_part->info);
 
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Merge,
