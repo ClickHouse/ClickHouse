@@ -524,17 +524,24 @@ value: 993
 
 ### Compaction {#iceberg-writes-compaction}
 
-La compaction des données (fusion des fichiers de suppression par position dans les fichiers de données) n&#39;est pas implémentée dans la build open source : `OPTIMIZE TABLE` sur une table Iceberg y renvoie `NOT_IMPLEMENTED`. En effet, elle ne publie pas la génération réécrite de manière atomique, si bien que la génération résolue par un lecteur est indéfinie.
+ClickHouse prend en charge la compaction des tables Iceberg. Actuellement, elle peut fusionner les fichiers de suppression par position avec les fichiers de données tout en mettant à jour les métadonnées. Les ID et les timestamps des snapshots précédents restent inchangés, de sorte que la fonctionnalité de time travel peut toujours être utilisée avec les mêmes valeurs.
 
-La compaction des manifests consolide les fichiers manifest d&#39;une table. Elle nécessite la version 2 du format Iceberg : les tables en version 1 ou 3 sont rejetées. Une table chiffrée dont les fichiers de données comportent des `key_metadata` propres à chaque fichier est également rejetée lorsque ses manifests doivent être réécrits.
+Comment l’utiliser :
 
 ```sql
 SET allow_experimental_iceberg_compaction = 1
 
-OPTIMIZE TABLE iceberg_writes_example MANIFEST;
-```
+OPTIMIZE TABLE iceberg_writes_example;
 
-Pour libérer l&#39;espace occupé par les fichiers, utilisez [`expire_snapshots`](#iceberg-expire-snapshots). Cette commande nécessite la version 2 du format et rejette les tables qui s&#39;appuient sur un catalogue transactionnel.
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+```
 
 ### Expiration des snapshots {#iceberg-expire-snapshots}
 
@@ -622,29 +629,29 @@ La commande effectue les étapes suivantes :
 
 #### Politique de rétention des snapshots {#iceberg-snapshot-retention-policy}
 
-La commande `expire_snapshots` respecte la [politique de rétention des snapshots d’Iceberg](https://iceberg.apache.org/spec/#snapshot-retention-policy). La rétention se configure via les propriétés de table Iceberg et des surcharges par référence :
+La commande `expire_snapshots` respecte la [politique de rétention des snapshots d’Iceberg](https://iceberg.apache.org/spec/#snapshot-retention-policy). La rétention se configure via les propriétés de table Iceberg et des remplacements par référence :
 
-| Propriété                              | Portée | Par défaut                                                                     | Description                                                                                                     |
-| -------------------------------------- | ------ | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| Propriété                              | Portée | Par défaut                                                                     | Description                                                                                                      |
+| -------------------------------------- | ------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
 | `history.expire.min-snapshots-to-keep` | Table  | `iceberg_expire_default_min_snapshots_to_keep` (par défaut `1`)                | Nombre minimal de snapshots à conserver dans la chaîne d’ancêtres de chaque branche                             |
-| `history.expire.max-snapshot-age-ms`   | Table  | `iceberg_expire_default_max_snapshot_age_ms` (par défaut `432000000`, 5 jours) | Âge maximal (en ms) des snapshots à conserver dans une branche                                                  |
+| `history.expire.max-snapshot-age-ms`   | Table  | `iceberg_expire_default_max_snapshot_age_ms` (par défaut `432000000`, 5 jours) | Âge maximal (en ms) des snapshots à conserver dans une branche                                                 |
 | `history.expire.max-ref-age-ms`        | Table  | `iceberg_expire_default_max_ref_age_ms` (par défaut `∞`)                       | Âge maximal (en ms) d’une référence de snapshot (branche ou tag) avant la suppression de la référence elle-même |
 
-Chaque référence de snapshot (`refs` dans les métadonnées Iceberg) peut remplacer ces valeurs au moyen de champs propres à la référence : `min-snapshots-to-keep`, `max-snapshot-age-ms` et `max-ref-age-ms`.
+Chaque référence de snapshot (`refs` dans les métadonnées Iceberg) peut remplacer ces valeurs au moyen de champs propres à la référence : `min-snapshots-to-keep`, `max-snapshot-age-ms` et `max-ref-age-ms`.
 
-**Évaluation de la rétention :**
+**Évaluation de la rétention :**
 
-* **Pour chaque branche** (y compris `main`) : la chaîne d’ancêtres est parcourue à partir de la tête de la branche. Les snapshots sont conservés tant qu’au moins l’une des conditions suivantes est vraie :
+* **Pour chaque branche** (y compris `main`) : la chaîne d’ancêtres est parcourue à partir de la tête de la branche. Les snapshots sont conservés tant qu’au moins l’une des conditions suivantes est vraie :
   * Le snapshot fait partie des `min-snapshots-to-keep` premiers snapshots de la chaîne
   * L’âge du snapshot ne dépasse pas `max-snapshot-age-ms` (c.-à-d. `now - timestamp-ms <= max-snapshot-age-ms`)
-* **Pour les tags** : le snapshot tagué est conservé, sauf si le tag a dépassé sa valeur `max-ref-age-ms`, auquel cas la référence du tag est supprimée
+* **Pour les tags** : le snapshot tagué est conservé, sauf si le tag a dépassé sa valeur `max-ref-age-ms`, auquel cas la référence du tag est supprimée
 * **Les références autres que `main`** dont l’âge dépasse `max-ref-age-ms` sont entièrement supprimées (la branche `main` n’est jamais supprimée)
 * **Les références orphelines** qui pointent vers des snapshots inexistants sont supprimées avec un avertissement
 * **Le snapshot actuel est toujours conservé**, quels que soient les paramètres de rétention
 
-**Privilèges requis :**
+**Privilèges requis :**
 
-Le privilège `ALTER TABLE EXECUTE` est requis. Il s’agit d’un privilège enfant de `ALTER TABLE` dans la hiérarchie du contrôle d’accès de ClickHouse. Vous pouvez l’accorder spécifiquement ou via le parent :
+Le privilège `ALTER TABLE EXECUTE` est requis. Il s’agit d’un privilège enfant de `ALTER TABLE` dans la hiérarchie du contrôle d’accès de ClickHouse. Vous pouvez l’accorder spécifiquement ou via le parent :
 
 ```sql
 -- Grant only EXECUTE permission
@@ -656,11 +663,10 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 
 <Note>
   * Seules les tables Iceberg format version 2 sont prises en charge (les snapshots v1 ne garantissent pas `manifest-list`, requis pour identifier en toute sécurité les fichiers à nettoyer)
-  * Les tables reposant sur un catalogue transactionnel sont rejetées avec `NOT_IMPLEMENTED`
   * Le snapshot actuel est toujours conservé, même s’il est antérieur à l’horodatage spécifié
   * Nécessite que le paramètre `allow_insert_into_iceberg` soit activé
   * Nécessite que le paramètre `allow_experimental_expire_snapshots` soit activé
-  * Le mécanisme d’autorisation propre au catalogue (authentification du catalogue REST, AWS Glue IAM, etc.) est appliqué indépendamment lorsque ClickHouse met à jour les métadonnées
+  * Le mécanisme d’autorisation propre au catalog (authentification du catalogue REST, AWS Glue IAM, etc.) est appliqué indépendamment lorsque ClickHouse met à jour les métadonnées
 </Note>
 
 ### Supprimer les fichiers orphelins {#iceberg-remove-orphan-files}

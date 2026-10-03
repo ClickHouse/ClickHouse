@@ -20,10 +20,13 @@ Estas configuraciones están disponibles en [system.merge&#95;tree&#95;settings]
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
 Es un disco de tabla: la ruta/endpoint apunta a los datos de la tabla, no a los datos de la base de datos.
-Compatible con discos de almacenamiento de objetos cuyos metadatos residen en el propio almacenamiento de objetos
+Compatible con discos de almacenamiento de objetos cuya metadata reside en el propio almacenamiento de objetos
 (s3&#95;plain, s3&#95;plain&#95;rewritable, web, web&#95;index) y sus variantes con caché. Las variantes
 cifradas solo son compatibles con los discos s3&#95;plain / s3&#95;plain&#95;rewritable con escritura, no
 con los discos web / web&#95;index de solo lectura.
+Se da por hecho que las partes ya presentes en la ruta coinciden con las columnas y la clave de ordenación
+que declara esta tabla. No queda registrada en ningún sitio la clave de ordenación con la que se escribió cada parte, por lo que una
+tabla que declare una clave distinta sobre las mismas partes devolverá resultados incorrectos o un error.
 
 ## table_readonly {#table_readonly}
 

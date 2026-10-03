@@ -11,7 +11,6 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
@@ -31,14 +30,11 @@ v26.9부터 사용되지 않음(obsolete): 분석기는 더 이상 비활성화�
 
 <ExperimentalBadge />
 
-<CloudOnlyBadge />
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
-ClickHouse Cloud에서만 적용되며, 백그라운드 Iceberg 컴팩션을 구성합니다.
-Iceberg 컴팩션 중 오래된 data files를 정리하도록 허용합니다.
+Iceberg compaction 중 오래된 data files를 정리하도록 허용합니다.
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
@@ -105,7 +101,6 @@ Engine=MaterializedPostgreSQL(...)를 사용하는 데이터베이스 생성이 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
 Iceberg 테이블에서 &#39;OPTIMIZE&#39;를 명시적으로 사용할 수 있도록 합니다.
-오픈 소스 빌드에서는 `OPTIMIZE TABLE ... MANIFEST`만 지원되며, 데이터 컴팩션(`MANIFEST` 없이 실행하는 `OPTIMIZE TABLE`)을 수행하면 `NOT_IMPLEMENTED`가 반환됩니다.
 
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 

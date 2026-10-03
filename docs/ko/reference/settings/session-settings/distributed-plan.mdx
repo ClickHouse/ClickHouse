@@ -82,6 +82,16 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 분산 쿼리 계획에서 PartialAggregation + Merge 대신 Shuffle 집계 전략을 사용합니다.
 Shuffle 전략이 올바른 결과를 생성할 수 없는 경우, 예를 들어 `GROUPING SETS`를 사용하거나 집계가 버킷 순서대로 결과를 생성해야 하는 경우에는 무시됩니다.
 
+## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "100000"},{"label": "상태 비저장 워커 작업이 상태 폴링 사이에 coordinator로 전달하기 위해 버퍼링하는 로그 라인 수를 제한하는 새로운 설정입니다. 초과된 라인은 삭제되며 그 수가 집계됩니다. 새 기능이므로 이전 값은 기본값과 동일합니다."}]}]} />
+
+`send_logs_level`에 따라 상태 비저장 워커 작업의 로그가 coordinator로 전달될 때, 각 worker 작업은 상태 폴링 사이에 이 설정에 지정된 개수까지만 로그 라인을 버퍼링합니다. 제한을 초과한 라인은 삭제되며, 삭제된 라인 수는 클라이언트에 보고됩니다. `0`은 제한이 없음을 의미합니다(라인이 삭제되지 않지만, 상태 폴링이 지연되면 버퍼가 무한정 커질 수 있습니다).
+
 ## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 
 <ExperimentalBadge />

@@ -708,7 +708,7 @@ La colonne « Exemple » montre la sortie à `2023-07-06 18:32:07`.
 </logger>
 ```
 
-Pour n’afficher les messages de log que dans la console :
+Pour n’afficher les messages de log que dans la console :
 
 ```xml
 <logger>
@@ -719,7 +719,7 @@ Pour n’afficher les messages de log que dans la console :
 
 **Surcharges par niveau**
 
-Le niveau de journalisation de chaque logger peut être redéfini. Par exemple, pour désactiver tous les messages des loggers « Backup » et « RBAC ».
+Le niveau de journalisation de chaque logger peut être surchargé. Par exemple, pour désactiver tous les messages des loggers « Backup » et « RBAC ».
 
 ```xml
 <logger>
@@ -738,12 +738,13 @@ Le niveau de journalisation de chaque logger peut être redéfini. Par exemple, 
 
 **syslog**
 
-Pour envoyer également les messages de log à syslog :
+Pour envoyer également les messages de log à syslog :
 
 ```xml
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -752,14 +753,15 @@ Pour envoyer également les messages de log à syslog :
 </logger>
 ```
 
-Clés pour `<syslog>` :
+Clés pour `<syslog>` :
 
-| Clé        | Description                                                                                                                                                                                                                                                                          |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `address`  | L’adresse de syslog au format `host\[:port\]`. Si elle est omise, le démon local est utilisé.                                                                                                                                                                                        |
-| `hostname` | Le nom d’hôte depuis lequel les logs sont envoyés (facultatif).                                                                                                                                                                                                                      |
-| `facility` | Le [mot-clé facility](https://en.wikipedia.org/wiki/Syslog#Facility) de syslog. Il doit être indiqué en majuscules avec le préfixe &quot;LOG&#95;&quot;, par ex. `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, etc. Par défaut : `LOG_USER` si `address` est spécifié, sinon `LOG_DAEMON`. |
-| `format`   | Format du message de log. Valeurs possibles : `bsd` et `syslog.`                                                                                                                                                                                                                     |
+| Clé           | Description                                                                                                                                                                                                                                                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `address`     | L’adresse de syslog au format `host\[:port\]`. Si elle est omise, le démon local est utilisé.                                                                                                                                                                                                                                        |
+| `hostname`    | Le nom d’hôte depuis lequel les logs sont envoyés (facultatif).                                                                                                                                                                                                                                                                      |
+| `facility`    | Le [mot-clé facility](https://en.wikipedia.org/wiki/Syslog#Facility) de syslog. Il doit être indiqué en majuscules avec le préfixe &quot;LOG&#95;&quot;, par ex. `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, etc. Par défaut : `LOG_USER` si `address` est spécifié, sinon `LOG_DAEMON`.                                                 |
+| `format`      | Format du message de log. Valeurs possibles : `bsd` et `syslog.`                                                                                                                                                                                                                                                                     |
+| `programname` | Nom du programme utilisé dans les messages syslog : l’identifiant (ident) syslog local, ou l’`APP-NAME` pour un syslog distant avec `format=syslog`. Sans effet avec `format=bsd`. De 1 à 48 caractères ASCII imprimables, sans espaces. Par défaut : le nom de la commande pour le syslog local, non défini pour le syslog distant. |
 
 **Formats de log**
 
@@ -767,7 +769,7 @@ Vous pouvez spécifier le format de log à afficher dans les logs de la console.
 
 **Exemple**
 
-Voici un exemple de log JSON produit en sortie :
+Voici un exemple de log JSON produit en sortie :
 
 ```json
 {
@@ -784,7 +786,7 @@ Voici un exemple de log JSON produit en sortie :
 }
 ```
 
-Pour activer la prise en charge de la journalisation au format JSON, utilisez l&#39;extrait suivant :
+Pour activer la prise en charge de la journalisation au format JSON, utilisez l&#39;extrait suivant :
 
 ```xml
 <logger>

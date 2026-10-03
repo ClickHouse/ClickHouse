@@ -708,7 +708,7 @@ La columna &quot;Ejemplo&quot; muestra la salida para `2023-07-06 18:32:07`.
 </logger>
 ```
 
-Para imprimir solo los mensajes de registro en la consola:
+Para imprimir solo los mensajes de log en la consola:
 
 ```xml
 <logger>
@@ -719,7 +719,7 @@ Para imprimir solo los mensajes de registro en la consola:
 
 **Sobrescrituras por nivel**
 
-El nivel de registro de cada nombre de log se puede sobrescribir. Por ejemplo, para silenciar todos los mensajes de los loggers &quot;Backup&quot; y &quot;RBAC&quot;.
+El nivel de log de cada nombre de log se puede sobrescribir. Por ejemplo, para silenciar todos los mensajes de los loggers &quot;Backup&quot; y &quot;RBAC&quot;.
 
 ```xml
 <logger>
@@ -738,12 +738,13 @@ El nivel de registro de cada nombre de log se puede sobrescribir. Por ejemplo, p
 
 **syslog**
 
-Para escribir también mensajes de registro en syslog:
+Para escribir también mensajes de log en syslog:
 
 ```xml
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -754,16 +755,17 @@ Para escribir también mensajes de registro en syslog:
 
 Claves para `<syslog>`:
 
-| Key        | Description                                                                                                                                                                                                                                                                                                          |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `address`  | La dirección de syslog en formato `host\[:port\]`. Si se omite, se usa el daemon local.                                                                                                                                                                                                                              |
-| `hostname` | El nombre del host desde el que se envían los logs (opcional).                                                                                                                                                                                                                                                       |
-| `facility` | La [palabra clave de facility de syslog](https://en.wikipedia.org/wiki/Syslog#Facility). Debe especificarse en mayúsculas con el prefijo &quot;LOG&#95;&quot;; por ejemplo, `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, etc. Valor predeterminado: `LOG_USER` si se especifica `address`; de lo contrario, `LOG_DAEMON`. |
-| `format`   | Formato del mensaje de registro. Valores posibles: `bsd` y `syslog.`                                                                                                                                                                                                                                                 |
+| Key           | Description                                                                                                                                                                                                                                                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`     | La dirección de syslog en formato `host\[:port\]`. Si se omite, se usa el daemon local.                                                                                                                                                                                                                                           |
+| `hostname`    | El nombre del host desde el que se envían los logs (opcional).                                                                                                                                                                                                                                                                    |
+| `facility`    | La [palabra clave de facility de syslog](https://en.wikipedia.org/wiki/Syslog#Facility). Debe especificarse en mayúsculas con el prefijo &quot;LOG&#95;&quot;; por ejemplo, `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, etc. Valor predeterminado: `LOG_USER` si se especifica `address`; de lo contrario, `LOG_DAEMON`.              |
+| `format`      | Formato del mensaje de log. Valores posibles: `bsd` y `syslog.`                                                                                                                                                                                                                                                              |
+| `programname` | Nombre del programa que se usa en los mensajes de syslog: el ident de syslog local o el `APP-NAME` para syslog remoto con `format=syslog`. No tiene efecto con `format=bsd`. De 1 a 48 caracteres ASCII imprimibles, sin espacios. Valor predeterminado: el nombre del comando para syslog local; sin definir para syslog remoto. |
 
-**Formatos de registro**
+**Formatos de log**
 
-Puede especificar el formato de registro que se mostrará en el registro de la consola. Actualmente, solo se admite JSON.
+Puede especificar el formato de log que se mostrará en el log de la consola. Actualmente, solo se admite JSON.
 
 **Ejemplo**
 
@@ -784,7 +786,7 @@ A continuación se muestra un ejemplo de un log de salida en formato JSON:
 }
 ```
 
-Para habilitar la compatibilidad con el registro en JSON, use el siguiente fragmento:
+Para habilitar la compatibilidad con el log en JSON, use el siguiente fragmento:
 
 ```xml
 <logger>

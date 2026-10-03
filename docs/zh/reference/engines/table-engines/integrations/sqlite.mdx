@@ -31,12 +31,14 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 
 ## 传递查询而非表名 {#passing-a-query}
 
-`table` 参数除了表名之外，也可以是一个 `SELECT` 查询，该查询会原样传递给 SQLite。表的结构根据查询结果推断。只有当结果列直接对应某个表中的列时，SQLite 才会报告其声明类型；对于表达式、字面量或聚合，则不报告任何类型。映射到 `String` 的声明类型 (参见[类型映射](/zh/reference/engines/database-engines/sqlite#data_types-support)) 将原样使用。其他所有列——无论是具有数值型声明类型的列，还是没有声明类型的列——都会根据查询结果第一行中该列值的存储类来确定类型：`INTEGER` 值对应 `Int64`，`REAL` 值对应 `Float64`，其他任何值 (`TEXT`、`BLOB`、`NULL`) 以及空结果均对应 `String`。只有当该行的存储类与数值型声明类型相符时，才会保留该声明类型，因为 SQLite 对复合 `SELECT` 也会报告声明类型，而该类型取自其中某一个分支，行数据却来自所有分支；否则，该列会像未声明类型的列一样，根据存储类确定类型。因此，推断出的类型只会放宽，绝不会收窄。推断此类列时会在 SQLite 中启动查询。第一行并不能代表其余各行：SQLite 可以在每一行中返回不同的存储类 (例如 `CASE WHEN id = 1 THEN 1 ELSE 1.5 END`) ，因此对于以数值类型读取的每一列，基于查询的读取都采用失败即关闭 (fail-closed) 策略——而不仅限于没有声明类型的列。如果某个值的存储类与该类型不匹配，或无法用该类型精确表示 (例如 `UInt8` 列中值为 `300` 的 `INTEGER` 单元，或 `Float32` 列中值为 `16777217` 的 `REAL` 单元) ，读取将直接失败，而不会进行静默的强制转换。若要读取存储类混杂的列，请将其声明为 `String`，或在 SQLite 查询中将其转换为文本。所有推断出的列均为 `Nullable`。查询既可以写成子查询，也可以包装在 `query` 函数中：
+`table` 参数除了表名之外，也可以是一个 `SELECT` 查询，该查询会原样传递给 SQLite。表的结构根据查询结果推断。只有当结果列直接对应某个表中的列时，SQLite 才会报告其声明类型；对于表达式、字面量或聚合，则不报告任何类型。映射到 `String` 的声明类型 (参见[类型映射](/zh/reference/engines/database-engines/sqlite#data_types-support)) 将原样使用。没有声明类型的列会根据查询结果第一行中该列值的存储类来确定类型：`INTEGER` 值对应 `Int64`，`REAL` 值对应 `Float64`，其他任何值 (`TEXT`、`BLOB`、`NULL`) 以及空结果均对应 `String`。数值型声明类型同样会根据第一行进行校验，因为 SQLite 对复合 `SELECT` 也会报告声明类型，而该类型取自其中某一个分支，行数据却来自所有分支。当该值的存储类与声明类型相符时 (整数类型对应 `INTEGER`，浮点类型对应 `INTEGER` 或 `REAL`) ，会保留该声明类型；当该值为 `NULL` 或结果为空时也会保留，因为二者都不携带任何可能与之矛盾的类型信息；否则，该列会像未声明类型的列一样，根据存储类确定类型。因此，推断出的类型只会放宽，绝不会收窄。推断此类列时会在 SQLite 中启动查询。第一行并不能代表其余各行：SQLite 可以在每一行中返回不同的存储类 (例如 `CASE WHEN id = 1 THEN 1 ELSE 1.5 END`) ，因此对于以数值类型读取的每一列，基于查询的读取都采用失败即关闭 (fail-closed) 策略——而不仅限于没有声明类型的列。如果某个值的存储类与该类型不匹配，或无法用该类型精确表示 (例如 `UInt8` 列中值为 `300` 的 `INTEGER` 单元，或 `Float32` 列中值为 `16777217` 的 `REAL` 单元) ，读取将直接失败，而不会进行静默的强制转换。若要读取存储类混杂的列，请将其声明为 `String`，或在 SQLite 查询中将其转换为文本。所有推断出的列均为 `Nullable`。查询既可以写成子查询，也可以包装在 `query` 函数中：
 
 ```sql
 CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', (SELECT col1, col2 FROM table1 WHERE col2 > 1));
 CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col2 > 1'));
 ```
+
+自 26.7 版本起支持传递查询。ClickHouse 会先将该查询包装为 `SELECT ... FROM (<query>)`，再发送给 SQLite，因此查询末尾不能带分号。
 
 此类表为只读表，不允许对其执行 `INSERT`。[`sqlite`](/zh/reference/functions/table-functions/sqlite) 表函数也支持相同的语法。
 

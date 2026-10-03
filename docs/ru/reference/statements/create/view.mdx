@@ -186,41 +186,44 @@ Materialized view работает следующим образом: при в�
 
 ## Безопасность SQL {#sql_security}
 
-`DEFINER` и `SQL SECURITY` позволяют указать, от имени какого пользователя ClickHouse выполнять запрос, лежащий в основе представления.
+`DEFINER` и `SQL SECURITY` позволяют указать, от имени какого пользователя ClickHouse выполнять запрос, лежащий в основе VIEW.
 `SQL SECURITY` имеет три допустимых значения: `DEFINER`, `INVOKER` или `NONE`. В секции `DEFINER` можно указать любого существующего пользователя или `CURRENT_USER`.
 
-В следующей таблице показано, какие права требуются и какому пользователю, чтобы выполнять `SELECT` из представления.
-Обратите внимание: независимо от выбранного режима безопасности SQL, в любом случае для чтения из представления по-прежнему требуется `GRANT SELECT ON <view>`.
+В следующей таблице показано, какие права требуются и какому пользователю, чтобы выполнять `SELECT` из VIEW.
+Обратите внимание: независимо от выбранного режима безопасности SQL, в любом случае для чтения из VIEW по-прежнему требуется `GRANT SELECT ON <view>`.
 
-| Параметр безопасности SQL | Представление                                                                | Materialized View                                                                                                         |
+| Параметр безопасности SQL | VIEW                                                                | Materialized VIEW                                                                                                         |
 | ------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `DEFINER alice`           | У `alice` должен быть grant `SELECT` на исходную таблицу представления.      | У `alice` должен быть grant `SELECT` на исходную таблицу представления и grant `INSERT` на целевую таблицу представления. |
-| `INVOKER`                 | У пользователя должен быть grant `SELECT` на исходную таблицу представления. | `SQL SECURITY INVOKER` нельзя указывать для materialized view.                                                            |
+| `DEFINER alice`           | У `alice` должен быть grant `SELECT` на исходную таблицу VIEW.      | У `alice` должен быть grant `SELECT` на исходную таблицу VIEW и grant `INSERT` на целевую таблицу VIEW. |
+| `INVOKER`                 | У пользователя должен быть grant `SELECT` на исходную таблицу VIEW. | `SQL SECURITY INVOKER` нельзя указывать для materialized VIEW.                                                            |
 | `NONE`                    | -                                                                            | -                                                                                                                         |
 
 <Note>
-  `SQL SECURITY NONE` — устаревший параметр. Любой пользователь, имеющий права на создание представлений с `SQL SECURITY NONE`, сможет выполнять любые произвольные запросы.
-  Поэтому для создания представления с этим параметром требуется `GRANT ALLOW SQL SECURITY NONE TO <user>`.
+  `SQL SECURITY NONE` — устаревший параметр. Любой пользователь, имеющий права на создание VIEW с `SQL SECURITY NONE`, сможет выполнять любые произвольные запросы.
+  Поэтому для создания VIEW с этим параметром требуется `GRANT ALLOW SQL SECURITY NONE TO <user>`.
 </Note>
 
 Если `DEFINER`/`SQL SECURITY` не указаны, результат зависит от настройки сервера [`ignore_empty_sql_security_in_create_view_query`](/ru/reference/settings/server-settings/settings/other#ignore_empty_sql_security_in_create_view_query).
 
-При значении по умолчанию `true` запрос сохраняется в исходном виде, а представление получает пустой тип безопасности SQL. Обычное представление при этом выполняется с разрешениями вызывающего пользователя, а для materialized view с явно указанной целевой таблицей проверки доступа к этой целевой таблице пропускаются: вставка в исходную таблицу не требует привилегии `INSERT` на целевую таблицу, а чтение из представления не требует привилегии `SELECT` на неё.
+При значении по умолчанию `true` запрос сохраняется в исходном виде, а VIEW получает пустой тип безопасности SQL. Обычное VIEW при этом выполняется с разрешениями вызывающего пользователя, а для materialized VIEW с явно указанной целевой таблицей проверки доступа к этой целевой таблице пропускаются: вставка в исходную таблицу не требует привилегии `INSERT` на целевую таблицу, а чтение из VIEW не требует привилегии `SELECT` на неё.
 
-При значении `false` в определение представления при создании записываются следующие значения по умолчанию:
+При значении `false` в определение VIEW при создании записываются следующие значения по умолчанию:
 
-* `SQL SECURITY`: `INVOKER` для обычных представлений (настраивается через [`default_normal_view_sql_security`](/ru/reference/settings/session-settings/default#default_normal_view_sql_security)) и `DEFINER` для materialized view (настраивается через [`default_materialized_view_sql_security`](/ru/reference/settings/session-settings/default#default_materialized_view_sql_security))
+* `SQL SECURITY`: `INVOKER` для обычных VIEW (настраивается через [`default_normal_view_sql_security`](/ru/reference/settings/session-settings/default#default_normal_view_sql_security)) и `DEFINER` для materialized VIEW (настраивается через [`default_materialized_view_sql_security`](/ru/reference/settings/session-settings/default#default_materialized_view_sql_security))
 * `DEFINER`: `CURRENT_USER` (настраивается через [`default_view_definer`](/ru/reference/settings/session-settings/default#default_view_definer))
 
-Refreshable materialized view всегда получают эти значения по умолчанию независимо от настройки.
+Refreshable materialized VIEW всегда получают эти значения по умолчанию независимо от настройки.
 
-При присоединении или перезагрузке представления при запуске сервера оно сохраняет тип безопасности SQL из своего сохранённого определения, поэтому представление, сохранённое без `DEFINER`/`SQL SECURITY`, сохраняет пустой тип безопасности SQL.
+При присоединении или перезагрузке VIEW при запуске сервера оно сохраняет тип безопасности SQL из своего сохранённого определения, поэтому VIEW, сохранённое без `DEFINER`/`SQL SECURITY`, сохраняет пустой тип безопасности SQL.
 
-Чтобы изменить безопасность SQL для существующего представления, используйте
+Чтобы изменить безопасность SQL для существующего VIEW, используйте
 
 ```sql
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
+
+Если в качестве `DEFINER` указан не текущий пользователь, требуется grant `SET DEFINER` на этого пользователя — как при создании VIEW, так и при использовании `MODIFY SQL SECURITY`.
+Чтобы изменить запрос VIEW с `SQL SECURITY DEFINER` или `SQL SECURITY NONE` с помощью [`ALTER TABLE ... MODIFY QUERY`](/ru/reference/statements/alter/view#required-privileges), необходимы те же grant&#39;ы, что и для объявления для него безопасности SQL.
 
 ### Примеры {#examples}
 

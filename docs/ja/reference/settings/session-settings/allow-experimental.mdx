@@ -11,7 +11,6 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
@@ -31,14 +30,11 @@ v26.9 以降、この設定は廃止されています。アナライザは無�
 
 <ExperimentalBadge />
 
-<CloudOnlyBadge />
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
-ClickHouse Cloud でのみ有効で、バックグラウンドで実行される Iceberg のコンパクションを設定します。
-Iceberg コンパクション 時に古い data files をクリーンアップできるようにします。
+Iceberg compaction 時に古い data files をクリーンアップできるようにします。
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
@@ -105,7 +101,6 @@ catalog&#95;type = &#39;paimon&#95;rest&#39; を使用する実験的なデー�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
 Iceberg テーブルで &#39;OPTIMIZE&#39; を明示的に使用できるようにします。
-オープンソースビルドでサポートされているのは `OPTIMIZE TABLE ... MANIFEST` のみです。データのコンパクション (`MANIFEST` を指定しない `OPTIMIZE TABLE`) を実行すると `NOT_IMPLEMENTED` が返されます。
 
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 

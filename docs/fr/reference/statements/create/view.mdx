@@ -194,8 +194,8 @@ Notez que, quelle que soit l’option de sécurité SQL, il est dans tous les ca
 
 | Option de sécurité SQL | Vue                                                                          | Vue matérialisée                                                                                                         |
 | ---------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `DEFINER alice`        | `alice` doit disposer du droit `SELECT` sur la table source de la vue.       | `alice` doit disposer du droit `SELECT` sur la table source de la vue et du droit `INSERT` sur la table cible de la vue. |
-| `INVOKER`              | L’utilisateur doit disposer du droit `SELECT` sur la table source de la vue. | `SQL SECURITY INVOKER` ne peut pas être spécifié pour les vues matérialisées.                                            |
+| `DEFINER alice`        | `alice` doit disposer du grant `SELECT` sur la table source de la vue.       | `alice` doit disposer du grant `SELECT` sur la table source de la vue et du grant `INSERT` sur la table cible de la vue. |
+| `INVOKER`              | L’utilisateur doit disposer du grant `SELECT` sur la table source de la vue. | `SQL SECURITY INVOKER` ne peut pas être spécifié pour les vues matérialisées.                                            |
 | `NONE`                 | -                                                                            | -                                                                                                                        |
 
 <Note>
@@ -221,6 +221,9 @@ Pour modifier la sécurité SQL d’une vue existante, utilisez
 ```sql
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
+
+Un `DEFINER` qui n’est pas l’utilisateur courant nécessite le grant `SET DEFINER` sur cet utilisateur, aussi bien lors de la création de la vue que lors d’un `MODIFY SQL SECURITY`.
+Pour modifier la requête d’une vue `SQL SECURITY DEFINER` ou `SQL SECURITY NONE` avec [`ALTER TABLE ... MODIFY QUERY`](/fr/reference/statements/alter/view#required-privileges), les grants nécessaires sont les mêmes que pour déclarer sa sécurité SQL.
 
 ### Exemples {#examples}
 

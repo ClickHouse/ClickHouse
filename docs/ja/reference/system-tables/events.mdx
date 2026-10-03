@@ -134,6 +134,10 @@ HTTP接続での接続エラーにより異常とマークされたアドレス�
 
 集約処理で二段階ハッシュテーブルとして初期化されたハッシュテーブルの数。
 
+### AggregationHavingPrefilterGroupsSkipped {#aggregationhavingprefiltergroupsskipped}
+
+集約の二段階バケットの変換時に、そのグループ自身の count() に対する HAVING の境界条件によってすでに除外されていたため、キーカラムがマテリアライズされなかったグループの数です (aggregationHavingPrefilter プラン最適化) 。
+
 ### AggregationOptimizedEqualRangesOfKeys {#aggregationoptimizedequalrangesofkeys}
 
 キーの等しい範囲の最適化が適用されたブロックの数
@@ -4420,6 +4424,14 @@ Data TLB の参照
 ### QueryMaskingRulesMatch {#querymaskingrulesmatch}
 
 クエリマスキングルールに正常に一致した回数。
+
+### QueryMemoryDriftSettled {#querymemorydriftsettled}
+
+終了時点でメモリがまだ計上されたまま (または過剰に解放された状態) となっていたクエリの数。この差分はユーザーごとのトラッカーから相殺され、そのクエリの計上値は最終的にゼロになります。
+
+### QueryMemoryDriftSettledBytes {#querymemorydriftsettledbytes}
+
+クエリ終了時にユーザーごとのトラッカーから差し引かれたバイト数の絶対値です。つまり、クエリ単位のメモリ計上がどれだけずれていたかを示します。
 
 ### QueryMemoryLimitExceeded {#querymemorylimitexceeded}
 

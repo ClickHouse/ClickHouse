@@ -744,6 +744,7 @@ Para também gravar mensagens de log no syslog:
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -754,12 +755,13 @@ Para também gravar mensagens de log no syslog:
 
 Chaves para `<syslog>`:
 
-| Key        | Description                                                                                                                                                                                                                                                                                                     |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `address`  | O endereço do syslog no formato `host\[:port\]`. Se omitido, o daemon local será usado.                                                                                                                                                                                                                         |
-| `hostname` | O nome do host do qual os logs são enviados (opcional).                                                                                                                                                                                                                                                         |
-| `facility` | A [palavra-chave](https://en.wikipedia.org/wiki/Syslog#Facility) de facility do syslog. Deve ser especificada em letras maiúsculas com o prefixo &quot;LOG&#95;&quot;, por exemplo, `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` etc. Padrão: `LOG_USER` se `address` for especificado; caso contrário, `LOG_DAEMON`. |
-| `format`   | Formato da mensagem de log. Valores possíveis: `bsd` e `syslog.`                                                                                                                                                                                                                                                |
+| Key           | Description                                                                                                                                                                                                                                                                                                     |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`     | O endereço do syslog no formato `host\[:port\]`. Se omitido, o daemon local será usado.                                                                                                                                                                                                                         |
+| `hostname`    | O nome do host do qual os logs são enviados (opcional).                                                                                                                                                                                                                                                         |
+| `facility`    | A [palavra-chave](https://en.wikipedia.org/wiki/Syslog#Facility) de facility do syslog. Deve ser especificada em letras maiúsculas com o prefixo &quot;LOG&#95;&quot;, por exemplo, `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` etc. Padrão: `LOG_USER` se `address` for especificado; caso contrário, `LOG_DAEMON`. |
+| `format`      | Formato da mensagem de log. Valores possíveis: `bsd` e `syslog.`                                                                                                                                                                                                                                                |
+| `programname` | Nome do programa usado nas mensagens do syslog: o ident do syslog local ou o `APP-NAME` do syslog remoto com `format=syslog`. Não tem efeito com `format=bsd`. De 1 a 48 caracteres ASCII imprimíveis, sem espaços. Padrão: o nome do comando para o syslog local; não definido para o syslog remoto.           |
 
 **Formatos de log**
 
@@ -784,7 +786,7 @@ Aqui está um exemplo de um log JSON gerado:
 }
 ```
 
-Para habilitar o suporte a logs em JSON, use o seguinte trecho:
+Para habilitar o suporte a logging em JSON, use o seguinte trecho:
 
 ```xml
 <logger>

@@ -82,6 +82,16 @@ Valeurs possibles :
 Utiliser la stratégie d’agrégation Shuffle au lieu de PartialAggregation + Merge dans le plan de requête distribuée.
 Ignoré lorsque la stratégie Shuffle ne peut pas produire un résultat correct, par exemple pour `GROUPING SETS` ou lorsque l’agrégation doit produire les résultats dans l’ordre des buckets.
 
+## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "100000"},{"label": "Nouveau paramètre limitant le nombre de lignes de log qu'une task de worker sans état met en tampon avant de les transmettre au coordinateur entre deux interrogations de statut ; les lignes excédentaires sont supprimées et comptabilisées. Comme il s'agit d'une nouvelle fonctionnalité, la valeur précédente est identique à la valeur par défaut."}]}]} />
+
+Lorsque `send_logs_level` transmet au coordinateur les log des tasks de worker sans état, chaque task de worker met en tampon au plus ce nombre de lignes de log entre deux interrogations de statut. Les lignes qui dépassent cette limite sont supprimées et leur nombre est communiqué au client. `0` signifie aucune limite (aucune ligne n&#39;est supprimée, mais si une interrogation de statut reste bloquée, le tampon peut croître indéfiniment).
+
 ## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 
 <ExperimentalBadge />

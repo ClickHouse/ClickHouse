@@ -46,7 +46,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_AsyncInsertBytes` ([UInt64](/ar/reference/data-types/int-uint)) — حجم البيانات بالبايت لاستعلامات INSERT غير المتزامنة.
 * `ProfileEvent_AsyncInsertRows` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف المُدرجة بواسطة استعلامات INSERT غير المتزامنة.
 * `ProfileEvent_AsyncInsertCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على معرّف hash مكرّر في cache معرّفات hash الخاصة باستعلامات INSERT غير المتزامنة.
-* `ProfileEvent_AsyncInsertFlush` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات flush لقائمة انتظار INSERT غير المتزامنة. تُدرج كل عملية flush دفعة من استعلامات INSERT غير المتزامنة كجزء بيانات واحد. قارن مع AsyncInsertQuery لمعرفة متوسط عدد الاستعلامات التي تُجمَّع معًا في دفعة واحدة.
+* `ProfileEvent_AsyncInsertFlush` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات تفريغ قائمة انتظار INSERT غير المتزامنة. تُدرج كل عملية تفريغ دفعة من استعلامات INSERT غير المتزامنة كجزء بيانات واحد. قارن مع AsyncInsertQuery لمعرفة متوسط عدد الاستعلامات التي تُجمَّع معًا في دفعة واحدة.
 * `ProfileEvent_FailedInternalQuery` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستعلامات الداخلية التي فشلت.
 * `ProfileEvent_FailedInternalSelectQuery` ([UInt64](/ar/reference/data-types/int-uint)) — مثل FailedInternalQuery، ولكن فقط لاستعلامات SELECT.
 * `ProfileEvent_FailedInternalInsertQuery` ([UInt64](/ar/reference/data-types/int-uint)) — مثل FailedInternalQuery، ولكن فقط لاستعلامات INSERT.
@@ -261,21 +261,21 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_AzureWriteRequestsErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أخطاء طلبات الكتابة إلى Azure.
 * `ProfileEvent_AzureWriteRequestsThrottling` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات الكتابة إلى Azure التي جرى تقييد معدلها.
 * `ProfileEvent_AzureWriteRequestsRedirects` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات إعادة توجيه طلبات الكتابة إلى Azure.
-* `ProfileEvent_AzureGetRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure GET التي مرّت عبر آلية تقييد المعدل: المحظورة وغير المحظورة.
-* `ProfileEvent_AzureGetRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure GET التي حظرتها آلية تقييد المعدل.
+* `ProfileEvent_AzureGetRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure GET التي مرّت عبر مُقيِّد المعدّل: المحظورة وغير المحظورة.
+* `ProfileEvent_AzureGetRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure GET التي حظرها مُقيِّد المعدّل.
 * `ProfileEvent_AzureGetRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي ظل فيه الاستعلام في حالة انتظار للامتثال لآلية تقييد معدل طلبات Azure GET.
-* `ProfileEvent_DiskAzureGetRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET لقرص Azure التي مرّت عبر آلية تقييد المعدل: المحظورة وغير المحظورة.
-* `ProfileEvent_DiskAzureGetRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET لقرص Azure التي حظرتها آلية تقييد المعدل.
+* `ProfileEvent_DiskAzureGetRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET لقرص Azure التي مرّت عبر مُقيِّد المعدّل: المحظورة وغير المحظورة.
+* `ProfileEvent_DiskAzureGetRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET لقرص Azure التي حظرها مُقيِّد المعدّل.
 * `ProfileEvent_DiskAzureGetRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي مدة انتظار الاستعلام امتثالًا لتقييد معدل طلبات GET لقرص Azure.
-* `ProfileEvent_AzurePutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure من نوع PUT التي مرّت عبر محدِّد المعدل: المحظورة وغير المحظورة.
-* `ProfileEvent_AzurePutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure من نوع PUT التي حظرها محدِّد المعدل.
+* `ProfileEvent_AzurePutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure من نوع PUT التي مرّت عبر مُقيِّد المعدّل: المحظورة وغير المحظورة.
+* `ProfileEvent_AzurePutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure من نوع PUT التي حظرها مُقيِّد المعدّل.
 * `ProfileEvent_AzurePutRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي مدة انتظار الاستعلام امتثالًا لتقييد معدل طلبات Azure من نوع PUT.
-* `ProfileEvent_DiskAzurePutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT لقرص Azure التي مرّت عبر محدِّد المعدل: المحظورة وغير المحظورة.
-* `ProfileEvent_DiskAzurePutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT لقرص Azure التي حظرها محدِّد المعدل.
+* `ProfileEvent_DiskAzurePutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT لقرص Azure التي مرّت عبر مُقيِّد المعدّل: المحظورة وغير المحظورة.
+* `ProfileEvent_DiskAzurePutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT لقرص Azure التي حظرها مُقيِّد المعدّل.
 * `ProfileEvent_DiskAzurePutRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي مدة انتظار الاستعلام امتثالًا لتقييد معدل طلبات PUT لقرص Azure.
-* `ProfileEvent_RemoteReadThrottlerBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات التي مرّت عبر محدِّد المعدل &#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#39;.
+* `ProfileEvent_RemoteReadThrottlerBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات التي مرّت عبر مُقيِّد المعدّل &#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#39;.
 * `ProfileEvent_RemoteReadThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي مدة انتظار الاستعلام امتثالًا لتقييد المعدل &#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#39;.
-* `ProfileEvent_RemoteWriteThrottlerBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات التي مرّت عبر محدِّد المعدل &#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#39;.
+* `ProfileEvent_RemoteWriteThrottlerBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات التي مرّت عبر مُقيِّد المعدّل &#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#39;.
 * `ProfileEvent_RemoteWriteThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي مدة انتظار الاستعلام امتثالًا لتقييد المعدل &#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#39;.
 * `ProfileEvent_LocalReadThrottlerBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات التي مرّت عبر محدِّد المعدل &#39;max&#95;local&#95;read&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;read&#95;bandwidth&#39;.
 * `ProfileEvent_LocalReadThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي مدة انتظار الاستعلام امتثالًا لتقييد المعدل &#39;max&#95;local&#95;read&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;read&#95;bandwidth&#39;.
@@ -822,6 +822,8 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تم فيها تجاوز حد الذاكرة العام.
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي خُصِّصت فيها الذاكرة دون التحقق من قيود الذاكرة.
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/ar/reference/data-types/int-uint)) — مقدار البايتات التي خُصِّصت دون التحقق من قيود الذاكرة.
+* `ProfileEvent_QueryMemoryDriftSettled` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستعلامات التي انتهت مع بقاء ذاكرة محتسبة عليها (أو مع احتساب تحرير ذاكرة أكثر من اللازم). يُسوّى الفرق في متعقّب الذاكرة الخاص بكل مستخدم، بحيث يصبح رصيد الاستعلام صفرًا.
+* `ProfileEvent_QueryMemoryDriftSettledBytes` ([UInt64](/ar/reference/data-types/int-uint)) — القيمة المطلقة لعدد البايتات التي سُوّيت في متعقّبات الذاكرة الخاصة بكل مستخدم عند انتهاء الاستعلامات، أي مقدار الانحراف في حساب الذاكرة لكل استعلام.
 * `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي التُقط فيها stack trace لعملية تحميل واحدة على متتبّع الذاكرة العام بحجم يساوي `min_allocation_size_to_log_stack_trace` أو يتجاوزه.
 * `ProfileEvent_AzureGetObject` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات GetObject في واجهة برمجة تطبيقات Azure.
 * `ProfileEvent_AzureUpload` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات Upload في واجهة برمجة تطبيقات Azure Blob Storage
@@ -972,6 +974,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_AdaptiveAggregationSharedTableSpills` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي كتب فيها التجميع التكيفي جدول التصريف المشترك إلى الخارج لأنه بلغ حد الجزء تحت ضغط الذاكرة.
 * `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الحاويات ذات المستويين التي حُررت ذاكرتها العاملة (خانة arena، ومراجع الأجزاء المرحلية) فور اكتمال دمجها وتحويلها، قبل اكتمال الدمج بالكامل.
 * `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الحاويات ذات المستويين التي حُوّلت عبر اختيار Top-K المحلي للحاوية (تحسين خطة aggregationBucketTopK).
+* `ProfileEvent_AggregationHavingPrefilterGroupsSkipped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المجموعات التي لم تُجسَّد أعمدة مفاتيحها أثناء تحويل حاوية ذات مستويين ضمن التجميع، لأن حد HAVING المفروض على قيمة count() للمجموعة نفسها كان قد استبعدها بالفعل (تحسين الخطة aggregationHavingPrefilter).
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/ar/reference/data-types/int-uint)) — عدد جداول التجزئة التي هُيئت على مستويين لأغراض التجميع.
 * `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي حُوِّل فيها جدول تجزئة للتجميع أحادي المستوى إلى مستويين في وقت التشغيل.
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الكتل التي طُبّق عليها تحسين النطاقات المتساوية للمفاتيح
@@ -1548,9 +1551,9 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ParquetPrunedPages` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي للصفحات المستبعَدة من بيانات Parquet عبر فهرس الأعمدة
 * `ProfileEvent_ParquetDecodingTasks` ([UInt64](/ar/reference/data-types/int-uint)) — المهام الصادرة عن قارئ Parquet
 * `ProfileEvent_ParquetDecodingTaskBatches` ([UInt64](/ar/reference/data-types/int-uint)) — مجموعات المهام المرسلة إلى مجموعة خيوط بواسطة قارئ Parquet
-* `ProfileEvent_ParquetPrefetcherReadRandomRead` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لعمليات القراءة باستخدام `ReadMode::RandomRead` بواسطة `DB::Parquet::Prefetcher`
-* `ProfileEvent_ParquetPrefetcherReadSeekAndRead` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لعمليات القراءة باستخدام `ReadMode::SeekAndRead` بواسطة `DB::Parquet::Prefetcher`
-* `ProfileEvent_ParquetPrefetcherReadEntireFile` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لعمليات القراءة باستخدام `ReadMode::EntireFileIsInMemory` بواسطة `DB::Parquet::Prefetcher`
+* `ProfileEvent_ParquetPrefetcherReadRandomRead` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لعمليات القراءة باستخدام ReadMode::RandomRead بواسطة DB::Parquet::Prefetcher
+* `ProfileEvent_ParquetPrefetcherReadSeekAndRead` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لعمليات القراءة باستخدام ReadMode::SeekAndRead بواسطة DB::Parquet::Prefetcher
+* `ProfileEvent_ParquetPrefetcherReadEntireFile` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لعمليات القراءة باستخدام ReadMode::EntireFileIsInMemory بواسطة DB::Parquet::Prefetcher
 * `ProfileEvent_ParquetRowsFilterExpression` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي للصفوف التي مرّت عبر عامل التصفية
 * `ProfileEvent_ParquetColumnsFilterExpression` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي للأعمدة التي مرّت عبر عامل التصفية
 * `ProfileEvent_FilterTransformPassedRows` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف التي اجتازت عامل التصفية في الاستعلام

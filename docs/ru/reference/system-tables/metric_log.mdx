@@ -491,11 +491,11 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_SelectedMarksTotal` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество marks (гранул индекса) до выбора тех, которые будут прочитаны из таблицы семейства MergeTree.
 * `ProfileEvent_SelectedRows` ([UInt64](/ru/reference/data-types/int-uint)) — Количество строк, выбранных оператором SELECT из всех таблиц.
 * `ProfileEvent_SelectedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество байт (в несжатом виде; для столбцов в том виде, в котором они хранятся в памяти), выбранных оператором SELECT из всех таблиц.
-* `ProfileEvent_RowsReadByMainReader` ([UInt64](/ru/reference/data-types/int-uint)) — Количество строк, прочитанных из таблиц MergeTree основным reader&#39;ом (после шага PREWHERE).
-* `ProfileEvent_RowsReadByPrewhereReaders` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество строк, прочитанных из таблиц MergeTree prewhere reader&#39;ами.
-* `ProfileEvent_LoadedDataParts` ([UInt64](/ru/reference/data-types/int-uint)) — Количество частей данных, загруженных таблицами MergeTree во время инициализации.
-* `ProfileEvent_LoadedDataPartsMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время в микросекундах, затраченное таблицами MergeTree на загрузку частей данных во время инициализации.
-* `ProfileEvent_FilteringMarksWithPrimaryKeyProcessedMarks` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество marks, обработанных во время анализа первичного ключа.
+* `ProfileEvent_RowsReadByMainReader` ([UInt64](/ru/reference/data-types/int-uint)) — Количество строк, прочитанных из таблиц семейства MergeTree основным считывателем (после этапа PREWHERE).
+* `ProfileEvent_RowsReadByPrewhereReaders` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество строк, прочитанных из таблиц семейства MergeTree считывателями PREWHERE.
+* `ProfileEvent_LoadedDataParts` ([UInt64](/ru/reference/data-types/int-uint)) — Количество частей данных, загруженных таблицами семейства MergeTree во время инициализации.
+* `ProfileEvent_LoadedDataPartsMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время в микросекундах, затраченное таблицами семейства MergeTree на загрузку частей данных во время инициализации.
+* `ProfileEvent_FilteringMarksWithPrimaryKeyProcessedMarks` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество меток, обработанных во время анализа первичного ключа.
 * `ProfileEvent_FilteringMarksWithPrimaryKeyMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на фильтрацию частей по первичному ключу.
 * `ProfileEvent_FilteringMarksWithSecondaryKeysMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на фильтрацию частей по индексам пропуска данных.
 * `ProfileEvent_DistributedIndexAnalysisMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное на распределённый анализ индексов
@@ -503,16 +503,16 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedIndexAnalysisReplicaUnavailable` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда распределённый анализ индексов завершился неудачей на одной из реплик без переключения на локальную реплику (сбой при подключении)
 * `ProfileEvent_DistributedIndexAnalysisReplicaFallback` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда распределённый анализ индексов завершился неудачей на одной из реплик с переключением на локальную реплику
 * `ProfileEvent_DistributedIndexAnalysisMissingParts` ([UInt64](/ru/reference/data-types/int-uint)) — Количество отсутствующих частей при распределённом анализе индексов, которые будут обработаны локально
-* `ProfileEvent_WaitMarksLoadMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на загрузку марок
-* `ProfileEvent_BackgroundLoadingMarksTasks` ([UInt64](/ru/reference/data-types/int-uint)) — Количество фоновых задач по загрузке марок
-* `ProfileEvent_MarksTasksFromCache` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда марки загружались синхронно, поскольку уже находились в кэше.
-* `ProfileEvent_LoadingMarksTasksCanceled` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда фоновые задачи по загрузке марок были отменены
-* `ProfileEvent_LoadedMarksFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Количество загруженных файлов марок.
-* `ProfileEvent_LoadedMarksCount` ([UInt64](/ru/reference/data-types/int-uint)) — Количество загруженных марок (суммарно по всем столбцам).
-* `ProfileEvent_LoadedMarksMemoryBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Размер представлений загруженных марок в памяти.
-* `ProfileEvent_MarkCacheEvictedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество байтов, вытесненных из кэша марок.
-* `ProfileEvent_MarkCacheEvictedMarks` ([UInt64](/ru/reference/data-types/int-uint)) — Количество марок, вытесненных из кэша марок.
-* `ProfileEvent_MarkCacheEvictedFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Количество файлов марок, вытесненных из кэша марок.
+* `ProfileEvent_WaitMarksLoadMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на загрузку меток
+* `ProfileEvent_BackgroundLoadingMarksTasks` ([UInt64](/ru/reference/data-types/int-uint)) — Количество фоновых задач по загрузке меток
+* `ProfileEvent_MarksTasksFromCache` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда метки загружались синхронно, поскольку уже находились в кэше.
+* `ProfileEvent_LoadingMarksTasksCanceled` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда фоновые задачи по загрузке меток были отменены
+* `ProfileEvent_LoadedMarksFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Количество загруженных файлов меток.
+* `ProfileEvent_LoadedMarksCount` ([UInt64](/ru/reference/data-types/int-uint)) — Количество загруженных меток (суммарно по всем столбцам).
+* `ProfileEvent_LoadedMarksMemoryBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Размер представлений загруженных меток в памяти.
+* `ProfileEvent_MarkCacheEvictedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество байтов, вытесненных из кэша меток.
+* `ProfileEvent_MarkCacheEvictedMarks` ([UInt64](/ru/reference/data-types/int-uint)) — Количество меток, вытесненных из кэша меток.
+* `ProfileEvent_MarkCacheEvictedFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Количество файлов меток, вытесненных из кэша меток.
 * `ProfileEvent_LoadedPrimaryIndexFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Количество загруженных файлов первичного индекса.
 * `ProfileEvent_LoadedPrimaryIndexRows` ([UInt64](/ru/reference/data-types/int-uint)) — Количество загруженных строк первичного ключа.
 * `ProfileEvent_LoadedPrimaryIndexBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество загруженных строк первичного ключа.
@@ -816,6 +816,8 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев превышения глобального лимита памяти.
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда память выделялась без проверки ограничений памяти.
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество байт, выделенных без проверки ограничений памяти.
+* `ProfileEvent_QueryMemoryDriftSettled` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов, после завершения которых за ними всё ещё числилась память (или объём освобождённой памяти был завышен). Разность вычитается из показаний трекера памяти пользователя, чтобы учтённый объём памяти запроса стал равен нулю.
+* `ProfileEvent_QueryMemoryDriftSettledBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Абсолютная величина корректировки показаний трекеров памяти пользователей в байтах при завершении запросов, то есть величина погрешности учёта памяти отдельных запросов.
 * `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда для единичного выделения памяти, учитываемого глобальным трекером памяти и равного или превышающего `min_allocation_size_to_log_stack_trace`, была сохранена трассировка стека.
 * `ProfileEvent_AzureGetObject` ([UInt64](/ru/reference/data-types/int-uint)) — Количество вызовов GetObject API Azure.
 * `ProfileEvent_AzureUpload` ([UInt64](/ru/reference/data-types/int-uint)) — Количество вызовов Upload API Azure Blob Storage
@@ -966,6 +968,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_AdaptiveAggregationSharedTableSpills` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда адаптивная агрегация записывала общую таблицу выгрузки, поскольку при нехватке памяти она достигала предела части.
 * `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/ru/reference/data-types/int-uint)) — Количество двухуровневых бакетов, рабочая память которых (слот арены, ссылки на отложенные фрагменты) освобождалась сразу после завершения их слияния и преобразования, до завершения всего слияния.
 * `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/ru/reference/data-types/int-uint)) — Количество двухуровневых бакетов, преобразованных с помощью локального для бакета выбора Top-K (оптимизация плана aggregationBucketTopK).
+* `ProfileEvent_AggregationHavingPrefilterGroupsSkipped` ([UInt64](/ru/reference/data-types/int-uint)) — Количество групп, столбцы ключа которых не материализовались при преобразовании двухуровневого бакета aggregation, поскольку условие HAVING для значения count() самой группы уже исключало её (оптимизация плана aggregationHavingPrefilter).
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/ru/reference/data-types/int-uint)) — Количество hash table, инициализированных как двухуровневые для aggregation.
 * `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев преобразования одноуровневой хеш-таблицы агрегации в двухуровневую во время выполнения.
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/ru/reference/data-types/int-uint)) — Для скольких blocks была применена оптимизация равных диапазонов ключей

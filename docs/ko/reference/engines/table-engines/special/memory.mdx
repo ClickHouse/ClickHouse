@@ -21,7 +21,7 @@ Memory 엔진은 데이터를 RAM에 압축되지 않은 형태로 저장합니�
 동시 데이터 접근은 동기화됩니다. 잠금 시간은 짧으며, 읽기 및 쓰기 작업이 서로를 차단하지 않습니다.
 인덱스는 지원되지 않습니다. 읽기는 병렬로 수행됩니다.
 
-읽기는 `PREWHERE`를 지원하며, [`optimize_move_to_prewhere`](/ko/reference/settings/session-settings#optimize_move_to_prewhere) 설정으로 제어되는 `WHERE` 조건의 자동 이동도 지원합니다. 먼저 조건에 사용된 컬럼만 읽고, 나머지 컬럼은 조건을 통과한 행이 있는 블록에 대해서만, 그것도 통과한 행에 한해서만 읽습니다. 이 방식은 `compress = true`와 함께 사용할 때 특히 효과적입니다. 선택도가 높은 조건에서는 대부분의 컬럼이 아예 압축 해제되지 않기 때문입니다. 필터가 없는 `SELECT count() FROM table`은 데이터를 읽지 않고 메타데이터만으로 처리됩니다.
+읽기는 `PREWHERE`를 지원하며, [`optimize_move_to_prewhere`](/ko/reference/settings/session-settings#optimize_move_to_prewhere) 설정으로 제어되는 `WHERE` 조건의 자동 이동도 지원합니다. 먼저 조건에 사용된 컬럼만 읽고, 나머지 컬럼은 조건을 통과한 행이 있는 블록에 대해서만, 그것도 통과한 행에 한해서만 읽습니다. 여러 조건의 논리곱(AND)은 [`enable_multiple_prewhere_read_steps`](/ko/reference/settings/session-settings#enable_multiple_prewhere_read_steps) 설정을 사용한 `MergeTree`와 마찬가지로 단계적으로 평가됩니다. 즉, 이후 각 조건의 컬럼은 앞선 조건을 모두 통과한 행에 대해서만 읽습니다. 이 방식은 `compress = true`와 함께 사용할 때 특히 효과적입니다. 선택도가 높은 조건에서는 대부분의 컬럼이 아예 압축 해제되지 않기 때문입니다. 필터가 없는 `SELECT count() FROM table`은 데이터를 읽지 않고 메타데이터만으로 처리됩니다.
 
 최대 성능(초당 10GB 초과)은 단순한 쿼리에서 달성됩니다. 이는 디스크에서 읽거나, 데이터를 압축 해제하거나 역직렬화할 필요가 없기 때문입니다. (다만 많은 경우 MergeTree 엔진의 성능도 거의 그에 가깝게 높습니다.)
 서버를 다시 시작하면 테이블의 데이터는 사라지고 테이블은 비게 됩니다.

@@ -186,41 +186,44 @@ VIEW を削除するには、[DROP VIEW](/ja/reference/statements/drop#drop-view
 
 ## SQL security {#sql_security}
 
-`DEFINER` と `SQL SECURITY` を使うと、ビューの基になるクエリを実行する際に、どの ClickHouse ユーザーを使用するかを指定できます。
+`DEFINER` と `SQL SECURITY` を使うと、VIEWの基になるクエリを実行する際に、どの ClickHouse ユーザーを使用するかを指定できます。
 `SQL SECURITY` には、`DEFINER`、`INVOKER`、`NONE` の 3 つの有効な値があります。`DEFINER` 句では、既存の任意のユーザー、または `CURRENT_USER` を指定できます。
 
-次の表は、ビューから読み取るために、どのユーザーにどの権限が必要かを示しています。
-なお、SQL security オプションにかかわらず、どの場合でもビューを読み取るには `GRANT SELECT ON <view>` が引き続き必要です。
+次の表は、VIEWから読み取るために、どのユーザーにどの権限が必要かを示しています。
+なお、SQL security オプションにかかわらず、どの場合でもVIEWを読み取るには `GRANT SELECT ON <view>` が引き続き必要です。
 
-| SQL security option | View                                                | Materialized View                                                                  |
+| SQL security option | VIEW                                                | Materialized VIEW                                                                  |
 | ------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `DEFINER alice`     | `alice` は、ビューのソーステーブルに対する `SELECT` 権限を持っている必要があります。 | `alice` は、ビューのソーステーブルに対する `SELECT` 権限と、ビューのターゲットテーブルに対する `INSERT` 権限を持っている必要があります。 |
-| `INVOKER`           | ユーザーは、ビューのソーステーブルに対する `SELECT` 権限を持っている必要があります。     | materialized views には `SQL SECURITY INVOKER` を指定できません。                             |
+| `DEFINER alice`     | `alice` は、VIEWのソーステーブルに対する `SELECT` 権限を持っている必要があります。 | `alice` は、VIEWのソーステーブルに対する `SELECT` 権限と、VIEWのターゲットテーブルに対する `INSERT` 権限を持っている必要があります。 |
+| `INVOKER`           | ユーザーは、VIEWのソーステーブルに対する `SELECT` 権限を持っている必要があります。     | materialized VIEW には `SQL SECURITY INVOKER` を指定できません。                             |
 | `NONE`              | -                                                   | -                                                                                  |
 
 <Note>
-  `SQL SECURITY NONE` は非推奨のオプションです。`SQL SECURITY NONE` を指定してビューを作成する権限を持つユーザーは、任意のクエリを実行できてしまいます。
-  そのため、このオプションでビューを作成するには `GRANT ALLOW SQL SECURITY NONE TO <user>` が必要です。
+  `SQL SECURITY NONE` は非推奨のオプションです。`SQL SECURITY NONE` を指定してVIEWを作成する権限を持つユーザーは、任意のクエリを実行できてしまいます。
+  そのため、このオプションでVIEWを作成するには `GRANT ALLOW SQL SECURITY NONE TO <user>` が必要です。
 </Note>
 
 `DEFINER`/`SQL SECURITY` が指定されていない場合、結果は [`ignore_empty_sql_security_in_create_view_query`](/ja/reference/settings/server-settings/settings/other#ignore_empty_sql_security_in_create_view_query) サーバー設定によって異なります。
 
-デフォルト値の `true` では、クエリは記述どおりに保存され、ビューには空の SQL security タイプが設定されます。通常のビューは呼び出し元の権限で実行され、ターゲットテーブルが明示的に指定された materialized view では、そのターゲットテーブルに対するアクセスチェックがスキップされます。つまり、ソーステーブルへの挿入にはターゲットテーブルに対する `INSERT` 権限は不要であり、ビューからの読み取りにはそのターゲットテーブルに対する `SELECT` 権限は不要です。
+デフォルト値の `true` では、クエリは記述どおりに保存され、VIEWには空の SQL security タイプが設定されます。通常のVIEWは呼び出し元の権限で実行され、ターゲットテーブルが明示的に指定された materialized VIEW では、そのターゲットテーブルに対するアクセスチェックがスキップされます。つまり、ソーステーブルへの挿入にはターゲットテーブルに対する `INSERT` 権限は不要であり、VIEWからの読み取りにはそのターゲットテーブルに対する `SELECT` 権限は不要です。
 
-`false` では、作成時に次のデフォルト値がビュー定義に書き込まれます。
+`false` では、作成時に次のデフォルト値がVIEW定義に書き込まれます。
 
-* `SQL SECURITY`: 通常のビューでは `INVOKER` ([`default_normal_view_sql_security`](/ja/reference/settings/session-settings/default#default_normal_view_sql_security) で設定可能) 、materialized view では `DEFINER` ([`default_materialized_view_sql_security`](/ja/reference/settings/session-settings/default#default_materialized_view_sql_security) で設定可能)
+* `SQL SECURITY`: 通常のVIEWでは `INVOKER` ([`default_normal_view_sql_security`](/ja/reference/settings/session-settings/default#default_normal_view_sql_security) で設定可能) 、materialized VIEW では `DEFINER` ([`default_materialized_view_sql_security`](/ja/reference/settings/session-settings/default#default_materialized_view_sql_security) で設定可能)
 * `DEFINER`: `CURRENT_USER` ([`default_view_definer`](/ja/reference/settings/session-settings/default#default_view_definer) で設定可能)
 
-リフレッシャブルmaterialized view には、設定にかかわらず常にこれらのデフォルト値が設定されます。
+リフレッシャブルmaterialized VIEW には、設定にかかわらず常にこれらのデフォルト値が設定されます。
 
-ビューは、アタッチ時またはサーバー起動時の再読み込み時に、保存されている定義の SQL security タイプを維持します。そのため、`DEFINER`/`SQL SECURITY` なしで保存されたビューは、空の SQL security タイプを維持します。
+VIEWは、アタッチ時またはサーバー起動時の再読み込み時に、保存されている定義の SQL security タイプを維持します。そのため、`DEFINER`/`SQL SECURITY` なしで保存されたVIEWは、空の SQL security タイプを維持します。
 
-既存のビューの SQL security を変更するには、次を使用します。
+既存のVIEWの SQL security を変更するには、次を使用します。
 
 ```sql
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
+
+現在のユーザー以外を `DEFINER` に指定する場合は、VIEWの作成時と `MODIFY SQL SECURITY` の実行時のいずれにおいても、そのユーザーに対する `SET DEFINER` 権限が必要です。
+[`ALTER TABLE ... MODIFY QUERY`](/ja/reference/statements/alter/view#required-privileges) を使用して `SQL SECURITY DEFINER` または `SQL SECURITY NONE` のVIEWのクエリを変更するには、その SQL security を宣言する場合と同じ権限が必要です。
 
 ### 例 {#examples}
 

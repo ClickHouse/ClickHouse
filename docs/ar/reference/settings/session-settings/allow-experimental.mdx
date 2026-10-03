@@ -11,7 +11,6 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -31,13 +30,10 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 <ExperimentalBadge />
 
-<CloudOnlyBadge />
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
-لا يسري مفعول هذا الإعداد إلا في ClickHouse Cloud، حيث يُستخدم لتهيئة دمج Iceberg في الخلفية.
 يتيح تنظيف ملفات البيانات القديمة أثناء دمج Iceberg.
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
@@ -105,7 +101,6 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
 السماح بالاستخدام الصريح لـ &#39;OPTIMIZE&#39; مع جداول Iceberg.
-في الإصدارات مفتوحة المصدر، لا يُدعم سوى `OPTIMIZE TABLE ... MANIFEST`؛ أما دمج البيانات (`OPTIMIZE TABLE` من دون `MANIFEST`) فيُعيد الخطأ `NOT_IMPLEMENTED`.
 
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 

@@ -744,6 +744,7 @@ ClickHouse 在关闭连接前，针对 HTTP 协议等待传入请求的秒数。
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -754,12 +755,13 @@ ClickHouse 在关闭连接前，针对 HTTP 协议等待传入请求的秒数。
 
 `<syslog>` 的键：
 
-| Key        | Description                                                                                                                                                                                                |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `address`  | syslog 地址，格式为 `host\[:port\]`。如果省略，则使用本地守护进程。                                                                                                                                                              |
-| `hostname` | 发送日志的主机名 (可选) 。                                                                                                                                                                                            |
-| `facility` | syslog 的 [facility 关键字](https://en.wikipedia.org/wiki/Syslog#Facility)。必须使用带有 &quot;LOG&#95;&quot; 前缀的大写形式指定，例如 `LOG_USER`、`LOG_DAEMON`、`LOG_LOCAL3` 等。默认值：如果指定了 `address`，则为 `LOG_USER`；否则为 `LOG_DAEMON`。 |
-| `format`   | 日志消息格式。可选值：`bsd` 和 `syslog.`                                                                                                                                                                               |
+| Key           | Description                                                                                                                                                                                                |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`     | syslog 地址，格式为 `host\[:port\]`。如果省略，则使用本地守护进程。                                                                                                                                                              |
+| `hostname`    | 发送日志的主机名 (可选) 。                                                                                                                                                                                            |
+| `facility`    | syslog 的 [facility 关键字](https://en.wikipedia.org/wiki/Syslog#Facility)。必须使用带有 &quot;LOG&#95;&quot; 前缀的大写形式指定，例如 `LOG_USER`、`LOG_DAEMON`、`LOG_LOCAL3` 等。默认值：如果指定了 `address`，则为 `LOG_USER`；否则为 `LOG_DAEMON`。 |
+| `format`      | 日志消息格式。可选值：`bsd` 和 `syslog.`                                                                                                                                                                               |
+| `programname` | syslog 消息中使用的程序名：对于本地 syslog，即其 ident；对于 `format=syslog` 的远程 syslog，即 `APP-NAME`。当 `format=bsd` 时不生效。取值为 1 到 48 个不含空格的可打印 ASCII 字符。默认值：本地 syslog 为命令名，远程 syslog 则不设置。                                      |
 
 **日志格式**
 

@@ -76,23 +76,23 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ReadCompressedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات (أي عدد البايتات قبل فك الضغط) المقروءة من المصادر المضغوطة (الملفات، الشبكة).
 * `ProfileEvent_CompressedReadBufferBlocks` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الكتل المضغوطة (كتل البيانات التي تُضغط كلٌّ منها بشكل مستقل) المقروءة من المصادر المضغوطة (الملفات، الشبكة).
 * `ProfileEvent_CompressedReadBufferBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات غير المضغوطة (أي عدد البايتات بعد فك الضغط) المقروءة من المصادر المضغوطة (الملفات، الشبكة).
-* `ProfileEvent_CompressedReadBufferChecksumDoesntMatch` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يتطابق فيها المجموع الاختباري للكتلة المضغوطة.
-* `ProfileEvent_CompressedReadBufferChecksumDoesntMatchSingleBitMismatch` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي كان فيها عدم تطابق المجموع الاختباري للكتلة المضغوطة ناتجًا عن اختلاف بِتّ واحد.
-* `ProfileEvent_CompressedReadBufferChecksumDoesntMatchMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في اكتشاف انقلابات البِتّات الناتجة عن عدم تطابق المجموع الاختباري للكتلة المضغوطة.
+* `ProfileEvent_CompressedReadBufferChecksumDoesntMatch` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم تتطابق فيها قيمة التحقق للكتلة المضغوطة.
+* `ProfileEvent_CompressedReadBufferChecksumDoesntMatchSingleBitMismatch` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي كان فيها عدم تطابق قيمة التحقق للكتلة المضغوطة ناتجًا عن اختلاف بِتّ واحد.
+* `ProfileEvent_CompressedReadBufferChecksumDoesntMatchMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في اكتشاف انقلابات البِتّات الناتجة عن عدم تطابق قيمة التحقق للكتلة المضغوطة.
 * `ProfileEvent_UncompressedCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي جرى فيها العثور على كتلة بيانات في التخزين المؤقت غير المضغوط (مع تجنّب فك الضغط).
 * `ProfileEvent_UncompressedCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على كتلة بيانات في الذاكرة المؤقتة غير المضغوطة (ما استلزم فك الضغط).
 * `ProfileEvent_UncompressedCacheWeightLost` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات التي أُخرجت من الذاكرة المؤقتة غير المضغوطة.
-* `ProfileEvent_PageCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على كتلة بيانات في ذاكرة تخزين الصفحات في فضاء المستخدم.
-* `ProfileEvent_PageCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على كتلة بيانات في ذاكرة تخزين الصفحات في فضاء المستخدم.
-* `ProfileEvent_PageCacheWeightLost` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات التي أُخرجت من ذاكرة تخزين الصفحات في فضاء المستخدم
-* `ProfileEvent_PageCacheResized` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي جرى فيها تغيير حجم ذاكرة تخزين الصفحات في فضاء المستخدم تلقائيًا (يحدث ذلك عادةً بضع مرات في الثانية، ويتحكم فيه memory&#95;worker&#95;period&#95;ms).
-* `ProfileEvent_PageCacheOvercommitResize` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي جرى فيها تغيير حجم ذاكرة تخزين الصفحات في فضاء المستخدم تلقائيًا لتحرير الذاكرة أثناء تخصيص الذاكرة.
-* `ProfileEvent_PageCacheReadBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المقروءة من ذاكرة تخزين الصفحات في فضاء المستخدم.
+* `ProfileEvent_PageCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على كتلة بيانات في ذاكرة التخزين المؤقت للصفحات في userspace.
+* `ProfileEvent_PageCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على كتلة بيانات في ذاكرة التخزين المؤقت للصفحات في userspace.
+* `ProfileEvent_PageCacheWeightLost` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات التي أُخرجت من ذاكرة التخزين المؤقت للصفحات في userspace
+* `ProfileEvent_PageCacheResized` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي جرى فيها تغيير حجم ذاكرة التخزين المؤقت للصفحات في userspace تلقائيًا (يحدث ذلك عادةً بضع مرات في الثانية، ويتحكم فيه memory&#95;worker&#95;period&#95;ms).
+* `ProfileEvent_PageCacheOvercommitResize` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي جرى فيها تغيير حجم ذاكرة التخزين المؤقت للصفحات في userspace تلقائيًا لتحرير الذاكرة أثناء تخصيص الذاكرة.
+* `ProfileEvent_PageCacheReadBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المقروءة من ذاكرة التخزين المؤقت للصفحات في userspace.
 * `ProfileEvent_MMappedFileCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على ملف في ذاكرة التخزين المؤقت MMap (لـ read&#95;method &#39;mmap&#39;)، لذلك لم نحتج إلى تنفيذ mmap له مرة أخرى.
 * `ProfileEvent_MMappedFileCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على ملف في ذاكرة التخزين المؤقت MMap (لـ read&#95;method &#39;mmap&#39;)، لذلك اضطررنا إلى تنفيذ mmap له مرة أخرى.
 * `ProfileEvent_OpenedFileCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على ملف في opened file cache، لذلك لم نحتج إلى فتحه مرة أخرى.
 * `ProfileEvent_OpenedFileCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على ملف في opened file cache، لذلك اضطررنا إلى فتحه مرة أخرى.
-* `ProfileEvent_OpenedFileCacheMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — مقدار الوقت المستغرَق في تنفيذ أساليب OpenedFileCache.
+* `ProfileEvent_OpenedFileCacheMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — مقدار الوقت المستغرَق في تنفيذ طرق OpenedFileCache.
 * `ProfileEvent_AIOWrite` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات الكتابة باستخدام واجهة AIO في Linux أو FreeBSD
 * `ProfileEvent_AIOWriteBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المكتوبة باستخدام واجهة AIO في Linux أو FreeBSD
 * `ProfileEvent_AIORead` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات القراءة باستخدام واجهة AIO في Linux أو FreeBSD
@@ -700,7 +700,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ParallelReplicasStealingByHashMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في جمع segments المخصّصة للـ stealing حسب hash
 * `ProfileEvent_ParallelReplicasProcessingPartsMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في معالجة data parts
 * `ProfileEvent_ParallelReplicasStealingLeftoversMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في جمع المقاطع المتروكة
-* `ProfileEvent_ParallelReplicasCollectingOwnedSegmentsMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في جمع المقاطع المخصّصة وفقًا لـ `hash`
+* `ProfileEvent_ParallelReplicasCollectingOwnedSegmentsMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في جمع المقاطع المخصّصة وفقًا للتجزئة
 * `ProfileEvent_ParallelReplicasNumRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الطلبات المرسلة إلى العقدة البادئة.
 * `ProfileEvent_CacheWarmerBytesDownloaded` ([UInt64](/ar/reference/data-types/int-uint)) — حجم البيانات التي جرى جلبها إلى ذاكرة التخزين المؤقت لنظام الملفات بواسطة خيوط خلفية مخصّصة.
 * `ProfileEvent_CacheWarmerDataPartsDownloaded` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أجزاء البيانات التي جرى جلبها بالكامل بواسطة CacheWarmer.
@@ -708,7 +708,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_PreferredWarmedUnmergedParts` ([UInt64](/ar/reference/data-types/int-uint)) — راجع الإعداد prefer&#95;warmed&#95;unmerged&#95;parts&#95;seconds. عدد المرات التي استخدمت فيها استعلامات القراءة أجزاء قديمة قبل الدمج موجودة في ذاكرة التخزين المؤقت بدلًا من الجزء المدمج الذي لم يكن CacheWarmer قد جلبه إلى ذاكرة التخزين المؤقت بعد.
 * `ProfileEvent_PerfCPUCycles` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الدورات. انتبه إلى ما يحدث أثناء تغيّر تردد CPU.
 * `ProfileEvent_PerfInstructions` ([UInt64](/ar/reference/data-types/int-uint)) — التعليمات المنجزة. انتبه، فقد تتأثر هذه بعوامل متعددة، وأبرزها عدد مقاطعات العتاد.
-* `ProfileEvent_PerfCacheReferences` ([UInt64](/ar/reference/data-types/int-uint)) — عمليات الوصول إلى ذاكرة التخزين المؤقت. يشير هذا عادةً إلى عمليات الوصول إلى ذاكرة التخزين المؤقت من المستوى الأخير، لكن ذلك قد يختلف بحسب CPU لديك. وقد يشمل هذا عمليات `prefetch` ورسائل الاتساق؛ ومرة أخرى يعتمد ذلك على تصميم CPU لديك.
+* `ProfileEvent_PerfCacheReferences` ([UInt64](/ar/reference/data-types/int-uint)) — عمليات الوصول إلى ذاكرة التخزين المؤقت. يشير هذا عادةً إلى عمليات الوصول إلى ذاكرة التخزين المؤقت من المستوى الأخير، لكن ذلك قد يختلف بحسب CPU لديك. وقد يشمل هذا عمليات الجلب المسبق ورسائل الاتساق؛ ومرة أخرى يعتمد ذلك على تصميم CPU لديك.
 * `ProfileEvent_PerfCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — إخفاقات ذاكرة التخزين المؤقت. يشير هذا عادةً إلى إخفاقات ذاكرة التخزين المؤقت من المستوى الأخير؛ والمقصود استخدامه بالاقتران مع الحدث PERFCOUNTHWCACHEREFERENCES لحساب معدلات الإخفاق في ذاكرة التخزين المؤقت.
 * `ProfileEvent_PerfBranchInstructions` ([UInt64](/ar/reference/data-types/int-uint)) — تعليمات التفرّع المنجزة. قبل Linux 2.6.35، كان هذا يستخدم الحدث الخاطئ على معالجات AMD.
 * `ProfileEvent_PerfBranchMisses` ([UInt64](/ar/reference/data-types/int-uint)) — تعليمات التفرّع التي أُخطئ في التنبؤ بها.
@@ -816,6 +816,8 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات تجاوز حد الذاكرة العام.
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي جرى فيها تخصيص الذاكرة دون التحقق من قيود الذاكرة.
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/ar/reference/data-types/int-uint)) — مقدار البايتات التي جرى تخصيصها دون التحقق من قيود الذاكرة.
+* `ProfileEvent_QueryMemoryDriftSettled` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستعلامات التي انتهت مع بقاء ذاكرة محتسبة عليها (أو مع احتساب تحرير ذاكرة لها بأكثر مما حُرّر فعليًا). يُسوّى الفرق في متعقّب الذاكرة الخاص بكل مستخدم، بحيث يصبح رصيد الاستعلام فيه صفرًا.
+* `ProfileEvent_QueryMemoryDriftSettledBytes` ([UInt64](/ar/reference/data-types/int-uint)) — العدد المطلق للبايتات التي سُوّيت في متعقّبات الذاكرة الخاصة بكل مستخدم عند انتهاء الاستعلامات، أي مقدار الانحراف في احتساب الذاكرة لكل استعلام.
 * `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي التُقط فيها تتبع مكدس لتخصيص واحد في متعقّب الذاكرة العام يساوي أو يتجاوز `min_allocation_size_to_log_stack_trace`.
 * `ProfileEvent_AzureGetObject` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات GetObject في واجهة برمجة تطبيقات Azure.
 * `ProfileEvent_AzureUpload` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات Upload في واجهة برمجة تطبيقات Azure Blob Storage
@@ -966,6 +968,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_AdaptiveAggregationSharedTableSpills` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أخرج فيها التجميع التكيفي جدول التصريف المشترك إلى القرص لأنه بلغ حد الجزء تحت ضغط الذاكرة.
 * `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الحاويات ثنائية المستوى التي حُررت ذاكرتها العاملة (فتحة Arena، ومراجع المقاطع المرحلية) مباشرةً بعد اكتمال دمجها وتحويلها، قبل انتهاء الدمج بالكامل.
 * `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الحاويات ثنائية المستوى التي حُوّلت عبر اختيار Top-K المحلي للحاوية (تحسين خطة aggregationBucketTopK).
+* `ProfileEvent_AggregationHavingPrefilterGroupsSkipped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المجموعات التي لم تُجسَّد column المفاتيح الخاصة بها أثناء تحويل حاوية ثنائية المستوى للتجميع، لأن الحد الذي يفرضه شرط HAVING على قيمة count() الخاصة بالمجموعة كان قد استبعدها بالفعل (تحسين خطة aggregationHavingPrefilter).
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/ar/reference/data-types/int-uint)) — عدد جداول التجزئة التي هُيئت بمستويين لأغراض التجميع.
 * `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي حُوِّل فيها جدول تجزئة للتجميع أحادي المستوى إلى مستويين أثناء وقت التشغيل.
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الكتل التي طُبّق عليها تحسين النطاقات المتساوية للمفاتيح
@@ -1557,21 +1560,21 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_AutomaticParallelReplicasProbePlansBuilt` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي بنت فيها النسخ المتماثلة المتوازية التلقائية خطة مرشحة تستخدم النسخ المتماثلة المتوازية لمقارنتها بخطة العقدة الواحدة. ولا تُستخدم كل خطة من هذا النوع: إذ تُبنى لتقدير تكلفتها، وتُستبعد عندما تتفوق خطة العقدة الواحدة
 * `ProfileEvent_DistributedConnectionReconnectCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات إعادة الاتصال بالخوادم الأخرى أثناء تنفيذ الاستعلامات الموزعة. وقد يحدث ذلك عند الحصول على اتصال غير محدّث من مجمّع الاتصالات
 * `ProfileEvent_DistributedConnectionConnectCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات الاتصال بالخوادم الأخرى أثناء تنفيذ الاستعلامات الموزعة. ويحدث ذلك عند إنشاء اتصال جديد بدلًا من استخدام اتصال موجود من المجمّع.
-* `ProfileEvent_RefreshableViewRefreshSuccess` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات تحديث العروض المادية القابلة للتحديث
-* `ProfileEvent_RefreshableViewRefreshFailed` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات فشل تحديث العروض المادية القابلة للتحديث
-* `ProfileEvent_RefreshableViewSyncReplicaSuccess` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي نفّذت فيها عبارة `SELECT` من عرض مادي قابل للتحديث عملية `SYNC REPLICA` ضمنية
-* `ProfileEvent_RefreshableViewSyncReplicaRetry` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي فشلت فيها عبارة `SELECT` من عرض مادي قابل للتحديث ثم أعادت محاولة `SYNC REPLICA` ضمنية
-* `ProfileEvent_RefreshableViewLockTableRetry` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي اضطرت فيها عبارة `SELECT` من عرض مادي قابل للتحديث إلى التبديل إلى جدول جديد لأن الجدول القديم أُزيل
-* `ProfileEvent_AsyncLoggingConsoleTotalMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل (المقبولة أو المُسقطة) التي أُرسلت إلى الطابور غير المتزامن لسجل وحدة التحكم
-* `ProfileEvent_AsyncLoggingFileLogTotalMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل (المقبولة أو المُسقطة) التي أُرسلت إلى الطابور غير المتزامن لسجل الملف
-* `ProfileEvent_AsyncLoggingErrorFileLogTotalMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل (المقبولة أو المُسقطة) التي أُرسلت إلى الطابور غير المتزامن لسجل ملف الأخطاء
-* `ProfileEvent_AsyncLoggingSyslogTotalMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل (المقبولة أو المُسقطة) التي أُرسلت إلى الطابور غير المتزامن لـ syslog
-* `ProfileEvent_AsyncLoggingTextLogTotalMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل (المقبولة أو المُسقطة) التي أُرسلت إلى الطابور غير المتزامن لـ text&#95;log
-* `ProfileEvent_AsyncLoggingConsoleDroppedMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل التي أُسقطت من سجل وحدة التحكم بسبب امتلاء طابور السجل غير المتزامن
-* `ProfileEvent_AsyncLoggingFileLogDroppedMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل التي أُسقطت من سجل الملف بسبب امتلاء طابور السجل غير المتزامن
-* `ProfileEvent_AsyncLoggingErrorFileLogDroppedMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل التي أُسقطت من سجل ملف الأخطاء بسبب امتلاء طابور السجل غير المتزامن
-* `ProfileEvent_AsyncLoggingSyslogDroppedMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل التي أُسقطت من syslog بسبب امتلاء طابور السجل غير المتزامن
-* `ProfileEvent_AsyncLoggingTextLogDroppedMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل التي أُسقطت من text&#95;log بسبب امتلاء طابور السجل غير المتزامن
+* `ProfileEvent_RefreshableViewRefreshSuccess` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات تحديث العروض المُجسَّدة القابلة للتحديث
+* `ProfileEvent_RefreshableViewRefreshFailed` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات فشل تحديث العروض المُجسَّدة القابلة للتحديث
+* `ProfileEvent_RefreshableViewSyncReplicaSuccess` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي نفّذت فيها عبارة `SELECT` من عرض مُجسَّد قابل للتحديث عملية `SYNC REPLICA` ضمنية
+* `ProfileEvent_RefreshableViewSyncReplicaRetry` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي فشلت فيها عبارة `SELECT` من عرض مُجسَّد قابل للتحديث ثم أعادت محاولة `SYNC REPLICA` ضمنية
+* `ProfileEvent_RefreshableViewLockTableRetry` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي اضطرت فيها عبارة `SELECT` من عرض مُجسَّد قابل للتحديث إلى التبديل إلى جدول جديد لأن الجدول القديم حُذف
+* `ProfileEvent_AsyncLoggingConsoleTotalMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل (المقبولة أو المُسقطة) التي أُرسلت إلى قائمة الانتظار غير المتزامنة لسجل وحدة التحكم
+* `ProfileEvent_AsyncLoggingFileLogTotalMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل (المقبولة أو المُسقطة) التي أُرسلت إلى قائمة الانتظار غير المتزامنة لسجل الملف
+* `ProfileEvent_AsyncLoggingErrorFileLogTotalMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل (المقبولة أو المُسقطة) التي أُرسلت إلى قائمة الانتظار غير المتزامنة لسجل ملف error
+* `ProfileEvent_AsyncLoggingSyslogTotalMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل (المقبولة أو المُسقطة) التي أُرسلت إلى قائمة الانتظار غير المتزامنة لـ syslog
+* `ProfileEvent_AsyncLoggingTextLogTotalMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل (المقبولة أو المُسقطة) التي أُرسلت إلى قائمة الانتظار غير المتزامنة لـ text&#95;log
+* `ProfileEvent_AsyncLoggingConsoleDroppedMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل التي أُسقطت من سجل وحدة التحكم بسبب امتلاء قائمة انتظار السجل غير المتزامن
+* `ProfileEvent_AsyncLoggingFileLogDroppedMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل التي أُسقطت من سجل الملف بسبب امتلاء قائمة انتظار السجل غير المتزامن
+* `ProfileEvent_AsyncLoggingErrorFileLogDroppedMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل التي أُسقطت من سجل ملف error بسبب امتلاء قائمة انتظار السجل غير المتزامن
+* `ProfileEvent_AsyncLoggingSyslogDroppedMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل التي أُسقطت من syslog بسبب امتلاء قائمة انتظار السجل غير المتزامن
+* `ProfileEvent_AsyncLoggingTextLogDroppedMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل التي أُسقطت من text&#95;log بسبب امتلاء قائمة انتظار السجل غير المتزامن
 * `ProfileEvent_JemallocFailedAllocationSampleTracking` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لمرات فشل تتبّع عيّنة تخصيص jemalloc
 * `ProfileEvent_JemallocFailedDeallocationSampleTracking` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لمرات فشل تتبّع عيّنة إلغاء تخصيص jemalloc
 * `ProfileEvent_SetsBuiltFromSubquery` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مجموعات `IN`/`JOIN` التي مُلئت بتشغيل الاستعلام الفرعي الخاص بها. ولا تُحتسب المجموعة المأخوذة من ذاكرة التخزين المؤقت للمجموعات المُعدّة مسبقًا، أو التي بُنيت بالفعل وأُعيد استخدامها.

@@ -194,8 +194,8 @@ Materialized view 的实现方式如下：当向 `SELECT` 中指定的表插入�
 
 | SQL 安全选项        | 视图                              | Materialized View                                     |
 | --------------- | ------------------------------- | ----------------------------------------------------- |
-| `DEFINER alice` | `alice` 必须拥有该视图源表的 `SELECT` 权限。 | `alice` 必须拥有该视图源表的 `SELECT` 权限，以及该视图目标表的 `INSERT` 权限。 |
-| `INVOKER`       | 用户必须拥有该视图源表的 `SELECT` 权限。       | 不能为 materialized view 指定 `SQL SECURITY INVOKER`。      |
+| `DEFINER alice` | `alice` 必须拥有该视图源表的 `SELECT` 授权。 | `alice` 必须拥有该视图源表的 `SELECT` 授权，以及该视图目标表的 `INSERT` 授权。 |
+| `INVOKER`       | 用户必须拥有该视图源表的 `SELECT` 授权。       | 不能为 materialized view 指定 `SQL SECURITY INVOKER`。      |
 | `NONE`          | -                               | -                                                     |
 
 <Note>
@@ -205,7 +205,7 @@ Materialized view 的实现方式如下：当向 `SELECT` 中指定的表插入�
 
 如果未指定 `DEFINER`/`SQL SECURITY`，结果取决于 [`ignore_empty_sql_security_in_create_view_query`](/zh/reference/settings/server-settings/settings/other#ignore_empty_sql_security_in_create_view_query) 服务器设置。
 
-当其默认值为 `true` 时，查询会按原样存储，且视图会获得空的 SQL 安全类型。普通视图随后将使用调用者的权限运行；对于显式指定目标表的 materialized view，将跳过对该目标表的访问检查：向源表插入数据不需要目标表的 `INSERT` 权限，从视图中读取数据也不需要其 `SELECT` 权限。
+当其默认值为 `true` 时，查询会按原样存储，且视图会获得空的 SQL 安全类型。普通视图随后将使用调用者的权限运行；对于显式指定目标表的 materialized view，将跳过对该目标表的访问检查：向源表插入数据不需要目标表的 `INSERT` 特权，从视图中读取数据也不需要其 `SELECT` 特权。
 
 当值为 `false` 时，会在创建时将以下默认值写入视图定义：
 
@@ -221,6 +221,9 @@ Materialized view 的实现方式如下：当向 `SELECT` 中指定的表插入�
 ```sql
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
+
+如果 `DEFINER` 不是当前用户，则无论是在创建视图时还是使用 `MODIFY SQL SECURITY` 时，都需要拥有针对该用户的 `SET DEFINER` 授权。
+要通过 [`ALTER TABLE ... MODIFY QUERY`](/zh/reference/statements/alter/view#required-privileges) 更改 `SQL SECURITY DEFINER` 或 `SQL SECURITY NONE` 视图的查询，所需的授权与声明其 SQL 安全设置时相同。
 
 ### 示例 {#examples}
 

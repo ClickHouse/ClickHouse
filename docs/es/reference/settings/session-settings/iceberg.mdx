@@ -11,7 +11,6 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudOnlyBadge } from "/snippets/es/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -93,13 +92,10 @@ consulte https://iceberg.apache.org/docs/1.5.2/configuration/.
 
 ## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
 
-<CloudOnlyBadge />
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1000"},{"label": "Nueva configuración"}]}]} />
 
-Solo tiene efecto en ClickHouse Cloud, donde configura la compactación de Iceberg en segundo plano.
 Umbral para los archivos de datos de compactación en Iceberg.
 
 ## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}

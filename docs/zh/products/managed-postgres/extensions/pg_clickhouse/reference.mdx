@@ -372,7 +372,7 @@ CREATE FOREIGN TABLE acts (
 
 #### 状态列与 `NOT NULL` {#state-columns-and-not-null}
 
-请保持 `AggregateFunction` 和 `SimpleAggregateFunction` 列为可空 (nullable) 。
+请保持 `AggregateFunction` 和 `SimpleAggregateFunction` 列为可空 (Nullable) 。
 对于 `NOT NULL` 状态列，PostgreSQL 19 会将 `count(column)` 改写为 `count(*)`，
 导致统计的是行数，而非合并状态。
 
@@ -447,7 +447,7 @@ ALTER FOREIGN TABLE hits ALTER COLUMN hits DROP NOT NULL;
 ```
 
 `NOT NULL` 仅对 PostgreSQL 生效。因此，[IMPORT FOREIGN
-SCHEMA](#import-foreign-schema) 会将状态列导入为可为空 (nullable) 的列。
+SCHEMA](#import-foreign-schema) 会将状态列导入为可为空 (Nullable) 的列。
 
 ### ALTER FOREIGN TABLE {#alter-foreign-table}
 

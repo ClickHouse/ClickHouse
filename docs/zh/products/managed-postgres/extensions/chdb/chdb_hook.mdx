@@ -118,8 +118,7 @@ URL 的格式因目标 (target) 而异。
 #### File 表引擎 {#file}
 
 <Important>
-  `file://` scheme 并非在所有系统上都受支持。例如在云平台上，管理员可能会在编译 `chdb_hook` 时将其禁用 (通过
-  向 `make` 传入 `NO_FILE_SCHEME` 选项) 。
+  ClickHouse Cloud 不支持 `file://` 协议。
 </Important>
 
 必须是 Postgres 服务器上的绝对路径，使用相对路径会报错。Postgres 用户必须根据实际需要属于 `pg_read_server_files` 或

@@ -82,6 +82,16 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 استخدم استراتيجية تجميع Shuffle بدلًا من PartialAggregation + Merge ضمن خطة الاستعلام الموزعة.
 يُتجاهل هذا الإعداد عندما لا تستطيع استراتيجية Shuffle إنتاج نتيجة صحيحة، على سبيل المثال مع `GROUPING SETS` أو عندما يجب أن ينتج التجميع نتائج مرتبة حسب حاوية.
 
+## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "100000"},{"label": "إعداد جديد يحدّد الحد الأقصى لعدد أسطر السجل التي تخزّنها مهمة العامل عديم الحالة مؤقتًا لإعادة توجيهها إلى المنسّق بين عمليات استطلاع الحالة؛ وتُحذف الأسطر الزائدة مع احتساب عددها. وبما أنها ميزة جديدة، فإن القيمة السابقة تساوي القيمة الافتراضية."}]}]} />
+
+عندما يعيد `send_logs_level` توجيه سجلات مهام العامل عديم الحالة إلى المنسّق، تخزّن كل مهمة عامل مؤقتًا هذا العدد من أسطر السجل كحد أقصى بين عمليات استطلاع الحالة. وتُحذف الأسطر التي تتجاوز هذا الحد، ويُبلَّغ العميل بعددها. وتعني القيمة `0` عدم وجود حد (فلا يُحذف أي سطر، لكن تعثّر استطلاع الحالة قد يؤدي إلى تضخّم المخزن المؤقت بلا حدود).
+
 ## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 
 <ExperimentalBadge />

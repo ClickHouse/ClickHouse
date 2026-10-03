@@ -11,7 +11,6 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudOnlyBadge } from "/snippets/pt-BR/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -31,13 +30,10 @@ O analisador é a infraestrutura de análise e planejamento de consultas adotada
 
 <ExperimentalBadge />
 
-<CloudOnlyBadge />
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nova configuração"}]}]} />
 
-Tem efeito apenas no ClickHouse Cloud, onde configura a compactação Iceberg em segundo plano.
 Permite a limpeza de arquivos de dados antigos durante a compactação do Iceberg.
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
@@ -105,7 +101,6 @@ Ativa funções de hash experimentais
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Nova configuração"}]}]} />
 
 Permite usar explicitamente &#39;OPTIMIZE&#39; em tabelas Iceberg.
-Nas compilações de código aberto, apenas `OPTIMIZE TABLE ... MANIFEST` é compatível; a compactação de dados (`OPTIMIZE TABLE` sem `MANIFEST`) retorna `NOT_IMPLEMENTED`.
 
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 

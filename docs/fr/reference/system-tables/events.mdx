@@ -135,6 +135,10 @@ Nombre de fois où une table de hachage d’agrégation à un niveau a été con
 
 Nombre de tables de hachage initialisées en mode à deux niveaux pour l’agrégation.
 
+### AggregationHavingPrefilterGroupsSkipped {#aggregationhavingprefiltergroupsskipped}
+
+Nombre de groupes dont les colonnes de clé n&#39;ont pas été matérialisées lors de la conversion d&#39;un bucket à deux niveaux d&#39;une agrégation, car une borne HAVING portant sur le count() propre à ce groupe l&#39;avait déjà écarté (optimisation de plan aggregationHavingPrefilter).
+
 ### AggregationOptimizedEqualRangesOfKeys {#aggregationoptimizedequalrangesofkeys}
 
 Nombre de blocs auxquels l’optimisation des plages de clés identiques a été appliquée
@@ -4421,6 +4425,14 @@ Temps total pendant lequel une requête est restée en attente pour respecter le
 ### QueryMaskingRulesMatch {#querymaskingrulesmatch}
 
 Nombre de fois où une règle de masquage des requêtes a été appliquée avec succès.
+
+### QueryMemoryDriftSettled {#querymemorydriftsettled}
+
+Nombre de requêtes qui se sont terminées alors que de la mémoire leur était encore imputée (ou qu&#39;elles avaient été créditées en excès). L&#39;écart est déduit du compteur par utilisateur afin que celui-ci revienne à zéro pour la requête.
+
+### QueryMemoryDriftSettledBytes {#querymemorydriftsettledbytes}
+
+Nombre absolu d&#39;octets retirés des compteurs par utilisateur à la fin des requêtes, c&#39;est-à-dire l&#39;ampleur de l&#39;écart de la comptabilisation par requête.
 
 ### QueryMemoryLimitExceeded {#querymemorylimitexceeded}
 

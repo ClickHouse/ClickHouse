@@ -140,7 +140,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中未找到 Parquet 元数据，因此必须从磁盘读取的次数。
 * `ProfileEvent_ParquetMetadataCacheWeightLost` ([UInt64](/zh/reference/data-types/int-uint)) — 从 Parquet 元数据缓存中被驱逐的近似字节数。
 * `ProfileEvent_IcebergIteratorInitializationMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 同步初始化 Iceberg 数据迭代器所花费的总时间。
-* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 从状态更新 Iceberg 存储元数据 (`buildStorageMetadataFromState`) 所花费的总时间。
+* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 从状态更新 Iceberg 存储元数据 (buildStorageMetadataFromState) 所花费的总时间。
 * `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/zh/reference/data-types/int-uint)) — Iceberg 迭代器返回的对象信息总数。
 * `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/zh/reference/data-types/int-uint)) — 经过 minmax 分析后，在按分区和 sequence number 筛选出的适用配对中，被接受的数据文件-位置删除文件配对总数。
 * `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/zh/reference/data-types/int-uint)) — 经过 minmax 分析后，在按分区和 sequence number 筛选出的适用配对中，被接受的数据文件-位置删除文件配对总数。
@@ -822,6 +822,8 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/zh/reference/data-types/int-uint)) — 超出全局内存限制的次数。
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/zh/reference/data-types/int-uint)) — 未检查内存约束即分配内存的次数。
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 未检查内存约束即分配的字节数。
+* `ProfileEvent_QueryMemoryDriftSettled` ([UInt64](/zh/reference/data-types/int-uint)) — 结束时内存记账值仍未归零 (仍有内存用量未扣除，或扣除过多) 的查询数量。该差额会从对应用户的内存跟踪器中扣除，使该查询的内存记账值归零。
+* `ProfileEvent_QueryMemoryDriftSettledBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 查询结束时从对应用户的内存跟踪器中扣除的字节数的绝对值，即各查询内存记账的偏差大小。
 * `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/zh/reference/data-types/int-uint)) — 向全局内存跟踪器单次分配达到或超过 `min_allocation_size_to_log_stack_trace` 时捕获堆栈跟踪的次数。
 * `ProfileEvent_AzureGetObject` ([UInt64](/zh/reference/data-types/int-uint)) — Azure API GetObject 调用次数。
 * `ProfileEvent_AzureUpload` ([UInt64](/zh/reference/data-types/int-uint)) — Azure Blob 存储 API Upload 调用次数
@@ -863,19 +865,19 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_CachedWriteBufferCacheWriteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 将数据写入文件系统缓存所花费的时间
 * `ProfileEvent_CachedWriteBufferCacheWriteStopped` ([UInt64](/zh/reference/data-types/int-uint)) — 直写式缓存停止的次数 (空间预留或缓存写入失败，或覆盖该范围的分段正在被逐出) ，之后写入会继续进行但不填充缓存
 * `ProfileEvent_CachedWriteBufferCoveringSegmentShrunk` ([UInt64](/zh/reference/data-types/int-uint)) — 直写式缓存为继续在新的 File 段中缓存，而缩小位于当前写入偏移之前的覆盖 File 段的次数 (中间范围已进入另一台 Distributed Cache 服务器)
-* `ProfileEvent_CachedWriteBufferCoveringSegmentShrinkFailed` ([UInt64](/zh/reference/data-types/int-uint)) — 直写式缓存因无法缩小位于当前写入偏移之前的覆盖 File 段而必须停止的次数 (该 File 段被其他方持有，因此无法填补其中的空洞) ，或该 File 段被并发逐出
+* `ProfileEvent_CachedWriteBufferCoveringSegmentShrinkFailed` ([UInt64](/zh/reference/data-types/int-uint)) — 写透缓存因无法缩小位于当前写入偏移之前的覆盖 File 段而必须停止的次数 (该 File 段被其他方持有，因此无法填补其中的空洞) ，或该 File 段被并发淘汰
 * `ProfileEvent_FilesystemCacheLoadMetadataMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 加载文件系统缓存元数据所花费的时间
-* `ProfileEvent_FilesystemCacheEvictedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从文件系统缓存中逐出的字节数
+* `ProfileEvent_FilesystemCacheEvictedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从文件系统缓存中淘汰的字节数
 * `ProfileEvent_FilesystemCacheCreatedKeyDirectories` ([UInt64](/zh/reference/data-types/int-uint)) — 已创建的键目录数
-* `ProfileEvent_FilesystemCacheEvictedFileSegments` ([UInt64](/zh/reference/data-types/int-uint)) — 从文件系统缓存中逐出的 File 段数量
-* `ProfileEvent_FilesystemCacheDowngradedFileSegments` ([UInt64](/zh/reference/data-types/int-uint)) — 在 SLRU 缓存策略中，从 protected queue 降级 (移动) 到 probationary queue 的 File 段数量。这是缓存内部的移动，不属于逐出。
+* `ProfileEvent_FilesystemCacheEvictedFileSegments` ([UInt64](/zh/reference/data-types/int-uint)) — 从文件系统缓存中淘汰的 File 段数量
+* `ProfileEvent_FilesystemCacheDowngradedFileSegments` ([UInt64](/zh/reference/data-types/int-uint)) — 在 SLRU 缓存策略中，从 protected queue 降级 (移动) 到 probationary queue 的 File 段数量。这是缓存内部的移动，不属于淘汰。
 * `ProfileEvent_FilesystemCacheBackgroundDownloadQueuePush` ([UInt64](/zh/reference/data-types/int-uint)) — 文件系统缓存中送入后台下载队列的 File 段数量
-* `ProfileEvent_FilesystemCacheEvictionSkippedFileSegments` ([UInt64](/zh/reference/data-types/int-uint)) — 因处于不可释放状态而跳过逐出的 File 段数量
-* `ProfileEvent_FilesystemCacheEvictionSkippedEvictingFileSegments` ([UInt64](/zh/reference/data-types/int-uint)) — 因处于逐出中状态而跳过逐出的 File 段数量
-* `ProfileEvent_FilesystemCacheEvictionSkippedMovingFileSegments` ([UInt64](/zh/reference/data-types/int-uint)) — 因处于移动状态而跳过逐出的 File 段数量
-* `ProfileEvent_FilesystemCacheEvictionTries` ([UInt64](/zh/reference/data-types/int-uint)) — 文件系统缓存逐出尝试次数
+* `ProfileEvent_FilesystemCacheEvictionSkippedFileSegments` ([UInt64](/zh/reference/data-types/int-uint)) — 因处于不可释放状态而跳过淘汰的 File 段数量
+* `ProfileEvent_FilesystemCacheEvictionSkippedEvictingFileSegments` ([UInt64](/zh/reference/data-types/int-uint)) — 因处于淘汰中状态而跳过淘汰的 File 段数量
+* `ProfileEvent_FilesystemCacheEvictionSkippedMovingFileSegments` ([UInt64](/zh/reference/data-types/int-uint)) — 因处于移动状态而跳过淘汰的 File 段数量
+* `ProfileEvent_FilesystemCacheEvictionTries` ([UInt64](/zh/reference/data-types/int-uint)) — 文件系统缓存淘汰尝试次数
 * `ProfileEvent_FilesystemCacheEvictionReusedIterator` ([UInt64](/zh/reference/data-types/int-uint)) — 文件系统缓存迭代器复用次数
-* `ProfileEvent_FilesystemCacheOvercommitCandidatesIterationSteps` ([UInt64](/zh/reference/data-types/int-uint)) — 为弥补预留空间缺口，overcommit 逐出循环在首次遍历后执行的外层迭代次数
+* `ProfileEvent_FilesystemCacheOvercommitCandidatesIterationSteps` ([UInt64](/zh/reference/data-types/int-uint)) — 为弥补预留空间缺口，overcommit 淘汰循环在首次遍历后执行的外层迭代次数
 * `ProfileEvent_FilesystemCacheLockKeyMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 锁定缓存键所花费的时间
 * `ProfileEvent_FilesystemCacheLockMetadataMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 锁定文件系统缓存元数据所花费的时间
 * `ProfileEvent_FilesystemCacheLockOriginPoolMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 锁定文件系统缓存共享源池所花费的时间
@@ -885,9 +887,9 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_FilesystemCacheReserveMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 预留文件系统缓存空间所花费的时间
 * `ProfileEvent_FilesystemCacheReserveAttempts` ([UInt64](/zh/reference/data-types/int-uint)) — 预留文件系统缓存空间的尝试次数
 * `ProfileEvent_FilesystemCacheFailedReserveAttempts` ([UInt64](/zh/reference/data-types/int-uint)) — 文件缓存空间预留失败的尝试次数。
-* `ProfileEvent_FilesystemCacheEvictMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 执行文件系统缓存逐出所花费的时间
-* `ProfileEvent_FilesystemCacheGetOrSetMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 文件系统缓存 `getOrSet()` 所花费的时间
-* `ProfileEvent_FilesystemCacheGetMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 文件系统缓存 `get()` 所花费的时间
+* `ProfileEvent_FilesystemCacheEvictMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 执行文件系统缓存淘汰所花费的时间
+* `ProfileEvent_FilesystemCacheGetOrSetMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 文件系统缓存 getOrSet() 所花费的时间
+* `ProfileEvent_FilesystemCacheGetMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 文件系统缓存 get() 所花费的时间
 * `ProfileEvent_FilesystemCacheBackgroundEvictedFileSegments` ([UInt64](/zh/reference/data-types/int-uint)) — 由后台线程驱逐的 File 段数量
 * `ProfileEvent_FilesystemCacheBackgroundEvictedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 由后台线程驱逐的字节数
 * `ProfileEvent_FilesystemCacheIdleClientEvictions` ([UInt64](/zh/reference/data-types/int-uint)) — 因在 `idle_client_ttl_sec` 内未发生访问而清除空闲分布式缓存客户端 (`user_id`) 所有缓存条目的次数。
@@ -972,6 +974,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_AdaptiveAggregationSharedTableSpills` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合因共享排空表在内存压力下达到分片边界而将其写出的次数。
 * `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/zh/reference/data-types/int-uint)) — 在合并和转换完成后、整个合并结束前立即释放其工作内存 (Arena 插槽、暂存块引用) 的两级桶数量。
 * `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/zh/reference/data-types/int-uint)) — 通过桶本地 Top-K 选择 (aggregationBucketTopK 查询计划优化) 转换的两级桶数量。
+* `ProfileEvent_AggregationHavingPrefilterGroupsSkipped` ([UInt64](/zh/reference/data-types/int-uint)) — 转换聚合的两级桶时，因针对组自身 count() 的 HAVING 边界条件已排除该组，而未物化其键列的组数量 (aggregationHavingPrefilter 查询计划优化)。
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/zh/reference/data-types/int-uint)) — 聚合时初始化为两级哈希表的数量。
 * `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/zh/reference/data-types/int-uint)) — 运行时将单层聚合哈希表转换为两级哈希表的次数。
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/zh/reference/data-types/int-uint)) — 应用了相等键范围优化的块数

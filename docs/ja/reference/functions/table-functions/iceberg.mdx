@@ -524,17 +524,24 @@ value: 993
 
 ### コンパクション {#iceberg-writes-compaction}
 
-データのコンパクション (position delete ファイル をデータファイルにマージする処理) はオープンソース版のビルドでは実装されておらず、Iceberg テーブルに対して `OPTIMIZE TABLE` を実行すると `NOT_IMPLEMENTED` が返されます。書き換え後の世代はアトミックにパブリッシュされないため、reader がどの世代を参照するかは未定義です。
+ClickHouse は Iceberg テーブルのコンパクションをサポートしています。現在は、メタデータを更新しながら、position delete ファイル を data files にマージできます。以前のスナップショット ID とタイムスタンプは変更されないため、タイムトラベル機能も引き続き同じ値で利用できます。
 
-マニフェストのコンパクションは、テーブルのマニフェストファイルを統合する処理です。この処理には Iceberg format version 2 が必要で、バージョン 1 およびバージョン 3 のテーブルは拒否されます。また、データファイルがファイルごとの `key_metadata` を持つ暗号化テーブルも、マニフェストの書き換えが必要な場合は拒否されます。
+使用方法:
 
 ```sql
 SET allow_experimental_iceberg_compaction = 1
 
-OPTIMIZE TABLE iceberg_writes_example MANIFEST;
-```
+OPTIMIZE TABLE iceberg_writes_example;
 
-ファイルを回収するには、[`expire_snapshots`](#iceberg-expire-snapshots) を使用します。この操作にはフォーマットバージョン 2 が必要で、トランザクション対応のカタログをバックエンドとするテーブルには使用できません。
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+```
 
 ### スナップショットの期限切れ処理 {#iceberg-expire-snapshots}
 
@@ -622,13 +629,13 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 
 #### スナップショット保持ポリシー {#iceberg-snapshot-retention-policy}
 
-`expire_snapshots` コマンドは、[Iceberg スナップショット保持ポリシー](https://iceberg.apache.org/spec/#snapshot-retention-policy) に従います。保持設定は、Iceberg テーブルのプロパティと参照ごとのオーバーライドで構成します。
+`expire_snapshots` コマンドは、[Iceberg snapshot retention policy](https://iceberg.apache.org/spec/#snapshot-retention-policy) に従います。保持設定は、Iceberg テーブルのプロパティと参照ごとのオーバーライドで構成します。
 
-| プロパティ                                  | 範囲   | デフォルト                                                                | 説明                                             |
-| -------------------------------------- | ---- | -------------------------------------------------------------------- | ---------------------------------------------- |
-| `history.expire.min-snapshots-to-keep` | テーブル | `iceberg_expire_default_min_snapshots_to_keep` (デフォルト `1`)           | 各ブランチの祖先チェーンで保持するスナップショットの最小数                  |
-| `history.expire.max-snapshot-age-ms`   | テーブル | `iceberg_expire_default_max_snapshot_age_ms` (デフォルト `432000000`、5 日) | ブランチで保持するスナップショットの最大保持期間 (ミリ秒)                 |
-| `history.expire.max-ref-age-ms`        | テーブル | `iceberg_expire_default_max_ref_age_ms` (デフォルト `∞`)                  | スナップショット参照 (ブランチまたはタグ) 自体が削除されるまでの最大経過時間 (ミリ秒) |
+| プロパティ                                  | 範囲   | デフォルト                                                                | 説明                                              |
+| -------------------------------------- | ---- | -------------------------------------------------------------------- | ----------------------------------------------- |
+| `history.expire.min-snapshots-to-keep` | テーブル | `iceberg_expire_default_min_snapshots_to_keep` (デフォルト `1`)           | 各ブランチの祖先チェーンで保持するスナップショットの最小数                   |
+| `history.expire.max-snapshot-age-ms`   | テーブル | `iceberg_expire_default_max_snapshot_age_ms` (デフォルト `432000000`、5 日) | ブランチで保持するスナップショットの最大保持期間 (ミリ秒)                  |
+| `history.expire.max-ref-age-ms`        | テーブル | `iceberg_expire_default_max_ref_age_ms` (デフォルト `∞`)                  | スナップショット参照 (ブランチまたはタグ) 自体が削除されるまでの最大経過時間 (ミリ秒)  |
 
 各スナップショット参照 (Iceberg メタデータ内の `refs`) では、参照ごとのフィールド `min-snapshots-to-keep`、`max-snapshot-age-ms`、`max-ref-age-ms` を使ってこれらの値を上書きできます。
 
@@ -647,17 +654,16 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 `ALTER TABLE EXECUTE` 権限が必要です。これは ClickHouse のアクセス制御階層では `ALTER TABLE` の子権限です。個別に付与することも、親権限を通じて付与することもできます。
 
 ```sql
--- Grant only EXECUTE permission
+-- EXECUTE権限のみを付与する
 GRANT ALTER TABLE EXECUTE ON my_iceberg_table TO my_user;
 
--- Or grant all ALTER TABLE permissions (includes ALTER TABLE EXECUTE)
+-- またはすべてのALTER TABLE権限を付与する（ALTER TABLE EXECUTEを含む）
 GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 ```
 
 <Note>
-  * サポートされるのは Iceberg format version 2 のテーブルのみです (v1 の スナップショット では `manifest-list` が保証されず、クリーンアップ対象のファイルを安全に特定するためにこれが必要です)
-  * トランザクション対応のカタログをバックエンドとするテーブルは、`NOT_IMPLEMENTED` エラーで拒否されます
-  * 指定した timestamp より古い場合でも、現在の スナップショット は常に保持されます
+  * サポートされるのは Iceberg format version 2 のテーブルのみです (v1 の snapshot では `manifest-list` が保証されず、クリーンアップ対象のファイルを安全に特定するためにこれが必要です)
+  * 指定した timestamp より古い場合でも、現在の snapshot は常に保持されます
   * `allow_insert_into_iceberg` 設定を有効にする必要があります
   * `allow_experimental_expire_snapshots` 設定を有効にする必要があります
   * ClickHouse がメタデータを更新する際は、カタログ自体の認可 (REST カタログ認証、AWS Glue IAM など) が別途適用されます

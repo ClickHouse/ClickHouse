@@ -261,21 +261,21 @@ Cette table peut être tronquée ou supprimée à tout moment sans risque.
 * `ProfileEvent_AzureWriteRequestsErrors` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’erreurs de requêtes d’écriture Azure.
 * `ProfileEvent_AzureWriteRequestsThrottling` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes d’écriture Azure soumises à une limitation de débit.
 * `ProfileEvent_AzureWriteRequestsRedirects` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de redirections de requêtes d’écriture Azure.
-* `ProfileEvent_AzureGetRequestThrottlerCount` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes GET Azure passées par le mécanisme de limitation : bloquées ou non.
-* `ProfileEvent_AzureGetRequestThrottlerBlocked` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes GET Azure bloquées par le mécanisme de limitation.
+* `ProfileEvent_AzureGetRequestThrottlerCount` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes GET Azure passées par le throttler : bloquées ou non.
+* `ProfileEvent_AzureGetRequestThrottlerBlocked` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes GET Azure bloquées par le throttler.
 * `ProfileEvent_AzureGetRequestThrottlerSleepMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Temps total pendant lequel une requête a été mise en attente pour respecter la limitation des requêtes GET Azure.
-* `ProfileEvent_DiskAzureGetRequestThrottlerCount` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes GET sur disque Azure passées par le mécanisme de limitation : bloquées ou non.
-* `ProfileEvent_DiskAzureGetRequestThrottlerBlocked` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes GET sur disque Azure bloquées par le mécanisme de limitation.
+* `ProfileEvent_DiskAzureGetRequestThrottlerCount` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes GET sur disque Azure passées par le throttler : bloquées ou non.
+* `ProfileEvent_DiskAzureGetRequestThrottlerBlocked` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes GET sur disque Azure bloquées par le throttler.
 * `ProfileEvent_DiskAzureGetRequestThrottlerSleepMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Temps total pendant lequel une requête a été mise en attente afin de respecter la limitation du débit des requêtes GET du disque Azure.
-* `ProfileEvent_AzurePutRequestThrottlerCount` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes PUT Azure passées par le limiteur, bloquées ou non.
-* `ProfileEvent_AzurePutRequestThrottlerBlocked` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes PUT Azure bloquées par le limiteur.
+* `ProfileEvent_AzurePutRequestThrottlerCount` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes PUT Azure passées par le throttler, bloquées ou non.
+* `ProfileEvent_AzurePutRequestThrottlerBlocked` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes PUT Azure bloquées par le throttler.
 * `ProfileEvent_AzurePutRequestThrottlerSleepMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Temps total pendant lequel une requête a été mise en attente afin de respecter la limitation du débit des requêtes PUT Azure.
-* `ProfileEvent_DiskAzurePutRequestThrottlerCount` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes PUT du disque Azure passées par le limiteur, bloquées ou non.
-* `ProfileEvent_DiskAzurePutRequestThrottlerBlocked` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes PUT du disque Azure bloquées par le limiteur.
+* `ProfileEvent_DiskAzurePutRequestThrottlerCount` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes PUT du disque Azure passées par le throttler, bloquées ou non.
+* `ProfileEvent_DiskAzurePutRequestThrottlerBlocked` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes PUT du disque Azure bloquées par le throttler.
 * `ProfileEvent_DiskAzurePutRequestThrottlerSleepMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Temps total pendant lequel une requête a été mise en attente afin de respecter la limitation du débit des requêtes PUT du disque Azure.
-* `ProfileEvent_RemoteReadThrottlerBytes` ([UInt64](/fr/reference/data-types/int-uint)) — Octets passés par le limiteur &#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#39;.
+* `ProfileEvent_RemoteReadThrottlerBytes` ([UInt64](/fr/reference/data-types/int-uint)) — Octets passés par le throttler &#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#39;.
 * `ProfileEvent_RemoteReadThrottlerSleepMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Temps total pendant lequel une requête a été mise en attente afin de respecter la limitation du débit de &#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#39;.
-* `ProfileEvent_RemoteWriteThrottlerBytes` ([UInt64](/fr/reference/data-types/int-uint)) — Octets passés par le limiteur &#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#39;.
+* `ProfileEvent_RemoteWriteThrottlerBytes` ([UInt64](/fr/reference/data-types/int-uint)) — Octets passés par le throttler &#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#39;.
 * `ProfileEvent_RemoteWriteThrottlerSleepMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Temps total pendant lequel une requête a été mise en attente afin de respecter la limitation du débit de &#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#39;.
 * `ProfileEvent_LocalReadThrottlerBytes` ([UInt64](/fr/reference/data-types/int-uint)) — Octets passés par le limiteur &#39;max&#95;local&#95;read&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;read&#95;bandwidth&#39;.
 * `ProfileEvent_LocalReadThrottlerSleepMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Temps total pendant lequel une requête a été mise en attente afin de respecter la limitation du débit de &#39;max&#95;local&#95;read&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;read&#95;bandwidth&#39;.
@@ -744,28 +744,28 @@ Cette table peut être tronquée ou supprimée à tout moment sans risque.
 * `ProfileEvent_CreatedLogEntryForMerge` ([UInt64](/fr/reference/data-types/int-uint)) — Entrée de journal créée avec succès pour fusionner des parts dans ReplicatedMergeTree.
 * `ProfileEvent_NotCreatedLogEntryForMerge` ([UInt64](/fr/reference/data-types/int-uint)) — L’entrée de journal destinée à fusionner des parts dans ReplicatedMergeTree n’est pas créée en raison d’une mise à jour concurrente du journal par un autre réplica.
 * `ProfileEvent_CreatedLogEntryForMutation` ([UInt64](/fr/reference/data-types/int-uint)) — Entrée de journal créée avec succès pour appliquer une mutation à des parts dans ReplicatedMergeTree.
-* `ProfileEvent_NotCreatedLogEntryForMutation` ([UInt64](/fr/reference/data-types/int-uint)) — L’entrée de journal destinée à appliquer une mutation à des parts dans ReplicatedMergeTree n’est pas créée en raison d’une mise à jour concurrente du journal par un autre réplica.
+* `ProfileEvent_NotCreatedLogEntryForMutation` ([UInt64](/fr/reference/data-types/int-uint)) — L’entrée de journal destinée à appliquer une mutation à des parts dans ReplicatedMergeTree n’est pas créée en raison d’une mise à jour concurrente du journal par une autre réplique.
 * `ProfileEvent_S3ReadMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Durée des requêtes GET et HEAD vers le stockage S3.
 * `ProfileEvent_S3ReadRequestsCount` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes GET et HEAD vers le stockage S3.
-* `ProfileEvent_S3ReadRequestsErrors` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’erreurs hors throttling dans les requêtes GET et HEAD vers le stockage S3.
+* `ProfileEvent_S3ReadRequestsErrors` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’erreurs hors limitation de débit dans les requêtes GET et HEAD vers le stockage S3.
 * `ProfileEvent_S3ReadRequestsThrottling` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’erreurs 429 et 503 dans les requêtes GET et HEAD vers le stockage S3.
 * `ProfileEvent_S3ReadRequestsRedirects` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de redirections dans les requêtes GET et HEAD vers le stockage S3.
-* `ProfileEvent_S3ReadRequestAttempts` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de tentatives pour les requêtes GET et HEAD, y compris la tentative initiale et les retries suivants, mais hors retries effectués en interne par la stratégie de retry S3
-* `ProfileEvent_S3ReadRequestRetryableErrors` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’erreurs réessayables pour les requêtes GET et HEAD, hors retries effectués en interne par la stratégie de retry S3
+* `ProfileEvent_S3ReadRequestAttempts` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de tentatives pour les requêtes GET et HEAD, y compris la tentative initiale et tous les réessais, à l’exclusion des réessais effectués en interne par la stratégie de réessai S3
+* `ProfileEvent_S3ReadRequestRetryableErrors` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’erreurs pouvant donner lieu à un réessai pour les requêtes GET et HEAD, à l’exclusion des réessais effectués en interne par la stratégie de réessai S3
 * `ProfileEvent_S3WriteMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Durée des requêtes POST, DELETE, PUT et PATCH vers le stockage S3.
 * `ProfileEvent_S3WriteRequestsCount` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes POST, DELETE, PUT et PATCH vers le stockage S3.
 * `ProfileEvent_S3WriteRequestsErrors` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’erreurs hors limitation de débit dans les requêtes POST, DELETE, PUT et PATCH vers le stockage S3.
 * `ProfileEvent_S3WriteRequestsThrottling` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’erreurs 429 et 503 dans les requêtes POST, DELETE, PUT et PATCH vers le stockage S3.
 * `ProfileEvent_S3WriteRequestsRedirects` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de redirections dans les requêtes POST, DELETE, PUT et PATCH vers le stockage S3.
 * `ProfileEvent_S3WriteRequestAttempts` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de tentatives pour les requêtes POST, DELETE, PUT et PATCH, y compris la tentative initiale et tous les réessais, à l’exclusion des réessais effectués en interne par la stratégie de réessai
-* `ProfileEvent_S3WriteRequestRetryableErrors` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’erreurs pouvant être réessayées pour les requêtes POST, DELETE, PUT et PATCH, à l’exclusion des réessais effectués en interne par la stratégie de réessai
+* `ProfileEvent_S3WriteRequestRetryableErrors` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’erreurs pouvant donner lieu à un réessai pour les requêtes POST, DELETE, PUT et PATCH, à l’exclusion des réessais effectués en interne par la stratégie de réessai
 * `ProfileEvent_DiskS3ReadMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Durée des requêtes GET et HEAD vers le stockage DiskS3.
 * `ProfileEvent_DiskS3ReadRequestsCount` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes GET et HEAD vers le stockage DiskS3.
 * `ProfileEvent_DiskS3ReadRequestsErrors` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’erreurs hors limitation de débit dans les requêtes GET et HEAD vers le stockage DiskS3.
 * `ProfileEvent_DiskS3ReadRequestsThrottling` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’erreurs 429 et 503 dans les requêtes GET et HEAD vers le stockage DiskS3.
 * `ProfileEvent_DiskS3ReadRequestsRedirects` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de redirections dans les requêtes GET et HEAD vers le stockage DiskS3.
 * `ProfileEvent_DiskS3ReadRequestAttempts` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de tentatives pour les requêtes GET et HEAD vers le stockage DiskS3, y compris la tentative initiale et tous les réessais, à l’exclusion des réessais effectués en interne par la stratégie de réessai S3
-* `ProfileEvent_DiskS3ReadRequestRetryableErrors` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’erreurs pouvant être réessayées pour les requêtes GET et HEAD vers le stockage DiskS3, à l’exclusion des réessais effectués en interne par la stratégie de réessai S3
+* `ProfileEvent_DiskS3ReadRequestRetryableErrors` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’erreurs pouvant donner lieu à un réessai pour les requêtes GET et HEAD vers le stockage DiskS3, à l’exclusion des réessais effectués en interne par la stratégie de réessai S3
 * `ProfileEvent_DiskS3WriteMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Durée des requêtes POST, DELETE, PUT et PATCH vers le stockage DiskS3.
 * `ProfileEvent_DiskS3WriteRequestsCount` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes POST, DELETE, PUT et PATCH vers le stockage DiskS3.
 * `ProfileEvent_DiskS3WriteRequestsErrors` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’erreurs hors limitation de débit dans les requêtes POST, DELETE, PUT et PATCH vers le stockage DiskS3.
@@ -822,6 +822,8 @@ Cette table peut être tronquée ou supprimée à tout moment sans risque.
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de fois où la limite globale de mémoire a été dépassée.
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de fois où de la mémoire a été allouée sans vérification des limites mémoire.
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/fr/reference/data-types/int-uint)) — Quantité d’octets alloués sans vérification des limites mémoire.
+* `ProfileEvent_QueryMemoryDriftSettled` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes terminées auxquelles de la mémoire était encore imputée (ou créditée en excès). Cet écart est corrigé dans le suivi mémoire par utilisateur afin de ramener à zéro le solde de la requête.
+* `ProfileEvent_QueryMemoryDriftSettledBytes` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’octets, en valeur absolue, déduits des compteurs de suivi mémoire par utilisateur à la fin des requêtes, soit l’écart de comptabilisation de la mémoire par requête.
 * `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de fois où une trace de pile a été capturée pour une seule imputation au memory tracker global d’un montant égal ou supérieur à `min_allocation_size_to_log_stack_trace`.
 * `ProfileEvent_AzureGetObject` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’appels GetObject à l’API Azure.
 * `ProfileEvent_AzureUpload` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’appels Upload à l’API Azure Blob Storage
@@ -972,6 +974,7 @@ Cette table peut être tronquée ou supprimée à tout moment sans risque.
 * `ProfileEvent_AdaptiveAggregationSharedTableSpills` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de fois où l’agrégation adaptative a écrit sa table de vidage partagée parce qu’elle avait atteint la borne de part sous pression mémoire.
 * `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de buckets à deux niveaux dont la mémoire de travail (emplacement d’arène, références de fragments mis en attente) a été libérée juste après l’achèvement de leur fusion et conversion, avant la fin de la fusion complète.
 * `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de buckets à deux niveaux convertis par la sélection Top-K locale au bucket (l’optimisation de plan aggregationBucketTopK).
+* `ProfileEvent_AggregationHavingPrefilterGroupsSkipped` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de groupes dont les colonnes clés n’ont pas été matérialisées lors de la conversion d’un bucket à deux niveaux d’une agrégation, parce qu’une borne HAVING appliquée au count() du groupe suffisait déjà à l’exclure (l’optimisation de plan aggregationHavingPrefilter).
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de tables de hachage initialisées sur deux niveaux pour l’agrégation.
 * `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de fois où une table de hachage d’agrégation à un niveau a été convertie à deux niveaux au moment de l’exécution.
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de blocs pour lesquels l’optimisation des plages de clés égales a été appliquée
@@ -1025,15 +1028,15 @@ Cette table peut être tronquée ou supprimée à tout moment sans risque.
 * `ProfileEvent_KafkaMessagesFailed` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de messages Kafka que ClickHouse n’a pas réussi à analyser
 * `ProfileEvent_KafkaRowsRead` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de lignes analysées à partir des messages Kafka
 * `ProfileEvent_KafkaRowsRejected` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de lignes analysées qui ont ensuite été rejetées (en raison de rééquilibrages / d’erreurs ou pour des raisons similaires). Ces lignes seront à nouveau consommées après le rééquilibrage.
-* `ProfileEvent_KafkaDirectReads` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes `SELECT` directes sur des tables Kafka depuis le démarrage du serveur
+* `ProfileEvent_KafkaDirectReads` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes SELECT directes sur des tables Kafka depuis le démarrage du serveur
 * `ProfileEvent_KafkaBackgroundReads` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de lectures en arrière-plan alimentant des vues matérialisées depuis Kafka depuis le démarrage du serveur
 * `ProfileEvent_KafkaCommits` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de validations réussies des offsets consommés vers Kafka (devrait normalement être identique à KafkaBackgroundReads)
 * `ProfileEvent_KafkaCommitFailures` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’échecs de validation des offsets consommés vers Kafka (c’est généralement le signe d’une duplication de données)
 * `ProfileEvent_KafkaConsumerErrors` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’erreurs signalées par librdkafka lors des opérations de poll
 * `ProfileEvent_KafkaMVNotReady` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de tentatives échouées de diffusion de données vers une vue matérialisée qui n’est pas prête
-* `ProfileEvent_KafkaWrites` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’écritures (`insert`) dans des tables Kafka
+* `ProfileEvent_KafkaWrites` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’écritures (insertions) dans des tables Kafka
 * `ProfileEvent_KafkaRowsWritten` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de lignes insérées dans des tables Kafka
-* `ProfileEvent_KafkaProducerFlushes` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de `flush` explicites du producteur Kafka
+* `ProfileEvent_KafkaProducerFlushes` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de vidages explicites du producteur Kafka
 * `ProfileEvent_KafkaMessagesProduced` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de messages produits vers Kafka
 * `ProfileEvent_KafkaProducerErrors` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’erreurs lors de la production de messages vers Kafka
 * `ProfileEvent_ScalarSubqueriesGlobalCacheHit` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de fois où une lecture depuis une sous-requête scalaire a été effectuée à l’aide du cache global

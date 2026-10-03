@@ -28,6 +28,23 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 * 0 - 비활성화
 * 1 - 활성화
 
+## query_plan_aggregation_having_prefilter {#query_plan_aggregation_having_prefilter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "최종 집계의 2단계 버킷을 변환하는 동안, 해당 집계 자체의 인수 없는 count()에 대한 HAVING 경계 조건이 이미 그룹을 제외하는 경우 그룹 키의 머티리얼라이즈를 건너뛰는 계획 최적화를 켜고 끄는 새로운 설정입니다. 건너뛴 그룹은 필터링되지도, 최종 처리되지도 않으므로 경계 조건보다 앞에 작성된 HAVING 조건과 형제 집계 함수의 최종 처리는 경계 조건이 제외하는 그룹에 대해 더 이상 평가되지 않습니다. 따라서 이들 중 하나에서 예외가 발생하던 쿼리가 이제는 성공할 수 있습니다. `compatibility`를 26.10 미만으로 설정하면 이전 동작이 유지됩니다."}]}]} />
+
+`GROUP BY`에 대한 `HAVING count() <comparison> <constant>`의 쿼리 계획 수준 최적화를 켜고 끕니다. 집계 결과의 2단계 버킷을 청크로 변환할 때, count가 경계 조건을 만족할 수 없는 그룹은 키 컬럼을 구체화하기 전에 건너뜁니다. 즉, 구체화한 뒤 상위 필터에서 버리는 대신 처음부터 처리하지 않습니다. 대부분의 그룹이 버려지고 버려지는 키가 변환 작업의 대부분을 차지하는 높은 카디널리티(high-cardinality) `GROUP BY`에서 &quot;임계값을 초과하는 그룹&quot;을 찾는 쿼리가 빨라집니다.
+
+건너뛴 그룹은 필터링되지도, 최종 처리되지도 않으므로 이 설정은 단순한 성능 옵션이 아닙니다. 경계 조건보다 앞에 작성된 `HAVING` 조건과 형제 집계 함수의 최종 처리는 경계 조건이 제외하는 그룹에 대해 더 이상 평가되지 않습니다. 그 결과 이들 중 하나에서 예외가 발생하던 쿼리가 대신 행을 반환할 수 있습니다. `count() AS cnt`에 대한 `HAVING throwIf(cnt = 3) = 0 AND count() > 3`이 그 예입니다. 이 설정을 0으로 지정하거나 `compatibility`를 `26.10` 미만 버전으로 지정하면 이전 동작이 유지됩니다.
+
+[query&#95;plan&#95;enable&#95;optimizations](/ko/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 설정이 1인 경우에만 적용됩니다.
+
+가능한 값:
+
+* 0 - 비활성화
+* 1 - 활성화
+
 ## query_plan_convert_any_join_to_semi_or_anti_join {#query_plan_convert_any_join_to_semi_or_anti_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

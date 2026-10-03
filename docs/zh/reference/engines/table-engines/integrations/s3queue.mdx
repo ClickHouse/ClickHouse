@@ -443,7 +443,7 @@ CREATE MATERIALIZED VIEW consumer TO stats
 * `*` — 匹配任意数量的任意字符，但不包括 `/`，也可以是空字符串。
 * `**` — 匹配任意数量的任意字符，包括 `/`，也可以是空字符串。
 * `?` — 匹配任意单个字符。
-* `{some_string,another_string,yet_another_one}` — 匹配字符串 `'some_string'`、`'another_string'`、`'yet_another_one'` 中的任意一个。
+* `{some_string,another_string,yet_another_one}` — 匹配字符串 `'some_string'`、`'another_string'`、`'yet_another_one'` 中的任意一个。每个字符串本身也可以包含 `*` 和 `?` 通配符，因此 `{csv,csv.*}` 可同时匹配 `.csv` 和 `.csv.gz`。
 * `{N..M}` — 匹配从 N 到 M 范围内的任意数字，包括两个端点。N 和 M 可以带前导零，例如 `000..078`。
 
 带有 `{}` 的写法与 [remote](/zh/reference/functions/table-functions/remote) 表函数类似。

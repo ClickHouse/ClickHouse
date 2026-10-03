@@ -513,7 +513,7 @@ CREATE MATERIALIZED VIEW consumer TO stats
 * `*` — Заменяет любое количество любых символов, кроме `/`, включая пустую строку.
 * `**` — Заменяет любое количество любых символов, включая `/`, включая пустую строку.
 * `?` — Заменяет любой отдельный символ.
-* `{some_string,another_string,yet_another_one}` — Заменяет любую из строк: `'some_string'`, `'another_string'`, `'yet_another_one'`.
+* `{some_string,another_string,yet_another_one}` — Заменяет любую из строк: `'some_string'`, `'another_string'`, `'yet_another_one'`. Каждая строка сама может содержать подстановочные шаблоны `*` и `?`, поэтому `{csv,csv.*}` соответствует как `.csv`, так и `.csv.gz`.
 * `{N..M}` — Заменяет любое число в диапазоне от N до M включительно. N и M могут содержать ведущие нули, например `000..078`.
 
 Конструкции с `{}` аналогичны конструкции в табличной функции [remote](/ru/reference/functions/table-functions/remote).

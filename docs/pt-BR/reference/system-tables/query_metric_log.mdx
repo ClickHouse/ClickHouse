@@ -822,6 +822,8 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes que o limite global de memória foi excedido.
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes em que a memória foi alocada sem verificar as restrições de memória.
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Quantidade de bytes alocada sem verificar as restrições de memória.
+* `ProfileEvent_QueryMemoryDriftSettled` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de consultas encerradas com memória ainda contabilizada para elas (ou com crédito em excesso). A diferença é descontada do rastreador por usuário para zerar a contabilização da consulta.
+* `ProfileEvent_QueryMemoryDriftSettledBytes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Quantidade absoluta de bytes descontados dos rastreadores por usuário ao término das consultas, ou seja, o desvio na contabilização de memória por consulta.
 * `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes em que um stack trace foi capturado para uma única alocação no rastreador global de memória igual ou superior a `min_allocation_size_to_log_stack_trace`.
 * `ProfileEvent_AzureGetObject` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de chamadas GetObject da API do Azure.
 * `ProfileEvent_AzureUpload` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de chamadas Upload da API do Azure Blob Storage
@@ -972,6 +974,7 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_AdaptiveAggregationSharedTableSpills` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Quantas vezes a agregação adaptativa gravou sua tabela de drenagem compartilhada porque ela atingiu o limite da parte sob pressão de memória.
 * `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de buckets de dois níveis cuja memória de trabalho (slot de arena, referências a fragmentos em staging) foi liberada logo após a conclusão da mesclagem e conversão, antes do término de toda a mesclagem.
 * `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de buckets de dois níveis convertidos pela seleção Top-K local ao bucket (a otimização de plano aggregationBucketTopK).
+* `ProfileEvent_AggregationHavingPrefilterGroupsSkipped` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de grupos cujas colunas-chave não foram materializadas durante a conversão de um bucket de dois níveis de uma agregação, porque um limite de HAVING sobre o próprio count() do grupo já o havia rejeitado (a otimização de plano aggregationHavingPrefilter).
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Quantas tabelas hash foram inicializadas em dois níveis para agregação.
 * `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes que uma tabela hash de agregação de nível único foi convertida em dois níveis durante a execução.
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Em quantos blocos a otimização de intervalos iguais de chaves foi aplicada
@@ -1020,7 +1023,7 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_KafkaRebalanceRevocations` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de revogações de partição (o primeiro estágio do rebalance do consumer group)
 * `ProfileEvent_KafkaRebalanceAssignments` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de atribuições de partição (o estágio final do rebalance do consumer group)
 * `ProfileEvent_KafkaRebalanceErrors` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de rebalances de consumer group com falha
-* `ProfileEvent_KafkaMessagesPolled` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de mensagens do Kafka coletadas do `librdkafka` para o ClickHouse
+* `ProfileEvent_KafkaMessagesPolled` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de mensagens do Kafka coletadas do librdkafka para o ClickHouse
 * `ProfileEvent_KafkaMessagesRead` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de mensagens do Kafka já processadas pelo ClickHouse
 * `ProfileEvent_KafkaMessagesFailed` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de mensagens do Kafka que o ClickHouse não conseguiu interpretar
 * `ProfileEvent_KafkaRowsRead` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de linhas analisadas a partir de mensagens do Kafka

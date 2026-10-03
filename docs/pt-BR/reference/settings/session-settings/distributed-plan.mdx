@@ -82,6 +82,16 @@ Valores possíveis:
 Use a estratégia de agregação Shuffle em vez de PartialAggregation + Merge no plano de consulta distribuída.
 Ignorado quando a estratégia Shuffle não pode produzir um resultado correto, por exemplo para `GROUPING SETS` ou quando a agregação deve produzir resultados em ordem de bucket.
 
+## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "100000"},{"label": "Nova configuração que limita quantas linhas de log uma tarefa de worker sem estado mantém em buffer para encaminhar ao coordenador entre as consultas de status; as linhas excedentes são descartadas e contabilizadas. Novo recurso, portanto o valor anterior é igual ao padrão."}]}]} />
+
+Quando `send_logs_level` encaminha os logs das tarefas de worker sem estado para o coordenador, cada tarefa de worker mantém em buffer no máximo esta quantidade de linhas de log entre as consultas de status. As linhas que ultrapassam esse limite são descartadas, e a quantidade descartada é informada ao cliente. `0` significa sem limite (nada é descartado, mas uma consulta de status travada pode fazer o buffer crescer indefinidamente).
+
 ## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 
 <ExperimentalBadge />

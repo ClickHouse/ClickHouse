@@ -815,6 +815,8 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/ko/reference/data-types/int-uint)) — 전역 메모리 한도를 초과한 횟수입니다.
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/ko/reference/data-types/int-uint)) — 메모리 제약을 확인하지 않고 메모리를 할당한 횟수입니다.
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 메모리 제약을 확인하지 않고 할당한 바이트 수입니다.
+* `ProfileEvent_QueryMemoryDriftSettled` ([UInt64](/ko/reference/data-types/int-uint)) — 종료 시에도 메모리 사용량이 집계에 남아 있거나 해제량이 과다 반영된 쿼리 수입니다. 해당 쿼리의 집계값이 0이 되도록 사용자별 메모리 트래커에서 오차를 보정합니다.
+* `ProfileEvent_QueryMemoryDriftSettledBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 종료 시 사용자별 메모리 트래커에서 보정한 바이트 수의 절댓값입니다. 즉, 쿼리별 메모리 집계의 오차 크기입니다.
 * `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/ko/reference/data-types/int-uint)) — 전역 메모리 추적기에 대한 단일 할당이 `min_allocation_size_to_log_stack_trace` 이상일 때 스택 트레이스를 캡처한 횟수입니다.
 * `ProfileEvent_AzureGetObject` ([UInt64](/ko/reference/data-types/int-uint)) — Azure API GetObject 호출 수입니다.
 * `ProfileEvent_AzureUpload` ([UInt64](/ko/reference/data-types/int-uint)) — Azure blob storage API Upload 호출 수입니다
@@ -965,6 +967,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_AdaptiveAggregationSharedTableSpills` ([UInt64](/ko/reference/data-types/int-uint)) — 메모리 압박 상황에서 파트 경계에 도달해 adaptive aggregation이 공유 드레인 테이블을 기록한 횟수입니다.
 * `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/ko/reference/data-types/int-uint)) — 전체 머지가 완료되기 전에 머지 및 변환이 완료된 직후 작업 메모리(arena 슬롯, 스테이징 청크 참조)가 해제된 2단계 버킷 수입니다.
 * `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/ko/reference/data-types/int-uint)) — 버킷 로컬 Top-K 선택(aggregationBucketTopK 계획 최적화)을 통해 변환된 2단계 버킷 수입니다.
+* `ProfileEvent_AggregationHavingPrefilterGroupsSkipped` ([UInt64](/ko/reference/data-types/int-uint)) — 집계의 2단계 버킷을 변환할 때, 그룹 자체의 count() 값이 HAVING 경계 조건을 충족하지 못해 이미 제외되었으므로 키 컬럼을 구체화하지 않은 그룹 수입니다(aggregationHavingPrefilter 계획 최적화).
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/ko/reference/data-types/int-uint)) — 집계를 위해 2단계로 초기화된 해시 테이블 수입니다.
 * `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/ko/reference/data-types/int-uint)) — 단일 수준 집계 해시 테이블이 런타임에 2단계로 변환된 횟수입니다.
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/ko/reference/data-types/int-uint)) — 동일한 키 범위 최적화가 적용된 블록 수입니다.

@@ -444,7 +444,7 @@ CREATE MATERIALIZED VIEW consumer TO stats
 * `*` — 빈 문자열을 포함해 `/`를 제외한 임의의 문자 0개 이상을 대체합니다.
 * `**` — 빈 문자열을 포함해 `/`를 포함한 임의의 문자 0개 이상을 대체합니다.
 * `?` — 임의의 단일 문자를 대체합니다.
-* `{some_string,another_string,yet_another_one}` — `'some_string'`, `'another_string'`, `'yet_another_one'` 문자열 중 하나를 대체합니다.
+* `{some_string,another_string,yet_another_one}` — `'some_string', 'another_string', 'yet_another_one'` 문자열 중 하나를 대체합니다. 각 문자열에도 `*` 및 `?` 와일드카드를 사용할 수 있으므로, `{csv,csv.*}`는 `.csv`와 `.csv.gz` 모두와 일치합니다.
 * `{N..M}` — N부터 M까지 범위의 임의의 숫자를 양 끝값을 포함해 대체합니다. N과 M 앞에는 0이 올 수 있습니다. 예: `000..078`.
 
 `{}` 구문은 [remote](/ko/reference/functions/table-functions/remote) 테이블 함수와 유사합니다.

@@ -28,6 +28,23 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * 0 - 禁用
 * 1 - 启用
 
+## query_plan_aggregation_having_prefilter {#query_plan_aggregation_having_prefilter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置，用于控制一项查询计划优化：在转换最终聚合的两级桶时，如果针对该聚合自身无参数 count() 的 HAVING 边界条件已排除某个分组，则跳过该分组的键物化。被跳过的分组既不经过过滤，也不进行最终处理，因此对于边界条件排除的分组，不再对写在该边界条件之前的 HAVING 合取条件求值，也不再执行同级聚合的最终处理。此前因这些操作之一引发异常的查询现在可能成功；将 `compatibility` 设为低于 26.10 的版本可保留先前的行为。"}]}]} />
+
+控制是否启用一项查询计划级别的优化，适用于带有 `GROUP BY` 的 `HAVING count() <comparison> <constant>` 查询。在将聚合结果的两级桶转换为块时，如果某个分组的计数无法满足边界条件，则在物化其键列之前跳过该分组，而不是先物化，再由上层过滤器丢弃。此优化可加速高基数 `GROUP BY` 上的“分组计数超过阈值”查询：这类查询会丢弃大多数分组，而转换工作大多花在这些被丢弃分组的键上。
+
+被跳过的分组既不经过过滤，也不进行最终处理，因此此设置不仅影响性能：对于边界条件排除的分组，不再对写在该边界条件之前的 `HAVING` 合取条件求值，也不再执行同级聚合的最终处理。此前因这些操作之一引发异常的查询可能改为返回行，例如在使用 `count() AS cnt` 的查询中指定 `HAVING throwIf(cnt = 3) = 0 AND count() > 3`。将此设置设为 0，或将 `compatibility` 设为低于 `26.10` 的版本，可保留先前的行为。
+
+仅当设置 [query&#95;plan&#95;enable&#95;optimizations](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时生效。
+
+可选值：
+
+* 0 - 禁用
+* 1 - 启用
+
 ## query_plan_convert_any_join_to_semi_or_anti_join {#query_plan_convert_any_join_to_semi_or_anti_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

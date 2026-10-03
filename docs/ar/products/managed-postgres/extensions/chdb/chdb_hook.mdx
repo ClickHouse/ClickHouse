@@ -131,9 +131,7 @@ COPY times FROM 's3://datasets-documentation/my-test-bucket-768/some_prefix/some
 #### File {#file}
 
 <Important>
-  قد لا يكون المخطط `file://` مدعوماً على جميع الأنظمة، مثل المنصات
-  السحابية، حيث يُصرِّف المسؤول `chdb_hook` بحيث يمنع استخدامه (عبر
-  الخيار `NO_FILE_SCHEME` للأداة `make`).
+  المخطط `file://` غير مدعوم على ClickHouse Cloud.
 </Important>
 
 يجب أن يكون مساراً مطلقاً على خادم Postgres، أما المسار النسبي فيؤدي إلى

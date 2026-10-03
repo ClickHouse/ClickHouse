@@ -186,41 +186,44 @@ Para excluir uma VIEW, use [DROP VIEW](/pt-BR/reference/statements/drop#drop-vie
 
 ## Segurança SQL {#sql_security}
 
-`DEFINER` e `SQL SECURITY` permitem especificar qual usuário do ClickHouse deve ser usado ao executar a consulta subjacente da visão.
+`DEFINER` e `SQL SECURITY` permitem especificar qual usuário do ClickHouse deve ser usado ao executar a consulta subjacente da VIEW.
 `SQL SECURITY` tem três valores válidos: `DEFINER`, `INVOKER` ou `NONE`. Você pode especificar qualquer usuário existente ou `CURRENT_USER` na cláusula `DEFINER`.
 
-A tabela a seguir mostra quais permissões são necessárias para cada usuário ao consultar uma visão.
+A tabela a seguir mostra quais permissões são necessárias para cada usuário ao consultar uma VIEW.
 Observe que, independentemente da opção de segurança SQL, em todos os casos ainda é necessário ter `GRANT SELECT ON <view>` para poder lê-la.
 
-| Opção de segurança SQL | Visão                                                                  | Visão materializada                                                                                                        |
+| Opção de segurança SQL | VIEW                                                                  | VIEW materializada                                                                                                        |
 | ---------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `DEFINER alice`        | `alice` deve ter o privilégio `SELECT` na tabela de origem da visão.   | `alice` deve ter o privilégio `SELECT` na tabela de origem da visão e o privilégio `INSERT` na tabela de destino da visão. |
-| `INVOKER`              | O usuário deve ter o privilégio `SELECT` na tabela de origem da visão. | `SQL SECURITY INVOKER` não pode ser especificado para visões materializadas.                                               |
+| `DEFINER alice`        | `alice` deve ter o privilégio `SELECT` na tabela de origem da VIEW.   | `alice` deve ter o privilégio `SELECT` na tabela de origem da VIEW e o privilégio `INSERT` na tabela de destino da VIEW. |
+| `INVOKER`              | O usuário deve ter o privilégio `SELECT` na tabela de origem da VIEW. | `SQL SECURITY INVOKER` não pode ser especificado para VIEWs materializadas.                                               |
 | `NONE`                 | -                                                                      | -                                                                                                                          |
 
 <Note>
-  `SQL SECURITY NONE` é uma opção obsoleta. Qualquer usuário com permissões para criar visões com `SQL SECURITY NONE` poderá executar qualquer consulta arbitrária.
-  Portanto, é necessário ter `GRANT ALLOW SQL SECURITY NONE TO <user>` para criar uma visão com essa opção.
+  `SQL SECURITY NONE` é uma opção obsoleta. Qualquer usuário com permissões para criar VIEWs com `SQL SECURITY NONE` poderá executar qualquer consulta arbitrária.
+  Portanto, é necessário ter `GRANT ALLOW SQL SECURITY NONE TO <user>` para criar uma VIEW com essa opção.
 </Note>
 
 Se `DEFINER`/`SQL SECURITY` não forem especificados, o resultado dependerá da configuração do servidor [`ignore_empty_sql_security_in_create_view_query`](/pt-BR/reference/settings/server-settings/settings/other#ignore_empty_sql_security_in_create_view_query).
 
-Com seu valor padrão de `true`, a consulta é armazenada conforme escrita e a visão recebe um tipo de segurança SQL vazio. Uma view normal é então executada com as permissões do invocador e, para uma visão materializada com uma tabela de destino especificada explicitamente, as verificações de acesso nessa tabela de destino são ignoradas: inserir na tabela de origem não exige o privilégio `INSERT` na tabela de destino, e ler a visão não exige o privilégio `SELECT` nela.
+Com seu valor padrão de `true`, a consulta é armazenada conforme escrita e a VIEW recebe um tipo de segurança SQL vazio. Uma VIEW normal é então executada com as permissões do invocador e, para uma VIEW materializada com uma tabela de destino especificada explicitamente, as verificações de acesso nessa tabela de destino são ignoradas: inserir na tabela de origem não exige o privilégio `INSERT` na tabela de destino, e ler a VIEW não exige o privilégio `SELECT` nela.
 
-Com `false`, os seguintes valores padrão são gravados na definição da visão no momento da criação:
+Com `false`, os seguintes valores padrão são gravados na definição da VIEW no momento da criação:
 
-* `SQL SECURITY`: `INVOKER` para views normais (configurável por [`default_normal_view_sql_security`](/pt-BR/reference/settings/session-settings/default#default_normal_view_sql_security)) e `DEFINER` para visões materializadas (configurável por [`default_materialized_view_sql_security`](/pt-BR/reference/settings/session-settings/default#default_materialized_view_sql_security))
+* `SQL SECURITY`: `INVOKER` para VIEWs normais (configurável por [`default_normal_view_sql_security`](/pt-BR/reference/settings/session-settings/default#default_normal_view_sql_security)) e `DEFINER` para VIEWs materializadas (configurável por [`default_materialized_view_sql_security`](/pt-BR/reference/settings/session-settings/default#default_materialized_view_sql_security))
 * `DEFINER`: `CURRENT_USER` (configurável por [`default_view_definer`](/pt-BR/reference/settings/session-settings/default#default_view_definer))
 
-Views materializadas atualizáveis sempre recebem esses valores padrão, independentemente da configuração.
+VIEWs materializadas atualizáveis sempre recebem esses valores padrão, independentemente da configuração.
 
-Uma visão mantém o tipo de segurança SQL de sua definição armazenada quando é anexada ou recarregada na inicialização do servidor, portanto, uma visão armazenada sem `DEFINER`/`SQL SECURITY` mantém o tipo de segurança SQL vazio.
+Uma VIEW mantém o tipo de segurança SQL de sua definição armazenada quando é anexada ou recarregada na inicialização do servidor, portanto, uma VIEW armazenada sem `DEFINER`/`SQL SECURITY` mantém o tipo de segurança SQL vazio.
 
-Para alterar a segurança SQL de uma visão existente, use
+Para alterar a segurança SQL de uma VIEW existente, use
 
 ```sql
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
+
+Um `DEFINER` que não seja o usuário atual exige a concessão `SET DEFINER` sobre esse usuário, tanto ao criar a VIEW quanto ao usar `MODIFY SQL SECURITY`.
+Para alterar a consulta de uma VIEW com `SQL SECURITY DEFINER` ou `SQL SECURITY NONE` usando [`ALTER TABLE ... MODIFY QUERY`](/pt-BR/reference/statements/alter/view#required-privileges), são necessárias as mesmas concessões exigidas para declarar sua segurança SQL.
 
 ### Exemplos {#examples}
 

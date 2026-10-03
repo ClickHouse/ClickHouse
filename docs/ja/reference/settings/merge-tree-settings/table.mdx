@@ -24,6 +24,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 (s3&#95;plain, s3&#95;plain&#95;rewritable, web, web&#95;index) およびそのキャッシュ付きバリアントでサポートされます。暗号化された
 バリアントは、書き込み可能な s3&#95;plain / s3&#95;plain&#95;rewritable ディスク上でのみサポートされ、
 読み取り専用の web / web&#95;index ディスク上ではサポートされません。
+パス配下にすでに存在するパーツは、このテーブルで宣言されたカラムおよび sorting
+key と一致しているものとみなされます。パーツの書き込み時にどの sorting key が使われたかはどこにも記録されないため、
+同じパーツに対して異なる sorting key を宣言したテーブルでは、誤った結果が返されるか、エラーが発生します。
 
 ## table_readonly {#table_readonly}
 

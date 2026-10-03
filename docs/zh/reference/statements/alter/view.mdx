@@ -195,9 +195,24 @@ SELECT * FROM mv;
 └───┘
 ```
 
-<div id="alter-table--modify-refresh-statement">
-  ## ALTER TABLE ... MODIFY REFRESH 语句
-</div>
+## 所需特权 {#required-privileges}
+
+`ALTER TABLE ... MODIFY QUERY` 需要对该视图拥有 `ALTER VIEW MODIFY QUERY` 特权。新查询会以该视图的 [SQL security](/zh/reference/statements/create/view#sql_security) 运行，因此该语句还需要具备创建使用该 SQL security 的视图时所需的授权：
+
+* `SQL SECURITY DEFINER` 且 definer 不是当前用户：需要对该 definer 拥有 `SET DEFINER`。
+* `SQL SECURITY NONE`：需要 `ALLOW SQL SECURITY NONE`。
+
+如果同一语句通过 `MODIFY SQL SECURITY` 更改了 SQL security，则上述授权要求针对的是新的 SQL security，而不是原有的 SQL security。
+
+使用 `ON CLUSTER` 时，语句会在其运行所在的主机上进行授权校验，因此该主机上必须存在该视图，否则语句将失败并返回 `UNKNOWN_TABLE`。
+
+```sql
+GRANT ALTER VIEW MODIFY QUERY ON db.mv TO alice;
+-- Only if `db.mv` runs as another user, for example `bob`:
+GRANT SET DEFINER ON bob TO alice;
+```
+
+## ALTER TABLE ... MODIFY REFRESH 语句 {#alter-table--modify-refresh-statement}
 
 `ALTER TABLE ... MODIFY REFRESH` 用于更改[可刷新materialized view](/zh/reference/statements/create/view#refreshable-materialized-view) 的刷新参数，包括调度、依赖关系、随机化以及[刷新设置](/zh/reference/statements/create/view#refresh-settings)。
 

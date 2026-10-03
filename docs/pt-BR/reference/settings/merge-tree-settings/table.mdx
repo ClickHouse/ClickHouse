@@ -23,7 +23,10 @@ Este é um disco de tabela: o caminho/endpoint aponta para os dados da tabela, n
 Compatível com discos de armazenamento de objetos cujos metadados ficam no próprio armazenamento de objetos
 (s3&#95;plain, s3&#95;plain&#95;rewritable, web, web&#95;index) e suas variantes em cache. As variantes
 criptografadas são compatíveis apenas com os discos s3&#95;plain / s3&#95;plain&#95;rewritable graváveis, não
-com os discos web / web&#95;index somente leitura.
+com os discos web / web&#95;index read-only.
+Presume-se que as partes já existentes no caminho correspondam às colunas e à sorting key
+declaradas por esta tabela. Como nada registra a sorting key com a qual uma parte foi gravada, uma
+tabela que declare uma sorting key diferente sobre as mesmas partes retornará resultados incorretos ou um erro.
 
 ## table_readonly {#table_readonly}
 

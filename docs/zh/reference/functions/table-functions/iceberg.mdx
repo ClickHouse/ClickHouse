@@ -524,17 +524,24 @@ value: 993
 
 ### 合并整理 {#iceberg-writes-compaction}
 
-开源构建版本尚未实现数据合并整理 (即将位置删除文件合并到数据文件中) ：在该版本中，对 Iceberg 表执行 `OPTIMIZE TABLE` 会返回 `NOT_IMPLEMENTED`。该操作不会以原子方式发布重写后的新一代数据，因此读取器最终解析到哪一代数据是未定义的。
+ClickHouse 支持对 Iceberg 表执行合并整理。目前，它可以在更新元数据的同时，将位置删除文件合并到数据文件中。此前的快照 ID 和时间戳保持不变，因此仍可使用相同的值进行时间旅行查询。
 
-清单合并整理用于整合表的清单文件。该操作要求表使用 Iceberg 格式版本 2，版本 1 和版本 3 的表会被拒绝。此外，如果加密表的数据文件带有逐文件的 `key_metadata`，且其清单需要重写，该表同样会被拒绝。
+使用方法：
 
 ```sql
 SET allow_experimental_iceberg_compaction = 1
 
-OPTIMIZE TABLE iceberg_writes_example MANIFEST;
-```
+OPTIMIZE TABLE iceberg_writes_example;
 
-如需回收文件，请使用 [`expire_snapshots`](#iceberg-expire-snapshots)。该操作要求格式版本为 2，且不支持基于事务型目录的表。
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+```
 
 ### 过期快照 {#iceberg-expire-snapshots}
 
@@ -624,11 +631,11 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 
 `expire_snapshots` 命令遵循 [Iceberg 快照保留策略](https://iceberg.apache.org/spec/#snapshot-retention-policy)。保留策略通过 Iceberg 表属性以及按引用的覆盖设置进行配置：
 
-| 属性                                     | 范围 | 默认值                                                                   | 描述                               |
-| -------------------------------------- | -- | --------------------------------------------------------------------- | -------------------------------- |
-| `history.expire.min-snapshots-to-keep` | 表  | `iceberg_expire_default_min_snapshots_to_keep` (默认值为 `1`)             | 每个分支的祖先链中至少要保留的快照数量              |
-| `history.expire.max-snapshot-age-ms`   | 表  | `iceberg_expire_default_max_snapshot_age_ms` (默认值为 `432000000`，即 5 天) | 分支中要保留的快照的最大保留时长 (毫秒)            |
-| `history.expire.max-ref-age-ms`        | 表  | `iceberg_expire_default_max_ref_age_ms` (默认值为 `∞`)                    | 快照引用 (分支或标签) 在被移除前允许的最大保留时长 (毫秒) |
+| 属性                                     | 范围 | 默认值                                                                    | 描述                                |
+| -------------------------------------- | -- | ---------------------------------------------------------------------- | --------------------------------- |
+| `history.expire.min-snapshots-to-keep` | 表  | `iceberg_expire_default_min_snapshots_to_keep` (默认值为 `1`)              | 每个分支的祖先链中至少要保留的快照数量               |
+| `history.expire.max-snapshot-age-ms`   | 表  | `iceberg_expire_default_max_snapshot_age_ms` (默认值为 `432000000`，即 5 天)  | 分支中要保留的快照的最大保留时长 (毫秒)             |
+| `history.expire.max-ref-age-ms`        | 表  | `iceberg_expire_default_max_ref_age_ms` (默认值为 `∞`)                     | 快照引用 (分支或标签) 在被移除前允许的最大保留时长 (毫秒)  |
 
 每个快照引用 (Iceberg 元数据中的 `refs`) 都可以通过引用级字段覆盖这些值：`min-snapshots-to-keep`、`max-snapshot-age-ms` 和 `max-ref-age-ms`。
 
@@ -647,16 +654,15 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 需要 `ALTER TABLE EXECUTE` 权限，它在 ClickHouse 访问控制层级中是 `ALTER TABLE` 的子权限。你可以单独授予该权限，也可以通过其父权限授予：
 
 ```sql
--- Grant only EXECUTE permission
+-- 仅授予 EXECUTE 权限
 GRANT ALTER TABLE EXECUTE ON my_iceberg_table TO my_user;
 
--- Or grant all ALTER TABLE permissions (includes ALTER TABLE EXECUTE)
+-- 或授予所有 ALTER TABLE 权限（包含 ALTER TABLE EXECUTE）
 GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 ```
 
 <Note>
   * 仅支持 Iceberg format version 2 表 (v1 快照不保证包含 `manifest-list`，而安全识别待清理文件需要它)
-  * 由事务型目录支撑的表会被拒绝，并返回 `NOT_IMPLEMENTED`
   * 当前快照始终会被保留，即使它早于指定的 timestamp
   * 要求启用 `allow_insert_into_iceberg` 设置
   * 要求启用 `allow_experimental_expire_snapshots` 设置

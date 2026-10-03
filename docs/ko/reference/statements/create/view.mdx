@@ -192,10 +192,10 @@ materialized view가 `TO [db.]name` 구문을 사용하는 경우, 뷰를 `DETAC
 다음 표는 뷰에서 `SELECT`할 때 어떤 사용자에게 어떤 권한이 필요한지 설명합니다.
 SQL 보안 옵션과 관계없이, 어떤 경우에도 뷰를 읽으려면 여전히 `GRANT SELECT ON <view>` 권한이 필요합니다.
 
-| SQL security option | View                                         | Materialized View                                                       |
+| SQL 보안 option | View                                         | Materialized View                                                       |
 | ------------------- | -------------------------------------------- | ----------------------------------------------------------------------- |
-| `DEFINER alice`     | `alice`는 뷰의 소스 테이블에 대한 `SELECT` 권한이 있어야 합니다. | `alice`는 뷰의 소스 테이블에 대한 `SELECT` 권한과 뷰의 대상 테이블에 대한 `INSERT` 권한이 있어야 합니다. |
-| `INVOKER`           | 사용자는 뷰의 소스 테이블에 대한 `SELECT` 권한이 있어야 합니다.     | materialized view에는 `SQL SECURITY INVOKER`를 지정할 수 없습니다.                 |
+| `DEFINER alice`     | `alice`는 뷰의 원본 테이블에 대한 `SELECT` 권한이 있어야 합니다. | `alice`는 뷰의 원본 테이블에 대한 `SELECT` 권한과 뷰의 대상 테이블에 대한 `INSERT` 권한이 있어야 합니다. |
+| `INVOKER`           | 사용자는 뷰의 원본 테이블에 대한 `SELECT` 권한이 있어야 합니다.     | materialized view에는 `SQL SECURITY INVOKER`를 지정할 수 없습니다.                 |
 | `NONE`              | -                                            | -                                                                       |
 
 <Note>
@@ -221,6 +221,9 @@ SQL 보안 옵션과 관계없이, 어떤 경우에도 뷰를 읽으려면 여�
 ```sql
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
+
+현재 사용자가 아닌 사용자를 `DEFINER`로 지정하려면 뷰를 생성할 때와 `MODIFY SQL SECURITY`를 사용할 때 모두 해당 사용자에 대한 `SET DEFINER` 권한이 필요합니다.
+[`ALTER TABLE ... MODIFY QUERY`](/ko/reference/statements/alter/view#required-privileges)로 `SQL SECURITY DEFINER` 또는 `SQL SECURITY NONE` 뷰의 쿼리를 변경하려면 해당 뷰의 SQL 보안을 선언할 때와 동일한 권한이 필요합니다.
 
 ### 예시 {#examples}
 

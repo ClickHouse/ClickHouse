@@ -126,7 +126,7 @@ URL 포맷은 대상(target)에 따라 다릅니다.
 #### File {#file}
 
 <Important>
-  `file://` 스킴은 일부 시스템에서 지원되지 않을 수 있습니다. 예를 들어 클라우드 플랫폼처럼 관리자가 `chdb_hook`을 컴파일할 때 `make`에 `NO_FILE_SCHEME` 옵션을 지정하여 이 스킴을 비활성화한 환경이 이에 해당합니다.
+  `file://` 스킴은 ClickHouse Cloud에서 지원되지 않습니다.
 </Important>
 
 Postgres 서버의 절대 경로여야 합니다. 상대 경로를 지정하면 오류가 발생합니다. Postgres 사용자는 용도에 따라 `pg_read_server_files` 또는 `pg_write_server_files` 역할(Role)의 멤버여야 합니다. 또한 Postgres 시스템 사용자에게 해당 파일에 대한 읽기 또는 쓰기 액세스 권한이 있어야 합니다. `COPY TO`에서 경로가 존재하지 않으면 chdb&#95;hook이 누락된 상위 디렉터리를 생성하며, 이때 필요한 파일 시스템 권한을 갖추고 있어야 합니다. 예시:

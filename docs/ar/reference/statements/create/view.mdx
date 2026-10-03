@@ -192,27 +192,27 @@ CREATE OR REPLACE MATERIALIZED VIEW mv TO target
 يوضح الجدول التالي الصلاحيات المطلوبة لكل مستخدم لكي يتمكن من إجراء `SELECT` من العرض.
 لاحظ أنه بغض النظر عن خيار `SQL SECURITY`، يبقى من الضروري في جميع الحالات امتلاك `GRANT SELECT ON <view>` للقراءة منه.
 
-| خيار أمان SQL   | العرض                                                               | العرض المادي                                                                                                      |
+| خيار أمان SQL   | العرض                                                               | العرض المُجسَّد                                                                                                      |
 | --------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `DEFINER alice` | يجب أن يمتلك `alice` صلاحية `SELECT` على جدول المصدر الخاص بالعرض.  | يجب أن يمتلك `alice` صلاحية `SELECT` على جدول المصدر الخاص بالعرض وصلاحية `INSERT` على الجدول الهدف الخاص بالعرض. |
-| `INVOKER`       | يجب أن يمتلك المستخدم صلاحية `SELECT` على جدول المصدر الخاص بالعرض. | لا يمكن تحديد `SQL SECURITY INVOKER` للعروض المادية.                                                              |
+| `DEFINER alice` | يجب أن يمتلك `alice` أذونات `SELECT` على جدول المصدر الخاص بالعرض.  | يجب أن يمتلك `alice` أذونات `SELECT` على جدول المصدر الخاص بالعرض وأذونات `INSERT` على الجدول الهدف الخاص بالعرض. |
+| `INVOKER`       | يجب أن يمتلك المستخدم أذونات `SELECT` على جدول المصدر الخاص بالعرض. | لا يمكن تحديد `SQL SECURITY INVOKER` للعروض المُجسَّدة.                                                              |
 | `NONE`          | -                                                                   | -                                                                                                                 |
 
 <Note>
-  يُعد الخيار `SQL SECURITY NONE` خيارًا مُهمَل. سيتمكن أي مستخدم لديه صلاحية إنشاء عروض باستخدام `SQL SECURITY NONE` من تنفيذ أي query عشوائي.
+  يُعد الخيار `SQL SECURITY NONE` خيارًا مُهمَل. سيتمكن أي مستخدم لديه صلاحية إنشاء عروض باستخدام `SQL SECURITY NONE` من تنفيذ أي استعلام عشوائي.
   لذلك، يلزم وجود `GRANT ALLOW SQL SECURITY NONE TO <user>` لإنشاء عرض باستخدام هذا الخيار.
 </Note>
 
 إذا لم يتم تحديد `DEFINER`/`SQL SECURITY`، فتعتمد النتيجة على إعداد الخادم [`ignore_empty_sql_security_in_create_view_query`](/ar/reference/settings/server-settings/settings/other#ignore_empty_sql_security_in_create_view_query).
 
-باستخدام قيمته الافتراضية `true`، يُخزَّن الاستعلام كما كُتب ويحصل العرض على نوع أمان SQL فارغ. وعندئذٍ يعمل العرض العادي بصلاحيات المستدعي، أما العرض المادي ذو الجدول الهدف المحدد صراحةً، فتُتخطى عمليات التحقق من الوصول إلى ذلك الجدول: إذ لا يتطلب الإدراج في جدول المصدر امتياز `INSERT` على الجدول الهدف، ولا تتطلب القراءة من العرض امتياز `SELECT` عليه.
+باستخدام قيمته الافتراضية `true`، يُخزَّن الاستعلام كما كُتب ويحصل العرض على نوع أمان SQL فارغ. وعندئذٍ يعمل العرض العادي بصلاحيات المستدعي، أما العرض المُجسَّد ذو الجدول الهدف المحدد صراحةً، فتُتخطى عمليات التحقق من الوصول إلى ذلك الجدول: إذ لا يتطلب الإدراج في جدول المصدر امتياز `INSERT` على الجدول الهدف، ولا تتطلب القراءة من العرض امتياز `SELECT` عليه.
 
 باستخدام `false`، تُكتب القيم الافتراضية التالية في تعريف العرض عند إنشائه:
 
-* `SQL SECURITY`: `INVOKER` للعروض العادية (قابل للتهيئة عبر [`default_normal_view_sql_security`](/ar/reference/settings/session-settings/default#default_normal_view_sql_security)) و`DEFINER` للعروض المادية (قابل للتهيئة عبر [`default_materialized_view_sql_security`](/ar/reference/settings/session-settings/default#default_materialized_view_sql_security))
+* `SQL SECURITY`: `INVOKER` للعروض العادية (قابل للتهيئة عبر [`default_normal_view_sql_security`](/ar/reference/settings/session-settings/default#default_normal_view_sql_security)) و`DEFINER` للعروض المُجسَّدة (قابل للتهيئة عبر [`default_materialized_view_sql_security`](/ar/reference/settings/session-settings/default#default_materialized_view_sql_security))
 * `DEFINER`: `CURRENT_USER` (قابل للتهيئة عبر [`default_view_definer`](/ar/reference/settings/session-settings/default#default_view_definer))
 
-تتلقى العروض المادية القابلة للتحديث هذه القيم الافتراضية دائمًا، بغض النظر عن الإعداد.
+تتلقى العروض المُجسَّدة القابلة للتحديث هذه القيم الافتراضية دائمًا، بغض النظر عن الإعداد.
 
 يحتفظ العرض بنوع أمان SQL من تعريفه المخزن عند إرفاقه أو إعادة تحميله عند بدء تشغيل الخادم، لذا يحتفظ العرض المخزن دون `DEFINER`/`SQL SECURITY` بنوع أمان SQL الفارغ.
 
@@ -221,6 +221,9 @@ CREATE OR REPLACE MATERIALIZED VIEW mv TO target
 ```sql
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
+
+يتطلب تحديد `DEFINER` غير المستخدم الحالي امتلاك أذونات `SET DEFINER` على ذلك المستخدم، سواء عند إنشاء العرض أو عند استخدام `MODIFY SQL SECURITY`.
+ولتغيير استعلام عرض من نوع `SQL SECURITY DEFINER` أو `SQL SECURITY NONE` باستخدام [`ALTER TABLE ... MODIFY QUERY`](/ar/reference/statements/alter/view#required-privileges)، يلزم امتلاك الأذونات نفسها المطلوبة لتحديد أمان SQL الخاص به.
 
 ### أمثلة {#examples}
 

@@ -719,7 +719,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 **تجاوزات حسب المستوى**
 
-يمكن تجاوز مستوى السجل لكل مُسجِّل على حدة. على سبيل المثال، لكتم جميع رسائل المُسجِّلَين &quot;Backup&quot; و&quot;RBAC&quot;.
+يمكن تجاوز مستوى السجل لكل مُسجِّل على حدة. على سبيل المثال، لكتم جميع رسائل المُسجِّلَين &quot;Backup&quot; و&quot;RBAC&quot;.
 
 ```xml
 <logger>
@@ -744,6 +744,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -754,12 +755,13 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 مفاتيح `<syslog>`:
 
-| Key        | Description                                                                                                                                                                                                                                                                           |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `address`  | عنوان syslog بالتنسيق `host\[:port\]`. وإذا لم يتم تحديده، فستُستخدم العملية الخدمية المحلية.                                                                                                                                                                                         |
-| `hostname` | اسم المضيف الذي تُرسل منه السجلات (اختياري).                                                                                                                                                                                                                                          |
-| `facility` | [الكلمة المفتاحية لـ facility](https://en.wikipedia.org/wiki/Syslog#Facility) في syslog. يجب كتابتها بأحرف كبيرة مع البادئة &quot;LOG&#95;&quot;، مثل `LOG_USER` و`LOG_DAEMON` و`LOG_LOCAL3` وما إلى ذلك. القيمة الافتراضية هي: `LOG_USER` إذا تم تحديد `address`، وإلا `LOG_DAEMON`. |
-| `format`   | تنسيق رسالة السجل. القيم الممكنة: `bsd` و`syslog.`                                                                                                                                                                                                                                    |
+| Key           | Description                                                                                                                                                                                                                                                                                                                        |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`     | عنوان syslog بالتنسيق `host\[:port\]`. وإذا لم يتم تحديده، فسيُستخدم البرنامج الخفي المحلي.                                                                                                                                                                                                                                      |
+| `hostname`    | اسم المضيف الذي تُرسل منه السجلات (اختياري).                                                                                                                                                                                                                                                                                       |
+| `facility`    | [الكلمة المفتاحية لـ facility](https://en.wikipedia.org/wiki/Syslog#Facility) في syslog. يجب كتابتها بأحرف كبيرة مع البادئة &quot;LOG&#95;&quot;، مثل `LOG_USER` و`LOG_DAEMON` و`LOG_LOCAL3` وما إلى ذلك. القيمة الافتراضية هي: `LOG_USER` إذا تم تحديد `address`، وإلا `LOG_DAEMON`.                                              |
+| `format`      | تنسيق رسالة السجل. القيم الممكنة: `bsd` و`syslog.`                                                                                                                                                                                                                                                                                 |
+| `programname` | اسم البرنامج المستخدم في رسائل syslog: معرّف syslog المحلي (ident)، أو `APP-NAME` لـ syslog البعيد عند استخدام `format=syslog`. ليس له أي تأثير عند استخدام `format=bsd`. يتكون من 1 إلى 48 محرفًا من محارف ASCII القابلة للطباعة دون مسافات. القيمة الافتراضية: اسم الأمر لـ syslog المحلي، ولا تُعيَّن أي قيمة لـ syslog البعيد. |
 
 **تنسيقات السجل**
 

@@ -15,7 +15,7 @@ doc_type: 'reference'
 * ログファイルをサブスクライブする。
 * サブスクライブしたログファイルに追記された新しいレコードを処理する。
 
-## テーブルの作成
+## テーブルの作成 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -36,7 +36,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 エンジン引数:
 
-* `path_to_logs` – サブスクライブするログファイルのパス。ログファイルを含むディレクトリへのパス、または単一のログファイルへのパスを指定できます。なお、ClickHouse で指定できるのは `user_files` ディレクトリ内のパスのみです。
+* `path_to_logs` – サブスクライブするログファイルのパス。ログファイルを含むディレクトリへのパス、または単一のログファイルへのパスを指定できます。相対パスは、[file](/ja/reference/functions/table-functions/file) テーブル関数と同様に、`user_files_path` ディレクトリを基準に解決されます。ただし、サーバーの作業ディレクトリを基準にすでに `user_files_path` 内を指している相対パス (たとえば、公式 Docker イメージのようにサーバーがデータディレクトリ内で実行されている場合の `user_files/my_app/app.log`) は、作業ディレクトリを基準とするパスとして扱われます。なお、ClickHouse で指定できるのは `user_files` ディレクトリ内のパスのみです。
 * `format_name` - レコードのフォーマット。FileLog はファイル内の各行を個別のレコードとして処理するため、すべてのデータフォーマットがこれに適しているわけではありません。
 
 パラメータ:
@@ -44,15 +44,15 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `poll_timeout_ms` - ログファイルから 1 回 `poll` する際のタイムアウト。デフォルト: [stream&#95;poll&#95;timeout&#95;ms](/ja/reference/settings/session-settings/stream#stream_poll_timeout_ms)。
 * `poll_max_batch_size` — 1 回の `poll` で取得するレコードの最大数。デフォルト: [max&#95;block&#95;size](/ja/reference/settings/session-settings/max#max_block_size)。
 * `max_block_size` — `poll` の最大バッチサイズ (レコード数) 。デフォルト: [max&#95;insert&#95;block&#95;size](/ja/reference/settings/session-settings/max-insert#max_insert_block_size)。
-* `max_threads` - ファイルを解析する最大スレッド数。デフォルトは 0 で、この場合は max(1, physical&#95;cpu&#95;cores / 4) が使用されます。
+* `max_threads` - ファイルをパースする最大スレッド数。デフォルトは 0 で、この場合は max(1, physical&#95;cpu&#95;cores / 4) が使用されます。
 * `poll_directory_watch_events_backoff_init` - ディレクトリ監視スレッドの初期スリープ値。デフォルト: `500`。
 * `poll_directory_watch_events_backoff_max` - ディレクトリ監視スレッドの最大スリープ値。デフォルト: `32000`。
 * `poll_directory_watch_events_backoff_factor` - バックオフの進み方。デフォルトは指数関数的です。デフォルト: `2`。
-* `handle_error_mode` — FileLog engine のエラー処理方法。設定可能な値: default (メッセージの解析に失敗した場合は例外がスローされます) 、stream (例外メッセージと生のメッセージが仮想カラム `_error` および `_raw_message` に保存されます) 。
+* `handle_error_mode` — FileLog エンジン のエラー処理方法。設定可能な値: default (メッセージのパースに失敗した場合は例外がスローされます) 、stream (例外メッセージと生のメッセージが仮想カラム `_error` および `_raw_message` に保存されます) 。
 
-## 説明
+## 説明 {#description}
 
-配信されたレコードは自動的に追跡されるため、ログファイル内の各レコードは一度しかカウントされません。
+配信されたレコードは自動的に追跡されるため、ログファイル内の各レコードは一度しかカウントされません。`copytruncate` を指定した `logrotate` の実行後など、次回の読み取り時にファイルが記録済みのオフセットより短くなっている場合は、そのファイルは先頭から再度読み取られます。ただし、次回の読み取りまでにファイルサイズがそのオフセット以上に戻った場合、切り詰めは検出されません。
 
 `SELECT` はレコードの読み取りにはあまり適していません (デバッグ用途を除く) 。各レコードは一度しか読み取れないためです。より実用的なのは、[materialized view](/ja/reference/statements/create/view) を使ってリアルタイムのストリームを作成することです。そのためには、次のようにします。
 
@@ -70,7 +70,7 @@ CREATE TABLE logs (
     timestamp UInt64,
     level String,
     message String
-  ) ENGINE = FileLog('user_files/my_app/app.log', 'JSONEachRow');
+  ) ENGINE = FileLog('my_app/app.log', 'JSONEachRow');
 
 CREATE TABLE daily (
     day Date,
@@ -96,7 +96,7 @@ ATTACH TABLE consumer;
 
 `ALTER` を使用してターゲットテーブルを変更する場合は、ターゲットテーブルとビューのデータに不整合が生じるのを避けるため、materialized view を無効にすることを推奨します。
 
-## 仮想カラム
+## 仮想カラム {#virtual-columns}
 
 * `_filename` - ログファイル名。データ型: `LowCardinality(String)`.
 * `_offset` - ログファイル内のオフセット。データ型: `UInt64`.
@@ -108,7 +108,7 @@ ATTACH TABLE consumer;
 
 注: `_raw_record` と `_error` の仮想カラムに値が入るのは、パース中に例外が発生した場合のみです。メッセージが正常にパースされた場合、これらは常に `NULL` になります。
 
-## データの永続性
+## データの永続性 {#data-durability}
 
 `FileLog` エンジンは、チャンクに対応する挿入がコミットされる前に、そのチャンクまで読み取ったオフセットを記録します。そのため、サーバーが中断されると、記録されたオフセットがターゲットテーブルに到達したデータより先に進む可能性があります。再起動時には、各ログファイルはメタデータディレクトリに記録されたオフセットから読み取りを再開するため、それらの行が再読み込みされることはありません。エラーは発生せずにデータが失われ、`count()` が単に小さくなります。通常のプロセス障害だけでもこの問題は発生し、電源断は必要ありません。これは、ターゲットパートの書き込みがまだ完了していない間にオフセットがメタデータファイルへ記録され、そのファイルが所定の場所へリネームされるためです。
 

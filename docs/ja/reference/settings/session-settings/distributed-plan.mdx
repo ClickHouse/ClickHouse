@@ -82,6 +82,16 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 分散クエリプランでは、PartialAggregation + Merge の代わりに Shuffle 集約戦略を使用します。
 Shuffle 戦略が正しい結果を生成できない場合、たとえば `GROUPING SETS` の場合や、集約が bucket 順で結果を生成しなければならない場合には無視されます。
 
+## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "100000"},{"label": "新しい設定。ステートレスワーカーのタスクが、ステータスポーリングの合間にコーディネーターへ転送するためにバッファリングするログ行数の上限を指定します。上限を超えた行は破棄され、その件数がカウントされます。新機能のため、以前の値はデフォルト値と同じです。"}]}]} />
+
+`send_logs_level` によってステートレスワーカーのタスクログがコーディネーターへ転送される場合、各workerタスクがステータスポーリングの合間にバッファリングするログ行数は、この値が上限となります。上限を超えた行は破棄され、その件数がクライアントに報告されます。`0` は無制限を意味します (行が破棄されることはありませんが、ステータスポーリングが停滞するとバッファが際限なく増大する可能性があります)。
+
 ## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 
 <ExperimentalBadge />

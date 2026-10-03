@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Le moteur de table MySQL vous permet d’exécuter des requêtes `SELECT` et `INSERT` sur des données stockées sur un serveur MySQL distant.
 
-## Créer une table
+## Créer une table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -56,7 +56,7 @@ Les clauses `WHERE` simples telles que `=, !=, >, >=, <, <=` sont exécutées su
 
 Le reste des conditions et la contrainte d’échantillonnage `LIMIT` ne sont exécutés dans ClickHouse qu’une fois la requête vers MySQL terminée.
 
-## TLS/SSL
+## TLS/SSL {#tls-ssl}
 
 Les identifiants d&#39;une connexion chiffrée à MySQL sont transmis sous forme de clés d&#39;une collection nommée (ou d&#39;arguments clé-valeur) :
 
@@ -82,7 +82,7 @@ Les mêmes identifiants peuvent également être fournis sous forme de chemins v
 </named_collections>
 ```
 
-## Utilisation d’une requête à la place d’un nom de table
+## Utilisation d’une requête à la place d’un nom de table {#passing-a-query}
 
 Au lieu d’un nom de table, l’argument `table` peut être une requête `SELECT` transmise telle quelle à MySQL. La structure de la table est déduite du résultat de la requête. La requête peut être écrite soit sous forme de sous-requête, soit encapsulée dans la fonction `query` :
 
@@ -91,21 +91,29 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', (SELECT a, b F
 CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
 ```
 
-Cela est utile pour déléguer à MySQL les jointures, les agrégations ou tout autre traitement. Une telle table est en lecture seule : `INSERT` n’y est pas autorisé. La même syntaxe est prise en charge par la fonction de table [`mysql`](/fr/reference/functions/table-functions/mysql).
+La transmission d’une requête est prise en charge à partir de la version 26.7. ClickHouse encapsule la requête dans `SELECT ... FROM (<query>)` avant de l’envoyer à MySQL ; elle ne doit donc pas se terminer par un point-virgule.
+
+Avec une collection nommée, transmettez la requête via la clé `query` plutôt que `table`, soit dans la collection elle-même, soit sous forme d’argument clé-valeur. `query` et `table` ne peuvent pas être spécifiés simultanément :
+
+```sql
+CREATE TABLE mysql_table ENGINE = MySQL(mysql_creds, database = 'test', query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
+```
+
+Cela est utile pour déléguer à MySQL les jointures, les agrégations ou tout autre traitement. Une telle table est en lecture seule : `INSERT` n’y est pas autorisé. La même syntaxe est prise en charge par la fonction de table [`mysql`](/fr/reference/functions/table-functions/mysql).
 
 <Note>
   La forme de sous-requête `(SELECT ...)` est analysée par ClickHouse, puis re-sérialisée dans le dialecte MySQL (quotage des identifiants avec des accents graves) avant d’être envoyée au serveur. Elle doit donc être valide en ClickHouse SQL. Pour transmettre une syntaxe propre à MySQL que ClickHouse n’analyse pas, utilisez la forme `query('...')`, dont le texte est envoyé tel quel à MySQL.
 
-  Tout `WHERE`, `LIMIT`, toute agrégation, etc. externe de la requête ClickHouse englobante n’est **pas** poussé dans la requête transmise — il est appliqué dans ClickHouse après récupération du résultat complet de la requête. Pour limiter les données lues depuis MySQL, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings/external-table#external_table_strict_query), un filtre externe sur les colonnes de la table est rejeté avec une exception au lieu d’être appliqué localement, car il ne peut pas être poussé dans la requête transmise. La vérification couvre le prédicat `WHERE` de niveau supérieur et chaque terme d’un `AND` de niveau supérieur. Un `PREWHERE` sur les colonnes de cette table ne relève pas de ce paramètre : ce moteur de table ne prend pas en charge `PREWHERE`, et une telle requête est rejetée avec `ILLEGAL_PREWHERE` quel que soit le paramètre. La vérification n’est effectuée que lorsqu’un filtre pourrait de toute façon être poussé : lorsque cette table est la seule table de la requête, de part et d’autre d’un `INNER JOIN`, ou du côté préservé d’une jointure externe (le côté gauche d’un `LEFT JOIN`, le côté droit d’un `RIGHT JOIN`). Du côté non préservé d’un `LEFT`/`RIGHT JOIN` et de part et d’autre d’un `FULL JOIN`, rien n’est poussé et rien n’est vérifié. Un filtre sur les colonnes de cette table est donc appliqué localement après la jointure, même en mode strict. Là où la vérification est effectuée, un prédicat qui référence d’autres tables jointes dans la requête englobante n’est pas poussé et est exclu de la vérification, qu’il référence uniquement le côté joint ou qu’il le mélange avec cette table dans une expression non-`AND` (par exemple un `OR`) ; un tel prédicat conserve son point d’évaluation ClickHouse habituel (`WHERE` après la jointure, `PREWHERE` avant celle-ci) et n’est pas rejeté.
+  Tout `WHERE`, `LIMIT`, toute agrégation, etc. externe de la requête ClickHouse englobante n’est **pas** poussé dans la requête transmise — il est appliqué dans ClickHouse après récupération du résultat complet de la requête. Pour limiter les données lues depuis MySQL, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings/external-table#external_table_strict_query), un filtre externe sur les colonnes de la table est rejeté avec une exception au lieu d’être appliqué localement, car il ne peut pas être poussé dans la requête transmise. La vérification couvre le prédicat `WHERE` de niveau supérieur et chaque terme d’un `AND` de niveau supérieur. Un `PREWHERE` sur les colonnes de cette table ne relève pas de ce paramètre : ce moteur de table ne prend pas en charge `PREWHERE`, et une telle requête est rejetée avec `ILLEGAL_PREWHERE` quel que soit le paramètre. La vérification n’est effectuée que lorsqu’un filtre pourrait de toute façon être poussé : lorsque cette table est la seule table de la requête, de part et d’autre d’un `INNER JOIN`, ou du côté préservé d’une jointure externe (le côté gauche d’un `LEFT JOIN`, le côté droit d’un `RIGHT JOIN`). Du côté non préservé d’un `LEFT`/`RIGHT JOIN` et de part et d’autre d’un `FULL JOIN`, rien n’est poussé et rien n’est vérifié. Un filtre sur les colonnes de cette table est donc appliqué localement après la jointure, même en mode strict. Là où la vérification est effectuée, un prédicat qui référence d’autres tables jointes dans la requête englobante n’est pas poussé et est exclu de la vérification, qu’il référence uniquement le côté joint ou qu’il le mélange avec cette table dans une expression non-`AND` (par exemple un `OR`) ; un tel prédicat conserve son point d’évaluation ClickHouse habituel (`WHERE` après la jointure, `PREWHERE` avant celle-ci) et n’est pas rejeté.
 </Note>
 
-Prend en charge plusieurs répliques, qui doivent être listées avec `|`. Par exemple :
+Prend en charge plusieurs répliques, qui doivent être listées avec `|`. Par exemple :
 
 ```sql
 CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
 ```
 
-## Exemple d&#39;utilisation
+## Exemple d&#39;utilisation {#usage-example}
 
 Créer une table dans MySQL :
 
@@ -170,11 +178,11 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-## Paramètres
+## Paramètres {#mysql-settings}
 
 Les paramètres par défaut ne sont pas très efficaces, car ils ne réutilisent même pas les connexions. Ces paramètres vous permettent d’augmenter le nombre de requêtes que le serveur peut exécuter par seconde.
 
-### `connection_auto_close`
+### `connection_auto_close` {#connection-auto-close}
 
 Permet de fermer automatiquement la connexion après l’exécution de la requête, c’est-à-dire de désactiver sa réutilisation.
 
@@ -185,7 +193,7 @@ Valeurs possibles :
 
 Valeur par défaut : `1`.
 
-### `connection_max_tries`
+### `connection_max_tries` {#connection-max-tries}
 
 Définit le nombre de tentatives pour le pool avec basculement.
 
@@ -196,7 +204,7 @@ Valeurs possibles :
 
 Valeur par défaut : `3`.
 
-### `connection_pool_size`
+### `connection_pool_size` {#connection-pool-size}
 
 Taille du pool de connexions (si toutes les connexions sont utilisées, la requête attendra qu&#39;une connexion se libère).
 
@@ -206,7 +214,7 @@ Valeurs possibles :
 
 Valeur par défaut : `16`.
 
-### `connection_wait_timeout`
+### `connection_wait_timeout` {#connection-wait-timeout}
 
 Délai d’expiration (en secondes) d’attente d’une connexion libre (s’il y a déjà `connection_pool_size` connexions actives), 0 - ne pas attendre.
 
@@ -216,7 +224,7 @@ Valeurs possibles :
 
 Valeur par défaut : `5`.
 
-### `connect_timeout`
+### `connect_timeout` {#connect-timeout}
 
 Délai d’expiration de la connexion (en secondes).
 
@@ -226,7 +234,7 @@ Valeurs possibles :
 
 Valeur par défaut : `10`.
 
-### `read_write_timeout`
+### `read_write_timeout` {#read-write-timeout}
 
 Délai d’expiration de lecture/écriture (en secondes).
 
@@ -236,7 +244,7 @@ Valeurs possibles :
 
 Valeur par défaut : `300`.
 
-### `enable_compression`
+### `enable_compression` {#enable-compression}
 
 Active la compression pour les connexions via le protocole MySQL.
 
@@ -265,7 +273,7 @@ ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
 SETTINGS enable_compression = 1;
 ```
 
-## Voir aussi
+## Voir aussi {#see-also}
 
 * [La fonction de table MySQL](/fr/reference/functions/table-functions/mysql)
 * [Utiliser MySQL comme source de dictionnaire](/fr/reference/statements/create/dictionary/sources/mysql)

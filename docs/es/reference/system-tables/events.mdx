@@ -135,6 +135,10 @@ Número de veces que una tabla hash de agregación de un solo nivel se convirti�
 
 Cuántas tablas hash se inicializaron con dos niveles para la agregación.
 
+### AggregationHavingPrefilterGroupsSkipped {#aggregationhavingprefiltergroupsskipped}
+
+Número de grupos cuyas columnas clave no se materializaron al convertir un bucket de una agregación de dos niveles, porque un límite HAVING aplicado al count() del propio grupo ya lo había descartado (la optimización del plan aggregationHavingPrefilter).
+
 ### AggregationOptimizedEqualRangesOfKeys {#aggregationoptimizedequalrangesofkeys}
 
 Para cuántos bloques se aplicó la optimización de rangos de claves iguales
@@ -4421,6 +4425,14 @@ Tiempo total que una consulta permaneció en espera para ajustarse a la limitaci
 ### QueryMaskingRulesMatch {#querymaskingrulesmatch}
 
 Número de veces que se encontró una coincidencia con las reglas de enmascaramiento de consultas.
+
+### QueryMemoryDriftSettled {#querymemorydriftsettled}
+
+Número de consultas que finalizaron con memoria todavía asignada a ellas (o con un exceso de crédito). La diferencia se descuenta del rastreador por usuario, de modo que su saldo quede en cero para la consulta.
+
+### QueryMemoryDriftSettledBytes {#querymemorydriftsettledbytes}
+
+Cantidad absoluta de bytes descontados de los rastreadores por usuario al finalizar las consultas, es decir, la magnitud del desfase en la contabilización por consulta.
 
 ### QueryMemoryLimitExceeded {#querymemorylimitexceeded}
 

@@ -439,14 +439,14 @@ CREATE MATERIALIZED VIEW consumer TO stats
 
 Para mais informações sobre colunas virtuais, consulte [aqui](/pt-BR/reference/engines/table-engines/index#table_engines-virtual_columns).
 
-## Curingas em path {#wildcards-in-path}
+## Curingas em caminho {#wildcards-in-path}
 
-O argumento `path` pode especificar vários arquivos usando curingas no estilo do bash. Para que um arquivo seja processado, ele deve existir e corresponder ao padrão completo do path. A listagem de arquivos é determinada durante o `SELECT` (não no momento do `CREATE`).
+O argumento `path` pode especificar vários arquivos usando curingas no estilo do bash. Para que um arquivo seja processado, ele deve existir e corresponder ao padrão completo do caminho. A listagem de arquivos é determinada durante o `SELECT` (não no momento do `CREATE`).
 
 * `*` — Substitui qualquer quantidade de caracteres, exceto `/`, incluindo a string vazia.
 * `**` — Substitui qualquer quantidade de caracteres, incluindo `/`, incluindo a string vazia.
 * `?` — Substitui qualquer caractere único.
-* `{some_string,another_string,yet_another_one}` — Substitui qualquer uma das strings `'some_string', 'another_string', 'yet_another_one'`.
+* `{some_string,another_string,yet_another_one}` — Substitui qualquer uma das strings `'some_string', 'another_string', 'yet_another_one'`. Cada uma dessas strings também pode conter os curingas `*` e `?`, de modo que `{csv,csv.*}` corresponde tanto a `.csv` quanto a `.csv.gz`.
 * `{N..M}` — Substitui qualquer número no intervalo de N a M, incluindo ambas as extremidades. N e M podem ter zeros à esquerda, por exemplo, `000..078`.
 
 Construções com `{}` são semelhantes à table function [remote](/pt-BR/reference/functions/table-functions/remote).

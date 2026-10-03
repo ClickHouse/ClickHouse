@@ -16,7 +16,7 @@ Este motor permite procesar archivos de registro de aplicaciones como un flujo d
 * Suscribirse a archivos de registro.
 * Procesar nuevos registros a medida que se añaden a los archivos de registro a los que se haya suscrito.
 
-## Crear una tabla
+## Crear una tabla {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -37,7 +37,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Argumentos del motor:
 
-* `path_to_logs` – Ruta de los archivos de registro a los que suscribirse. Puede ser la ruta a un directorio con archivos de registro o a un único archivo de registro. Tenga en cuenta que ClickHouse solo permite rutas dentro del directorio `user_files`.
+* `path_to_logs` – Ruta de los archivos de registro a los que suscribirse. Puede ser la ruta a un directorio con archivos de registro o a un único archivo de registro. Una ruta relativa se resuelve con respecto al directorio `user_files_path`, como en la función de tabla [file](/es/reference/functions/table-functions/file); una ruta relativa que ya apunta a una ubicación dentro de `user_files_path` desde el directorio de trabajo del servidor (por ejemplo, `user_files/my_app/app.log` cuando el servidor se ejecuta en su directorio de datos, como en la imagen oficial de Docker) conserva ese significado. Tenga en cuenta que ClickHouse solo permite rutas dentro del directorio `user_files`.
 * `format_name` - Formato del registro. Tenga en cuenta que FileLog procesa cada línea de un archivo como un registro independiente y que no todos los formatos de datos son adecuados para ello.
 
 Parámetros opcionales:
@@ -51,9 +51,9 @@ Parámetros opcionales:
 * `poll_directory_watch_events_backoff_factor` - Velocidad del backoff; de forma predeterminada, es exponencial. Predeterminado: `2`.
 * `handle_error_mode` — Cómo gestionar los errores del motor FileLog. Valores posibles: default (se lanzará una excepción si no se puede analizar un mensaje), stream (el mensaje de excepción y el mensaje sin procesar se guardarán en las columnas virtuales `_error` y `_raw_message`).
 
-## Descripción
+## Descripción {#description}
 
-Los registros entregados se controlan automáticamente, de modo que cada registro de un archivo de registro solo se cuenta una vez.
+Los registros entregados se controlan automáticamente, de modo que cada registro de un archivo de registro solo se cuenta una vez. Si, en la siguiente lectura, un archivo es más corto que el offset registrado para él, como ocurre después de `logrotate` con `copytruncate`, se vuelve a leer desde el principio. No se detecta un truncamiento si el archivo vuelve a crecer hasta alcanzar al menos ese offset antes de la siguiente lectura.
 
 `SELECT` no resulta especialmente útil para leer registros (excepto para depuración), porque cada registro solo puede leerse una vez. Es más práctico crear hilos en tiempo real mediante [vistas materializadas](/es/reference/statements/create/view). Para ello:
 
@@ -71,7 +71,7 @@ CREATE TABLE logs (
     timestamp UInt64,
     level String,
     message String
-  ) ENGINE = FileLog('user_files/my_app/app.log', 'JSONEachRow');
+  ) ENGINE = FileLog('my_app/app.log', 'JSONEachRow');
 
 CREATE TABLE daily (
     day Date,
@@ -97,7 +97,7 @@ ATTACH TABLE consumer;
 
 Si desea cambiar la tabla de destino con `ALTER`, le recomendamos deshabilitar la vista materializada para evitar discrepancias entre la tabla de destino y los datos de la vista.
 
-## Columnas virtuales
+## Columnas virtuales {#virtual-columns}
 
 * `_filename` - Nombre del archivo de registro. Tipo de dato: `LowCardinality(String)`.
 * `_offset` - Desplazamiento en el archivo de registro. Tipo de dato: `UInt64`.
@@ -109,7 +109,7 @@ Columnas virtuales adicionales cuando `handle_error_mode='stream'`:
 
 Nota: las columnas virtuales `_raw_record` y `_error` solo se rellenan en caso de excepción durante el análisis; siempre son `NULL` cuando el mensaje se analiza correctamente.
 
-## Durabilidad de los datos
+## Durabilidad de los datos {#data-durability}
 
 El motor `FileLog` registra el desplazamiento consumido de un fragmento antes de que se confirme el insert al que pertenece, por lo que una interrupción del servidor puede dejar el desplazamiento registrado por delante de los datos que llegaron a la tabla de destino. Al reiniciarse, cada archivo de registro se reanuda desde el desplazamiento registrado en su directorio de metadatos, por lo que esas filas no se vuelven a leer: se pierden sin que se produzca ningún error y `count()` es simplemente menor. Basta un fallo normal del proceso para que esto ocurra, sin necesidad de una pérdida de alimentación, ya que el desplazamiento se registra en un archivo de metadatos que se renombra en su ubicación definitiva mientras la parte de destino aún se está escribiendo.
 

@@ -436,14 +436,14 @@ CREATE MATERIALIZED VIEW consumer TO stats
 
 Pour en savoir plus sur les colonnes virtuelles, consultez [cette page](/fr/reference/engines/table-engines/index#table_engines-virtual_columns).
 
-## Caractères génériques dans le chemin {#wildcards-in-path}
+## Caractères génériques dans le path {#wildcards-in-path}
 
-L&#39;argument `path` peut spécifier plusieurs fichiers à l&#39;aide de caractères génériques de style Bash. Pour être traité, un fichier doit exister et correspondre à l&#39;intégralité du motif de chemin. La liste des fichiers est établie lors du `SELECT` (et non au moment du `CREATE`).
+L&#39;argument `path` peut spécifier plusieurs fichiers à l&#39;aide de caractères génériques de style Bash. Pour être traité, un fichier doit exister et correspondre à l&#39;intégralité du motif de path. La liste des fichiers est établie lors du `SELECT` (et non au moment du `CREATE`).
 
 * `*` — Remplace n&#39;importe quel nombre de caractères, sauf `/`, y compris une chaîne vide.
 * `**` — Remplace n&#39;importe quel nombre de caractères, y compris `/`, y compris une chaîne vide.
 * `?` — Remplace n&#39;importe quel caractère unique.
-* `{some_string,another_string,yet_another_one}` — Remplace l&#39;une des chaînes `'some_string', 'another_string', 'yet_another_one'`.
+* `{some_string,another_string,yet_another_one}` — Remplace l&#39;une des chaînes `'some_string', 'another_string', 'yet_another_one'`. Chaque chaîne peut elle-même contenir les caractères génériques `*` et `?` : ainsi, `{csv,csv.*}` correspond à la fois à `.csv` et à `.csv.gz`.
 * `{N..M}` — Remplace n&#39;importe quel nombre dans la plage de N à M, bornes incluses. N et M peuvent comporter des zéros non significatifs, par exemple `000..078`.
 
 Les constructions avec `{}` sont similaires à la fonction de table [remote](/fr/reference/functions/table-functions/remote).

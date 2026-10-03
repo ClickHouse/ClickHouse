@@ -24,6 +24,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 (s3&#95;plain、s3&#95;plain&#95;rewritable、web、web&#95;index) 及其缓存变体。加密
 变体仅支持在可写的 s3&#95;plain / s3&#95;plain&#95;rewritable 磁盘 上使用，不支持在
 只读的 web / web&#95;index 磁盘 上使用。
+系统会默认该路径下已有的 parts 与此表声明的列和 sorting key 一致。
+由于系统不会记录 part 写入时所用的 sorting key，因此如果有表基于相同的 parts
+声明了不同的 sorting key，将返回错误结果或报错。
 
 ## table_readonly {#table_readonly}
 

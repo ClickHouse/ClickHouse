@@ -28,6 +28,23 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 * 0 - 無効化
 * 1 - 有効化
 
+## query_plan_aggregation_having_prefilter {#query_plan_aggregation_having_prefilter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "最終集約の二段階バケットを変換する際に、その集約自身の引数なし count() に対する HAVING の境界条件によってグループがすでに除外される場合、そのグループのキーのマテリアライズをスキップするプラン最適化を切り替える新しい設定です。スキップされたグループにはフィルタも最終化も適用されないため、境界条件より前に記述された HAVING の連言条件や、同じ集約内の他の集約関数の最終化は、境界条件で除外されたグループに対して評価されなくなります。その結果、これらのいずれかで例外が発生していたクエリが成功するようになる場合があります。`compatibility` を 26.10 未満に設定すると、従来の動作が維持されます。"}]}]} />
+
+`GROUP BY` に対する `HAVING count() <comparison> <constant>` について、クエリプランレベルの最適化を切り替えます。集約結果の二段階バケットを chunk に変換する際、count が境界条件を満たし得ないグループは、キーカラムがマテリアライズされる前にスキップされます。これにより、いったんマテリアライズしてから上位のフィルタで破棄するという無駄な処理を回避できます。高カーディナリティな `GROUP BY` に対して「しきい値を超えるグループ」を求めるクエリでは、大半のグループが破棄され、破棄されるキーの処理が変換処理の大部分を占めるため、この最適化によって高速化されます。
+
+スキップされたグループにはフィルタも最終化も適用されないため、この設定は単なるパフォーマンス向上のためのものではありません。境界条件より前に記述された `HAVING` の連言条件や、同じ集約内の他の集約関数の最終化は、境界条件で除外されたグループに対して評価されなくなります。そのため、これらのいずれかで例外が発生していたクエリが、代わりに行を返す場合があります。例えば、`count() AS cnt` に対する `HAVING throwIf(cnt = 3) = 0 AND count() > 3` がこれに該当します。この設定を 0 にするか、`compatibility` を `26.10` 未満のバージョンに設定すると、従来の動作が維持されます。
+
+設定 [query&#95;plan&#95;enable&#95;optimizations](/ja/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
+
+設定可能な値:
+
+* 0 - 無効
+* 1 - 有効
+
 ## query_plan_convert_any_join_to_semi_or_anti_join {#query_plan_convert_any_join_to_semi_or_anti_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

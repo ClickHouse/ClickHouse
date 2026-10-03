@@ -134,6 +134,10 @@ DNS 解析结果中发现的 HTTP 连接新地址总数
 
 聚合过程中被初始化为两级的哈希表数量。
 
+### AggregationHavingPrefilterGroupsSkipped {#aggregationhavingprefiltergroupsskipped}
+
+在转换聚合的两级桶时，由于针对该分组自身 count() 的 HAVING 边界条件已将其排除 (即 aggregationHavingPrefilter 查询计划优化) ，因而未物化其键列的分组数量。
+
 ### AggregationOptimizedEqualRangesOfKeys {#aggregationoptimizedequalrangesofkeys}
 
 应用了键等值范围优化的块数
@@ -4420,6 +4424,14 @@ CPU 时钟，一种高分辨率的按 CPU 计时器
 ### QueryMaskingRulesMatch {#querymaskingrulesmatch}
 
 查询脱敏规则成功匹配的次数。
+
+### QueryMemoryDriftSettled {#querymemorydriftsettled}
+
+结束时仍有内存计入其名下 (或被超额返还) 的查询数量。差额会在每用户内存跟踪器中进行冲销，使该查询的计数最终归零。
+
+### QueryMemoryDriftSettledBytes {#querymemorydriftsettledbytes}
+
+查询结束时从各用户级跟踪器中扣除的字节数绝对值，即按查询统计的内存记账所产生的偏差大小。
 
 ### QueryMemoryLimitExceeded {#querymemorylimitexceeded}
 

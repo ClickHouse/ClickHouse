@@ -816,6 +816,8 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/zh/reference/data-types/int-uint)) — 超出全局内存限制的次数。
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/zh/reference/data-types/int-uint)) — 未检查内存约束即分配内存的次数。
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 未检查内存约束即分配的字节数。
+* `ProfileEvent_QueryMemoryDriftSettled` ([UInt64](/zh/reference/data-types/int-uint)) — 结束时内存用量统计仍未归零 (仍有内存计入用量，或释放时扣减过多) 的查询数量。该差额会从对应用户的内存跟踪器中扣除，使该查询的内存用量统计归零。
+* `ProfileEvent_QueryMemoryDriftSettledBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 查询结束时从对应用户的内存跟踪器中扣除的字节数的绝对值，即各查询内存用量统计的偏差量。
 * `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/zh/reference/data-types/int-uint)) — 对全局内存跟踪器的单次内存计入达到或超过 `min_allocation_size_to_log_stack_trace` 时捕获堆栈跟踪的次数。
 * `ProfileEvent_AzureGetObject` ([UInt64](/zh/reference/data-types/int-uint)) — Azure API GetObject 调用次数。
 * `ProfileEvent_AzureUpload` ([UInt64](/zh/reference/data-types/int-uint)) — Azure Blob 存储 API Upload 调用次数
@@ -857,7 +859,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_CachedWriteBufferCacheWriteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 将数据写入文件系统缓存所花费的时间
 * `ProfileEvent_CachedWriteBufferCacheWriteStopped` ([UInt64](/zh/reference/data-types/int-uint)) — 写穿缓存被中止的次数 (空间预留或缓存写入失败，或覆盖该范围的分段正在被淘汰) ，之后写入会继续进行但不填充缓存
 * `ProfileEvent_CachedWriteBufferCoveringSegmentShrunk` ([UInt64](/zh/reference/data-types/int-uint)) — 为继续在新的 File 段中缓存，写穿缓存缩小位于写入偏移之前的覆盖 File 段的次数 (中间范围被写入另一个分布式缓存服务器)
-* `ProfileEvent_CachedWriteBufferCoveringSegmentShrinkFailed` ([UInt64](/zh/reference/data-types/int-uint)) — 写穿缓存因无法缩小位于写入偏移之前的覆盖 File 段而不得不停止的次数 (该段被其他对象持有，因而无法解决其中的空洞) ，或该段被并发淘汰
+* `ProfileEvent_CachedWriteBufferCoveringSegmentShrinkFailed` ([UInt64](/zh/reference/data-types/int-uint)) — 写透缓存因无法缩小位于写入偏移之前的覆盖 File 段而不得不停止的次数 (该段被其他对象持有，因而无法解决其中的空洞) ，或该段被并发淘汰
 * `ProfileEvent_FilesystemCacheLoadMetadataMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 加载文件系统缓存元数据所花费的时间
 * `ProfileEvent_FilesystemCacheEvictedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从文件系统缓存中淘汰的字节数
 * `ProfileEvent_FilesystemCacheCreatedKeyDirectories` ([UInt64](/zh/reference/data-types/int-uint)) — 已创建的键目录数量
@@ -966,6 +968,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_AdaptiveAggregationSharedTableSpills` ([UInt64](/zh/reference/data-types/int-uint)) — 由于在内存压力下达到分片上限，自适应聚合将其共享排空表写出的次数。
 * `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/zh/reference/data-types/int-uint)) — 两级桶在其合并和转换完成后、整个合并结束前立即释放工作内存 (Arena 插槽、暂存块引用) 的数量。
 * `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/zh/reference/data-types/int-uint)) — 通过桶本地 Top-K 选择 (aggregationBucketTopK 查询计划优化) 转换的两级桶数量。
+* `ProfileEvent_AggregationHavingPrefilterGroupsSkipped` ([UInt64](/zh/reference/data-types/int-uint)) — 转换聚合的两级桶时，因针对组自身 count() 的 HAVING 边界条件已将该组排除而未物化键列的组数 (aggregationHavingPrefilter 查询计划优化) 。
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/zh/reference/data-types/int-uint)) — 为聚合初始化为两级结构的哈希表数量。
 * `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/zh/reference/data-types/int-uint)) — 在运行时将单级聚合哈希表转换为两级结构的次数。
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/zh/reference/data-types/int-uint)) — 有多少个块应用了键相等范围优化
@@ -1528,7 +1531,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_WasmGuestExecuteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 执行 WebAssembly 代码所花费的时间
 * `ProfileEvent_WasmTotalExecuteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 执行 WebAssembly 代码所花费的时间
 * `ProfileEvent_WasmModuleInstatiate` ([UInt64](/zh/reference/data-types/int-uint)) — 已创建的 WebAssembly 隔离区数量
-* `ProfileEvent_ExecutableUserDefinedFunctionInvocations` ([UInt64](/zh/reference/data-types/int-uint)) — 可执行和 executable&#95;pool 用户自定义函数的调用次数。
+* `ProfileEvent_ExecutableUserDefinedFunctionInvocations` ([UInt64](/zh/reference/data-types/int-uint)) — executable 和 executable&#95;pool 用户自定义函数的调用次数。
 * `ProfileEvent_ExecutableUserDefinedFunctionElapsedMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 执行 executable 和 executable&#95;pool 用户自定义函数所花费的挂钟时间，单位为微秒。
 * `ProfileEvent_ExecutableUserDefinedFunctionUserTimeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — executable 和 executable&#95;pool 用户自定义函数子进程消耗的用户态 CPU 时间，单位为微秒。
 * `ProfileEvent_ExecutableUserDefinedFunctionSystemTimeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — executable 和 executable&#95;pool 用户自定义函数子进程消耗的内核态 CPU 时间，单位为微秒。
@@ -1722,7 +1725,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_ReplicaReady` ([Int64](/zh/reference/data-types/int-uint)) — 指示副本是否已准备好接受查询：0 = 否，1 = 是
 * `CurrentMetric_MemoryTracking` ([Int64](/zh/reference/data-types/int-uint)) — 服务器跟踪的内存总量 (字节) 。默认情况下，后台内存工作线程每个 tick 都会根据外部测得的进程实际内存用量校正该值 (参见 `memory_worker_correct_memory_tracker` 服务器设置) ，因此它反映的是实测用量，而非单纯的内存分配计数。未经校正的值请参见 `MemoryTrackingUncorrected`。
 * `CurrentMetric_MemoryTrackingUncorrected` ([Int64](/zh/reference/data-types/int-uint)) — 全局内存跟踪器在未根据测量结果进行校正时的值：一个将内存分配计入、将内存释放扣除的普通计数器。后台内存工作线程每个 tick 都会对其生成快照 (参见 `memory_worker_period_ms`) ，因此该值最多比计数器滞后一个 tick；工作线程未运行时，该值保持为 `0`。它与 `MemoryTracking` 之间的差值表示普通计数器与实测用量之间的当前差距：除统计偏差外，还包括进程使用但从未计入该计数器的内存，例如分配器保留的内存页。
-* `CurrentMetric_MergesMutationsMemoryTracking` ([Int64](/zh/reference/data-types/int-uint)) — 后台任务 (merge 和 mutations) 分配的内存总量 (字节) 。
+* `CurrentMetric_MergesMutationsMemoryTracking` ([Int64](/zh/reference/data-types/int-uint)) — 后台任务 (合并和变更) 分配的内存总量 (字节) 。
 * `CurrentMetric_EphemeralNode` ([Int64](/zh/reference/data-types/int-uint)) — ZooKeeper 中持有的临时节点数量。
 * `CurrentMetric_MaxAllocatedEphemeralLockSequentialNumber` ([Int64](/zh/reference/data-types/int-uint)) — 为 ZooKeeper 中的临时锁 znode 分配的最大顺序编号。主要受块编号影响。
 * `CurrentMetric_ZooKeeperSession` ([Int64](/zh/reference/data-types/int-uint)) — 到 ZooKeeper 的会话 (连接) 数量。不应超过 1，因为使用多个到 ZooKeeper 的连接可能会因 ZooKeeper 一致性模型允许的非线性一致性 (陈旧读取) 而导致 bug。
@@ -1730,13 +1733,13 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_ZooKeeperConnectionLossStartedTimestampSeconds` ([Int64](/zh/reference/data-types/int-uint)) — ZooKeeper 连接丢失时的 Unix 时间戳 (以秒为单位) ；如果连接正常，则为 0。
 * `CurrentMetric_ZooKeeperWatch` ([Int64](/zh/reference/data-types/int-uint)) — ZooKeeper 中的 watches (事件订阅) 数量。
 * `CurrentMetric_ZooKeeperRequest` ([Int64](/zh/reference/data-types/int-uint)) — 正在处理中的 ZooKeeper 请求数量。
-* `CurrentMetric_DelayedInserts` ([Int64](/zh/reference/data-types/int-uint)) — 由于 MergeTree 表中某个分区的活动 data parts 数量过多而被限流的 INSERT 查询数量。
+* `CurrentMetric_DelayedInserts` ([Int64](/zh/reference/data-types/int-uint)) — 由于 MergeTree 表中某个分区的活跃数据分区片段数量过多而被限流的 INSERT 查询数量。
 * `CurrentMetric_ContextLockWait` ([Int64](/zh/reference/data-types/int-uint)) — 在 Context 中等待锁的线程数量。这是全局锁。
 * `CurrentMetric_StorageBufferRows` ([Int64](/zh/reference/data-types/int-uint)) — Buffer 表缓冲区中的行数。
 * `CurrentMetric_StorageBufferBytes` ([Int64](/zh/reference/data-types/int-uint)) — Buffer 表缓冲区中的字节数。
 * `CurrentMetric_DictCacheRequests` ([Int64](/zh/reference/data-types/int-uint)) — cache 类型字典的数据源中正在处理的请求数量。
-* `CurrentMetric_Revision` ([Int64](/zh/reference/data-types/int-uint)) — server 的修订号。除补丁发行版外，每个 release 或 release candidate 都会使该数值递增。
-* `CurrentMetric_VersionInteger` ([Int64](/zh/reference/data-types/int-uint)) — server 的版本，以一个基数为 1000 的整数表示。例如，版本 11.22.33 会转换为 11022033。
+* `CurrentMetric_Revision` ([Int64](/zh/reference/data-types/int-uint)) — 服务器的修订号。除补丁发行版外，每个发行版或候选发行版都会使该数值递增。
+* `CurrentMetric_VersionInteger` ([Int64](/zh/reference/data-types/int-uint)) — 服务器的版本，以一个基数为 1000 的整数表示。例如，版本 11.22.33 会转换为 11022033。
 * `CurrentMetric_RWLockWaitingReaders` ([Int64](/zh/reference/data-types/int-uint)) — 在表 RWLock 上等待读锁的线程数量。
 * `CurrentMetric_RWLockWaitingWriters` ([Int64](/zh/reference/data-types/int-uint)) — 在表 RWLock 上等待写锁的线程数量。
 * `CurrentMetric_RWLockActiveReaders` ([Int64](/zh/reference/data-types/int-uint)) — 在表 RWLock 上持有读锁的线程数量。

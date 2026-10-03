@@ -194,8 +194,8 @@ Tenga en cuenta que, independientemente de la opción de SQL security, en todos 
 
 | Opción de SQL security | Vista                                                                           | Vista materializada                                                                                                                         |
 | ---------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DEFINER alice`        | `alice` debe tener el privilegio `SELECT` sobre la tabla fuente de la vista.    | `alice` debe tener el privilegio `SELECT` sobre la tabla fuente de la vista y el privilegio `INSERT` sobre la tabla de destino de la vista. |
-| `INVOKER`              | El usuario debe tener el privilegio `SELECT` sobre la tabla fuente de la vista. | No se puede especificar `SQL SECURITY INVOKER` para las vistas materializadas.                                                              |
+| `DEFINER alice`        | `alice` debe tener el privilegio `SELECT` sobre la tabla de origen de la vista.    | `alice` debe tener el privilegio `SELECT` sobre la tabla de origen de la vista y el privilegio `INSERT` sobre la tabla de destino de la vista. |
+| `INVOKER`              | El usuario debe tener el privilegio `SELECT` sobre la tabla de origen de la vista. | No se puede especificar `SQL SECURITY INVOKER` para las vistas materializadas.                                                              |
 | `NONE`                 | -                                                                               | -                                                                                                                                           |
 
 <Note>
@@ -205,7 +205,7 @@ Tenga en cuenta que, independientemente de la opción de SQL security, en todos 
 
 Si no se especifican `DEFINER`/`SQL SECURITY`, el resultado depende de la configuración del servidor [`ignore_empty_sql_security_in_create_view_query`](/es/reference/settings/server-settings/settings/other#ignore_empty_sql_security_in_create_view_query).
 
-Con su valor predeterminado de `true`, la consulta se almacena tal como se escribió y la vista obtiene un tipo de SQL security vacío. Una vista normal se ejecuta entonces con los permisos del invocador y, en el caso de una vista materializada con una tabla de destino especificada explícitamente, se omiten las comprobaciones de acceso a esa tabla de destino: insertar en la tabla fuente no requiere el privilegio `INSERT` en la tabla de destino, y leer de la vista no requiere el privilegio `SELECT` sobre ella.
+Con su valor predeterminado de `true`, la consulta se almacena tal como se escribió y la vista obtiene un tipo de SQL security vacío. Una vista normal se ejecuta entonces con los permisos del invocador y, en el caso de una vista materializada con una tabla de destino especificada explícitamente, se omiten las comprobaciones de acceso a esa tabla de destino: insertar en la tabla de origen no requiere el privilegio `INSERT` en la tabla de destino, y leer de la vista no requiere el privilegio `SELECT` sobre ella.
 
 Con `false`, los siguientes valores predeterminados se escriben en la definición de la vista en el momento de crearla:
 
@@ -221,6 +221,9 @@ Para cambiar SQL security de una vista existente, use
 ```sql
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
+
+Un `DEFINER` que no sea el usuario actual requiere el privilegio `SET DEFINER` sobre ese usuario, tanto al crear la vista como al usar `MODIFY SQL SECURITY`.
+Para cambiar la consulta de una vista con `SQL SECURITY DEFINER` o `SQL SECURITY NONE` mediante [`ALTER TABLE ... MODIFY QUERY`](/es/reference/statements/alter/view#required-privileges), se necesitan los mismos privilegios que para declarar su SQL security.
 
 ### Ejemplos {#examples}
 

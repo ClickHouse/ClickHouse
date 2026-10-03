@@ -19,11 +19,14 @@ Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/r
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
 
-Il s’agit d’un disque de table : le chemin/l’endpoint pointe vers les données de la table, et non vers celles de la base de données.
+Il s’agit d’un disque de table : le chemin/l’endpoint pointe vers les données de la table, et non vers celles de la base de données.
 Pris en charge pour les disques de stockage d’objets dont les métadonnées résident dans le stockage d’objets lui-même
 (s3&#95;plain, s3&#95;plain&#95;rewritable, web, web&#95;index) ainsi que leurs variantes mises en cache. Les variantes
 chiffrées sont prises en charge uniquement avec les disques s3&#95;plain / s3&#95;plain&#95;rewritable inscriptibles, et non
 avec les disques web / web&#95;index en lecture seule.
+Les parts déjà présentes sous ce chemin sont présumées correspondre aux colonnes et à la clé de tri
+déclarées par cette table. La clé de tri utilisée lors de l’écriture d’une part n’étant enregistrée nulle part, une
+table qui déclare une clé différente sur les mêmes parts renvoie des résultats erronés ou une erreur.
 
 ## table_readonly {#table_readonly}
 

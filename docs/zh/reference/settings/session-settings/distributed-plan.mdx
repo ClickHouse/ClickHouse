@@ -82,6 +82,16 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 在分布式查询计划中，采用 Shuffle 聚合策略，而不是 PartialAggregation + Merge。
 在 Shuffle 策略无法产生正确结果的场景下会被忽略，例如 `GROUPING SETS`，或者聚合必须按桶顺序产生结果时。
 
+## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "100000"},{"label": "新增设置，用于限制无状态工作线程任务在两次状态轮询之间可缓冲（以待转发给协调器）的日志行数；超出部分将被丢弃并计数。由于是新特性，先前的值与默认值相同。"}]}]} />
+
+当 `send_logs_level` 将无状态工作线程任务的日志转发给协调器时，每个工作线程任务在两次状态轮询之间最多缓冲该数量的日志行。超出上限的行将被丢弃，丢弃的行数会报告给客户端。`0` 表示不设上限 (不会丢弃任何日志，但如果状态轮询停滞，缓冲区可能会无限增长) 。
+
 ## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 
 <ExperimentalBadge />

@@ -815,6 +815,8 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/ja/reference/data-types/int-uint)) — グローバルメモリ制限を超えた回数。
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/ja/reference/data-types/int-uint)) — メモリ制約を確認せずにメモリが割り当てられた回数。
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/ja/reference/data-types/int-uint)) — メモリ制約を確認せずに割り当てられたバイト数。
+* `ProfileEvent_QueryMemoryDriftSettled` ([UInt64](/ja/reference/data-types/int-uint)) — 終了時点でメモリがまだ計上されたまま (または過剰に差し引かれた状態) だったクエリ数。その差分はユーザーごとのトラッカーから差し引かれ、そのクエリの計上値が最終的にゼロになるようにします。
+* `ProfileEvent_QueryMemoryDriftSettledBytes` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ終了時にユーザーごとのトラッカーから差し引かれたバイト数の絶対値。つまり、クエリごとの計上がどれだけずれていたかを示します。
 * `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/ja/reference/data-types/int-uint)) — `min_allocation_size_to_log_stack_trace` 以上のグローバルメモリトラッカーへの単一の割り当てについて、スタックトレースが取得された回数。
 * `ProfileEvent_AzureGetObject` ([UInt64](/ja/reference/data-types/int-uint)) — Azure API の GetObject 呼び出し回数。
 * `ProfileEvent_AzureUpload` ([UInt64](/ja/reference/data-types/int-uint)) — Azure blob storage API の Upload 呼び出し回数。
@@ -965,6 +967,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_AdaptiveAggregationSharedTableSpills` ([UInt64](/ja/reference/data-types/int-uint)) — メモリ逼迫下でパーツ境界に達したため、アダプティブ集計が共有ドレインテーブルを書き出した回数。
 * `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/ja/reference/data-types/int-uint)) — マージ・変換の完了直後、マージ全体の完了前に作業メモリ (アリーナスロット、ステージング済み chunk への参照) が解放された二段階 bucket 数。
 * `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/ja/reference/data-types/int-uint)) — bucket ローカルの Top-K 選択 (aggregationBucketTopK プラン最適化) によって変換された二段階 bucket 数。
+* `ProfileEvent_AggregationHavingPrefilterGroupsSkipped` ([UInt64](/ja/reference/data-types/int-uint)) — 集約の二段階バケットの変換時に、各グループの count() に対する HAVING の境界条件によってすでに除外されていたため、キーカラムがマテリアライズされなかったグループ数 (aggregationHavingPrefilter プラン最適化)。
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/ja/reference/data-types/int-uint)) — aggregation 用に two-level として初期化された hash table の数。
 * `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/ja/reference/data-types/int-uint)) — 実行時に単一レベルの集約 hash table が二段階に変換された回数。
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/ja/reference/data-types/int-uint)) — キーの等しい範囲の最適化が適用された blocks 数
@@ -1527,7 +1530,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_WasmGuestExecuteMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — WebAssembly コードの実行に費やされた時間
 * `ProfileEvent_WasmTotalExecuteMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — WebAssembly コードの実行に費やされた時間
 * `ProfileEvent_WasmModuleInstatiate` ([UInt64](/ja/reference/data-types/int-uint)) — 作成された WebAssembly コンパートメントの数
-* `ProfileEvent_ExecutableUserDefinedFunctionInvocations` ([UInt64](/ja/reference/data-types/int-uint)) — 実行可能および executable&#95;pool ユーザー定義関数の呼び出し回数。
+* `ProfileEvent_ExecutableUserDefinedFunctionInvocations` ([UInt64](/ja/reference/data-types/int-uint)) — executable および executable&#95;pool ユーザー定義関数の呼び出し回数。
 * `ProfileEvent_ExecutableUserDefinedFunctionElapsedMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 実行可能および executable&#95;pool ユーザー定義関数の実行に費やされた実時間 (マイクロ秒) 。
 * `ProfileEvent_ExecutableUserDefinedFunctionUserTimeMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 実行可能および executable&#95;pool ユーザー定義関数の子プロセスが消費したユーザーモード CPU 時間 (マイクロ秒) 。
 * `ProfileEvent_ExecutableUserDefinedFunctionSystemTimeMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 実行可能および executable&#95;pool ユーザー定義関数の子プロセスが消費したカーネルモード CPU 時間 (マイクロ秒) 。

@@ -136,9 +136,7 @@ O formato das URLs varia conforme o target.
 #### File {#file}
 
 <Important>
-  O esquema `file://` pode não ser compatível com todos os sistemas, como plataformas
-  de nuvem, em que o administrador compila o `chdb_hook` de forma a desativá-lo (por meio
-  da opção `NO_FILE_SCHEME` do `make`).
+  O esquema `file://` não é compatível com o ClickHouse Cloud.
 </Important>
 
 Deve ser um caminho absoluto no servidor Postgres. Um caminho relativo resulta em

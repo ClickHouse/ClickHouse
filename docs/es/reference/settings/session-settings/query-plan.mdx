@@ -28,6 +28,23 @@ Valores posibles:
 * 0 - Deshabilitar
 * 1 - Habilitar
 
+## query_plan_aggregation_having_prefilter {#query_plan_aggregation_having_prefilter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración para activar o desactivar la optimización del plan que omite la materialización de la clave de un grupo durante la conversión de un bucket de dos niveles de una agregación final, cuando un límite de HAVING aplicado al propio count() sin argumentos de esa agregación ya descarta el grupo. Un grupo omitido no se filtra ni se finaliza, por lo que, en los grupos descartados por el límite, dejan de evaluarse tanto una condición de HAVING escrita antes del límite y unida mediante AND como la finalización de otra agregación del mismo nivel. Una consulta que generaba una excepción en alguna de esas evaluaciones ahora puede completarse correctamente; `compatibility` con un valor inferior a 26.10 mantiene el comportamiento anterior."}]}]} />
+
+Activa o desactiva una optimización a nivel del plan de consulta para `HAVING count() <comparison> <constant>` sobre un `GROUP BY`. Durante la conversión de un bucket de dos niveles del resultado de la agregación en fragmentos, los grupos cuyo recuento no puede cumplir el límite se omiten antes de materializar sus columnas clave, en lugar de materializarse y luego descartarse mediante el filtro superior. Acelera las consultas de «grupos por encima de un umbral» sobre un `GROUP BY` de alta cardinalidad, en las que se descarta la mayoría de los grupos y la conversión de las claves descartadas supone la mayor parte del trabajo.
+
+Un grupo omitido no se filtra ni se finaliza, por lo que esta configuración no solo afecta al rendimiento: en los grupos descartados por el límite, dejan de evaluarse tanto una condición de `HAVING` escrita antes del límite y unida mediante AND como la finalización de otra agregación del mismo nivel. Una consulta que generaba una excepción en alguna de esas evaluaciones puede, en cambio, devolver filas; por ejemplo, `HAVING throwIf(cnt = 3) = 0 AND count() > 3` sobre un `count() AS cnt`. Establecer esta configuración en 0, o `compatibility` en una versión inferior a `26.10`, mantiene el comportamiento anterior.
+
+Solo tiene efecto si la configuración [query&#95;plan&#95;enable&#95;optimizations](/es/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) está establecida en 1.
+
+Valores posibles:
+
+* 0 - Desactivar
+* 1 - Activar
+
 ## query_plan_convert_any_join_to_semi_or_anti_join {#query_plan_convert_any_join_to_semi_or_anti_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

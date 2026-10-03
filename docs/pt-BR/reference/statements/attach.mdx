@@ -20,7 +20,7 @@ A consulta não cria dados em disco, mas parte do pressuposto de que os dados j�
 
 Se uma tabela tiver sido previamente desanexada (consulta [DETACH](/pt-BR/reference/statements/detach)), ou seja, se sua estrutura já for conhecida, você poderá usar a forma abreviada sem definir a estrutura.
 
-## Anexar tabela existente
+## Anexar tabela existente {#attach-existing-table}
 
 **Sintaxe**
 
@@ -32,9 +32,9 @@ Esta consulta é usada ao iniciar o servidor. O servidor armazena os metadados d
 
 Se a tabela tiver sido desanexada permanentemente, ela não será anexada novamente quando o servidor iniciar, então você precisará usar a consulta `ATTACH` explicitamente.
 
-## Criar nova tabela e anexar dados
+## Criar nova tabela e anexar dados {#create-new-table-and-attach-data}
 
-### Com caminho especificado para os dados da tabela
+### Com caminho especificado para os dados da tabela {#with-specified-path-to-table-data}
 
 A consulta cria uma nova tabela com a estrutura informada e anexa os dados da tabela ao diretório informado em `user_files`.
 O usuário precisa dos privilégios `READ ON FILE` e `WRITE ON FILE` para esta consulta: ela lê o diretório e o move para o caminho de dados da nova tabela.
@@ -60,7 +60,7 @@ SELECT * FROM test;
 └──────┴────┘
 ```
 
-### Com UUID da tabela especificado
+### Com UUID da tabela especificado {#with-specified-table-uuid}
 
 Esta consulta cria uma nova tabela com a estrutura informada e anexa os dados da tabela com o UUID especificado.
 Ela é compatível com o motor de banco de dados [Atomic](/pt-BR/reference/engines/database-engines/atomic).
@@ -71,9 +71,11 @@ Ela é compatível com o motor de banco de dados [Atomic](/pt-BR/reference/engin
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ```
 
-## Anexar tabela MergeTree como ReplicatedMergeTree
+## Anexar tabela MergeTree como ReplicatedMergeTree {#attach-mergetree-table-as-replicatedmergetree}
 
 Permite anexar uma tabela MergeTree não replicada como ReplicatedMergeTree. A tabela ReplicatedMergeTree será criada com os valores das configurações `default_replica_path` e `default_replica_name`. Também é possível anexar uma tabela replicada como uma MergeTree comum.
+
+A conversão é compatível com tabelas em bancos de dados `Atomic` e `Ordinary`. Uma tabela em um banco de dados `Ordinary` não tem UUID; por isso, a conversão gera um UUID, expande `default_replica_path` com ele uma única vez e armazena o caminho resultante explicitamente nos argumentos do motor da tabela convertida. Para adicionar outras réplicas dessa tabela, especifique esse caminho explicitamente no primeiro argumento do motor `ReplicatedMergeTree`; ele pode ser encontrado na coluna `zookeeper_path` de `system.replicas`. Como o caminho armazenado não contém mais a macro `{uuid}`, o znode pertencente a essa tabela é localizado a cada carregamento, comparando novamente o caminho com `default_replica_path`; a conversão é recusada quando não é possível fazer o caminho corresponder de volta a esse template (por exemplo, quando ele expande `{uuid}` mais de uma vez). O uso de `{uuid}` em `default_replica_name` não é compatível com nenhuma conversão.
 
 Observe que os dados da tabela no ZooKeeper não são afetados por esta consulta. Isso significa que você precisa adicionar metadados no ZooKeeper usando `SYSTEM RESTORE REPLICA` ou limpá-los com `SYSTEM DROP REPLICA ... FROM ZKPATH ...` após a operação de attach.
 
@@ -115,7 +117,7 @@ ATTACH TABLE test AS NOT REPLICATED;
 SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
 ```
 
-## Anexar Dicionário Existente
+## Anexar Dicionário Existente {#attach-existing-dictionary}
 
 Anexa um dicionário anteriormente desanexado.
 
@@ -125,7 +127,7 @@ Anexa um dicionário anteriormente desanexado.
 ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-## Anexar banco de dados existente
+## Anexar banco de dados existente {#attach-existing-database}
 
 Anexa um banco de dados que foi desanexado anteriormente.
 

@@ -195,9 +195,24 @@ SELECT * FROM mv;
 └───┘
 ```
 
-<div id="alter-table--modify-refresh-statement">
-  ## Оператор ALTER TABLE ... MODIFY REFRESH
-</div>
+## Необходимые привилегии {#required-privileges}
+
+Для выполнения `ALTER TABLE ... MODIFY QUERY` требуется привилегия `ALTER VIEW MODIFY QUERY` на представление. Новый запрос выполняется в режиме [безопасности SQL](/ru/reference/statements/create/view#sql_security) представления, поэтому для оператора также нужны привилегии, необходимые для создания представления с таким режимом безопасности SQL:
+
+* `SQL SECURITY DEFINER`, если definer не является текущим пользователем: `SET DEFINER` на этого definer.
+* `SQL SECURITY NONE`: `ALLOW SQL SECURITY NONE`.
+
+Если тот же оператор изменяет режим безопасности SQL с помощью `MODIFY SQL SECURITY`, эти привилегии требуются для нового режима безопасности SQL, а не для прежнего.
+
+При использовании `ON CLUSTER` проверка прав для оператора выполняется на хосте, где он запускается, поэтому на этом хосте должно существовать представление. В противном случае оператор завершится с ошибкой `UNKNOWN_TABLE`.
+
+```sql
+GRANT ALTER VIEW MODIFY QUERY ON db.mv TO alice;
+-- Only if `db.mv` runs as another user, for example `bob`:
+GRANT SET DEFINER ON bob TO alice;
+```
+
+## Оператор ALTER TABLE ... MODIFY REFRESH {#alter-table--modify-refresh-statement}
 
 `ALTER TABLE ... MODIFY REFRESH` изменяет параметры обновления [refreshable materialized view](/ru/reference/statements/create/view#refreshable-materialized-view), включая расписание, зависимости, случайное смещение и [настройки обновления](/ru/reference/statements/create/view#refresh-settings).
 

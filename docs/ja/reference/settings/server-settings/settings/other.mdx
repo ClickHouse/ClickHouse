@@ -746,6 +746,7 @@ ClickHouse が接続を閉じるまでに、HTTPプロトコルで到着する�
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -756,12 +757,13 @@ ClickHouse が接続を閉じるまでに、HTTPプロトコルで到着する�
 
 `<syslog>` のキー:
 
-| キー         | 説明                                                                                                                                                                                                                        |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `address`  | `host\[:port\]` フォーマットの syslog のアドレスです。省略した場合はローカルデーモンが使用されます。                                                                                                                                                            |
-| `hostname` | ログの送信元ホスト名です (省略可能) 。                                                                                                                                                                                                     |
-| `facility` | syslog の [facility キーワード](https://en.wikipedia.org/wiki/Syslog#Facility)です。`LOG_USER`、`LOG_DAEMON`、`LOG_LOCAL3` などのように、`LOG_` プレフィックス付きの大文字で指定する必要があります。デフォルトは、`address` が指定されている場合は `LOG_USER`、それ以外の場合は `LOG_DAEMON` です。 |
-| `format`   | ログメッセージのフォーマットです。設定可能な値: `bsd` と `syslog.`                                                                                                                                                                                |
+| キー            | 説明                                                                                                                                                                                                                         |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`     | `host\[:port\]` フォーマットの syslog のアドレスです。省略した場合はローカルデーモンが使用されます。                                                                                                                                                             |
+| `hostname`    | ログの送信元ホスト名です (省略可能) 。                                                                                                                                                                                                      |
+| `facility`    | syslog の [facility キーワード](https://en.wikipedia.org/wiki/Syslog#Facility)です。`LOG_USER`、`LOG_DAEMON`、`LOG_LOCAL3` などのように、`LOG_` プレフィックス付きの大文字で指定する必要があります。デフォルトは、`address` が指定されている場合は `LOG_USER`、それ以外の場合は `LOG_DAEMON` です。  |
+| `format`      | ログメッセージのフォーマットです。設定可能な値: `bsd` と `syslog.`                                                                                                                                                                                 |
+| `programname` | syslog メッセージで使用するプログラム名です。ローカル syslog では ident として、`format=syslog` を指定したリモート syslog では `APP-NAME` として使用されます。`format=bsd` の場合は無効です。空白を含まない、印字可能な ASCII 文字 1〜48 文字で指定します。デフォルトは、ローカル syslog の場合はコマンド名、リモート syslog の場合は未設定です。 |
 
 **ログフォーマット**
 
@@ -786,7 +788,7 @@ ClickHouse が接続を閉じるまでに、HTTPプロトコルで到着する�
 }
 ```
 
-JSONロギングを有効にするには、次のスニペットを使用します。
+JSONログを有効にするには、次のスニペットを使用します。
 
 ```xml
 <logger>

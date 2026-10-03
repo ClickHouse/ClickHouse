@@ -135,6 +135,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Сколько хеш-таблиц для агрегации было инициализировано как двухуровневые.
 
+### AggregationHavingPrefilterGroupsSkipped {#aggregationhavingprefiltergroupsskipped}
+
+Количество групп, столбцы ключа которых не были материализованы при преобразовании двухуровневого бакета агрегации, поскольку группа уже была отброшена условием HAVING на её собственный count() (оптимизация плана aggregationHavingPrefilter).
+
 ### AggregationOptimizedEqualRangesOfKeys {#aggregationoptimizedequalrangesofkeys}
 
 Количество блоков, для которых была применена оптимизация равных диапазонов ключей
@@ -4421,6 +4425,14 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### QueryMaskingRulesMatch {#querymaskingrulesmatch}
 
 Количество успешных срабатываний правил маскирования запросов.
+
+### QueryMemoryDriftSettled {#querymemorydriftsettled}
+
+Количество запросов, к моменту завершения которых за ними всё ещё числилась память (или было учтено её избыточное освобождение). Эта разность списывается с пользовательского трекера памяти, чтобы для запроса итоговое значение стало равным нулю.
+
+### QueryMemoryDriftSettledBytes {#querymemorydriftsettledbytes}
+
+Абсолютный объём в байтах, списанный с пользовательских трекеров при завершении запросов, то есть величина погрешности учёта памяти на уровне отдельных запросов.
 
 ### QueryMemoryLimitExceeded {#querymemorylimitexceeded}
 

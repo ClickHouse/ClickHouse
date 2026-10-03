@@ -10,19 +10,15 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHistory.jsx";
-import { CloudOnlyBadge } from "/snippets/es/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
 ## iceberg_compaction_commit_batch_size {#iceberg_compaction_commit_batch_size}
 
-<CloudOnlyBadge />
-
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "100"},{"label": "Nueva configuración"}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "100"},{"label": "Nueva configuración"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "100"},{"label": "Nueva SETTING"}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "100"},{"label": "Nueva SETTING"}]}]} />
 
-Solo tiene efecto en ClickHouse Cloud, donde configura la compactación de Iceberg en segundo plano.
 Número de archivos de datos fusionados que acumula la compactación de Iceberg en segundo plano antes de publicarlos en una nueva instantánea.
 
 Los resultados de la compactación se publican en cualquier caso cuando ya no quedan candidatos por compactar, por lo que esta SETTING solo limita
@@ -32,35 +28,26 @@ recibiendo nuevos archivos de datos; por tanto, cada salida fusionada se escribe
 
 ## iceberg_compaction_data_cleanup {#iceberg_compaction_data_cleanup}
 
-<CloudOnlyBadge />
-
 <SettingsInfoBlock type="Segundos" default_value="10800" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "10800"},{"label": "Nueva configuración"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "10800"},{"label": "Nuevo ajuste"}]}]} />
 
-Solo tiene efecto en ClickHouse Cloud, donde configura la compactación de Iceberg en segundo plano.
 Tiempo tras el cual se eliminarán los datos.
 
 ## iceberg_compaction_delay_bias {#iceberg_compaction_delay_bias}
 
-<CloudOnlyBadge />
-
 <SettingsInfoBlock type="Segundos" default_value="10800" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "10800"},{"label": "Nueva configuración"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "10800"},{"label": "Nuevo SETTING"}]}]} />
 
-Solo tiene efecto en ClickHouse Cloud, donde configura la compactación de Iceberg en segundo plano.
 Tiempo mínimo de espera entre 2 operaciones de compactación en segundo plano.
 
 ## iceberg_compaction_max_bytes_in_data_file {#iceberg_compaction_max_bytes_in_data_file}
-
-<CloudOnlyBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "536870912"},{"label": "Nueva configuración para el máximo de bytes de un archivo de datos de Iceberg generado por la compactación, independiente del límite durante la inserción. El valor predeterminado coincide con el valor predeterminado documentado de la propiedad de tabla Iceberg `write.target-file-size-bytes` (512 MiB); consulte https:\/\/iceberg.apache.org\/docs\/1.5.2\/configuration\/. Anteriormente, la compactación fusionaba en un único archivo de salida todos los archivos aptos de una partición."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "Nueva configuración para el máximo de bytes de un archivo de datos de Iceberg generado por la compactación, independiente del límite durante la inserción."}]}]} />
 
-Solo tiene efecto en ClickHouse Cloud, donde configura la compactación de Iceberg en segundo plano.
 Máximo de bytes de un archivo de datos Parquet de Iceberg generado por la compactación.
 
 El valor predeterminado refleja el valor predeterminado documentado de la propiedad de tabla Iceberg `write.target-file-size-bytes` (512 MiB);
@@ -70,13 +57,10 @@ y volverá a seleccionarse para la compactación.
 
 ## iceberg_compaction_max_rows_in_data_file {#iceberg_compaction_max_rows_in_data_file}
 
-<CloudOnlyBadge />
-
 <SettingsInfoBlock type="UInt64" default_value="18446744073709551615" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "18446744073709551615"},{"label": "Nueva configuración para el número máximo de filas de un archivo de datos Iceberg generado por compactación, independiente del límite durante la inserción."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "Nueva configuración para el número máximo de filas de un archivo de datos Iceberg generado por compactación, independiente del límite durante la inserción."}]}]} />
 
-Solo tiene efecto en ClickHouse Cloud, donde configura la compactación de Iceberg en segundo plano.
 Número máximo de filas de un archivo de datos Parquet de Iceberg generado por compactación. De forma predeterminada, se establece al máximo, de modo que el límite de tamaño
 `iceberg_compaction_max_bytes_in_data_file` decide por sí solo cuántos datos van a un archivo de salida, del mismo modo que
 Iceberg no tiene un equivalente en número de filas de `write.target-file-size-bytes`.

@@ -134,6 +134,10 @@ HTTP 연결에서 연결 오류로 인해 비정상으로 표시된 주소의 �
 
 집계용으로 2단계 해시 테이블로 초기화된 개수입니다.
 
+### AggregationHavingPrefilterGroupsSkipped {#aggregationhavingprefiltergroupsskipped}
+
+집계(aggregation)의 2단계 버킷을 변환하는 과정에서, 그룹 자체의 count()에 대한 HAVING 경계 조건에 의해 이미 제외되어 키 컬럼이 구체화되지 않은 그룹의 수입니다(aggregationHavingPrefilter 계획 최적화).
+
 ### AggregationOptimizedEqualRangesOfKeys {#aggregationoptimizedequalrangesofkeys}
 
 키의 동일 범위 최적화가 적용된 블록 수
@@ -4420,6 +4424,14 @@ Join 모드로 패치 파트를 적용할 때 해시 테이블에 추가된 행�
 ### QueryMaskingRulesMatch {#querymaskingrulesmatch}
 
 쿼리 마스킹 규칙과 성공적으로 일치한 횟수입니다.
+
+### QueryMemoryDriftSettled {#querymemorydriftsettled}
+
+종료 시점에 메모리가 여전히 할당된 것으로 집계되어 있던(또는 과다하게 반환된) 쿼리의 수입니다. 이 차이만큼 사용자별 트래커에서 조정하므로, 해당 쿼리에 대한 최종 값은 0이 됩니다.
+
+### QueryMemoryDriftSettledBytes {#querymemorydriftsettledbytes}
+
+쿼리 종료 시 사용자별 트래커에서 차감된 바이트의 절대량입니다. 즉, 쿼리별 집계가 실제와 얼마나 어긋났는지를 나타냅니다.
 
 ### QueryMemoryLimitExceeded {#querymemorylimitexceeded}
 

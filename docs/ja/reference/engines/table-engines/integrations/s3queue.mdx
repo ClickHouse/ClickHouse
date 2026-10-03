@@ -439,14 +439,14 @@ CREATE MATERIALIZED VIEW consumer TO stats
 
 仮想カラムについて詳しくは、[こちら](/ja/reference/engines/table-engines/index#table_engines-virtual_columns)を参照してください。
 
-## path 内のワイルドカード {#wildcards-in-path}
+## パス 内のワイルドカード {#wildcards-in-path}
 
 `path` 引数では、bash 風のワイルドカードを使って複数のファイルを指定できます。処理対象のファイルは存在し、パスパターン全体に一致している必要があります。ファイルの一覧は `SELECT` の実行時に決定されます (`CREATE` 時ではありません) 。
 
 * `*` — 空文字列を含む、`/` を除く任意の文字列に置き換えられます。
 * `**` — 空文字列を含む、`/` を含む任意の文字列に置き換えられます。
 * `?` — 任意の 1 文字に置き換えられます。
-* `{some_string,another_string,yet_another_one}` — `'some_string'`、`'another_string'`、`'yet_another_one'` のいずれかの文字列に置き換えられます。
+* `{some_string,another_string,yet_another_one}` — `'some_string'`、`'another_string'`、`'yet_another_one'` のいずれかの文字列に置き換えられます。各文字列には `*` や `?` のワイルドカードも使用できるため、`{csv,csv.*}` は `.csv` と `.csv.gz` の両方に一致します。
 * `{N..M}` — N から M までの範囲内の任意の数値 (両端を含む) に置き換えられます。N と M には先頭にゼロを付けることもできます (例: `000..078`) 。
 
 `{}` を使う構文は、[remote](/ja/reference/functions/table-functions/remote) テーブル関数に似ています。

@@ -525,17 +525,24 @@ value: 993
 
 ### Compactación {#iceberg-writes-compaction}
 
-La compactación de datos (fusionar archivos de eliminación por posición en archivos de datos) no está implementada en el build de código abierto: allí, `OPTIMIZE TABLE` sobre una tabla Iceberg devuelve `NOT_IMPLEMENTED`. La generación reescrita no se publica de forma atómica, por lo que la generación que resuelve un lector queda no definida.
+ClickHouse admite la compactación de tablas Iceberg. Actualmente, puede fusionar archivos de eliminación por posición en archivos de datos mientras actualiza los metadatos. Los ID y las marcas de tiempo de instantáneas anteriores no cambian, por lo que la función de viaje en el tiempo puede seguir usándose con los mismos valores.
 
-La compactación de manifiestos consolida los archivos de manifiesto de una tabla. Requiere la versión 2 del formato Iceberg; las tablas de las versiones 1 y 3 se rechazan. También se rechaza una tabla cifrada cuyos archivos de datos incluyen `key_metadata` por archivo cuando es necesario reescribir sus manifiestos.
+Cómo usarlo:
 
 ```sql
 SET allow_experimental_iceberg_compaction = 1
 
-OPTIMIZE TABLE iceberg_writes_example MANIFEST;
-```
+OPTIMIZE TABLE iceberg_writes_example;
 
-Para liberar archivos, use [`expire_snapshots`](#iceberg-expire-snapshots). Requiere la versión 2 del formato y no admite tablas respaldadas por un catálogo transaccional.
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+```
 
 ### Expiración de instantáneas {#iceberg-expire-snapshots}
 
@@ -631,7 +638,7 @@ El comando `expire_snapshots` respeta la [política de retención de instantáne
 | `history.expire.max-snapshot-age-ms`   | Tabla  | `iceberg_expire_default_max_snapshot_age_ms` (predeterminado `432000000`, 5 días) | Antigüedad máxima (en ms) de las instantáneas que se conservan en una rama                                          |
 | `history.expire.max-ref-age-ms`        | Tabla  | `iceberg_expire_default_max_ref_age_ms` (predeterminado `∞`)                      | Antigüedad máxima (en ms) de una referencia de instantánea (rama o etiqueta) antes de eliminar la propia referencia |
 
-Cada referencia de instantánea (`refs` en la metadata de Iceberg) puede sobrescribir estos valores con campos por referencia: `min-snapshots-to-keep`, `max-snapshot-age-ms` y `max-ref-age-ms`.
+Cada referencia de instantánea (`refs` en los metadatos de Iceberg) puede sobrescribir estos valores con campos por referencia: `min-snapshots-to-keep`, `max-snapshot-age-ms` y `max-ref-age-ms`.
 
 **Evaluación de la retención:**
 
@@ -648,20 +655,19 @@ Cada referencia de instantánea (`refs` en la metadata de Iceberg) puede sobresc
 Se requiere el privilegio `ALTER TABLE EXECUTE`, que es un privilegio secundario de `ALTER TABLE` en la jerarquía de control de acceso de ClickHouse. Puede concederlo específicamente o a través del privilegio principal:
 
 ```sql
--- Grant only EXECUTE permission
+-- Otorgar solo el permiso EXECUTE
 GRANT ALTER TABLE EXECUTE ON my_iceberg_table TO my_user;
 
--- Or grant all ALTER TABLE permissions (includes ALTER TABLE EXECUTE)
+-- O conceder todos los permisos de ALTER TABLE (incluye ALTER TABLE EXECUTE)
 GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 ```
 
 <Note>
   * Solo se admiten tablas Iceberg format version 2 (las instantáneas v1 no garantizan `manifest-list`, que es necesario para identificar de forma segura los archivos que deben limpiarse)
-  * Las tablas respaldadas por un catálogo transaccional se rechazan con `NOT_IMPLEMENTED`
   * La instantánea actual siempre se conserva, incluso si es anterior a la marca de tiempo especificada
   * Requiere que la configuración `allow_insert_into_iceberg` esté habilitada
   * Requiere que la configuración `allow_experimental_expire_snapshots` esté habilitada
-  * La autorización propia del catálogo (autenticación del catálogo REST, AWS Glue IAM, etc.) se aplica de forma independiente cuando ClickHouse actualiza la metadata
+  * La autorización propia del catalog (autenticación del REST catalog, AWS Glue IAM, etc.) se aplica de forma independiente cuando ClickHouse actualiza los metadatos
 </Note>
 
 ### Eliminar archivos huérfanos {#iceberg-remove-orphan-files}

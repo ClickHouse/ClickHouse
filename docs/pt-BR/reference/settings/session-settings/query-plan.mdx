@@ -28,6 +28,23 @@ Valores possíveis:
 * 0 - Desativar
 * 1 - Ativar
 
+## query_plan_aggregation_having_prefilter {#query_plan_aggregation_having_prefilter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração para ativar ou desativar a otimização do plano que ignora a materialização da chave de um grupo durante a conversão de um bucket de dois níveis de uma agregação final, quando um limite em HAVING sobre o próprio count() sem argumentos dessa agregação já rejeita o grupo. Um grupo ignorado não é filtrado nem finalizado; portanto, uma conjunção em HAVING escrita antes do limite e a finalização de uma agregação irmã deixam de ser avaliadas nos grupos rejeitados pelo limite. Uma consulta que lançava uma exceção em uma delas agora pode ser bem-sucedida; `compatibility` abaixo de 26.10 mantém o comportamento anterior."}]}]} />
+
+Ativa ou desativa uma otimização no nível do plano de consulta para `HAVING count() <comparison> <constant>` sobre um `GROUP BY`. Durante a conversão de um bucket de dois níveis do resultado da agregação em fragmentos, um grupo cuja contagem não pode satisfazer o limite é ignorado antes que suas colunas-chave sejam materializadas, em vez de ser materializado e depois descartado pelo filtro acima. Acelera consultas do tipo &quot;grupos acima de um limiar&quot; sobre um `GROUP BY` de alta cardinalidade, em que a maioria dos grupos é descartada e as chaves descartadas representam a maior parte da conversão.
+
+Um grupo ignorado não é filtrado nem finalizado; portanto, esta não é apenas uma opção de desempenho: uma conjunção em `HAVING` escrita antes do limite e a finalização de uma agregação irmã deixam de ser avaliadas nos grupos rejeitados pelo limite. Uma consulta que lançava uma exceção em uma delas pode passar a retornar linhas, por exemplo, `HAVING throwIf(cnt = 3) = 0 AND count() > 3` sobre um `count() AS cnt`. Definir esta configuração como 0, ou `compatibility` como uma versão anterior à `26.10`, mantém o comportamento anterior.
+
+Só tem efeito se a configuração [query&#95;plan&#95;enable&#95;optimizations](/pt-BR/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) for 1.
+
+Valores possíveis:
+
+* 0 - Desativar
+* 1 - Habilitar
+
 ## query_plan_convert_any_join_to_semi_or_anti_join {#query_plan_convert_any_join_to_semi_or_anti_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
