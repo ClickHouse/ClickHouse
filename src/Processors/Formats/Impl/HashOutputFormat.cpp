@@ -1,15 +1,30 @@
 #include <Processors/Formats/Impl/HashOutputFormat.h>
 
 #include <Columns/IColumn.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Core/Block.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBuffer.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/Port.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int QUERY_WAS_CANCELLED;
+}
+
+namespace FailPoints
+{
+extern const char hash_output_format_cancel_mid_loop[];
+}
 
 HashOutputFormat::HashOutputFormat(WriteBuffer & out_, SharedHeader header_)
     : IOutputFormat(header_, out_)
@@ -23,9 +38,30 @@ String HashOutputFormat::getName() const
 
 void HashOutputFormat::consume(Chunk chunk)
 {
+    /// Check for cancellation at the beginning of the loop, use throw instead of return.
+    if (isCancelled())
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
     for (size_t i = 0, rows = chunk.getNumRows(); i < rows; ++i)
+    {
+        /// Check for cancellation periodically, use throw instead of return.
+        if (isCancelled())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
+        if (i == 5)
+        {
+            /// This runs inside `IProcessor::work()`, which must only use CPU and never wait, so the
+            /// hook cancels the query the same way `KILL QUERY` does instead of blocking: the
+            /// check above then observes the cancellation on the next row.
+            fiu_do_on(FailPoints::hash_output_format_cancel_mid_loop, {
+                if (auto query_context = CurrentThread::tryGetQueryContext())
+                    query_context->killCurrentQuery();
+            });
+        }
+
         for (const auto & column : chunk.getColumns())
             column->updateHashWithValue(i, hash);
+    }
 }
 
 void HashOutputFormat::finalizeImpl()
