@@ -10639,6 +10639,14 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
 Enable experimental table function `eval`.
 )", EXPERIMENTAL, \
         {"26.7", false, false, "New setting to enable the experimental table function `eval`."}) \
+    DECLARE(Bool, allow_partition_prefix_part_filter, false, R"(
+Allow pruning parts with a binary search on partition prefix
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting"}) \
+    DECLARE(Bool, enable_partition_prefix_part_filter_dry_run, false, R"(
+Enable dry-run mode for pruning parts with a binary search on partition prefix
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting"}) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

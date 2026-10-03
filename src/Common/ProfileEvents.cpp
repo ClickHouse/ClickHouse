@@ -200,6 +200,9 @@
     M(NetworkSendElapsedMicroseconds, "Total time spent waiting for data to send to network or sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.", ValueType::Microseconds) \
     M(NetworkReceiveBytes, "Total number of bytes received from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.", ValueType::Bytes) \
     M(NetworkSendBytes, "Total number of bytes send to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.", ValueType::Bytes) \
+    M(SelectPartsDurationMicroseconds, "Total time spent in filterPartsByPartition function.", ValueType::Microseconds) \
+    M(PartitionPrefixFilterPrunedParts, "Number of parts pruned by partition prefix filter.", ValueType::Number) \
+    M(PartitionPrefixFilterOverprunedParts, "Number of incorrectly pruned parts by partition prefix filter (determined in dry-run mode).", ValueType::Number) \
     M(NativeProtocolSend, "Number of non-empty native protocol output buffer flushes.", ValueType::Number) \
     M(FilterPartsByVirtualColumnsMicroseconds, "Total time spent in filterPartsByVirtualColumns function.", ValueType::Microseconds) \
     \

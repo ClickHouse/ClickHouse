@@ -174,7 +174,7 @@ private:
     /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
     ///  as well as `max_block_number_to_read`.
     static RangesInDataParts selectPartsToRead(
-        const RangesInDataParts & parts,
+        const RangesInDataPartsSpan & parts,
         const std::optional<std::unordered_set<String>> & part_values,
         const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
