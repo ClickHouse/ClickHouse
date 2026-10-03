@@ -414,8 +414,12 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
     Block res;
     res.info = block.info;
 
-    for (const auto & elem : header)
+    /// Same-named columns (SELECT *, x + 1 AS x) cannot be told apart by name; the source produces them in header order.
+    const bool match_by_position = header.getIndexByName().size() < header.columns() && block.columns() == header.columns();
+
+    for (size_t i = 0; i < header.columns(); ++i)
     {
+        const auto & elem = header.getByPosition(i);
         ColumnPtr column;
 
         if (elem.column && isColumnConst(*elem.column))
@@ -423,13 +427,13 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
             /// We expect constant column in block.
             /// If block is not empty, then get value for constant from it,
             /// because it may be different for remote server for functions like version(), uptime(), ...
-            if (block.rows() > 0 && block.has(elem.name))
+            if (block.rows() > 0 && (match_by_position || block.has(elem.name)))
             {
                 /// Const column is passed as materialized. Get first value from it.
                 ///
                 /// TODO: check that column contains the same value.
                 /// TODO: serialize const columns.
-                auto col = block.getByName(elem.name);
+                auto col = match_by_position ? block.getByPosition(i) : block.getByName(elem.name);
                 if (const auto * blob = typeid_cast<const ColumnBLOB *>(col.column.get()))
                     col.column = blob->convertFrom();
                 col.column = col.column->cut(0, 1);
@@ -447,7 +451,7 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
         }
         else
         {
-            const auto & col = block.getByName(elem.name);
+            const auto & col = match_by_position ? block.getByPosition(i) : block.getByName(elem.name);
             if (auto * blob = typeid_cast<ColumnBLOB *>(col.column->assumeMutable().get()))
             {
                 blob->addCast(col.type, elem.type);
