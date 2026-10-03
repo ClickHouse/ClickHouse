@@ -947,6 +947,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
                 args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, ttl_validation_mode);
+            if (args.is_restore_from_backup)
+                metadata.table_ttl.validateRecompressionCodecsForUntypedByteStreams();
         }
 
         /// We use the local (query) context here so that user-level settings profiles can control

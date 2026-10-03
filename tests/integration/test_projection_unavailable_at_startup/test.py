@@ -43,6 +43,22 @@ def started_cluster():
         cluster.shutdown()
 
 
+def replace_codec_in_backup(backup_name, database, old_codec, new_codec):
+    """Change one codec spelling in isolated backup metadata, keeping its byte length."""
+    assert len(old_codec) == len(new_codec)
+    metadata_path = f"/backups/{backup_name}/metadata/{database}/source.sql"
+    original = node.exec_in_container(["cat", metadata_path], privileged=True, user="root")
+    assert old_codec in original, original
+    node.exec_in_container(
+        ["sed", "-i", f"s/{old_codec}/{new_codec}/", metadata_path],
+        privileged=True,
+        user="root",
+    )
+    assert new_codec in node.exec_in_container(
+        ["cat", metadata_path], privileged=True, user="root"
+    )
+
+
 def projections(table):
     return node.query(
         f"SELECT count() FROM system.projections WHERE database = 'dl' AND table = '{table}'"
@@ -118,6 +134,71 @@ def event_value(event):
             f"SELECT sum(value) FROM system.events WHERE event = '{event}'"
         ).strip()
     )
+
+
+def test_restore_part_default_codec_requires_untyped_byte_stream_compatibility(started_cluster):
+    database = "codec_part_default_restore"
+    node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+    node.query(f"CREATE DATABASE {database}")
+    node.query(
+        f"CREATE TABLE {database}.source "
+        "(k UInt64, x Float64 CODEC(NONE), "
+        "PROJECTION p (x CODEC(Default)) AS (SELECT k, x ORDER BY k)) "
+        "ENGINE = MergeTree ORDER BY k SETTINGS default_compression_codec = 'LZ4'"
+    )
+    backup = f"part_default_codec_{uuid.uuid4().hex}"
+    node.query(f"BACKUP TABLE {database}.source TO Disk('backups', '{backup}')")
+    restore = f"RESTORE TABLE {database}.source AS {database}.restored FROM Disk('backups', '{backup}')"
+
+    replace_codec_in_backup(
+        backup, database, "default_compression_codec = 'LZ4'", "default_compression_codec = 'SZ3'"
+    )
+    error = node.query_and_get_error(restore, settings={"enable_sz3_codec": 1})
+    assert "Codec SZ3 is lossy" in error, error
+    assert node.query(f"EXISTS TABLE {database}.restored").strip() == "0"
+
+    replace_codec_in_backup(
+        backup, database, "default_compression_codec = 'SZ3'", "default_compression_codec = 'T64'"
+    )
+    error = node.query_and_get_error(restore)
+    assert "Cannot validate codec T64 without a column type" in error, error
+    assert node.query(f"EXISTS TABLE {database}.restored").strip() == "0"
+
+    replace_codec_in_backup(
+        backup, database, "default_compression_codec = 'T64'", "default_compression_codec = 'LZ4'"
+    )
+    node.query(restore)
+    node.query(f"INSERT INTO {database}.restored (k, x) VALUES (1, 1.125)")
+    assert node.query(f"SELECT x FROM {database}.restored").strip() == "1.125"
+    assert node.query(
+        "SELECT count() FROM system.projection_parts "
+        f"WHERE database = '{database}' AND table = 'restored' AND name = 'p' AND active"
+    ).strip() == "1"
+
+
+def test_restore_recompression_ttl_requires_untyped_byte_stream_compatibility(started_cluster):
+    database = "codec_ttl_restore"
+    node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+    node.query(f"CREATE DATABASE {database}")
+    node.query(
+        f"CREATE TABLE {database}.source (dt DateTime, k UInt64, x String CODEC(NONE)) "
+        "ENGINE = MergeTree ORDER BY k TTL dt + INTERVAL 1 SECOND RECOMPRESS CODEC(LZ4)"
+    )
+    backup = f"part_ttl_codec_{uuid.uuid4().hex}"
+    node.query(f"BACKUP TABLE {database}.source TO Disk('backups', '{backup}')")
+    restore = f"RESTORE TABLE {database}.source AS {database}.restored FROM Disk('backups', '{backup}')"
+
+    replace_codec_in_backup(backup, database, "RECOMPRESS CODEC(LZ4)", "RECOMPRESS CODEC(T64)")
+    error = node.query_and_get_error(restore)
+    assert "Cannot validate codec T64 without a column type" in error, error
+    assert node.query(f"EXISTS TABLE {database}.restored").strip() == "0"
+
+    replace_codec_in_backup(backup, database, "RECOMPRESS CODEC(T64)", "RECOMPRESS CODEC(LZ4)")
+    node.query(restore)
+    node.query(f"INSERT INTO {database}.restored VALUES (now() - INTERVAL 1 DAY, 1, 'a')")
+    node.query(f"INSERT INTO {database}.restored VALUES (now() - INTERVAL 1 DAY, 2, 'b')")
+    node.query(f"OPTIMIZE TABLE {database}.restored FINAL")
+    assert node.query(f"SELECT x FROM {database}.restored ORDER BY k") == "a\nb\n"
 
 
 def test_restore_unavailable_projection_validates_codec_output_type(started_cluster):

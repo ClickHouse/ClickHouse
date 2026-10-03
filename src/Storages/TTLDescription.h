@@ -180,6 +180,9 @@ struct TTLTableDescription
     TTLTableDescription(const TTLTableDescription & other);
     TTLTableDescription & operator=(const TTLTableDescription & other);
 
+    /// RECOMPRESS is a part-wide codec and may compress statistics without a column type.
+    void validateRecompressionCodecsForUntypedByteStreams() const;
+
     static TTLTableDescription getTTLForTableFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
