@@ -76,18 +76,17 @@ struct DeterministicTimeCondition
 /// likelihood that independent derivations (e.g. the write side of one query and the read side of a
 /// later query) pick the same grid and therefore the same cache key.
 ///
-/// `allow_top_k_filter` treats the internal `__topKFilter` function - which TopK dynamic filtering
-/// folds into the storage filter as `and(__topKFilter(...), <predicate>)` - as an opaque
-/// deterministic leaf, mirroring `isDeterministicAllowingTopKFilter` in `updateQueryConditionCache`
-/// and `ReadFromMergeTree`. Without it, a TopK read of a current-time condition would derive nothing
-/// and bypass the cache entirely. Only pass `true` where the cache key is additionally partitioned by
-/// the TopK plan parameters, because granule exclusions produced under a running `__topKFilter`
-/// threshold may only be reused under the same TopK plan.
+/// The internal `__topKFilter` function is non-deterministic, so a condition containing it derives
+/// nothing. This is intended: granules dropped by a TopK read depend on the running threshold, i.e.
+/// on the whole set of rows matching the condition. Two derivations that share a key may stand for
+/// different row sets (a later query's condition can match a subset of an earlier query's rows), and
+/// the top N of a subset may lie in granules that the earlier query excluded. So a TopK read must not
+/// write or consult entries under a derived condition partitioned by the TopK plan; it may only
+/// consult entries written by plain reads of the predicate.
 std::optional<DeterministicTimeCondition> deriveDeterministicTimeCondition(
     const ActionsDAG::Node * condition,
     TimeConditionRounding rounding,
     double grid_factor,
-    time_t current_time,
-    bool allow_top_k_filter);
+    time_t current_time);
 
 }

@@ -3828,19 +3828,19 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 {
                     hash = outputs.front()->getHash();
                 }
-                else if (settings[Setting::use_query_condition_cache_for_time_conditions])
+                else if (settings[Setting::use_query_condition_cache_for_time_conditions] && !top_k_filter_info)
                 {
                     /// A condition involving the current time can be cached under the deterministic
                     /// condition derived by rounding its time constants onto a grid (issue #115504).
                     /// This is a write side, so the derived condition must *strengthen* the original
                     /// one: index analysis proved that no rows of the excluded granules match the
                     /// condition, hence none match the (stricter) derived condition either.
+                    /// Not for TopK reads, see `deriveDeterministicTimeCondition`.
                     if (auto derived = deriveDeterministicTimeCondition(
                             outputs.front(),
                             TimeConditionRounding::Strengthen,
                             static_cast<double>(settings[Setting::query_condition_cache_time_condition_grid_factor]),
-                            time(nullptr),
-                            /*allow_top_k_filter=*/true))
+                            time(nullptr)))
                         hash = derived->hash;
                 }
 

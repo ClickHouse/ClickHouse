@@ -194,34 +194,17 @@ std::optional<Field> roundTimeConstant(const IDataType & type, const Field & val
     }
 }
 
-bool isTopKFilterFunction(const ActionsDAG::Node * node)
-{
-    return node->type == ActionsDAG::ActionType::FUNCTION
-        && node->function_base
-        && node->function_base->getName() == "__topKFilter";
-}
-
-/// `allow_top_k_filter` treats the internal `__topKFilter` function as an opaque deterministic leaf,
-/// mirroring `isDeterministicAllowingTopKFilter` in `updateQueryConditionCache.cpp` and
-/// `ReadFromMergeTree.cpp`: TopK dynamic filtering folds `__topKFilter` into the storage filter DAG
-/// as `and(__topKFilter(...), <predicate>)`, and the write and read sides already partition the
-/// cache key by the TopK plan parameters. Without this, a TopK read of a current-time condition
-/// would derive nothing at all and bypass the cache entirely.
-///
 /// Like `VirtualColumnUtils::isDeterministic`, this also looks into `COLUMN` nodes holding a
 /// constant-folded lambda (`ColumnFunction`): e.g. in `arrayExists(x -> rand() % 2 = 0, arr)` the
 /// non-deterministic `rand` lives in the lambda's own `ActionsDAG`, not in this one.
-bool isDeterministicSubtree(const ActionsDAG::Node * node, bool allow_top_k_filter)
+bool isDeterministicSubtree(const ActionsDAG::Node * node)
 {
-    if (!(allow_top_k_filter && isTopKFilterFunction(node)))
-    {
-        if (!node->isDeterministic())
-            return false;
-        if (!allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); }))
-            return false;
-    }
+    if (!node->isDeterministic())
+        return false;
+    if (!allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); }))
+        return false;
     for (const auto * child : node->children)
-        if (!isDeterministicSubtree(child, allow_top_k_filter))
+        if (!isDeterministicSubtree(child))
             return false;
     return true;
 }
@@ -259,14 +242,13 @@ struct Rewriter
 {
     double grid_factor;
     time_t current_time;
-    bool allow_top_k_filter;
 
     /// Hash the condition rewritten with rounded time constants into `hash` and render it into
     /// `description`. `weaken` gives the current rounding direction; it flips under NOT.
     /// Returns false if the condition contains non-determinism that cannot be rounded away.
     bool hashRewritten(const ActionsDAG::Node * node, bool weaken, SipHash & hash, String & description) const
     {
-        if (isDeterministicSubtree(node, allow_top_k_filter))
+        if (isDeterministicSubtree(node))
         {
             hash.update(HashTag::DeterministicSubtree);
             node->updateHash(hash);
@@ -321,9 +303,7 @@ struct Rewriter
                 return false;
             const auto * constant = lhs_is_constant ? lhs : rhs;
             const auto * other = lhs_is_constant ? rhs : lhs;
-            /// Strict here: the compared expression must not hide a `__topKFilter` (its value is
-            /// not a fixed quantity a rounded bound could be compared against monotonically).
-            if (!isDeterministicSubtree(other, /*allow_top_k_filter=*/false))
+            if (!isDeterministicSubtree(other))
                 return false;
 
             /// The constant is an upper bound on the deterministic side for `expr < K` and for
@@ -378,20 +358,19 @@ std::optional<DeterministicTimeCondition> deriveDeterministicTimeCondition(
     const ActionsDAG::Node * condition,
     TimeConditionRounding rounding,
     double grid_factor,
-    time_t current_time,
-    bool allow_top_k_filter)
+    time_t current_time)
 {
     if (!condition || grid_factor <= 0)
         return std::nullopt;
 
     /// An already deterministic condition needs no derivation; keep its ordinary hash as the cache
     /// key so this feature does not affect existing conditions in any way.
-    if (isDeterministicSubtree(condition, allow_top_k_filter))
+    if (isDeterministicSubtree(condition))
         return std::nullopt;
 
     SipHash hash;
     String description;
-    Rewriter rewriter{grid_factor, current_time, allow_top_k_filter};
+    Rewriter rewriter{grid_factor, current_time};
     if (!rewriter.hashRewritten(condition, rounding == TimeConditionRounding::Weaken, hash, description))
         return std::nullopt;
 

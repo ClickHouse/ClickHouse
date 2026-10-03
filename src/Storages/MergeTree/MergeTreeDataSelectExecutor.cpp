@@ -1769,10 +1769,8 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         /// skipping the granule is sound. The write sides store entries under the strengthened
         /// variant, which coincides with the weakened one for grid-aligned constants and equals the
         /// weakened variant of the next grid cell otherwise.
-        /// Note that the derivation understands the internal `__topKFilter` node as an opaque
-        /// deterministic leaf, so TopK reads of a current-time condition derive a key too.
         const time_t current_time = time(nullptr);
-        auto derive = [&](const ActionsDAG::Node * node, bool allow_top_k_filter) -> std::optional<DeterministicTimeCondition>
+        auto derive = [&](const ActionsDAG::Node * node) -> std::optional<DeterministicTimeCondition>
         {
             if (!settings[Setting::use_query_condition_cache_for_time_conditions])
                 return std::nullopt;
@@ -1780,13 +1778,15 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                 node,
                 TimeConditionRounding::Weaken,
                 static_cast<double>(settings[Setting::query_condition_cache_time_condition_grid_factor]),
-                current_time,
-                allow_top_k_filter);
+                current_time);
         };
 
-        /// Only a key partitioned by the TopK plan (`apply_top_k_salt`) may look through a
-        /// `__topKFilter`, mirroring the write paths.
-        std::optional<DeterministicTimeCondition> derived = derive(dag, /*allow_top_k_filter=*/apply_top_k_salt);
+        /// The WHERE writers of a TopK read never store entries under a derived condition (see
+        /// `deriveDeterministicTimeCondition`), so the TopK-salted WHERE key is not derived either;
+        /// such a read only reuses plain entries through the predicate-only hash below. The TopK-salted
+        /// PREWHERE key is derived like its writer in `MergeTreeSelectProcessor` does.
+        const bool is_top_k_where_key = apply_top_k_salt && !prewhere_top_k_salt && top_k_filter_info;
+        std::optional<DeterministicTimeCondition> derived = is_top_k_where_key ? std::nullopt : derive(dag);
 
         /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
         /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
@@ -1802,7 +1802,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             {
                 /// Key the stripped predicate the same way a plain `SELECT ... WHERE` would: through
                 /// the derived deterministic condition when it involves the current time.
-                auto stripped_derived = derive(stripped, /*allow_top_k_filter=*/false);
+                auto stripped_derived = derive(stripped);
                 topk_reuse_predicate_only_hash = queryConditionCacheHash(stripped_derived ? stripped_derived->hash : stripped->getHash(), settings_salt);
                 has_topk_reuse_predicate_only_hash = true;
             }

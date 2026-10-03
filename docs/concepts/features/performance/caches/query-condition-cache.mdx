@@ -63,6 +63,7 @@ For an unaligned constant as in `WHERE time >= now() - INTERVAL 10 DAY`, cache e
 
 The derivation can be disabled with the setting [`use_query_condition_cache_for_time_conditions`](/reference/settings/session-settings/use-query) (default: enabled), which only takes effect if `use_query_condition_cache` is also enabled.
 It applies to `MergeTree` tables; reads from files and object storage (`file`, `s3`, and similar) still use the query condition cache only for deterministic conditions.
+Queries of the form `ORDER BY ... LIMIT N` which use dynamic filtering (`use_top_k_dynamic_filtering`) reuse the entries written by other queries with the same condition, but do not write entries for conditions involving the current time themselves: the rows they skip depend on the top `N` rows matching the condition, which differ between two conditions mapped onto the same grid point.
 
 ### `ORDER BY ... LIMIT n` (TopK) queries {#top-k-queries}
 

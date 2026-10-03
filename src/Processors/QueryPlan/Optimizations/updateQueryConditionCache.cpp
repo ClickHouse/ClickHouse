@@ -84,18 +84,21 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     /// "the derived condition matches no rows of this granule", so the entry stored under the derived
     /// hash is sound. The read side (filterPartsByQueryConditionCache) probes the weakened variant;
     /// the two coincide for grid-aligned constants and are one grid cell apart otherwise.
+    /// A TopK read never stores entries under a derived condition, see `deriveDeterministicTimeCondition`.
+    const bool is_top_k_read = read_from_merge_tree->isSelectedForTopKFilterOptimization();
+    const bool derive_time_conditions = optimization_settings.use_query_condition_cache_for_time_conditions && !is_top_k_read;
+
     std::optional<DeterministicTimeCondition> derived;
     for (const auto * output : outputs)
     {
         if (!isDeterministicAllowingTopKFilter(output))
         {
-            if (optimization_settings.use_query_condition_cache_for_time_conditions)
+            if (derive_time_conditions)
                 derived = deriveDeterministicTimeCondition(
                     output,
                     TimeConditionRounding::Strengthen,
                     optimization_settings.query_condition_cache_time_condition_grid_factor,
-                    time(nullptr),
-                    /*allow_top_k_filter=*/true);
+                    time(nullptr));
             if (!derived)
                 return;
         }
@@ -112,11 +115,8 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
                 node,
                 TimeConditionRounding::Strengthen,
                 optimization_settings.query_condition_cache_time_condition_grid_factor,
-                time(nullptr),
-                /*allow_top_k_filter=*/true);
+                time(nullptr));
     };
-
-    const bool is_top_k_read = read_from_merge_tree->isSelectedForTopKFilterOptimization();
 
     FilterStep * filter_step_to_tag = nullptr;
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)

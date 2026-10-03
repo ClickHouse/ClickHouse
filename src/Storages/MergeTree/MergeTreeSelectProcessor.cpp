@@ -234,7 +234,9 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
                 /// `filterPartsByQueryConditionCache`), so only the same TopK plan, part set,
                 /// and post-PREWHERE predicate ever reuses it. The consult side salts every
                 /// non-deterministic PREWHERE of a TopK read, so do the same here, also for a
-                /// condition involving the current time.
+                /// condition involving the current time. The latter never contains `__topKFilter`
+                /// (see `deriveDeterministicTimeCondition`), so its granule drops do not depend on
+                /// the running threshold.
                 const auto & top_k_salt = reader_settings.query_condition_cache_top_k_salt;
                 std::optional<std::pair<UInt64, String>> condition;
                 if (top_k_salt && VirtualColumnUtils::isDeterministicAllowingTopKFilter(output))
@@ -247,9 +249,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
                             output,
                             TimeConditionRounding::Strengthen,
                             reader_settings.query_condition_cache_time_condition_grid_factor,
-                            time(nullptr),
-                            /// Only a key salted with the TopK plan may look through a `__topKFilter`.
-                            /*allow_top_k_filter=*/top_k_salt.has_value()))
+                            time(nullptr)))
                         condition.emplace(derived->hash, derived->condition);
                 }
 
