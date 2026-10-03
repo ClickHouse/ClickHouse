@@ -17,6 +17,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Common/assert_cast.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Disks/IDisk.h>
 #if ENABLE_DISTRIBUTED_CACHE
@@ -35,7 +37,8 @@ public:
     SystemFilesystemCacheSource(
         SharedHeader header_,
         UInt64 max_block_size_,
-        ContextPtr context_)
+        ContextPtr context_,
+        const ExpressionActionsPtr & cache_name_filter)
         : ISource(header_)
         , WithContext(context_)
         , max_block_size(max_block_size_)
@@ -46,8 +49,20 @@ public:
 #endif
     {
         auto caches_by_name = FileCacheFactory::instance().getAll();
-        for (const auto & [cache_name, cache_data] : caches_by_name)
+
+        /// Only the caches whose name passes the `cache_name` part of the query filter.
+        MutableColumnPtr names = ColumnString::create();
+        for (const auto & [cache_name, _] : caches_by_name)
+            names->insert(cache_name);
+        Block names_block{{std::move(names), std::make_shared<DataTypeString>(), "cache_name"}};
+        if (cache_name_filter)
+            VirtualColumnUtils::filterBlockWithExpression(cache_name_filter, names_block);
+
+        const auto & filtered_names = assert_cast<const ColumnString &>(*names_block.getByPosition(0).column);
+        for (size_t i = 0; i < filtered_names.size(); ++i)
         {
+            const String cache_name{filtered_names.getDataAt(i)};
+            const auto & cache_data = caches_by_name.at(cache_name);
             unique_caches.insert(cache_data);
             caches_by_instance[cache_data].push_back(cache_name);
         }
@@ -245,17 +260,28 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        auto source = std::make_shared<SystemFilesystemCacheSource>(getOutputHeader(), max_block_size, context);
+        auto source = std::make_shared<SystemFilesystemCacheSource>(getOutputHeader(), max_block_size, context, cache_name_filter);
         source->setStorageLimits(storage_limits);
         processors.emplace_back(source);
         pipeline.init(Pipe(std::move(source)));
     }
 
-    /// TODO: void applyFilters(ActionDAGNodes added_filter_nodes) can be implemented to filter out cache names
+    void applyFilters(ActionDAGNodes added_filter_nodes) override
+    {
+        SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+        if (!filter_actions_dag)
+            return;
+
+        Block block_to_filter{{ColumnString::create(), std::make_shared<DataTypeString>(), "cache_name"}};
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
+        if (dag)
+            cache_name_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
+    }
 
 private:
     std::shared_ptr<const StorageLimitsList> storage_limits;
     const UInt64 max_block_size;
+    ExpressionActionsPtr cache_name_filter;
 };
 
 }
