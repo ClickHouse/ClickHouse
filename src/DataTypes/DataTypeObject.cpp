@@ -45,6 +45,17 @@
 
 namespace DB
 {
+
+bool containsObjectType(const IDataType & type)
+{
+    if (isObject(type))
+        return true;
+
+    bool contains_object = false;
+    type.forEachChild([&](const IDataType & child) { contains_object |= isObject(child); });
+    return contains_object;
+}
+
 namespace Setting
 {
     extern const SettingsBool allow_simdjson;
@@ -2057,10 +2068,10 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
-## Lazy Type Hints (Beta) {#lazy-type-hints}
+## Lazy Type Hints {#lazy-type-hints}
 
 <Note>
-This feature is in beta and requires the setting `enable_json_lazy_type_hints` to be enabled.
+This feature requires the setting `enable_json_lazy_type_hints` to be enabled.
 </Note>
 
 When you add or modify type hints on a JSON column using `ALTER TABLE ... MODIFY COLUMN`, ClickHouse normally rewrites all data parts to materialize the new type hints. For tables with large amounts of historical data (hundreds of terabytes), this can be extremely expensive.

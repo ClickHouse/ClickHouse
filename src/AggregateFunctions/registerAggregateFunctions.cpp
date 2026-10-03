@@ -1,4 +1,5 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <WindowFunctions/registerWindowFunctions.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -120,7 +121,6 @@ void registerAggregateFunctionCombinatorTuple(AggregateFunctionCombinatorFactory
 void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorSparkbar(AggregateFunctionCombinatorFactory &);
 
-void registerWindowFunctions(AggregateFunctionFactory & factory);
 
 void registerAggregateFunctions()
 {
