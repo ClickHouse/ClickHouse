@@ -42,17 +42,6 @@ namespace
 /// How many as-you-type hint rows to show at once (mirrors the Web UI completion window).
 constexpr size_t HINTS_MAX_ROWS = 5;
 
-/// Whether the current input is an AI-chat line (the interactive `?` / `??` command). Such a
-/// line is a natural-language question, not SQL, so SQL identifier hints and completions are
-/// noise and are suppressed for it.
-bool isAIChatLine(const std::string & text)
-{
-    size_t i = 0;
-    while (i < text.size() && (text[i] == ' ' || text[i] == '\t'))
-        ++i;
-    return i < text.size() && text[i] == '?';
-}
-
 /// Extract identifier-like words from a query so they can be prioritized in completions/hints
 /// (column names, aliases, etc. typed elsewhere in the same query). Uses the SQL lexer so that
 /// string literals, numbers, and comments are not mistaken for identifiers.
