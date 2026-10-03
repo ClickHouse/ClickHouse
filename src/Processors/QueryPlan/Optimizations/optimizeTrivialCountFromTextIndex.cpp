@@ -255,6 +255,17 @@ bool guardsHold(const ReadFromMergeTree & reading)
         mutations && (mutations->hasDataMutations() || mutations->hasPatchParts() || mutations->hasLightweightDeletedMask()))
         return false;
 
+    /// The rewrite answers from the index files the parts hold, located by name and selected only by
+    /// `getDeserializedFormat` below, with none of the per-part `canUseIndex` checks the ordinary
+    /// skip-index paths apply. A pending `DROP INDEX` whose name a new index has already taken
+    /// leaves those files holding the postings of the previous index, so counting from them returns
+    /// the cardinality of a text index that no longer exists. Bail out for the whole query: a
+    /// per-part split (treating a part whose index is stale as unindexed, as the partially
+    /// materialized branch does) would be tighter, but a pending metadata mutation is a narrow
+    /// window and the rewrite is an optimization.
+    if (const auto & mutations = reading.getMutationsSnapshot(); mutations && mutations->hasMetadataMutations())
+        return false;
+
     if (reading.getStorageMetadata()->hasUniqueKey())
         return false;
 

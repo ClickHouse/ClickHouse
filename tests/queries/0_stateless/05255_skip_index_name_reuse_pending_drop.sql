@@ -36,6 +36,12 @@ SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1,
 
 SELECT '-- after the mutations are applied, the new index is used';
 SYSTEM START MERGES t_ixr;
+-- Wait the pending `DROP INDEX` out on its own, with a mutation that leaves `ix` alone. One
+-- mutation carrying both the drop and the materialization resolves the drop against the current
+-- metadata, where the name already belongs to the new definition, and removes the index instead of
+-- building it - whether the index exists at all would then depend on how much of the queue the
+-- background task picks up in one go.
+ALTER TABLE t_ixr UPDATE b = b WHERE 0 SETTINGS mutations_sync = 2;
 ALTER TABLE t_ixr MATERIALIZE INDEX ix SETTINGS mutations_sync = 2;
 SELECT count() FROM t_ixr WHERE b = 995000 SETTINGS max_rows_to_read = 128;
 

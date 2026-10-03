@@ -1,0 +1,5 @@
+-- count over the re-added index
+1
+1
+-- after the mutations are applied, the count is still right
+1
