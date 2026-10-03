@@ -1567,7 +1567,18 @@ static NameToNameVector collectFilesForRenames(
 
                 for (const auto & [old_stream, _] : old_streams)
                 {
-                    if (!new_streams.contains(old_stream) && --stream_counts[old_stream] == 0)
+                    if (new_streams.contains(old_stream))
+                        continue;
+
+                    /// Every such command walks all streams of the source part, so with several of them
+                    /// the count of a stream can already have reached zero (and the stream been removed)
+                    /// on behalf of an earlier command. Do not decrement it below zero.
+                    auto stream_it = stream_counts.find(old_stream);
+                    if (stream_it == stream_counts.end() || stream_it->second == 0)
+                        continue;
+
+                    --stream_it->second;
+                    if (stream_it->second == 0)
                     {
                         add_rename(old_stream + ".bin", "");
                         add_rename(old_stream + mrk_extension, "");
