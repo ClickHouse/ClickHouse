@@ -15,6 +15,20 @@ CONFIG_TEMPLATE = """<clickhouse>
                 <path>/var/lib/clickhouse/disks/checked_disk/</path>
                 {extra}
             </checked_disk>
+            <locations_disk>
+                <type>object_storage</type>
+                <metadata_type>local</metadata_type>
+                <metadata_path>/var/lib/clickhouse/disks/locations_disk_metadata/</metadata_path>
+                <locations>
+                    <main>
+                        <object_storage_type>local</object_storage_type>
+                        <path>/var/lib/clickhouse/disks/locations_disk/</path>
+                        <local>1</local>
+                        <enabled>1</enabled>
+                        {location_extra}
+                    </main>
+                </locations>
+            </locations_disk>
         </disks>
     </storage_configuration>
 </clickhouse>
@@ -35,14 +49,18 @@ def start_cluster():
         cluster.shutdown()
 
 
-def write_disk_configuration(node, extra, default_disk=""):
+def write_disk_configuration(node, extra, default_disk="", location_extra=""):
     node.exec_in_container(
         [
             "bash",
             "-c",
             "cat > {} << 'EOF'\n{}EOF".format(
                 CONFIG_PATH,
-                CONFIG_TEMPLATE.format(extra=extra, default_disk=default_disk),
+                CONFIG_TEMPLATE.format(
+                    extra=extra,
+                    default_disk=default_disk,
+                    location_extra=location_extra,
+                ),
             ),
         ]
     )
@@ -129,3 +147,24 @@ def test_section_added_for_implicit_default_disk(start_cluster):
 
     write_disk_configuration(node, "")
     node.query("SYSTEM RELOAD CONFIG")
+
+
+def test_unknown_element_inside_existing_section(start_cluster):
+    node = cluster.instances["node"]
+    assert "locations_disk" in node.query("SELECT name FROM system.disks")
+
+    # A typo inside a section that the disk was created with is reported as well.
+    write_disk_configuration(
+        node,
+        "<keep_free_space_bytes>1024</keep_free_space_bytes>",
+        location_extra="<localy>1</localy>",
+    )
+    error = node.query_and_get_error("SYSTEM RELOAD CONFIG")
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in error
+    assert "locations.main.localy" in error
+
+    write_disk_configuration(
+        node, "<keep_free_space_bytes>1024</keep_free_space_bytes>"
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+    assert "locations_disk" in node.query("SELECT name FROM system.disks")

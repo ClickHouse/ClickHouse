@@ -78,14 +78,12 @@ public:
     void clearRegistry();
 
 private:
-    /// Report the elements of the disk definition that nothing has read while the disk was created.
+    /// Report the elements of the disk definition that nothing reads.
     static void checkForUnknownKeys(
-        const ConfigurationWithUsageTracking & tracked_config,
+        const Strings & unknown_keys,
         const String & name,
         const String & disk_type,
-        const String & config_prefix,
-        const ContextPtr & context,
-        bool skip_used_sections);
+        const ContextPtr & context);
 
     using DiskTypeRegistry = std::unordered_map<String, Creator>;
     DiskTypeRegistry registry;

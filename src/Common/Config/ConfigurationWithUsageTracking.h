@@ -36,19 +36,36 @@ public:
     /// Remember a key as used, for the keys that are read by someone else, not through this object.
     void markAsUsed(const String & key) const;
 
-    /// The keys that have been read through this object or marked as used, in a normalized form.
-    /// Only the set of names is returned: it does not touch the configuration behind this object,
-    /// which makes it usable when that configuration is already gone (after a configuration reload).
-    std::unordered_set<String> getUsedKeys() const;
+    /// What has been done with the configuration through this object, in a normalized form of the keys.
+    /// Only the names are kept: it does not touch the configuration behind this object, which makes it
+    /// usable when that configuration is already gone (after a configuration reload).
+    struct Usage
+    {
+        /// The keys that have been read or marked as used (including the absent ones).
+        std::unordered_set<String> used;
+        /// The keys whose children have been enumerated with `keys`.
+        std::unordered_set<String> enumerated;
+        /// The keys that were present: read and found, or listed by an enumeration.
+        std::unordered_set<String> present;
+    };
+
+    Usage getUsage() const;
 
     /// The leaf keys inside `prefix` that were neither read through this object nor marked as used.
     /// An empty prefix means the whole configuration. The names are returned relative to `prefix`.
     /// Reading a section itself does not make the keys inside it used: `has` of a section is only
     /// a check that the code is going to descend into it, and it still has to read every key it
     /// supports, so a typo inside a section has to be reported as well.
-    /// With `skip_used_sections`, the keys inside a section that has been read are not reported:
-    /// this gives the keys that are unknown for sure, without knowing what reads a section.
-    Strings getUnusedKeys(const String & prefix, bool skip_used_sections = false) const;
+    Strings getUnusedKeys(const String & prefix) const;
+
+    /// The leaf keys inside `prefix` that are unknown for sure, judging only by how another configuration
+    /// was read before (`previous`, the usage of the configuration a disk was created from). It is done
+    /// before the code that reads this configuration runs, so everything that code may read is not reported:
+    /// - a leaf inside an enumerated section: it may be read by a pattern of its name (such as `key[1]`);
+    /// - the inside of a section that was not present before but was looked at (such as `proxy`) or listed
+    ///   in an enumerated section (such as a new location): nothing has read its keys yet.
+    /// The keys used through this object (including the ones marked from `previous`) count as read.
+    Strings getUnknownKeys(const String & prefix, const Usage & previous) const;
 
 protected:
     bool getRaw(const std::string & key, std::string & value) const override;
@@ -60,10 +77,10 @@ private:
     const Poco::Util::AbstractConfiguration & config;
 
     mutable std::mutex mutex;
-    mutable std::unordered_set<String> used_keys;
+    mutable Usage usage;
 
     bool isUsed(const String & key) const;
-    void collectUnusedKeys(const String & prefix, const String & relative_key, bool skip_used_sections, Strings & result) const;
+    void collectUnusedKeys(const String & prefix, const String & relative_key, const Usage * previous, Strings & result) const;
 };
 
 }

@@ -91,7 +91,7 @@ DiskPtr DiskFactory::create(
     /// A disk of a table that is being attached has been accepted by an older version of the server
     /// already, and its data has to be read even if the definition contains something we do not know.
     if (!attach)
-        checkForUnknownKeys(*tracked_config, name, disk_type, config_prefix, context, /* skip_used_sections = */ false);
+        checkForUnknownKeys(tracked_config->getUnusedKeys(config_prefix), name, disk_type, context);
 
     return disk;
 }
@@ -113,9 +113,11 @@ void DiskFactory::applyNewSettings(
     /// Only the names of the keys are taken from it: the configuration it was created from is
     /// already replaced by the new one at this point.
     auto tracked_config = std::make_shared<ConfigurationWithUsageTracking>(config);
+    ConfigurationWithUsageTracking::Usage creation_usage;
     if (creation_config)
     {
-        for (const auto & key : creation_config->getUsedKeys())
+        creation_usage = creation_config->getUsage();
+        for (const auto & key : creation_usage.used)
             tracked_config->markAsUsed(key);
     }
 
@@ -124,11 +126,12 @@ void DiskFactory::applyNewSettings(
 
     /// `applyNewSettings` changes the live disk, so a definition with an unknown element has to be
     /// rejected before it, otherwise a failed reload leaves a part of the rejected definition applied.
-    /// Only the inside of a section that the creation of the disk has looked at (such as `proxy`)
-    /// cannot be judged yet: a section that was not there before may be read by `applyNewSettings`
-    /// only, and it is checked after it.
+    /// Only what `applyNewSettings` may read cannot be judged yet: a new section that the creation of
+    /// the disk has looked at (such as `proxy`) or a new entry of an enumerated section (such as a new
+    /// location), and the elements of an enumerated section, which can be read by a pattern of their
+    /// names (such as `key[1]` of an `encrypted` disk). They are checked after it.
     if (creation_config)
-        checkForUnknownKeys(*tracked_config, name, disk_type, config_prefix, context, /* skip_used_sections = */ true);
+        checkForUnknownKeys(tracked_config->getUnknownKeys(config_prefix, creation_usage), name, disk_type, context);
 
     /// Unlike the creation of a disk, `applyNewSettings` does not keep a reference to the
     /// configuration anywhere: it reads the settings it supports and returns, so this proxy is not
@@ -142,7 +145,7 @@ void DiskFactory::applyNewSettings(
     /// An element inside a section that neither the creation of this disk nor `applyNewSettings`
     /// reads does nothing, exactly as it does nothing at the start of the server, where it is
     /// reported as well.
-    checkForUnknownKeys(*tracked_config, name, disk_type, config_prefix, context, /* skip_used_sections = */ false);
+    checkForUnknownKeys(tracked_config->getUnusedKeys(config_prefix), name, disk_type, context);
 }
 
 std::shared_ptr<const ConfigurationWithUsageTracking> DiskFactory::trackImplicitLocalDisk(
@@ -167,14 +170,11 @@ std::shared_ptr<const ConfigurationWithUsageTracking> DiskFactory::trackImplicit
 }
 
 void DiskFactory::checkForUnknownKeys(
-    const ConfigurationWithUsageTracking & tracked_config,
+    const Strings & unknown_keys,
     const String & name,
     const String & disk_type,
-    const String & config_prefix,
-    const ContextPtr & context,
-    bool skip_used_sections)
+    const ContextPtr & context)
 {
-    const Strings unknown_keys = tracked_config.getUnusedKeys(config_prefix, skip_used_sections);
     if (unknown_keys.empty())
         return;
 

@@ -42,6 +42,17 @@ String unescapeDots(const String & key)
     return result;
 }
 
+/// The key of the section containing `key`, skipping the escaped dots (see `unescapeDots`).
+String getParentKey(const String & key)
+{
+    for (size_t pos = key.size(); pos > 0; --pos)
+    {
+        if (key[pos - 1] == '.' && (pos < 2 || key[pos - 2] != '\\'))
+            return key.substr(0, pos - 1);
+    }
+    return {};
+}
+
 }
 
 ConfigurationWithUsageTracking::ConfigurationWithUsageTracking(const Poco::Util::AbstractConfiguration & config_)
@@ -57,10 +68,17 @@ ConfigurationWithUsageTracking::~ConfigurationWithUsageTracking()
 
 bool ConfigurationWithUsageTracking::getRaw(const std::string & key, std::string & value) const
 {
-    markAsUsed(key);
+    const bool present = config.has(key);
+    {
+        std::lock_guard lock(mutex);
+        String normalized_key = normalizeKey(key);
+        if (present)
+            usage.present.insert(normalized_key);
+        usage.used.insert(std::move(normalized_key));
+    }
 
     /// A missing key is reported by returning false, while `getRawString` throws.
-    if (!config.has(key))
+    if (!present)
         return false;
 
     value = config.getRawString(key);
@@ -75,35 +93,48 @@ void ConfigurationWithUsageTracking::setRaw(const std::string & key, const std::
 void ConfigurationWithUsageTracking::enumerate(const std::string & key, Keys & range) const
 {
     config.keys(key, range);
+
+    std::lock_guard lock(mutex);
+    String normalized_key = normalizeKey(key);
+    for (const auto & child : range)
+        usage.present.insert(normalized_key.empty() ? child : normalized_key + "." + child);
+    usage.enumerated.insert(std::move(normalized_key));
 }
 
 void ConfigurationWithUsageTracking::markAsUsed(const String & key) const
 {
     std::lock_guard lock(mutex);
-    used_keys.insert(normalizeKey(key));
+    usage.used.insert(normalizeKey(key));
 }
 
-std::unordered_set<String> ConfigurationWithUsageTracking::getUsedKeys() const
+ConfigurationWithUsageTracking::Usage ConfigurationWithUsageTracking::getUsage() const
 {
     std::lock_guard lock(mutex);
-    return used_keys;
+    return usage;
 }
 
 bool ConfigurationWithUsageTracking::isUsed(const String & key) const
 {
     std::lock_guard lock(mutex);
-    return used_keys.contains(normalizeKey(key));
+    return usage.used.contains(normalizeKey(key));
 }
 
-Strings ConfigurationWithUsageTracking::getUnusedKeys(const String & prefix, bool skip_used_sections) const
+Strings ConfigurationWithUsageTracking::getUnusedKeys(const String & prefix) const
 {
     Strings result;
-    collectUnusedKeys(prefix, "", skip_used_sections, result);
+    collectUnusedKeys(prefix, "", nullptr, result);
+    return result;
+}
+
+Strings ConfigurationWithUsageTracking::getUnknownKeys(const String & prefix, const Usage & previous) const
+{
+    Strings result;
+    collectUnusedKeys(prefix, "", &previous, result);
     return result;
 }
 
 void ConfigurationWithUsageTracking::collectUnusedKeys(
-    const String & prefix, const String & relative_key, bool skip_used_sections, Strings & result) const
+    const String & prefix, const String & relative_key, const Usage * previous, Strings & result) const
 {
     String key;
     if (relative_key.empty())
@@ -118,18 +149,26 @@ void ConfigurationWithUsageTracking::collectUnusedKeys(
 
     /// Only the leaves carry values, and only they can be reported: an intermediate node is read
     /// as a section (with `has`), which says nothing about the keys inside it.
+    /// The parent of `key` is an enumerated section of the previous configuration.
+    bool in_enumerated_section = false;
+    if (previous && !relative_key.empty())
+    {
+        String normalized_key = normalizeKey(key);
+        in_enumerated_section = previous->enumerated.contains(getParentKey(normalized_key));
+    }
+
     if (children.empty())
     {
-        if (!relative_key.empty() && !isUsed(key))
+        if (!relative_key.empty() && !isUsed(key) && !in_enumerated_section)
             result.push_back(unescapeDots(relative_key));
         return;
     }
 
-    if (skip_used_sections && !relative_key.empty() && isUsed(key))
+    if (previous && !relative_key.empty() && !previous->present.contains(normalizeKey(key)) && (in_enumerated_section || isUsed(key)))
         return;
 
     for (const auto & child : children)
-        collectUnusedKeys(prefix, relative_key.empty() ? child : relative_key + "." + child, skip_used_sections, result);
+        collectUnusedKeys(prefix, relative_key.empty() ? child : relative_key + "." + child, previous, result);
 }
 
 }
