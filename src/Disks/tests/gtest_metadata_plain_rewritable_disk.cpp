@@ -244,7 +244,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RefreshSkipsUnchangedDirectoryReads)
 
     auto object_storage = std::make_shared<CountingStorage>(LocalObjectStorageSettings(
         "reader", getObjectStorage("RefreshSkipsUnchangedDirectoryReads")->getCommonKeyPrefix(), false));
-    MetadataStorageFromPlainRewritableObjectStorage reader(object_storage, "");
+    MetadataStorageFromPlainRewritableObjectStorage reader(object_storage, "", hard_links_enabled);
     ASSERT_EQ(object_storage->reads, 2);
     reader.refresh(0);
     EXPECT_EQ(object_storage->reads, 2);
@@ -3077,6 +3077,61 @@ TEST_F(MetadataPlainRewritableDiskTest, HardLinksDisabledRewriteLinkInTheSameTra
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/f1").front().remote_path), "new bytes");
     EXPECT_EQ(metadata->getFileSize("B/f1"), 9u);
     EXPECT_EQ(listAllBlobs(test).size(), 4u);  /// Two `prefix.path` objects and two blobs.
+}
+
+/// Without `enable_hard_links` a moved hard link is a copy that the move carries from its original target at commit.
+/// The copy cannot be superseded then, so a rewrite of the link in the same transaction is refused before any bytes are written.
+TEST_F(MetadataPlainRewritableDiskTest, HardLinksDisabledMoveLinkInTheSameTransaction)
+{
+    thread_local_rng.seed(42);
+
+    hard_links_enabled = false;
+
+    const std::string test = "HardLinksDisabledMoveLink";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("B");
+        tx->createDirectory("C");
+        const auto key = tx->generateObjectKeyForPath("A/f1").serialize();
+        size_t size = writeObject(object_storage, key, "old bytes");
+        tx->createMetadataFile("A/f1", {StoredObject(key, "A/f1", size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// The moved link, the original path of the link, and the link in a moved directory.
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink("A/f1", "B/f1");
+        tx->moveFile("B/f1", "C/f1");
+        EXPECT_THROW(tx->generateObjectKeyForPath("C/f1"), DB::Exception);
+        EXPECT_THROW(tx->generateObjectKeyForPath("B/f1"), DB::Exception);
+    }
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink("A/f1", "B/f1");
+        tx->moveDirectory("B", "D");
+        EXPECT_THROW(tx->generateObjectKeyForPath("D/f1"), DB::Exception);
+    }
+
+    /// Without a rewrite the moved link keeps the bytes of the source.
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink("A/f1", "B/f1");
+        tx->moveFile("B/f1", "C/f1");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_FALSE(metadata->existsFile("B/f1"));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("C/f1").front().remote_path), "old bytes");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/f1").front().remote_path), "old bytes");
+
+    metadata = restartMetadataStorage(test);
+    EXPECT_FALSE(metadata->existsFile("B/f1"));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("C/f1").front().remote_path), "old bytes");
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, UnlinkSharedFileUndo)

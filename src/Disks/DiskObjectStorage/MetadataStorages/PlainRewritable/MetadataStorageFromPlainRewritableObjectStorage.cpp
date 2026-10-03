@@ -47,6 +47,7 @@ namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -807,19 +808,34 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
         metadata_storage.metrics));
 }
 
-void MetadataStorageFromPlainRewritableObjectStorageTransaction::forgetFallbackCopiesUnder(const NormalizedPath & directory)
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::markFallbackCopyMoved(const std::string & path_from, const std::string & path_to)
 {
-    const auto prefix = directory.string() + "/";
-    std::erase_if(fallback_copies, [&](const auto & entry) { return directory.empty() || entry.first.starts_with(prefix); });
+    /// The copy puts its blob at the default key of the original target, and the move carries it from there at commit.
+    /// A rewrite of either path cannot supersede the copy anymore: the move needs it as the source, and the blob that
+    /// the move or the copy produces at commit would overwrite the bytes that the caller writes before the commit.
+    if (const auto it = fallback_copies.find(path_from); it != fallback_copies.end())
+    {
+        it->second.moved = true;
+        fallback_copies[path_to] = FallbackCopy{.copy = it->second.copy, .moved = true};
+    }
+    else if (const auto it_to = fallback_copies.find(path_to); it_to != fallback_copies.end())
+    {
+        it_to->second.moved = true;
+    }
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
 {
     uncommitted_state.moveDirectory(path_from, path_to);
 
-    /// See `planFileMove`.
-    forgetFallbackCopiesUnder(normalizePath(path_from));
-    forgetFallbackCopiesUnder(normalizePath(path_to));
+    const auto directory_from = normalizePath(path_from).string();
+    const auto directory_to = normalizePath(path_to).string();
+    std::vector<std::pair<std::string, std::string>> moved_copies;
+    for (const auto & [path, _] : fallback_copies)
+        if (directory_from.empty() || path.starts_with(directory_from + "/"))
+            moved_copies.emplace_back(path, (std::filesystem::path(directory_to) / path.substr(directory_from.empty() ? 0 : directory_from.size() + 1)).string());
+    for (const auto & [moved_from, moved_to] : moved_copies)
+        markFallbackCopyMoved(moved_from, moved_to);
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(
         normalizeDirectoryPath(path_from),
@@ -899,7 +915,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
             metadata_storage.object_storage,
             metadata_storage.layout,
             metadata_storage.metrics);
-        fallback_copies[normalized_path_to.string()] = copy.get();
+        fallback_copies[normalized_path_to.string()] = FallbackCopy{.copy = copy.get()};
         operations.addOperation(std::move(copy));
         return;
     }
@@ -918,11 +934,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::planFileMove(const NormalizedPath & path_from, const NormalizedPath & path_to)
 {
-    /// A copy that stands in for a hard link can be superseded only while its target stays where the copy puts it.
-    /// Once the target is moved away, the move needs the copy as its source at commit, and a new file at the old path
-    /// is unrelated to it. Once the target is replaced, the copy is not the file at that path anymore.
-    fallback_copies.erase(path_from.string());
-    fallback_copies.erase(path_to.string());
+    markFallbackCopyMoved(path_from.string(), path_to.string());
 
     uncommitted_state.useDirectory(path_from.parent_path());
     uncommitted_state.useDirectory(path_to.parent_path());
@@ -987,7 +999,14 @@ ObjectStorageKey MetadataStorageFromPlainRewritableObjectStorageTransaction::gen
     /// has one key) and overwrite the bytes that the caller writes to the key returned from here before the commit.
     if (const auto it = fallback_copies.find(normalized_path.string()); it != fallback_copies.end())
     {
-        it->second->supersede();
+        if (it->second.moved)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot write the file '{}': the transaction has moved the copy of a file that stands in for a hard link "
+                "(the disk has hard links disabled) to or from this path",
+                path);
+
+        it->second.copy->supersede();
         fallback_copies.erase(it);
     }
 
