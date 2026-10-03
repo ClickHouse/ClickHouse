@@ -1371,6 +1371,47 @@ bool tryInsertObjectLikeValueIntoTypedColumn(
     return true;
 }
 
+/// `VARIANT` has no unsigned integer primitives: the writer stores `UInt8`, `UInt16` and `UInt32` as the next
+/// wider signed primitive (`INT16`, `INT32`, `INT64`), and `UInt64` up to the `Int64` range as `INT64`.
+/// When the `Variant` carrier has no arm of the stored signed type, map the value back to the unsigned arm
+/// that the writer narrowed from, if the carrier has it and the value fits.
+std::optional<std::pair<ColumnVariant::Discriminator, ColumnPtr>> tryCastToUnsignedVariantArm(
+    const DataTypeVariant & variant_type, const DataTypePtr & source_type, const ColumnPtr & source_column)
+{
+    std::vector<String> candidates;
+    switch (source_type->getTypeId())
+    {
+        case TypeIndex::Int16:
+            candidates = {"UInt8"};
+            break;
+        case TypeIndex::Int32:
+            candidates = {"UInt16"};
+            break;
+        case TypeIndex::Int64:
+            candidates = {"UInt32", "UInt64"};
+            break;
+        default:
+            return std::nullopt;
+    }
+
+    for (const auto & candidate : candidates)
+    {
+        auto discr = variant_type.tryGetVariantDiscriminator(candidate);
+        if (!discr)
+            continue;
+
+        const auto & arm_type = variant_type.getVariant(*discr);
+        auto casted = castColumnAccurateOrNull({source_column, source_type, "__parquet_variant_value"}, arm_type);
+        const auto & nullable_casted = assert_cast<const ColumnNullable &>(*casted);
+        if (nullable_casted.isNullAt(0))
+            continue;
+
+        return std::make_pair(*discr, nullable_casted.getNestedColumnPtr());
+    }
+
+    return std::nullopt;
+}
+
 void insertVariantValueIntoTypedColumn(
     IColumn & column,
     const DataTypePtr & type,
@@ -1449,7 +1490,13 @@ void insertVariantValueIntoTypedColumn(
             return;
         }
 
-        auto source_column = materializeVariantValueColumnImpl(value, source_type, format_settings, depth + 1);
+        ColumnPtr source_column = materializeVariantValueColumnImpl(value, source_type, format_settings, depth + 1);
+        if (auto unsigned_arm = tryCastToUnsignedVariantArm(*variant_type, source_type, source_column))
+        {
+            assert_cast<ColumnVariant &>(column).insertIntoVariantFrom(unsigned_arm->first, *unsigned_arm->second, 0);
+            return;
+        }
+
         auto casted = castColumn({std::move(source_column), source_type, "__parquet_variant_value"}, type);
         column.insertFrom(*casted->convertToFullColumnIfConst(), 0);
         return;

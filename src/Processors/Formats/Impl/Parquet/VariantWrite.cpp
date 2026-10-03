@@ -1485,6 +1485,18 @@ bool tryEncodeVariantScalarFromColumnUsingTypeHint(
     if (!normalized_type)
         return false;
 
+    /// `Bool` is a custom-named `UInt8`: route a declared `Bool` to the boolean primitive before the
+    /// generic `UInt8` case, otherwise it is written as `INT16` and reads back as `Int16`, which cannot
+    /// be inserted into a carrier like `Variant(Bool, UInt8)`.
+    if (isBool(normalized_type))
+    {
+        if (value_type.getTypeId() != TypeIndex::UInt8)
+            return false;
+        const bool value = assert_cast<const ColumnVector<UInt8> &>(column).getData()[row] != 0;
+        sink.writePrimitiveHeader(value ? VariantPrimitiveType::BooleanTrue : VariantPrimitiveType::BooleanFalse);
+        return true;
+    }
+
     switch (normalized_type->getTypeId())
     {
         case TypeIndex::Date:
