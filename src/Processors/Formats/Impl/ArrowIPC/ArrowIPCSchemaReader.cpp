@@ -145,7 +145,8 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
         DataTypePtr type;
         try
         {
-            type = ArrowIPC::fieldToCHType(field, format_settings, make_nullable);
+            /// Infer the Arrow null type as Nullable(Nothing) (like the data reader) instead of failing.
+            type = ArrowIPC::fieldToCHType(field, format_settings, make_nullable, /*allow_null_type=*/true);
         }
         catch (const Exception & e)
         {
@@ -168,6 +169,12 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
             type = removeNullableRecursively(type, format_settings);
         else if (make_columns_nullable == 1)
             type = makeNullableRecursively(type, format_settings);
+
+        /// A null-typed column infers as Nullable(Nothing), which cannot be stored in a table; keep it
+        /// skippable so `CREATE TABLE ... AS file(...)` retains the skip-setting escape hatch.
+        if (format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference
+            && type->cannotBeStoredInTables())
+            continue;
 
         result.emplace_back(field.name, type);
     }

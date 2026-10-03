@@ -1,2 +1,7 @@
---- delta dictionary that duplicates a base value is rejected ---
-duplicate values
+--- delta dictionary that duplicates a base value reads, duplicates deduplicated ---
+AAA
+BBB
+AAA
+AAA
+AAA
+AAA

@@ -372,37 +372,6 @@ ColumnWithTypeAndName prepareArrowColumnForCast(
     }
     return from;
 }
-
-/// Contiguous dictionary values must be unique across the base batch and all its deltas.
-void checkDictionaryUnique(const ArrowIPC::DictionaryRegistry::Dictionary & dictionary)
-{
-    UnorderedSetWithMemoryTracking<std::string_view> seen;
-    bool null_seen = false;
-    for (const auto & segment : dictionary.segments)
-    {
-        const auto * constant = typeid_cast<const ColumnConst *>(segment.column.get());
-        const IColumn & values = constant ? constant->getDataColumn() : *segment.column;
-        const auto * nullable = typeid_cast<const ColumnNullable *>(&values);
-        const IColumn & inner = nullable ? nullable->getNestedColumn() : values;
-        if (!(inner.isFixedAndContiguous() || typeid_cast<const ColumnString *>(&inner)))
-            return;
-
-        seen.reserve(seen.size() + values.size());
-        for (size_t i = 0; i < values.size(); ++i)
-        {
-            if (nullable && nullable->getNullMapData()[i])
-            {
-                if (null_seen)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow dictionary contains duplicate values");
-                null_seen = true;
-            }
-            else if (!seen.emplace(inner.getDataAt(i)).second)
-            {
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow dictionary contains duplicate values");
-            }
-        }
-    }
-}
 }
 
 void ArrowIPCBlockInputFormat::prepareReader()
@@ -617,8 +586,9 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
         if (use.hint)
             reinterpretRawByteColumns(values, use.hint, /*field=*/nullptr);
 
+        /// Arrow allows duplicate dictionary values (also across a base + delta merge); the
+        /// `LowCardinality` build dedups them and remaps the per-row indexes.
         dictionaries.set(id, use.position, {values.column, values.type, std::move(decoded.null_map)}, dict_batch.isDelta());
-        checkDictionaryUnique(dictionaries.get(id, use.position));
     }
 }
 
