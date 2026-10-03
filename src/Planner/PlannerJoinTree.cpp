@@ -549,6 +549,10 @@ bool applyTrivialCountIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
+    /// `totalRows` counts the live table, not the snapshot pinned for this query.
+    if (query_context->getPinnedStorageSnapshot(storage->getStorageID().uuid))
+        return false;
+
     if (getEffectiveRowPolicyFilter(*storage, query_context))
         return false;
 
@@ -682,6 +686,10 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
     if (!storage->supportsTrivialCountOptimization(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
+        return false;
+
+    /// The column stats describe the live table, not the snapshot pinned for this query.
+    if (query_context->getPinnedStorageSnapshot(storage->getStorageID().uuid))
         return false;
 
     if (getEffectiveRowPolicyFilter(*storage, query_context))
@@ -1577,6 +1585,10 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
     }
 
     if (!table_ptr->isMergeTree())
+        return false;
+
+    /// TODO(unique-key): support parallel replicas.
+    if (table_ptr->hasUniqueKey())
         return false;
 
     if (!table_ptr->supportsReplication() && !query_settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
