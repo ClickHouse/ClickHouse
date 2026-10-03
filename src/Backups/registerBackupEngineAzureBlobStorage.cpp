@@ -301,12 +301,10 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 params.write_settings,
                 params.context);
 
-            auto snapshot_reader_creator = [&](const String & endpoint, const String & container_name)
+            auto snapshot_reader_creator = [&](const String & endpoint, const String & blob_namespace)
             {
-                connection_params.endpoint.storage_account_url = endpoint;
-                connection_params.endpoint.container_name = container_name;
                 return std::make_shared<BackupReaderAzureBlobStorage>(
-                    connection_params,
+                    makeSnapshotSourceConnectionParams(connection_params, endpoint, blob_namespace),
                     "",
                     params.allow_azure_native_copy,
                     params.read_settings,

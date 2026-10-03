@@ -13,8 +13,11 @@
 #include <Disks/DiskType.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <boost/algorithm/string.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
 #include <azure/core/context.hpp>
+#include <azure/core/url.hpp>
+#include <azure/storage/common/storage_credential.hpp>
 
 #include <filesystem>
 
@@ -26,6 +29,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -61,6 +65,76 @@ namespace
             {"sdk_retry_max_backoff_ms", std::to_string(settings.sdk_retry_max_backoff_ms)},
         };
     }
+
+    /// The recorded endpoint of a snapshot's source disk as a service URL: scheme, host, port and path, without
+    /// query parameters and trailing slashes. A source disk that authenticates with a SAS records it in the
+    /// query, and one configured with a connection string records the connection string itself; the snapshot
+    /// is read with the backup's credential in any case, so only the service URL is kept.
+    String snapshotServiceURL(const String & endpoint)
+    {
+        Azure::Core::Url parsed;
+        try
+        {
+            parsed = endpoint.starts_with("http") ? Azure::Core::Url(endpoint)
+                                                  : Azure::Storage::_internal::ParseConnectionString(endpoint).BlobServiceUrl;
+        }
+        catch (const std::exception & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse the endpoint of a lightweight snapshot: {}", e.what());
+        }
+        if (parsed.GetScheme().empty() || parsed.GetHost().empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The endpoint of a lightweight snapshot is not a service URL");
+
+        String url = parsed.GetScheme() + "://" + parsed.GetHost();
+        if (parsed.GetPort() != 0)
+            url += ":" + std::to_string(parsed.GetPort());
+        if (!parsed.GetPath().empty())
+            url += "/" + parsed.GetPath();
+        while (url.ends_with('/'))
+            url.pop_back();
+        return url;
+    }
+
+    /// The connection string with its blob endpoint replaced by `service_url`. `CreateFromConnectionString()`
+    /// takes the endpoint from the connection string alone, so this is how a connection string is pointed at
+    /// the recorded endpoint of a snapshot; the account key or SAS it carries then authorises the reads there,
+    /// or Azure refuses them if it belongs to another account.
+    String withBlobEndpoint(const String & connection_string, const String & service_url)
+    {
+        std::vector<String> parts;
+        boost::split(parts, connection_string, boost::is_any_of(";"));
+        String result;
+        for (const auto & part : parts)
+            if (!part.empty() && !part.starts_with("BlobEndpoint="))
+                result += part + ";";
+        return result + "BlobEndpoint=" + service_url;
+    }
+}
+
+AzureBlobStorage::ConnectionParams makeSnapshotSourceConnectionParams(
+    const AzureBlobStorage::ConnectionParams & backup_connection_params, const String & endpoint, const String & blob_namespace)
+{
+    auto connection_params = backup_connection_params;
+
+    /// The objects are read from the recorded endpoint with the backup's credential, as the S3 reader does.
+    const String service_url = snapshotServiceURL(endpoint);
+    if (const auto * connection_string = std::get_if<AzureBlobStorage::ConnectionString>(&connection_params.auth_method))
+    {
+        const String repointed = withBlobEndpoint(connection_string->toUnderType(), service_url);
+        connection_params.auth_method = AzureBlobStorage::ConnectionString{repointed};
+        connection_params.endpoint.storage_account_url = repointed;
+    }
+    else
+        connection_params.endpoint.storage_account_url = service_url;
+
+    const auto slash_pos = blob_namespace.find('/');
+    connection_params.endpoint.container_name = blob_namespace.substr(0, slash_pos);
+    connection_params.endpoint.prefix = (slash_pos == String::npos) ? "" : blob_namespace.substr(slash_pos + 1);
+
+    /// The snapshot was taken from this container, so it exists; the existence check is also a
+    /// container-level request.
+    connection_params.endpoint.container_already_exists = true;
+    return connection_params;
 }
 
 BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
