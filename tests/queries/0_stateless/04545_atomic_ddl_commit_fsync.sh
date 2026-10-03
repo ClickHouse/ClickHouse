@@ -16,6 +16,20 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# With a remote database disk the metadata lives in object storage, which has no directories to sync.
+# The probe fails closed: only 0 and 1 are answers.
+probe=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.disks WHERE name='disk_db_remote' AND type = 'ObjectStorage' AND object_storage_type='S3' AND metadata_type='PlainRewritable'" 2>&1)
+probe_rc=$?
+probe=$(printf '%s' "$probe" | tr -d '[:space:]')
+if [[ "$probe_rc" != "0" || ( "$probe" != "0" && "$probe" != "1" ) ]]; then
+    echo "database disk probe failed: rc=$probe_rc out=$probe" >&2
+    exit 1
+fi
+if [[ "$probe" == "1" ]]; then
+    echo "@@SKIP@@: the database disk is object storage"
+    exit 0
+fi
+
 # DirectorySync per query_id; an unset entry means no query_log row was found.
 declare -A directory_sync
 
