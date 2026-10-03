@@ -5,6 +5,8 @@
 42
 24
 10
+-- all rows match the on-the-fly set
+5000
 bug with constant columns in join keys
 a	a
 1
