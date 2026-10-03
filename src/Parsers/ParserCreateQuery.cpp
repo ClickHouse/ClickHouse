@@ -26,8 +26,6 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTOrderByElement.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Core/UUID.h>
 
 
@@ -1747,6 +1745,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_create(Keyword::CREATE);
+    ParserKeyword s_or_replace(Keyword::OR_REPLACE);
     ParserKeyword s_named_collection(Keyword::NAMED_COLLECTION);
     ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
     ParserKeyword s_on(Keyword::ON);
@@ -1757,6 +1756,7 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     ParserToken s_comma(TokenType::Comma);
 
     String cluster_str;
+    bool or_replace = false;
     bool if_not_exists = false;
 
     ASTPtr collection_name;
@@ -1764,10 +1764,13 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     if (!s_create.ignore(pos, expected))
         return false;
 
+    if (s_or_replace.ignore(pos, expected))
+        or_replace = true;
+
     if (!s_named_collection.ignore(pos, expected))
         return false;
 
-    if (s_if_not_exists.ignore(pos, expected))
+    if (!or_replace && s_if_not_exists.ignore(pos, expected))
         if_not_exists = true;
 
     if (!name_p.parse(pos, collection_name, expected))
@@ -1805,6 +1808,7 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
 
     tryGetIdentifierNameInto(collection_name, query->collection_name);
     query->if_not_exists = if_not_exists;
+    query->or_replace = or_replace;
     query->changes = changes;
     query->cluster = std::move(cluster_str);
     query->overridability = overridability;
@@ -1937,14 +1941,11 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || dictionary_p.parse(pos, node, expected);
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserCreateQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementCreate(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE",
+    documentation["CREATE"] =
     {
         .description = R"DOCS_MD(
 CREATE queries create (for example) new [databases](/reference/statements/create/database), [tables](/reference/statements/create/table) and [views](/reference/statements/create/view).
@@ -1960,9 +1961,9 @@ CREATE USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
 CREATE TOKEN ...
 )",
         .related = {"ATTACH", "DROP", "CREATE TABLE", "CREATE DATABASE", "CREATE VIEW", "CREATE DICTIONARY"},
-    });
+    };
 
-    factory.registerStatement("CREATE DATABASE",
+    documentation["CREATE DATABASE"] =
     {
         .description = R"DOCS_MD(
 Creates a new database.
@@ -2067,9 +2068,9 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 )",
         .parent = "CREATE",
         .related = {"CREATE", "CREATE TABLE", "DROP"},
-    });
+    };
 
-    factory.registerStatement("CREATE TABLE",
+    documentation["CREATE TABLE"] =
     {
         .description = R"DOCS_MD(
 Creates a new table. By default, tables are created only on the current server.
@@ -2532,9 +2533,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], ...)] ENGINE = engi
 )",
         .parent = "CREATE",
         .related = {"CREATE", "CREATE TEMPORARY TABLE", "REPLACE TABLE", "CODEC", "ALTER", "DROP"},
-    });
+    };
 
-    factory.registerStatement("CREATE TEMPORARY TABLE",
+    documentation["CREATE TEMPORARY TABLE"] =
     {
         .description = R"DOCS_MD(
 ## Temporary table support {#temporary-table-support}
@@ -2578,9 +2579,9 @@ CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
 )",
         .parent = "CREATE TABLE",
         .related = {"CREATE TABLE", "DROP"},
-    });
+    };
 
-    factory.registerStatement("REPLACE TABLE",
+    documentation["REPLACE TABLE"] =
     {
         .description = R"DOCS_MD(
 ## Overview {#overview}
@@ -2755,9 +2756,9 @@ SELECT * FROM base.t1;
 )",
         .parent = "CREATE TABLE",
         .related = {"CREATE TABLE", "EXCHANGE", "RENAME"},
-    });
+    };
 
-    factory.registerStatement("CODEC",
+    documentation["CODEC"] =
     {
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -2857,7 +2858,7 @@ These codecs are designed to make compression more effective by exploiting speci
 
 ### DoubleDelta {#doubledelta}
 
-`DoubleDelta(bytes_size)` — Calculates delta of deltas and writes it in compact binary form. The `bytes_size` has a similar meaning than `delta_bytes` in [Delta](#delta) codec. Specifying `bytes_size` as an argument is deprecated and support will be removed in a future release. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any numeric type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-bit deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf). DoubleDelta is a data preparation codec, i.e. it cannot be used stand-alone.
+`DoubleDelta(bytes_size)` — Calculates delta of deltas and writes it in compact binary form. The `bytes_size` has a similar meaning than `delta_bytes` in [Delta](#delta) codec. Specifying `bytes_size` as an argument is deprecated and support will be removed in a future release. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any numeric type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-bit deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
 
 ### GCD {#gcd}
 
@@ -2993,7 +2994,7 @@ ENGINE = MergeTree ORDER BY x;
 
 <ExperimentalBadge/>
 
-The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type.
+The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it.
 
 <Note>
 Specialized codecs are currently chosen for integers up to 64 bits, enums, dates and times, `Decimal32`/`Decimal64`, `IPv4`, and `Float32`/`Float64`. Other columns select between the default codec and `NONE` for their values.
@@ -3015,7 +3016,7 @@ INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number
 OPTIMIZE TABLE adaptive FINAL;
 ```
 
-You can observe how it works with the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/mergeTreeCodecBlockCounts) table function. Here `time` grows steadily, so `T64`, which stores only the bits that vary within a block, beat the default codec on every block. `user_id` holds hashes that no codec can shrink, so its blocks were stored raw:
+You can observe how it works with the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/mergeTreeCodecBlockCounts) table function. Here `time` grows steadily, so `T64`, which stores only the bits that vary within a block, followed by the default `LZ4` squeezing the regular pattern those bits form, beat the default alone on every block. `user_id` holds hashes that no codec can shrink, so its blocks were stored raw:
 
 ```sql
 SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase(), 'adaptive');
@@ -3023,7 +3024,7 @@ SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase
 
 ```text
    ┌─column──┬─codec_block_counts─┐
-1. │ time    │ {'T64':62}         │
+1. │ time    │ {'T64, LZ4':62}    │
 2. │ user_id │ {'NONE':123}       │
    └─────────┴────────────────────┘
 ```
@@ -3038,9 +3039,9 @@ column_name type CODEC(codec1[(arguments)][, codec2[(arguments)], ...])
 )",
         .parent = "CREATE TABLE",
         .related = {"CREATE TABLE", "ALTER TABLE ... COLUMN"},
-    });
+    };
 
-    factory.registerStatement("CREATE VIEW",
+    documentation["CREATE VIEW"] =
     {
         .description = R"DOCS_MD(
 import { DeprecatedBadge } from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
@@ -3254,6 +3255,9 @@ To change SQL security for an existing view, use
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
 
+A `DEFINER` that is not the current user requires the `SET DEFINER` grant on that user, both when the view is created and with `MODIFY SQL SECURITY`.
+To change the query of a `SQL SECURITY DEFINER` or `SQL SECURITY NONE` view with [`ALTER TABLE ... MODIFY QUERY`](/reference/statements/alter/view#required-privileges), the same grants are necessary as to declare its SQL security.
+
 ### Examples {#examples}
 ```sql
 CREATE VIEW test_view
@@ -3339,6 +3343,8 @@ Typically the first refresh is started immediately after the materialized view i
 ### In Replicated DB {#in-replicated-db}
 
 If the refreshable materialized view is in a [Replicated database](/reference/engines/database-engines/replicated), the replicas coordinate with each other such that only one replica performs the refresh at each scheduled time. [ReplicatedMergeTree](/reference/engines/table-engines/mergetree-family/replication) table engine is required, so that all replicas see the data produced by the refresh.
+
+`RANDOMIZE FOR` is applied by each replica independently, so the replicas do not agree on the exact time of the next refresh and whichever one comes first performs it. This means a random replica refreshes each time, and that `next_refresh_time` in [`system.view_refreshes`](/reference/system-tables/view_refreshes) reports the time this replica would refresh at, not necessarily the time the refresh actually happens. Because the earliest of several random times is earlier than one random time on average, refreshes happen slightly earlier inside the `RANDOMIZE FOR` window the more replicas there are.
 
 In `APPEND` mode, coordination can be disabled using `SETTINGS all_replicas = 1`. This makes replicas do refreshes independently of each other. In this case ReplicatedMergeTree is not required.
 
@@ -3615,9 +3621,9 @@ AS SELECT ...
 )",
         .parent = "CREATE",
         .related = {"CREATE", "CREATE TABLE", "ALTER TABLE ... MODIFY QUERY", "DROP"},
-    });
+    };
 
-    factory.registerStatement("CREATE DICTIONARY",
+    documentation["CREATE DICTIONARY"] =
     {
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -3722,9 +3728,9 @@ COMMENT 'Comment'
 )",
         .parent = "CREATE",
         .related = {"CREATE", "DROP", "SYSTEM"},
-    });
+    };
 
-    factory.registerStatement("CREATE NAMED COLLECTION",
+    documentation["CREATE NAMED COLLECTION"] =
     {
         .description = R"DOCS_MD(
 Creates a new named collection.
@@ -3736,22 +3742,26 @@ DDL-created named collections can be enabled on select ClickHouse Cloud services
 **Syntax**
 
 ```sql
-CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
+CREATE [OR REPLACE] NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
 key_name1 = 'some value' [[NOT] OVERRIDABLE],
 key_name2 = 'some value' [[NOT] OVERRIDABLE],
 key_name3 = 'some value' [[NOT] OVERRIDABLE],
 ...
 ```
 
+`OR REPLACE` and `IF NOT EXISTS` cannot be used together. `CREATE OR REPLACE` of an existing collection
+replaces it entirely: keys and overridability flags absent from the new definition are removed.
+
 **Example**
 
 ```sql
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
+CREATE OR REPLACE NAMED COLLECTION foobar AS a = '2', c = '3';
 ```
 
 **Related statements**
 
-- [CREATE NAMED COLLECTION](/reference/statements/alter/named-collection)
+- [ALTER NAMED COLLECTION](/reference/statements/alter/named-collection)
 - [DROP NAMED COLLECTION](/reference/statements/drop#drop-function)
 
 **See Also**
@@ -3759,14 +3769,14 @@ CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
 - [Named collections guide](/concepts/features/configuration/server-config/named-collections)
 )DOCS_MD",
         .syntax = R"(
-CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster]
+CREATE [OR REPLACE] NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster]
 AS key_name1 = 'some value' [[NOT] OVERRIDABLE], key_name2 = 'some value' [[NOT] OVERRIDABLE], ...
 )",
         .parent = "CREATE",
         .related = {"CREATE", "ALTER NAMED COLLECTION", "DROP"},
-    });
+    };
 
-    factory.registerStatement("ATTACH",
+    documentation["ATTACH"] =
     {
         .description = R"DOCS_MD(
 Attaches a table or a dictionary, for example, when moving a database to another server.
@@ -3836,6 +3846,8 @@ ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 
 Allows to attach non-replicated MergeTree table as ReplicatedMergeTree. ReplicatedMergeTree table will be created with values of `default_replica_path` and `default_replica_name` settings. It is also possible to attach a replicated table as a regular MergeTree.
 
+The conversion is supported for tables in `Atomic` and `Ordinary` databases. A table in an `Ordinary` database has no UUID, so the conversion generates a UUID, expands `default_replica_path` with it once, and stores the resulting path explicitly in the engine arguments of the converted table. To add further replicas of such a table, specify this path explicitly in the first argument of the `ReplicatedMergeTree` engine; it can be found in the `zookeeper_path` column of `system.replicas`. Because the stored path no longer contains the `{uuid}` macro, the znode such a table owns is found by matching the path against `default_replica_path` again on every load; the conversion is refused when that template cannot be matched back (for example, when it expands `{uuid}` more than once). `{uuid}` in `default_replica_name` is not supported for any conversion.
+
 Note that table's data in ZooKeeper is not affected in this query. This means you have to add metadata in ZooKeeper using `SYSTEM RESTORE REPLICA` or clear it with `SYSTEM DROP REPLICA ... FROM ZKPATH ...` after attach.
 
 If you are trying to add a replica to an existing ReplicatedMergeTree table, keep in mind that all the local data in converted MergeTree table will be detached.
@@ -3901,7 +3913,9 @@ ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ATTACH TABLE [db.]name AS [NOT] REPLICATED
 )",
         .related = {"DETACH", "CREATE", "DROP"},
-    });
+    };
+
+    return documentation;
 }
 
 }

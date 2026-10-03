@@ -53,10 +53,6 @@ SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) WHERE id =
 SELECT '-- external_table_strict_query: no outer filter is allowed';
 SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) SETTINGS external_table_strict_query = 1;
 
--- The verdicts below hold on the analyzer path only: with enable_analyzer = 0 the guard
--- inspects the original AST and rejects every one of them.
-SET enable_analyzer = 1;
-
 SELECT '-- external_table_strict_query: a predicate on the joined local side is not a filter on the source';
 -- The flag column is absent from the passed query, so it cannot be confused with a source column.
 CREATE TABLE local_r (id Int64, flag UInt8) ENGINE = Memory;
@@ -71,8 +67,9 @@ SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT 
 SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE l.id = 1 SETTINGS external_table_strict_query = 1; -- { serverError INCORRECT_QUERY }
 SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE l.id = 1 AND r.id SETTINGS external_table_strict_query = 1; -- { serverError INCORRECT_QUERY }
 
--- A disjunction mixing the two sides is dropped whole, so the guard sees no filter and does
--- not fire. The counts must agree: this is a missed rejection, not a wrong answer.
+-- On the analyzer path a disjunction mixing the two sides is dropped whole while the AST is
+-- rebuilt from the query tree, so the guard sees no filter and does not fire. The counts must
+-- agree: this is a missed rejection, not a wrong answer.
 SELECT '-- external_table_strict_query: a disjunction mixing the source and the local side is not rejected';
 SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE l.id = 1 OR r.flag SETTINGS external_table_strict_query = 1;
 SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE l.id = 1 OR r.flag SETTINGS external_table_strict_query = 0;
@@ -113,9 +110,11 @@ DROP TABLE local_mt;
 SELECT '-- INSERT into a query-backed table function is rejected before schema inference';
 INSERT INTO TABLE FUNCTION sqlite('${DB}', query('SELECT id FROM nonexistent_table')) VALUES (1); -- { serverError INCORRECT_QUERY }
 
-SELECT '-- projection-count mismatch: an explicit structure with more columns than the query pads with defaults';
+SELECT '-- projection-count mismatch: an explicit structure with more columns than the query fails closed';
 CREATE TABLE count_mismatch (id Int64, name String, extra Int32) ENGINE = SQLite('${DB}', query('SELECT id, name FROM t1'));
-SELECT * FROM count_mismatch ORDER BY id;
+-- ClickHouse quotes its generated outer projection with strict SQLite backquotes, so the column that the query
+-- does not produce is an error instead of being silently read as a double-quoted string literal.
+SELECT * FROM count_mismatch ORDER BY id; -- { serverError SQLITE_ENGINE_ERROR }
 DROP TABLE count_mismatch;
 
 SELECT '-- type mismatch: a text value read into a declared Date is a query error, not a crash';
