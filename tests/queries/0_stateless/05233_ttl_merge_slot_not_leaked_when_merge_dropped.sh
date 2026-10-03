@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-shared-merge-tree
+# Tags: no-parallel, no-fasttest, no-shared-merge-tree
 # Tag no-parallel: enables a global fail point, and the resource it is about is server-wide
+# Tag no-fasttest: a test that enables a global fail point must run alone, and such tests are kept out of the fast test
 # Tag no-shared-merge-tree: the fail point sits on the StorageMergeTree merge assignment path
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
