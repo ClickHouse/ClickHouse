@@ -44,24 +44,9 @@ namespace QueryPlanOptimizations
 
 std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTree * reading)
 {
-    /// Reading through a projection part bypasses the parent table's
-    /// delete-bitmap filter, so logically-deleted rows would resurface. Decline
-    /// the projection for a unique-key table that carries one (CREATE/ALTER
-    /// reject the combination, but SECONDARY_CREATE/ATTACH load it); the
-    /// optimizer then falls back to the correctly-filtered base-table read, and
-    /// an actual projection-part read is hard-rejected downstream in
-    /// MergeTreeDataSelectExecutor. A unique-key table with no projection is
-    /// unaffected.
-    /// TODO(unique-key): support reading via projections on UNIQUE KEY tables.
-    /// TODO(unique-key): count shortcuts that bypass the delete bitmap — the
-    /// implicit _minmax_count_projection here and the trivial-count path
-    /// (supportsTrivialCountOptimization -> totalRows) — are deferred to the
-    /// read+delete work, which makes count() delete-bitmap-aware.
-    {
-        const auto metadata = reading->getStorageMetadata();
-        if (metadata->hasUniqueKey() && metadata->hasProjections())
-            return std::unexpected("the table has a UNIQUE KEY");
-    }
+    /// TODO(unique-key): support projections, `_minmax_count_projection` included.
+    if (reading->getStorageMetadata()->hasUniqueKey())
+        return std::unexpected("the table has a UNIQUE KEY");
 
     if (reading->getAnalyzedResult() && reading->getAnalyzedResult()->readFromProjection())
         return std::unexpected("the read is already served by a projection");

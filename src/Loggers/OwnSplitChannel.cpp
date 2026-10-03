@@ -65,7 +65,8 @@ void OwnSplitChannel::log(Poco::Message && msg)
         return;
 
     const auto & logs_queue = CurrentThread::getInternalTextLogsQueue();
-    if (channels.empty() && (logs_queue == nullptr && !logs_queue->isNeeded(msg.getPriority(), msg.getSource())))
+    if (channels.empty() && !text_log_max_priority.load(std::memory_order_relaxed)
+        && (logs_queue == nullptr || !logs_queue->isNeeded(msg.getPriority(), msg.getSource())))
         return;
 
     if (const auto & masker = SensitiveDataMasker::getInstance())
@@ -118,7 +119,7 @@ void pushExtendedMessageToInternalTCPTextLogQueue(
     columns[i++]->insert(msg.getSource());
     columns[i++]->insert(msg.getText());
 
-    [[maybe_unused]] bool push_result = logs_queue->emplace(std::move(columns));
+    logs_queue->pushOrDrop(std::move(columns));
 }
 
 void logToSystemTextLogQueue(
