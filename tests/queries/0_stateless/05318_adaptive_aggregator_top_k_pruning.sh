@@ -20,7 +20,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function check()
 {
-    local label=$1 settings=$2 keys=$3 aggregates=$4 order=$5 rows=${6:-1000000}
+    local label=$1 settings=$2 keys=$3 aggregates=$4 order=$5 rows=${6:-100000}
     local source="SELECT if(number % 4 = 0, toUInt64(sqrt(number % 10000)), number + 1000000) AS k, number FROM numbers_mt($rows)"
     local query="SELECT $keys, $aggregates FROM ($source) GROUP BY $keys ORDER BY $order"
     local full="SELECT $keys, $aggregates FROM ($source) GROUP BY $keys SETTINGS enable_adaptive_aggregator = 0"
@@ -48,7 +48,7 @@ check 'Fixed-width arguments' 'max_threads = 4' 'k' 'count() AS c, sum(number) A
 check 'Variable-width argument' 'max_threads = 4' 'toString(k) AS sk' 'count() AS c, max(toString(number)) AS m' 'c DESC LIMIT 10'
 check 'States with destructors' 'max_threads = 4' 'k' 'count() AS c, uniqExact(number % 97) AS u' 'c DESC LIMIT 10'
 check 'Offset' 'max_threads = 4' 'k' 'count() AS c' 'c DESC LIMIT 5 OFFSET 3'
-check 'Spilled records' 'max_bytes_before_external_group_by = 8000000' 'k' 'count() AS c, sum(number) AS s' 'c DESC LIMIT 10'
+check 'Spilled records' 'max_bytes_before_external_group_by = 800000' 'k' 'count() AS c, sum(number) AS s' 'c DESC LIMIT 10'
 check 'Streams that never froze' 'max_threads = 16' 'k' 'count() AS c' 'c DESC LIMIT 10' 60000
 check 'Ascending order' 'max_threads = 4' 'k' 'count() AS c' 'c ASC LIMIT 10'
 check 'Throw-mode group limit' "max_rows_to_group_by = 10000000, group_by_overflow_mode = 'throw'" 'k' 'count() AS c' 'c DESC LIMIT 10'
