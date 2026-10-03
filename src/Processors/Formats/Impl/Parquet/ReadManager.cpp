@@ -117,7 +117,7 @@ void ReadManager::admitTopKRowGroups(MemoryUsageDiff & diff)
 
     while (true)
     {
-        size_t row_group_idx;
+        size_t row_group_idx = 0;
         {
             std::lock_guard lock(top_k_admission.mutex);
             size_t allowance = std::max(top_k_admission.min_outstanding, top_k_admission.admitted / 2);
