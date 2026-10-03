@@ -887,6 +887,17 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     }
 
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
+    struct RowGroupCandidate
+    {
+        const parq::RowGroup * meta = nullptr;
+        size_t row_group_idx = 0;
+        size_t start_global_row_idx = 0;
+        std::pair<size_t, size_t> requested_rows_slice {0, 0};
+        Hyperrectangle hyperrectangle;
+        std::optional<Range> top_k_sort_column_range;
+    };
+    std::vector<RowGroupCandidate> candidates;
+    bool some_top_k_range_to_read = false;
     size_t total_rows = 0;
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
@@ -958,15 +969,47 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             && rowGroupFailsSpatialFilters(*meta, primitive_columns, geostats_spatial_filters))
             continue;
 
+        candidates.push_back(RowGroupCandidate{
+            .meta = meta,
+            .row_group_idx = row_group_idx,
+            .start_global_row_idx = total_rows - size_t(meta->num_rows),
+            .requested_rows_slice = requested_rows_slice,
+            .hyperrectangle = std::move(hyperrectangle),
+            .top_k_sort_column_range = getTopKSortColumnRange(*meta)});
+        if (candidates.back().top_k_sort_column_range.has_value()
+            && (!row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx)))
+            some_top_k_range_to_read = true;
+    }
+
+    /// TopN dynamic filtering: read first the row groups whose sort column statistics are best for the
+    /// threshold, so that it tightens early. Any order is correct when the output order is free.
+    if (format_filter_info->top_k_filter && top_k_primitive_idx.has_value() && !rows_to_read
+        && !options.format.parquet.preserve_order && candidates.size() > 1 && some_top_k_range_to_read)
+    {
+        const bool ascending = format_filter_info->top_k_filter->threshold_tracker->getDirection() == 1;
+        std::stable_sort(candidates.begin(), candidates.end(), [ascending](const RowGroupCandidate & a, const RowGroupCandidate & b)
+        {
+            const auto & a_range = a.top_k_sort_column_range;
+            const auto & b_range = b.top_k_sort_column_range;
+            if (!a_range.has_value() || !b_range.has_value())
+                return a_range.has_value() && !b_range.has_value();
+            return ascending ? accurateLess(a_range->left, b_range->left) : accurateLess(b_range->right, a_range->right);
+        });
+        row_groups_ordered_by_top_k = true;
+    }
+
+    for (RowGroupCandidate & candidate : candidates)
+    {
+        const auto * meta = candidate.meta;
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;
-        row_group.need_to_process = !row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx);
-        row_group.requested_rows_slice = requested_rows_slice;
-        row_group.row_group_idx = row_group_idx;
-        row_group.start_global_row_idx = total_rows - size_t(meta->num_rows);
+        row_group.need_to_process = !row_groups_to_read.has_value() || row_groups_to_read->contains(candidate.row_group_idx);
+        row_group.requested_rows_slice = candidate.requested_rows_slice;
+        row_group.row_group_idx = candidate.row_group_idx;
+        row_group.start_global_row_idx = candidate.start_global_row_idx;
         row_group.columns.resize(primitive_columns.size());
-        row_group.hyperrectangle = std::move(hyperrectangle);
-        row_group.top_k_sort_column_range = getTopKSortColumnRange(*meta);
+        row_group.hyperrectangle = std::move(candidate.hyperrectangle);
+        row_group.top_k_sort_column_range = std::move(candidate.top_k_sort_column_range);
 
         for (size_t column_idx = 0; column_idx < primitive_columns.size(); ++column_idx)
         {
@@ -1775,7 +1818,7 @@ bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes
         bool miss = false;
         for (size_t i = 0; i < 8; ++i)
         {
-            size_t bit_idx = UInt32(UInt32(h) * salt[i]) >> 27;
+            size_t bit_idx = (UInt32(h) * salt[i]) >> 27;
             UInt32 word = unalignedLoad<UInt32>(data.data() + i * 4);
             if (!(word & (1u << bit_idx)))
             {
@@ -2687,7 +2730,6 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     const bool use_filter_in_decoder = (column_info.levels.back().rep == 0) &&
         !row_subgroup.filter.filter.empty() &&
         column.page.initialized &&
-        !column.page.is_dictionary_encoded &&
         column.data_pages.empty() &&
         !column.need_null_map;
     const size_t subgroup_end_row_idx = row_subgroup.start_row_idx + row_subgroup.filter.rows_total;
@@ -3429,23 +3471,26 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
         if (row_subgroup && !row_subgroup->filter.filter.empty())
         {
             chassert(first_row_idx >= row_subgroup->start_row_idx);
+            chassert(page.def.empty());
             filter_offset = first_row_idx - row_subgroup->start_row_idx;
             filter = row_subgroup->filter.filter.data();
         }
 
         if (page.is_dictionary_encoded)
         {
-            chassert(!filter);
+            /// A subgroup whose rows all pass is read like an unfiltered one, through the fused path.
+            if (filter && row_subgroup->filter.rows_pass == row_subgroup->filter.rows_total)
+                filter = nullptr;
             /// Fused decode-and-gather; falls back to materializing the indexes as a column when
-            /// the decoder or the dictionary mode does not support the fusion.
-            if (!page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
+            /// filtering, or when the decoder or the dictionary mode does not support the fusion.
+            if (filter || !page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
             {
                 if (!page.indices_column)
                     page.indices_column = ColumnUInt32::create();
                 auto & indices_column_uint32 = assert_cast<ColumnUInt32 &>(*page.indices_column);
                 auto & data = indices_column_uint32.getData();
                 chassert(data.empty());
-                page.decoder->decode(encoded_values_to_read, *page.indices_column, nullptr, 0);
+                page.decoder->decode(encoded_values_to_read, *page.indices_column, filter, filter_offset);
                 column.dictionary.index(indices_column_uint32, *subchunk.column);
                 data.clear();
             }
