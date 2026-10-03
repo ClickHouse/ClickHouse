@@ -781,6 +781,31 @@ void generateManifestFile(
     writer.close();
 }
 
+// Avro uses zigzag encoding for integers to efficiently represent small negative
+// numbers. Positive n maps to 2n, negative n maps to 2(-n)-1, keeping small
+// magnitudes compact regardless of sign. The value is then serialized as a
+// variable-length base-128 integer (little-endian), where the high bit of each
+// byte signals whether more bytes follow.
+// See: https://avro.apache.org/docs/1.11.1/specification/#binary-encoding
+static void writeAvroLong(WriteBuffer & out, int64_t val)
+{
+    uint64_t n = (static_cast<uint64_t>(val) << 1) ^ static_cast<uint64_t>(val >> 63);
+    while (n & ~0x7fULL)
+    {
+        char c = static_cast<char>((n & 0x7f) | 0x80);
+        out.write(&c, 1);
+        n >>= 7;
+    }
+    char c = static_cast<char>(n);
+    out.write(&c, 1);
+}
+
+static void writeAvroBytes(WriteBuffer & out, const String & s)
+{
+    writeAvroLong(out, static_cast<int64_t>(s.size()));
+    out.write(s.data(), s.size());
+}
+
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
     Poco::JSON::Object::Ptr metadata,
@@ -837,6 +862,47 @@ void generateManifestList(
         schema_representation = manifest_list_v3_schema;
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported iceberg format-version {}", version);
+
+    // For empty manifest list (e.g. TRUNCATE), write a valid Avro container
+    // file manually so we can embed the full schema JSON with field-ids intact,
+    // without triggering the DataFileWriter constructor's eager writeHeader()
+    // which commits encoder state before we can override avro.schema.
+    //
+    // The condition must be the exact complement of the carry-forward predicate below
+    // ("use_previous_snapshots || !carry_forward_manifest_paths.empty()"), otherwise this
+    // shortcut returns before entries that the caller expects to be carried over from the
+    // parent snapshot are written. A caller that adds no new manifests and names everything
+    // it retains through `carry_forward_manifest_paths` (`DROP PARTITION`, and
+    // `OPTIMIZE ... MANIFEST` when only delete manifests survive) would otherwise commit an
+    // empty manifest list: the snapshot summary still reports the old row count while the
+    // table reads as empty. Keep the two conditions in sync.
+    if (manifest_entry_names.empty() && !use_previous_snapshots && carry_forward_manifest_paths.empty())
+    {
+        // For an empty manifest list (e.g. after TRUNCATE), we write a minimal valid
+        // Avro Object Container File manually rather than using avro::DataFileWriter.
+        // The reason: DataFileWriter calls writeHeader() eagerly in its constructor,
+        // committing the binary encoder state. Post-construction setMetadata() calls
+        // corrupt StreamWriter::next_ causing a NULL dereference on close(). Writing
+        // the OCF header directly ensures the full schema JSON (with Iceberg field-ids)
+        // is embedded intact — the Avro C++ library strips unknown field properties
+        // like field-id during schema node serialization.
+        // Avro OCF format: [magic(4)] [metadata_map] [sync_marker(16)] [no data blocks]
+        buf.write("Obj\x01", 4);
+
+        writeAvroLong(buf, 2);  // 2 metadata entries
+        writeAvroBytes(buf, "avro.codec");
+        writeAvroBytes(buf, "null");
+        writeAvroBytes(buf, "avro.schema");
+        writeAvroBytes(buf, schema_representation);  // full JSON with field-ids intact
+
+        writeAvroLong(buf, 0);  // end of metadata map
+
+        static const char sync_marker[16] = {};
+        buf.write(sync_marker, 16);
+
+        buf.finalize();
+        return;
+    }
 
     auto schema = avro::compileJsonSchemaFromString(schema_representation); // NOLINT
 
@@ -1442,7 +1508,7 @@ bool IcebergStorageSink::initializeMetadata()
         refresh_cursor);
     auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
 
-    auto cleanup = [&] (bool retry_because_of_metadata_conflict)
+    auto cleanup = [&] (bool retry_because_of_metadata_conflict, bool remove_objects = true)
     {
         auto best_effort_remove = [&](const String & path)
         {
@@ -1456,11 +1522,14 @@ bool IcebergStorageSink::initializeMetadata()
             }
         };
 
-        /// A commit conflict keeps the data files and the manifests for the next attempt. Only the manifest list depends on the attempt.
-        if (!retry_because_of_metadata_conflict)
-            removeDataFilesAndManifests();
+        if (remove_objects)
+        {
+            /// A commit conflict keeps the data files and the manifests for the next attempt. Only the manifest list depends on the attempt.
+            if (!retry_because_of_metadata_conflict)
+                removeDataFilesAndManifests();
 
-        best_effort_remove(storage_manifest_list_name);
+            best_effort_remove(storage_manifest_list_name);
+        }
 
         if (retry_because_of_metadata_conflict)
         {
@@ -1511,7 +1580,7 @@ bool IcebergStorageSink::initializeMetadata()
             /// The partition spec stays as on the first attempt. The manifests are already written with it.
         }
     };
-
+    bool commit_result_unknown = false;
     try
     {
         /// On a retry the manifests are reused and only the manifest list is written.
@@ -1654,13 +1723,15 @@ bool IcebergStorageSink::initializeMetadata()
             if (catalog)
             {
                 auto catalog_filename = resolver.resolveForCatalog(metadata_info.path);
-
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
+                commit_result_unknown = true;
                 if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
                 {
+                    commit_result_unknown = false;
                     cleanup(true);
                     return false;
                 }
+                commit_result_unknown = false;
             }
         }
 
@@ -1669,7 +1740,7 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
-        cleanup(false);
+        cleanup(false, /*remove_objects =*/!commit_result_unknown);
         throw;
     }
     return true;
