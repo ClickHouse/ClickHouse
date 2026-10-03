@@ -638,21 +638,25 @@ ProcessList::EntryPtr ProcessList::insert(
           */
 
         {
-            auto user_process_list = user_to_queries.find(client_info.current_user);
+            auto user_process_list_it = user_to_queries.find(client_info.current_user);
 
-            if (user_process_list != user_to_queries.end())
+            if (user_process_list_it != user_to_queries.end())
             {
+                /// The waits below release `mutex`, and another user's first query may then rehash
+                /// `user_to_queries`, invalidating the iterator. References to its elements stay valid
+                /// (entries are never erased), so only the reference is used after this point.
+                ProcessListForUser & user_process_list = user_process_list_it->second;
                 if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_user]
-                    && user_process_list->second.non_internal_queries >= settings[Setting::max_concurrent_queries_for_user])
+                    && user_process_list.non_internal_queries >= settings[Setting::max_concurrent_queries_for_user])
                 {
                     const size_t limit = settings[Setting::max_concurrent_queries_for_user];
-                    auto & user_queries = user_process_list->second.non_internal_queries;
+                    auto & user_queries = user_process_list.non_internal_queries;
                     auto under_limit = [&] { return user_queries < limit; };
 
                     /// Same as `max_concurrent_queries_for_all_users` above, but scoped to this user:
                     /// only this user's early-release teardowns can decrement `non_internal_queries`,
                     /// so wait on the per-user counter while draining it can clear the limit, then reject.
-                    auto & user_pending_teardowns = user_process_list->second.admission_pending_teardowns;
+                    auto & user_pending_teardowns = user_process_list.admission_pending_teardowns;
                     auto drain_can_clear = [&] { return user_queries < limit + user_pending_teardowns; };
                     if (got_admission_slot
                         ? !passes_secondary_limit(under_limit, drain_can_clear)
@@ -664,7 +668,7 @@ ProcessList::EntryPtr ProcessList::insert(
                             "Too many simultaneous queries for user {}. "
                             "Current: {}, maximum: {}",
                             client_info.current_user,
-                            user_process_list->second.non_internal_queries,
+                            user_queries,
                             settings[Setting::max_concurrent_queries_for_user].toString());
                 }
 
