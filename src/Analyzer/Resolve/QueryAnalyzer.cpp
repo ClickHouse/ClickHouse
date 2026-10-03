@@ -4258,12 +4258,6 @@ bool isTupleOperator(const QueryTreeNodePtr & node)
     return ast_function && ast_function->name == "tuple" && ast_function->isOperator();
 }
 
-void expandParenthesizedKeyList(QueryTreeNodes & key_list)
-{
-    if (key_list.size() == 1 && isTupleOperator(key_list.front()))
-        expandTuplesInList(key_list);
-}
-
 bool nodeSupportsConvertToNullable(const QueryTreeNodePtr & node)
 {
     auto node_type = node->getNodeType();
@@ -4401,20 +4395,27 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
     }
     else
     {
+        auto & group_by_list = query_node_typed.getGroupBy().getNodes();
+
         replaceNodesWithPositionalArguments(query_node_typed.getGroupByNode(), query_node_typed.getProjection().getNodes(), scope);
+
+        /// Record the parenthesized key-list shorthand while it is still an unresolved tuple expression.
+        /// Alias resolution can also turn an identifier into a tuple, but that alias must stay one key.
+        const bool expand_parenthesized_key_list =
+            (query_node_typed.isGroupByWithRollup() || query_node_typed.isGroupByWithCube())
+            && group_by_list.size() == 1 && isTupleOperator(group_by_list.front());
 
         resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
         // Remove redundant calls to `tuple` function for ordinary GROUP BY. It simplifies checking if expression
         // is an aggregation key and is required to support queries like: SELECT number FROM numbers(3)
         // GROUP BY (number, number % 2). For ROLLUP and CUBE, preserve tuple-valued keys but keep the historical
-        // singleton `GROUP BY (a, b) WITH ...` shorthand as two grouping keys. Expand that wrapper only here,
-        // after positional arguments have already been handled.
-        auto & group_by_list = query_node_typed.getGroupBy().getNodes();
+        // singleton `GROUP BY (a, b) WITH ...` shorthand as two grouping keys. Expand that wrapper only when it
+        // was present in the parsed expression, before alias resolution.
         if (!query_node_typed.isGroupByWithRollup() && !query_node_typed.isGroupByWithCube())
             expandTuplesInList(group_by_list);
-        else
-            expandParenthesizedKeyList(group_by_list);
+        else if (expand_parenthesized_key_list)
+            expandTuplesInList(group_by_list);
 
         for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
         {
