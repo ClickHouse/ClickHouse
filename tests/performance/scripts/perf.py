@@ -714,9 +714,11 @@ servers = [
     { "host": host or args.host[0], "port": port or args.port[0], "user": args.user, "password": args.password, "secure": args.secure }
     for (host, port) in itertools.zip_longest(args.host, args.port)
 ]
+# Setup statements like `OPTIMIZE ... FINAL` are silent for long; raise the 300 s default under `--long`.
+driver_options = {"send_receive_timeout": 30 * 60} if args.long else {}
 # Force settings_is_important to fail queries on unknown settings.
 all_connections = [
-    clickhouse_driver.Client(**server, settings_is_important=True) for server in servers
+    clickhouse_driver.Client(**server, settings_is_important=True, **driver_options) for server in servers
 ]
 
 # Long-lived workers to fan out per-connection commands (SYSTEM JEMALLOC PURGE
