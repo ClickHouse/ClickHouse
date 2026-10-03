@@ -6411,6 +6411,10 @@ Automatically choose implicit projections to perform SELECT query
 Enables using projections to filter part ranges even when projections are not selected to perform SELECT query.
 )", 0, \
         {"25.6", false, true, "New setting"}) \
+    DECLARE(Float, optimize_projection_skip_index_ratio, 0.5, R"(
+When `use_skip_indexes_on_data_read` is enabled, perform skip index analysis on primary parts if there are useful skip indexes and the ratio of marks selected by the projection to the marks selected by primary parts is greater than this setting.
+)", 0, \
+        {"26.10", 1.0, 0.5, "New setting controlling when projection selection applies the base table's deferred skip indexes before comparing costs: the extra pass runs only if the best projection candidate reads more than this fraction of the parent's primary-key-only mark estimate. The previous value 1.0 restores the pre-existing behavior: with ratio = 1 the refinement runs only for candidates that are rejected anyway, so the decision falls back to the old primary-key-only comparison."}) \
     DECLARE(Bool, force_optimize_projection, false, R"(
 Enables or disables the obligatory use of [projections](/reference/engines/table-engines/mergetree-family/mergetree#projections) in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
 
