@@ -2,6 +2,8 @@
 -- `use_skip_indexes = 0` must not disable the part-level min-max index on partition-key columns.
 
 SET enable_parallel_replicas = 0;
+-- The arms below differ only in `use_skip_indexes`, which the query condition cache does not take into account.
+SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS t_minmax_use_skip_indexes;
 
@@ -30,12 +32,13 @@ SELECT count(), min(ts), max(ts) FROM t_minmax_use_skip_indexes WHERE toStartOfD
 DROP TABLE t_minmax_use_skip_indexes;
 
 -- https://github.com/ClickHouse/ClickHouse/issues/115271: min-max pruning removes the `p = 1` part
--- before the partition pruner evaluates `intDiv(1, p - 1)` on it.
+-- before the partition pruner evaluates `intDiv(1, p - 1)` on it. No statistics, so the `Statistics` step
+-- can not remove the part first.
 DROP TABLE IF EXISTS t_minmax_use_skip_indexes_div;
 
 CREATE TABLE t_minmax_use_skip_indexes_div (p Int64, b UInt64)
 ENGINE = MergeTree ORDER BY b PARTITION BY p
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, auto_statistics_types = '';
 
 INSERT INTO t_minmax_use_skip_indexes_div VALUES (1, 10);
 
