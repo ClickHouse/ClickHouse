@@ -2713,7 +2713,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         || select_query_options.to_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
                     if (query_context->canUseParallelReplicasCustomKey() && to_stage_supports_custom_key
-                        && query_context->getClientInfo().distributed_depth == 0)
+                        && query_context->getClientInfo().distributed_depth == 0 && !query_context->isSQLSecurityOverriddenBody())
                     {
                         if (auto cluster = query_context->getClusterForParallelReplicas();
                             query_context->canUseParallelReplicasCustomKeyForCluster(*cluster))

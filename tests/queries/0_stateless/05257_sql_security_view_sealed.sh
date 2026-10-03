@@ -15,6 +15,8 @@ db=${CLICKHOUSE_DATABASE}
 pr_settings="enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0, parallel_replicas_plan_based = 0, parallel_replicas_mode = 'read_tasks', parallel_replicas_min_number_of_rows_per_replica = 0, automatic_parallel_replicas_mode = 0, serialize_query_plan = 0"
 # The cluster has an interserver secret, so a replica runs a shipped read as the initial user.
 url_pr_settings="enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_interserver_secret', parallel_replicas_for_cluster_engines = 1, parallel_replicas_mode = 'read_tasks', parallel_replicas_plan_based = 0, automatic_parallel_replicas_mode = 0"
+# Custom-key parallel replicas ship the read as SQL as well.
+ck_settings="enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'cityHash64(owner)', serialize_query_plan = 0"
 
 ${CLICKHOUSE_CLIENT} <<EOF
 DROP USER IF EXISTS $user, $definer;
@@ -37,6 +39,7 @@ GRANT SELECT ON $db.policy_secrets TO $definer;
 CREATE VIEW $db.policy_view DEFINER = $definer SQL SECURITY DEFINER AS SELECT owner, secret FROM $db.policy_secrets;
 -- The view's own query asks for parallel replicas.
 CREATE VIEW $db.pr_policy_view DEFINER = $definer SQL SECURITY DEFINER AS SELECT owner, secret FROM $db.policy_secrets SETTINGS $pr_settings;
+CREATE VIEW $db.ck_policy_view DEFINER = $definer SQL SECURITY DEFINER AS SELECT owner, secret FROM $db.policy_secrets SETTINGS $ck_settings;
 GRANT READ ON URL, CREATE TEMPORARY TABLE ON *.* TO $definer;
 CREATE VIEW $db.url_view DEFINER = $definer SQL SECURITY DEFINER
     AS SELECT x FROM url('http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+42', 'TSV', 'x UInt8');
@@ -65,6 +68,7 @@ GRANT SELECT ON $db.none_view TO $user;
 GRANT SELECT ON $db.policy_view TO $user;
 GRANT SELECT ON $db.view_policy_view TO $user;
 GRANT SELECT ON $db.pr_policy_view TO $user;
+GRANT SELECT ON $db.ck_policy_view TO $user;
 GRANT SELECT ON $db.none_projection_view TO $user;
 GRANT SELECT ON $db.url_view TO $user;
 EOF
@@ -123,6 +127,11 @@ ${CLICKHOUSE_CLIENT} --query "
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query
       AND log_comment = '05257_pr_${CLICKHOUSE_DATABASE}'"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "
+    SELECT secret FROM $db.ck_policy_view WHERE throwIf(secret = 'HIDDEN', 'LEAKED') = 0
+    SETTINGS enable_parallel_replicas = 0, log_comment = '05257_ck_view_${CLICKHOUSE_DATABASE}'" 2>&1
+${CLICKHOUSE_CLIENT} --user "$definer" --query "
+    SELECT secret FROM $db.policy_secrets SETTINGS $ck_settings, log_comment = '05257_ck_direct_${CLICKHOUSE_DATABASE}'"
+${CLICKHOUSE_CLIENT} --user "$user" --query "
     SELECT x FROM $db.url_view SETTINGS $url_pr_settings, log_comment = '05257_url_view_${CLICKHOUSE_DATABASE}'" 2>&1
 ${CLICKHOUSE_CLIENT} --user "$definer" --query "
     SELECT x FROM url('http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+42', 'TSV', 'x UInt8')
@@ -133,7 +142,8 @@ ${CLICKHOUSE_CLIENT} --query "
     WHERE type = 'QueryFinish' AND initial_query_id IN (
         SELECT query_id FROM system.query_log
         WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
-          AND log_comment IN ('05257_url_view_${CLICKHOUSE_DATABASE}', '05257_url_direct_${CLICKHOUSE_DATABASE}'))
+          AND log_comment IN ('05257_url_view_${CLICKHOUSE_DATABASE}', '05257_url_direct_${CLICKHOUSE_DATABASE}',
+              '05257_ck_view_${CLICKHOUSE_DATABASE}', '05257_ck_direct_${CLICKHOUSE_DATABASE}'))
     GROUP BY log_comment ORDER BY log_comment"
 
 echo "--- an outer predicate does not skip data by the values of the hidden rows"
@@ -186,4 +196,4 @@ ${CLICKHOUSE_CLIENT} --query "SELECT countIf(explain LIKE '%ReadFromSealedView%'
 echo -n "view_policy_view for the user with the policy: "
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN SELECT * FROM $db.view_policy_view WHERE secret = 'x'" | grep -c ReadFromSealedView
 
-${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.policy_view; DROP VIEW $db.pr_policy_view; DROP VIEW $db.url_view; DROP ROW POLICY policy05257 ON $db.policy_secrets; DROP ROW POLICY invoker_policy05257 ON $db.invoker_policy_secrets; DROP ROW POLICY view_policy05257 ON $db.view_policy_view; DROP USER $user, $definer"
+${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.policy_view; DROP VIEW $db.pr_policy_view; DROP VIEW $db.ck_policy_view; DROP VIEW $db.url_view; DROP ROW POLICY policy05257 ON $db.policy_secrets; DROP ROW POLICY invoker_policy05257 ON $db.invoker_policy_secrets; DROP ROW POLICY view_policy05257 ON $db.view_policy_view; DROP USER $user, $definer"
