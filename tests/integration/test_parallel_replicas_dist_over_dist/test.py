@@ -3,6 +3,7 @@ import uuid
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import wait_condition
 
 cluster = ClickHouseCluster(__file__)
 
@@ -67,7 +68,7 @@ def create_tables():
                 )
                 Engine=ReplicatedMergeTree('/test_pr_dist_over_dist/{instance}/{TABLE}', 'r{i}')
                 ORDER BY (ServiceName, Timestamp)
-                -- Small granules so there are enough mark segments for both replicas of a shard.
+                -- Small granules so there are mark segments to spread over the replicas of a shard.
                 SETTINGS index_granularity = 8
                 """)
 
@@ -105,31 +106,49 @@ def insert_data(node, matching_rows, body_length):
         """)
 
 
-def parallel_replicas_reads(query_id):
-    """`(ParallelReplicasQueryCount, names of the nodes that ran the query)`, cluster-wide.
+def parallel_replicas_coordinators(query_id):
+    """Names of the nodes that ran a parallel-replicas read, one entry per read.
 
-    The event is counted where the reading coordinator lives, which in a chain of distributed tables
-    is the leaf replica and not the initiator, so every node has to be looked at. The set of nodes is
-    the robust way to tell which replicas took part: a replica of a parallel-replicas read runs the
-    query even when the coordinator ends up handing it no ranges to read, so unlike
-    `ParallelReplicasUsedCount` it does not depend on how the reading happened to be distributed."""
-    queries = 0
-    participants = set()
+    `ParallelReplicasQueryCount` is counted where the reading coordinator lives. A `Distributed` hop
+    sends its sub-query to one replica of the shard, and that replica is the one that then reads the
+    `MergeTree` with parallel replicas, so the coordinator is on whichever replica of the instance was
+    picked - not on the server the outer cluster addressed. Every node has to be looked at.
+
+    How many replicas each read ended up using is deliberately not asserted: with data this small one
+    replica can serve the whole read before the other asks for work."""
+    coordinators = []
     for node in nodes:
         # SYSTEM FLUSH LOGS is not cluster-aware, it has to be issued on each node separately.
         node.query("SYSTEM FLUSH LOGS")
-        row = node.query(
-            f"""
-            SELECT count(), sum(ProfileEvents['ParallelReplicasQueryCount'])
-            FROM system.query_log
-            WHERE initial_query_id = '{query_id}' AND type = 'QueryFinish'
-            SETTINGS enable_parallel_replicas = 0
-            """
-        ).split()
-        if int(row[0]):
-            participants.add(node.name)
-        queries += int(row[1])
-    return queries, participants
+        reads = int(
+            node.query(
+                f"""
+                SELECT sum(ProfileEvents['ParallelReplicasQueryCount'])
+                FROM system.query_log
+                WHERE initial_query_id = '{query_id}' AND type = 'QueryFinish'
+                SETTINGS enable_parallel_replicas = 0
+                """
+            )
+        )
+        coordinators += [node.name] * reads
+    return sorted(coordinators)
+
+
+def one_parallel_replicas_read_per_instance(coordinators):
+    return all(
+        sum(name in [node.name for node in instance_nodes] for name in coordinators) == 1
+        for _, instance_nodes in INSTANCES
+    )
+
+
+def wait_for_one_parallel_replicas_read_per_instance(query_id):
+    """A coordinator's own query can still be finishing when the initiator already has all the data."""
+    return wait_condition(
+        lambda: parallel_replicas_coordinators(query_id),
+        one_parallel_replicas_read_per_instance,
+        max_attempts=30,
+        delay=1,
+    )
 
 
 @pytest.mark.parametrize("prefer_localhost_replica", [0, 1])
@@ -152,8 +171,8 @@ def test_parallel_replicas_over_distributed_over_distributed(
                 "enable_parallel_replicas": 2,
                 "max_parallel_replicas": 2,
                 "prefer_localhost_replica": prefer_localhost_replica,
-                # The automatic decision must not collapse the read onto one replica on this small
-                # data, and one mark segment per granule lets the reading spread over both replicas.
+                # The automatic decision must not turn parallel replicas off on this small data, and
+                # one mark segment per granule lets the reading spread over both replicas.
                 "automatic_parallel_replicas_mode": 0,
                 "parallel_replicas_mark_segment_size": 1,
             },
@@ -161,8 +180,9 @@ def test_parallel_replicas_over_distributed_over_distributed(
         == EXPECTED
     )
 
-    # One parallel-replicas read per instance, over all four replicas: the outer cluster cannot use
-    # parallel replicas for its own hop, since each of its shards has a single replica, but that says
-    # nothing about the two-replica clusters below it. Without this the test would also pass when
-    # parallel replicas are silently turned off somewhere along the chain.
-    assert parallel_replicas_reads(query_id) == (2, {node.name for node in nodes})
+    # Exactly one parallel-replicas read inside each instance, over that instance's own `default`
+    # cluster of two replicas. The outer cluster cannot use parallel replicas for its own hop, since
+    # each of its shards has a single replica, but that says nothing about the clusters below it.
+    # Without this the test would also pass when parallel replicas are silently turned off somewhere
+    # along the chain.
+    wait_for_one_parallel_replicas_read_per_instance(query_id)
