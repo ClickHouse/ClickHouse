@@ -8,7 +8,7 @@
 DROP TABLE IF EXISTS t_mut_reload;
 
 CREATE TABLE t_mut_reload (date1 Date, value1 String, value2 UInt64) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
+SETTINGS optimize_row_order_if_no_order_by = 0, enable_block_number_column = 1, enable_block_offset_column = 1,
          part_minmax_index_columns = 'with_block_number_offset', min_bytes_for_wide_part = 0,
          min_bytes_for_full_part_storage = 0;
 

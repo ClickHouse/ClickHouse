@@ -14,7 +14,7 @@ set -eo pipefail
 $CLICKHOUSE_CLIENT <<EOF
 DROP TABLE IF EXISTS nested_in_nested_protobuf_00825;
 
-CREATE TABLE nested_in_nested_protobuf_00825 (x Nested (y Nested (z Int64))) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE nested_in_nested_protobuf_00825 (x Nested (y Nested (z Int64))) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
 
 INSERT INTO nested_in_nested_protobuf_00825 VALUES ([[(1),(2)],[(3),(4),(5)]]), ([[(6)]]), ([[]]), ([]);
 

@@ -221,7 +221,7 @@ CREATE TABLE tmp
     `zxcvbnmkj_qwer` DateTime('UTC') MATERIALIZED now()
 )
 ENGINE = MergeTree
-ORDER BY tuple()
+ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0
 </create_query>
 
 <create_query>create table null as tmp ENGINE = Null;</create_query>

@@ -579,7 +579,7 @@ CREATE TABLE test_nullable_tuple
     data Nullable(Tuple(String, UInt64))
 )
 ENGINE = MergeTree
-ORDER BY tuple();
+ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
 
 INSERT INTO test_nullable_tuple VALUES
     (('Alice', 100)),

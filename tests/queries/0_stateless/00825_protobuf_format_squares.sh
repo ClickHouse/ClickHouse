@@ -12,7 +12,7 @@ set -eo pipefail
 $CLICKHOUSE_CLIENT <<EOF
 DROP TABLE IF EXISTS squares_protobuf_00825;
 
-CREATE TABLE squares_protobuf_00825 (number UInt32, square UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE squares_protobuf_00825 (number UInt32, square UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
 
 INSERT INTO squares_protobuf_00825 VALUES (2, 4), (0, 0), (3, 9);
 

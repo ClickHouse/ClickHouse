@@ -82,6 +82,11 @@ public:
         return data->getDataAt(0);
     }
 
+    bool supportsGetDataAt() const override
+    {
+        return data->supportsGetDataAt();
+    }
+
     UInt64 get64(size_t) const override
     {
         return data->get64(0);

@@ -13,7 +13,7 @@
         <allow_suspicious_types_in_group_by>1</allow_suspicious_types_in_group_by>
     </settings>
 
-    <create_query>CREATE TABLE t_json_group_by (j JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE t_json_group_by (j JSON) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
     <fill_query>
         INSERT INTO t_json_group_by
         SELECT toJSONString(map('a', toString(number % 1000), 'b', toString(number % 7),

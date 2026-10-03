@@ -16,7 +16,7 @@ CREATE TABLE tab (
     GROUP BY x, z
   )
 ) ENGINE = MergeTree
-order by tuple();
+order by tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
 
 INSERT INTO tab
 SELECT number, number % 3, number % 5, number % 7
@@ -53,7 +53,7 @@ CREATE TABLE tab (
     GROUP BY x / 2, y % 10
   )
 ) ENGINE = MergeTree
-order by tuple();
+order by tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
 
 INSERT INTO tab
 SELECT number, number % 3, number % 5

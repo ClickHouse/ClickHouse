@@ -7,7 +7,7 @@
         <!-- Keep `INSERT ... SELECT` synchronous to measure insert itself without batching overhead -->
         <async_insert>0</async_insert>
     </settings>
-    <create_query>CREATE TABLE t (x UInt64) ENGINE = MergeTree() ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE t (x UInt64) ENGINE = MergeTree() ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
     <query>INSERT INTO t SELECT * FROM numbers(3000)</query>
     <drop_query>DROP TABLE IF EXISTS t</drop_query>
 </test>

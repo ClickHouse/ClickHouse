@@ -4,7 +4,7 @@
       <query_plan_direct_read_from_text_index>1</query_plan_direct_read_from_text_index>
   </settings>
 
-  <create_query>CREATE TABLE text_index_partially_materialized (text String) ENGINE = MergeTree ORDER BY tuple()</create_query>
+  <create_query>CREATE TABLE text_index_partially_materialized (text String) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
 
   <fill_query>INSERT INTO text_index_partially_materialized SELECT arrayStringConcat(arrayMap(x -> toString(rand(number * 30 + x) % 500000), range(42)), ' ') FROM numbers(1000)</fill_query>
   <fill_query>ALTER TABLE text_index_partially_materialized ADD INDEX idx(text) TYPE text(tokenizer = splitByNonAlpha)</fill_query>
