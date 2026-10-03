@@ -26,6 +26,15 @@ SELECT formatQueryFromJSON('{"type":"ProjectionDeclaration","name":"p","columns"
 -- A column list describes what a `SELECT` produces, so it cannot stand without one.
 SELECT formatQueryFromJSON('{"type":"ProjectionDeclaration","name":"p","columns":{"type":"ExpressionList","children":[{"type":"ColumnDeclaration","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
 
+-- A JSON-only separator must not format a projection list that SQL cannot parse back.
+WITH
+    parseQueryToJSON('CREATE TABLE t (x UInt64, y UInt64, PROJECTION p (x CODEC(NONE), y CODEC(NONE)) AS (SELECT x, y ORDER BY x)) ENGINE = MergeTree ORDER BY x') AS original,
+    replaceOne(
+        original,
+        '"order_by":{"type":"Identifier","name":"x"}},"columns":{"type":"ExpressionList"',
+        '"order_by":{"type":"Identifier","name":"x"}},"columns":{"type":"ExpressionList","separator":";"') AS malformed
+SELECT formatQueryFromJSON(malformed); -- { serverError BAD_ARGUMENTS }
+
 -- ---------------------------------------------------------------------------
 -- `formatQuery` fixpoint. A projection's column list is the only caller of
 -- `ASTExpressionList::formatImplMultiline` other than `ASTCreateQuery`, so its indentation is not

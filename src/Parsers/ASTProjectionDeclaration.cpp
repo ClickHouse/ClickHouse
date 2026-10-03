@@ -107,6 +107,9 @@ void ASTProjectionDeclaration::readJSON(const Poco::JSON::Object & json)
     auto columns_child = r.readChildOfType<ASTExpressionList>("columns");
     if (columns_child)
     {
+        if (columns_child->as<ASTExpressionList &>().getSeparator() != ',')
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`ProjectionDeclaration` column list must use a comma separator during AST JSON deserialization");
         if (columns_child->children.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "`ProjectionDeclaration` column list must be non-empty during AST JSON deserialization");
