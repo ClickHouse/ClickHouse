@@ -43,6 +43,7 @@
 
 #include <Core/Settings.h>
 
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -4486,6 +4487,17 @@ void expandTuplesInList(QueryTreeNodes & key_list)
     key_list = std::move(expanded_keys);
 }
 
+bool isTupleOperator(const QueryTreeNodePtr & node)
+{
+    const auto * function = node->as<FunctionNode>();
+    if (!function || function->getFunctionName() != "tuple")
+        return false;
+
+    const auto & original_ast = function->getOriginalAST();
+    const auto * ast_function = original_ast ? original_ast->as<ASTFunction>() : nullptr;
+    return ast_function && ast_function->name == "tuple" && ast_function->isOperator();
+}
+
 bool nodeSupportsConvertToNullable(const QueryTreeNodePtr & node)
 {
     auto node_type = node->getNodeType();
@@ -4623,14 +4635,27 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
     }
     else
     {
+        auto & group_by_list = query_node_typed.getGroupBy().getNodes();
+
         replaceNodesWithPositionalArguments(query_node_typed.getGroupByNode(), query_node_typed.getProjection().getNodes(), scope);
+
+        /// Record the parenthesized key-list shorthand while it is still an unresolved tuple expression.
+        /// Alias resolution can also turn an identifier into a tuple, but that alias must stay one key.
+        const bool expand_parenthesized_key_list =
+            (query_node_typed.isGroupByWithRollup() || query_node_typed.isGroupByWithCube())
+            && group_by_list.size() == 1 && isTupleOperator(group_by_list.front());
 
         resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-        // Remove redundant calls to `tuple` function. It simplifies checking if expression is an aggregation key.
-        // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
-        auto & group_by_list = query_node_typed.getGroupBy().getNodes();
-        expandTuplesInList(group_by_list);
+        // Remove redundant calls to `tuple` function for ordinary GROUP BY. It simplifies checking if expression
+        // is an aggregation key and is required to support queries like: SELECT number FROM numbers(3)
+        // GROUP BY (number, number % 2). For ROLLUP and CUBE, preserve tuple-valued keys but keep the historical
+        // singleton `GROUP BY (a, b) WITH ...` shorthand as two grouping keys. Expand that wrapper only when it
+        // was present in the parsed expression, before alias resolution.
+        if (!query_node_typed.isGroupByWithRollup() && !query_node_typed.isGroupByWithCube())
+            expandTuplesInList(group_by_list);
+        else if (expand_parenthesized_key_list)
+            expandTuplesInList(group_by_list);
 
         for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
         {
@@ -7489,19 +7514,20 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     expandGroupByAll(query_node_typed);
 
     /// `GROUP BY ALL` adds the SELECT expressions as grouping keys only here, after
-    /// `resolveGroupByNode` already ran its tuple unwrapping and key type validation. So a key like
-    /// `tuple(a, b)` is kept as a single key, unlike an explicit `GROUP BY tuple(a, b)` which
-    /// `expandTuplesInList` turns into the separate keys `a` and `b`, and none of the expanded keys go
-    /// through `validateGroupByKeyType`. Redo both here: otherwise the tuple elements are not
-    /// individually available after aggregation, and a later pass such as `OrderByTupleEliminationPass`
-    /// (which rewrites `ORDER BY tuple(a, b)` into `ORDER BY a, b`) would reference columns missing from
-    /// the aggregated block; and a suspicious key type such as `Variant`/`Dynamic`, which explicit
-    /// `GROUP BY` rejects, would be silently accepted. See https://github.com/ClickHouse/ClickHouse/issues/83433.
+    /// `resolveGroupByNode` already ran its tuple unwrapping and key type validation. For ordinary GROUP BY,
+    /// a key like `tuple(a, b)` is kept as a single key at this point, unlike an explicit `GROUP BY tuple(a, b)`
+    /// which `expandTuplesInList` turns into the separate keys `a` and `b`. Redo both here: otherwise the tuple
+    /// elements are not individually available after aggregation, and a later pass such as
+    /// `OrderByTupleEliminationPass` (which rewrites `ORDER BY tuple(a, b)` into `ORDER BY a, b`) would reference
+    /// columns missing from the aggregated block; and a suspicious key type such as `Variant`/`Dynamic`, which
+    /// explicit `GROUP BY` rejects, would be silently accepted. For ROLLUP and CUBE, however, a tuple is one
+    /// logical grouping key and must stay intact. See https://github.com/ClickHouse/ClickHouse/issues/83433.
     if (was_group_by_all)
     {
-        expandTuplesInList(query_node_typed.getGroupBy().getNodes());
+        if (!is_rollup_or_cube)
+            expandTuplesInList(query_node_typed.getGroupBy().getNodes());
 
-        /// Only the acceptance check is optional; the tuple expansion above is not.
+        /// Only the acceptance check is optional; tuple expansion above is not for ordinary GROUP BY.
         if (scope.context->getSettingsRef()[Setting::validate_group_by_all_key_types])
         {
             for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
