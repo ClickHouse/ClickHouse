@@ -2949,9 +2949,9 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
                 std::unordered_set<String> requested_columns;
                 for (const auto & column : info.format_header)
                     requested_columns.insert(column.name);
-                if (info.row_level_filter)
+                if (query_info.row_level_filter)
                 {
-                    for (const auto & input : info.row_level_filter->actions.getRequiredColumns())
+                    for (const auto & input : query_info.row_level_filter->actions.getRequiredColumns())
                         requested_columns.insert(input.name);
                 }
                 if (info.prewhere_info)
