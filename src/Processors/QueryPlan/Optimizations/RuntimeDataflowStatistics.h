@@ -31,7 +31,14 @@ struct AggregatedDataVariants;
 
 struct RuntimeDataflowStatistics
 {
+    /// The read parallel replicas would coordinate: they split it, so the cost model divides it by their
+    /// number.
     size_t input_bytes = 0;
+    /// Every other read of the same subtree. Parallel replicas do not split these - each replica runs the
+    /// whole subtree, so each reads all of them. They cost the same wall-clock time either way, which is
+    /// why they are kept apart from `input_bytes` rather than added to it, but they cost the cluster
+    /// `num_replicas` times as much work, which is what the amplification gate weighs.
+    size_t replicated_bytes = 0;
     size_t output_bytes = 0;
     size_t total_rows_to_read = 0;
 };
@@ -103,6 +110,13 @@ class RuntimeDataflowStatisticsCacheUpdater
     };
 
 public:
+    /// An updater for a read parallel replicas would *not* coordinate. It records into `primary`'s
+    /// replicated-bytes bucket and writes no cache entry of its own, so one execution still produces one
+    /// entry. Holding `primary` by shared pointer also orders the two: the entry is written by `primary`'s
+    /// destructor, which cannot run while any satellite is still alive.
+    static std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>
+    makeReplicatedBytesSatellite(const std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater> & primary);
+
     RuntimeDataflowStatisticsCacheUpdater(size_t cache_key_, size_t total_rows_to_read_)
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)
@@ -179,6 +193,10 @@ private:
         MaxInputType = 2,
     };
     std::array<Statistics, 2> input_bytes_statistics;
+    /// Filled by this updater's satellites, never by the updater itself.
+    std::array<Statistics, 2> replicated_bytes_statistics;
+    /// Set only on a satellite, and then it records into this updater instead of into itself.
+    std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater> replicated_bytes_primary;
 
     enum OutputStatisticsType
     {
