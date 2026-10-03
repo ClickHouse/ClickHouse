@@ -374,7 +374,9 @@ void StorageMergeTree::read(
     size_t num_streams)
 {
     /// The reading step for parallel replicas is built in the Planner, so don't do it here.
-    const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
+    /// TODO(unique-key): support parallel reading.
+    const bool enable_parallel_reading = !storage_snapshot->metadata->hasUniqueKey()
+        && local_context->canUseParallelReplicasOnFollower()
         && local_context->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
 
     QueryPlanPtr plan = MergeTreeDataSelectExecutor(*this).read(
@@ -3700,9 +3702,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     assertNotReadonly();
     LOG_DEBUG(log, "StorageMergeTree::replacePartitionFrom\tsource_table: {}, replace: {}", source_table->getStorageID().getShortName(), replace);
 
-    /// Source-side UK reject (destination-side rejection is centralized in
-    /// MergeTreeData::alterPartition). Without this, REPLACE PARTITION FROM a
-    /// UK source into a plain table would silently break UK invariants.
+    /// TODO(unique-key): support a UNIQUE KEY source; the destination's is refused in `alterPartition`.
     auto source_uk_metadata_snapshot = source_table->getInMemoryMetadataPtr(local_context, false);
     if (source_uk_metadata_snapshot->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -3949,8 +3949,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
                         "Table {} supports movePartitionToTable only for MergeTree family of table engines. Got {}",
                         getStorageID().getNameForLogs(), dest_table->getName());
 
-    /// Destination-side UK reject (source-side rejection is centralized in
-    /// MergeTreeData::alterPartition).
+    /// TODO(unique-key): support a UNIQUE KEY destination; the source's is refused in `alterPartition`.
     auto dest_uk_metadata_snapshot = dest_table_storage->getInMemoryMetadataPtr(local_context, false);
     if (dest_uk_metadata_snapshot->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -4231,7 +4230,7 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     const auto & backup_settings = backup_entries_collector.getBackupSettings();
     auto local_context = backup_entries_collector.getContext();
 
-    /// TODO(unique-key): sidecar-aware restore
+    /// TODO(unique-key): support BACKUP.
     if (auto uk_metadata = getInMemoryMetadataPtr(local_context, false); uk_metadata && uk_metadata->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "BACKUP is not supported for UNIQUE KEY tables yet: a restored part is renamed, and "
