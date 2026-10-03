@@ -60,7 +60,6 @@ run_case()
     ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query \
         "INSERT INTO ${table} SELECT number, char(number + ascii('a')) FROM numbers(100, 10)"
 
-
     local pd_before pd_after
     pd_before=$(count_position_deletes "${table}")
 

@@ -28,7 +28,6 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO t0 VALUES (4);
 "
 
-
 ${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE t0"
 
 echo '--- Rewritten manifest entries ---'
