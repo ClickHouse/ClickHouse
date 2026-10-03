@@ -14,7 +14,8 @@ SELECT 'explicit', k, arr, arr.size0, length(arr) FROM 04709_buf ORDER BY k
     SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT 'folded', k, arr, arr.size0 FROM 04709_buf ORDER BY k
     SETTINGS optimize_functions_to_subcolumns = 1;
-SELECT 'aggregates', sum(length(arr)), sum(empty(arr)) FROM 04709_buf;
+SELECT 'aggregates', sum(length(arr)), sum(empty(arr)) FROM 04709_buf
+    SETTINGS optimize_functions_to_subcolumns = 1;
 
 SELECT 'prewhere_ordinary', arr, arr.size0 FROM 04709_buf PREWHERE k = 1
     SETTINGS optimize_functions_to_subcolumns = 0;
