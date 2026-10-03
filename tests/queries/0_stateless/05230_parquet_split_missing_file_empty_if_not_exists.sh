@@ -4,10 +4,12 @@
 # Fail point state is process global and each clickhouse-local invocation owns its own, so arming
 # one here cannot reach a concurrent test: no no-parallel tag is needed.
 
-# `engine_file_empty_if_not_exists` must hold on the single-file parallel split path too. A source
-# of the split is assigned one fixed path instead of pulling one from the file iterator, so it does
-# not pass the iterator's missing-file check; without its own check, a file removed between the
-# split decision and the per-bucket reads turns the setting's empty result into an error.
+# A file removed between the single-file parallel split decision and the per-bucket reads is a
+# concurrent modification, so the per-bucket sources fail close with `FILE_CHANGED_DURING_READ`
+# even under `engine_file_empty_if_not_exists = 1`: other sources may have already opened the old
+# file and keep reading it, and treating the file as empty in one source would silently return
+# only part of the row groups. The setting still applies to a file that is missing when the read
+# is planned, which is never split.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -39,17 +41,21 @@ query="SELECT sum(k) FROM file('${LOCAL_DIR}/data.parquet', Parquet, 'k UInt64, 
 # Untouched file: the split reads every row group exactly once.
 "${LOCAL[@]}" "${split[@]}" --query "${query}"
 
-# The file is gone by the time the per-bucket sources open it. With the setting on, that is an
-# empty result, exactly as for an unsplit read of a missing file.
+# The file is gone by the time the per-bucket sources open it. Even with the setting on, that is
+# an error, not an empty (or partial) result. Only the code is printed: the message carries a path
+# that differs every run.
 "${LOCAL[@]}" "${split[@]}" --engine_file_empty_if_not_exists=1 --query "
     SYSTEM ENABLE FAILPOINT file_read_inject_fixed_file_missing;
     ${query};
-    SYSTEM DISABLE FAILPOINT file_read_inject_fixed_file_missing;
-"
+" 2>&1 | grep -o -m1 'FILE_CHANGED_DURING_READ'
 
-# With the setting off it is an error, and the same error the unsplit path reports. Only the code
-# is printed: the message carries a path that differs every run.
+# The same with the setting off.
 "${LOCAL[@]}" "${split[@]}" --engine_file_empty_if_not_exists=0 --query "
     SYSTEM ENABLE FAILPOINT file_read_inject_fixed_file_missing;
     ${query};
-" 2>&1 | grep -o -m1 'FILE_DOESNT_EXIST'
+" 2>&1 | grep -o -m1 'FILE_CHANGED_DURING_READ'
+
+# A file that is missing when the read is planned is not split, and the setting makes it empty.
+"${LOCAL[@]}" "${split[@]}" --engine_file_empty_if_not_exists=1 --query "
+    SELECT count() FROM file('${LOCAL_DIR}/missing.parquet', Parquet, 'k UInt64, s String');
+"

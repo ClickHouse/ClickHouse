@@ -1969,17 +1969,19 @@ Chunk StorageFileSource::generate()
                     fiu_do_on(FailPoints::file_read_inject_fixed_file_missing, { current_path += ".removed"; });
 
                     /// The file can disappear between the split decision and this read - the split
-                    /// takes no lock spanning the two - and it may never have existed at all, since
-                    /// the split probe does not require it. Honor `engine_file_empty_if_not_exists`
-                    /// exactly as the iterator path below does; there is only one file here, so
-                    /// "skip it" means "produce nothing".
+                    /// takes no lock spanning the two. The split is only planned for a file the
+                    /// decision could `stat`, so a missing path here is a concurrent modification,
+                    /// not the ordinary "missing file" case of `engine_file_empty_if_not_exists`
+                    /// (a file that is already absent at planning time is never split). Fail close
+                    /// regardless of that setting: other per-bucket sources of this read may have
+                    /// already opened the old file and keep reading it through their descriptors,
+                    /// so treating the file as empty here would silently drop only this source's
+                    /// row groups and return a partial result.
                     if (!fs::exists(current_path))
-                    {
-                        if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
-                            return {};
-
-                        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", current_path);
-                    }
+                        throw Exception(
+                            ErrorCodes::FILE_CHANGED_DURING_READ,
+                            "File {} was removed concurrently while a parallel single-file read was in progress",
+                            current_path);
                 }
                 else
                 {
@@ -2880,9 +2882,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         /// the path list is built never reaches this point (`listFilesWithRegexpMatching` drops it,
         /// so the single-path gate above is not satisfied), but one removed after that does, and
         /// what a missing file means is `engine_file_empty_if_not_exists`' decision, taken on the
-        /// read path (`StorageFileSource::generate`) identically for a split and an unsplit read.
-        /// Throwing `CANNOT_STAT` from this probe would pre-empt it. A failed probe only means
-        /// "do not split".
+        /// unsplit read path (`StorageFileSource::generate`). Throwing `CANNOT_STAT` from this
+        /// probe would pre-empt it. A failed probe only means "do not split". Once the split is
+        /// planned, the file disappearing is a concurrent modification and the per-bucket sources
+        /// fail close with `FILE_CHANGED_DURING_READ`.
         struct stat file_stat{};
         const bool file_stat_read = 0 == stat(single_file_path.c_str(), &file_stat);
         if (file_stat_read && file_stat.st_size > 0 && is_uncompressed)
