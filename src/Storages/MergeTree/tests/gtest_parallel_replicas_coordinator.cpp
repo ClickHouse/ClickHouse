@@ -104,7 +104,7 @@ RangesInDataPartDescription makePart(const String & partition_id, Int64 min_bloc
 }
 
 /// Like `makePart` but additionally sets the part fingerprint
-/// (`getTotalChecksumUInt128` halves) on the description, exercising the fingerprint
+/// (halves of the data-only checksum) on the description, exercising the fingerprint
 /// branch of `sameLocalLayout`. Used by the divergent-checksum tests.
 RangesInDataPartDescription makePartWithFingerprint(
     const String & partition_id,
@@ -534,9 +534,9 @@ TEST(ParallelReplicasCoordinator, InOrderSkipsValidationWhenTotalMarksUnset)
 
 /// `total_marks_in_part` alone is not a part identity: two genuinely different non-replicated
 /// `MergeTree` parts that happen to share a name AND coincidentally have the same mark count
-/// would slip past the previous mark-only check. The fingerprint is the
-/// `getTotalChecksumUInt128` of the part's `checksums.txt` and disambiguates such cases. Same
-/// fingerprint = same on-disk content; different fingerprint = different content.
+/// would slip past the previous mark-only check. The fingerprint is a hash of the uncompressed
+/// contents of the part's data files and disambiguates such cases. Same fingerprint = same data;
+/// different fingerprint = different data.
 TEST(ParallelReplicasCoordinator, InOrderRejectsDivergentChecksumWithSameMarks)
 {
     ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
@@ -586,6 +586,64 @@ TEST(ParallelReplicasCoordinator, DefaultRejectsDivergentChecksumWithSameMarks)
     EXPECT_THROW(
         coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/1, std::move(divergent))),
         DB::Exception);
+}
+
+/// The fingerprint covers only the uncompressed data, so it does not pin the mark layout: the same
+/// rows can be split into a different number of granules. Ranges are dispatched in marks of the
+/// first replica's part, so a same-named part with an equal fingerprint but a different mark count
+/// is still rejected.
+TEST(ParallelReplicasCoordinator, InOrderRejectsSameChecksumWithDivergentTotalMarks)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+
+    {
+        RangesInDataPartsDescription parts;
+        parts.push_back(makePartWithFingerprint(
+            "all", 1, 1, 0, /*marks=*/8,
+            /*fingerprint_low64=*/0x5555555555555555ull,
+            /*fingerprint_high64=*/0x6666666666666666ull));
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    RangesInDataPartsDescription divergent;
+    divergent.push_back(makePartWithFingerprint(
+        "all", 1, 1, 0, /*marks=*/16,
+        /*fingerprint_low64=*/0x5555555555555555ull,
+        /*fingerprint_high64=*/0x6666666666666666ull));
+    EXPECT_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/1, std::move(divergent))),
+        DB::Exception);
+}
+
+/// A projection part is identified by its parent part's info plus `projection_name`, so it is a
+/// different object from its parent part with a different fingerprint and mark count. One replica
+/// may read a part through a projection while another, which has not materialized the projection
+/// for that part, reads the part itself; that is not a divergence of same-named parts.
+TEST(ParallelReplicasCoordinator, InOrderDoesNotCompareProjectionWithItsParentPart)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+
+    {
+        RangesInDataPartsDescription parts;
+        auto part = makePartWithFingerprint(
+            "all", 1, 1, 0, /*marks=*/8,
+            /*fingerprint_low64=*/0x7777777777777777ull,
+            /*fingerprint_high64=*/0x8888888888888888ull);
+        setPartNameIdentityNodeLocal(part);
+        parts.push_back(std::move(part));
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    RangesInDataPartsDescription projection_parts;
+    auto projection_part = makePartWithFingerprint(
+        "all", 1, 1, 0, /*marks=*/2,
+        /*fingerprint_low64=*/0x9999999999999999ull,
+        /*fingerprint_high64=*/0xAAAAAAAAAAAAAAAAull);
+    projection_part.projection_name = "p";
+    setPartNameIdentityNodeLocal(projection_part);
+    projection_parts.push_back(std::move(projection_part));
+    EXPECT_NO_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/1, std::move(projection_parts))));
 }
 
 /// The complement: same fingerprint must be accepted even when other analyzed-view fields

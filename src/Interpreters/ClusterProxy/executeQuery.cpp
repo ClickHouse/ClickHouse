@@ -48,6 +48,7 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
@@ -1113,6 +1114,25 @@ static size_t findLocalReplicaIndexAndUpdatePools(std::vector<ConnectionPoolPtr>
     return *local_replica_index;
 }
 
+/// Returns the `MergeTreeData` that `storage` reads from, looking through `StorageProxy` wrappers
+/// (for example, `StorageTableProxy` of a database with `lazy_load_tables`), or `nullptr` when it is
+/// not a `MergeTree` table. The bound on the number of wrappers mirrors
+/// `getDistributedStorageFromTableExpression`.
+static std::shared_ptr<const MergeTreeData> getMergeTreeDataThroughProxies(StoragePtr storage)
+{
+    for (size_t i = 0; storage && i < 16; ++i)
+    {
+        if (auto merge_tree = std::dynamic_pointer_cast<const MergeTreeData>(storage))
+            return merge_tree;
+
+        const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get());
+        if (!proxy)
+            return nullptr;
+        storage = proxy->getNested();
+    }
+    return nullptr;
+}
+
 /// Registers the initiator's own classification of the table's part names on the coordinator, so
 /// that announcements from replicas whose protocol predates
 /// `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT` (they report
@@ -1125,14 +1145,14 @@ static size_t findLocalReplicaIndexAndUpdatePools(std::vector<ConnectionPoolPtr>
 static void seedAuthoritativePartNameIdentity(
     ParallelReplicasReadingCoordinator & coordinator, const StorageID & storage_id, const ContextPtr & context)
 {
-    const auto storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get());
+    const auto merge_tree = getMergeTreeDataThroughProxies(DatabaseCatalog::instance().tryGetTable(storage_id, context));
     if (!merge_tree)
         return;
 
-    /// `stream_id` of every stream of this table is its full table name, plus a `#split_{i}` suffix
-    /// when the table is read as several streams (stripped by the coordinator).
-    coordinator.setAuthoritativePartNameIdentity(storage_id.getFullTableName(), partNameIdentityOf(*merge_tree));
+    /// `stream_id` of every stream of this table is the full table name of the `MergeTreeData` it
+    /// reads, plus a `#split_{i}` suffix when the table is read as several streams (stripped by the
+    /// coordinator).
+    coordinator.setAuthoritativePartNameIdentity(merge_tree->getStorageID().getFullTableName(), partNameIdentityOf(*merge_tree));
 }
 
 /// Same as above for every `MergeTree` table read by `plan`, used where the initiator builds a plan
@@ -1167,7 +1187,7 @@ static void seedAuthoritativePartNameIdentity(
 
         if (const auto * table_node = node->as<TableNode>())
         {
-            if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table_node->getStorage().get()))
+            if (const auto merge_tree = getMergeTreeDataThroughProxies(table_node->getStorage()))
                 coordinator.setAuthoritativePartNameIdentity(
                     merge_tree->getStorageID().getFullTableName(), partNameIdentityOf(*merge_tree));
         }

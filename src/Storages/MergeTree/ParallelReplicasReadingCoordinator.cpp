@@ -53,14 +53,19 @@ takeFromRange(const MarkRange & range, size_t min_marks_per_request, size_t & cu
 
 void sortResponseRanges(RangesInDataPartsDescription & result)
 {
-    std::ranges::sort(result, [](const auto & lhs, const auto & rhs) { return lhs.info < rhs.info; });
+    /// A part and a projection of it are different objects for the follower, so group by both.
+    std::ranges::sort(
+        result,
+        [](const auto & lhs, const auto & rhs)
+        { return std::tie(lhs.info, lhs.projection_name) < std::tie(rhs.info, rhs.projection_name); });
 
     RangesInDataPartsDescription new_result;
 
     /// Aggregate ranges for each part within a single entry
     for (auto & ranges_in_part : result)
     {
-        if (new_result.empty() || new_result.back().info != ranges_in_part.info)
+        if (new_result.empty() || new_result.back().info != ranges_in_part.info
+            || new_result.back().projection_name != ranges_in_part.projection_name)
             new_result.push_back(
                 RangesInDataPartDescription{.info = ranges_in_part.info, .projection_name = ranges_in_part.projection_name,
                                              .min_marks_per_task = ranges_in_part.min_marks_per_task});
@@ -124,9 +129,9 @@ struct Part
 
     /// Content fingerprint of the underlying part on the first announcing replica's local disk
     /// (snapshotted from `description.part_checksum_*` at first insertion). The two halves
-    /// together hold the `getTotalChecksumUInt128` of the part's `checksums.txt`, which is
-    /// computed over file contents and is therefore identical across replicas that share the
-    /// same on-disk data. Two replicas that hold genuinely different parts which happen to share
+    /// together hold a hash of the uncompressed contents of the part's data files
+    /// (`computeTotalChecksumDataOnly`), which is therefore identical across replicas that share
+    /// the same data. Two replicas that hold genuinely different parts which happen to share
     /// a name produce different fingerprints, so the coordinator can reject that case even when
     /// `total_marks_in_part` happens to coincide. A value of `(0, 0)` means the field was unset
     /// (older protocol replica or part with no loaded checksums); the coordinator skips
@@ -138,13 +143,19 @@ struct Part
     /// same content on every cluster member (snapshotted from `description.part_name_identity` at
     /// first insertion). For `NodeLocal` data a missing fingerprint makes same-named parts
     /// unverifiable, so the coordinator fails closed; for `ClusterWide` data the engine's contract
-    /// (or shared-metadata storage) makes same-named parts safe to merge even without a
+    /// makes same-named parts safe to merge even without a
     /// fingerprint. `Unknown` means the first replica spoke an older protocol that did not carry
     /// the field.
     RangesInDataPartDescription::PartNameIdentity initial_part_name_identity
         = RangesInDataPartDescription::PartNameIdentity::Unknown;
 
-    bool operator<(const Part & rhs) const { return description.info < rhs.description.info; }
+    /// A part and a projection of it are different objects (the coordinator, the followers and
+    /// `getPartOrProjectionName` all tell them apart), so order by both.
+    bool operator<(const Part & rhs) const
+    {
+        return std::tie(description.info, description.projection_name)
+            < std::tie(rhs.description.info, rhs.description.projection_name);
+    }
 };
 }
 
@@ -178,10 +189,12 @@ namespace
 ///
 /// Identity check, in priority order:
 ///
-///   1. **Content fingerprint** — `(part_checksum_low64, part_checksum_high64)`, which is the
-///      `getTotalChecksumUInt128` of the part's `checksums.txt`. The fingerprint is computed
-///      over the part's file contents and is therefore the strongest available cross-replica
-///      identity. Two replicas that hold the same on-disk part agree on the fingerprint; two
+///   1. **Content fingerprint** — `(part_checksum_low64, part_checksum_high64)`, a hash of the
+///      uncompressed contents of the part's data files (`computeTotalChecksumDataOnly`), plus
+///      equal `total_marks_in_part` when both sides carry it. The fingerprint is computed over
+///      the part's data and is therefore the strongest available cross-replica identity, while
+///      tolerating codec or server-version differences in how the same data was written. Two
+///      replicas that hold the same part agree on the fingerprint; two
 ///      replicas that hold genuinely different parts produce different fingerprints even when
 ///      `total_marks_in_part` happens to coincide (for example, two non-replicated `MergeTree`
 ///      instances that each created a part named `all_1_1_0` from independent local inserts).
@@ -195,7 +208,7 @@ namespace
 ///      hold the same data, and merging them blindly could return incorrect results.
 ///
 ///   3. **Total mark count** — fallback used when the fingerprint is unset and no side reports
-///      `NodeLocal` part names (a replicated engine, or shared-metadata storage, guarantees
+///      `NodeLocal` part names (a replicated engine guarantees
 ///      part-name/content identity, so the weaker check is safe there and mixed-version clusters
 ///      keep working). Catches the common AST-fuzzer shape where mark counts diverge.
 ///
@@ -224,6 +237,11 @@ bool sameLocalLayout(const Part & known, const RangesInDataPartDescription & ann
 
     if (known_has_fingerprint && announced_has_fingerprint)
     {
+        /// The fingerprint covers the uncompressed data only, so also require the same mark layout:
+        /// ranges are dispatched in marks of the first replica's part.
+        if (known.initial_total_marks_in_part != 0 && announced.total_marks_in_part != 0
+            && known.initial_total_marks_in_part != announced.total_marks_in_part)
+            return false;
         return known.initial_part_checksum_low64 == announced.part_checksum_low64
             && known.initial_part_checksum_high64 == announced.part_checksum_high64;
     }
@@ -235,8 +253,7 @@ bool sameLocalLayout(const Part & known, const RangesInDataPartDescription & ann
     /// whenever their mark counts happen to coincide, and ranges from the first replica's
     /// snapshot could then be dispatched against the second replica's different data, returning
     /// incorrect results. For `ClusterWide` part names a part name implies identical content (by
-    /// the engine's contract, or because all members read the same shared-metadata storage), so
-    /// the fallback below stays safe there (this keeps mixed-version clusters working during
+    /// the engine's contract), so the fallback below stays safe there (this keeps mixed-version clusters working during
     /// rolling upgrades).
     using PartNameIdentity = RangesInDataPartDescription::PartNameIdentity;
     if (known.initial_part_name_identity == PartNameIdentity::NodeLocal
@@ -262,7 +279,10 @@ bool sameLocalLayout(const Part & known, const RangesInDataPartDescription & ann
     const bool announced_has_fingerprint
         = announced.part_checksum_low64 != 0 || announced.part_checksum_high64 != 0;
 
-    if (known_has_fingerprint && announced_has_fingerprint)
+    const bool fingerprints_differ = known.initial_part_checksum_low64 != announced.part_checksum_low64
+        || known.initial_part_checksum_high64 != announced.part_checksum_high64;
+
+    if (known_has_fingerprint && announced_has_fingerprint && fingerprints_differ)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -279,8 +299,9 @@ bool sameLocalLayout(const Part & known, const RangesInDataPartDescription & ann
     }
 
     using PartNameIdentity = RangesInDataPartDescription::PartNameIdentity;
-    if (known.initial_part_name_identity == PartNameIdentity::NodeLocal
-        || announced.part_name_identity == PartNameIdentity::NodeLocal)
+    if ((!known_has_fingerprint || !announced_has_fingerprint)
+        && (known.initial_part_name_identity == PartNameIdentity::NodeLocal
+            || announced.part_name_identity == PartNameIdentity::NodeLocal))
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -793,7 +814,8 @@ void DefaultCoordinator::tryToTakeFromDistributionQueue(
 
     while (!distribution_queue.empty() && current_marks_amount < min_marks_per_request)
     {
-        if (result.ranges.empty() || distribution_queue.begin()->info != result.info)
+        if (result.ranges.empty() || distribution_queue.begin()->info != result.info
+            || distribution_queue.begin()->projection_name != result.projection_name)
         {
             if (!result.ranges.empty())
                 /// We're switching to a different part, so have to save currently accumulated ranges
@@ -895,7 +917,7 @@ void DefaultCoordinator::tryToStealFromQueue(
         chassert(part_ranges.ranges.size() == 1);
         auto & range = part_ranges.ranges.front();
 
-        if (result.ranges.empty() || part_ranges.info != result.info)
+        if (result.ranges.empty() || part_ranges.info != result.info || part_ranges.projection_name != result.projection_name)
         {
             if (!result.ranges.empty())
                 /// We're switching to a different part, so have to save currently accumulated ranges

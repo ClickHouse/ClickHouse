@@ -5,13 +5,12 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
-#include <Disks/DiskType.h>
-#include <Disks/IDisk.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <IO/VarInt.h>
+#include <Common/SipHash.h>
 
 template <>
 struct fmt::formatter<DB::RangesInDataPartDescription>
@@ -195,67 +194,40 @@ RangesInDataPart::RangesInDataPart(
 
 /// Whether a part name of `storage` identifies the same content on every cluster member.
 ///
-/// Two independent guarantees make it so:
+/// Only an engine that coordinates block numbers through Keeper (`ReplicatedMergeTree` and
+/// descendants) guarantees it: there a part name is globally unique by construction.
 ///
-///   * The engine coordinates block numbers through Keeper (`ReplicatedMergeTree` and descendants),
-///     so a part name is globally unique by construction.
-///
-///   * All of the table's data lives on storage whose metadata is shared by every cluster member -
-///     `MetadataStorageType::Plain`, `PlainRewritable`, `StaticWeb`, `WebIndex` and `Keeper`. There
-///     every member enumerates literally the same parts, so same-named parts trivially hold the
-///     same content even for a plain `MergeTree`. Deriving this from the engine's replication bit
-///     alone would misclassify such a deployment as node-local and reject perfectly safe queries.
-///
-/// `MetadataStorageType::Local` and `Memory` keep metadata per node, so a plain `MergeTree` on them
-/// is node-local: two members can each mint an `all_1_1_0` holding different rows.
-///
-/// Deriving this inspects the table's storage policy, which takes a global lock, so callers that
-/// describe many parts of the same table should derive it once and pass it down as a hint.
+/// A plain `MergeTree` is always node-local, whatever its disks are. Even on storage whose metadata
+/// lives next to the data (`MetadataStorageType::Plain`, `PlainRewritable`, `StaticWeb`, ...), the
+/// table's disks only tell what this node points at, not whether every cluster member points at the
+/// same namespace: two members with per-node object storage prefixes can each mint an `all_1_1_0`
+/// holding different rows. Same-named parts of such tables are verified by the content fingerprint
+/// instead, and the coordinator fails closed when the fingerprint is unavailable.
 RangesInDataPartDescription::PartNameIdentity partNameIdentityOf(const MergeTreeData & storage)
 {
     using PartNameIdentity = RangesInDataPartDescription::PartNameIdentity;
-
-    if (storage.supportsReplication())
-        return PartNameIdentity::ClusterWide;
-
-    const auto disks = storage.getDisks();
-    if (disks.empty())
-        return PartNameIdentity::NodeLocal;
-
-    for (const auto & disk : disks)
-    {
-        switch (disk->getDataSourceDescription().metadata_type)
-        {
-            case MetadataStorageType::Plain:
-            case MetadataStorageType::PlainRewritable:
-            case MetadataStorageType::StaticWeb:
-            case MetadataStorageType::WebIndex:
-            case MetadataStorageType::Keeper:
-                break;
-            case MetadataStorageType::None:
-            case MetadataStorageType::Local:
-            case MetadataStorageType::Memory:
-                return PartNameIdentity::NodeLocal;
-        }
-    }
-    return PartNameIdentity::ClusterWide;
+    return storage.supportsReplication() ? PartNameIdentity::ClusterWide : PartNameIdentity::NodeLocal;
 }
 
-RangesInDataPartDescription RangesInDataPart::getDescription(
-    std::optional<RangesInDataPartDescription::PartNameIdentity> part_name_identity_hint) const
+RangesInDataPartDescription RangesInDataPart::getDescription() const
 {
     chassert(!data_part->isProjectionPart() || parent_part);
 
-    /// Content fingerprint of the underlying part. Identifies the actual on-disk data, so two
-    /// genuinely-different same-named parts produce different fingerprints (used by
-    /// `ParallelReplicasReadingCoordinator` to reject divergent local data even when mark counts
-    /// happen to coincide). When `checksums` is empty (rare paths where the file is not loaded),
-    /// the fingerprint is left at `(0, 0)` and the coordinator falls back to `total_marks_in_part`.
+    /// Content fingerprint of the underlying part. Identifies the data, so two genuinely-different
+    /// same-named parts produce different fingerprints (used by `ParallelReplicasReadingCoordinator`
+    /// to reject divergent local data even when mark counts happen to coincide). It covers only the
+    /// uncompressed contents of the data files, like the comparison `ReplicatedMergeTree` does for
+    /// same-named parts, so the same data written with a different codec or by a different server
+    /// version is not mistaken for divergent data. When `checksums` is empty (rare paths where the
+    /// file is not loaded), the fingerprint is left at `(0, 0)` and the coordinator falls back to
+    /// `total_marks_in_part` where the part name identity allows it.
     UInt64 fingerprint_low64 = 0;
     UInt64 fingerprint_high64 = 0;
     if (!data_part->checksums.empty())
     {
-        const auto fingerprint = data_part->checksums.getTotalChecksumUInt128();
+        SipHash hash;
+        data_part->checksums.computeTotalChecksumDataOnly(hash);
+        const auto fingerprint = getSipHash128AsPair(hash);
         fingerprint_low64 = fingerprint.low64;
         fingerprint_high64 = fingerprint.high64;
     }
@@ -271,10 +243,9 @@ RangesInDataPartDescription RangesInDataPart::getDescription(
         .total_marks_in_part = data_part->index_granularity->getMarksCountWithoutFinal(),
         .part_checksum_low64 = fingerprint_low64,
         .part_checksum_high64 = fingerprint_high64,
-        /// Tells the coordinator whether a part name is a content identity here (replicated engines
-        /// and shared-metadata storage) or same-named parts must be verified by fingerprint (a plain
-        /// `MergeTree` on node-local storage).
-        .part_name_identity = part_name_identity_hint.value_or(partNameIdentityOf(data_part->storage)),
+        /// Tells the coordinator whether a part name is a content identity here (replicated engines)
+        /// or same-named parts must be verified by fingerprint (a plain `MergeTree`).
+        .part_name_identity = partNameIdentityOf(data_part->storage),
     };
 }
 
@@ -304,14 +275,8 @@ RangesInDataParts::RangesInDataParts(const DataPartsVector & parts)
 RangesInDataPartsDescription RangesInDataParts::getDescriptions() const
 {
     RangesInDataPartsDescription result;
-    if (empty())
-        return result;
-
-    /// Every part here belongs to the same table, so derive the identity class once - it inspects the
-    /// storage policy under a global lock, which we do not want to do per part.
-    const auto part_name_identity = partNameIdentityOf(front().data_part->storage);
     for (const auto & part : *this)
-        result.emplace_back(part.getDescription(part_name_identity));
+        result.emplace_back(part.getDescription());
     return result;
 }
 
