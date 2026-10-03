@@ -179,7 +179,7 @@ namespace
                 DB::ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive merge.");
     }
 
-    /// Emplaces a staged key into `table` with the record's routing hash. String-like keys were
+    /// Emplaces a staged key into `table` with its routing hash. String-like keys were
     /// staged as raw characters and are rebuilt here, pointing into the record: the records of a
     /// partition are freed only after every table holding its keys is converted or written.
     template <typename Key, typename Table>
@@ -242,10 +242,17 @@ namespace
             return true;
     }
 
-    /// The staged record formats. Every record starts with its routing hash, is padded to 4 bytes
-    /// and never straddles two chunks, and nothing in it points outside the record, so a chunk of
-    /// records can go to disk and come back byte for byte. The fields are read and written
-    /// unaligned, so the padding only keeps a record's size a multiple of the narrowest field.
+    /// The staged record formats. A record is padded to 4 bytes and never straddles two chunks,
+    /// and nothing in it points outside the record, so a chunk of records can go to disk and come
+    /// back byte for byte. The fields are read and written unaligned, so the padding only keeps a
+    /// record's size a multiple of the narrowest field.
+    ///
+    /// The merge emplaces a staged key with its routing hash, the table's own hash of the key (see
+    /// `emplaceStagedKey`). A record of a byte-staged key, and a general record, starts with the
+    /// hash, because rehashing the key bytes would take a pass over them. A record of a fixed stride
+    /// has a fixed-width key and stores no hash: the merge rehashes the key in a few instructions,
+    /// which costs less than eight more bytes in a record of a dozen or two, written by the staging,
+    /// read by the merge, and written to disk and read back by a spill.
     constexpr size_t alignStagedRecord(size_t bytes)
     {
         return (bytes + 3) & ~size_t{3};
@@ -260,29 +267,42 @@ namespace
         unalignedStore<UInt32>(fields_end, 0);
     }
 
-    /// Count and key-only records: {UInt64 hash, [UInt32 count,] key}. The count is a run length
-    /// within one block, which a UInt32 holds. A key whose width varies is preceded by its UInt32
-    /// size; a fixed-width key has the compile-time width, so its records have a fixed stride.
+    /// Count and key-only records: {[UInt64 hash,] [UInt32 count,] [UInt32 size,] key}. The count is
+    /// a run length within one block, which a UInt32 holds. A key whose width varies is staged with
+    /// the hash and its UInt32 size; a fixed-width key has the compile-time width, so its records
+    /// have a fixed stride, and carries no hash.
     template <typename Key, bool with_count>
     struct StagedKeyRecord
     {
         static constexpr bool variable_width = adaptive_key_stages_bytes<Key>;
-        static constexpr size_t size_offset = with_count ? 12 : 8;
+        static constexpr size_t count_offset = variable_width ? sizeof(UInt64) : 0;
+        static constexpr size_t size_offset = count_offset + (with_count ? sizeof(UInt32) : 0);
         static constexpr size_t key_offset = size_offset + (variable_width ? sizeof(UInt32) : 0);
 
         static size_t bytes(size_t key_size) { return alignStagedRecord(key_offset + key_size); }
 
-        static void writeHeader(char * record, UInt64 routing_hash, UInt32 count, size_t key_size)
+        static void writeHeader(char * record, [[maybe_unused]] UInt64 routing_hash, UInt32 count, [[maybe_unused]] size_t key_size)
         {
-            unalignedStore<UInt64>(record, routing_hash);
-            if constexpr (with_count)
-                unalignedStore<UInt32>(record + 8, count);
             if constexpr (variable_width)
+            {
+                unalignedStore<UInt64>(record, routing_hash);
                 unalignedStore<UInt32>(record + size_offset, static_cast<UInt32>(key_size));
+            }
+            if constexpr (with_count)
+                unalignedStore<UInt32>(record + count_offset, count);
         }
 
-        static UInt64 hash(const char * record) { return unalignedLoad<UInt64>(record); }
-        static UInt32 count(const char * record) { return unalignedLoad<UInt32>(record + 8); }
+        /// The routing hash of the record's key, which `table` hashes as the producer's table did.
+        template <typename Table>
+        static UInt64 hash([[maybe_unused]] const Table & table, const char * record)
+        {
+            if constexpr (variable_width)
+                return unalignedLoad<UInt64>(record);
+            else
+                return table.hash(unalignedLoad<Key>(record + key_offset));
+        }
+
+        static UInt32 count(const char * record) { return unalignedLoad<UInt32>(record + count_offset); }
 
         static size_t keySize(const char * record)
         {
@@ -293,15 +313,19 @@ namespace
         }
     };
 
-    /// General records with a fixed-width key and only fixed-size arguments: {UInt64 hash, key, arguments}, the
-    /// arguments laid out by `AdaptiveArgumentLayout`, so every record of the query has the same stride.
+    /// General records with a fixed-width key and only fixed-size arguments: {key, arguments}, the arguments laid out
+    /// by `AdaptiveArgumentLayout`, so every record of the query has the same stride.
     template <typename Key>
     struct StagedFixedArgumentRecord
     {
-        static constexpr size_t key_offset = 8;
+        static constexpr size_t key_offset = 0;
         static constexpr size_t arguments_offset = key_offset + sizeof(Key);
 
         static size_t bytes(size_t fixed_argument_bytes) { return alignStagedRecord(arguments_offset + fixed_argument_bytes); }
+
+        /// The routing hash of the record's key, which `table` hashes as the producer's table did.
+        template <typename Table>
+        static UInt64 hash(const Table & table, const char * record) { return table.hash(unalignedLoad<Key>(record + key_offset)); }
     };
 
     /// General records otherwise: {UInt64 hash, UInt32 size, UInt32 key size, fixed-size arguments, key,
@@ -318,14 +342,17 @@ namespace
             unalignedStore<UInt32>(record + 12, static_cast<UInt32>(key_size));
         }
 
+        static UInt64 hash(const char * record) { return unalignedLoad<UInt64>(record); }
         static size_t bytes(const char * record) { return unalignedLoad<UInt32>(record + 8); }
         static size_t keySize(const char * record) { return unalignedLoad<UInt32>(record + 12); }
     };
 
-    /// Calls `callback(record, bytes, key_pos, key_size)` for every general record of `ranges`, in the record shape the
-    /// producers chose for `Key` and the argument layout (see `Aggregator::appendDelayedRecords`).
-    template <typename Key, typename Callback>
-    void forEachArgumentRecord(const DB::AdaptiveArgumentLayout & argument_layout, const DB::AdaptiveRecordRanges & ranges, Callback && callback)
+    /// Calls `callback(record, bytes, hash)` for every general record of `ranges`, in the record shape the producers
+    /// chose for `Key` and the argument layout (see `Aggregator::appendDelayedRecords`), with the routing hash of its
+    /// key as `table` hashes it.
+    template <typename Key, typename Table, typename Callback>
+    void forEachArgumentRecord(
+        const Table & table, const DB::AdaptiveArgumentLayout & argument_layout, const DB::AdaptiveRecordRanges & ranges, Callback && callback)
     {
         bool fixed_stride = false;
         if constexpr (!adaptive_key_stages_bytes<Key>)
@@ -337,7 +364,7 @@ namespace
             const size_t bytes = Record::bytes(argument_layout.fixed_bytes);
             for (const auto & range : ranges)
                 for (const char * record = range.data(); record < range.data() + range.size(); record += bytes)
-                    callback(record, bytes, record + Record::key_offset, sizeof(Key));
+                    callback(record, bytes, Record::hash(table, record));
         }
         else
         {
@@ -346,11 +373,7 @@ namespace
                 for (const char * record = range.data(); record < range.data() + range.size();)
                 {
                     const size_t bytes = StagedArgumentRecord::bytes(record);
-                    callback(
-                        record,
-                        bytes,
-                        record + StagedArgumentRecord::header_bytes + argument_layout.fixed_bytes,
-                        StagedArgumentRecord::keySize(record));
+                    callback(record, bytes, StagedArgumentRecord::hash(record));
                     record += bytes;
                 }
             }
@@ -1002,10 +1025,8 @@ void NO_INLINE Aggregator::appendDelayedRecords(
             for (size_t i = 0; i < total; ++i)
             {
                 prefetch_append(i);
-                const UInt64 hash = adaptive.miss_hashes[i];
-                const size_t partition = layout.partitionOf(hash);
+                const size_t partition = layout.partitionOf(adaptive.miss_hashes[i]);
                 char * record = partitions.append(partition, bytes);
-                unalignedStore<UInt64>(record, hash);
                 write_key(i, sizeof(SharedKey), record + Record::key_offset);
                 write_fixed_arguments(record + Record::arguments_offset, adaptive.miss_source_rows[i]);
                 zeroStagedRecordPadding(record + Record::arguments_offset + argument_layout.fixed_bytes);
@@ -1154,16 +1175,17 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
         = adaptive_key_stages_bytes<Key> || table.getBufferSizeInBytes() > adaptive_drain_prefetch_min_table_bytes;
     size_t drained = 0;
     size_t skipped = 0;
-    /// The callers' lambdas run once per record, so all of them are inlined into the walk.
-    const auto walk = [&](auto record_bytes, auto key_of, auto apply) ALWAYS_INLINE
+    /// The callers' lambdas run once per record, so all of them are inlined into the walk. `apply` receives the record
+    /// with the routing hash of its key, which `hash_of` reads from the record or recomputes from its key.
+    const auto walk = [&](auto record_bytes, auto key_of, auto hash_of, auto apply) ALWAYS_INLINE
     {
         const auto walk_ranges = [&]<bool with_prefetch, bool filtered>() ALWAYS_INLINE
         {
-            /// Whether the walk takes a record: every one, or with alive bins only those of an alive bin.
-            const auto takes = [&](const char * record) ALWAYS_INLINE
+            /// Whether the walk takes a record of the hash: every one, or with alive bins only those of an alive bin.
+            const auto takes = [&]([[maybe_unused]] UInt64 hash) ALWAYS_INLINE
             {
                 if constexpr (filtered)
-                    return alive_bins[bucketCountBin(unalignedLoad<UInt64>(record))];
+                    return alive_bins[bucketCountBin(hash)];
                 else
                     return true;
             };
@@ -1194,10 +1216,11 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                             __builtin_prefetch(next, /*rw=*/0, /*locality=*/2);
                     }
                 }
-                if (takes(ahead))
+                const UInt64 hash = hash_of(ahead);
+                if (takes(hash))
                 {
                     const auto [key_pos, key_size] = key_of(ahead);
-                    prefetchStagedKey<Key>(table, key_pos, key_size, unalignedLoad<UInt64>(ahead));
+                    prefetchStagedKey<Key>(table, key_pos, key_size, hash);
                 }
                 ahead += record_bytes(ahead);
             };
@@ -1213,9 +1236,10 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                 {
                     if constexpr (with_prefetch)
                         prefetch_next();
-                    if (takes(record))
+                    const UInt64 hash = hash_of(record);
+                    if (takes(hash))
                     {
-                        apply(record);
+                        apply(record, hash);
                         ++drained;
                     }
                     else
@@ -1245,11 +1269,12 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
         walk(
             [](const char * record) ALWAYS_INLINE { return Record::bytes(Record::keySize(record)); },
             [](const char * record) ALWAYS_INLINE { return std::pair{record + Record::key_offset, Record::keySize(record)}; },
-            [&](const char * record) ALWAYS_INLINE
+            [&](const char * record) ALWAYS_INLINE { return Record::hash(table, record); },
+            [&](const char * record, UInt64 hash) ALWAYS_INLINE
             {
                 typename Table::LookupResult it;
                 bool inserted = false;
-                emplaceStagedKey<Key>(table, record + Record::key_offset, Record::keySize(record), Record::hash(record), it, inserted);
+                emplaceStagedKey<Key>(table, record + Record::key_offset, Record::keySize(record), hash, it, inserted);
                 if constexpr (MapAggregationMethod<Method>)
                 {
                     if (inserted)
@@ -1266,11 +1291,12 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
         walk(
             [](const char * record) ALWAYS_INLINE { return Record::bytes(Record::keySize(record)); },
             [](const char * record) ALWAYS_INLINE { return std::pair{record + Record::key_offset, Record::keySize(record)}; },
-            [&](const char * record) ALWAYS_INLINE
+            [&](const char * record) ALWAYS_INLINE { return Record::hash(table, record); },
+            [&](const char * record, UInt64 hash) ALWAYS_INLINE
             {
                 typename Table::LookupResult it;
                 bool inserted = false;
-                emplaceStagedKey<Key>(table, record + Record::key_offset, Record::keySize(record), Record::hash(record), it, inserted);
+                emplaceStagedKey<Key>(table, record + Record::key_offset, Record::keySize(record), hash, it, inserted);
                 if constexpr (MapAggregationMethod<Method>)
                 {
                     if (inserted)
@@ -1299,11 +1325,11 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
 
         if (count_only)
         {
-            const auto count = [&](const char * record, const char * key_pos, size_t key_size) ALWAYS_INLINE
+            const auto count = [&](const char * key_pos, size_t key_size, UInt64 hash) ALWAYS_INLINE
             {
                 typename Table::LookupResult it;
                 bool inserted = false;
-                emplaceStagedKey<Key>(table, key_pos, key_size, unalignedLoad<UInt64>(record), it, inserted);
+                emplaceStagedKey<Key>(table, key_pos, key_size, hash, it, inserted);
                 if (inserted)
                     getInlineCountState(it->getMapped()) = 1;
                 else
@@ -1316,17 +1342,19 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                 walk(
                     [bytes](const char *) ALWAYS_INLINE { return bytes; },
                     [](const char * record) ALWAYS_INLINE { return std::pair{record + Record::key_offset, sizeof(Key)}; },
-                    [&](const char * record) ALWAYS_INLINE { count(record, record + Record::key_offset, sizeof(Key)); });
+                    [&](const char * record) ALWAYS_INLINE { return Record::hash(table, record); },
+                    [&](const char * record, UInt64 hash) ALWAYS_INLINE { count(record + Record::key_offset, sizeof(Key), hash); });
             }
             else
             {
                 walk(
                     [](const char * record) ALWAYS_INLINE { return StagedArgumentRecord::bytes(record); },
                     key_of,
-                    [&](const char * record) ALWAYS_INLINE
+                    [](const char * record) ALWAYS_INLINE { return StagedArgumentRecord::hash(record); },
+                    [&](const char * record, UInt64 hash) ALWAYS_INLINE
                     {
                         const auto [key_pos, key_size] = key_of(record);
-                        count(record, key_pos, key_size);
+                        count(key_pos, key_size, hash);
                     });
             }
             /// The records were counted, not drained into states.
@@ -1340,11 +1368,11 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
 
         places.clear();
         records.ptrs.clear();
-        const auto apply = [&](const char * record, const char * key_pos, size_t key_size) ALWAYS_INLINE
+        const auto apply = [&](const char * record, const char * key_pos, size_t key_size, UInt64 hash) ALWAYS_INLINE
         {
             typename Table::LookupResult it;
             bool inserted = false;
-            emplaceStagedKey<Key>(table, key_pos, key_size, unalignedLoad<UInt64>(record), it, inserted);
+            emplaceStagedKey<Key>(table, key_pos, key_size, hash, it, inserted);
             if (inserted)
             {
                 it->getMapped() = nullptr;
@@ -1365,7 +1393,8 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
             walk(
                 [bytes](const char *) ALWAYS_INLINE { return bytes; },
                 fixed_key_of,
-                [&](const char * record) ALWAYS_INLINE { apply(record, record + Record::key_offset, sizeof(Key)); });
+                [&](const char * record) ALWAYS_INLINE { return Record::hash(table, record); },
+                [&](const char * record, UInt64 hash) ALWAYS_INLINE { apply(record, record + Record::key_offset, sizeof(Key), hash); });
             fixed_arguments_offset = Record::arguments_offset;
         }
         else
@@ -1373,10 +1402,11 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
             walk(
                 [](const char * record) ALWAYS_INLINE { return StagedArgumentRecord::bytes(record); },
                 key_of,
-                [&](const char * record) ALWAYS_INLINE
+                [](const char * record) ALWAYS_INLINE { return StagedArgumentRecord::hash(record); },
+                [&](const char * record, UInt64 hash) ALWAYS_INLINE
                 {
                     const auto [key_pos, key_size] = key_of(record);
-                    apply(record, key_pos, key_size);
+                    apply(record, key_pos, key_size, hash);
                 });
         }
 
@@ -1791,11 +1821,12 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                     auto & best_records = scratch.best_records;
                     best_records.clear();
                     forEachArgumentRecord<Key>(
+                        table,
                         *adaptive_argument_layout,
                         scratch.ranges,
-                        [&](const char * record, size_t bytes, const char *, size_t)
+                        [&](const char * record, size_t bytes, UInt64 hash)
                         {
-                            if (is_best(unalignedLoad<UInt64>(record)))
+                            if (is_best(hash))
                                 best_records.emplace_back(record, bytes);
                         });
                     if (!best_records.empty())
