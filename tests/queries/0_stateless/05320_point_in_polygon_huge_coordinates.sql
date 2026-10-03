@@ -39,11 +39,12 @@ SELECT pointInPolygon((9e199, 5e199), materialize([(0., 0.), (1e200, 0.), (0., 1
 SELECT pointInPolygon((0.9, 0.5), CAST(CAST([(0., 0.), (1., 0.), (0., 1.)] AS Ring) AS Geometry)), pointInPolygon((0.9, 0.5), materialize([(0., 0.), (1., 0.), (0., 1.)]));
 
 -- Up to 1e100 the polygon is evaluated, and primary key analysis prunes and agrees with the function.
-SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (1.1920928955078125e-7, 1e100), (0.9999, 1e100), (1.0001, 0.)]) SETTINGS max_rows_to_read = 2000, use_lightweight_primary_key_index_analysis = 0;
-SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (1.1920928955078125e-7, 1e100), (0.9999, 1e100), (1.0001, 0.)]) SETTINGS max_rows_to_read = 2000, use_lightweight_primary_key_index_analysis = 1;
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (1.1920928955078125e-7, 1e100), (0.9999, 1e100), (1.0001, 0.)]) SETTINGS max_rows_to_read = 2000, use_lightweight_primary_key_index_analysis = 0, use_query_condition_cache = 0;
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (1.1920928955078125e-7, 1e100), (0.9999, 1e100), (1.0001, 0.)]) SETTINGS max_rows_to_read = 2000, use_lightweight_primary_key_index_analysis = 1, use_query_condition_cache = 0;
 SELECT count() FROM pip_nopk WHERE pointInPolygon((x, y), [(0., 0.), (1.1920928955078125e-7, 1e100), (0.9999, 1e100), (1.0001, 0.)]);
 SELECT pointInPolygon((1e-9, 1e99), [(0., 0.), (1.1920928955078125e-7, 1e100), (0.9999, 1e100), (1.0001, 0.)]),
        pointInPolygon((0.9, 5.), [(0., 0.), (1.1920928955078125e-7, 1e100), (0.9999, 1e100), (1.0001, 0.)]);
+SELECT pointInPolygon((9e99, 5e99), materialize([(0., 0.), (1e100, 0.), (0., 1e100)])), pointInPolygon((4e99, 5e99), materialize([(0., 0.), (1e100, 0.), (0., 1e100)]));
 
 DROP TABLE pip_pk;
 DROP TABLE pip_nopk;
