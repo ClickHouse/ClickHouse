@@ -438,17 +438,28 @@ namespace
     ///
     /// The identifiers are selected from the tags table first: the matchers usually select a small part of all
     /// the time series, so the time ranges table is read by its primary key (`id`) instead of being scanned.
+    /// `id_type` is the type of the identifiers; the returned query gives them this type without `LowCardinality`.
     ASTPtr makeSelectIDsFilteredByTimeRangesTable(
         ASTPtr select_ids_query,
         const StorageID & time_ranges_table_id,
-        ASTs time_range_conditions)
+        ASTs time_range_conditions,
+        const DataTypePtr & id_type)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
         /// SELECT id
         {
+            ASTPtr id_expression = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID);
+
+            /// The returned IDs are used in the condition (id IN <set>) while reading the samples table.
+            /// Since the `IN` operator in (id IN <set>) removes low-cardinality from `id` we should do the same with <set>,
+            /// otherwise `id` would be converted back to low-cardinality per sample block to match the type of <set>.
+            bool id_type_contains_low_cardinality = !recursiveRemoveLowCardinality(id_type)->equals(*id_type);
+            if (id_type_contains_low_cardinality)
+                id_expression = makeASTFunction("CAST", std::move(id_expression), make_intrusive<ASTLiteral>(recursiveRemoveLowCardinality(id_type)->getName()));
+
             auto select_list_exp = make_intrusive<ASTExpressionList>();
-            select_list_exp->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+            select_list_exp->children.push_back(std::move(id_expression));
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
 
@@ -474,13 +485,14 @@ namespace
         ASTPtr select_ids_query,
         const StorageID & time_ranges_table_id,
         const TableTimeRange & time_range_to_filter_ids,
+        const DataTypePtr & table_id_type,
         const DataTypePtr & table_timestamp_type)
     {
         if (!time_ranges_table_id || time_range_to_filter_ids.containsAllTimestamps())
             return select_ids_query;
 
         return makeSelectIDsFilteredByTimeRangesTable(
-            std::move(select_ids_query), time_ranges_table_id, makeTimeRangeConditions(time_range_to_filter_ids, table_timestamp_type));
+            std::move(select_ids_query), time_ranges_table_id, makeTimeRangeConditions(time_range_to_filter_ids, table_timestamp_type), table_id_type);
     }
 
     /// Makes the WHERE clause of a query selecting identifiers from the tags table.
@@ -534,6 +546,7 @@ namespace
         const std::unordered_map<String, String> & column_name_by_tag_name,
         const StorageID & time_ranges_table_id,
         const TableTimeRange & time_range_to_filter_ids,
+        const DataTypePtr & table_id_type,
         const DataTypePtr & table_timestamp_type)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
@@ -582,7 +595,7 @@ namespace
 
         /// If there is a time ranges table: `SELECT id FROM time_ranges_table WHERE <time range conditions> AND id IN (<this query>)`.
         return applyTimeRangeFilterToSelectIDsQuery(
-            wrapIntoSelectWithUnionQuery(std::move(select_query)), time_ranges_table_id, time_range_to_filter_ids, table_timestamp_type);
+            wrapIntoSelectWithUnionQuery(std::move(select_query)), time_ranges_table_id, time_range_to_filter_ids, table_id_type, table_timestamp_type);
     }
 
     /// The bounds of `time_range_to_filter_samples` must have the scale of `table_timestamp_type`.
@@ -984,7 +997,7 @@ namespace
                 probe_select_ids->setExpression(ASTSelectQuery::Expression::WHERE, std::move(probe_where));
             }
             ASTPtr probe_select_ids_query = applyTimeRangeFilterToSelectIDsQuery(
-                wrapIntoSelectWithUnionQuery(std::move(probe_select_ids)), time_ranges_table_id, time_range_to_filter_ids, table_timestamp_type);
+                wrapIntoSelectWithUnionQuery(std::move(probe_select_ids)), time_ranges_table_id, time_range_to_filter_ids, table_id_type, table_timestamp_type);
 
             /// SELECT 1 FROM (<probe_select_ids_query>) LIMIT 1
             auto probe_select = make_intrusive<ASTSelectQuery>();
@@ -1069,7 +1082,7 @@ ASTPtr StorageTimeSeriesSelector::makeSelectIDsQuery(
         ? makeSelectNoIDsQuery(table_id_type)
         : makeSelectQueryFromTagsTable(
             tags_table_id, matchers, makeColumnNameByTagNameMap(time_series_settings),
-            time_ranges_table_id, time_range_to_filter_ids, table_timestamp_type);
+            time_ranges_table_id, time_range_to_filter_ids, table_id_type, table_timestamp_type);
 
     /// Alias the returned expression (`timeSeriesStoreTags(...)`, which returns `id`) so callers can reference the column by a fixed name.
     const auto & select_with_union = typeid_cast<const ASTSelectWithUnionQuery &>(*select_query);
@@ -1159,7 +1172,8 @@ void StorageTimeSeriesSelector::readImpl(
         = whole_metric_id_range_condition ? TableTimeRange::ALL_TIMESTAMPS : time_range_to_filter_ids;
 
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
-        tags_table_id, matchers, column_name_by_tag_name, time_ranges_table_id, time_range_to_filter_ids_in_tags_query, config.table_timestamp_type);
+        tags_table_id, matchers, column_name_by_tag_name, time_ranges_table_id, time_range_to_filter_ids_in_tags_query,
+        config.table_id_type, config.table_timestamp_type);
 
     auto modified_context = Context::createCopy(context);
     ContextPtr interpreter_context = modified_context;
