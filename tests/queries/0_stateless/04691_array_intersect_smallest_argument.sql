@@ -35,6 +35,13 @@ SELECT arrayIntersect([], [], []);
 SELECT arraySort(arrayUnion([1, 2], []));
 SELECT arraySort(arraySymmetricDifference([1, 2], []));
 
+SELECT '-- row-varying empty seed argument';
+SELECT arrayIntersect(
+    materialize(range(3)),
+    if(number % 2 = 0, emptyArrayUInt64(), range(3)),
+    materialize(range(3)))
+FROM numbers(4);
+
 SELECT '-- the output keeps the order of the first argument';
 SELECT arrayIntersect([5, 4, 3, 2, 1], [1, 2, 3]);
 SELECT arrayIntersect([5, 4, 3, 2, 1], [3], [3, 2, 1]);
