@@ -25,6 +25,9 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_internal_settings (a UInt64) EN
 # `distributed_cache_client_id` is the setting that exposed this: a query reading through the distributed
 # cache with a deliberately invalid id had the internal `ATTACH` inherit it and be rejected while the cache
 # client was constructed. It is inert for a plain `MergeTree` read, so here it only has to travel (or not).
+# Only the statements of this run count: a reused server keeps the `query_log` of earlier runs.
+START_TIME=$(${CLICKHOUSE_CLIENT} -q "SELECT now64(6)")
+
 check_if_detached "SELECT count() FROM t_reattach_internal_settings SETTINGS distributed_cache_client_id = 'reattach_marker'" "t_reattach_internal_settings"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
@@ -38,6 +41,7 @@ ${CLICKHOUSE_CLIENT} -q "
         countIf(mapContains(Settings, 'distributed_cache_client_id')) AS inherited_caller_setting
     FROM system.query_log
     WHERE event_date >= yesterday()
+      AND event_time_microseconds >= '${START_TIME}'
       AND current_database = currentDatabase()
       AND type = 'QueryStart'
       AND query IN (

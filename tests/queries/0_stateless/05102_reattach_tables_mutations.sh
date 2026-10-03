@@ -216,14 +216,22 @@ busy_pid=$!
 
 # Wait for the holder to be running rather than for a fixed time: whether it is still holding the table
 # when the hook probes is what the check below is about, and a slow runner must not decide it.
+busy_running=0
 for _ in {0..600}
 do
     if [[ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = '$BUSY_QUERY_ID'")" -gt 0 ]]
     then
+        busy_running=1
         break
     fi
     sleep 0.1
 done
+
+# Without the holder running, the check below would test an idle table and report a false regression.
+if [ "$busy_running" -ne 1 ]
+then
+    echo "FAIL (the concurrent INSERT did not show up in system.processes)"
+fi
 
 check_if_not_detached "SELECT count() FROM t_reattach_busy" "t_reattach_busy"
 
