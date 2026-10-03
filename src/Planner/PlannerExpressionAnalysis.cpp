@@ -71,11 +71,18 @@ std::optional<FilterAnalysisResult> analyzeFilter(
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     const ColumnNodePtrWithHashSet & correlated_columns_set,
-    ActionsChain & actions_chain)
+    ActionsChain & actions_chain,
+    bool after_aggregation)
 {
     FilterAnalysisResult result;
 
-    auto [filter_expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(filter_expression_node, input_columns, planner_context, correlated_columns_set);
+    auto [filter_expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+        filter_expression_node,
+        input_columns,
+        planner_context,
+        correlated_columns_set,
+        /*use_column_identifier_as_action_node_name=*/ true,
+        /*compute_missing_alias_columns=*/ after_aggregation);
 
     result.filter_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     result.filter_actions->dag = std::move(filter_expression_dag);
@@ -346,7 +353,8 @@ std::optional<WindowAnalysisResult> analyzeWindow(
 
     auto window_descriptions = extractWindowDescriptions(window_function_nodes, *planner_context);
 
-    PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
+    PlannerActionsVisitor actions_visitor(
+        planner_context, correlated_columns_set, /*use_column_identifier_as_action_node_name=*/ true, /*compute_missing_alias_columns=*/ true);
 
     ActionsAndProjectInputsFlagPtr before_window_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     before_window_actions->dag = ActionsDAG(input_columns);
@@ -477,7 +485,9 @@ ProjectionAnalysisResult analyzeProjection(
         query_node.getProjectionNode(),
         input_columns,
         planner_context,
-        correlated_columns_set);
+        correlated_columns_set,
+        /*use_column_identifier_as_action_node_name=*/ true,
+        /*compute_missing_alias_columns=*/ true);
 
     auto projection_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     projection_actions->dag = std::move(projection_actions_dag);
@@ -539,7 +549,8 @@ SortAnalysisResult analyzeSort(
     auto & before_sort_actions_outputs = before_sort_actions->dag.getOutputs();
     before_sort_actions_outputs.clear();
 
-    PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
+    PlannerActionsVisitor actions_visitor(
+        planner_context, correlated_columns_set, /*use_column_identifier_as_action_node_name=*/ true, /*compute_missing_alias_columns=*/ true);
     bool has_with_fill = false;
     std::unordered_set<std::string_view> before_sort_actions_dag_output_node_names;
 
@@ -580,7 +591,8 @@ SortAnalysisResult analyzeSort(
     {
         auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
 
-        PlannerActionsVisitor interpolate_actions_visitor(planner_context, correlated_columns_set);
+        PlannerActionsVisitor interpolate_actions_visitor(
+            planner_context, correlated_columns_set, /*use_column_identifier_as_action_node_name=*/ true, /*compute_missing_alias_columns=*/ true);
 
         /// getLastStepAvailableOutputColumns should have been correct.
         /// However, we materialize ORDER BY columns in case of WITH FILL, and it causes a name-collision.
@@ -644,7 +656,9 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
         query_node.getLimitByNode(),
         input_columns,
         planner_context,
-        correlated_columns_set);
+        correlated_columns_set,
+        /*use_column_identifier_as_action_node_name=*/ true,
+        /*compute_missing_alias_columns=*/ true);
     correlated_subtrees.assertEmpty("in LIMIT BY expression");
 
     auto before_limit_by_actions = std::make_shared<ActionsAndProjectInputsFlag>();
@@ -722,7 +736,8 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
             current_output_columns,
             planner_context,
             correlated_columns_set,
-            actions_chain);
+            actions_chain,
+            /*after_aggregation=*/ false);
         if (where_analysis_result_optional)
         {
             where_action_step_index_optional = actions_chain.getLastStepIndex();
@@ -749,7 +764,8 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
             current_output_columns,
             planner_context,
             correlated_columns_set,
-            actions_chain);
+            actions_chain,
+            /*after_aggregation=*/ true);
         if (having_analysis_result_optional)
         {
             having_action_step_index_optional = actions_chain.getLastStepIndex();
@@ -776,7 +792,8 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
             current_output_columns,
             planner_context,
             correlated_columns_set,
-            actions_chain);
+            actions_chain,
+            /*after_aggregation=*/ true);
         if (qualify_analysis_result_optional)
         {
             qualify_action_step_index_optional = actions_chain.getLastStepIndex();

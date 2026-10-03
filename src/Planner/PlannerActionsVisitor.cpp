@@ -719,7 +719,8 @@ public:
         ActionsDAG & actions_dag,
         const PlannerContextPtr & planner_context_,
         const ColumnNodePtrWithHashSet & correlated_columns_set_,
-        bool use_column_identifier_as_action_node_name_);
+        bool use_column_identifier_as_action_node_name_,
+        bool compute_missing_alias_columns_);
 
     std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> visit(QueryTreeNodePtr expression_node);
 
@@ -764,6 +765,8 @@ private:
 
     NodeNameAndNodeMinLevel visitColumn(const QueryTreeNodePtr & node);
 
+    NodeNameAndNodeMinLevel visitAliasColumnExpression(const QueryTreeNodePtr & node, const std::string & column_node_name);
+
     NodeNameAndNodeMinLevel visitCorrelatedColumn(const ColumnNodePtr & node);
 
     NodeNameAndNodeMinLevel visitConstant(const QueryTreeNodePtr & node, const std::string & override_column_name = {});
@@ -787,18 +790,21 @@ private:
     const ColumnNodePtrWithHashSet & correlated_columns_set;
     ActionNodeNameHelper action_node_name_helper;
     bool use_column_identifier_as_action_node_name;
+    bool compute_missing_alias_columns;
 };
 
 PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(
     ActionsDAG & actions_dag,
     const PlannerContextPtr & planner_context_,
     const ColumnNodePtrWithHashSet & correlated_columns_set_,
-    bool use_column_identifier_as_action_node_name_
+    bool use_column_identifier_as_action_node_name_,
+    bool compute_missing_alias_columns_
 )
     : planner_context(planner_context_)
     , correlated_columns_set(correlated_columns_set_)
     , action_node_name_helper(node_to_node_name, *planner_context, use_column_identifier_as_action_node_name_)
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
+    , compute_missing_alias_columns(compute_missing_alias_columns_)
 {
     actions_stack.emplace_back(actions_dag, nullptr);
 }
@@ -864,6 +870,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             return visitConstant(expression, column_node_name);
         else if (!use_column_identifier_as_action_node_name)
             return visitImpl(expression);
+
+        if (compute_missing_alias_columns && !actions_stack.front().containsNode(column_node_name))
+        {
+            auto column_source = column_node.getColumnSourceOrNull();
+            auto column_source_type = column_source ? column_source->getNodeType() : QueryTreeNodeType::COLUMN;
+            if (column_source_type == QueryTreeNodeType::TABLE || column_source_type == QueryTreeNodeType::TABLE_FUNCTION)
+                return visitAliasColumnExpression(node, column_node_name);
+        }
     }
 
     Int64 actions_stack_size = static_cast<Int64>(actions_stack.size() - 1);
@@ -960,6 +974,23 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
 
     return {column_node_name, Levels(0)};
+}
+
+PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitAliasColumnExpression(
+    const QueryTreeNodePtr & node, const std::string & column_node_name)
+{
+    const auto & column_node = node->as<ColumnNode &>();
+    auto [expression_node_name, levels] = visitImpl(column_node.getExpression());
+
+    /// Steps of the query plan (e.g. sorting, LIMIT BY) refer to the column by its name.
+    size_t level = levels.max();
+    actions_stack[level].addAliasIfNecessary(column_node_name, actions_stack[level].getNodeOrThrow(expression_node_name));
+
+    size_t actions_stack_size = actions_stack.size();
+    for (size_t i = level + 1; i < actions_stack_size; ++i)
+        actions_stack[i].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());
+
+    return {column_node_name, levels};
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitCorrelatedColumn(const ColumnNodePtr & node)
@@ -1490,10 +1521,12 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitor::PlannerActionsVisitor(
     const PlannerContextPtr & planner_context_,
     const ColumnNodePtrWithHashSet & correlated_columns_set_,
-    bool use_column_identifier_as_action_node_name_)
+    bool use_column_identifier_as_action_node_name_,
+    bool compute_missing_alias_columns_)
     : planner_context(planner_context_)
     , correlated_columns_set(correlated_columns_set_)
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
+    , compute_missing_alias_columns(compute_missing_alias_columns_)
 {}
 
 std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> PlannerActionsVisitor::visit(ActionsDAG & actions_dag, QueryTreeNodePtr expression_node)
@@ -1502,7 +1535,8 @@ std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> PlannerActionsVisito
         actions_dag,
         planner_context,
         correlated_columns_set,
-        use_column_identifier_as_action_node_name);
+        use_column_identifier_as_action_node_name,
+        compute_missing_alias_columns);
     return actions_visitor_impl.visit(expression_node);
 }
 
