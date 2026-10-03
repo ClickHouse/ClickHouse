@@ -76,7 +76,14 @@ public:
     {
         FileStatus status = FileStatus::OPEN;
         UInt64 inode{};
+        bool is_symlink = false;
         std::optional<std::ifstream> reader = std::nullopt;
+    };
+
+    struct OtherName
+    {
+        UInt64 inode = 0;
+        bool is_symlink = false;
     };
 
     struct FileMeta
@@ -96,8 +103,8 @@ public:
         FileNameToContext context_by_name;
         /// File names without path.
         Names file_names;
-        /// Other names in the directory (hard links, symlinks) of files read under another name; they are not read.
-        std::unordered_map<String, UInt64> inode_by_other_name;
+        /// Names in the directory (hard links, symbolic links) of files read under another name; they are not read.
+        std::unordered_map<String, OtherName> other_names;
     };
 
     auto & getFileInfos() { return file_infos; }
@@ -205,14 +212,14 @@ private:
     /// re-assigning the old inode to a different filename earlier in the batch
     /// is not clobbered. Leaves `context_by_name[file_name]` at `{OPEN, inode}`
     /// and pushes the name into `file_names` exactly once.
-    void onFileAppeared(const String & file_name, UInt64 inode);
+    void onFileAppeared(const String & file_name, UInt64 inode, bool is_symlink);
 
-    /// Whether `inode` is read under a tracked, not removed name other than `file_name`.
-    bool isReadUnderOtherName(const String & file_name, UInt64 inode) const;
-    /// Records `file_name` as an other name of `inode` if `inode` is read under another name; returns whether it did.
-    bool addOtherName(const String & file_name, UInt64 inode);
-    /// The smallest recorded other name of `inode` that may still be a name of it. Drops the definitely stale ones.
-    std::optional<String> findOtherName(UInt64 inode);
+    /// Whether `file_name` provably no longer refers to `inode`.
+    bool isGone(const String & file_name, UInt64 inode) const;
+    /// Handles a new name of a file read under another name; returns whether the event is fully handled.
+    bool addOtherName(const String & file_name, UInt64 inode, bool is_symlink);
+    /// The other name of `inode` that takes the file over, and whether it is gone.
+    std::optional<std::pair<String, bool>> findOtherName(UInt64 inode);
     /// `file_name` no longer has `inode`: hands the file over to one of its other names, or drops its meta.
     void releaseInode(const String & file_name, UInt64 inode);
     void moveMetaFile(const String & from, const String & to) const;

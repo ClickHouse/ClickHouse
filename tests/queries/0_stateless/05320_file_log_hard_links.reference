@@ -4,10 +4,10 @@ app.log	2
 app.log	3
 -- a write through the other name is read under the read name
 app.log	4
--- the read name is removed and the other name is linked again: read on, not from the start
+-- the read name is removed, and the other name is linked again and then removed: read on, not from the start
 new.log	5
 -- the same name is linked again
-new.log	6
+6
 -- link and unlink: the only other name reads on
 next.log	7
 -- a hard link renamed into the directory is not read
@@ -17,10 +17,28 @@ keep.log	10
 next.log	9
 -- a hard link made while the table is detached
 keep.log	11
--- hard links that exist when the table is created
+-- hard links and a symbolic link that exist when the table is created
 a.log	1
 a.log	2
--- a symbolic link is not read, and is not read either once it dangles
+-- a symbolic link that exists when the table is created
 a.log	1
+-- hard links and symbolic links to a read file are not read
 a.log	2
+-- the read name is removed: a hard link reads on, not a symbolic link
 b.log	3
+-- symbolic links that no longer point to the file do not keep it: a file linked back from outside the directory is read from the start
+v.log	1
+v.log	2
+v.log	3
+v.log	4
+-- a symbolic link to a file outside the directory is read
+z.log	5
+-- a hard link to a file read under a symbolic link reads it on
+y.log	6
+-- the hard link is removed: the symbolic link reads on
+z.log	7
+-- a symbolic link that no longer points to the file does not keep it either when it is the read name
+w.log	5
+w.log	6
+w.log	7
+w.log	8

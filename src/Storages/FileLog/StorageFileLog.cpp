@@ -86,6 +86,13 @@ namespace
         new_context->setSetting("input_format_custom_detect_header", false);
         return new_context;
     }
+
+    /// An `lstat` error counts as a symbolic link, so that such a name is checked with `stat`.
+    bool isSymlink(const String & path)
+    {
+        struct stat st{};
+        return lstat(path.c_str(), &st) != 0 || S_ISLNK(st.st_mode);
+    }
 }
 
 static constexpr auto TMP_SUFFIX = ".tmp";
@@ -314,33 +321,39 @@ void StorageFileLog::loadFiles()
 
     /// Get files inode
     std::vector<UInt64> inodes;
+    std::vector<bool> symlinks;
     inodes.reserve(file_infos.file_names.size());
+    symlinks.reserve(file_infos.file_names.size());
     for (const auto & file : file_infos.file_names)
+    {
         inodes.push_back(getInode(getFullDataPath(file)));
+        symlinks.push_back(isSymlink(getFullDataPath(file)));
+    }
 
-    /// A file with several names is read under one of them: the name in its meta if it is listed, else the smallest one.
-    std::unordered_map<UInt64, String> read_name_by_inode;
-    for (size_t i = 0; i < inodes.size(); ++i)
+    /// A file with several names is read under one of them: a hard link rather than a symbolic link, then the name in its meta, then the smallest.
+    auto read_key = [&](size_t i)
     {
-        const auto & file = file_infos.file_names[i];
-        auto [it, inserted] = read_name_by_inode.emplace(inodes[i], file);
-        if (inserted)
-            continue;
         auto meta = file_infos.meta_by_inode.find(inodes[i]);
-        auto is_meta_name = [&](const String & name) { return meta != file_infos.meta_by_inode.end() && meta->second.file_name == name; };
-        if (!is_meta_name(it->second) && (is_meta_name(file) || file < it->second))
-            it->second = file;
+        const bool is_meta_name = meta != file_infos.meta_by_inode.end() && meta->second.file_name == file_infos.file_names[i];
+        return std::tuple<bool, bool, const String &>(symlinks[i], !is_meta_name, file_infos.file_names[i]);
+    };
+    std::unordered_map<UInt64, size_t> read_index_by_inode;
+    for (size_t i = 0; i < inodes.size(); ++i)
+    {
+        auto [it, inserted] = read_index_by_inode.emplace(inodes[i], i);
+        if (!inserted && read_key(i) < read_key(it->second))
+            it->second = i;
     }
 
     for (size_t i = 0; i < inodes.size(); ++i)
     {
         const auto & file = file_infos.file_names[i];
-        if (read_name_by_inode.at(inodes[i]) == file)
-            file_infos.context_by_name.emplace(file, FileContext{.inode = inodes[i]});
+        if (read_index_by_inode.at(inodes[i]) == i)
+            file_infos.context_by_name.emplace(file, FileContext{.inode = inodes[i], .is_symlink = symlinks[i]});
         else
-            file_infos.inode_by_other_name.emplace(file, inodes[i]);
+            file_infos.other_names.emplace(file, OtherName{.inode = inodes[i], .is_symlink = symlinks[i]});
     }
-    std::erase_if(file_infos.file_names, [&](const String & file) { return file_infos.inode_by_other_name.contains(file); });
+    std::erase_if(file_infos.file_names, [&](const String & file) { return file_infos.other_names.contains(file); });
 
     /// Update file meta or create file meta
     for (const auto & [file, ctx] : file_infos.context_by_name)
@@ -1057,68 +1070,94 @@ Unlike the message-broker engines, `FileLog` cannot be protected against this by
             .related = {"Kafka", "RabbitMQ", "NATS"}});
 }
 
-void StorageFileLog::onFileAppeared(const String & file_name, UInt64 inode)
+void StorageFileLog::onFileAppeared(const String & file_name, UInt64 inode, bool is_symlink)
 {
     auto it = file_infos.context_by_name.find(file_name);
     if (it == file_infos.context_by_name.end())
     {
         file_infos.file_names.push_back(file_name);
-        file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
+        file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode, .is_symlink = is_symlink});
         return;
     }
     if (it->second.inode != inode)
         releaseInode(file_name, it->second.inode); /// May rehash `context_by_name`, so `it` is invalid after it.
-    file_infos.context_by_name[file_name] = FileContext{.inode = inode};
+    file_infos.context_by_name[file_name] = FileContext{.inode = inode, .is_symlink = is_symlink};
 }
 
-bool StorageFileLog::isReadUnderOtherName(const String & file_name, UInt64 inode) const
+bool StorageFileLog::isGone(const String & file_name, UInt64 inode) const
 {
+    const String full_path = getFullDataPath(file_name);
+    struct stat st{};
+    if (stat(full_path.c_str(), &st) != 0)
+        return errno == ENOENT || errno == ENOTDIR || errno == ELOOP; /// Another error proves nothing.
+    return st.st_ino != inode;
+}
+
+bool StorageFileLog::addOtherName(const String & file_name, UInt64 inode, bool is_symlink)
+{
+    file_infos.other_names.erase(file_name);
     auto meta = file_infos.meta_by_inode.find(inode);
     if (meta == file_infos.meta_by_inode.end() || meta->second.file_name == file_name)
         return false;
     auto read = file_infos.context_by_name.find(meta->second.file_name);
-    return read != file_infos.context_by_name.end() && read->second.inode == inode && read->second.status != FileStatus::REMOVED;
-}
-
-bool StorageFileLog::addOtherName(const String & file_name, UInt64 inode)
-{
-    file_infos.inode_by_other_name.erase(file_name);
-    if (!isReadUnderOtherName(file_name, inode))
+    if (read == file_infos.context_by_name.end() || read->second.inode != inode || read->second.status == FileStatus::REMOVED)
         return false;
+
+    if (read->second.is_symlink)
+    {
+        /// A symbolic link can stop pointing to the file with no event, so the file is read under the new name.
+        if (isGone(read->first, inode))
+        {
+            read->second.status = FileStatus::REMOVED; /// The cleanup loop drops it; the new name is handled as a new one.
+            return false;
+        }
+        const String link = read->first;
+        file_infos.context_by_name.erase(read);
+        std::erase(file_infos.file_names, link);
+        file_infos.other_names.emplace(link, OtherName{.inode = inode, .is_symlink = true});
+        onFileAppeared(file_name, inode, is_symlink);
+        auto & read_meta = file_infos.meta_by_inode.at(inode);
+        moveMetaFile(read_meta.file_name, file_name);
+        read_meta.file_name = file_name;
+        return true;
+    }
+
     if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
     {
         releaseInode(file_name, it->second.inode); /// May rehash `context_by_name`, so `it` is invalid after it.
         file_infos.context_by_name.erase(file_name);
         std::erase(file_infos.file_names, file_name);
     }
-    file_infos.inode_by_other_name.emplace(file_name, inode);
+    file_infos.other_names.emplace(file_name, OtherName{.inode = inode, .is_symlink = is_symlink});
     return true;
 }
 
-std::optional<String> StorageFileLog::findOtherName(UInt64 inode)
+std::optional<std::pair<String, bool>> StorageFileLog::findOtherName(UInt64 inode)
 {
-    std::optional<String> found;
-    for (auto it = file_infos.inode_by_other_name.begin(); it != file_infos.inode_by_other_name.end();)
+    /// A hard link is a name of the file until its removal event is processed, so a gone one is kept; a gone symbolic link is dropped.
+    /// Preferred: a name that still has the file, then a hard link, then the smallest name.
+    std::optional<std::tuple<bool, bool, String>> best; /// (gone, is_symlink, name)
+    for (auto it = file_infos.other_names.begin(); it != file_infos.other_names.end();)
     {
-        if (it->second != inode)
+        if (it->second.inode != inode)
         {
             ++it;
             continue;
         }
-        struct stat st{};
-        const bool stat_failed = stat(getFullDataPath(it->first).c_str(), &st) != 0;
-        /// Only absence or another inode proves the name stale; another error proves nothing, so the name is kept.
-        const bool stale = stat_failed ? (errno == ENOENT || errno == ENOTDIR || errno == ELOOP) : st.st_ino != inode;
-        if (stale)
+        const bool gone = isGone(it->first, inode);
+        if (gone && it->second.is_symlink)
         {
-            it = file_infos.inode_by_other_name.erase(it);
+            it = file_infos.other_names.erase(it);
             continue;
         }
-        if (!found || it->first < *found)
-            found = it->first;
+        std::tuple<bool, bool, String> candidate{gone, it->second.is_symlink, it->first};
+        if (!best || candidate < *best)
+            best = std::move(candidate);
         ++it;
     }
-    return found;
+    if (!best)
+        return std::nullopt;
+    return std::pair{std::get<2>(*best), std::get<0>(*best)};
 }
 
 void StorageFileLog::moveMetaFile(const String & from, const String & to) const
@@ -1134,19 +1173,22 @@ void StorageFileLog::releaseInode(const String & file_name, UInt64 inode)
     auto meta = file_infos.meta_by_inode.find(inode);
     if (meta == file_infos.meta_by_inode.end() || meta->second.file_name != file_name)
         return;
-    auto other_name = findOtherName(inode);
-    if (!other_name)
+    auto other = findOtherName(inode);
+    if (!other)
     {
         file_infos.meta_by_inode.erase(meta);
         disk->removeFileIfExists(getFullMetaPath(file_name));
         return;
     }
-    file_infos.inode_by_other_name.erase(*other_name);
-    meta->second.file_name = *other_name;
-    moveMetaFile(file_name, *other_name);
-    /// Status `OPEN`: the file is read on from the offset in its meta.
-    file_infos.context_by_name.emplace(*other_name, FileContext{.inode = inode});
-    file_infos.file_names.push_back(*other_name);
+    const auto & [other_name, gone] = *other;
+    const bool is_symlink = file_infos.other_names.at(other_name).is_symlink;
+    file_infos.other_names.erase(other_name);
+    meta->second.file_name = other_name;
+    moveMetaFile(file_name, other_name);
+    /// A gone name is not read: its pending removal hands the file on.
+    file_infos.context_by_name.emplace(
+        other_name, FileContext{.status = gone ? FileStatus::NO_CHANGE : FileStatus::OPEN, .inode = inode, .is_symlink = is_symlink});
+    file_infos.file_names.push_back(other_name);
 }
 
 bool StorageFileLog::updateFileInfos()
@@ -1207,15 +1249,16 @@ bool StorageFileLog::updateFileInfos()
                 if (std::filesystem::is_regular_file(file_path))
                 {
                     auto inode = getInode(file_path);
+                    const bool is_symlink = isSymlink(file_path);
 
-                    if (addOtherName(file_name, inode))
+                    if (addOtherName(file_name, inode, is_symlink))
                         break;
 
                     /// The file kept another name in the directory, so it is not new: it is read on like a renamed one.
                     /// Checked before `onFileAppeared`, which may release a meta.
                     const bool kept_other_name = file_infos.meta_by_inode.contains(inode) && findOtherName(inode).has_value();
 
-                    onFileAppeared(file_name, inode);
+                    onFileAppeared(file_name, inode, is_symlink);
 
                     if (kept_other_name)
                     {
@@ -1248,9 +1291,9 @@ bool StorageFileLog::updateFileInfos()
                 if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                     it->second.status = FileStatus::UPDATED;
                 /// A write through another name updates the name the file is read under.
-                else if (auto other = file_infos.inode_by_other_name.find(file_name); other != file_infos.inode_by_other_name.end())
+                else if (auto other = file_infos.other_names.find(file_name); other != file_infos.other_names.end())
                 {
-                    if (auto meta = file_infos.meta_by_inode.find(other->second); meta != file_infos.meta_by_inode.end())
+                    if (auto meta = file_infos.meta_by_inode.find(other->second.inode); meta != file_infos.meta_by_inode.end())
                     {
                         if (auto read = file_infos.context_by_name.find(meta->second.file_name);
                             read != file_infos.context_by_name.end() && read->second.status != FileStatus::REMOVED)
@@ -1264,7 +1307,7 @@ bool StorageFileLog::updateFileInfos()
             /// The file **left** the directory
             case DirectoryWatcherBase::DW_ITEM_MOVED_FROM:
             {
-                file_infos.inode_by_other_name.erase(file_name);
+                file_infos.other_names.erase(file_name);
                 if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                     it->second.status = FileStatus::REMOVED;
                 break;
@@ -1277,11 +1320,12 @@ bool StorageFileLog::updateFileInfos()
                 if (std::filesystem::is_regular_file(file_path))
                 {
                     auto inode = getInode(file_path);
+                    const bool is_symlink = isSymlink(file_path);
 
-                    if (addOtherName(file_name, inode))
+                    if (addOtherName(file_name, inode, is_symlink))
                         break;
 
-                    onFileAppeared(file_name, inode);
+                    onFileAppeared(file_name, inode, is_symlink);
 
                     /// File has been renamed, we should also rename meta file
                     if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())

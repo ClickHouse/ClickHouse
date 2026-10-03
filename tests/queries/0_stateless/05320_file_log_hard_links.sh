@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A FileLog file with several names in the directory (hard links, a symbolic link) is read once, under one of
+# A FileLog file with several names in the directory (hard links, symbolic links) is read once, under one of
 # its names, and keeps being read from the same position whichever of its names it is read under.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -10,6 +10,9 @@ logs_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}
 rm -rf "${logs_dir}"
 mkdir -p "${logs_dir}"/{d1,d2,d3}
 d1=${logs_dir}/d1
+held=${logs_dir}/held.log
+out=${logs_dir}/out.log
+tmp=${logs_dir}/tmp.txt
 
 function read_log()
 {
@@ -60,17 +63,19 @@ echo '-- a write through the other name is read under the read name'
 printf '4\n' >> "${d1}/alias.log"
 read_until file_log 4
 
-echo '-- the read name is removed and the other name is linked again: read on, not from the start'
+echo '-- the read name is removed, and the other name is linked again and then removed: read on, not from the start'
 rm "${d1}/app.log"
 ln "${d1}/alias.log" "${d1}/new.log"
+rm "${d1}/alias.log"
 printf '5\n' >> "${d1}/new.log"
 read_until file_log 5
 
 echo '-- the same name is linked again'
+ln "${d1}/new.log" "${d1}/alias.log"
 rm "${d1}/new.log"
 ln "${d1}/alias.log" "${d1}/new.log"
 printf '6\n' >> "${d1}/new.log"
-read_until file_log 6
+read_until file_log 6 | cut -f2
 
 echo '-- link and unlink: the only other name reads on'
 rm "${d1}/alias.log"
@@ -88,8 +93,8 @@ read_until file_log 8
 echo '-- the read name is replaced by another file: the other name reads on, the new file is read from the start'
 rm "${d1}/x.log"
 ln "${d1}/next.log" "${d1}/keep.log"
-printf '9\n' > "${d1}/tmp.txt"
-mv "${d1}/tmp.txt" "${d1}/next.log"
+printf '9\n' > "${tmp}"
+mv "${tmp}" "${d1}/next.log"
 printf '10\n' >> "${d1}/keep.log"
 read_until file_log 9 10
 
@@ -100,24 +105,62 @@ ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log"
 printf '11\n' >> "${d1}/keep.log"
 read_log file_log
 
-echo '-- hard links that exist when the table is created'
+echo '-- hard links and a symbolic link that exist when the table is created'
 printf '1\n2\n' > "${logs_dir}/d2/a.log"
 ln "${logs_dir}/d2/a.log" "${logs_dir}/d2/b.log"
+ln -s a.log "${logs_dir}/d2/0.log"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_create (id UInt64) ENGINE = FileLog('${logs_dir}/d2/', 'TSV')"
 read_log file_log_create
 
-echo '-- a symbolic link is not read, and is not read either once it dangles'
+echo '-- a symbolic link that exists when the table is created'
 d3=${logs_dir}/d3
 printf '1\n' > "${d3}/a.log"
+ln -s a.log "${d3}/s1.log"
+: > "${d3}/sync.log"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_symlink (id UInt64) ENGINE = FileLog('${d3}/', 'TSV')"
 read_log file_log_symlink
-sync_watch file_log_symlink "${d3}/a.log"
-ln -s a.log "${d3}/s.log"
+sync_watch file_log_symlink "${d3}/sync.log"
+
+echo '-- hard links and symbolic links to a read file are not read'
+ln "${d3}/a.log" "${d3}/b.log"
+ln -s b.log "${d3}/1.log"
+ln -s b.log "${d3}/tmp.sym"
+mv "${d3}/tmp.sym" "${d3}/0.log"
 printf '2\n' >> "${d3}/a.log"
 read_until file_log_symlink 2
+
+echo '-- the read name is removed: a hard link reads on, not a symbolic link'
 rm "${d3}/a.log"
-printf '3\n' > "${d3}/b.log"
+printf '3\n' >> "${d3}/b.log"
 read_until file_log_symlink 3
+
+echo '-- symbolic links that no longer point to the file do not keep it: a file linked back from outside the directory is read from the start'
+ln "${d3}/b.log" "${held}"
+rm "${d3}/b.log"
+ln "${held}" "${d3}/v.log"
+printf '4\n' >> "${d3}/v.log"
+read_until file_log_symlink 1 2 3 4
+
+echo '-- a symbolic link to a file outside the directory is read'
+printf '5\n' > "${out}"
+ln -s ../out.log "${d3}/z.log"
+read_until file_log_symlink 5
+
+echo '-- a hard link to a file read under a symbolic link reads it on'
+ln "${out}" "${d3}/y.log"
+printf '6\n' >> "${d3}/y.log"
+read_until file_log_symlink 6
+
+echo '-- the hard link is removed: the symbolic link reads on'
+rm "${d3}/y.log"
+printf '7\n' >> "${out}"
+read_until file_log_symlink 7
+
+echo '-- a symbolic link that no longer points to the file does not keep it either when it is the read name'
+mv "${out}" "${logs_dir}/out2.log"
+ln "${logs_dir}/out2.log" "${d3}/w.log"
+printf '8\n' >> "${d3}/w.log"
+read_until file_log_symlink 5 6 7 8
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_create"
