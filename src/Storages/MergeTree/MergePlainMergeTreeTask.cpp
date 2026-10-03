@@ -266,6 +266,9 @@ void MergePlainMergeTreeTask::finish()
         ThreadFuzzer::maybeInjectMemoryLimitException();
     }
 
+    /// While still under the merge's tracker, which its writer buffers were charged to; before `finalize`, as in `cancel`.
+    merge_task.reset();
+
     merge_mutate_entry->finalize();
 }
 
