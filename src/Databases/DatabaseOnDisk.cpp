@@ -24,6 +24,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
@@ -153,6 +154,8 @@ std::pair<String, StoragePtr> createTableFromAST(
         /// registered, so that `DROP NAMED COLLECTION` stays blocked after a server restart.
         if (const auto collection_name = table_function->getUsedNamedCollectionName(); !collection_name.empty())
             NamedCollectionFactory::instance().addDependency(collection_name, storage->getStorageID());
+        if (const auto * table_function_node = table_function_ast->as<ASTFunction>())
+            addNestedTableFunctionNamedCollectionDependencies(table_function_node->arguments, storage->getStorageID());
 
         return {ast_create_query.getTable(), storage};
     }
@@ -615,6 +618,15 @@ void DatabaseOnDisk::renameTable(
 
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
     to_database.createTable(local_context, to_table_name, table, attach_query);
+
+    /// A move between an `Ordinary` and an `Atomic` database changes the identity the named collection
+    /// dependencies of the table are keyed by: the move into `Atomic` assigns a fresh UUID, the move out
+    /// of it drops the UUID. The rename interpreter only knows the names, so re-key the entries here,
+    /// where both identities are known - otherwise a later `DETACH` of the moved table finds no
+    /// dependency and `DROP NAMED COLLECTION` is allowed while the metadata still references it.
+    if (from_ordinary_to_atomic || from_atomic_to_ordinary)
+        NamedCollectionFactory::instance().rekeyDependencies(
+            StorageID(getDatabaseName(), table_name, prev_uuid), table->getStorageID());
 
     db_disk->removeFileIfExists(table_metadata_path);
 

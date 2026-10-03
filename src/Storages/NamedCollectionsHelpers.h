@@ -30,7 +30,26 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ContextPtr context,
     bool throw_unknown_collection = true,
     VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> * complex_args = nullptr,
-    const StorageID * dependent_table_id = nullptr);
+    const StorageID * dependent_table_id = nullptr,
+    String * used_named_collection_name = nullptr);
+
+/// The name of the named collection the engine arguments of a table definition reference, if any.
+/// The collection is always the first argument, as in `tryGetNamedCollectionWithOverrides` above, and
+/// only engines whose `StorageFeatures::supports_named_collections` is set can reference one. For a
+/// table whose storage is not built (a lazily loaded one), this is the only way to learn which
+/// collection its stored definition uses. It performs no access check: the caller inspects stored
+/// metadata during loading, not a query of a user.
+std::optional<std::string> tryGetUsedNamedCollectionName(const String & engine_name, const ASTs & asts);
+
+/// Registers the dependency of `dependent_table_id` on every named collection referenced by a table
+/// function nested in `ast` (`ast` itself included): a `Remote` engine or a `remote` table function
+/// persists its table function target, e.g. `remote('addr', url(nc, ...))`, and resolves it only at
+/// read time, so the collection the target uses must be held for as long as the table exists. A table
+/// function references a collection by an identifier as its first argument; as the same identifier can
+/// mean something else for some table functions (a cluster name for `remote`, a database name for
+/// `merge`), the dependency is registered only when a collection with that name exists, which can only
+/// make the drop of a same-named collection stricter.
+void addNestedTableFunctionNamedCollectionDependencies(const ASTPtr & ast, const StorageID & dependent_table_id);
 
 /// Helper function to get named collection for dictionary source.
 /// Dictionaries have collection name as name argument of dict configuration and other arguments are overrides.

@@ -80,7 +80,7 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
 
     ASTs & args = func_args.arguments->children;
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, getUsedNamedCollectionNameForUpdate()))
     {
         if (!named_collection->has("structure"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required key (structure) is not specified.");

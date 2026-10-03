@@ -45,10 +45,10 @@ namespace Setting
     extern const SettingsUInt64 arrow_flight_request_timeout_sec;
 }
 
-StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & args, ContextPtr context_, const StorageID * table_id)
+StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & args, ContextPtr context_, const StorageID * table_id, String * used_named_collection_name)
 {
     StorageArrowFlight::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context_, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context_, true, nullptr, table_id, used_named_collection_name))
     {
         configuration = StorageArrowFlight::processNamedCollectionResult(*named_collection);
     }
@@ -360,6 +360,7 @@ void registerStorageArrowFlight(StorageFactory & factory)
         },
         {
             .supports_schema_inference = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::ARROW_FLIGHT,
         },
         Documentation{
