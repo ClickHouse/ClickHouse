@@ -73,3 +73,26 @@ SELECT n.a, c, d FROM t_default_missing_nested ORDER BY k;
 OPTIMIZE TABLE t_default_missing_nested FINAL;
 SELECT k, n.a, n.b, c, d, r FROM t_default_missing_nested ORDER BY k;
 DROP TABLE t_default_missing_nested;
+
+-- A column with a compound name that has a DEFAULT of its own, read by another DEFAULT, on a part that lacks both.
+DROP TABLE IF EXISTS t_default_missing_compound;
+CREATE TABLE t_default_missing_compound (k UInt64, n Nested(a UInt64)) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_default_missing_compound VALUES (1, [10, 20]);
+ALTER TABLE t_default_missing_compound
+    ADD COLUMN n.b Array(UInt64), ADD COLUMN n.e Array(UInt64) DEFAULT arrayMap(x -> x + 1, n.a),
+    ADD COLUMN `p.r` UInt64 DEFAULT k * 100;
+ALTER TABLE t_default_missing_compound
+    ADD COLUMN c UInt64 DEFAULT length(n.b), ADD COLUMN f UInt64 DEFAULT length(n.e), ADD COLUMN g UInt64 DEFAULT n.e.size0,
+    ADD COLUMN h UInt64 DEFAULT p.r + 1, ADD COLUMN m UInt64 DEFAULT arraySum(arrayMap(n -> n.e, [CAST(tuple(5), 'Tuple(e UInt64)')]));
+SELECT c FROM t_default_missing_compound;
+SELECT f FROM t_default_missing_compound;
+SELECT g FROM t_default_missing_compound;
+SELECT h FROM t_default_missing_compound;
+-- `n` in the lambda is its argument, not the Nested column.
+SELECT f, m FROM t_default_missing_compound;
+SELECT n.e, f, g FROM t_default_missing_compound;
+INSERT INTO t_default_missing_compound (k, n.a) VALUES (2, [30]);
+SELECT k, n.b, n.e, c, f, g, h, m FROM t_default_missing_compound ORDER BY k;
+OPTIMIZE TABLE t_default_missing_compound FINAL;
+SELECT k, n.b, n.e, c, f, g, h, m FROM t_default_missing_compound ORDER BY k;
+DROP TABLE t_default_missing_compound;
