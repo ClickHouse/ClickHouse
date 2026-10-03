@@ -2534,16 +2534,6 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     if (merge_entry)
     {
-        /// Test hook: drop the selected merge without ever scheduling it, the way the background pool
-        /// discards a queued task when its table is dropped. Everything the selection reserved - in
-        /// particular the slot a merge with TTL takes - has to be given back along this path.
-        /// The merge type is checked first so that the one-shot fires on a merge with TTL and is not
-        /// spent on whichever unrelated merge the server happened to select first.
-        if (isTTLMergeType(merge_entry->future_part->merge_type))
-        {
-            fiu_do_on(FailPoints::mt_drop_selected_ttl_merge_once, { return false; });
-        }
-
         if (is_cancelled(merge_entry))
             return false;
 
@@ -2555,6 +2545,22 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, cleanup, merge_entry, shared_lock, common_assignee_trigger);
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));
+
+        /// Test hook: drop the merge task before it ever runs, the way the background pool discards
+        /// a queued task when its table is dropped. The task is already constructed, so the selected
+        /// entry - and with it the slot a merge with TTL takes - is owned by the task, exactly as for
+        /// a queued task, and everything the selection reserved has to be given back when it dies.
+        /// The merge type is checked first so that the one-shot fires on a merge with TTL and is not
+        /// spent on whichever unrelated merge the server happened to select first.
+        if (isTTLMergeType(merge_entry->future_part->merge_type))
+        {
+            fiu_do_on(FailPoints::mt_drop_selected_ttl_merge_once,
+            {
+                merge_entry.reset();
+                task.reset();
+                return false;
+            });
+        }
 
         /// Test hook: pretend the background pool is full for a manually scheduled merge and drop
         /// the selected merge without scheduling it. The merge must be retried (its queue entry in
