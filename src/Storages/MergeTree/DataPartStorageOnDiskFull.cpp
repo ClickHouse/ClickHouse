@@ -237,7 +237,7 @@ void DataPartStorageOnDiskFull::createProjection(const std::string & name)
     executeWriteOperation([&](auto & disk) { disk.createDirectory(fs::path(root_path) / part_dir / name); });
 }
 
-void DataPartStorageOnDiskFull::beginTransaction()
+void DataPartStorageOnDiskFull::beginTransaction(const MergeTreeSettings & /*settings*/)
 {
     if (transaction)
         throw Exception(ErrorCodes::LOGICAL_ERROR,

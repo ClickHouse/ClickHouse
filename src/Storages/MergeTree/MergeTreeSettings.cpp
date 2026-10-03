@@ -2393,6 +2393,12 @@ only; existing parts retain whatever layout they had at write time.
 )", BETA, \
         {"26.8", 0, 1024 * 1024, "Promote to BETA and enable by default: pack skip-index substreams whose serialized on-disk size is at most 1 MiB into a single `skp_idx.packed` archive per part, cutting object count and read requests on object storage. Larger substreams keep the standalone `skp_idx_<name>.idx2` / `.mrk2` layout. Set to 0 to restore the previous behavior (no packing)."}, \
         {"26.6", 0, 0, "New setting. Pack any skip-index substream whose serialized on-disk size is at most this many bytes into a single skp_idx.packed archive per part; larger substreams stay in the standalone skp_idx_<name>.idx2 / .mrk2 layout. Decision is made per substream at write time."}) \
+    DECLARE(UInt64, max_bytes_to_buffer_for_packed_part, 32 * 1024 * 1024, R"(
+Maximum amount of part data buffered in memory while writing a packed part. Once this
+threshold is exceeded, the buffered data is spilled to temporary files inside the part
+directory and read back during finalization, keeping the in-memory footprint bounded.
+)", 0, \
+        {"26.10", std::numeric_limits<UInt64>::max(), 32 * 1024 * 1024, "New setting. The previous value disables spilling and buffers all packed part data in memory, preserving pre-26.8 behavior"}) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
 When enabled, allows summing columns in a SummingMergeTree table to be used in
 the partition or sorting key.

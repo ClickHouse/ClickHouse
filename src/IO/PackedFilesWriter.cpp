@@ -1,7 +1,13 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/PackedFilesWriter.h>
+#include <IO/SwapHelper.h>
+#include <IO/copyData.h>
+#include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Common/escapeForFileName.h>
 
 
@@ -10,8 +16,27 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_OPEN_FILE;
     extern const int FILE_ALREADY_EXISTS;
     extern const int FILE_DOESNT_EXIST;
+}
+
+PackedFilesWriter::PackedFilesWriter(std::shared_ptr<SpillConfig> spill_config_)
+    : spill_config(std::move(spill_config_))
+{
+}
+
+PackedFilesWriter::~PackedFilesWriter()
+{
+    try
+    {
+        if (spill_config && spill_config->remove_spill_temp_dir)
+            spill_config->remove_spill_temp_dir();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("PackedFilesWriter"), "Failed to remove spill temp directory");
+    }
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -40,8 +65,9 @@ PackedFilesWriter::writeFile(const String & file_name)
             "File {} already exists in packed archive (existing files: [{}])", file_name, existing_files);
     }
 
-    it->second = std::make_shared<Data>();
-    return std::make_unique<FakeWriteBufferFromFile>(file_name, it->second);
+    auto file = std::make_shared<WrittenFile>(std::make_shared<SpillableMemoryWriteBuffer>(spill_config, file_name));
+    it->second = file;
+    return std::make_unique<FakeWriteBufferFromFile>(file);
 }
 
 void PackedFilesWriter::moveFile(const String & from_name, const String & to_name)
@@ -213,13 +239,13 @@ PackedFilesWriter::FinalizePlan PackedFilesWriter::prepareFinalize(const Strings
     bool need_sync = false;
     for (const auto & name : ordered_file_names)
     {
-        const auto & data = written_files.at(name);
-        const UInt64 data_size = data->chars.size();
+        const auto & file = written_files.at(name);
+        const UInt64 data_size = file->buffer->count();
 
-        index[name] = {data_offset, data_size, data->uncompressed_size};
+        index[name] = {data_offset, data_size, file->uncompressed_size};
         data_offset += data_size;
         /// fsync the whole file with archive if any of files were requested to be fsynced.
-        need_sync |= data->need_sync;
+        need_sync |= file->need_sync;
     }
 
     return {std::move(index), std::move(ordered_file_names), version, need_sync};
@@ -245,8 +271,11 @@ void PackedFilesWriter::finalize(WriteBuffer & out, const FinalizePlan & plan) c
 
     for (const auto & name : plan.ordered_file_names)
     {
-        const auto & data = written_files.at(name);
-        out.write(reinterpret_cast<const char *>(data->chars.data()), data->chars.size());
+        const auto & file = written_files.at(name);
+        auto read_buf = file->buffer->tryGetReadBuffer();
+        if (!read_buf)
+            throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Failed to open read buffer for file {} from packed archive", name);
+        copyData(*read_buf, out);
     }
 }
 
@@ -263,22 +292,34 @@ size_t PackedFilesWriter::getSizeOfHeader()
     return sizeof(UInt8) + sizeof(UInt64);
 }
 
+PackedFilesWriter::FakeWriteBufferFromFile::FakeWriteBufferFromFile(std::shared_ptr<WrittenFile> file_)
+    : WriteBufferFromFileBase(0, nullptr, 0)
+    , file(std::move(file_))
+{
+    swap(*file->buffer);
+}
+
+PackedFilesWriter::FakeWriteBufferFromFile::~FakeWriteBufferFromFile()
+{
+    swap(*file->buffer);
+}
+
 void PackedFilesWriter::FakeWriteBufferFromFile::nextImpl()
 {
-    SwapGuard guard(*this);
-    impl->next();
+    SwapHelper swap_helper(*this, *file->buffer);
+    file->buffer->next();
 }
 
 void PackedFilesWriter::FakeWriteBufferFromFile::finalizeImpl()
 {
-    SwapGuard guard(*this);
-    impl->finalize();
+    SwapHelper swap_helper(*this, *file->buffer);
+    file->buffer->finalize();
 }
 
 void PackedFilesWriter::FakeWriteBufferFromFile::cancelImpl() noexcept
 {
-    SwapGuard guard(*this);
-    impl->cancel();
+    SwapHelper swap_helper(*this, *file->buffer);
+    file->buffer->cancel();
 }
 
 }

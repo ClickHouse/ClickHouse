@@ -644,7 +644,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     if (global_ctx->parent_part && data_part_storage->exists())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection merge directory {} already exists", data_part_storage->getFullPath());
 
-    data_part_storage->beginTransaction();
+    data_part_storage->beginTransaction(*global_ctx->data_settings);
 
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
@@ -3292,7 +3292,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
     if (!global_ctx->temporary_text_index_storage)
     {
         auto new_part_path = global_ctx->new_data_part->getDataPartStorage().getRelativePath();
-        global_ctx->temporary_text_index_storage = createTemporaryTextIndexStorage(global_ctx->disk, new_part_path);
+        global_ctx->temporary_text_index_storage = createTemporaryTextIndexStorage(global_ctx->disk, new_part_path, *global_ctx->data_settings);
     }
 
     addSkipIndexesExpressionSteps(plan, description_to_build, global_ctx);

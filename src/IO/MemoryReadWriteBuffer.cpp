@@ -124,6 +124,17 @@ void MemoryWriteBuffer::addChunk()
 }
 
 
+void MemoryWriteBuffer::freeChunks()
+{
+    for (const auto & range : chunk_list)
+        free(range.begin(), range.size());
+
+    chunk_list.clear();
+    chunk_tail = chunk_list.before_begin();
+    total_chunks_size = 0;
+}
+
+
 std::unique_ptr<ReadBuffer> MemoryWriteBuffer::getReadBufferImpl()
 {
     finalize();

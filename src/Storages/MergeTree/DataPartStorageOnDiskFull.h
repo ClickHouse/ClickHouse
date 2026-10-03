@@ -43,7 +43,7 @@ public:
     void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) override;
     void copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) override;
 
-    void beginTransaction() override;
+    void beginTransaction(const MergeTreeSettings & settings) override;
     void commitTransaction() override;
     void precommitTransaction() override {}
     bool hasActiveTransaction() const override { return transaction != nullptr; }

@@ -211,7 +211,8 @@ private:
 
 using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;
 
-MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, const String & part_relative_path);
+MutableDataPartStoragePtr createTemporaryTextIndexStorage(
+    const DiskPtr & disk, const String & part_relative_path, const MergeTreeSettings & settings);
 
 /// Resolves the stream's on-disk name and size from the part's checksums instead of the filesystem.
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(

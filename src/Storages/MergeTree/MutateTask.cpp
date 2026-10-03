@@ -2256,7 +2256,7 @@ void PartMergerWriter::createBuildTextIndexesTask()
     }
 
     auto part_path = ctx->new_data_part->getDataPartStorage().getRelativePath();
-    temporary_text_index_storage = createTemporaryTextIndexStorage(ctx->disk, part_path);
+    temporary_text_index_storage = createTemporaryTextIndexStorage(ctx->disk, part_path, *ctx->data->getSettings());
     std::vector<MergeTreeIndexPtr> text_indexes(ctx->text_indices_to_recalc.begin(), ctx->text_indices_to_recalc.end());
 
     build_text_index_transform = std::make_unique<BuildTextIndexTransform>(
@@ -2796,7 +2796,7 @@ private:
                     hardlinked_files.insert(file_name_with_projection_prefix);
                 }
 
-                ctx->new_data_part->getDataPartStorage().checkpointTransaction();
+                ctx->new_data_part->getDataPartStorage().checkpointTransaction(*ctx->data->getSettings());
             }
         }
 
@@ -3127,7 +3127,7 @@ private:
                     }
                 }
 
-                ctx->new_data_part->getDataPartStorage().checkpointTransaction();
+                ctx->new_data_part->getDataPartStorage().checkpointTransaction(*settings);
             }
         }
 
@@ -4095,7 +4095,7 @@ bool MutateTask::prepare()
         {
             std::tie(part, lock) = ctx->data->cloneAndLoadDataPart(
                 ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
-            part->getDataPartStorage().beginTransaction();
+            part->getDataPartStorage().beginTransaction(*settings_ptr);
             ctx->temporary_directory_lock = std::move(lock);
         }
 
@@ -4224,7 +4224,7 @@ bool MutateTask::prepare()
     builder.withPartInfo(ctx->future_part->part_info);
 
     ctx->new_data_part = std::move(builder).build();
-    ctx->new_data_part->getDataPartStorage().beginTransaction();
+    ctx->new_data_part->getDataPartStorage().beginTransaction(*ctx->data->getSettings());
 
     ctx->new_data_part->uuid = ctx->future_part->uuid;
     ctx->new_data_part->is_temp = true;

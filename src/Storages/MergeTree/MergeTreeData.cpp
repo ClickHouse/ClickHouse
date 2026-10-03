@@ -12986,7 +12986,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             read_settings,
             write_settings,
             /* save_metadata_callback= */ {},
-            params_with_invalidated_columns);
+            params_with_invalidated_columns,
+            *getSettings());
     }
     else
     {
@@ -13005,14 +13006,15 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             read_settings,
             write_settings,
             /* save_metadata_callback= */ {},
-            params_with_invalidated_columns);
+            params_with_invalidated_columns,
+            *getSettings());
     }
 
     if (params.metadata_version_to_write.has_value())
     {
         chassert(!params.keep_metadata_version);
 
-        dst_part_storage->beginTransaction();
+        dst_part_storage->beginTransaction(*getSettings());
         auto out_metadata = dst_part_storage->writeFile(
             IMergeTreeDataPart::METADATA_VERSION_FILE_NAME,
             /*buf_size=*/ 4096,
@@ -13317,7 +13319,8 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
                     local_context->getReadSettings(),
                     local_context->getWriteSettings(),
                     callback,
-                    params);
+                    params,
+                    *getSettings());
 
                 part->is_frozen.store(true, std::memory_order_relaxed);
                 {
@@ -14773,7 +14776,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
     auto new_data_part_storage = new_data_part->getDataPartStoragePtr();
-    new_data_part_storage->beginTransaction();
+    new_data_part_storage->beginTransaction(*settings);
 
     SyncGuardPtr sync_guard;
 

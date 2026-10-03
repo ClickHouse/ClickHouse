@@ -128,7 +128,8 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
-        const ClonePartParams & params) const override;
+        const ClonePartParams & params,
+        const MergeTreeSettings & settings) const override;
 
     MutableDataPartStoragePtr freezeRemote(
     const std::string & to,
@@ -137,7 +138,8 @@ public:
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
     std::function<void(const DiskPtr &)> save_metadata_callback,
-    const ClonePartParams & params) const override;
+    const ClonePartParams & params,
+    const MergeTreeSettings & settings) const override;
 
     MutableDataPartStoragePtr clonePart(
         const std::string & to,
