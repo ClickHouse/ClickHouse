@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/ColumnWithTypeAndName.h>
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ActionsDAG.h>
@@ -8,81 +8,20 @@
 namespace DB
 {
 
-class IAST;
 class Field;
 class FutureSet;
 using FutureSetPtr = std::shared_ptr<FutureSet>;
-class PreparedSets;
-using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
-struct Settings;
-
-/** Context of RPNBuilderTree.
-  *
-  * For AST tree context, precalculated block with constants and prepared sets are required for index analysis.
-  * For DAG tree precalculated block with constants and prepared sets are not required, because constants and sets already
-  * calculated inside COLUMN actions dag node.
-  */
-class RPNBuilderTreeContext
-{
-public:
-    /// Construct RPNBuilderTreeContext for ActionsDAG tree
-    explicit RPNBuilderTreeContext(ContextPtr query_context_);
-
-    /// Construct RPNBuilderTreeContext for AST tree
-    explicit RPNBuilderTreeContext(ContextPtr query_context_, Block block_with_constants_, PreparedSetsPtr prepared_sets_);
-
-    /// Get query context
-    const ContextPtr & getQueryContext() const
-    {
-        return query_context;
-    }
-
-    /// Get query context settings
-    const Settings & getSettings() const;
-
-    /** Get block with constants.
-      * Valid only for AST tree.
-      */
-    const Block & getBlockWithConstants() const
-    {
-        return block_with_constants;
-    }
-
-    /** Get prepared sets.
-      * Valid only for AST tree.
-      */
-    const PreparedSetsPtr & getPreparedSets() const
-    {
-        return prepared_sets;
-    }
-
-private:
-    /// Valid for both AST and ActionDAG tree
-    ContextPtr query_context;
-
-    /// Valid only for AST tree
-    Block block_with_constants;
-
-    /// Valid only for AST tree
-    PreparedSetsPtr prepared_sets;
-};
 
 class RPNBuilderFunctionTreeNode;
 
-/** RPNBuilderTreeNode is wrapper around DAG or AST node.
+/** RPNBuilderTreeNode is wrapper around an ActionsDAG node.
   * It defines unified interface for index analysis.
   */
-class RPNBuilderTreeNode
+class RPNBuilderTreeNode : public WithContext
 {
 public:
-    /// Construct RPNBuilderTreeNode with non null dag node and tree context
-    explicit RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, RPNBuilderTreeContext & tree_context_);
-
-    /// Construct RPNBuilderTreeNode with non null ast node and tree context
-    explicit RPNBuilderTreeNode(const IAST * ast_node_, RPNBuilderTreeContext & tree_context_);
-
-    /// Get AST node
-    const IAST * getASTNode() const { return ast_node; }
+    /// Construct RPNBuilderTreeNode with non null dag node and the query context shared by all nodes of one tree
+    explicit RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, const ContextPtr & query_context_);
 
     /// Get DAG node
     const ActionsDAG::Node * getDAGNode() const { return dag_node; }
@@ -113,14 +52,12 @@ public:
 
     /** Try get constant from node. If node is constant returns true, and constant value and constant type output parameters are set.
       * Otherwise false is returned.
+      * The output type is the type of the value: `LowCardinality` is removed, and `Nullable` is removed when the value is not NULL.
       */
     bool tryGetConstant(Field & output_value, DataTypePtr & output_type) const;
 
     /// Try get prepared set from node
     FutureSetPtr tryGetPreparedSet() const;
-
-    /// Try get prepared set from node that match data types
-    FutureSetPtr tryGetPreparedSet(const DataTypes & data_types) const;
 
     /** Convert node to function node.
       * Node must be function before calling these method, otherwise exception is thrown.
@@ -130,22 +67,11 @@ public:
     /// Convert node to function node or null optional
     std::optional<RPNBuilderFunctionTreeNode> toFunctionNodeOrNull() const;
 
-    /// Get tree context
-    const RPNBuilderTreeContext & getTreeContext() const
-    {
-        return tree_context;
-    }
-
-    /// Get tree context
-    RPNBuilderTreeContext & getTreeContext()
-    {
-        return tree_context;
-    }
+    /// If this node is the `ARRAY_JOIN` action `arrayJoin(x)`, return its argument node `x`; otherwise std::nullopt.
+    std::optional<RPNBuilderTreeNode> getArrayJoinArgument() const;
 
 protected:
-    const IAST * ast_node = nullptr;
     const ActionsDAG::Node * dag_node = nullptr;
-    RPNBuilderTreeContext & tree_context;
 };
 
 /** RPNBuilderFunctionTreeNode is wrapper around RPNBuilderTreeNode with function type.
@@ -167,6 +93,14 @@ public:
     /// Get function argument at index
     RPNBuilderTreeNode getArgumentAt(size_t index) const;
 };
+
+/// Whether the node is `CAST`, `_CAST`, `toNullable` or `toLowCardinality` whose conversion never changes
+/// the value and never throws: `LowCardinality` added or dropped and `Nullable` added, at any depth of `Array`.
+bool isLosslessConversionFunction(const ActionsDAG::Node & node);
+
+/// Strips lossless conversions (see above) from the node. Indexes are analyzed on the expression under them.
+RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node);
+const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node);
 
 /** RPN Builder build stack of reverse polish notation elements (RPNElements) required for index analysis.
   *
@@ -194,6 +128,28 @@ public:
   * In addition client must provide ExtractAtomFromTreeFunction that returns true and RPNElement as output parameter,
   * if it can convert RPNBuilderTree node to RPNElement, false otherwise.
   */
+/// `indexHint` exists so that index analysis can see a condition that is never executed. A consumer
+/// that analyses indexes has to descend into it - that is the whole point of the hint. A consumer
+/// that estimates how selective an expression is must not: the condition removes no rows, since the
+/// function evaluates to 1 for every row, so descending into it applies a selectivity the query does
+/// not have. Where the hint holds a conjunct derived from its siblings (`LogicalExpressionOptimizerPass`
+/// wraps those it derived from a chain of comparisons), it would also apply that conjunct's
+/// selectivity twice, once for the original and once for the copy. Such a consumer specialises this
+/// trait and gets an `ALWAYS_TRUE` leaf for the whole hint.
+///
+/// `ALWAYS_TRUE` bounds the claim to the number of rows the condition removes; a hint is not inert.
+/// It takes part in index analysis and prunes the read set, so a relation under one can yield fewer
+/// rows than a selectivity-based estimate suggests. That is invisible to
+/// `ConditionSelectivityEstimator` for every predicate, not just hints: it estimates
+/// `total_rows * selectivity`, and `total_rows` counts whole parts, mark ranges included whether the
+/// index selected them or not. Pruning is carried by a separate estimate,
+/// `RowEstimateSource::PrimaryIndex`, which is used only when column statistics are missing.
+template <typename RPNElement>
+struct RPNBuilderTraits
+{
+    static constexpr bool expand_index_hint = true;
+};
+
 template <typename RPNElement>
 class RPNBuilder
 {

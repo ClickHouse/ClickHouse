@@ -92,8 +92,10 @@ class Labels:
     CI_FUNCTIONAL = "ci-functional-test"
     CI_TOOLCHAIN = "ci-toolchain"
     CI_NO_COVERAGE = "ci-no-coverage"
+    # Pull requests run the LLVM coverage jobs only with this label.
+    CI_COVERAGE = "ci-coverage"
 
-    # Gates the PromQL compliance PR comment from integration-test post-hooks (see promql_compliance_hook.py).
+    # Gates the PromQL compliance dedicated job + PR comment (see promql_compliance_job.py).
     COMP_PROMQL = "comp-promql"
 
     # automatic backport for critical bug fixes

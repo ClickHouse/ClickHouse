@@ -29,6 +29,10 @@ public:
     /// Waits for in-progress reads to complete, cancels queued reads that haven't started yet.
     ~Prefetcher();
 
+    /// Same handshake as the destructor. After this returns, no background task reads through the
+    /// ReadBuffer passed to init() anymore, so that buffer may be destroyed. Idempotent.
+    void shutdownTasks();
+
     /// Not thread safe.
     /// All ranges must be registered before any reading happens (except direct readSync).
     /// Ranges are allowed to overlap a little, but this decreases the effectiveness of range

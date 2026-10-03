@@ -132,14 +132,14 @@ SELECT polygonPerimeterCartesian([[[(0., 0.), (0., 5.), (5., 5.), (5., 0.)]]])
 
     FunctionDocumentation::Description description_spherical = R"(Calculates the perimeter of the polygon.)";
     FunctionDocumentation::Syntax syntax_spherical = "polygonPerimeterSpherical(polygon)";
-    FunctionDocumentation::Arguments arguments_spherical = {{"polygon", "A value of type [`Polygon`](/sql-reference/data-types/geo#polygon)"}};
+    FunctionDocumentation::Arguments arguments_spherical = {{"polygon", "A value of type [`Polygon`](/reference/data-types/geo#polygon)"}};
     FunctionDocumentation::ReturnedValue returned_value_spherical = {"The perimeter of the polygon on a sphere", {"Float64"}};
     FunctionDocumentation::Examples examples_spherical = {{"spherical_example",
                   R"(
 SELECT round(polygonPerimeterSpherical([[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]]), 6)
                   )",
                   R"(
-0.045539
+0.001201
                   )"}};
     FunctionDocumentation::IntroducedIn introduced_in_spherical = {21, 4};
     FunctionDocumentation::Category category_spherical = FunctionDocumentation::Category::GeoPolygon;

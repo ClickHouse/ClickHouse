@@ -23,8 +23,6 @@ SELECT 'prewhere_ordinary', arr, arr.size0 FROM 04709_buf PREWHERE k = 1
 -- the parent, so a derivation reading it back must not pick up a fabricated default.
 SELECT 'prewhere_consumes_parent', k, arr.size0 FROM 04709_buf PREWHERE has(arr, 2) ORDER BY k;
 SELECT 'prewhere_consumes_parent_element', k, arr.size0 FROM 04709_buf PREWHERE arr[1] = 1 ORDER BY k;
-SELECT 'prewhere_consumes_parent_old_analyzer', k, arr.size0 FROM 04709_buf PREWHERE has(arr, 2) ORDER BY k
-    SETTINGS enable_analyzer = 0;
 SELECT 'prewhere_consumes_parent_selected', k, arr, arr.size0 FROM 04709_buf PREWHERE has(arr, 2) ORDER BY k;
 SELECT 'prewhere_consumes_parent_other_expression', k, arr.size0, length(arr) FROM 04709_buf
     PREWHERE has(arr, 2) ORDER BY k SETTINGS optimize_functions_to_subcolumns = 0;

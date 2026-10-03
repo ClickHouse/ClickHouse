@@ -1,0 +1,7 @@
+-- PREWHERE and WHERE on different Map subscripts, no row matches
+-- same shape, one row matches
+1
+-- the lazy materialization pass is reached (plan oracle)
+1	1
+-- in the plan, mapKeys virtual is present and mapValues virtual is absent (EXPLAIN entry path)
+1	0

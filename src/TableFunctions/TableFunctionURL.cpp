@@ -29,7 +29,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_url_wildcard_from_index_pages;
+    extern const SettingsBool allow_url_wildcard_from_index_pages;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -47,13 +47,13 @@ namespace
 {
     void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
     {
-        if (context->getSettingsRef()[Setting::allow_experimental_url_wildcard_from_index_pages])
+        if (context->getSettingsRef()[Setting::allow_url_wildcard_from_index_pages])
             return;
 
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Wildcard expansion for `url` from HTTP index pages is experimental. "
-            "Set `allow_experimental_url_wildcard_from_index_pages = 1` to enable it");
+            "Set `allow_url_wildcard_from_index_pages = 1` to enable it");
     }
 
     ASTs makeWebObjectStorageEngineArgs(
@@ -267,17 +267,32 @@ StoragePtr TableFunctionURL::executeImpl(
     /// reports the delegate's engine name and access URI, so the outer check (or the caller that
     /// explicitly disabled it and took over) has already covered exactly the delegate's source.
     if (delegate)
+    {
+        /// The query text still names `url`, while the delegate is a different backend. If the delegate
+        /// created its `*Cluster` storage for `parallel_replicas_for_cluster_engines`, the forwarded query
+        /// would be rewritten from the surface AST name into `urlCluster(...)` - a function that rejects
+        /// every non-HTTP scheme - and with the argument grammar of the delegate rather than of `url`.
+        /// Scheme dispatch is therefore resolved on this node: the delegate builds its plain storage.
+        ContextMutablePtr delegate_context = Context::createCopy(context);
+        delegate_context->setSetting("parallel_replicas_for_cluster_engines", false);
+
         return delegate->execute(
             ast_function,
-            context,
+            delegate_context,
             table_name,
             std::move(cached_columns),
             /*use_global_context=*/false,
             is_insert_query,
             /*check_create_temporary_table=*/false,
             /*check_source_access=*/false);
+    }
 
-    return ITableFunctionFileLike::executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
+    /// Stored columns accompany a table definition rather than an ad-hoc query, so creation and
+    /// replay must resolve to the same storage.
+    const bool keep_creation_storage_choice = is_insert_query || !cached_columns.empty();
+
+    return ITableFunctionFileLike::executeImpl(
+        ast_function, context, table_name, std::move(cached_columns), keep_creation_storage_choice);
 }
 
 bool TableFunctionURL::needStructureHint() const
@@ -482,8 +497,8 @@ std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
 void registerTableFunctionURL(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionURL>({.description = R"DOCS_MD(
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 `url` function creates a table from the `URL` with given `format` and `structure`.
 
@@ -504,7 +519,7 @@ url(URL [,format] [,structure] [,headers])
 | `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string).     |
 | `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified format and structure and with data from the defined `URL`.
 
@@ -549,6 +564,8 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 
 Scheme dispatch is not yet wired through [`urlCluster`](/reference/functions/table-functions/urlCluster): a non-`http(s)` scheme passed to `urlCluster` is rejected with an error. Use the corresponding cluster function (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) for those backends instead.
 
+For the same reason, a dispatched `url` call is read on the node that received the query: the [parallel_replicas_for_cluster_engines](/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) fan-out is not applied to it. Use the corresponding cluster function directly when you want the read distributed across replicas.
+
 ## Globs in URL {#globs-in-url}
 
 Patterns in `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](/reference/functions/table-functions/remote#globs-in-addresses) function.
@@ -574,7 +591,7 @@ Example:
 ```sql
 SELECT count()
 FROM url('https://ftp.gnu.org/gnu/wget/wget-1.21*.tar.gz', 'RawBLOB')
-SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
+SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
 ```
 
 ## Virtual Columns {#virtual-columns}
@@ -609,7 +626,8 @@ The resolution rules are:
 - **Query-only** (e.g. `?x=1`): appended to the full base path, replacing any existing query or fragment.
 - **Fragment-only** (e.g. `#frag`): appended to the base URL, preserving the query, replacing any existing fragment.
 - **Empty**: returns the base URL without fragment.
-- **Absolute URL**: passed through unchanged; `url_base` is ignored.
+- **Absolute URL**: passed through unchanged; `url_base` is ignored. A URL is considered absolute only when it starts with `scheme://`: a name whose first path segment contains a colon (e.g. `report:2026.csv`), which RFC 3986 would parse as an absolute URI with the scheme `report`, is resolved as a path-relative reference instead, because such a name is not a usable URL.
+- **Scheme-only base** (e.g. `file://`): a path-relative URL is appended to the base directly: `file://` + `data.csv` = `file://data.csv`, which for the `file://` scheme means a path relative to the [user_files](/reference/settings/server-settings/settings/user#user_files_path) directory (the current directory for clickhouse-local). Dot segments are kept as-is in this case.
 
 **Example**
 

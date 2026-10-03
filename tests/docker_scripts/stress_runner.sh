@@ -14,7 +14,7 @@ ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 source /repo/tests/docker_scripts/stress_tests.lib
 
 
-install_packages package_folder
+install_binary /package_folder/clickhouse
 
 # Thread Fuzzer allows to check more permutations of possible thread scheduling
 # and find more potential issues.
@@ -47,10 +47,10 @@ export ZOOKEEPER_FAULT_INJECTION=1
 # available for dump via clickhouse-local
 configure
 
-# run before start_minio to have valid aws creds
+# run before start_seaweedfs to have valid aws creds
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config || echo "ERROR: Failed to create log export config"
 
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || { echo "Failed to start minio"; exit 1; }
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_seaweedfs stateless || { echo "Failed to start seaweedfs"; exit 1; }
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
 
 # Start Redpanda (Kafka-compatible broker) so that Kafka engine tests work and
@@ -208,11 +208,41 @@ clickhouse-client --query "CREATE TABLE test.visits (CounterID UInt32,  StartDat
     ENGINE = CollapsingMergeTree(Sign) PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
     SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='$TEMP_POLICY'"
 
+# `--max_execution_time` is enforced cooperatively: the deadline is raised out of band and ends the
+# query only where its threads observe it, so it does not bound a statement parked in blocking I/O.
+# Bound each INSERT in wall-clock time instead.
+PREP_MAX_EXECUTION_TIME=600
+PREP_STATEMENT_TIMEOUT=$((PREP_MAX_EXECUTION_TIME + 300))
+PREP_STDERR=/tmp/prep_statement.err
+
+function run_prep_statement()
+{
+    local rc=0
+    LC_ALL=C timeout --verbose --signal=TERM --kill-after=60 "$PREP_STATEMENT_TIMEOUT" "$@" \
+        2> "$PREP_STDERR" || rc=$?
+    cat "$PREP_STDERR" >&2
+
+    # An expiry is 124 with the TERM diagnostic, or 137 with the KILL one. Neither half identifies it
+    # alone: `clickhouse-client` exits with the server's error code, and a signal the wrapper merely
+    # forwarded exits 143 after printing the same TERM line.
+    case "$rc" in
+        124) grep -qF "sending signal TERM to command" "$PREP_STDERR" || return $rc ;;
+        137) grep -qF "sending signal KILL to command" "$PREP_STDERR" || return $rc ;;
+        *) return $rc ;;
+    esac
+
+    echo -e "Stateful data preparation statement exceeded ${PREP_STATEMENT_TIMEOUT}s (see gdb.log)$FAIL" >> /test_output/test_results.tsv
+    echo "thread apply all backtrace (on stateful prep bound)" >> /test_output/gdb.log
+    timeout --verbose --signal=TERM --kill-after=60 30m gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+    clickhouse stop --force
+    exit 1
+}
+
 # Might fail in sanitizer runs, not very important
 set +e
-clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+run_prep_statement clickhouse-client --max_execution_time "$PREP_MAX_EXECUTION_TIME" --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+run_prep_statement clickhouse-client --max_execution_time "$PREP_MAX_EXECUTION_TIME" --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+run_prep_statement clickhouse-client --max_execution_time "$PREP_MAX_EXECUTION_TIME" --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
 
 clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
 clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
@@ -294,8 +324,18 @@ cp -av --dereference /repo/ci/jobs/scripts/fuzzer/limit-recursion-settings.xml /
 
 start_server || { echo "Failed to start server"; exit 1; }
 
+# clickhouse-test must know which storage backend the server actually uses, or its storage skip
+# tags are inert and incompatible tests run on an unsupported backend. Both variables are already
+# final here: the policy choice above, including its RANDOM % 3 fallback, exports them.
+test_cmd_opts=""
+if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+    test_cmd_opts=" --s3-storage"
+elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+    test_cmd_opts=" --azure-blob-storage"
+fi
+
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
-python3 /repo/ci/jobs/scripts/stress/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit "${STRESS_GLOBAL_TIME_LIMIT:-1200}" --encrypted-storage "$USE_ENCRYPTED_STORAGE" \
+python3 /repo/ci/jobs/scripts/stress/stress.py --test-cmd="/usr/bin/clickhouse-test${test_cmd_opts}" --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit "${STRESS_GLOBAL_TIME_LIMIT:-1200}" --encrypted-storage "$USE_ENCRYPTED_STORAGE" \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
@@ -313,7 +353,7 @@ rm -f /etc/clickhouse-server/config.d/fail_points_active.xml
 
 # Use a larger timeout for the post-stress restart: under sanitizers with
 # async_load_databases=false the server may need minutes to load all tables.
-start_server 10 || { echo "Failed to start server"; exit 1; }
+start_server 10 600 || { echo "Failed to start server"; exit 1; }
 
 check_server_start
 

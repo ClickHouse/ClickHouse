@@ -80,6 +80,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             String{},
             distributed_settings,
             LoadingStrictnessLevel::CREATE,
+            /* is_fresh_definition = */ true,
             cluster,
             remote_table_function_ptr,
             !is_cluster_function);
@@ -307,11 +308,11 @@ clusterAllReplicas(['cluster_name', db, table, sharding_key][, SETTINGS name = v
 | `sharding_key`              | A sharding key. Optional. Needs to be specified if the cluster has more than one shard.                                                           |
 | `SETTINGS name = value, ...` | Settings of the Distributed table created by the function, for example `skip_unavailable_shards`. Optional. A setting specified in the query has priority over it. |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 The dataset from clusters.
 
-## Using macros {#using_macros}
+## Using macros {#using-macros}
 
 `cluster_name` can contain macros — substitution in `{}`. The substituted value is taken from the [macros](/reference/settings/server-settings/settings/other#macros) section of the server configuration file.
 

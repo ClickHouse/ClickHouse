@@ -38,6 +38,12 @@ struct Authentication
         const ClientInfo & client_info,
         SettingsChanges & settings);
 
+    /// Marks the one-time password contained in the credentials as used, enforcing single use
+    /// of the codes (RFC 6238, Section 5.2). Returns false if the code has already been used before.
+    /// Must be called exactly once after the whole authentication succeeds, so that a failed attempt
+    /// (e.g. a wrong password combined with a valid code) cannot consume the code.
+    static bool consumeOneTimePassword(const Credentials & credentials, const AuthenticationData & authentication_method);
+
     // A signaling class used to communicate requirements for credentials.
     template <typename CredentialsType>
     class Require : public Exception

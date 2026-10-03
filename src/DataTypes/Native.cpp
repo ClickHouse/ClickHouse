@@ -31,7 +31,7 @@ bool typeIsSigned(const IDataType & type)
 {
     WhichDataType data_type(type);
     return data_type.isInt() || data_type.isFloat() || data_type.isEnum() || data_type.isDate32() || data_type.isDecimal()
-        || data_type.isDateTime64();
+        || data_type.isDateTime64() || data_type.isTimeOrTime64();
 }
 
 llvm::Type * toNullableType(llvm::IRBuilderBase & builder, llvm::Type * type)
@@ -286,6 +286,7 @@ llvm::Value * nativeCastWithDecimalScale(
             {
                 /// `Decimal` → `Decimal` (possibly different scale and/or precision).
                 /// Widen/narrow the integer storage first, then adjust scale.
+                /// The scale lift is unchecked; `FunctionIfBase` declines a lift that can overflow 32- or 64-bit storage.
                 auto * widened = (from_native_type == to_native_type)
                     ? value
                     : b.CreateIntCast(value, to_native_type, /*isSigned=*/true);
@@ -301,6 +302,9 @@ llvm::Value * nativeCastWithDecimalScale(
             {
                 /// Integer → `Decimal`: widen to `Decimal`'s underlying integer type,
                 /// then multiply by `10^to_scale` to lift the value into `Decimal` scale.
+                /// The lift is unchecked, so only a destination whose storage holds `value * 10^to_scale`
+                /// may be passed here. `FunctionIfBase`, the only caller, passes the branches' least
+                /// supertype, which reserves precision for the integer's digits plus `to_scale`.
                 auto * widened = (from_native_type == to_native_type)
                     ? value
                     : b.CreateIntCast(value, to_native_type, typeIsSigned(*from_type));
@@ -311,6 +315,8 @@ llvm::Value * nativeCastWithDecimalScale(
             }
             if (from_w.isFloat32() || from_w.isFloat64())
             {
+                /// A float source must not reach here: `fptosi` has no defined result outside the destination range.
+                chassert(false, "Float to Decimal must not be JIT-compiled");
                 /// Float → `Decimal`: multiply by `10^to_scale` in floating point first,
                 /// then truncate to the target integer storage type.
                 if (to_scale == 0)
