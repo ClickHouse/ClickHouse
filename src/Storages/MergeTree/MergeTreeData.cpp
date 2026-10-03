@@ -90,6 +90,7 @@
 #include <Planner/Utils.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -5774,30 +5775,50 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             is_initial_alter = false;
 #endif
 
-        /// An index the ALTER leaves as it was, as `ADD INDEX IF NOT EXISTS` does for an existing one, is not checked.
-        auto is_changed_index = [&](const String & name)
+        /// An ALTER may not add an alias to a definition. One that an older server stored is kept, also through a rename.
+        if (is_initial_alter)
         {
-            if (!new_metadata.secondary_indices.has(name))
-                return false;
-            if (!old_metadata.secondary_indices.has(name))
-                return true;
-            return old_metadata.secondary_indices.getByName(name).definition_ast->getTreeHash(/*ignore_aliases=*/ false)
-                != new_metadata.secondary_indices.getByName(name).definition_ast->getTreeHash(/*ignore_aliases=*/ false);
-        };
+            auto check = [](const ASTPtr & old_ast, const ASTPtr & new_ast, std::string_view clause)
+            {
+                NameSet old_aliases;
+                KeyDescription::collectAliases(old_ast.get(), old_aliases);
+                KeyDescription::checkNoAlias(new_ast.get(), clause, old_aliases);
+            };
+            check(old_metadata.sorting_key.definition_ast, new_metadata.sorting_key.definition_ast, "ORDER BY");
+            check(old_metadata.sampling_key.definition_ast, new_metadata.sampling_key.definition_ast, "SAMPLE BY");
+            check(old_metadata.table_ttl.definition_ast, new_metadata.table_ttl.definition_ast, "TTL");
+
+            for (const auto & index : new_metadata.secondary_indices)
+            {
+                const auto * old_index = old_metadata.secondary_indices.has(index.name)
+                    ? &old_metadata.secondary_indices.getByName(index.name) : nullptr;
+                check(old_index ? old_index->definition_ast : nullptr, index.definition_ast, "INDEX");
+            }
+
+            for (const auto & constraint : new_metadata.constraints.getConstraints())
+            {
+                ASTPtr old_constraint;
+                for (const auto & candidate : old_metadata.constraints.getConstraints())
+                    if (candidate->as<ASTConstraintDeclaration &>().name == constraint->as<ASTConstraintDeclaration &>().name)
+                        old_constraint = candidate;
+                check(old_constraint, constraint, "CONSTRAINT");
+            }
+
+            NameSet old_column_ttl_aliases;
+            for (const auto & column : old_metadata.columns)
+                KeyDescription::collectAliases(column.ttl.get(), old_column_ttl_aliases);
+            for (const auto & column : new_metadata.columns)
+                KeyDescription::checkNoAlias(column.ttl.get(), "TTL", old_column_ttl_aliases);
+        }
 
         bool changes_order_by = false;
         for (const auto & command : commands)
         {
             if (command.type == AlterCommand::MODIFY_ORDER_BY)
             {
-                if (is_initial_alter)
-                    KeyDescription::checkNoAlias(command.order_by.get(), "ORDER BY");
                 changes_order_by = true;
+                break;
             }
-            else if (command.type == AlterCommand::MODIFY_TTL && is_initial_alter)
-                KeyDescription::checkNoAlias(command.ttl.get(), "TTL");
-            else if (command.type == AlterCommand::ADD_INDEX && is_initial_alter && is_changed_index(command.index_name))
-                KeyDescription::checkNoAlias(new_metadata.secondary_indices.getByName(command.index_name).definition_ast.get(), "INDEX");
         }
 
         if (is_initial_alter && changes_order_by)

@@ -84,8 +84,9 @@ struct KeyDescription
     /// additional initializations.
     static KeyDescription buildEmptyKey();
 
-    /// Throws BAD_ARGUMENTS if the definition has an alias at any depth outside a subquery.
-    static void checkNoAlias(const IAST * definition_ast, std::string_view clause);
+    /// Throws BAD_ARGUMENTS if the definition has an alias at any depth outside a subquery, other than `allowed_aliases`.
+    static void checkNoAlias(const IAST * definition_ast, std::string_view clause, const NameSet & allowed_aliases = {});
+    static void collectAliases(const IAST * definition_ast, NameSet & aliases);
 
     /// Recalculate all expressions and fields for key with new columns without
     /// changes in constant fields. Just wrapper for static methods.

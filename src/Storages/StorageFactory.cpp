@@ -1,4 +1,5 @@
 #include <Storages/StorageFactory.h>
+#include <Storages/ConstraintsDescription.h>
 #include <Storages/KeyDescription.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
@@ -246,7 +247,12 @@ StoragePtr StorageFactory::get(
                 KeyDescription::checkNoAlias(storage_def->primary_key, "PRIMARY KEY");
                 KeyDescription::checkNoAlias(storage_def->order_by, "ORDER BY");
                 KeyDescription::checkNoAlias(storage_def->unique_key, "UNIQUE KEY");
+                KeyDescription::checkNoAlias(storage_def->sample_by, "SAMPLE BY");
                 KeyDescription::checkNoAlias(storage_def->ttl_table, "TTL");
+                for (const auto & [_, ttl] : columns.getColumnTTLs())
+                    KeyDescription::checkNoAlias(ttl.get(), "TTL");
+                for (const auto & constraint : constraints.getConstraints())
+                    KeyDescription::checkNoAlias(constraint.get(), "CONSTRAINT");
                 if (query.columns_list)
                     KeyDescription::checkNoAlias(query.columns_list->indices, "INDEX");
             }

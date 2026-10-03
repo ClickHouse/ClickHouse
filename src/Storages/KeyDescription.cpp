@@ -262,30 +262,50 @@ KeyDescription KeyDescription::buildEmptyKey()
     return result;
 }
 
-void KeyDescription::checkNoAlias(const IAST * definition_ast, std::string_view clause)
+namespace
 {
-    if (!definition_ast)
+
+template <typename F>
+void forEachAlias(const IAST * ast, F && f)
+{
+    if (!ast)
         return;
 
-    if (const String alias = definition_ast->tryGetAlias(); !alias.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias '{}' is not allowed in {}", alias, clause);
+    if (const String alias = ast->tryGetAlias(); !alias.empty())
+        f(alias);
 
     /// Aliases inside a subquery are local to it.
-    if (definition_ast->as<ASTSubquery>())
+    if (ast->as<ASTSubquery>())
         return;
 
-    for (const auto & child : definition_ast->children)
-        checkNoAlias(child.get(), clause);
+    for (const auto & child : ast->children)
+        forEachAlias(child.get(), f);
 
     /// `GROUP BY` keys, `SET` assignments and the `RECOMPRESS` codec of a `TTL` rule are not among its children.
-    if (const auto * ttl_element = definition_ast->as<ASTTTLElement>())
+    if (const auto * ttl_element = ast->as<ASTTTLElement>())
     {
         for (const auto & key : ttl_element->group_by_key)
-            checkNoAlias(key.get(), clause);
+            forEachAlias(key.get(), f);
         for (const auto & assignment : ttl_element->group_by_assignments)
-            checkNoAlias(assignment.get(), clause);
-        checkNoAlias(ttl_element->recompression_codec.get(), clause);
+            forEachAlias(assignment.get(), f);
+        forEachAlias(ttl_element->recompression_codec.get(), f);
     }
+}
+
+}
+
+void KeyDescription::checkNoAlias(const IAST * definition_ast, std::string_view clause, const NameSet & allowed_aliases)
+{
+    forEachAlias(definition_ast, [&](const String & alias)
+    {
+        if (!allowed_aliases.contains(alias))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias '{}' is not allowed in {}", alias, clause);
+    });
+}
+
+void KeyDescription::collectAliases(const IAST * definition_ast, NameSet & aliases)
+{
+    forEachAlias(definition_ast, [&](const String & alias) { aliases.insert(alias); });
 }
 
 KeyDescription KeyDescription::parse(
