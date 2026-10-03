@@ -14,7 +14,7 @@ CREATE TABLE ts ENGINE = TimeSeries FORMAT Null;
 SELECT 'replicated_inner_tables', count() FROM system.tables
 WHERE database = currentDatabase() AND (engine LIKE 'Replicated%MergeTree' OR engine LIKE 'Shared%MergeTree');
 
-INSERT INTO ts(metric_name, tags, time_series) VALUES ('m', map('a', 'b'), [(now64(3), 1)]);
+INSERT INTO ts(metric_name, tags, samples) VALUES ('m', map('a', 'b'), [(now64(3), 1)]);
 SELECT 'samples_before', count() FROM ts;
 
 TRUNCATE TABLE ts FORMAT Null;

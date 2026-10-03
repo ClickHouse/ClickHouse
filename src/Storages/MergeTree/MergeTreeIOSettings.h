@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <optional>
 #include <Compression/ICompressionCodec.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <IO/ReadSettings.h>
@@ -56,6 +57,10 @@ struct MergeTreeReaderSettings
     bool enable_multiple_prewhere_read_steps = false;
     /// In case of multiple prewhere steps, execute filtering earlier to support short-circuit properly.
     bool force_short_circuit_execution = false;
+    /// In case of multiple prewhere steps, a step may read the columns of later steps over the same storage
+    /// column, so that the column is deserialized once. Only set when reading those columns cannot throw,
+    /// see `ReadFromMergeTree::canReadPrewhereColumnsAhead`.
+    bool read_ahead_prewhere_columns = false;
     /// If true, try to lower size of read buffer according to granule size and compressed block size.
     bool adjust_read_buffer_size = true;
     /// If true, it's allowed to read the whole part without reading marks.
@@ -64,6 +69,14 @@ struct MergeTreeReaderSettings
     bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
+    /// Folded into every query condition cache key, see `queryConditionCacheSettingsSalt`.
+    UInt64 query_condition_cache_settings_salt = 0;
+    /// Set for a TopK (`ORDER BY ... LIMIT n`) read whose granule drops may depend on the running
+    /// `__topKFilter` threshold: the TopK plan salt (`TopKFilterInfo::condition_hash`) and the
+    /// post-PREWHERE filter hash to fold into the query condition cache key when recording
+    /// PREWHERE-filtered granules, so the entries are only reused under the same TopK plan, part
+    /// set, and threshold-determining predicate. Unset for non-TopK reads.
+    std::optional<UInt64> query_condition_cache_top_k_salt;
     /// Force reading complete granules, even when the readers could read incomplete granules.
     bool force_read_complete_granules = false;
     bool use_deserialization_prefixes_cache = false;
@@ -75,7 +88,6 @@ struct MergeTreeReaderSettings
     UInt64 merge_tree_coarse_index_granularity = 8;
     UInt64 merge_tree_generic_exclusion_search_max_steps = 0;
     size_t filesystem_prefetches_limit = 0;
-    bool enable_analyzer = false;
     bool load_marks_asynchronously = false;
     /// If true, compress marks into the in-memory representation one block at a time
     /// instead of materializing the full plain marks array.
@@ -143,6 +155,7 @@ struct MergeTreeWriterSettings
     MergeTreeObjectSerializationVersion object_serialization_version{};
     MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version{};
     size_t object_shared_data_buckets = 1;
+    size_t object_shared_data_target_chunk_rows = 8192;
     size_t max_buckets_in_map = 1;
     MergeTreeMapBucketsStrategy map_buckets_strategy = MergeTreeMapBucketsStrategy::SQRT;
     double map_buckets_coefficient = 1.0;

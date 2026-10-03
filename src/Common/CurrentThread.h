@@ -30,6 +30,7 @@ class InternalTextLogsQueue;
 
 class ThreadStatus;
 class ThreadGroup;
+class MemoryPressureMonitor;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
 using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
@@ -63,7 +64,6 @@ public:
     static ThreadGroupPtr getGroup();
 
     /// MemoryTracker for user that owns current thread if any
-    static MemoryTracker * getUserMemoryTracker();
 
     /// Adjust counters in MemoryTracker hierarchy if untracked_memory is not 0.
     static void flushUntrackedMemory();
@@ -84,6 +84,9 @@ public:
 
     static ProfileEvents::Counters & getProfileEvents();
     static MemoryTracker * getMemoryTracker();
+
+    /// The current query's memory-pressure monitor when in a thread group, else the global monitor.
+    static MemoryPressureMonitor & getMemoryPressureMonitor();
 
     /// Update read and write rows (bytes) statistics (used in system.query_thread_log)
     static void updateProgressIn(const Progress & value);

@@ -1,0 +1,42 @@
+[(110,1),(120,1),(130,3),(140,4),(190,5),(200,5),(210,8),(220,12),(230,13)]
+Row 1:
+──────
+stddev_45s: [(90,NULL),(105,NULL),(120,0),(135,0.9428090415820634),(150,1.299038105676658),(165,0.5),(180,0),(195,0),(210,1.4142135623730951)]
+stdvar_45s: [(90,NULL),(105,NULL),(120,0),(135,0.8888888888888888),(150,1.6875),(165,0.25),(180,0),(195,0),(210,2)]
+Row 1:
+──────
+stddev_5s: [(90,NULL),(100,NULL),(110,0),(120,0),(130,0),(140,0),(150,NULL),(160,NULL),(170,NULL),(180,NULL),(190,0),(200,0),(210,0),(220,0),(230,0)]
+stdvar_5s: [(90,NULL),(100,NULL),(110,0),(120,0),(130,0),(140,0),(150,NULL),(160,NULL),(170,NULL),(180,NULL),(190,0),(200,0),(210,0),(220,0),(230,0)]
+0	[NULL,NULL,0,0,0,NULL,NULL,NULL,0]	[NULL,NULL,0,0,0,NULL,NULL,NULL,0]
+1	[NULL,NULL,NULL,0,0,0,NULL,0,0]	[NULL,NULL,NULL,0,0,0,NULL,0,0]
+2	[NULL,NULL,0,0,1.5,0,0,NULL,0]	[NULL,NULL,0,0,2.25,0,0,NULL,0]
+0	[NULL,NULL,0,0,0,NULL,NULL,NULL,0]	[NULL,NULL,0,0,0,NULL,NULL,NULL,0]
+1	[NULL,NULL,NULL,0,0,0,NULL,0,0]	[NULL,NULL,NULL,0,0,0,NULL,0,0]
+2	[NULL,NULL,0,0,1.5,0,0,NULL,0]	[NULL,NULL,0,0,2.25,0,0,NULL,0]
+[NULL,NULL,0,0.9428090415820634,1.299038105676658,0.5,0,0,1.4142135623730951]
+[NULL,NULL,0,0.9428090415820634,1.299038105676658,0.5,0,0,1.4142135623730951]
+[NULL,NULL,0,0.8888888888888888,1.6875,0.25,0,0,2]
+[NULL,NULL,0,0.8888888888888888,1.6875,0.25,0,0,2]
+Row 1:
+──────
+stddev_large: [(100,0),(110,0.5)]
+stdvar_large: [(100,0),(110,0.25)]
+Row 1:
+──────
+stddev_nan: [(100,0),(110,nan),(120,nan)]
+stdvar_nan: [(100,0),(110,nan),(120,nan)]
+Duplicate timestamps:
+[0]
+[0]
+[2]
+[4]
+NaN loses to a real value:
+[4]
+[4]
+NaN survives when all values at the timestamp are NaN:
+[nan]
+Partial states sharing a timestamp deduplicate on merge:
+[0]
+Float32 input still yields a Float64 result:
+Array(Nullable(Float64))
+[4]

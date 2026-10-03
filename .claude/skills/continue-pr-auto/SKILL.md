@@ -99,7 +99,24 @@ of the PR surface that existed when the worker began:
 
 ```bash
 git fetch origin "$BASE_BRANCH"
-git reset --hard "$HEAD_REMOTE/$HEAD_BRANCH"
+# The automation may have already prepared a validated, conflict-free merge of
+# the base branch into the pull-request head in this worktree (the triage phase
+# of `utils/continue-all-prs.sh` records it). Keep that merge instead of
+# throwing it away and paying for a second merge and rebuild. Accept the
+# recorded commit only when it is exactly that merge: a two-parent commit whose
+# first parent is the current remote pull-request head and whose second parent
+# is the current base-branch head. Anything else - a stale marker from an
+# earlier pull request, a commit with a different shape - is ignored.
+VALIDATED_MERGE_FILE="$(pwd)/tmp/continue-all-prs/validated-base-merge"
+CHECKOUT_TARGET="$HEAD_REMOTE/$HEAD_BRANCH"
+if [ -s "$VALIDATED_MERGE_FILE" ]; then
+    VALIDATED_MERGE=$(cat "$VALIDATED_MERGE_FILE")
+    if git cat-file -e "${VALIDATED_MERGE}^{commit}" 2>/dev/null \
+        && [ "$(git rev-parse "${VALIDATED_MERGE}^@")" = "$(git rev-parse "$HEAD_REMOTE/$HEAD_BRANCH" "origin/$BASE_BRANCH")" ]; then
+        CHECKOUT_TARGET="$VALIDATED_MERGE"
+    fi
+fi
+git reset --hard "$CHECKOUT_TARGET"
 git clean -ffdx -e build/ -e tmp/continue-all-prs/
 test -z "$(git status --porcelain)"
 mkdir -p tmp
@@ -107,7 +124,9 @@ PR_BASELINE_DIR="$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline"
 rm -rf "$PR_BASELINE_DIR"
 mkdir -p "$PR_BASELINE_DIR"
 INITIAL_PR_HEAD=$(git rev-parse "$HEAD_REMOTE/$HEAD_BRANCH")
-test "$(git rev-parse HEAD)" = "$INITIAL_PR_HEAD"
+# The pull-request head stays the baseline even when the worktree already
+# carries the validated base-branch merge on top of it.
+git merge-base --is-ancestor "$INITIAL_PR_HEAD" HEAD
 INITIAL_BASE_HEAD=$(git rev-parse "origin/$BASE_BRANCH")
 printf '%s\n%s\n' "$INITIAL_PR_HEAD" "$INITIAL_BASE_HEAD" > "$PR_BASELINE_DIR/state"
 git diff --name-status "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/name-status"
@@ -131,7 +150,7 @@ git fetch origin "$BASE_BRANCH"
 git merge-base --is-ancestor "origin/$BASE_BRANCH" HEAD || echo "needs merge"
 ```
 
-If the branch is behind the base branch and is red (some checks didn't pass), or if it is behind the base branch for more than a week (regardless of checks success), or has conflicts (including when GitHub reports the PR as `CONFLICTING` or its mergeability as unknown), or if at least one CI failure is unrelated to this PR and its fix has already landed on the base branch (merging pulls the fix in and clears the red — see step 4), merge:
+If the branch is behind the base branch and is red (some checks didn't pass), or if it is behind the base branch for more than a week (regardless of checks success), or has conflicts (including when GitHub reports the PR as `CONFLICTING` or its mergeability as unknown), or if at least one CI failure is unrelated to this PR and its fix has already landed on the base branch (merging pulls the fix in and clears the red — see step 4), or if the merge queue removed the PR after its last commit (see step 4), merge:
 
 ```bash
 git merge "origin/$BASE_BRANCH"
@@ -189,7 +208,35 @@ Resolving merge markers is not always enough. If the branch is long-stale, the m
 
 ### 4. Analyze CI status and fix failures
 
-Use the CI analysis tool to fetch reports:
+**First, check whether the merge queue rejected the PR.** The PR's own CI runs on its head commit, but the merge queue re-tests the PR merged with the latest base branch (a `gh-readonly-queue/<base>/pr-<N>-<base-sha>` ref, workflow `MergeQueueCI`). A PR can therefore be all green and `CLEAN` yet keep being rejected - typically a semantic conflict: a test added on the base branch that pins behaviour this PR changes, or an API the PR uses that was changed on the base branch. Look for the latest merge-queue event:
+
+```bash
+gh api graphql -f query="
+{
+  repository(owner: \"${REPO%%/*}\", name: \"${REPO#*/}\") {
+    pullRequest(number: $PR_NUMBER) {
+      mergeQueueEntry { state }
+      commits(last: 1) { nodes { commit { oid committedDate } } }
+      timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT]) {
+        nodes { __typename ... on RemovedFromMergeQueueEvent { createdAt reason beforeCommit { oid } } }
+      }
+    }
+  }
+}"
+```
+
+If the last event is a `RemovedFromMergeQueueEvent` (with a reason other than `merged`) newer than the last commit, and the PR is not back in the queue, the rejection is the first failure to fix. `beforeCommit.oid` is the merge-queue commit that was tested. `fetch_ci_report.js` with the PR URL detects this case and adds the failed jobs of that merge-queue run to its output (marked with a ⚠️ line and listed under `MergeQueueCI`). To look at the run directly, take its report links from the commit statuses (the check runs link to GitHub Actions jobs instead):
+
+```bash
+MQ_SHA=<beforeCommit.oid>
+gh api "repos/$REPO/commits/$MQ_SHA/statuses" --paginate \
+    --jq '.[] | select(.state != "success") | "\(.context)\t\(.state)\t\(.target_url)"'
+node .claude/tools/fetch_ci_report.js "<a praktika.html?REF=gh-readonly-queue/...&sha=$MQ_SHA&name_0=MergeQueueCI&name_1=<job> URL from above>" --failed
+```
+
+The per-job JSON is also directly at `https://s3.amazonaws.com/clickhouse-test-reports/REFs/gh-readonly-queue/<base>/pr-<N>-<base-sha>/$MQ_SHA/mergequeueci/result_<job>.json` (gzip-compressed; the build log is `.../mergequeueci/<job>/job.log`). To fix the rejection, merge the latest base branch (step 3) even if the PR is otherwise current, reproduce the failure on the merged tree, and fix it in the PR - adapt the code to the changed API, or update a newly added test when the PR intentionally changes the behaviour it pins (say so in the commit message and the PR comment). Do not re-add the PR to the merge queue yourself, and do not dismiss a merge-queue failure as flaky without the same evidence as for any other failure.
+
+Then fetch the PR's own CI reports:
 
 ```bash
 node .claude/tools/fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/$PR_NUMBER" --failed --cidb

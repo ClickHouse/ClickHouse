@@ -26,7 +26,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
-#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
+#include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -290,7 +290,7 @@ bool hasRowsInFilter(const IColumn & where_column)
     if (const auto * where_column_uint8 = typeid_cast<const ColumnUInt8 *>(&where_column))
         return hasRowsInFilter(*where_column_uint8);
     else
-        return hasRowsInFilter(where_column);
+        return hasRowsInFilter<IColumn>(where_column);
 }
 
 void updateTTLInfoConst(MergeTreeDataPartTTLInfo & ttl_info, const ColumnConst & ttl_column, const IColumn * where_column)
@@ -990,14 +990,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     temp_part->temporary_directory_lock = data.claimTemporaryPartDirectory(data_part_volume->getDisk(), part_dir, may_have_leftover);
 
     auto part_format = data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr);
-    /// UNIQUE KEY parts must use Full part storage: the dense-index sidecar
-    /// (`unique_key_index.sst`) is opened directly by filesystem path via RocksDB
-    /// `SstFileReader`, which cannot read a file packed inside an archive. Packed
-    /// storage would leave the sidecar existsFile-visible but unopenable, failing
-    /// every subsequent load of the part.
-    if (metadata_snapshot->hasUniqueKey())
-        part_format.storage_type = MergeTreeDataPartStorageType::Full;
-
     auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings(), PartDirIntent::CreateFresh)
         .withPartFormat(part_format)
         .withPartInfo(new_part_info)
@@ -1113,14 +1105,23 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
 
+    /// Write the `unique_key_index.sst` in one step: `writeDenseIndexOnInsert`
+    /// records its checksum in `gathered_data.checksums` (so it is covered by
+    /// `CHECK TABLE`, part-size accounting, backup and fetches) and finalizes +
+    /// optionally fsyncs the file inline - before `checksums.txt` is written,
+    /// so a crash cannot leave the checksum durable while the SST is not.
     if (metadata_snapshot->hasUniqueKey())
-        UniqueKeyDenseIndexOps::writeDenseIndexOnInsert(
+    {
+        SSTIndexWriter::writeDenseIndexOnInsert(
             *data_part_storage,
             metadata_snapshot,
             block,
             perm_ptr,
             context->getSettingsRef()[Setting::unique_key_max_encoded_size],
+            gathered_data.checksums,
+            (*data_settings)[MergeTreeSetting::fsync_after_insert],
             context);
+    }
 
     if ((*data.getSettings())[MergeTreeSetting::materialize_projections_on_insert])
     {
