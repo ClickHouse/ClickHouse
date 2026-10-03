@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-shared-merge-tree
+# Tags: no-parallel, no-fasttest, no-shared-merge-tree
 # no-parallel: the fail point is global, and a `TRUNCATE` of another test could hit it.
+# no-fasttest: tests that arm a fail point must not run in the fast test, where they would run alone.
 # no-shared-merge-tree: the fail point is in `StorageMergeTree`, and `SYSTEM STOP CLEANUP` is needed to keep the
 # rolled back parts until the parts inside their ranges become outdated.
 
@@ -23,6 +24,9 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO t VALUES (1);
     INSERT INTO t VALUES (2);
 "
+
+# The fail point is `ONCE`, but disarm it on every exit path in case `TRUNCATE` did not reach it.
+trap '$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_throw_after_renaming_empty_parts" ||:' EXIT
 
 # Writes the empty parts `all_1_1_1` and `all_2_2_1`, then fails and rolls them back.
 $CLICKHOUSE_CLIENT -q "
