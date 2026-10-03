@@ -20,6 +20,14 @@ option (ENABLE_SKIM "Enable skim" ${ENABLE_LIBRARIES})
 option (ENABLE_POLYGLOT "Enable polyglot SQL transpiler" ${ENABLE_LIBRARIES})
 option (ENABLE_LANCE "Enable Lance DataLake adapter" ${ENABLE_LIBRARIES})
 
+# The Lance crates depend on `ring` (through `object_store` and `rustls`), the same as `delta-kernel-rs`:
+# - MSan: `ring` disables its assembly under MSan, but still calls the assembly functions, so the link fails.
+# - NO_ARMV81_OR_HIGHER: `ring` assumes that Neon is available on ARM.
+if (ENABLE_LANCE AND ((SANITIZE STREQUAL "memory") OR NO_ARMV81_OR_HIGHER))
+    message (STATUS "Disabling Lance because the `ring` crate does not support this build")
+    set (ENABLE_LANCE OFF)
+endif()
+
 if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_POLYGLOT AND NOT ENABLE_LANCE)
     message(STATUS "prql, skim, polyglot, and lance are disabled")
     return()

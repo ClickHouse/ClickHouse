@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-msan, no-parallel
 # Tag no-fasttest: `Lance` requires the Rust build.
 # Tag no-parallel: this test uses the global `lance_metadata_iterate_pause` failpoint.
+# Tag no-msan: `Lance` is disabled in MSan builds, because the `ring` crate does not build with MSan.
 
 set -e -o pipefail
 
