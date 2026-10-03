@@ -2,6 +2,7 @@
 
 #include <array>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <tuple>
@@ -860,8 +861,8 @@ public:
     /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
     std::optional<Int64> getMinPartDataVersion() const;
 
-    /// Returns all detached parts
-    DetachedPartsInfo getDetachedParts() const;
+    /// Returns detached parts, or only directories matching `exact_part_name` when it is set.
+    DetachedPartsInfo getDetachedParts(const std::optional<String> & exact_part_name = std::nullopt) const;
 
     static void validateDetachedPartName(const String & name);
 
