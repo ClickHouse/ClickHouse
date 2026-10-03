@@ -3196,7 +3196,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
     const auto to_decay_length = tryGetExponentialTimeDecayingDecayLength(to_type);
     if (from_decay_length && to_decay_length && *from_decay_length != *to_decay_length)
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Cannot convert ExponentialTimeDecaying values between different decay lengths: {} and {}",
             *from_decay_length,
             *to_decay_length);
