@@ -734,6 +734,13 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
         /// Accept only the widening `join_use_nulls` itself adds. `Safe` leaves a type that cannot be
         /// inside `Nullable` unchanged, which the branch above has already returned on.
+        ///
+        /// The pairs reaching here have equal input types (`getJoiningKeysForJoinStep` skips the others,
+        /// they go to the least-supertype path below), so the JOIN applies no unifying cast to them, and
+        /// the only post-join action that can change such a name's type is `toNullable`. Casting the
+        /// opposite key to the output type reproduces the output value only for that conversion: for any
+        /// other post-join expression (possible once expressions are pushed into the JOIN) the cast would
+        /// have the right type and a different value, so the inferred predicate would filter wrong rows.
         if (!replaced->type->equals(*makeNullableOrLowCardinalityNullableSafe(source.getType())))
             return;
 
