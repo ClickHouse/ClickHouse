@@ -12,10 +12,8 @@ namespace DB
 
 class ColumnString;
 
-/// Extracts `key<delimiter>value` pairs separated by pair delimiters from a string that may
-/// contain arbitrary noise between the pairs. Keys and values may be quoted. This is the
-/// implementation of the `extractKeyValuePairs` function; the grammar is described in its
-/// documentation. It is also used to parse Hive-style partitioning paths.
+/// Extracts `key<delimiter>value` pairs separated by pair delimiters from a string
+/// that may contain arbitrary noise between the pairs. Keys and values may be quoted.
 class KeyValuePairExtractor
 {
 public:
@@ -42,7 +40,6 @@ public:
         UInt64 max_number_of_pairs = 0;
     };
 
-    /// Throws `BAD_ARGUMENTS` if the configuration is inconsistent.
     explicit KeyValuePairExtractor(const Configuration & configuration_);
     ~KeyValuePairExtractor();
 

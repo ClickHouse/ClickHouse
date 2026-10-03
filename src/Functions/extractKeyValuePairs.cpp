@@ -115,7 +115,7 @@ struct KeyValuePairExtractor::Impl
     Configuration configuration;
 
     /// Bytes skipped while waiting for a key: the delimiters, and the escape character with escaping.
-    ByteSetLookup waiting_key_bytes;
+    ByteSetLookup key_wait_bytes;
     /// Bytes that end an unquoted key: both delimiters, the quoting character
     /// unless the strategy is `ACCEPT`, and the escape character with escaping.
     ByteSetLookup key_stop_bytes;
@@ -131,12 +131,12 @@ struct KeyValuePairExtractor::Impl
     {
         validate();
 
-        waiting_key_bytes.add(configuration.key_value_delimiter);
+        key_wait_bytes.add(configuration.key_value_delimiter);
         key_stop_bytes.add(configuration.key_value_delimiter);
 
         for (char c : configuration.pair_delimiters)
         {
-            waiting_key_bytes.add(c);
+            key_wait_bytes.add(c);
             key_stop_bytes.add(c);
             value_stop_bytes.add(c);
             pair_delimiters.add(c);
@@ -152,7 +152,7 @@ struct KeyValuePairExtractor::Impl
 
         if (configuration.with_escaping)
         {
-            waiting_key_bytes.add(ESCAPE_CHARACTER);
+            key_wait_bytes.add(ESCAPE_CHARACTER);
             key_stop_bytes.add(ESCAPE_CHARACTER);
             value_stop_bytes.add(ESCAPE_CHARACTER);
             quoted_stop_bytes.add(ESCAPE_CHARACTER);
@@ -189,8 +189,7 @@ struct KeyValuePairExtractor::Impl
         }
     }
 
-    /// Reads a token starting at `pos` until a byte from `stop_set` and moves `pos` past that byte
-    /// (or to `end`). With escaping, escape sequences are decoded into the token.
+    /// Reads a token starting at `pos` until a byte from `stop_bytes` and moves `pos` past that byte (or to `end`).
     template <bool with_escaping>
     Stop readToken(const ByteSetLookup & stop_bytes, Token & token, std::string_view & result, const char *& pos, const char * end) const
     {
@@ -298,8 +297,8 @@ struct KeyValuePairExtractor::Impl
         return readQuotedValue<with_escaping>(value, value_view, pos, end);
     }
 
-    /// Reads a quoted value, `pos` is right after the opening quote. Only a pair delimiter may follow
-    /// the closing quote, everything up to it is skipped.
+    /// Reads a quoted value, `pos` is right after the opening quote.
+    /// Only a pair delimiter may follow the closing quote, everything up to it is skipped.
     template <bool with_escaping>
     ReadResult readQuotedValue(Token & value, std::string_view & value_view, const char *& pos, const char * end) const
     {
@@ -345,7 +344,7 @@ struct KeyValuePairExtractor::Impl
         while (true)
         {
             /// Waiting for a key.
-            pos = waiting_key_bytes.find<false>(pos, end);
+            pos = key_wait_bytes.find<false>(pos, end);
             if (pos == end)
                 return num_pairs;
 
@@ -487,9 +486,7 @@ public:
         for (size_t i = 0; i < sample_rows; ++i)
             process_row(i);
 
-        /// The sample may not be representative, so the estimate is capped by what the output can
-        /// reach at most: the keys and values together are never longer than the input, and a pair
-        /// takes at least two bytes of it.
+        /// The sample may not be representative, so the estimate is capped by what the output can reach at most.
         const size_t input_bytes = data_column.byteSize();
         auto estimate = [&](size_t sample_size, size_t max_size)
         {
@@ -500,8 +497,8 @@ public:
         {
             keys->getChars().reserve(estimate(keys->getChars().size(), input_bytes));
             values->getChars().reserve(estimate(values->getChars().size(), input_bytes));
-            keys->getOffsets().reserve(estimate(offset, input_bytes / 2));
-            values->getOffsets().reserve(estimate(offset, input_bytes / 2));
+            keys->getOffsets().reserve(estimate(keys->getOffsets().size(), input_bytes / 2));
+            values->getOffsets().reserve(estimate(values->getOffsets().size(), input_bytes / 2));
         }
 
         for (size_t i = sample_rows; i < input_rows_count; ++i)
