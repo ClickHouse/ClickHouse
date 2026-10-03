@@ -323,7 +323,7 @@ Here are the relevant settings for an `Executable` table:
   - Description: Send the number of rows in each chunk before sending a chunk to process. This setting can help to write your script in a more efficient way to preallocate some resources
   - Default value: false
 - `command_termination_timeout`
-  - Description: Command termination timeout in seconds. After the pipe to the command is closed, and likewise once the command has finished writing its output, the command has this long to exit before ClickHouse sends it SIGTERM; with `check_exit_code` enabled, a command that has not exited by then fails the query, as its exit code could not be checked. A value of `0` sends the signal at once where the command is being discarded; for the non-pooled `Executable` engine it leaves the wait for the exit status under `check_exit_code` unbounded (as the wait was before), while a pooled process being discarded gets no grace at all
+  - Description: Command termination timeout in seconds. After the pipe to the command is closed, the command has this long to exit before ClickHouse sends it SIGTERM. With `check_exit_code` enabled, a non-pooled command that has finished writing its output is waited for until it exits, however long that takes, so that its exit code can be checked; a pooled process that is being discarded after it has finished writing its output gets this long, and one that has not exited by then fails the query, as its exit code could not be checked (with `0` it gets no grace at all)
   - Default value: 10
 - `command_read_timeout`
   - Description: Timeout for reading data from command stdout in milliseconds
@@ -335,7 +335,7 @@ Here are the relevant settings for an `Executable` table:
   - Description: What is done with the command's stderr output: `none` (read and discarded), `log` (logged at once), `log_first` (the first 4 KiB logged after the command exits), `log_last` (the last 4 KiB), `throw` (any output fails the query; with `log_first`/`log_last` and a non-zero exit code the output is included in the exception)
   - Default value: none
 - `check_exit_code`
-  - Description: Check the exit code of the command once it has finished writing its output: a non-zero exit code, or a command that has not exited within `command_termination_timeout` after that, fails the query
+  - Description: Check the exit code of the command once it has finished writing its output: a non-zero exit code fails the query, and so does a pooled process being discarded that has not exited within `command_termination_timeout`
   - Default value: false
 
 Let's look at an example. The following Python script is named `my_script.py` and is saved in the `user_scripts` folder. It reads in a number `i` and prints `i` random strings, with each string preceded by a number that is separated by a tab:
@@ -555,7 +555,7 @@ Here are the relevant settings for an `Executable` table:
   - Description: Send the number of rows in each chunk before sending a chunk to process. This setting can help to write your script in a more efficient way to preallocate some resources
   - Default value: false
 - `command_termination_timeout`
-  - Description: Command termination timeout in seconds. After the pipe to the command is closed, and likewise once the command has finished writing its output, the command has this long to exit before ClickHouse sends it SIGTERM; with `check_exit_code` enabled, a command that has not exited by then fails the query, as its exit code could not be checked. A value of `0` sends the signal at once where the command is being discarded; for the non-pooled `Executable` engine it leaves the wait for the exit status under `check_exit_code` unbounded (as the wait was before), while a pooled process being discarded gets no grace at all
+  - Description: Command termination timeout in seconds. After the pipe to the command is closed, the command has this long to exit before ClickHouse sends it SIGTERM. With `check_exit_code` enabled, a non-pooled command that has finished writing its output is waited for until it exits, however long that takes, so that its exit code can be checked; a pooled process that is being discarded after it has finished writing its output gets this long, and one that has not exited by then fails the query, as its exit code could not be checked (with `0` it gets no grace at all)
   - Default value: 10
 - `command_read_timeout`
   - Description: Timeout for reading data from command stdout in milliseconds
@@ -567,7 +567,7 @@ Here are the relevant settings for an `Executable` table:
   - Description: What is done with the command's stderr output: `none` (read and discarded), `log` (logged at once), `log_first` (the first 4 KiB logged after the command exits), `log_last` (the last 4 KiB), `throw` (any output fails the query; with `log_first`/`log_last` and a non-zero exit code the output is included in the exception)
   - Default value: none
 - `check_exit_code`
-  - Description: Check the exit code of the command once it has finished writing its output: a non-zero exit code, or a command that has not exited within `command_termination_timeout` after that, fails the query
+  - Description: Check the exit code of the command once it has finished writing its output: a non-zero exit code fails the query, and so does a pooled process being discarded that has not exited within `command_termination_timeout`
   - Default value: false
 
 Let's look at an example. The following Python script is named `my_script.py` and is saved in the `user_scripts` folder. It reads in a number `i` and prints `i` random strings, with each string preceded by a number that is separated by a tab:

@@ -915,7 +915,7 @@ void ShellCommand::drainOutputPipes(
 }
 
 
-bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check_exit_status, bool no_grace_means_unbounded)
+bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check_exit_status, bool unbounded_status_wait)
 {
     /// A child that writes past what the protocol asked of it fills the pipe and blocks in `write`.
     /// Nothing reads that pipe any more by the time this is called, so the only way the child ever
@@ -993,20 +993,14 @@ bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check
             return true;
         }
 
-        /// A configured grace period of zero is "signal at once" for the destructor, but not "the
-        /// exit status is out of time before it was ever waited for": the deadline it arms is now,
-        /// a single `WNOHANG` probe would see a child that has closed its stdout but has not yet
-        /// become a zombie as one that failed to exit, and whether that happens would be a matter
-        /// of scheduling - a query failing nondeterministically over a configuration that, before
-        /// this wait existed, waited for the exit status without a bound. So zero keeps that
-        /// meaning here: the wait for the exit status is unbounded, as a blocking `wait` was.
-        /// Only when the status is wanted, and only for the caller that says so (see the header):
-        /// without the status this wait is for the child's last words on stderr, and a pooled
-        /// worker being discarded was never waited for at all - neither may hang the query (and a
-        /// pool's slot) forever over a child that does not exit on stdin EOF. For those zero means
-        /// what it means for the destructor: no grace, signal at once.
-        const bool unbounded = check_exit_status && no_grace_means_unbounded
-            && config.terminate_in_destructor_strategy.wait_for_normal_exit_before_termination_seconds == 0;
+        /// The exit status of a non-pooled command was waited for without a bound before this wait
+        /// existed, and a command whose cleanup outlasts `command_termination_timeout` must not
+        /// start failing for it: that wait stays unbounded, only drained now (see the header). Only
+        /// when the status is wanted, and only for the caller that says so: without the status
+        /// this wait is for the child's last words on stderr, and a pooled worker being discarded
+        /// was never waited for at all - neither may hang the query (and a pool's slot) forever
+        /// over a child that does not exit on stdin EOF.
+        const bool unbounded = check_exit_status && unbounded_status_wait;
         const UInt64 remaining_ms = unbounded ? poll_step_ms : remainingTerminationTimeoutMs();
         if (remaining_ms == 0)
         {

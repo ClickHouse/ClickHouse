@@ -522,15 +522,16 @@ def test_executable_source_exit_code(started_cluster):
 def test_executable_source_that_lingers_after_its_output(started_cluster):
     skip_test_msan(node)
 
-    # A source that closes its stdout after the rows and stays alive. It is given
-    # `command_termination_timeout` (one second here) to exit. With `check_exit_code` on, an exit
-    # code that could not be read within that budget is not a passing one: the load fails and says
-    # so, instead of waiting for the command indefinitely or waving it through. With it off, the
-    # budget is spent, the command is signalled, and the rows are the result.
-    error = node.query_and_get_error(
-        "SELECT * FROM dictionary(executable_source_lingers_python) ORDER BY input"
+    # A source that closes its stdout after the rows and exits successfully only after its
+    # `command_termination_timeout` (one second here). With `check_exit_code` on, its exit status is
+    # waited for without a bound, as it always was, and the load succeeds. With it off, the budget
+    # is spent, the command is signalled, and the rows are the result just the same.
+    assert (
+        node.query(
+            "SELECT * FROM dictionary(executable_source_lingers_python) ORDER BY input"
+        )
+        == "1\tValue 1\n2\tValue 2\n3\tValue 3\n"
     )
-    assert "did not exit within command_termination_timeout (1 seconds)" in error, error
 
     assert (
         node.query(

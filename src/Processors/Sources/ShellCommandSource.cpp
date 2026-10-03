@@ -903,6 +903,21 @@ public:
 
     ~ShellCommandHolder()
     {
+        /// The idle worker goes first, before the regions and their charge: it holds a descriptor to
+        /// every region, so the pages stay resident for as long as it lives, and a member is only
+        /// destroyed after this body - which would drop the charge while the worker still holds
+        /// the pages, for the whole wait `~ShellCommand` starts with. Its stdin is closed first,
+        /// so that a worker written to exit on EOF does so at once rather than sitting out
+        /// `command_termination_timeout` blocked on its next request. Past that budget the worker
+        /// is signalled and not waited for, and a descendant may have kept the inherited
+        /// descriptors - the limits described in the note on the cap in
+        /// `docs/reference/functions/regular-functions/udf.mdx`.
+        if (returned_command)
+        {
+            returned_command->closeInputs();
+            returned_command.reset();
+        }
+
         shared_memory = {};
 
         if (persistent_memory_charge)
@@ -947,15 +962,6 @@ public:
     /// it, or drop it together with its regions - has to be decided before the regions are taken
     /// over, because taking them over is what a dropped worker's regions must not survive.
     ShellCommand * returnedCommand() const { return returned_command.get(); }
-
-    /// Drops the returned process alone, keeping its regions for the process that replaces it.
-    /// Only for a process that is provably gone: a live one keeps writable descriptors to those
-    /// regions, and the replacement would be serving this query through memory the old process
-    /// can still write into - `discardWorkerAndRegions` is what that case needs.
-    void discardExitedWorker()
-    {
-        returned_command.reset();
-    }
 
     /// Who borrowed this worker last: the user, and the roles the query ran with.
     ///
@@ -1580,16 +1586,16 @@ namespace
                         /// for, and stderr is only drained until it goes quiet, so a command that
                         /// carries on writing past either is blocked in `write` on a full pipe -
                         /// and `wait` reaps before it closes anything, so it would never return.
-                        /// Draining lets the command reach its own exit, bounded by
-                        /// `command_termination_timeout`.
+                        /// Draining lets the command reach its own exit.
                         ///
-                        /// A command that does not exit within that budget fails the query rather
-                        /// than being waved through: `check_exit_code` says the exit status is
-                        /// checked, and a status that cannot be read is not a passing one. The
-                        /// alternative - warn and succeed - would make the setting mean "checked,
-                        /// unless the command avoids being checked", which is the one command it
-                        /// most needs to hold for. `check_exit_code = 0` is how a command that is
-                        /// not expected to exit promptly is configured.
+                        /// With `check_exit_code` a non-pooled command is waited for without a
+                        /// bound, as the blocking `wait` this replaces did: a command whose cleanup
+                        /// outlasts `command_termination_timeout` and then exits successfully passes,
+                        /// as it always has. A pooled worker being discarded was never waited for, and
+                        /// it gets `command_termination_timeout` and no more; one that does not exit
+                        /// within it fails the query rather than being waved through, because a
+                        /// status that cannot be read is not a passing one. `check_exit_code = 0` is
+                        /// how a command that is not expected to exit promptly is configured.
                         ///
                         /// Waited for even without `check_exit_code`, when stderr is observed: this
                         /// is the last stretch in which the command can write, and a line it writes
@@ -1602,16 +1608,14 @@ namespace
                         const bool reaped = command->waitDrainingOutput(
                             [this](std::string_view str) { timeout_command_out.consumeStderrBytes(str); },
                             check_exit_code,
-                            /*no_grace_means_unbounded=*/ !process_pool);
+                            /*unbounded_status_wait=*/ !process_pool);
 
                         /// A status that could not be read is not a passing status, and that holds
-                        /// however little time the command was given. (For a non-pooled command a
-                        /// `command_termination_timeout` of zero is not "no time": this wait then has
-                        /// no bound, as a blocking `wait` had - see `ShellCommand::waitDrainingOutput`
-                        /// - so `reaped` is always true. For a pooled worker being discarded zero is
-                        /// zero.) Waving a lingering command through with a warning would make
-                        /// `check_exit_code` mean "checked, unless the timeout is short", which is not
-                        /// a contract anyone can rely on.
+                        /// however little time the command was given. Only a pooled worker gets here:
+                        /// for a non-pooled command the wait for the status has no bound, so `reaped`
+                        /// is always true when it is checked. Waving a lingering worker through with
+                        /// a warning would make `check_exit_code` mean "checked, unless the timeout is
+                        /// short", which is not a contract anyone can rely on.
                         if (!reaped && check_exit_code)
                             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
                                 "The command did not exit within command_termination_timeout ({} seconds) after "
@@ -2493,12 +2497,14 @@ namespace
                         /// once that output fills the pipe the child sits in `write`, and a plain
                         /// `wait` - which reaps before it closes anything - would never return.
                         /// Nothing reads those pipes any more, so this wait takes the bytes off
-                        /// them and lets the child reach its own exit, bounded by
-                        /// `command_termination_timeout`. What it finds on stderr still goes
+                        /// them and lets the child reach its own exit - without a bound for a
+                        /// non-pooled command whose exit status is checked, as on the pipe path,
+                        /// and within `command_termination_timeout` for a pooled worker, which was
+                        /// never waited for before. What it finds on stderr still goes
                         /// through `stderr_reaction`: this is the last stretch in which a command
                         /// can write, and under `throw` that output fails the query like any other.
                         ///
-                        /// A worker that does not exit within that budget fails the query rather
+                        /// A pooled worker that does not exit within that budget fails the query rather
                         /// than being waved through: `check_exit_code` says the exit status is
                         /// checked, and a status that cannot be read is not a passing one. The
                         /// query's rows are already correct, but so are the rows of any command
@@ -2512,7 +2518,7 @@ namespace
                         const bool reaped = command->waitDrainingOutput(
                             [this](std::string_view str) { timeout_command_out->consumeStderrBytes(str); },
                             check_exit_code,
-                            /*no_grace_means_unbounded=*/ !is_pooled);
+                            /*unbounded_status_wait=*/ !is_pooled);
 
                         /// As on the pipe path: a status that could not be read is not a passing
                         /// status, whatever the budget was. See the note there.
@@ -2821,18 +2827,21 @@ namespace
         /// Looks over the worker this borrow would be built on, before anything is built on it -
         /// and, above all, before its regions are taken over.
         ///
-        /// Two states disqualify it, and they are told apart by what they cost. A process that
-        /// exited while it sat in the pool is simply gone: it holds nothing, so its regions are
-        /// untouched and the replacement inherits the very same ones (the pipe path does the same
-        /// in `createPipe`). A process that is alive and has written to its stdout since its last
-        /// answer is a different matter. Those bytes are an earlier borrow's - this one has sent
-        /// nothing yet - and read as the beginning of *this* answer they are a plausible response
-        /// frame, so the worker has to go; but it is alive, and it holds writable descriptors to
-        /// the regions. Handing those regions to its replacement would leave this query reading a
-        /// mapping the discarded process can still write into: the destructor gives it the
-        /// termination timeout and then a signal it may ignore. So it goes together with its
-        /// regions, as everywhere else that drops a live worker - a process and its regions live
-        /// and die together - and this borrow starts on fresh ones.
+        /// Two states disqualify it: a process that hung up its stdout while it sat in the pool,
+        /// and one that has written to its stdout since its last answer. The second one's bytes
+        /// are an earlier borrow's - this one has sent nothing yet - and read as the beginning of
+        /// *this* answer they are a plausible response frame, so the worker has to go.
+        ///
+        /// Either way it goes together with its regions, and this borrow starts on fresh ones. A
+        /// hung-up stdout says the process closed it, not that the process is gone - it may have
+        /// closed it and carried on - and even a process that has exited may have left a
+        /// descendant holding the descriptors to the regions it inherited. Handing those regions
+        /// to a replacement would leave this query reading a mapping something else can still
+        /// write into: the destructor gives the process the termination timeout and then a signal
+        /// it may ignore, and a descendant nothing at all. So a process and its regions live and
+        /// die together, as everywhere else that drops a worker. What that costs is the regions a
+        /// worker that died in the pool had grown, which the replacement grows again if it needs
+        /// them.
         ///
         /// Both run here rather than after `buildCommand` for the same reason: once the regions
         /// have been taken over and charged to this query, dropping them is no longer a matter of
@@ -2855,17 +2864,21 @@ namespace
                     LOG_DEBUG(
                         getLogger("ShellCommandSharedMemorySource"),
                         "The process of an executable UDF (pid {}) exited while it was idle in the pool; "
-                        "starting a replacement for this borrow.",
+                        "it is discarded, with its regions, and a replacement is started for this borrow.",
                         worker->getPid());
                 else
                     LOG_WARNING(
                         getLogger("ShellCommandSharedMemorySource"),
                         "The process of an executable UDF (pid {}) exited while it was idle in the pool, "
-                        "after writing to its stderr; starting a replacement for this borrow. Stderr: {}",
+                        "after writing to its stderr; it is discarded, with its regions, and a replacement is "
+                        "started for this borrow. Stderr: {}",
                         worker->getPid(),
                         leftover_stderr);
 
-                command_holder->discardExitedWorker();
+                /// Closed before the process is dropped, so that one that only closed its stdout and
+                /// exits on EOF does so at once rather than sitting out the termination timeout.
+                worker->closeInputs();
+                command_holder->discardWorkerAndRegions();
                 return;
             }
 
@@ -3726,25 +3739,15 @@ namespace
                 }
             }
 
-            /// Release the per-borrow memory charge on the query thread. The producer thread is
-            /// joined above, so this total is final.
-            if (size_t charge = query_memory_charge.load(std::memory_order_relaxed))
-                unchargeQueryMemory(charge);
-
-            /// Whatever regions the holder still owns outlive this borrow, so they are charged
-            /// again - globally this time - now that the borrow's charge is gone. There is no way
-            /// to move a charge between trackers atomically, so one of the two orders has to be
-            /// picked: this one leaves the bytes uncounted for the moment in between, the other
-            /// would count them twice. Undercounting for a moment can at most let a concurrent
-            /// allocation through (memory limits are approximate anyway - see
-            /// `max_untracked_memory`), while double counting could fail a query that fits and
-            /// would inflate the peak the server reports. The borrow side of the hand-over
-            /// (`releaseChargeToBorrower`) errs the same way, for the same reason.
-            /// Checked once more, as late as possible: `keep_command` was decided above, and the
+            /// Checked once more, as late as it can be: `keep_command` was decided above, and the
             /// command is alive in between - a file it extended past the cap since then would be
             /// charged to the server and handed to the next query along with the worker. The window
             /// between this read and the charge below cannot be closed (the command can extend the
-            /// file at any instant), which is why the charge is capped as well.
+            /// file at any instant), which is why the charge is capped as well. It cannot come after
+            /// the borrow's charge is released: a worker found over the cap is destroyed
+            /// here, which can take up to `command_termination_timeout`, and its regions stay
+            /// mapped until then - they are to be counted against the query for all of that time,
+            /// not left uncounted by every tracker.
             if (keep_command && command_holder && !regionsAreWithinTheCap())
             {
                 keep_command = false;
@@ -3762,6 +3765,20 @@ namespace
                 }
             }
 
+            /// Release the per-borrow memory charge on the query thread. The producer thread is
+            /// joined above, so this total is final.
+            if (size_t charge = query_memory_charge.load(std::memory_order_relaxed))
+                unchargeQueryMemory(charge);
+
+            /// Whatever regions the holder still owns outlive this borrow, so they are charged
+            /// again - globally this time - now that the borrow's charge is gone. There is no way
+            /// to move a charge between trackers atomically, so one of the two orders has to be
+            /// picked: this one leaves the bytes uncounted for the moment in between, the other
+            /// would count them twice. Undercounting for a moment can at most let a concurrent
+            /// allocation through (memory limits are approximate anyway - see
+            /// `max_untracked_memory`), while double counting could fail a query that fits and
+            /// would inflate the peak the server reports. The borrow side of the hand-over
+            /// (`releaseChargeToBorrower`) errs the same way, for the same reason.
             if (command_holder)
                 command_holder->acquireChargeFromBorrower(shared_memory_max_footprint);
 

@@ -1,8 +1,9 @@
 #!/usr/bin/python3
 
-# A source that produces its rows, closes its stdout and then stays alive far longer than the
-# `command_termination_timeout` it is configured with. Whether its exit code is wanted decides
-# whether the load fails or the process is simply signalled once the budget is spent.
+# A source that produces its rows, closes its stdout and then stays alive longer than the
+# `command_termination_timeout` it is configured with before exiting successfully. With its exit
+# code wanted it is waited for until it exits, as it always was; without, it is signalled once the
+# budget is spent. Either way the rows are the result.
 
 import os
 import sys
@@ -18,4 +19,4 @@ if __name__ == "__main__":
     # `closefd=False`); the server only sees EOF once the descriptor itself is closed.
     os.close(sys.stdout.fileno())
 
-    time.sleep(60)
+    time.sleep(3)

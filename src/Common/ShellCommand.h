@@ -196,13 +196,14 @@ public:
     /// turning the command's own exit code into a query failure: the child is still reaped, and
     /// its output still reaches `stderr_sink`, but a non-zero or signalled exit is not raised.
     ///
-    /// `no_grace_means_unbounded` is for the one caller that used to `wait` for a command with no
-    /// bound at all - the non-pooled command whose output has ended - and for which a grace period
-    /// of zero would otherwise turn that wait into a single probe that fails nondeterministically:
-    /// with it, zero keeps the old meaning, and the wait for the exit status is unbounded. A
-    /// pooled worker that is being discarded was never waited for before, and for it zero means
-    /// what it means everywhere else: no grace, signal at once - so that a worker which closes
-    /// its stdout and then never exits cannot pin the query, and the pool's slot, forever.
+    /// `unbounded_status_wait` is for the one caller that used to `wait` for a command with no
+    /// bound at all - the non-pooled command whose output has ended. With it, and with the status
+    /// wanted, the wait for the exit status keeps that meaning whatever `command_termination_timeout`
+    /// is: the output is drained, so a child blocked in `write` still gets to its exit, but a
+    /// command that takes its time over cleanup is waited for exactly as before rather than failed
+    /// for it - existing `executable` configurations rely on that. A pooled worker that is being
+    /// discarded was never waited for before, and for it the budget is the budget: a worker which
+    /// closes its stdout and then never exits must not pin the query, and the pool's slot, forever.
     /// How long the command is given to exit on its own before it is signalled
     /// (`command_termination_timeout`). Zero means it is given no time at all, which a caller that
     /// wants the exit status has to know about: there is then no difference between a command that
@@ -213,7 +214,7 @@ public:
     }
 
     using StderrSink = std::function<void(std::string_view)>;
-    bool waitDrainingOutput(const StderrSink & stderr_sink = {}, bool check_exit_status = true, bool no_grace_means_unbounded = false);
+    bool waitDrainingOutput(const StderrSink & stderr_sink = {}, bool check_exit_status = true, bool unbounded_status_wait = false);
 
     WriteBufferFromFile in;        /// If the command reads from stdin, do not forget to call in.close() after writing all the data there.
     ReadBufferFromFile out;

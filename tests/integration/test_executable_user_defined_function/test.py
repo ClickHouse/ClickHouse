@@ -645,28 +645,16 @@ def test_executable_function_stderr_written_on_the_way_out_still_throws(started_
         assert "complaining on the way out" in str(exc.value), str(exc.value)
 
 
-def test_executable_function_unreadable_exit_code_fails_the_query(started_cluster):
-    """A command whose exit status cannot be read must fail the query, not be waved through."""
+def test_executable_function_slow_cleanup_is_waited_for(started_cluster):
+    """A non-pooled command that outlives `command_termination_timeout` on its way out still passes `check_exit_code`."""
     skip_test_msan(node)
 
-    # This command answers correctly and then refuses to leave: instead of exiting when its stdin is
-    # closed it sleeps far past its `command_termination_timeout`, and only much later exits
-    # non-zero. The server will not wait for it indefinitely - the timeout is exactly how long it
-    # waits before signalling - so the status is never read.
-    #
-    # `check_exit_code` is at its default, and a status that could not be read is not a passing one:
-    # succeeding here would make the setting mean "checked, unless the command avoids being
-    # checked", which is the one command it is there for.
-    started = time.monotonic()
-    with pytest.raises(Exception) as exc:
-        node.query("SELECT test_function_lingers_python(1)")
-    elapsed = time.monotonic() - started
+    # The command answers, closes its stdout and exits successfully only after its
+    # `command_termination_timeout`. Its exit status is waited for without a bound, as it always
+    # was, so the query succeeds rather than failing for a status that took a while to arrive.
+    assert node.query("SELECT test_function_lingers_python(1)") == "Key 1\n"
 
-    assert "did not exit within command_termination_timeout" in str(exc.value), str(exc.value)
-    assert elapsed < 60, f"the query took {elapsed:.1f}s to give up on the command"
-
-    # And `check_exit_code = 0` is how such a command is configured - the setting the message above
-    # points at, so it has to work: nothing is checked, and the same command answers normally.
+    # With `check_exit_code = 0` the status is not wanted, and the same command answers normally.
     assert node.query("SELECT test_function_lingers_ignore_python(1)") == "Key 1\n"
 
 

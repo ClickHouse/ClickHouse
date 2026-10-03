@@ -1,15 +1,9 @@
 #!/usr/bin/python3
 
-# A UDF that answers correctly and then refuses to leave: on `stdin` EOF - the server telling it to
-# exit - it sleeps far past `command_termination_timeout` and only then exits non-zero.
-#
-# `check_exit_code` says the command's exit status is checked and a non-zero one fails the query.
-# The server cannot read a status from a process that has not exited, and it will not wait for one
-# indefinitely either - `command_termination_timeout` is what it waits, after which the process is
-# signalled. A status that could not be read is not a passing status: waving the query through with
-# a log line would make `check_exit_code` mean "checked, unless the command avoids being checked",
-# which is precisely the command it most needs to hold for. This one exits `1` in the end, and
-# nothing would ever see it.
+# A UDF that answers correctly and then takes its time over cleanup: on `stdin` EOF - the server
+# telling it to exit - it stays alive past `command_termination_timeout` and only then exits
+# successfully. A non-pooled command is waited for until it exits when its exit code is checked,
+# whatever transport it uses, so such a command passes.
 
 import mmap
 import os
@@ -88,10 +82,9 @@ def main():
         write_varint(stdout, len(output))
         stdout.flush()
 
-    # Far past the function's `command_termination_timeout`. The SIGTERM that follows ends this
-    # sleep, so the process does not outlive the query by more than the signal takes to arrive.
-    time.sleep(600)
-    sys.exit(1)
+    # Past the function's `command_termination_timeout` (2 seconds).
+    time.sleep(4)
+    sys.exit(0)
 
 
 if __name__ == "__main__":
