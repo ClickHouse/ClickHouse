@@ -2730,6 +2730,13 @@ static BlockIO executeQueryImpl(
         /// secondary-query case), `internal` is a server-side flag and cannot be spoofed, so it
         /// is safe to skip rule application on it.
         ///
+        /// A nested query whose SQL the user wrote is still a user query, though: the body of
+        /// `EXECUTE AS`, the subqueries of `PARALLEL WITH` and the queries run by
+        /// `StorageQueryRunner` re-enter `executeQuery` with `QueryFlags{ .internal = true,
+        /// .user_initiated = true }`. Apply rules to them as well, otherwise wrapping a statement
+        /// into such a construct would bypass a `REJECT` rule (and the missing-rule check) that
+        /// fires when the same statement is submitted directly.
+        ///
         /// Protocol adapters that synthesize SQL from a non-SQL user request cannot use the
         /// `internal` flag (their query should still be logged and accounted as a user query), so
         /// they instead clear `query_rules` on their private per-request context before calling
@@ -2752,7 +2759,7 @@ static BlockIO executeQueryImpl(
         /// `DatabaseReplicated` task for every replayed query, and likewise a server-side flag),
         /// so a worker-side default `query_rules` cannot rewrite or reject the replayed DDL
         /// regardless of the entry format version.
-        if (!internal && !context->isDDLOrOnClusterInternal())
+        if ((!internal || flags.user_initiated) && !context->isDDLOrOnClusterInternal())
             astTraversal(out_ast, context, applied_rewrite_rules);
     }
     catch (...)
