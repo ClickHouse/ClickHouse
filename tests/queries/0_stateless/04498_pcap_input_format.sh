@@ -145,3 +145,9 @@ SELECT count() FROM file('$DATA_DIR/broken.pcap.gz', PCAP) FORMAT TSV" 2>&1 | gr
 
 echo "--- schema inference via file() extension is PCAP-explicit only (count) ---"
 $CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$DATA_DIR/packets.pcap', PCAP)"
+
+echo "--- format is inferred from the .pcap and .pcapng extensions ---"
+for f in packets.pcap packets.pcapng; do
+    $CLICKHOUSE_LOCAL -q "SELECT '$f', count(), countIf(ip_protocol = 'TCP') FROM file('$DATA_DIR/$f') FORMAT TSV"
+done
+$CLICKHOUSE_LOCAL -q "DESCRIBE file('$DATA_DIR/packets.pcapng') FORMAT TSV" | cut -f1 | head -n 2

@@ -299,13 +299,16 @@ bool isIPv6ExtensionHeader(UInt8 header)
     }
 }
 
-/// The protocol carried by an IPv6 packet: the `next header` value of the last header of its
-/// extension-header chain (Hop-by-Hop options, Routing, Fragment, ...), or the value from the
-/// fixed header when there is no chain. `libtins` strips the `next header` byte of every
-/// extension header it parses and exposes only the one from the fixed header, so the chain is
-/// walked over the raw bytes of the frame. When the snapshot length cuts the chain, the type of
-/// the last extension header that is still known is returned.
-UInt8 ipv6FinalNextHeader(const Tins::IPv6 & ipv6, const unsigned char * frame, size_t frame_size, size_t ipv6_offset)
+/// Walks the extension-header chain (Hop-by-Hop options, Routing, Fragment, ...) of an IPv6
+/// packet, calling `on_extension_header` with the type of every extension header in the chain,
+/// and returns the protocol carried by the packet: the `next header` value of the last header of
+/// the chain, or the value from the fixed header when there is no chain. `libtins` strips the
+/// `next header` byte of every extension header it parses and exposes only the one from the
+/// fixed header, so the chain is walked over the raw bytes of the frame. When the snapshot length
+/// cuts the chain, the type of the last extension header that is still known is returned.
+template <typename OnExtensionHeader>
+UInt8 walkIPv6ExtensionHeaders(
+    const Tins::IPv6 & ipv6, const unsigned char * frame, size_t frame_size, size_t ipv6_offset, OnExtensionHeader && on_extension_header)
 {
     static constexpr size_t fixed_header_size = 40;
 
@@ -313,6 +316,8 @@ UInt8 ipv6FinalNextHeader(const Tins::IPv6 & ipv6, const unsigned char * frame, 
     size_t pos = ipv6_offset + fixed_header_size;
     while (isIPv6ExtensionHeader(next))
     {
+        on_extension_header(next);
+
         /// Every extension header starts with its own `next header` byte followed by a length byte.
         if (pos + 2 > frame_size)
             break;
@@ -331,6 +336,11 @@ UInt8 ipv6FinalNextHeader(const Tins::IPv6 & ipv6, const unsigned char * frame, 
         next = following;
     }
     return next;
+}
+
+UInt8 ipv6FinalNextHeader(const Tins::IPv6 & ipv6, const unsigned char * frame, size_t frame_size, size_t ipv6_offset)
+{
+    return walkIPv6ExtensionHeaders(ipv6, frame, frame_size, ipv6_offset, [](UInt8) {});
 }
 
 /// Name of the IANA protocol number found in the IPv4 `protocol` field or after the IPv6
@@ -359,8 +369,11 @@ String ipProtocolName(UInt8 protocol)
         case 112: return "VRRP";
         case 115: return "L2TP";
         case 132: return "SCTP";
+        case 135: return "Mobility Header";
         case 136: return "UDPLite";
         case 137: return "MPLS-in-IP";
+        case 139: return "HIP";
+        case 140: return "Shim6";
         default: return std::to_string(protocol);
     }
 }
@@ -526,6 +539,17 @@ Chunk PCAPBlockInputFormat::read()
             {
                 String name = Tins::Utils::to_string(p->pdu_type());
                 col_protocols_data->insertData(name.data(), name.size());
+
+                /// `libtins` does not keep the IPv6 extension headers in the PDU chain, so they
+                /// are taken from the raw bytes and listed right after the IPv6 layer.
+                if (const auto * ipv6_layer = dynamic_cast<const Tins::IPv6 *>(p))
+                {
+                    walkIPv6ExtensionHeaders(*ipv6_layer, data, caplen, offsetOfLayer(*pdu, *ipv6_layer), [&](UInt8 header)
+                    {
+                        String header_name = ipProtocolName(header);
+                        col_protocols_data->insertData(header_name.data(), header_name.size());
+                    });
+                }
             }
             col_protocols_offsets->insertValue(col_protocols_data->size());
         }
@@ -771,6 +795,8 @@ void registerInputFormatPCAP(FormatFactory & factory)
             return std::make_shared<PCAPBlockInputFormat>(buf, std::make_shared<const Block>(sample), settings);
         });
     factory.markFormatSupportsSubsetOfColumns("PCAP");
+    /// `registerRandomAccessInputFormat` maps only the `.pcap` extension, derived from the format name.
+    factory.registerFileExtension("pcapng", "PCAP");
 
     factory.setDocumentation("PCAP", Documentation{
         .description = R"DOCS_MD(
@@ -826,7 +852,7 @@ The `PCAP` format produces the following columns:
 | `capture_length` | `UInt32` | Number of bytes saved in the file for this packet; equals `length(raw)` |
 | `original_length` | `UInt32` | Size of the packet on the wire; `>= capture_length` |
 | `link_type` | `LowCardinality(String)` | Link-layer type of the outermost layer, for example `ETHERNET_II` |
-| `protocols` | `Array(LowCardinality(String))` | Ordered list of protocols in the packet, from the link layer inwards, for example `['ETHERNET_II', 'IP', 'TCP']` |
+| `protocols` | `Array(LowCardinality(String))` | Ordered list of protocols in the packet, from the link layer inwards, for example `['ETHERNET_II', 'IP', 'TCP']`. IPv6 extension headers are listed right after `IPv6` by their IANA keywords: `HOPOPT`, `IPv6-Route`, `IPv6-Frag`, `AH`, `IPv6-Opts`, `Mobility Header`, `HIP` and `Shim6` |
 | `eth_src` | `Nullable(String)` | Source MAC address, or `NULL` for non-Ethernet packets |
 | `eth_dst` | `Nullable(String)` | Destination MAC address |
 | `eth_type` | `LowCardinality(String)` | Protocol carried by the Ethernet frame, for example `IP`. 802.1Q tags are unwrapped, so a VLAN-tagged frame reports the encapsulated protocol and not `DOT1Q` |
