@@ -5,10 +5,12 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromVector.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Common/Arena.h>
 #include <Common/Base64.h>
 #include <Common/FailPoint.h>
@@ -94,4 +96,37 @@ TEST(ColumnAggregateFunction, StateFieldNameMatchesStateTypeName)
     const auto state_type = std::make_shared<DataTypeAggregateFunction>(aggregate_function, argument_types, params);
     ASSERT_EQ(field.safeGet<AggregateFunctionStateData>().name, state_type->getName());
     ASSERT_EQ(state_type->getName(), "AggregateFunction(quantile('0.5'::Decimal32(1)), Float64)");
+}
+
+/// A `Field` taken from a type that kept parameters `argMin` never reads names parameters its own
+/// state type does not, and a `Map` parameter makes that name unparseable. No SQL construct produces
+/// such a name, so both places that accept one are covered here.
+TEST(ColumnAggregateFunction, AcceptsStateNameSpellingUnreadParameters)
+{
+    tryRegisterAggregateFunctions();
+
+    using namespace DB;
+
+    AggregateFunctionFactory & factory = AggregateFunctionFactory::instance();
+    DataTypes argument_types = {std::make_shared<DataTypeUInt8>(), std::make_shared<DataTypeUInt8>()};
+    Array parameters = {Field(Map{Tuple{Field(UInt64(1)), Field(UInt64(2))}})};
+    AggregateFunctionProperties properties;
+    auto function = factory.get("argMin", NullsAction::EMPTY, argument_types, parameters, properties);
+
+    /// What `decodeAggregateFunction` builds out of an encoding that carried the parameters.
+    auto decoded_type = std::make_shared<DataTypeAggregateFunction>(function, argument_types, parameters);
+    auto state_type = function->getStateType();
+    ASSERT_NE(decoded_type->getName(), state_type->getName());
+    ASSERT_EQ(DataTypeFactory::instance().tryGet(decoded_type->getName()), nullptr);
+
+    Field state = decoded_type->getDefault();
+    auto column = state_type->createColumn();
+    ASSERT_TRUE(column->tryInsert(state));
+    ASSERT_NO_THROW(convertFieldToType(state, *state_type));
+
+    /// A name that denotes another state is still rejected, parameters or not.
+    auto other_function = factory.get("argMax", NullsAction::EMPTY, argument_types, parameters, properties);
+    Field other_state = DataTypeAggregateFunction(other_function, argument_types, parameters).getDefault();
+    ASSERT_FALSE(column->tryInsert(other_state));
+    ASSERT_THROW(convertFieldToType(other_state, *state_type), Exception);
 }
