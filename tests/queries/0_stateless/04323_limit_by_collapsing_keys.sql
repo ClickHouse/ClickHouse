@@ -3,6 +3,7 @@
 
 SET max_threads = 16;
 SET enable_analyzer = 1;
+SET max_bytes_ratio_before_external_limit_by = 0;
 
 -- { echo }
 
