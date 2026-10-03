@@ -617,13 +617,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// the funnel produces for the *same* input streams; aggregation-in-order does not define a per-group
         /// order beyond that on its own, since which rows one stream carries already depends on `max_threads`
         /// and on `read_in_order_two_level_merge_threshold`.
-        /// An aggregate that additionally depends on how the partial states are combined can still differ:
-        /// `sum` over `Float*` is accumulated once per input stream and then merged on the funnel path, but in
-        /// a single pass over the merged rows here, so the two build a different addition tree over the same
-        /// rows in the same order and the results can differ in the last bits. That is the non-determinism
-        /// float aggregation already has across `max_threads` (on the funnel path alone,
-        /// `sum(toFloat64(v) / 3)` differs between `max_threads = 8` and `max_threads = 2`), not something
-        /// this optimization introduces.
+        /// Any other aggregate that depends on how the partial states are combined can still differ: the funnel
+        /// path accumulates one partial state per input stream and merges them, while here each group is
+        /// accumulated in a single state over the merged rows and never merged. E.g. `sum` over `Float*` builds
+        /// a different addition tree and can differ in the last bits; approximate aggregates (`quantile*`,
+        /// `topK`), the element order of `groupUniqArray` and the choice among ties of `argMax` can differ as
+        /// well (see `QueryOracleChecker` and 05259_aggregation_in_order_shuffle_merge_sensitive_aggregates).
+        /// That is the non-determinism these aggregates already have across `max_threads` (on the funnel path
+        /// alone, `sum(toFloat64(v) / 3)` differs between `max_threads = 8` and `max_threads = 2`), not
+        /// something this optimization introduces.
         /// aggregation-in-order does not enforce `max_rows_to_group_by`: it keeps only a bounded working set
         /// of keys (completed groups are streamed out as the sorted input advances), so neither the streaming
         /// per-shard path (executeOnBlockSmall / mergeOnBlockSmall) nor the ordinary funnel path (whose
