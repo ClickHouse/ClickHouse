@@ -14,8 +14,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -m -q "
 CREATE TABLE t (x String) ENGINE = Memory SETTINGS compress = 1;
-INSERT INTO t SETTINGS ast_fuzzer_runs = 0, max_rows_to_read = 0, max_block_size = 1000,
-    min_insert_block_size_rows = 1000, min_insert_block_size_bytes = 0 SELECT 'Hello, world' FROM numbers(60000000);
+INSERT INTO t SETTINGS ast_fuzzer_runs = 0, max_block_size = 100, min_insert_block_size_rows = 100,
+    min_insert_block_size_bytes = 0 SELECT repeat('Hello, world', 1000) FROM numbers(65000);
 "
 
 $CLICKHOUSE_CLIENT -m -q "
