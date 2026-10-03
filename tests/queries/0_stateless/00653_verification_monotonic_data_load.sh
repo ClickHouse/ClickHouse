@@ -16,6 +16,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: Tests projection behavior sensitive to sort order
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS string_test_table;"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS fixed_string_test_table;"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS signed_integer_test_table;"

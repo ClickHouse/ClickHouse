@@ -1,5 +1,7 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: the test checks the shape of the local query plan.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t_lm_header_order;
 

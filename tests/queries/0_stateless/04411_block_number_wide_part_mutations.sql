@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t;
 
 -- Wide + full storage (so columns are hardlinked) with persisted _block_number/_block_offset.

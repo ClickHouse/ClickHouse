@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: `mergeTreeIndex` returns the primary index values at granule boundaries, which depend on the key direction
+SET force_primary_key_reverse_order = 0;
+
 -- Wrapping or unwrapping LowCardinality on a key column is allowed and does not rewrite existing
 -- parts, so until the mutation materializes a part's primary index holds a different representation
 -- than the current metadata declares. mergeTreeIndex must still emit the declared type.

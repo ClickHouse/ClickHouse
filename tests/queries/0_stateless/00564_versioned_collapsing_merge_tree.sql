@@ -1,4 +1,6 @@
 -- Tags: no-random-merge-tree-settings
+-- Disable force_primary_key_reverse_order: Uses deprecated MergeTree syntax incompatible with reverse keys
+SET force_primary_key_reverse_order = 0;
 
 set allow_deprecated_syntax_for_merge_tree=1;
 set optimize_on_insert = 0;

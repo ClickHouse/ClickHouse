@@ -1,5 +1,7 @@
 -- Tags: no-random-merge-tree-settings
 -- no-random-merge-tree-settings: reads mergeTreeCodecBlockCounts, randomized block-number/offset columns add rows.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 -- Adaptive codec selection must not override an explicit RECOMPRESS CODEC(X). RECOMPRESS CODEC(Default) stays adaptive.
 

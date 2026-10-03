@@ -1,4 +1,6 @@
 -- Tags: zookeeper, no-random-merge-tree-settings, no-replicated-database
+-- Disable force_primary_key_reverse_order: tests reverse sorting key feature itself, forced DESC would interfere with explicit ASC/DESC
+SET force_primary_key_reverse_order = 0;
 
 drop table if exists x1;
 drop table if exists x2;

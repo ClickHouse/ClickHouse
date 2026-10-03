@@ -4,6 +4,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: tests input format parsing, creates MergeTree with order-dependent output
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 echo "DROP TABLE IF EXISTS test_table;" | ${CLICKHOUSE_CLIENT}
 echo "DROP TABLE IF EXISTS test_table_2;" | ${CLICKHOUSE_CLIENT}
 echo "SELECT 1;" | ${CLICKHOUSE_CLIENT}

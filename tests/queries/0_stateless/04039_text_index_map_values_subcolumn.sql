@@ -4,6 +4,8 @@
 -- rewrites arrayElement(m, 'key') into the map.key_* subcolumn form.
 SET explain_query_plan_default = 'legacy';
 
+-- Skip index granule counts depend on physical data sort order
+SET force_primary_key_reverse_order = 0;
 SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS tab;

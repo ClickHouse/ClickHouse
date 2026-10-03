@@ -1,6 +1,8 @@
 -- Tags: long
 -- long: times out in private
 
+-- Disable force_primary_key_reverse_order: tests read_in_order optimization with parallel replicas, sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
 SET log_queries = 1;
 SET optimize_read_in_order=1;
 SET use_skip_indexes_for_top_k = 0;

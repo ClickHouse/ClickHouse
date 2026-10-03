@@ -1,5 +1,7 @@
 -- Tags: no-random-merge-tree-settings
 -- no-random-merge-tree-settings: block counts depend on the default codec, and randomized enable_block_number/offset_column add rows on merge.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t_adaptive_on;
 DROP TABLE IF EXISTS t_adaptive_off;

@@ -1,5 +1,8 @@
 -- Test that join_any_take_last_row is honored with join_algorithm='auto'
 -- for both the JoinSwitcher path and the HashJoin path (multi-disjunct ANY JOIN).
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 

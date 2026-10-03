@@ -5,6 +5,8 @@
 -- `max_rows_to_group_by` with `group_by_overflow_mode = 'any'`, after which
 -- `Aggregator::executeImplBatch` switches to `findKey` for subsequent blocks.
 -- Covers: src/Common/ColumnsHashingImpl.h:229-241 — findKey nullable branch.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 
 DROP TABLE IF EXISTS t_nullable_findkey;

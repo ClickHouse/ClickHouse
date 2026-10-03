@@ -5,11 +5,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: backup database output depends on key direction
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 database_name="$CLICKHOUSE_DATABASE"_03278_test_database
 backup_database_name="$CLICKHOUSE_DATABASE"_03278_test_table_backup_database
 backup_path="$CLICKHOUSE_DATABASE"_03278_test_database.test_table
 
-$CLICKHOUSE_CLIENT "
+$CLICKHOUSE_CLIENT --query="
 DROP DATABASE IF EXISTS $database_name;
 CREATE DATABASE $database_name;
 

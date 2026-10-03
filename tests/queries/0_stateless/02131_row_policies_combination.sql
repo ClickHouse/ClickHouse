@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests row policies with MergeTree, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS 02131_rptable;
 CREATE TABLE 02131_rptable (x UInt8) ENGINE = MergeTree ORDER BY x;
 INSERT INTO 02131_rptable VALUES (1), (2), (3), (4);

@@ -1,6 +1,8 @@
 -- Tags: no-parallel-replicas
 
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
+-- Disable force_primary_key_reverse_order: tests text index query behavior on MergeTree with query_log validation
+SET force_primary_key_reverse_order = 0;
 
 -- Affects the number of estimated rows.
 SET use_skip_indexes_on_data_read = 0;

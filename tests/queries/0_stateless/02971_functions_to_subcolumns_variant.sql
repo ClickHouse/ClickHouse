@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Query plan output depends on sort direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_func_to_subcolumns_variant;
 
 SET allow_experimental_variant_type = 1;

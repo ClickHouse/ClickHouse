@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: queries without `ORDER BY` return rows in the physical order of the key
+SET force_primary_key_reverse_order = 0;
+
 -- A view-keyed additional_table_filters predicate containing a subquery (either
 -- a standalone one, like a ROW POLICY `USING (SELECT ...)`, or one embedded as
 -- an operand) must suppress the trivial-view pushdown, the same way a

@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
+
 -- Tags: no-random-merge-tree-settings
 -- no-random-merge-tree-settings: to fix pipeline structure
 

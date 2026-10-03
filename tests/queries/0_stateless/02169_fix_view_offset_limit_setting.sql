@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: reversed key changes physical row order in underlying table
+SET force_primary_key_reverse_order = 0;
 DROP TABLE IF EXISTS counter;
 CREATE TABLE counter (id UInt64, createdAt DateTime) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO counter SELECT number, now() FROM numbers(500);

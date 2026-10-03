@@ -13,6 +13,9 @@
 -- shape below reaches the oracle in the vast majority of runs; repeat to make a
 -- regression practically certain to fire.
 
+-- Disable force_primary_key_reverse_order: `any` returns the value from the first row in the physical order
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS oracle_apply_agg;
 CREATE TABLE oracle_apply_agg (i Int32, d Date) ENGINE = MergeTree ORDER BY i;
 INSERT INTO oracle_apply_agg VALUES (1, '2020-01-01'), (2, '2020-01-02'), (3, '2020-01-03');

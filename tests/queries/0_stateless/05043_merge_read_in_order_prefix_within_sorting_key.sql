@@ -1,4 +1,6 @@
 -- Tags: no-random-merge-tree-settings
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t_read_in_order_prefix;
 DROP TABLE IF EXISTS m_read_in_order_prefix;

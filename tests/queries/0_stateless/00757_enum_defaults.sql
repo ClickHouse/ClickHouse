@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: output row order depends on MergeTree sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS auto_assign_enum;
 DROP TABLE IF EXISTS auto_assign_enum1;
 DROP TABLE IF EXISTS auto_assign_enum2;

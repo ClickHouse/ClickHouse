@@ -1,5 +1,8 @@
 -- Tags: zookeeper
 
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_modify_projection_r1;
 DROP TABLE IF EXISTS t_modify_projection_r2;
 

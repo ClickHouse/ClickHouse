@@ -1,4 +1,6 @@
 -- Tags: long, zookeeper
+-- Disable force_primary_key_reverse_order: SHOW CREATE TABLE output checks ORDER BY clause
+SET force_primary_key_reverse_order = 0;
 
 SET database_atomic_wait_for_drop_and_detach_synchronously=1;
 

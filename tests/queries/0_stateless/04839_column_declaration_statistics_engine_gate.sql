@@ -1,6 +1,8 @@
 -- The column-declaration spelling `ALTER TABLE ... ADD/MODIFY COLUMN c UInt64 STATISTICS(...)` must honor
 -- the same engine gate as the dedicated `ADD/DROP/MODIFY STATISTICS` commands, which non-MergeTree
 -- engines reject as NOT_IMPLEMENTED in `checkAlterIsPossible`.
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
 
 SET allow_statistics = 1;
 

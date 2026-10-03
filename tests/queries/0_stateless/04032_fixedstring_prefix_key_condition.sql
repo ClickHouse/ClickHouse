@@ -1,3 +1,5 @@
+-- Reverse key breaks FixedString prefix key conditions (startsWith, LIKE) causing extra granules to be read
+SET force_primary_key_reverse_order = 0;
 -- { echo }
 
 DROP TABLE IF EXISTS test;

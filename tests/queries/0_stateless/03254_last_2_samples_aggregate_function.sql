@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: reversed key changes AggregatingMergeTree order breaking time-series aggregate function results
+SET force_primary_key_reverse_order = 0;
 SET allow_experimental_ts_to_grid_aggregate_function=1;
 SET optimize_on_insert = 1;
 

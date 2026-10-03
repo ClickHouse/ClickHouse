@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests aggregation-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
+
 drop table if exists data_02295;
 
 create table data_02295 (

@@ -3,6 +3,8 @@
 -- no-parallel-replicas: Dictionary is not available on parallel-replica workers.
 -- no-flaky-check: single runs of this test approach the 180s cap in heavy sanitizer + object-storage configurations,
 -- so it cannot fit the flaky-check time limit whenever a PR touches it.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 SET optimize_or_like_chain = 0;
 SET optimize_rewrite_like_perfect_affix = 0;

@@ -19,6 +19,8 @@
 -- `CLONE`, `REFRESH`, `TO target`, `AS SELECT`, etc.) that the parser may attach to
 -- an `ATTACH` query but that the short `ATTACH` path silently drops by overwriting
 -- the user-provided `create` with stored metadata.
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
 
 SET default_table_engine = 'MergeTree';
 

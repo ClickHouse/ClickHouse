@@ -1,4 +1,6 @@
 -- Tags: no-random-merge-tree-settings
+-- Disable force_primary_key_reverse_order: Tests projection behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS data;
 DROP TABLE IF EXISTS mv_indexes;

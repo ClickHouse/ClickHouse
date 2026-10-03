@@ -6,6 +6,8 @@
 --   change the granule boundaries and flip the counts.
 -- See `src/Storages/MergeTree/KeyCondition.cpp` (atom_map "isNotDistinctFrom",
 -- reverseComparisonOperator, tryRewriteIsTrueCondition, tryRewriteInTruthyCondition).
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 SET use_query_condition_cache = 0;
 SET use_skip_indexes_on_data_read = 0;

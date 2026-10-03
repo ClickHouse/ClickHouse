@@ -1,5 +1,7 @@
 -- Tags: long, no-replicated-database
 -- Tag no-replicated-database: Unsupported type of ALTER query
+-- Disable force_primary_key_reverse_order: SHOW CREATE TABLE output checks ORDER BY clause
+SET force_primary_key_reverse_order = 0;
 SET output_format_pretty_row_numbers = 0;
 
 DROP TABLE IF EXISTS check_query_comment_column;

@@ -1,6 +1,8 @@
 -- The modifiers of a column declaration can be written in any order, and each of them at most once.
 -- In particular, `COMMENT` is accepted after `CODEC`, `STATISTICS`, `TTL`, `COLLATE`, `PRIMARY KEY`
 -- and per-column `SETTINGS`, not only before them.
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
 
 SET allow_experimental_statistics = 1;
 

@@ -1,4 +1,7 @@
 -- Tags: no-random-merge-tree-settings
+-- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 -- add_minmax_index_for_numeric_columns=0: Different sizes
 
 SET optimize_trivial_insert_select = 1;

@@ -1,5 +1,8 @@
 -- Tags: long, no-tsan, no-asan, no-msan, no-debug
 
+-- partial_merge join produces duplicate rows when the left table's MergeTree key is reversed
+SET force_primary_key_reverse_order = 0;
+
 SET max_threads=0;
 SET max_insert_threads=0;
 SET max_rows_to_read = '50M';

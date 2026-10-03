@@ -1,6 +1,8 @@
 -- Tags: no-random-settings
 -- Verify that DeduplicationInfo does not store original_block when deduplication is disabled,
 -- which would otherwise roughly double the peak memory during INSERT.
+-- Disable force_primary_key_reverse_order: creates MergeTree with ORDER BY, tests INSERT deduplication memory behavior
+SET force_primary_key_reverse_order = 0;
 
 SET allow_suspicious_fixed_string_types = 1;
 

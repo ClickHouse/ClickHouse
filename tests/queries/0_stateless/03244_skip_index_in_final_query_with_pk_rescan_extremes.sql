@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests FINAL with *MergeTree engine sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 -- More tests for use_skip_index_if_final_exact_mode optimization
 
 SET use_skip_indexes = 1;

@@ -1,5 +1,7 @@
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database: EXPLAIN output differs for replicated database.
+-- Disable force_primary_key_reverse_order: reversed key changes physical row order in dictionary source table
+SET force_primary_key_reverse_order = 0;
 -- no-parallel-replicas: Dictionary is not available on parallel-replica workers.
 
 SET enable_analyzer = 1;

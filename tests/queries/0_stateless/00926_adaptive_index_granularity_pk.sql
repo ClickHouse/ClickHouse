@@ -1,4 +1,6 @@
 -- Tags: no-random-merge-tree-settings
+-- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
 
 SET send_logs_level = 'fatal';
 -- The PartsSplitter injection (merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability)

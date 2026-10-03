@@ -7,6 +7,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
+
 # materialize_statistics_on_insert is randomized in CI; pin it off so auto-statistics are not
 # built on INSERT and do not add a Statistics step to the EXPLAIN index analysis.
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy --materialize_statistics_on_insert=0"
