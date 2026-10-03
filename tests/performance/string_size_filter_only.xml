@@ -160,5 +160,28 @@
         PREWHERE length(s) &gt; 2048
         FORMAT Null
     </query>
+    <!-- Exercise the actual analyzer path added by this PR. The opt-in query is
+         expected to be backward-incompatible with the reference binary because
+         the new setting does not exist there; perf.py still measures it on the
+         patched binary. The control keeps the same analyzer setting but leaves
+         the new optimization disabled. -->
+    <query tag="String analyzer opt-in selective">
+        SELECT s
+        FROM string_size_filter_only_perf
+        PREWHERE empty(s)
+        FORMAT Null
+        SETTINGS
+            optimize_functions_to_subcolumns = 1,
+            optimize_string_size_subcolumn_with_full_read = 1
+    </query>
+
+    <query tag="String analyzer opt-out selective control">
+        SELECT s
+        FROM string_size_filter_only_perf
+        PREWHERE empty(s)
+        FORMAT Null
+        SETTINGS optimize_functions_to_subcolumns = 1
+    </query>
+
     <drop_query>DROP TABLE IF EXISTS string_size_filter_only_legacy_perf</drop_query>
 </test>
