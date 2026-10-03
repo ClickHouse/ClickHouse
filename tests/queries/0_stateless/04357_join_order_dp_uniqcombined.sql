@@ -5,7 +5,6 @@ SET materialize_statistics_on_insert = 1;
 SET use_statistics = 1;
 SET query_plan_join_swap_table='auto';
 SET enable_join_runtime_filters = 0;
-SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_join_order_algorithm = 'dpsize,greedy';
 SET max_bytes_before_external_join = 0; -- Remove once spilling hash join is enabled by default
