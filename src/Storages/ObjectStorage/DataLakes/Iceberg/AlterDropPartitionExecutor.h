@@ -8,6 +8,7 @@
 #include <Core/Field.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
@@ -24,6 +25,11 @@
 #include <optional>
 #include <unordered_set>
 #include <vector>
+
+namespace DataLake
+{
+class ICatalog;
+}
 
 namespace DB
 {
@@ -45,7 +51,9 @@ public:
         const PersistentTableComponents & components_,
         const DataLakeStorageSettings & data_lake_settings_,
         String write_format_,
-        LoggerPtr log_);
+        LoggerPtr log_,
+        std::shared_ptr<DataLake::ICatalog> catalog_,
+        StorageID storage_id_);
 
     void run();
 
@@ -92,13 +100,17 @@ private:
     struct ManifestListWriteResult
     {
         GeneratedMetadataFileWithInfo metadata_info;
+        Poco::JSON::Object::Ptr new_snapshot;
     };
 
     ManifestListWriteResult writeManifestList(
         SnapshotState & state, const DropPlan & plan, FileNamesGenerator & filename_generator, std::vector<String> & files_for_cleanup);
 
-    bool
-    commitMetadataJSON(SnapshotState & state, FileNamesGenerator & filename_generator, const GeneratedMetadataFileWithInfo & metadata_info);
+    bool commitMetadataJSON(
+        SnapshotState & state,
+        FileNamesGenerator & filename_generator,
+        const GeneratedMetadataFileWithInfo & metadata_info,
+        const Poco::JSON::Object::Ptr & new_snapshot);
 
     void cleanupNotCommited(std::vector<std::string> files);
 
@@ -110,6 +122,8 @@ private:
     const DataLakeStorageSettings & data_lake_settings;
     String write_format;
     LoggerPtr log;
+    std::shared_ptr<DataLake::ICatalog> catalog;
+    StorageID storage_id;
 };
 
 }

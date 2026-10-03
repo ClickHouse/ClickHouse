@@ -274,6 +274,10 @@ public:
     /// Updates metadata in catalog.
     virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
 
+    /// Whether `updateMetadata` is implemented. The default implementation throws, so a caller that
+    /// writes files before committing must check this first and refuse the operation up front.
+    virtual bool supportsMetadataUpdate() const { return false; }
+
     /// Commit a schema evolution (ADD/DROP/MODIFY/RENAME COLUMN) to the catalog.
     /// `new_metadata_path` is the path of the freshly written `vN.metadata.json`; it is used by
     /// non-transactional catalogs (e.g. Glue) that only store a pointer to the metadata file.
