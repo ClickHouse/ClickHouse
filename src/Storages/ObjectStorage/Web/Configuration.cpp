@@ -278,7 +278,7 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
 
     const auto url_root_for_expansion = has_path ? url.substr(0, path_start + 1) : url.substr(0, path_end) + "/";
     const auto query_fragment_part = query_or_fragment_pos == String::npos ? String{} : url.substr(query_or_fragment_pos);
-    const auto url_shards_with_failover = parseURLShardsWithFailover(url_root_for_expansion + query_fragment_part, max_addresses, "url");
+    const auto url_shards_with_failover = parseURLShardsWithFailover(url_root_for_expansion, max_addresses, "url");
 
     path.path = has_path ? url.substr(path_start, path_end - path_start) : String{};
     while (path.path.starts_with('/'))
@@ -304,7 +304,8 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
 
         for (const auto & url_option : failover_url_options)
         {
-            Poco::URI uri(url_option, false);
+            /// Query parameters are opaque request data, not glob or failover templates.
+            Poco::URI uri(url_option + query_fragment_part, false);
 
             if (url_shards.empty() && url_shard.empty())
             {

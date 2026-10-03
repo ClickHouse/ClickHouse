@@ -57,6 +57,7 @@
 #cmakedefine01 USE_DWARF_PARSER
 #cmakedefine01 USE_LDAP
 #cmakedefine01 USE_ROCKSDB
+#cmakedefine01 USE_MAXMINDDB
 #cmakedefine01 USE_LIBPQXX
 #cmakedefine01 USE_SQLITE
 #cmakedefine01 USE_NURAFT

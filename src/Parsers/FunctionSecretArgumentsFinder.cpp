@@ -992,6 +992,47 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
     {
         find_secrets = [this] { findURLSecretArguments(); };
     }
+    else if (engine_name == "MaxMindDB")
+    {
+        find_secrets = [this]
+        {
+            findURLSecretArguments();
+            const auto positional = classifyS3Arguments();
+            maskS3UrlArgument(positional, 0);
+            String source;
+            if (!isNamedCollectionName(0) && !positional.empty()
+                && tryGetStringFromArgument(positional[0], &source) && source.find_first_of("@?#") != String::npos)
+            {
+                result.replaced_arguments.erase(positional[0]);
+                markSecretArgument(positional[0]);
+            }
+            if (!isNamedCollectionName(0))
+            {
+                String second;
+                const bool no_sign = positional.size() == 2 && tryGetStringFromArgument(positional[1], &second) && second == "NOSIGN";
+                if (!no_sign)
+                    maskS3PositionalsFrom(positional, 1);
+            }
+            for (size_t i = 1; i < function->arguments->size(); ++i)
+            {
+                const auto equals = function->arguments->at(i)->getFunction();
+                if (!equals || equals->name() != "equals" || !equals->hasArguments() || equals->arguments->size() != 2)
+                    continue;
+                String key;
+                if (!equals->arguments->at(0)->tryGetString(&key, true) || key == "access_key_id" || key.starts_with("headers."))
+                    markSecretArgument(i, true);
+                else if (key == "url")
+                {
+                    String url;
+                    if (!equals->arguments->at(1)->tryGetString(&url, false) || url.find_first_of("@?#") != String::npos)
+                    {
+                        result.replaced_arguments.erase(i);
+                        markSecretArgument(i, true);
+                    }
+                }
+            }
+        };
+    }
     else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
     {
         find_secrets = [this] { findAzureBlobStorageTableEngineSecretArguments(); };

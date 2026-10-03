@@ -10,6 +10,7 @@
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <Poco/String.h>
 #include <Poco/Timestamp.h>
 
 #include <deque>
@@ -118,7 +119,16 @@ ContextPtr WebObjectStorage::getRequestContext() const
             return query_context;
     }
 
-    return getContext();
+    if (!default_request_settings)
+        return getContext();
+    auto request_context = Context::createCopy(getContext());
+    request_context->setSettings(*default_request_settings);
+    return request_context;
+}
+
+void WebObjectStorage::setDefaultRequestSettings(const Settings & settings)
+{
+    default_request_settings = std::make_shared<const Settings>(settings);
 }
 
 bool WebObjectStorage::exists(const StoredObject & object) const
@@ -293,7 +303,9 @@ ObjectStorageKeyGeneratorPtr WebObjectStorage::createKeyGenerator() const
 
 ObjectStoragePtr WebObjectStorage::cloneImpl() const
 {
-    return std::make_shared<WebObjectStorage>(url_shards, getContext(), headers, max_directories_to_read);
+    auto clone = std::make_shared<WebObjectStorage>(url_shards, getContext(), headers, max_directories_to_read);
+    clone->default_request_settings = default_request_settings;
+    return clone;
 }
 
 ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & path, bool with_tags) const
@@ -422,7 +434,7 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
             const auto & header_name = tuple[0].safeGet<String>();
             const auto & header_value = tuple[1].safeGet<String>();
             metadata.attributes.emplace(header_name, header_value);
-            if (header_name == "ETag")
+            if (Poco::icompare(header_name, "ETag") == 0)
                 metadata.etag = header_value;
         }
         return metadata;
