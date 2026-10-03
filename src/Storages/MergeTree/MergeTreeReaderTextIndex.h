@@ -192,7 +192,7 @@ private:
     /// Per-column `ResolvedSearch`, built on the first granule. Dropped on the same triggers as `lazy_cursors`.
     std::vector<std::optional<ResolvedSearch>> resolved_searches;
 
-    /// Flushed at the end of each `readRows` call.
+    /// Counters of the lazy intersections, added to the profile events when the reader is destroyed.
     LazyPostingsStats lazy_postings_stats;
 };
 

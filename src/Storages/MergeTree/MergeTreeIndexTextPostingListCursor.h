@@ -43,6 +43,26 @@ struct PostingsApplyWindow
     }
 };
 
+/// Counters of the lazy posting-list operations, accumulated locally and added to the profile events in the
+/// destructor, to avoid an atomic `ProfileEvents::increment` per block, advance or granule on the hot path.
+struct LazyPostingsStats
+{
+    LazyPostingsStats() = default;
+    LazyPostingsStats(const LazyPostingsStats &) = delete;
+    LazyPostingsStats & operator=(const LazyPostingsStats &) = delete;
+    ~LazyPostingsStats();
+
+    size_t blocks_decoded = 0;
+    size_t advance_count = 0;
+    size_t segments_prepared = 0;
+    size_t segments_skipped_dense = 0;
+    size_t segments_skipped_resolved = 0;
+    size_t blocks_skipped_resolved = 0;
+    size_t brute_force_intersections = 0;
+    size_t brute_force_early_exits = 0;
+    size_t leapfrog_intersections = 0;
+};
+
 /// Lazy cursor over a compressed posting list (sorted row IDs for a token).
 ///
 /// Storage layout (two-level hierarchy):
@@ -73,9 +93,6 @@ public:
     /// Fully-materialized posting list over a pre-flattened, shared, immutable sorted array (analyzer-folded
     /// or already-decoded postings). Cardinality, density and the row-id range derive from the array itself.
     explicit PostingListCursor(FlatPostingsPtr shared_values_);
-
-    /// Flushes batched ProfileEvents counters to the global counters.
-    ~PostingListCursor();
 
     /// Sets bits in `data` for all doc_ids in [row_offset, row_offset + num_rows).
     /// Returns the range of rows for which bytes were set.
@@ -175,19 +192,7 @@ private:
     size_t current_segment_idx = 0;
     bool is_valid = true;
 
-    /// ProfileEvents are batched into these local counters and flushed in the destructor
-    /// to avoid per-block / per-advance atomic ops on the hot path.
-    struct EventsCounters
-    {
-        size_t blocks_decoded = 0;
-        size_t advance_count = 0;
-        size_t segments_prepared = 0;
-        size_t segments_skipped_dense = 0;
-        size_t segments_skipped_resolved = 0;
-        size_t blocks_skipped_resolved = 0;
-    };
-
-    EventsCounters counters;
+    LazyPostingsStats stats;
 };
 
 using PostingListCursorPtr = std::shared_ptr<PostingListCursor>;
@@ -196,18 +201,6 @@ using PostingListCursorMap = absl::flat_hash_map<std::string_view, PostingListCu
 /// Posting-list doc IDs are 32-bit, so `row_offset > UInt32::max` cannot legitimately occur.
 /// Throw a `LOGICAL_ERROR` rather than wrap the offset and corrupt the output column.
 void requireRowOffsetRepresentable(size_t row_offset);
-
-/// Counters of lazy intersections, accumulated over many granules and flushed into the profile events at once,
-/// because each `ProfileEvents::increment` updates the thread, query and global counters.
-struct LazyPostingsStats
-{
-    size_t brute_force_intersections = 0;
-    size_t brute_force_early_exits = 0;
-    size_t leapfrog_intersections = 0;
-
-    /// Adds the non-zero counters to the profile events and resets them.
-    void flush();
-};
 
 /// Sorts the cursors for `lazyUnionPostingLists` by descending density, so the densest cursor fills the output first.
 void sortCursorsForUnion(std::vector<PostingListCursor *> & cursors);

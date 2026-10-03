@@ -570,8 +570,6 @@ size_t MergeTreeReaderTextIndex::readRows(
             cleanupPostingsBlocks(*rows_range);
     }
 
-    lazy_postings_stats.flush();
-
     current_mark = from_mark;
     current_row = from_row;
     return read_rows;

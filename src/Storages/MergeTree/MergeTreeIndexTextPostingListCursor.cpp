@@ -106,30 +106,33 @@ PostingListCursor::PostingListCursor(FlatPostingsPtr shared_values_)
     density_val = span > 0.0 ? static_cast<double>(decoded_count) / span : 0.0;
 }
 
+LazyPostingsStats::~LazyPostingsStats()
+{
+    auto add = [](ProfileEvents::Event event, size_t value)
+    {
+        if (value)
+            ProfileEvents::increment(event, value);
+    };
+
+    add(ProfileEvents::TextIndexLazyPackedBlocksDecoded, blocks_decoded);
+    add(ProfileEvents::TextIndexLazyAdvanceCount, advance_count);
+    add(ProfileEvents::TextIndexLazySegmentsPrepared, segments_prepared);
+    add(ProfileEvents::TextIndexLazySegmentsSkippedDense, segments_skipped_dense);
+    add(ProfileEvents::TextIndexLazySegmentsSkippedResolved, segments_skipped_resolved);
+    add(ProfileEvents::TextIndexLazyBlocksSkippedResolved, blocks_skipped_resolved);
+    add(ProfileEvents::TextIndexLazyBruteForceIntersections, brute_force_intersections);
+    add(ProfileEvents::TextIndexLazyBruteForceEarlyExits, brute_force_early_exits);
+    add(ProfileEvents::TextIndexLazyLeapfrogIntersections, leapfrog_intersections);
+}
+
 UInt32 PostingListCursor::cardinality() const
 {
     return is_embedded ? static_cast<UInt32>(decoded_count) : info->cardinality;
 }
 
-PostingListCursor::~PostingListCursor()
-{
-    if (counters.blocks_decoded)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyPackedBlocksDecoded, counters.blocks_decoded);
-    if (counters.advance_count)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyAdvanceCount, counters.advance_count);
-    if (counters.segments_prepared)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsPrepared, counters.segments_prepared);
-    if (counters.segments_skipped_dense)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedDense, counters.segments_skipped_dense);
-    if (counters.segments_skipped_resolved)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedResolved, counters.segments_skipped_resolved);
-    if (counters.blocks_skipped_resolved)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyBlocksSkippedResolved, counters.blocks_skipped_resolved);
-}
-
 void PostingListCursor::prepareSegment(size_t segment_idx)
 {
-    ++counters.segments_prepared;
+    ++stats.segments_prepared;
     current_segment_idx = segment_idx;
     chassert(!is_embedded);
     chassert(segment_idx < total_segments);
@@ -333,7 +336,7 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
 
 void PostingListCursor::decodeBlock(size_t block_idx)
 {
-    ++counters.blocks_decoded;
+    ++stats.blocks_decoded;
 
     const auto & segment = *current_segment;
     chassert(block_idx < segment.block_count);
@@ -433,7 +436,7 @@ static const uint32_t * gallopingLowerBound(const uint32_t * first, const uint32
 
 void PostingListCursor::advance(uint32_t target)
 {
-    ++counters.advance_count;
+    ++stats.advance_count;
 
     if (!is_valid)
         return;
@@ -695,7 +698,7 @@ PostingsApplyWindow PostingListCursor::linearSegments(UInt8 * data, size_t row_o
 
                 if (canSkipRegion<op>(data + clip_off, clip_count))
                 {
-                    ++counters.segments_skipped_resolved;
+                    ++stats.segments_skipped_resolved;
                     continue;
                 }
             }
@@ -717,7 +720,7 @@ PostingsApplyWindow PostingListCursor::linearSegments(UInt8 * data, size_t row_o
 
                 if (clip_begin < clip_end)
                 {
-                    ++counters.segments_skipped_dense;
+                    ++stats.segments_skipped_dense;
                     padDenseRange<op>(data + (clip_begin - row_offset), clip_end - clip_begin);
                     window.extend(clip_begin, clip_end);
                     continue;
@@ -767,7 +770,7 @@ PostingsApplyWindow PostingListCursor::linearSegments(UInt8 * data, size_t row_o
 
                     if (canSkipRegion<op>(data + blk_off, blk_cnt))
                     {
-                        ++counters.blocks_skipped_resolved;
+                        ++stats.blocks_skipped_resolved;
                         continue;
                     }
                 }
@@ -823,7 +826,7 @@ PostingsApplyWindow PostingListCursor::linearEmbedded(UInt8 * data, size_t row_o
 
         if (clip_begin < clip_end)
         {
-            ++counters.segments_skipped_dense;
+            ++stats.segments_skipped_dense;
             padDenseRange<op>(data + (clip_begin - row_offset), clip_end - clip_begin);
             return {clip_begin, clip_end};
         }
@@ -1171,18 +1174,6 @@ void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursor *> & c
 }
 
 } // anonymous namespace
-
-void LazyPostingsStats::flush()
-{
-    if (brute_force_intersections)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyBruteForceIntersections, brute_force_intersections);
-    if (brute_force_early_exits)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyBruteForceEarlyExits, brute_force_early_exits);
-    if (leapfrog_intersections)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyLeapfrogIntersections, leapfrog_intersections);
-
-    *this = {};
-}
 
 void sortCursorsForUnion(std::vector<PostingListCursor *> & cursors)
 {
