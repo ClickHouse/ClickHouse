@@ -886,7 +886,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     }
 
     /// Return the transitive MATERIALIZED closure of changed columns.
-    auto affected_materialized_closure = [&](const NameSet & changed_base_columns) -> NameSet
+    auto affected_materialized_closure = [&](const NameSet & changed_base_columns, const NameSet & barrier_columns = {}) -> NameSet
     {
         NameSet affected;
         NameSet reachable = changed_base_columns;
@@ -896,7 +896,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             changed = false;
             for (const auto & [mat_column, deps] : materialized_column_dependencies)
             {
-                if (reachable.contains(mat_column))
+                if (reachable.contains(mat_column) || barrier_columns.contains(mat_column))
                     continue;
                 if (std::ranges::any_of(deps, [&](const auto & d) { return reachable.contains(d); }))
                 {
@@ -1011,9 +1011,14 @@ void MutationsInterpreter::prepare(bool dry_run)
         patch_affected_materialized = affected_materialized_closure(patch_updated_columns);
 
     /// CLEAR uses only the readable dependency closure.
+    /// Key columns keep their stored values; checkAlterEligibility refuses a CLEAR that reaches one.
     NameSet clear_affected_materialized;
     if (!clear_column_names.empty())
-        clear_affected_materialized = affected_materialized_closure(clear_column_names);
+    {
+        const auto * merge_tree_data = source.getMergeTreeData();
+        clear_affected_materialized = affected_materialized_closure(
+            clear_column_names, merge_tree_data ? merge_tree_data->getKeyStorageColumns(*metadata_snapshot) : NameSet{});
+    }
 
     /// Recomputed MATERIALIZED columns also invalidate their stored artifacts.
     NameSet all_affected_materialized;

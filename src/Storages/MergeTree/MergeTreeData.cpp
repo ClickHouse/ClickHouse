@@ -70,6 +70,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -5465,6 +5466,25 @@ Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & col
 
 }
 
+NameSet MergeTreeData::getKeyStorageColumns(const StorageInMemoryMetadata & metadata) const
+{
+    Names key_columns = metadata.getColumnsRequiredForPartitionKey();
+    std::ranges::copy(metadata.getColumnsRequiredForSortingKey(), std::back_inserter(key_columns));
+    if (!merging_params.sign_column.empty())
+        key_columns.push_back(merging_params.sign_column);
+    if (!merging_params.version_column.empty())
+        key_columns.push_back(merging_params.version_column);
+
+    NameSet key_storage_columns;
+    const auto & columns = metadata.getColumns();
+    for (const auto & name : key_columns)
+    {
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        key_storage_columns.insert(column ? column->getNameInStorage() : name);
+    }
+    return key_storage_columns;
+}
+
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
     /// Reject schema-changing ALTER while a streaming query holds a subscription on this storage.
@@ -5765,6 +5785,49 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     removeImplicitStatistics(new_metadata.columns);
     auto settings_defaults = getDefaultSettings();
     commands.apply(new_metadata, local_context, share_nested_offsets, settings_defaults.get());
+
+    /// A mutation must not change a key column of an existing part, so CLEAR must not recalculate a MATERIALIZED one.
+    {
+        const auto txn = local_context->getZooKeeperMetadataTransaction();
+        const bool is_ddl_replay = txn && !txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+        const bool is_shared_catalog_replay = local_context->getClientInfo().is_shared_catalog_internal
+            && !SharedDatabaseCatalog::isInitialQuery(local_context);
+#else
+        const bool is_shared_catalog_replay = false;
+#endif
+
+        const bool has_clear = std::ranges::any_of(commands, [](const AlterCommand & command)
+            { return command.type == AlterCommand::DROP_COLUMN && command.clear && !command.ignore; });
+
+        if (has_clear && !is_ddl_replay && !is_shared_catalog_replay)
+        {
+            const auto & new_columns = new_metadata.getColumns();
+            const NameSet key_columns = getKeyStorageColumns(new_metadata);
+            MaterializedColumnDependencies materialized_dependencies(new_columns, local_context);
+
+            for (const AlterCommand & command : commands)
+            {
+                if (command.type != AlterCommand::DROP_COLUMN || !command.clear || command.ignore)
+                    continue;
+
+                NameSet cleared_columns;
+                if (new_columns.has(command.column_name))
+                    cleared_columns.insert(command.column_name);
+                else
+                    for (const auto & nested_column : new_columns.getNested(command.column_name))
+                        cleared_columns.insert(nested_column.name);
+
+                for (const auto & key_column : key_columns)
+                {
+                    if (!materialized_dependencies.findColumnsToRecalculate(key_column, cleared_columns).empty())
+                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "Cleared column {} affects MATERIALIZED column {}, which is a key column. Cannot CLEAR it",
+                            backQuoteIfNeed(command.column_name), backQuoteIfNeed(key_column));
+                }
+            }
+        }
+    }
 
     /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
     /// stay physically sorted in the directions the key had when they were written, and no regular data part records those
