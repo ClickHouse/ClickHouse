@@ -290,7 +290,7 @@ public:
         destroyImpl<true>(place);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         writeVarUInt(merged_maps.size(), buf);
@@ -298,11 +298,11 @@ public:
         for (const auto & elem : merged_maps)
         {
             this->data(place).writeKey(elem.first, buf);
-            nested_func->serialize(elem.second, buf);
+            nested_func->serialize(elem.second, buf, version);
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         UInt64 size = 0;
@@ -336,7 +336,7 @@ public:
                 throw;
             }
 
-            nested_func->deserialize(it->second, buf, std::nullopt, arena);
+            nested_func->deserialize(it->second, buf, version, arena);
         }
     }
 
