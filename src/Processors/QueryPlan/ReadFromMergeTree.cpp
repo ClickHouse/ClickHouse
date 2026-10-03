@@ -25,6 +25,7 @@
 #include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -3497,11 +3498,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         result.column_names_to_read.push_back(ExpressionActions::getSmallestColumn(available_real_columns).name);
     }
 
-    /// Streaming queries do index analysis in MergeTreeCommitOrderSource
-    /// and return here, bypassing the UNIQUE KEY snapshot/pin + delete-bitmap
-    /// filter below. Fail closed rather than serve logically-deleted rows.
-    ///
-    /// TODO(unique-key): wire the delete-bitmap filter into the streaming source.
+    /// TODO(unique-key): support streaming reads.
     if (query_info_.isStream())
     {
         if (metadata_snapshot->hasUniqueKey())
@@ -3912,7 +3909,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             /// under a key salted with the effective skip-index profile so that only a query that
             /// ran the same set of indexes consults them; a query that disabled skip indexes (or
             /// ignored an index) reads its own profile's key and is not poisoned. See issue #108519.
-            const UInt64 profiled_condition_hash = MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(*condition_hash, *indexes);
+            const UInt64 profiled_condition_hash = MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(
+                *condition_hash, *indexes, settings[Setting::distributed_index_analysis]);
             for (const auto & remaining_ranges : remaining)
             {
                 const auto & data_part = remaining_ranges.data_part;
@@ -6829,8 +6827,8 @@ bool ReadFromMergeTree::supportsBucketedRead() const
         && !context->getSettingsRef()[Setting::distributed_plan_prefer_replicas_over_workers])
         unsupported_deferred_filters = false;
 #endif
-    /// An order set before the plan was optimized (the old analyzer's executeOrderOptimized) is rejected in
-    /// getReasonReadCannotBeDistributed, so it cannot reach here. Do not gate on it: the worker
+    /// An order set before the plan was optimized is rejected in getReasonReadCannotBeDistributed,
+    /// so it cannot reach here. Do not gate on it: the worker
     /// path asks for its order before consulting this, and refusing would route the read to a node with no catalog.
     return !unsupported_deferred_filters
         && !(analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
@@ -6860,6 +6858,11 @@ void ReadFromMergeTree::verifyBucketedReadSupported() const
 
 void ReadFromMergeTree::serialize(Serialization & ctx) const
 {
+    /// TODO(unique-key): support distributed plans.
+    if (getStorageMetadata()->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "distributed query plan is not supported on UNIQUE KEY tables");
+
     /// Serializing the STREAM modifier is not implemented yet, so reject it instead of silently
     /// reading a plain snapshot. (Pinned block boundaries and part-order virtual columns are rejected
     /// earlier in getReasonReadCannotBeDistributed.)
@@ -7096,7 +7099,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     StorageID table_id(database_name, table_name);
     auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, ctx.context);
 
-    auto * merge_tree = dynamic_cast<MergeTreeData *>(storage_ptr.get());
+    auto * merge_tree = castStorage<MergeTreeData>(storage_ptr, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::UNKNOWN_TABLE,
             "Table {} is not a MergeTree table", table_id.getNameForLogs());

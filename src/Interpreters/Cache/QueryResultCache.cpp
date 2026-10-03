@@ -665,11 +665,21 @@ std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, 
     return combined.get128();
 }
 
+bool canWriteToQueryResultCache(ContextPtr context)
+{
+    if (!context->getSettingsRef()[Setting::enable_writes_to_query_cache])
+        return false;
+    QueryResultCachePtr query_result_cache = context->getQueryResultCache();
+    return query_result_cache && query_result_cache->canStoreEntries();
+}
+
 bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check)
 {
     const Settings & settings = context->getSettingsRef();
 
-    if ((skip_context_check || context->getCanUseQueryResultCache()) && settings[Setting::enable_writes_to_query_cache])
+    /// A query result cache which can not store anything (e.g. in `clickhouse-local`, or with a zero limit in the server configuration)
+    /// must not trigger the checks below: they only protect against storing wrong results.
+    if ((skip_context_check || context->getCanUseQueryResultCache()) && canWriteToQueryResultCache(context))
     {
         /// The filters injected through `additional_table_filters` / `additional_result_filter` are part
         /// of the query the server runs, so the checks below have to see them too: a non-deterministic
@@ -1424,6 +1434,14 @@ void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_
     cache.setMaxCount(max_entries);
     max_entry_size_in_bytes = max_entry_size_in_bytes_;
     max_entry_size_in_rows = max_entry_size_in_rows_;
+
+    /// A cache with a zero limit can not store entries, so no writer will ever insert into it again (see `canStoreEntries`).
+    /// The eviction is lazy and happens only upon insert, hence drop the existing entries now, otherwise they would linger.
+    if (max_size_in_bytes == 0 || max_entries == 0 || max_entry_size_in_bytes_ == 0 || max_entry_size_in_rows_ == 0)
+    {
+        cache.clear();
+        times_executed.clear();
+    }
 }
 
 QueryResultCacheReader QueryResultCache::createReader(const Key & key)
@@ -1465,6 +1483,16 @@ void QueryResultCache::clear(const std::optional<String> & tag)
 
     std::lock_guard lock(mutex);
     times_executed.clear();
+}
+
+bool QueryResultCache::canStoreEntries() const
+{
+    {
+        std::lock_guard lock(mutex);
+        if (max_entry_size_in_bytes == 0 || max_entry_size_in_rows == 0)
+            return false;
+    }
+    return cache.maxSizeInBytes() != 0 && cache.maxCount() != 0;
 }
 
 size_t QueryResultCache::maxSizeInBytes() const
