@@ -195,7 +195,8 @@ PrometheusHTTPProtocolAPI::~PrometheusHTTPProtocolAPI() = default;
 void PrometheusHTTPProtocolAPI::executePromQLQuery(
     WriteBuffer & response,
     const Params & params,
-    QueryFinishCallback query_finish_callback)
+    QueryFinishCallback query_finish_callback,
+    QueryFinishCallback query_start_callback)
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
@@ -245,6 +246,11 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     chassert(sql_query);
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
+
+    /// Apply request-scoped execution settings after PromQL/time validation, but before the query
+    /// context is copied for the generated SQL.
+    if (query_start_callback)
+        query_start_callback();
 
     /// Isolate the settings required by generated PromQL from the request context.
     auto query_context = Context::createCopy(getContext());
