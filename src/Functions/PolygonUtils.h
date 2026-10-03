@@ -290,23 +290,25 @@ private:
 
     struct HalfPlane
     {
-        /// Line, a * x + b * y + c = 0. Vector (a, b) points inside half-plane.
-        CoordinateType a;
-        CoordinateType b;
-        CoordinateType c;
+        /// Left closed half-plane of the line through (x0, y0) with direction (dx, dy), evaluated relative to (x0, y0).
+        CoordinateType x0;
+        CoordinateType y0;
+        CoordinateType dx;
+        CoordinateType dy;
 
         HalfPlane() = default;
 
         /// Take left half-plane.
         HalfPlane(const Point & from, const Point & to)
         {
-            a = -(to.y() - from.y());
-            b = to.x() - from.x();
-            c = -from.x() * a - from.y() * b;
+            x0 = from.x();
+            y0 = from.y();
+            dx = to.x() - from.x();
+            dy = to.y() - from.y();
         }
 
         /// Inner part of the HalfPlane is the left side of initialized vector.
-        bool contains(CoordinateType x, CoordinateType y) const { return a * x + b * y + c >= 0; }
+        bool contains(CoordinateType x, CoordinateType y) const { return dx * (y - y0) - dy * (x - x0) >= 0; }
     };
 
     struct Cell
@@ -353,11 +355,11 @@ private:
     /// Complex case. Will check intersection directly.
     inline void addComplexPolygonCell(size_t index, const Box & box);
 
-    /// Empty intersection or intersection == box.
+    /// No polygon edge enters the cell: the cell is inside or outside as its centre.
     inline void addCell(size_t index, const Box & empty_box);
 
-    /// True if the part of the segment inside the closed box has positive length and its midpoint,
-    /// returned in `middle`, is strictly inside the box.
+    /// True if the segment has a point strictly inside the box (an endpoint, or the midpoint of its part inside the closed
+    /// box when that part has positive length); the point is returned in `middle`.
     static bool crossesBox(const Point & from, const Point & to, const Box & box, Point & middle);
 
     /// Sutherland-Hodgman clip of a closed ring by a box (closed or empty result). The winding number
@@ -556,6 +558,21 @@ template <typename CoordinateType>
 bool PointInPolygonWithGrid<CoordinateType>::crossesBox(
         const Point & from, const Point & to, const Box & box, Point & middle)
 {
+    auto strictly_inside = [&box](const Point & point)
+    {
+        return point.x() > box.min_corner().x() && point.x() < box.max_corner().x()
+            && point.y() > box.min_corner().y() && point.y() < box.max_corner().y();
+    };
+
+    for (const Point * endpoint : {&from, &to})
+    {
+        if (strictly_inside(*endpoint))
+        {
+            middle = *endpoint;
+            return true;
+        }
+    }
+
     CoordinateType dx = to.x() - from.x();
     CoordinateType dy = to.y() - from.y();
 
@@ -591,8 +608,7 @@ bool PointInPolygonWithGrid<CoordinateType>::crossesBox(
     CoordinateType t = (t_min + t_max) / 2;
     middle = Point(from.x() + t * dx, from.y() + t * dy);
 
-    return middle.x() > box.min_corner().x() && middle.x() < box.max_corner().x()
-        && middle.y() > box.min_corner().y() && middle.y() < box.max_corner().y();
+    return strictly_inside(middle);
 }
 
 template <typename CoordinateType>
