@@ -33,6 +33,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 #include <IO/WriteHelpers.h>
 #include <Planner/findQueryForParallelReplicas.h>
 #include <Planner/PlannerContext.h>
@@ -713,7 +714,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
         std::make_shared<const Block>(Block{}),
         std::move(set_and_key),
         network_transfer_limits,
-        /* prepared_sets_cache = */ nullptr);
+        /* prepared_sets_cache = */ nullptr,
+        /* spill_settings = */ {});
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 

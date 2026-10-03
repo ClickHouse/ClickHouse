@@ -67,15 +67,11 @@ bool planHasCorrelatedExpressions(const QueryPlan & plan)
 
 namespace Setting
 {
-    extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool make_distributed_plan;
-    extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_rows_to_transfer;
-    extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsOverflowMode transfer_overflow_mode;
-    extern const SettingsBool transform_null_in;
     extern const SettingsBool use_index_for_in_with_subqueries;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
 }
@@ -85,19 +81,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
-}
-
-SizeLimits PreparedSets::getSizeLimitsForSet(const Settings & settings)
-{
-    return SizeLimits(settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]);
-}
-
-/// A distributed plan ships the set's values to worker tasks, so
-/// `use_index_for_in_with_subqueries_max_values` must not drop them; the transfer limits
-/// bound them at task serialization.
-static size_t getMaxSizeForIndex(const Settings & settings)
-{
-    return settings[Setting::make_distributed_plan] ? 0 : settings[Setting::use_index_for_in_with_subqueries_max_values];
 }
 
 /// The build plan has `CreatingSetStep` at its root, which cannot be serialized for remote
@@ -289,15 +272,14 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     std::unique_ptr<QueryPlan> source_,
     StoragePtr external_table,
     std::shared_ptr<FutureSetFromSubquery> external_table_set_,
-    bool transform_null_in,
-    SizeLimits size_limits,
-    size_t max_size_for_index)
-    : hash(hash_), ast(std::move(ast_)), external_table_set(std::move(external_table_set_)), source(std::move(source_))
+    FutureSetSettings set_settings_)
+    : hash(hash_), ast(std::move(ast_)), set_settings(std::move(set_settings_)), external_table_set(std::move(external_table_set_))
+    , source(std::move(source_))
 {
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = PreparedSets::toString(hash_, {});
 
-    set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
+    set_and_key->set = std::make_shared<Set>(set_settings.size_limits, set_settings.max_size_for_index, set_settings.transform_null_in);
     set_and_key->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
 
     set_and_key->external_table = std::move(external_table);
@@ -307,14 +289,12 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     Hash hash_,
     ASTPtr ast_,
     QueryTreeNodePtr query_tree_,
-    bool transform_null_in,
-    SizeLimits size_limits,
-    size_t max_size_for_index)
-    : hash(hash_), ast(std::move(ast_)), query_tree(std::move(query_tree_))
+    FutureSetSettings set_settings_)
+    : hash(hash_), ast(std::move(ast_)), set_settings(std::move(set_settings_)), query_tree(std::move(query_tree_))
 {
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = PreparedSets::toString(hash_, {});
-    set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
+    set_and_key->set = std::make_shared<Set>(set_settings.size_limits, set_settings.max_size_for_index, set_settings.transform_null_in);
 }
 
 FutureSetFromSubquery::~FutureSetFromSubquery() = default;
@@ -445,6 +425,7 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(
         set_and_key,
         network_transfer_limits,
         prepared_sets_cache,
+        set_settings,
         recoverable_build);
     creating_set->setStepDescription("Create set for subquery");
     plan->addStep(std::move(creating_set));
@@ -662,6 +643,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
             tmp_set_and_key,
             network_transfer_limits,
             cache,
+            set_settings,
             /*recoverable_build_=*/true);
         creating_set->setStepDescription("Create set for subquery");
         plan_to_complete.addStep(std::move(creating_set));
@@ -792,10 +774,10 @@ String PreparedSets::toString(const PreparedSets::Hash & key, const DataTypes & 
 
 FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings)
 {
-    auto size_limits = getSizeLimitsForSet(settings);
+    const FutureSetSettings set_settings(settings);
     auto from_tuple = std::make_shared<FutureSetFromTuple>(
         key, std::move(ast), std::move(block),
-        settings[Setting::transform_null_in], size_limits);
+        set_settings.transform_null_in, set_settings.size_limits);
 
     const auto & set_types = from_tuple->getTypes();
     auto & sets_by_hash = sets_from_tuple[key];
@@ -828,10 +810,9 @@ FutureSetFromSubqueryPtr PreparedSets::addFromSubquery(
     FutureSetFromSubqueryPtr external_table_set,
     const Settings & settings)
 {
-    auto size_limits = getSizeLimitsForSet(settings);
     auto from_subquery = std::make_shared<FutureSetFromSubquery>(
         key, std::move(ast), std::move(source), std::move(external_table), std::move(external_table_set),
-        settings[Setting::transform_null_in], size_limits, getMaxSizeForIndex(settings));
+        FutureSetSettings(settings));
 
     auto [it, inserted] = sets_from_subqueries.emplace(key, from_subquery);
 
@@ -847,10 +828,8 @@ FutureSetFromSubqueryPtr PreparedSets::addFromSubquery(
     QueryTreeNodePtr query_tree,
     const Settings & settings)
 {
-    auto size_limits = getSizeLimitsForSet(settings);
     auto from_subquery = std::make_shared<FutureSetFromSubquery>(
-        key, std::move(ast), std::move(query_tree),
-        settings[Setting::transform_null_in], size_limits, getMaxSizeForIndex(settings));
+        key, std::move(ast), std::move(query_tree), FutureSetSettings(settings));
 
     auto [it, inserted] = sets_from_subqueries.emplace(key, from_subquery);
 

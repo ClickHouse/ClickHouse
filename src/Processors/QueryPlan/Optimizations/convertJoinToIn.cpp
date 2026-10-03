@@ -45,9 +45,7 @@ static InConversion buildInConversion(
     const SharedHeader & lhs_input_header,
     const NamePairs & name_pairs,
     std::unique_ptr<QueryPlan> in_source,
-    bool transform_null_in,
-    SizeLimits size_limits,
-    size_t max_size_for_index)
+    FutureSetSettings set_settings)
 {
     ActionsDAG lhs_dag(lhs_input_header->getColumnsWithTypeAndName());
     std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_outputs;
@@ -94,7 +92,7 @@ static InConversion buildInConversion(
 
     /// right parameter of IN function
     auto future_set = std::make_shared<FutureSetFromSubquery>(
-        get_random_hash(), nullptr, std::move(in_source), nullptr, nullptr, transform_null_in, size_limits, max_size_for_index);
+        get_random_hash(), nullptr, std::move(in_source), nullptr, nullptr, std::move(set_settings));
 
     ColumnConst::Ptr set_col = ColumnConst::create(ColumnSet::create(1, future_set), 0);
     const ActionsDAG::Node * in_rhs_arg =
@@ -280,18 +278,18 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     makeExpressionNodeOnTopOf(*rhs_in_node, std::move(right_pre_join_actions), nodes, makeDescription("Calculate join right keys"));
     parent_node->children.pop_back();
 
+    auto set_settings = settings.set_settings;
     /// Join equality does not match Nulls.
     /// In case we support NullSafeEquals, we should set transform_null_in = true.
     /// But it would require proper support for sets with multiple keys.
-    bool transform_null_in = false;
+    set_settings.transform_null_in = false;
+    set_settings.size_limits = settings.network_transfer_limits;
 
     auto in_conversion = buildInConversion(
         lhs_in_node->step->getOutputHeader(),
         name_pairs,
         std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes)),
-        transform_null_in,
-        settings.network_transfer_limits,
-        settings.use_index_for_in_with_subqueries_max_values);
+        std::move(set_settings));
 
     {
         auto filter_name = in_conversion.dag.getOutputs().front()->result_name;

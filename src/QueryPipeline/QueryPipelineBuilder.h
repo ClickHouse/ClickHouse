@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Processors/IProcessor_fwd.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -34,6 +36,7 @@ using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
 struct SetAndKey;
 using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
+struct SetSpillSettings;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
@@ -187,6 +190,7 @@ public:
         SetAndKeyPtr set_and_key,
         const SizeLimits & limits,
         PreparedSetsCachePtr prepared_sets_cache,
+        std::optional<SetSpillSettings> spill_settings,
         bool recoverable_build = false);
 
     void addMaterializingCTETransform(

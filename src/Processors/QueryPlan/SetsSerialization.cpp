@@ -32,8 +32,6 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool transform_null_in;
-    extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -276,12 +274,11 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
 static void makeSetsFromTuple(std::list<QueryPlanAndSets::SetFromTuple> sets, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
+    const FutureSetSettings set_settings(settings);
     for (auto & set : sets)
     {
-        SizeLimits size_limits = PreparedSets::getSizeLimitsForSet(settings);
-        bool transform_null_in = settings[Setting::transform_null_in];
-
-        auto future_set = std::make_shared<FutureSetFromTuple>(set.hash, nullptr, std::move(set.set_columns), transform_null_in, size_limits);
+        auto future_set = std::make_shared<FutureSetFromTuple>(
+            set.hash, nullptr, std::move(set.set_columns), set_settings.transform_null_in, set_settings.size_limits);
         for (auto * column : set.columns)
             column->setData(future_set);
     }
@@ -300,14 +297,8 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
     {
         auto subquery_plan = QueryPlan::makeSets(std::move(set.plan_and_sets), context);
 
-        SizeLimits size_limits = PreparedSets::getSizeLimitsForSet(settings);
-        bool transform_null_in = settings[Setting::transform_null_in];
-        size_t max_size_for_index = settings[Setting::use_index_for_in_with_subqueries_max_values];
-
         auto future_set = std::make_shared<FutureSetFromSubquery>(
-            set.hash, nullptr, std::make_unique<QueryPlan>(std::move(subquery_plan)),
-            nullptr, nullptr,
-            transform_null_in, size_limits, max_size_for_index);
+            set.hash, nullptr, std::make_unique<QueryPlan>(std::move(subquery_plan)), nullptr, nullptr, FutureSetSettings(settings));
 
         for (auto * column : set.columns)
             column->setData(future_set);

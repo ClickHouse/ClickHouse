@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -12,8 +13,24 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/MemoryTrackerUtils.h>
+#include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForSet;
+}
+
+namespace ProfileEvents
+{
+    extern const Event ExternalSetCompressedBytes;
+    extern const Event ExternalSetUncompressedBytes;
+    extern const Event ExternalSetWritePart;
+}
 
 namespace DB
 {
@@ -50,17 +67,48 @@ CreatingSetStep::CreatingSetStep(
     SetAndKeyPtr set_and_key_,
     SizeLimits network_transfer_limits_,
     PreparedSetsCachePtr prepared_sets_cache_,
+    FutureSetSettings set_settings_,
     bool recoverable_build_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(Block{}), getTraits())
     , set_and_key(std::move(set_and_key_))
     , network_transfer_limits(std::move(network_transfer_limits_))
     , prepared_sets_cache(std::move(prepared_sets_cache_))
+    , set_settings(std::move(set_settings_))
     , recoverable_build(recoverable_build_)
 {
 }
 
-void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
+    const size_t max_bytes_before_external_set = getMaxBytesBeforeExternalProcessing(
+        set_settings.max_bytes_before_external_set,
+        set_settings.max_bytes_ratio_before_external_set,
+        "max_bytes_ratio_before_external_set");
+
+    /// The transform applies these settings only when it builds the set itself. A set on disk is shared
+    /// through the prepared sets cache like one in memory.
+    std::optional<SetSpillSettings> spill_settings;
+    if (max_bytes_before_external_set)
+    {
+        if (!build_settings.temp_data_on_disk)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for the set of IN is not provided");
+
+        spill_settings = SetSpillSettings{
+            .max_bytes_before_external_set = max_bytes_before_external_set,
+            .tmp_data = build_settings.temp_data_on_disk->childScope(
+                {.current_metric = CurrentMetrics::TemporaryFilesForSet,
+                 .bytes_compressed = ProfileEvents::ExternalSetCompressedBytes,
+                 .bytes_uncompressed = ProfileEvents::ExternalSetUncompressedBytes,
+                 .num_files = ProfileEvents::ExternalSetWritePart,
+                 .spilled_to_disk_operator = "set"},
+                set_settings.temporary_files_buffer_size,
+                set_settings.temporary_files_codec),
+            .min_free_disk_space = set_settings.min_free_disk_space,
+            .max_block_size = set_settings.max_block_size,
+            .process_list_element = build_settings.process_list_element,
+        };
+    }
+
     /// With a single input stream the set fill deduplicates just as well on its own; the pre-distinct
     /// only pays off by deduplicating disjoint streams in parallel. The partition count can drop to one
     /// after the flag was set (e.g. a later filter pushdown re-runs part selection), so check the final
@@ -84,9 +132,10 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     return nullptr;
 
                 /// Deduplicate independently per stream. The set fill deduplicates anyway, so on
-                /// mostly-unique input the transform may abandon and pass rows through.
+                /// mostly-unique input the transform may abandon and pass rows through. It also frees its
+                /// table and passes rows through under the spill threshold of the set.
                 return std::make_shared<DistinctTransform>(
-                    header, SizeLimits{}, 0, Names{}, /*allow_abandoning_=*/true, skip_null_keys);
+                    header, SizeLimits{}, 0, Names{}, /*allow_abandoning_=*/true, skip_null_keys, max_bytes_before_external_set);
             });
     }
 
@@ -95,6 +144,7 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         set_and_key,
         network_transfer_limits,
         prepared_sets_cache,
+        std::move(spill_settings),
         recoverable_build);
 }
 
