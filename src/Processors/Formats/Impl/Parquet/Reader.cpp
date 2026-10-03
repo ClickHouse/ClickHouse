@@ -206,7 +206,9 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
     while (pos < uncompressed_size)
     {
         decompressor->set(out + pos, uncompressed_size - pos);
-        decompressor->next();
+        if (!decompressor->next())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Unexpected end of compressed page: decompressed {} of {} bytes", pos, uncompressed_size);
         chassert(decompressor->position() == out + pos);
         size_t n = decompressor->available();
         chassert(n <= uncompressed_size - pos);
@@ -221,7 +223,7 @@ void Reader::init(const ReadOptions & options_, const Block & sample_block_, For
     format_filter_info = format_filter_info_;
 }
 
-parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
+parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher, size_t footer_read_size)
 {
     /// Parquet file ends with:
     ///  * serialized FileMetaData struct,
@@ -232,9 +234,14 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     if (file_size <= 8)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet file too short: {} bytes", file_size);
 
-    /// Read the last 64 KiB in hopes that FileMetaData is smaller than that.
-    /// This is usually enough for files smaller than a few hundred MB.
-    size_t initial_read_size = std::min(file_size, 64ul << 10);
+    /// Read a tail sized to the file (1%, clamped to [128 KiB, 2 MiB]) so it usually covers the whole
+    /// footer - FileMetaData for wider range of layouts - in one read. A non-zero
+    /// `footer_read_size` overrides this adaptive size with a fixed read size.
+    if (footer_read_size == 0)
+        footer_read_size = std::clamp<size_t>(file_size / 100, 128ul << 10, 2ul << 20);
+    /// The read must cover at least the 8-byte trailer (metadata size + magic) so the offsets below
+    /// don't underflow; an explicit `footer_read_size` smaller than that is bumped up to 8.
+    size_t initial_read_size = std::min(file_size, std::max<size_t>(footer_read_size, 8));
     PODArray<char> buf(initial_read_size);
     prefetcher.readSync(buf.data(), initial_read_size, file_size - initial_read_size);
 
@@ -343,10 +350,23 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
                 continue;
             }
 
-            if (column_meta.statistics.__isset.min_value)
-                column_info.decoder.decodeField(column_meta.statistics.min_value, /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
-            if (column_meta.statistics.__isset.max_value)
-                column_info.decoder.decodeField(column_meta.statistics.max_value, /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
+            const bool has_min = column_meta.statistics.__isset.min_value;
+            const bool has_max = column_meta.statistics.__isset.max_value;
+            const auto & converter = column_info.decoder.fixed_size_converter;
+            if ((!has_min || !has_max) && converter && converter->statsNeedBothBounds())
+                continue;
+
+            bool stats_usable = true;
+            if (has_min)
+                stats_usable = column_info.decoder.decodeField(column_meta.statistics.min_value, /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
+            if (stats_usable && has_max)
+                stats_usable = column_info.decoder.decodeField(column_meta.statistics.max_value, /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
+
+            if (!stats_usable)
+            {
+                range = Range::createWholeUniverse();
+                continue;
+            }
 
             adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
         }
@@ -557,16 +577,25 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// i.e. the very same raw name `geo_meta` already carries. Translating them to the query-side
     /// name (as an earlier version of this code did) breaks the match against
     /// `primitive_columns[i].name` for any bbox sub-column that was itself renamed.
-    std::unordered_map<String, String> clickhouse_to_parquet_name;
-    const auto * query_side_column_mapper = format_filter_info->current_schema_column_mapper
-        ? format_filter_info->current_schema_column_mapper.get()
-        : format_filter_info->column_mapper.get();
-    if (query_side_column_mapper && format_filter_info->column_mapper)
-        clickhouse_to_parquet_name =
-            query_side_column_mapper->makeMapping(format_filter_info->column_mapper->getFieldIdToClickHouseName()).first;
+    std::optional<std::unordered_map<String, String>> clickhouse_to_parquet_name;
+    auto get_clickhouse_to_parquet_name = [&]() -> const std::unordered_map<String, String> &
+    {
+        if (!clickhouse_to_parquet_name)
+        {
+            clickhouse_to_parquet_name.emplace();
+            const auto * query_side_column_mapper = format_filter_info->current_schema_column_mapper
+                ? format_filter_info->current_schema_column_mapper.get()
+                : format_filter_info->column_mapper.get();
+            if (query_side_column_mapper && format_filter_info->column_mapper)
+                *clickhouse_to_parquet_name
+                    = query_side_column_mapper->makeMapping(format_filter_info->column_mapper->getFieldIdToClickHouseName()).first;
+        }
+        return *clickhouse_to_parquet_name;
+    };
     auto resolve_geo_meta = [&](const String & ch_name) -> std::unordered_map<String, DB::GeoColumnMetadata>::const_iterator
     {
-        if (auto it = clickhouse_to_parquet_name.find(ch_name); it != clickhouse_to_parquet_name.end())
+        const auto & mapping = get_clickhouse_to_parquet_name();
+        if (auto it = mapping.find(ch_name); it != mapping.end())
             return geo_meta->find(it->second);
         return geo_meta->find(ch_name);
     };
@@ -578,7 +607,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// pruning.
     auto to_raw_geometry_name = [&](const String & ch_name) -> String
     {
-        if (auto it = clickhouse_to_parquet_name.find(ch_name); it != clickhouse_to_parquet_name.end())
+        const auto & mapping = get_clickhouse_to_parquet_name();
+        if (auto it = mapping.find(ch_name); it != mapping.end())
             return it->second;
         return ch_name;
     };
@@ -857,6 +887,17 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     }
 
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
+    struct RowGroupCandidate
+    {
+        const parq::RowGroup * meta = nullptr;
+        size_t row_group_idx = 0;
+        size_t start_global_row_idx = 0;
+        std::pair<size_t, size_t> requested_rows_slice {0, 0};
+        Hyperrectangle hyperrectangle;
+        std::optional<Range> top_k_sort_column_range;
+    };
+    std::vector<RowGroupCandidate> candidates;
+    bool some_top_k_range_to_read = false;
     size_t total_rows = 0;
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
@@ -928,15 +969,47 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             && rowGroupFailsSpatialFilters(*meta, primitive_columns, geostats_spatial_filters))
             continue;
 
+        candidates.push_back(RowGroupCandidate{
+            .meta = meta,
+            .row_group_idx = row_group_idx,
+            .start_global_row_idx = total_rows - size_t(meta->num_rows),
+            .requested_rows_slice = requested_rows_slice,
+            .hyperrectangle = std::move(hyperrectangle),
+            .top_k_sort_column_range = getTopKSortColumnRange(*meta)});
+        if (candidates.back().top_k_sort_column_range.has_value()
+            && (!row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx)))
+            some_top_k_range_to_read = true;
+    }
+
+    /// TopN dynamic filtering: read first the row groups whose sort column statistics are best for the
+    /// threshold, so that it tightens early. Any order is correct when the output order is free.
+    if (format_filter_info->top_k_filter && top_k_primitive_idx.has_value() && !rows_to_read
+        && !options.format.parquet.preserve_order && candidates.size() > 1 && some_top_k_range_to_read)
+    {
+        const bool ascending = format_filter_info->top_k_filter->threshold_tracker->getDirection() == 1;
+        std::stable_sort(candidates.begin(), candidates.end(), [ascending](const RowGroupCandidate & a, const RowGroupCandidate & b)
+        {
+            const auto & a_range = a.top_k_sort_column_range;
+            const auto & b_range = b.top_k_sort_column_range;
+            if (!a_range.has_value() || !b_range.has_value())
+                return a_range.has_value() && !b_range.has_value();
+            return ascending ? accurateLess(a_range->left, b_range->left) : accurateLess(b_range->right, a_range->right);
+        });
+        row_groups_ordered_by_top_k = true;
+    }
+
+    for (RowGroupCandidate & candidate : candidates)
+    {
+        const auto * meta = candidate.meta;
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;
-        row_group.need_to_process = !row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx);
-        row_group.requested_rows_slice = requested_rows_slice;
-        row_group.row_group_idx = row_group_idx;
-        row_group.start_global_row_idx = total_rows - size_t(meta->num_rows);
+        row_group.need_to_process = !row_groups_to_read.has_value() || row_groups_to_read->contains(candidate.row_group_idx);
+        row_group.requested_rows_slice = candidate.requested_rows_slice;
+        row_group.row_group_idx = candidate.row_group_idx;
+        row_group.start_global_row_idx = candidate.start_global_row_idx;
         row_group.columns.resize(primitive_columns.size());
-        row_group.hyperrectangle = std::move(hyperrectangle);
-        row_group.top_k_sort_column_range = getTopKSortColumnRange(*meta);
+        row_group.hyperrectangle = std::move(candidate.hyperrectangle);
+        row_group.top_k_sort_column_range = std::move(candidate.top_k_sort_column_range);
 
         for (size_t column_idx = 0; column_idx < primitive_columns.size(); ++column_idx)
         {
@@ -1745,7 +1818,7 @@ bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes
         bool miss = false;
         for (size_t i = 0; i < 8; ++i)
         {
-            size_t bit_idx = UInt32(UInt32(h) * salt[i]) >> 27;
+            size_t bit_idx = (UInt32(h) * salt[i]) >> 27;
             UInt32 word = unalignedLoad<UInt32>(data.data() + i * 4);
             if (!(word & (1u << bit_idx)))
             {
@@ -2168,10 +2241,14 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             }
             else
             {
-                column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
-                column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
+                const bool stats_usable
+                    = column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left)
+                    && column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
 
-                adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
+                if (stats_usable)
+                    adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
+                else
+                    range = Range::createWholeUniverse();
             }
 
             /// All conjunctive predicates on this column (e.g. two `pointInPolygon` calls sharing
@@ -2653,7 +2730,6 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     const bool use_filter_in_decoder = (column_info.levels.back().rep == 0) &&
         !row_subgroup.filter.filter.empty() &&
         column.page.initialized &&
-        !column.page.is_dictionary_encoded &&
         column.data_pages.empty() &&
         !column.need_null_map;
     const size_t subgroup_end_row_idx = row_subgroup.start_row_idx + row_subgroup.filter.rows_total;
@@ -3395,23 +3471,26 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
         if (row_subgroup && !row_subgroup->filter.filter.empty())
         {
             chassert(first_row_idx >= row_subgroup->start_row_idx);
+            chassert(page.def.empty());
             filter_offset = first_row_idx - row_subgroup->start_row_idx;
             filter = row_subgroup->filter.filter.data();
         }
 
         if (page.is_dictionary_encoded)
         {
-            chassert(!filter);
+            /// A subgroup whose rows all pass is read like an unfiltered one, through the fused path.
+            if (filter && row_subgroup->filter.rows_pass == row_subgroup->filter.rows_total)
+                filter = nullptr;
             /// Fused decode-and-gather; falls back to materializing the indexes as a column when
-            /// the decoder or the dictionary mode does not support the fusion.
-            if (!page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
+            /// filtering, or when the decoder or the dictionary mode does not support the fusion.
+            if (filter || !page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
             {
                 if (!page.indices_column)
                     page.indices_column = ColumnUInt32::create();
                 auto & indices_column_uint32 = assert_cast<ColumnUInt32 &>(*page.indices_column);
                 auto & data = indices_column_uint32.getData();
                 chassert(data.empty());
-                page.decoder->decode(encoded_values_to_read, *page.indices_column, nullptr, 0);
+                page.decoder->decode(encoded_values_to_read, *page.indices_column, filter, filter_offset);
                 column.dictionary.index(indices_column_uint32, *subchunk.column);
                 data.clear();
             }
