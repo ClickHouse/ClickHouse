@@ -1093,6 +1093,16 @@ bool StorageFileLog::isGone(const String & file_name, UInt64 inode) const
     return st.st_ino != inode;
 }
 
+bool StorageFileLog::resolvesIntoDirectory(const String & file_name) const
+{
+    std::error_code ec;
+    const auto target = std::filesystem::canonical(getFullDataPath(file_name), ec);
+    if (ec)
+        return false;
+    const auto root = std::filesystem::canonical(root_data_path, ec);
+    return !ec && target.parent_path() == root;
+}
+
 bool StorageFileLog::addOtherName(const String & file_name, UInt64 inode, bool is_symlink)
 {
     file_infos.other_names.erase(file_name);
@@ -1148,7 +1158,7 @@ bool StorageFileLog::addOtherName(const String & file_name, UInt64 inode, bool i
 
 std::optional<std::pair<String, bool>> StorageFileLog::findOtherName(UInt64 inode)
 {
-    /// A hard link is a name of the file until its removal event is processed, so a gone one is kept; a gone symbolic link is dropped.
+    /// A hard link is a name of the file until its removal event is processed, so a gone one is kept. A symbolic link is dropped when gone, or when it resolves into the directory, where its target is a name with its own events.
     /// Preferred: a name that still has the file, then a hard link, then the smallest name.
     std::optional<std::tuple<bool, bool, String>> best; /// (gone, is_symlink, name)
     for (auto it = file_infos.other_names.begin(); it != file_infos.other_names.end();)
@@ -1159,7 +1169,7 @@ std::optional<std::pair<String, bool>> StorageFileLog::findOtherName(UInt64 inod
             continue;
         }
         const bool gone = isGone(it->first, inode);
-        if (gone && it->second.is_symlink)
+        if (it->second.is_symlink && (gone || resolvesIntoDirectory(it->first)))
         {
             it = file_infos.other_names.erase(it);
             continue;

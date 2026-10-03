@@ -11,6 +11,7 @@ rm -rf "${logs_dir}"
 mkdir -p "${logs_dir}"/{d1,d2,d3}
 d1=${logs_dir}/d1
 held=${logs_dir}/held.log
+held2=${logs_dir}/held2.log
 out=${logs_dir}/out.log
 tmp=${logs_dir}/tmp.txt
 
@@ -172,6 +173,30 @@ read_until file_log_symlink 9
 rm "${d3}/h.log"
 printf '10\n' >> "${d3}/k.log"
 read_until file_log_symlink 10
+
+echo '-- the read name is removed: a hard link reads on before a symbolic link to the file outside the directory'
+ln -s ../out2.log "${d3}/a2.log"
+ln "${d3}/k.log" "${d3}/m.log"
+rm "${d3}/k.log"
+printf '11\n' >> "${d3}/m.log"
+read_until file_log_symlink 11
+
+echo '-- a symbolic link to the read name does not keep the file: the name re-created with the same inode is read from the start'
+printf '20\n' > "${d3}/r.log"
+read_until file_log_symlink 20
+ln -s r.log "${d3}/cur.log"
+ln "${d3}/r.log" "${held2}"
+rm "${d3}/r.log"
+printf '21\n22\n23\n' > "${held2}"
+ln "${held2}" "${d3}/r.log"
+read_until file_log_symlink 21 22 23
+
+echo '-- a symbolic link out of the directory that no longer points to the file does not keep it: the name linked back is read from the start'
+mv "${logs_dir}/out2.log" "${logs_dir}/out3.log"
+rm "${d3}/m.log"
+ln "${logs_dir}/out3.log" "${d3}/m.log"
+printf '12\n' >> "${d3}/m.log"
+read_until file_log_symlink 5 6 7 8 9 10 11 12
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_create"

@@ -45,3 +45,19 @@ w.log	8
 -- a symbolic link renamed over the read name: a hard link of the file reads on, also after the link target is removed
 h.log	9
 k.log	10
+-- the read name is removed: a hard link reads on before a symbolic link to the file outside the directory
+m.log	11
+-- a symbolic link to the read name does not keep the file: the name re-created with the same inode is read from the start
+r.log	20
+r.log	21
+r.log	22
+r.log	23
+-- a symbolic link out of the directory that no longer points to the file does not keep it: the name linked back is read from the start
+m.log	10
+m.log	11
+m.log	12
+m.log	5
+m.log	6
+m.log	7
+m.log	8
+m.log	9
