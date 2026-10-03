@@ -219,7 +219,12 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
     }
     else if (command.type == DROP_INDEX)
     {
-        stale_indices.emplace(command.index_name);
+        /// `CLEAR INDEX` arrives as a `DROP_INDEX` with `clear`, but it keeps the index in the
+        /// metadata, so its name cannot be taken by another definition and the files in the part
+        /// still belong to this very index. Only a real drop makes them stale.
+        /// The name of the index of a `DROP_INDEX` command is in `column_name`, not `index_name`.
+        if (!command.clear)
+            stale_indices.emplace(command.column_name);
     }
     else if (command.type == READ_COLUMN)
     {
