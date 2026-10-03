@@ -732,6 +732,11 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
     if (!is_cluster_function && isNamedCollectionName(0))
     {
         /// azureBlobStorage(named_collection, ..., account_key = 'account_key', ...)
+        if (!azureCollectionArgumentsAreShowable(1, /* positional_limit= */ 0))
+        {
+            maskEveryArgument();
+            return;
+        }
         if (maskAzureConnectionString(-1, true, 1))
             return;
         findSecretNamedArgument("account_key", 1);
@@ -740,6 +745,11 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
     if (is_cluster_function && isNamedCollectionName(1))
     {
         /// azureBlobStorageCluster(cluster, named_collection, ..., account_key = 'account_key', ...)
+        if (!azureCollectionArgumentsAreShowable(2, /* positional_limit= */ 0))
+        {
+            maskEveryArgument();
+            return;
+        }
         if (maskAzureConnectionString(-1, true, 2))
             return;
         findSecretNamedArgument("account_key", 2);

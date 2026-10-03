@@ -195,10 +195,11 @@ protected:
     /// engines, `url` at slot `url_slot`.
     void findAzurePositionalSecretArguments(size_t url_slot);
     bool maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0);
-    /// Whether the arguments an `AzureBlobStorage(named_collection, ...)` destination or table takes
-    /// from `start` can be shown: only an argument written here can carry a credential, and each has
-    /// to be readable enough to tell that it does not. `positional_limit` bounds the plain literals
-    /// read beside the overrides: one filename for a backup locator, none for a table engine.
+    /// Whether the arguments an `AzureBlobStorage(named_collection, ...)` destination, table or table
+    /// function takes from `start` can be shown: only an argument written here can carry a credential,
+    /// and each has to be readable enough to tell that it does not. `positional_limit` bounds the plain
+    /// literals read beside the overrides: one filename for a backup locator, none for a table engine
+    /// or a table function.
     bool azureCollectionArgumentsAreShowable(size_t start, size_t positional_limit);
     /// Masks the secrets of every URL form (`url`/`urlCluster` table functions, the `URL` table
     /// engine, and their named-collection variants): the userinfo password of the url positional or a
