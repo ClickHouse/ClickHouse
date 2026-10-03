@@ -1,0 +1,6 @@
+-- row exists
+1
+-- match on existing v (counts equal, no fixed count in reference)
+1
+-- match on absent v (counts equal)
+1

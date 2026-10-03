@@ -10116,6 +10116,14 @@ If set to true, allow using the text index.
         {"26.2", true, true, "The text index is now GA. This also applies to the alias `allow_experimental_full_text_index`."}, \
         {"25.12", true, false, "Text index was moved to Beta."}, \
         {"24.6", true, false, "Enable experimental text index. At the time the setting was named `allow_experimental_full_text_index`, which is now an alias of it."}) \
+    DECLARE(Bool, allow_experimental_cuckoo_filter_index, false, R"(
+If set to true, allow defining skip indexes of type `cuckoo_filter`. The on-disk format is new; enable only after you accept the operational risk.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to gate the experimental cuckoo filter skip index type."}) \
+    DECLARE(Bool, allow_experimental_binary_fuse_filter_index, false, R"(
+If set to true, allow defining skip indexes of type `binary_fuse_filter`. The on-disk format is experimental.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to gate the experimental binary fuse filter skip index type."}) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted text index in query plan.
 )", 0, \
