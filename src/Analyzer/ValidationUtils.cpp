@@ -208,10 +208,12 @@ public:
     explicit ValidateGroupByColumnsVisitor(
         const QueryTreeNodes & group_by_keys_nodes_,
         const QueryTreeNodes & original_group_by_keys_nodes_,
-        const QueryTreeNodePtr & query_node_)
+        const QueryTreeNodePtr & query_node_,
+        bool group_by_use_nulls_)
         : group_by_keys_nodes(group_by_keys_nodes_)
         , original_group_by_keys_nodes(original_group_by_keys_nodes_)
         , query_node(query_node_)
+        , group_by_use_nulls(group_by_use_nulls_)
     {}
 
     void visitImpl(const QueryTreeNodePtr & node)
@@ -268,7 +270,9 @@ public:
         /// The value of an ALIAS column is computed when the table is read and is not available after aggregation
         /// unless the column itself is a GROUP BY key, but the planner computes the ALIAS expression after aggregation
         /// if it depends only on GROUP BY keys, for example: SELECT a FROM t GROUP BY k, where `a` is `ALIAS f(k)`.
-        if (isTableAliasColumn(node) && isComputableAfterAggregation(column_node->getExpression()))
+        /// With `group_by_use_nulls` the keys inside the resolved ALIAS expression are converted to Nullable,
+        /// while the type of the column is not, so the expression cannot give NULL in the rows where the key is NULL.
+        if (!group_by_use_nulls && isTableAliasColumn(node) && isComputableAfterAggregation(column_node->getExpression()))
             return;
 
         throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
@@ -368,6 +372,7 @@ private:
     const QueryTreeNodes & group_by_keys_nodes;
     const QueryTreeNodes & original_group_by_keys_nodes;
     const QueryTreeNodePtr & query_node;
+    bool group_by_use_nulls;
 };
 
 }
@@ -486,7 +491,8 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
 
     if (has_aggregation)
     {
-        ValidateGroupByColumnsVisitor validate_group_by_columns_visitor(group_by_keys_nodes, original_group_by_keys_nodes, query_node);
+        ValidateGroupByColumnsVisitor validate_group_by_columns_visitor(
+            group_by_keys_nodes, original_group_by_keys_nodes, query_node, params.group_by_use_nulls);
 
         if (query_node_typed.hasHaving())
             validate_group_by_columns_visitor.visit(query_node_typed.getHaving());
