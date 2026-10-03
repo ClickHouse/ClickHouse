@@ -359,6 +359,10 @@ For a more sustainable solution that maintains performance, partitioning the tab
 
 As discussed in Exploiting Partitions with ReplacingMergeTree, we recommend partitioning tables as a best practice. Partitioning isolates data for more efficient merges and avoids merging across partitions, particularly during query execution. This behavior is enhanced in versions from 23.12 onward: if the partition key is a prefix of the sorting key, merging across partitions isn't performed at query time, leading to faster query performance.
 
+### Row TTL {#row-ttl}
+
+A row `TTL` removes expired rows when parts are merged. `ReplacingMergeTree` keeps the row with the highest version among the stored rows with the same sorting key, so deleting the newest version of a key while an older version is stored in another part would make the older version visible again. Unless the `TTL` reads only columns that are the same in every version of a key, or has the form `ver + INTERVAL ...`, expired rows are deleted only by merges of a whole partition: a background `TTL` merge, or `OPTIMIZE TABLE ... FINAL`. Other merges and mutations keep them. See [Row TTL](/reference/engines/table-engines/mergetree-family/replacingmergetree#row-ttl) for the details, and partition such a table so that old partitions stop receiving inserts.
+
 ### Tuning merges for better query performance {#tuning-merges-for-better-query-performance}
 
 By default, `min_age_to_force_merge_seconds` and `min_age_to_force_merge_on_partition_only` are set to 0 and false, respectively, disabling these features. In this configuration, ClickHouse will apply standard merging behavior without forcing merges based on partition age.

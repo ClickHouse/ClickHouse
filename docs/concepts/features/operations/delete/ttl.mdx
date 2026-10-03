@@ -111,6 +111,12 @@ TTL time + INTERVAL 1 MONTH DELETE WHERE event != 'error',
     time + INTERVAL 6 MONTH DELETE WHERE event = 'error'
 ```
 
+### Removing rows from a ReplacingMergeTree table {#removing-rows-from-a-replacingmergetree-table}
+
+In a [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) table, a `TTL` that can differ between the versions of a key, for example `TTL deleted_at + INTERVAL 14 DAY DELETE WHERE is_deleted`, deletes rows only in merges of a whole partition, so that deleting the newest version of a key does not make an older version visible again. See [Row TTL](/reference/engines/table-engines/mergetree-family/replacingmergetree#row-ttl).
+
+If you partition such a table by the column used in the `TTL`, as recommended above, make sure that every version of a key falls into the same partition: `ReplacingMergeTree` does not compare rows of different partitions.
+
 ## Removing columns {#removing-columns}
 
 Instead of deleting the entire row, suppose you want just the balance and address columns to expire. Let's modify the `customers` table and add a TTL for both columns to be 2 hours:

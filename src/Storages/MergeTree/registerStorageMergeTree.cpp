@@ -2150,6 +2150,8 @@ When ClickHouse detects that data is expired, it performs an off-schedule merge.
 
 If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](/reference/statements/optimize) query before `SELECT`.
 
+In `ReplacingMergeTree`, some `TTL` rules delete rows only in merges of whole partitions, see [Row TTL](/reference/engines/table-engines/mergetree-family/replacingmergetree#row-ttl).
+
 **See Also**
 
 - [ttl_only_drop_parts](/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) setting
@@ -3163,6 +3165,8 @@ To permanently drop such delete rows, enable the table setting `allow_experiment
 all into a single part and remove any delete rows.
 
 2. Manually run `OPTIMIZE TABLE table [PARTITION partition | PARTITION ID 'partition_id'] FINAL CLEANUP`.
+
+A row `TTL` that deletes delete rows is applied as described in [Row TTL](#row-ttl).
 </Note>
 
 Example:
@@ -3197,6 +3201,24 @@ select * from myThirdReplacingMT final;
 │   1 │ first   │ 2020-01-01 00:00:00 │          0 │
 └─────┴─────────┴─────────────────────┴────────────┘
 ```
+
+## Row TTL {#row-ttl}
+
+A row `TTL` ([`TTL expr [DELETE] [WHERE condition]`](/reference/engines/table-engines/mergetree-family/mergetree#mergetree-table-ttl)) removes expired rows when parts are merged. `ReplacingMergeTree` keeps the row with the highest version among the stored rows with the same sorting key, so deleting the newest version of a key while an older version is stored in another part would make the older version visible again. To prevent this, a merge that does not include all parts of a partition keeps the rows that such a `TTL` has expired, and so does a mutation, for example `ALTER TABLE ... MATERIALIZE TTL` or an `ALTER TABLE ... UPDATE` of a column that the `TTL` reads.
+
+They are deleted by a merge of the whole partition: a background `TTL` merge, which is assigned when all parts of the partition can be merged together, or `OPTIMIZE TABLE ... FINAL`, when merges with `TTL` are allowed.
+
+A `TTL` for which an older version of a key always expires no later than a newer one is applied as in other `MergeTree` tables:
+- a `TTL` whose expression and `WHERE` condition read only columns of the sorting key, or columns that are the partition key or its elements, for example `TTL day + INTERVAL 1 MONTH` with `ORDER BY (id, day)` or with `PARTITION BY day`;
+- a `TTL` of the form `ver + INTERVAL ...`, where `ver` is the version column of type `Date`, `Date32`, `DateTime` or `DateTime64`, without a `WHERE` condition or with a condition on such columns only.
+
+With such a `TTL`, after the newest version of a key is deleted, an older version can be returned until a merge deletes it too. It has already expired, like any row that the `TTL` has not deleted yet. With an interval of a day or longer and a time zone with daylight saving time, a version stored during the hour that repeats when clocks go back can expire up to that hour later than the newer version.
+
+Expired rows that wait for a merge of the whole partition take disk space, and queries without `FINAL` return them. A partition larger than `max_bytes_to_merge_at_max_space_in_pool`, or with more parts than `max_parts_to_merge_at_once`, is not merged whole in the background, so its expired rows are deleted only by `OPTIMIZE TABLE ... FINAL`. The same applies to a column `TTL` of such a table. Partition the table so that old partitions stop receiving inserts, by a column that has the same value in every version of a key.
+
+To delete expired rows in every merge and mutation, as before version 26.10, set the table setting [`replacing_ttl_whole_partition_only`](/reference/settings/merge-tree-settings/other#replacing_ttl_whole_partition_only) to `0`. Do this only if the columns that the `TTL` reads have the same value in every version of a key.
+
+Versions of a key in different partitions are not compared. A row with a lower version inserted after the key was deleted by `TTL` is visible, as after `OPTIMIZE ... FINAL CLEANUP`: until the newest version expires, it hides older versions inserted late.
 
 ## Query clauses {#query-clauses}
 
