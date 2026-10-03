@@ -76,11 +76,11 @@ SELECT formatQueryFromJSON('{"type":"ProjectionDeclaration","name":"p","index":{
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('BACKUP FROM SNAPSHOT Disk(\'default\', \'/snapshot/\') TO Disk(\'default\', \'/backup/\')'), '"base_snapshot_name":', '"elements":[{}],"base_snapshot_name":')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
--- TTL GROUP BY: `group_by_key`/`group_by_assignments` are produced only by `ParserTTLElement` in the
--- `GROUP BY` branch, after at least one grouping key. A `GROUP_BY` mode with an empty `group_by_key`
--- would format `GROUP BY ` with no expressions, and these fields on a `DELETE` TTL are silently dropped.
+-- TTL GROUP BY: `group_by_key`/`group_by_assignments` on a non-`GROUP_BY` (e.g. `DELETE`) TTL are
+-- silently dropped by the formatter, so those combinations must be rejected on read.
+-- (An empty `group_by_key` in `GROUP_BY` mode is a valid parser-produced shape:
+-- `MergeTree` accepts `TTL d GROUP BY` with an empty key list, aggregating the whole part.)
 -- ---------------------------------------------------------------------------
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY TTL d GROUP BY x SET y = max(y)'), '"group_by_key":[{"type":"Identifier","name":"x"}]', '"group_by_key":[]')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY TTL d'), '"mode":"DELETE"', '"mode":"DELETE","group_by_key":[{"type":"Identifier","name":"x"}]')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
