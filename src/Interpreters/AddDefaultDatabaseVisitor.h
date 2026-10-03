@@ -515,8 +515,18 @@ private:
     /// their aliases are collected when the visitor descends into them.
     void collectAliases(const ASTPtr & ast) const
     {
-        if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTTableExpression>())
+        if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
             return;
+
+        /// The alias of a table expression names a table, but the aliases in the arguments of a table function belong
+        /// to the select query, as in the analyzer.
+        if (const auto * table_expression = ast->as<ASTTableExpression>())
+        {
+            if (const auto * table_function = table_expression->table_function ? table_expression->table_function->as<ASTFunction>() : nullptr;
+                table_function && table_function->arguments)
+                collectAliases(table_function->arguments);
+            return;
+        }
 
         String alias = ast->tryGetAlias();
         if (!alias.empty())

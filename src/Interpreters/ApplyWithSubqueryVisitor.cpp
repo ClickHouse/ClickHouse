@@ -170,7 +170,7 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
         if (child != ast.tables())
             forEachExpressionAlias(child, add_own_alias);
     }
-    /// So do `ARRAY JOIN` and `JOIN ... ON`, unlike a table expression.
+    /// So do `ARRAY JOIN`, `JOIN ... ON` and the arguments of a table function, unlike a table alias.
     if (ast.tables())
     {
         for (const auto & element : ast.tables()->children)
@@ -184,6 +184,12 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
             if (const auto * table_join = table_element->table_join ? table_element->table_join->as<ASTTableJoin>() : nullptr;
                 table_join && table_join->on_expression)
                 forEachExpressionAlias(table_join->on_expression, add_own_alias);
+            if (const auto * table_expression = table_element->table_expression ? table_element->table_expression->as<ASTTableExpression>() : nullptr;
+                table_expression && table_expression->table_function)
+            {
+                if (const auto * table_function = table_expression->table_function->as<ASTFunction>(); table_function && table_function->arguments)
+                    forEachExpressionAlias(table_function->arguments, add_own_alias);
+            }
         }
     }
 

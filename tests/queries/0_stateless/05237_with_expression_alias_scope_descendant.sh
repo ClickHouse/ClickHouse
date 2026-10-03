@@ -69,13 +69,16 @@ SELECT 'live shadowed top-level', (WITH [7] AS nested SELECT (SELECT toUInt8(7 I
 CREATE VIEW v_shadowed_top AS WITH [7] AS nested SELECT (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 + toUInt8(6 IN nested) WHERE notEmpty([6] AS nested)) AS r;
 SELECT 'view shadowed top-level', r FROM v_shadowed_top;
 
--- So does a name that \`ARRAY JOIN\`, \`JOIN ... ON\` or a lambda binds.
+-- So does a name that \`ARRAY JOIN\`, \`JOIN ... ON\`, a table function argument or a lambda binds.
 SELECT 'live shadowed array join', (WITH tuple([7] AS nested) AS wrapper SELECT (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 + toUInt8(6 IN nested) FROM numbers(1) ARRAY JOIN [6] AS nested));
 CREATE VIEW v_shadowed_array_join AS WITH tuple([7] AS nested) AS wrapper SELECT (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 + toUInt8(6 IN nested) FROM numbers(1) ARRAY JOIN [6] AS nested) AS r;
 SELECT 'view shadowed array join', r FROM v_shadowed_array_join;
 SELECT 'live shadowed join on', (WITH tuple([7] AS nested) AS wrapper SELECT (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 + toUInt8(6 IN nested) FROM numbers(1) AS a INNER JOIN numbers(1) AS b ON notEmpty([6] AS nested)));
 CREATE VIEW v_shadowed_join_on AS WITH tuple([7] AS nested) AS wrapper SELECT (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 + toUInt8(6 IN nested) FROM numbers(1) AS a INNER JOIN numbers(1) AS b ON notEmpty([6] AS nested)) AS r;
 SELECT 'view shadowed join on', r FROM v_shadowed_join_on;
+SELECT 'live shadowed table function', (WITH tuple([7] AS nested) AS wrapper SELECT (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 + toUInt8(6 IN nested) FROM numbers(length([6] AS nested))));
+CREATE VIEW v_shadowed_table_function AS WITH tuple([7] AS nested) AS wrapper SELECT (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 + toUInt8(6 IN nested) FROM numbers(length([6] AS nested))) AS r;
+SELECT 'view shadowed table function', r FROM v_shadowed_table_function;
 SELECT 'live lambda parameter', (WITH tuple([7] AS nested) AS wrapper SELECT arrayMap(nested -> toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 + toUInt8(6 IN nested), [[6]])[1]);
 CREATE VIEW v_lambda_parameter AS WITH tuple([7] AS nested) AS wrapper SELECT arrayMap(nested -> toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 + toUInt8(6 IN nested), [[6]])[1] AS r;
 SELECT 'view lambda parameter', r FROM v_lambda_parameter;
