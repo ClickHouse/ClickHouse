@@ -137,7 +137,7 @@ public:
 
     bool hasDynamicStructure() const override { throwMustBeDecompressed(); }
     void takeExactDynamicStructureFrom(const IColumn &) override { throwMustBeDecompressed(); }
-    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> &, std::optional<size_t>) override { throwMustBeDecompressed(); }
+    void chooseDynamicStructureForMerge(const ColumnsView &, std::optional<size_t>) override { throwMustBeDecompressed(); }
     void fixDynamicStructure() override { throwMustBeDecompressed(); }
 
 protected:

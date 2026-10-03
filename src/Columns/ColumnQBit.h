@@ -170,7 +170,7 @@ public:
     }
 
     void reserve(size_t n) override { tuple->reserve(n); }
-    void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
+    void prepareForSquashing(const ColumnsView & source_columns, size_t factor) override;
     void shrinkToFit() override { tuple->shrinkToFit(); }
     void ensureOwnership() override { tuple->ensureOwnership(); }
     void protect() override { tuple->protect(); }

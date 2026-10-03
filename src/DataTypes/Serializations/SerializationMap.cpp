@@ -14,6 +14,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsView.h>
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/JSONUtils.h>
@@ -1284,16 +1285,16 @@ void SerializationMap::collectMapFromBuckets(const VectorWithMemoryTracking<Colu
     if (map_buckets.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty list of buckets provided");
 
-    VectorWithMemoryTracking<ColumnPtr> map_keys_buckets(map_buckets.size());
-    VectorWithMemoryTracking<ColumnPtr> map_values_buckets(map_buckets.size());
+    ColumnRawPtrs map_keys_buckets(map_buckets.size());
+    ColumnRawPtrs map_values_buckets(map_buckets.size());
     std::vector<const ColumnArray::Offsets *> map_offsets_buckets(map_buckets.size());
     for (size_t bucket = 0; bucket != map_buckets.size(); ++bucket)
     {
         const auto & nested_column = assert_cast<const ColumnMap &>(*map_buckets[bucket]).getNestedColumn();
         const auto & nested_data = assert_cast<const ColumnTuple &>(nested_column.getData());
         map_offsets_buckets[bucket] = &nested_column.getOffsets();
-        map_keys_buckets[bucket] = nested_data.getColumnPtr(0);
-        map_values_buckets[bucket] = nested_data.getColumnPtr(1);
+        map_keys_buckets[bucket] = nested_data.getColumnPtr(0).get();
+        map_values_buckets[bucket] = nested_data.getColumnPtr(1).get();
     }
 
     auto & nested_column = assert_cast<ColumnMap &>(map_column).getNestedColumn();

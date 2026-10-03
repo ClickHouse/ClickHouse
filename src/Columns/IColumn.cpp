@@ -21,9 +21,10 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/findEqualRangeEndAssumeSorted.h>
+#include <Columns/ColumnsView.h>
 #include <Columns/IColumnDummy.h>
 #include <Columns/IColumn_fwd.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -54,6 +55,13 @@ extern const int NOT_IMPLEMENTED;
 void throwCannotPopBack(size_t n, const std::string & column_name, size_t column_size)
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, column_name, column_size);
+}
+
+void IColumn::prepareForSquashing(const ColumnsView & source_columns, size_t factor)
+{
+    size_t new_size = size();
+    source_columns.forEach([&](const IColumn * source_column) { new_size += source_column->size(); });
+    reserve(new_size * factor);
 }
 
 void throwColumnConvertNotSupported(std::string_view type_name, const char * as_type)
