@@ -199,9 +199,7 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
                             local_context);
                     }
 
-                    std::shared_ptr<MergeTreeData> merge_tree;
-                    if (storage)
-                        merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+                    auto merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Skip);
 
                     /// Only a snapshot carrying the marker written at `FREEZE` time needs any of
                     /// the leader-election handling below, and the marker lookup costs an object
@@ -210,14 +208,13 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
                         && disk->existsFile(table_directory / MergeTreeData::LEADER_ELECTION_SNAPSHOT_MARKER_FILE_NAME))
                     {
                         /// A lazily loaded table (`lazy_load_tables = 1`) is attached, but the
-                        /// catalog hands out a `StorageTableProxy` until something touches it, so
-                        /// the cast above misses it and the table would be misread as unattached.
+                        /// catalog hands out a `StorageTableProxy` until something touches it; the
+                        /// cast above does not load it, so the table would be misread as unattached.
                         /// Materialize the real storage and retry — the snapshot belongs to a
                         /// `leader_election` table whose lease this node can, in fact, check.
                         /// Restricting this to marker-bearing snapshots keeps an ordinary
                         /// `SYSTEM UNFREEZE` from starting every lazy table in the server.
-                        if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
-                            merge_tree = std::dynamic_pointer_cast<MergeTreeData>(proxy->getNested());
+                        merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load);
 
                         /// Still unresolved: the table is genuinely not loaded on this node — it
                         /// was dropped locally, or never attached here. Removing the snapshot
