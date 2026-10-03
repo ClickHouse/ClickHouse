@@ -1,11 +1,13 @@
 #include "config.h"
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <thread>
 #include <Common/scope_guard_safe.h>
 #include <Common/DequeWithMemoryTracking.h>
@@ -59,6 +61,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/ProfileEvents.h>
@@ -1000,6 +1003,8 @@ public:
     DistributedQueryPlanExecutorLocal(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, DistributedQueryCancellationPtr cancellation_, StageWakeupPtr stage_wakeup_)
         : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, makeContextForLocalExecution(context_), std::move(cancellation_), std::move(stage_wakeup_))
     {
+        if (execution_span.isTraceEnabled())
+            execution_span.addAttribute("clickhouse.distributed.execute_locally", 1);
     }
 
     ~DistributedQueryPlanExecutorLocal() override
@@ -1073,8 +1078,15 @@ protected:
 
         for (const auto & task : stage.tasks)
         {
+            /// The start of the task on the initiator: no request is sent, the task runs on a thread
+            /// of this server, so the span is internal. Its identity in the DAG is in the attributes.
+            OpenTelemetry::SpanHolder dispatch_span("DistributedPlanTask::dispatch");
+            if (dispatch_span.isTraceEnabled())
+                addDispatchSpanAttributes(dispatch_span, stage_name, task);
+
             task_description.task = task;
             started_tasks.emplace_back(startTask(task_description, started_threads).share());
+            dispatch_span.status_code = OpenTelemetry::SpanStatus::OK;
         }
 
         stage_tasks[stage_name] = std::move(started_tasks);
@@ -1355,6 +1367,12 @@ public:
         for (const auto & [task_id, host] : task_to_host_map->getTaskHosts())
             distinct_hosts.insert(host.host);
         ProfileEvents::increment(ProfileEvents::DistributedPlanHostsUsed, distinct_hosts.size());
+
+        if (execution_span.isTraceEnabled())
+        {
+            execution_span.addAttribute("clickhouse.distributed.execute_locally", 0);
+            execution_span.addAttribute("clickhouse.distributed.hosts", distinct_hosts.size());
+        }
     }
 
     void cleanup() override
@@ -1925,6 +1943,17 @@ protected:
 
             task_description.task = task;
 
+            /// The dispatch of the task to its worker, as the initiator sees it: the request that
+            /// starts the task. The task itself runs asynchronously on the worker and is polled for,
+            /// so the span ends when the worker has accepted the task, not when the task is done.
+            OpenTelemetry::SpanHolder dispatch_span("DistributedPlanTask::dispatch", OpenTelemetry::SpanKind::CLIENT);
+            if (dispatch_span.isTraceEnabled())
+            {
+                addDispatchSpanAttributes(dispatch_span, stage_name, task);
+                const WorkerAddress & worker = task_to_host_map->getTaskHosts().at(task.task_id);
+                dispatch_span.addAttribute("clickhouse.target_host", fmt::format("{}:{}", worker.host, worker.stateless_worker_port));
+            }
+
             /// Add exchange destinations for output streams
             task_description.exchange_stream_sources = {};
             for (const auto & input_stream : task.input_exchange_streams)
@@ -1944,9 +1973,12 @@ protected:
             }
             catch (...)
             {
+                dispatch_span.status_code = OpenTelemetry::SpanStatus::ERROR;
+                dispatch_span.status_message = getCurrentExceptionMessage(false);
                 running_tasks.cancelAndForgetUntracked(task_info);
                 throw;
             }
+            dispatch_span.status_code = OpenTelemetry::SpanStatus::OK;
             running_tasks.addTask(stage_name, task_info);
             ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasks);
         }
@@ -2064,6 +2096,15 @@ void notifyStageWakeup(const StageWakeupPtr & stage_wakeup) noexcept
     }
 }
 
+static std::string_view exchangeKindName(ExchangeDescription::Kind kind)
+{
+    switch (kind)
+    {
+        case ExchangeDescription::Kind::Persisted: return "Persisted";
+        case ExchangeDescription::Kind::Streaming: return "Streaming";
+    }
+}
+
 DistributedQueryPlanExecutor::DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, DistributedQueryCancellationPtr cancellation_, StageWakeupPtr stage_wakeup_)
     : unique_query_id(unique_query_id_)
     , distributed_query_plan(distributed_query_plan_)
@@ -2072,7 +2113,87 @@ DistributedQueryPlanExecutor::DistributedQueryPlanExecutor(const UUID & unique_q
     , cancellation(std::move(cancellation_))
     , stage_wakeup(std::move(stage_wakeup_))
     , logger(getLogger("DistributedQueryPlanExecutor"))
+    , execution_span("DistributedPlanExecutor::execute")
 {
+    if (!execution_span.isTraceEnabled())
+        return;
+
+    /// The shape of the fragment DAG. The plan's maps are unordered, so the edges are sorted to
+    /// make the attribute deterministic; each reads `consumer <- producer via exchange (kind)`.
+    size_t tasks_count = 0;
+    for (const auto & [_, stage] : distributed_query_plan.stages)
+        tasks_count += stage.tasks.size();
+
+    std::vector<String> edges; // STYLE_CHECK_ALLOW_STD_CONTAINERS: a few short strings, sorted and joined right away
+    for (const auto & [consumer, dependencies] : distributed_query_plan.stage_depends_on)
+    {
+        for (const auto & [producer, exchange_id] : dependencies)
+        {
+            const auto exchange = distributed_query_plan.exchange_descriptions.find(exchange_id);
+            const std::string_view kind = exchange == distributed_query_plan.exchange_descriptions.end() ? "unknown" : exchangeKindName(exchange->second.kind);
+            edges.push_back(fmt::format("{} <- {} via {} ({})", consumer, producer, exchange_id, kind));
+        }
+    }
+    std::sort(edges.begin(), edges.end());
+
+    execution_span.addAttribute("clickhouse.distributed.query_id", toString(unique_query_id));
+    execution_span.addAttribute("clickhouse.initial_query_id", context->getClientInfo().initial_query_id);
+    execution_span.addAttribute("clickhouse.distributed.stages", distributed_query_plan.stages.size());
+    execution_span.addAttribute("clickhouse.distributed.tasks", tasks_count);
+    execution_span.addAttribute("clickhouse.distributed.stage_dependencies", fmt::format("[{}]", fmt::join(edges, "; ")));
+    execution_span.addAttribute("clickhouse.distributed.final_result_stream", distributed_query_plan.final_result_stream_name);
+}
+
+DistributedQueryPlanExecutor::~DistributedQueryPlanExecutor()
+{
+    /// `execute` finished the span with `OK` when the last stage ended; here the span is still open
+    /// only when the execution did not get that far. The first `finish` wins, so an outcome recorded
+    /// there is not overwritten. A cancellation by the pipeline (the client stopped reading) is not
+    /// a failure of the distributed query: the span is left `UNSET` and says why.
+    if (const std::exception_ptr failure = cancellation->getFailure())
+    {
+        execution_span.finish(OpenTelemetry::SpanStatus::ERROR, getExceptionMessage(failure, /*with_stacktrace=*/ false));
+    }
+    else if (cancellation->isCancelled())
+    {
+        execution_span.addAttribute("clickhouse.distributed.cancelled", 1);
+        execution_span.finish();
+    }
+    else
+    {
+        execution_span.finish();
+    }
+}
+
+String DistributedQueryPlanExecutor::dependsOnAttribute(const String & stage_name) const
+{
+    const auto it = distributed_query_plan.stage_depends_on.find(stage_name);
+    if (it == distributed_query_plan.stage_depends_on.end())
+        return {};
+
+    std::vector<String> producers; // STYLE_CHECK_ALLOW_STD_CONTAINERS: a few short strings, sorted and joined right away
+    for (const auto & [producer, _] : it->second)
+        producers.push_back(producer);
+    std::sort(producers.begin(), producers.end());
+    return fmt::format("[{}]", fmt::join(producers, ", "));
+}
+
+void DistributedQueryPlanExecutor::addDispatchSpanAttributes(OpenTelemetry::Span & span, const String & stage_name, const DistributedQueryTask & task) const
+{
+    span.addAttribute("clickhouse.distributed.task_id", task.task_id);
+    span.addAttribute("clickhouse.distributed.stage", stage_name);
+    span.addAttribute("clickhouse.distributed.depends_on", dependsOnAttribute(stage_name));
+    span.addAttribute("clickhouse.initial_query_id", context->getClientInfo().initial_query_id);
+
+    /// The kinds of the exchanges the task writes to, distinct and sorted; normally one.
+    std::set<std::string_view> kinds; // STYLE_CHECK_ALLOW_STD_CONTAINERS: at most two entries
+    for (const auto & output_stream : task.output_exchange_streams)
+    {
+        const auto exchange = distributed_query_plan.exchange_descriptions.find(output_stream.exchange_id);
+        if (exchange != distributed_query_plan.exchange_descriptions.end())
+            kinds.insert(exchangeKindName(exchange->second.kind));
+    }
+    span.addAttribute("clickhouse.exchange.kind", fmt::format("{}", fmt::join(kinds, ", ")));
 }
 
 void DistributedQueryPlanExecutor::checkCancelled() const
@@ -2141,6 +2262,10 @@ void DistributedQueryPlanExecutor::start()
 {
     LOG_DEBUG(logger, "Starting distributed query, unique id: {}", toString(unique_query_id));
 
+    /// Everything started from here, the task dispatch spans and the contexts the local task threads
+    /// inherit, hangs under the execution span rather than under the pipeline thread's span.
+    OpenTelemetry::ParentSpanGuard parent_span_guard(execution_span.getSpanId());
+
     /// Start from the root stages (those no other stage depends on) so the recursion can start each
     /// consumer before its streaming producers. Entering at an arbitrary stage could start a producer
     /// before its consumer is running.
@@ -2181,6 +2306,9 @@ bool DistributedQueryPlanExecutor::execute(UInt64 poll_timeout_ms)
         poll_timeout_ms = 0;
     }
 
+    /// Every stage ended without a failure (`waitForStage` throws on one): the distributed
+    /// execution is complete, whatever happens to the result afterwards.
+    execution_span.finish(OpenTelemetry::SpanStatus::OK);
     return true;
 }
 
