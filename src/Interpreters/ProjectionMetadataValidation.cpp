@@ -134,6 +134,19 @@ void validateProjectionMetadataAdmission(
     const ProjectionsDescription * copied_projections,
     ProjectionMetadataPublication publication)
 {
+    /// Enforce this part-write invariant before a normalized CREATE enters a replicated or
+    /// distributed DDL log. Older ON CLUSTER formats may expand AS source only on the worker;
+    /// the shared CREATE finalizer checks that worker-resolved candidate before publication.
+    if (source != ProjectionDefinitionSource::PreviouslyAccepted && isInitialProjectionMetadataQuery(context))
+    {
+        if (create.columns_list && create.columns_list->projections)
+            for (const auto & definition : create.columns_list->projections->children)
+                ProjectionDescription::validateDynamicDefaultCodec(definition->as<const ASTProjectionDeclaration &>());
+        if (copied_projections)
+            for (const auto & definition : copied_projections->getDefinitionsInDeclarationOrder())
+                ProjectionDescription::validateDynamicDefaultCodec(definition->as<const ASTProjectionDeclaration &>());
+    }
+
     /// Old `ON CLUSTER` entries expand `AS source_table` on each worker. Check the copied
     /// projections there too, since the source may not exist on the initiator.
     const bool validate_distributed_source_copy = source == ProjectionDefinitionSource::NewQuery
@@ -208,6 +221,14 @@ void validateProjectionMetadataAdmission(
 {
     if (isInitialProjectionMetadataQuery(context))
     {
+        for (const auto & child : alter.command_list->children)
+        {
+            const auto & command = child->as<const ASTAlterCommand &>();
+            if (command.type == ASTAlterCommand::ADD_PROJECTION && command.projection_decl)
+                ProjectionDescription::validateDynamicDefaultCodec(
+                    command.projection_decl->as<const ASTProjectionDeclaration &>());
+        }
+
         /// `MODIFY PROJECTION` needs an existing definition to prove that only settings change.
         /// Without a local table, an ON CLUSTER initiator cannot perform that check before
         /// publishing the DDL; some workers could apply it while others reject it.
