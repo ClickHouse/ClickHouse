@@ -35,6 +35,7 @@
 #include <Common/logger_useful.h>
 #include <Common/parseGlobs.h>
 #include <Common/re2.h>
+#include <base/errnoToString.h>
 
 #include <sys/stat.h>
 
@@ -160,7 +161,8 @@ private:
                 file_log.getPollTimeoutMillisecond(),
                 stream_number,
                 max_streams_number,
-                (*file_log.filelog_settings)[FileLogSetting::handle_error_mode]));
+                (*file_log.filelog_settings)[FileLogSetting::handle_error_mode],
+                /* skip_broken_records */ false));
         }
 
         return Pipe::unitePipes(std::move(pipes));
@@ -170,6 +172,13 @@ private:
     StoragePtr storage;
     StorageSnapshotPtr storage_snapshot;
 };
+
+String resolveFileLogPath(const String & path, const String & user_files_path)
+{
+    if (user_files_path.empty() || std::filesystem::path(path).is_absolute() || fileOrSymlinkPathStartsWith(path, user_files_path))
+        return path;
+    return std::filesystem::path(user_files_path) / path;
+}
 
 StorageFileLog::StorageFileLog(
     const StorageID & table_id_,
@@ -185,7 +194,7 @@ StorageFileLog::StorageFileLog(
     , WithContext(context_->getGlobalContext())
     , filelog_context(configureContext(getContext()))
     , filelog_settings(std::move(settings))
-    , path(path_)
+    , path(resolveFileLogPath(path_, getContext()->getUserFilesPath()))
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
     , log(getLogger("StorageFileLog (" + table_id_.getFullTableName() + ")"))
@@ -548,16 +557,74 @@ void StorageFileLog::assertStreamGood(const std::ifstream & reader)
     }
 }
 
+bool StorageFileLog::isTrackedByDirectoryEvents(const String & file_name) const
+{
+    return directory_watch && !FS::isSymlinkNoThrow(getFullDataPath(file_name));
+}
+
 void StorageFileLog::openFilesAndSetPos()
 {
+    bool any_open_failed = false;
     for (const auto & file : file_infos.file_names)
     {
         auto & file_ctx = findInMap(file_infos.context_by_name, file);
-        if (file_ctx.status != FileStatus::NO_CHANGE)
+        if (file_ctx.status != FileStatus::NO_CHANGE || file_ctx.open_failed)
         {
             file_ctx.reader.emplace(getFullDataPath(file));
+            const int open_errno = errno;
+            if (!file_ctx.reader->is_open() && open_errno == ENOENT && isTrackedByDirectoryEvents(file))
+            {
+                /// Removed or renamed: the pending directory events drop the file or move its offset to the new name.
+                file_ctx.reader.reset();
+                file_ctx.status = FileStatus::NO_CHANGE;
+                continue;
+            }
+            if (!file_ctx.reader->is_open()
+                && (open_errno == ENOENT || open_errno == EACCES || open_errno == EPERM || open_errno == ELOOP))
+            {
+                if (!file_ctx.open_failed)
+                    LOG_ERROR(log, "Cannot open file {}, will retry: {}", getFullDataPath(file), errnoToString(open_errno));
+                file_ctx.reader.reset();
+                file_ctx.status = FileStatus::NO_CHANGE;
+                file_ctx.open_failed = true;
+                /// The path leads to no file: what appears there later is read from its start, also after a restart.
+                if (open_errno == ENOENT || open_errno == ELOOP)
+                {
+                    if (auto it = file_infos.meta_by_inode.find(file_ctx.inode);
+                        it != file_infos.meta_by_inode.end() && it->second.file_name == file && it->second.last_writen_position != 0)
+                    {
+                        disk->removeFileIfExists(getFullMetaPath(file));
+                        it->second.last_writen_position = 0;
+                    }
+                }
+                any_open_failed = true;
+                /// Published at once: a later file can throw before the end of the loop.
+                has_files_to_reopen = true;
+                continue;
+            }
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
+            if (file_ctx.open_failed)
+            {
+                /// The path may lead to another file now: read it from the start.
+                if (const UInt64 inode = getInode(getFullDataPath(file)); inode != file_ctx.inode)
+                {
+                    if (isTrackedByDirectoryEvents(file))
+                    {
+                        file_ctx.reader.reset();
+                        file_ctx.status = FileStatus::NO_CHANGE;
+                        any_open_failed = true;
+                        has_files_to_reopen = true;
+                        continue;
+                    }
+                    file_infos.meta_by_inode.erase(file_ctx.inode);
+                    disk->removeFileIfExists(getFullMetaPath(file));
+                    file_ctx.inode = inode;
+                    file_infos.meta_by_inode.insert_or_assign(inode, FileMeta{.file_name = file});
+                }
+                file_ctx.open_failed = false;
+                file_ctx.status = FileStatus::UPDATED;
+            }
 
             reader.seekg(0, std::ios::end);
             assertStreamGood(reader);
@@ -568,12 +635,16 @@ void StorageFileLog::openFilesAndSetPos()
             auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
             if (meta.last_writen_position > static_cast<UInt64>(file_end))
             {
-                throw Exception(
-                    ErrorCodes::CANNOT_READ_ALL_DATA,
-                    "Last saved offsset for File {} is bigger than the file size ({} > {})",
+                /// Truncated in place, e.g. by `logrotate` with `copytruncate`.
+                LOG_INFO(
+                    log,
+                    "File {} is smaller than its saved offset ({} < {}), reading it again from the beginning",
                     file,
-                    meta.last_writen_position,
-                    std::streamoff{file_end});
+                    std::streamoff{file_end},
+                    meta.last_writen_position);
+                /// Before resetting: `serialize` refuses to store an offset smaller than the one on disk.
+                disk->removeFileIfExists(getFullMetaPath(meta.file_name));
+                meta.last_writen_position = 0;
             }
             /// update file end at the moment, used in ReadBuffer and serialize
             meta.last_open_end = file_end;
@@ -582,6 +653,7 @@ void StorageFileLog::openFilesAndSetPos()
             assertStreamGood(reader);
         }
     }
+    has_files_to_reopen = any_open_failed;
     serialize();
 }
 
@@ -708,6 +780,7 @@ void StorageFileLog::threadFunc()
         auto table_id = getStorageID();
 
         auto dependencies_count = getTableDependentCount();
+        reschedule = !dependencies_count;
 
         if (dependencies_count)
         {
@@ -761,7 +834,7 @@ void StorageFileLog::threadFunc()
     {
         if (path_is_directory)
         {
-            if (!getTableDependentCount() || reschedule)
+            if (!getTableDependentCount() || reschedule || has_files_to_reopen)
                 task->holder->scheduleAfter(milliseconds_to_wait);
             else
             {
@@ -831,6 +904,7 @@ bool StorageFileLog::streamToViews()
 
     auto block_io = interpreter.execute();
 
+    read_more_after_skipped_records = false;
     /// Each stream responsible for closing it's files and store meta
     openFilesAndSetPos();
 
@@ -847,7 +921,8 @@ bool StorageFileLog::streamToViews()
             getPollTimeoutMillisecond(),
             stream_number,
             max_streams_number,
-            (*filelog_settings)[FileLogSetting::handle_error_mode]));
+            (*filelog_settings)[FileLogSetting::handle_error_mode],
+            /* skip_broken_records */ true));
     }
 
     auto input= Pipe::unitePipes(std::move(pipes));
@@ -867,7 +942,8 @@ bool StorageFileLog::streamToViews()
     UInt64 milliseconds = watch.elapsedMilliseconds();
     LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", rows.load(), table_id.getNameForLogs(), milliseconds);
 
-    return updateFileInfos();
+    bool stalled = updateFileInfos();
+    return stalled && !read_more_after_skipped_records;
 }
 
 void StorageFileLog::wakeUp()
@@ -995,7 +1071,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Engine arguments:
 
-- `path_to_logs` – Path to log files to subscribe. It can be path to a directory with log files or to a single log file. The file name in the path can have [globs](/reference/functions/table-functions/file#globs-in-path) (`*`, `?`, `{abc,def}`, `{N..M}`) to read only the matching files of the directory, see [Selecting files with globs](#selecting-files-with-globs). Note that ClickHouse allows only paths inside `user_files` directory.
+- `path_to_logs` – Path to log files to subscribe. It can be path to a directory with log files or to a single log file. A relative path is resolved against the `user_files_path` directory, like in the [file](/reference/functions/table-functions/file) table function; a relative path that is already inside `user_files_path` from the working directory of the server (for example, `user_files/my_app/app.log` when the server runs in its data directory, as in the official Docker image) keeps that meaning. The file name in the path can have [globs](/reference/functions/table-functions/file#globs-in-path) (`*`, `?`, `{abc,def}`, `{N..M}`) to read only the matching files of the directory, see [Selecting files with globs](#selecting-files-with-globs). Note that ClickHouse allows only paths inside `user_files` directory.
 - `format_name` - Record format. Note that FileLog process each line in a file as a separate record and not all data formats are suitable for it.
 
 Optional parameters:
@@ -1007,11 +1083,13 @@ Optional parameters:
 - `poll_directory_watch_events_backoff_init` - The initial sleep value for watch directory thread. Default: `500`.
 - `poll_directory_watch_events_backoff_max` - The max sleep value for watch directory thread. Default: `32000`.
 - `poll_directory_watch_events_backoff_factor` - The speed of backoff, exponential by default. Default: `2`.
-- `handle_error_mode` — How to handle errors for FileLog engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
+- `handle_error_mode` — How to handle errors for FileLog engine. Possible values: default (a direct `SELECT` throws an exception if a record fails to parse; while the table streams into materialized views, such a record is skipped and the error is written to the server log), stream (the exception message and raw record will be saved in virtual columns `_error` and `_raw_record`).
 
 ## Description {#description}
 
-The delivered records are tracked automatically, so each record in a log file is only counted once.
+The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read.
+
+A file that cannot be opened (a symlink whose target was removed, a file not readable by the server, or the file of a single-file table that was removed) is skipped with an error in the server log and retried until it can be opened while the table is loaded; a file that was missing is then read from its start. A symlink is read only if its target exists when the table finds it.
 
 `SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
 
@@ -1029,7 +1107,7 @@ CREATE TABLE logs (
     timestamp UInt64,
     level String,
     message String
-  ) ENGINE = FileLog('user_files/my_app/app.log', 'JSONEachRow');
+  ) ENGINE = FileLog('my_app/app.log', 'JSONEachRow');
 
 CREATE TABLE daily (
     day Date,
@@ -1275,7 +1353,7 @@ bool StorageFileLog::updateFileInfos()
                         if (disk->existsFile(getFullMetaPath(old_name)))
                             disk->replaceFile(getFullMetaPath(old_name), getFullMetaPath(file_name));
                     }
-                    /// May move from other place, adding new meta info
+                    /// The rename source was not tracked, e.g. it was created and renamed within one batch
                     else
                         file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
                 }
