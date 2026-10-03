@@ -6,7 +6,7 @@ tags: ['Tools and Utilities']
 keywords: ['Windows']
 ---
 
-## Example
+## Example {#example}
 
 This example shows how AD users that belong to different AD security groups can be given role access in ClickHouse.  It also shows how a user may be added to multiple AD user groups so they can have access provided by multiple roles.
 
@@ -55,18 +55,22 @@ In this environment, we have the following:
 
 <Image img={ad_user_group} size="md" alt="Example user group membership" />
 
-2.  In ClickHouse `config.xml`, add the `ldap_servers` configuration to each ClickHouse node.
+2.  In ClickHouse `config.xml`, add the `ldap_servers` configuration to each ClickHouse node. The example uses a dedicated AD service account (`svc.clickhouse`) for every search, so regular users do not need permission to read the group OU or their own `memberOf`; the user's own password is verified by binding as the DN that the search found (search-and-bind, selected by `<bind_dn>{user_dn}</bind_dn>`).
 ```
 <ldap_servers>
 	<marsnet2_ad>
 		<host>marsdc1.marsnet2.local</host>
-		<port>389</port>
-		<bind_dn>{user_name}@marsnet2.local</bind_dn>
+		<port>636</port>
+		<enable_tls>yes</enable_tls>
+		<tls_require_cert>demand</tls_require_cert>
+		<tls_ca_cert_file>/etc/clickhouse-server/marsnet2_ca.pem</tls_ca_cert_file>
+		<lookup_bind_dn>CN=svc.clickhouse,OU=ServiceAccounts,DC=marsnet2,DC=local</lookup_bind_dn>
+		<lookup_password from_env="CLICKHOUSE_LDAP_LOOKUP_PASSWORD" hide_in_preprocessed="true"/>
+		<bind_dn>{user_dn}</bind_dn>
 		<user_dn_detection>
 			<base_dn>OU=Users,OU=ClickHouse,DC=marsnet2,DC=local</base_dn>
 			<search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
 		</user_dn_detection>
-		<enable_tls>no</enable_tls>
 	</marsnet2_ad>
 </ldap_servers>
 ```
@@ -76,8 +80,11 @@ In this environment, we have the following:
 | ldap_servers |Tag used to define the ldap servers that will be used by ClickHouse|NA|
 | marsnet_ad |This tag is arbitrary and is just a label to use to identify the server in `<user_directories>` section|NA|
 | host |FQDN or IP Address of Active Directory server or domain|marsdc1.marsnet2.local|
-| port |Active Directory Port, usually 389 for non-ssl or 636 for SSL|389|
-| bind_dn |Which user will be used to create the bind to AD, it can be a dedicated user if regular users are not allowed to| `{user_name}@marsnet2.local`|
+| port |Active Directory Port, usually 389 for non-ssl or 636 for SSL|636|
+| enable_tls |Use LDAPS (`yes`), plain LDAP (`no`) or StartTLS (`starttls`); LDAPS with `tls_require_cert` set to `demand` and the domain CA in `tls_ca_cert_file` is recommended|yes|
+| lookup_bind_dn |DN of the service account that performs the user search and the group searches; it needs read access to the user and group OUs|CN=svc.clickhouse,OU=ServiceAccounts,DC=marsnet2,DC=local|
+| lookup_password |Password of the service account; read from an environment variable with `from_env` and hidden from the preprocessed configuration with `hide_in_preprocessed`|NA|
+| bind_dn |DN the user's password is verified against; `{user_dn}` means "the DN that `user_dn_detection` found" (search-and-bind). A template such as `{user_name}@marsnet2.local` performs a direct bind instead| `{user_dn}`|
 | user_dn_detection |Settings on how ClickHouse will find the AD users|NA|
 | base_dn |AD OU path to start the search for the users|OU=Users,OU=ClickHouse,DC=marsnet2,DC=local|
 | search_filter |ldap search filter to find the AD user|`(&(objectClass=user)(sAMAccountName={user_name}))`|
