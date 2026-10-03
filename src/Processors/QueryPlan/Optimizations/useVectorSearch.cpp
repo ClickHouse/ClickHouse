@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <unordered_set>
 
 #include <Columns/ColumnConst.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -92,6 +91,14 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     if (!expression_step)
         return no_layers_updated;
 
+    /// A row-changing action (e.g. `arrayJoin`) below the sort expands or drops rows before the sort and the
+    /// limit. Vector search shortlists a few base rows and feeds only those to this `ExpressionStep`, so the
+    /// rows a later base row would have contributed are never produced and the query returns fewer rows than
+    /// the `LIMIT` - e.g. the nearest base rows hold empty arrays, `arrayJoin` drops them, and the result is
+    /// empty. This mirrors the `hasArrayJoin` guard in `optimizeTopK`. See #82279.
+    if (expression_step->getExpression().hasArrayJoin())
+        return no_layers_updated;
+
     if (node->children.size() != 1)
         return no_layers_updated;
     node = node->children.front();
@@ -103,6 +110,10 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
         filter_step = typeid_cast<FilterStep *>(node->step.get());
         if (!filter_step)
             return no_layers_updated;
+        /// Same reasoning as above: `arrayJoin` inside a `FilterStep` below the sort changes the number of rows
+        /// before the sort and the limit, but vector search prunes rows before it.
+        if (filter_step->getExpression().hasArrayJoin())
+            return no_layers_updated;
         if (node->children.size() != 1)
             return no_layers_updated;
         node = node->children.front();
@@ -113,6 +124,15 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     }
 
     if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
+        additional_filters_present = true;
+
+    /// A row-level policy filter is reader-side as well: it restricts the set of rows just like a `WHERE` or a
+    /// `PREWHERE`, so it must participate in `additional_filters_present`. Otherwise a query filtered only by a
+    /// policy is treated as unfiltered: the `vector_search_filter_strategy = 'prefilter'` bailout below is
+    /// skipped, so an explicit request for exact search is ignored, and `MergeTreeIndexConditionVectorSimilarity`
+    /// fetches only `LIMIT` neighbours without the `vector_search_index_fetch_multiplier` compensation, which the
+    /// policy can then discard.
+    if (read_from_mergetree_step->getRowLevelFilter())
         additional_filters_present = true;
 
     if (additional_filters_present && settings.vector_search_filter_strategy == VectorSearchFilterStrategy::PREFILTER)
@@ -184,8 +204,6 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
         else if (child->type == ActionsDAG::ActionType::INPUT) /// old analyzer
         {
             search_column = child->result_name;
-            if (search_column.contains('.'))
-                search_column = search_column.substr(search_column.find('.') + 1); /// admittedly fragile but hey, it's the old path ...
         }
         else if (child->type == ActionsDAG::ActionType::COLUMN)
         {
@@ -222,22 +240,41 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     /// Check if a vector similarity index exists on top of the search column.
     /// Multi-column indexes cannot be used
     const auto & indexes = read_from_mergetree_step->getStorageMetadata()->getSecondaryIndices();
-    bool has_vector_similarity_index = false;
-    for (const auto & index : indexes)
+    auto has_vector_similarity_index_on = [&indexes](const String & column_name)
     {
-        if (index.type != "vector_similarity")
-            continue;
-
-        chassert(index.expression);
-        auto required_columns = index.expression->getRequiredColumns();
-        if (required_columns.size() == 1 && required_columns[0] == search_column)
+        for (const auto & index : indexes)
         {
-            has_vector_similarity_index = true;
-            break;
+            if (index.type != "vector_similarity")
+                continue;
+
+            chassert(index.expression);
+            auto required_columns = index.expression->getRequiredColumns();
+            if (required_columns.size() == 1 && required_columns[0] == column_name)
+                return true;
         }
+        return false;
+    };
+
+    /// Resolve the name extracted from `ORDER BY` to the exact storage column. The name is either already a storage
+    /// column - including a genuinely dotted one, such as a `Nested` component `n.vec` or even `n.values.id` - or it
+    /// carries the table qualifier which the analyzer prepends (`__table1.vec`). Peel the leading component only when it
+    /// is a proven qualifier, i.e. when the full name is not a column of this table while the remainder is. Peeling
+    /// based on the index lookup alone would turn `n.values.id` into `values.id` and, if such a column happens to be
+    /// indexed, rank candidates by a different vector column instead of falling back to an exact scan.
+    const ColumnsDescription & storage_columns = read_from_mergetree_step->getStorageMetadata()->getColumns();
+    auto is_storage_column = [&storage_columns](const String & column_name)
+    {
+        return storage_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+    };
+
+    if (!is_storage_column(search_column) && search_column.contains('.'))
+    {
+        const String unqualified = search_column.substr(search_column.find('.') + 1);
+        if (is_storage_column(unqualified))
+            search_column = unqualified;
     }
 
-    if (!has_vector_similarity_index)
+    if (!has_vector_similarity_index_on(search_column))
         return no_layers_updated;
 
     /// The `_distance` column is an internal virtual column populated by the vector search optimization.
@@ -255,89 +292,6 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
 
     return no_layers_updated;
-}
-
-/// Finds the INPUT node of `dag` which reads the vector search column, or nullptr if the column is not an input.
-///
-/// `search_column` is the unqualified name of the storage column. An exact match always wins. An input may
-/// carry a table qualifier (`tab.vec`), so as a fallback a single leading qualifier is stripped, the same way
-/// `optimizeVectorSearchWithQuantizedCodes` resolves a dotted name. The fallback must not fire for an unrelated
-/// column that merely ends in the same leaf name: the `vec` element of a `Nested` column `n` is a physical column
-/// literally named `n.vec`, hence the check against the storage columns.
-static const ActionsDAG::Node * findSearchColumnInput(const ActionsDAG & dag, const String & search_column, const ColumnsDescription & storage_columns)
-{
-    const ActionsDAG::Node * qualified_match = nullptr;
-
-    for (const auto * input : dag.getInputs())
-    {
-        if (input->result_name == search_column)
-            return input;
-
-        if (qualified_match)
-            continue;
-
-        const auto qualifier_end = input->result_name.find('.');
-        if (qualifier_end == String::npos)
-            continue;
-
-        /// Only a single qualifier may be stripped: for a table `tab` with a `Nested` column `n`, the input
-        /// `tab.n.vec` refers to the column `n.vec` and not to `vec`.
-        if (std::string_view(input->result_name).substr(qualifier_end + 1) != search_column)
-            continue;
-
-        /// A physical column with exactly this name is a different column, not a qualified reference to `search_column`.
-        if (storage_columns.hasPhysical(input->result_name))
-            continue;
-
-        qualified_match = input;
-    }
-
-    return qualified_match;
-}
-
-/// Checks whether any output of `dag` other than `excluded_output` transitively consumes `input`.
-/// Such an output survives the no-rescoring rewrite, so `input` cannot be removed from the read header.
-static bool anyOutputConsumesInput(const ActionsDAG & dag, const ActionsDAG::Node * input, const ActionsDAG::Node * excluded_output)
-{
-    std::unordered_set<const ActionsDAG::Node *> visited;
-    std::vector<const ActionsDAG::Node *> to_visit;
-
-    for (const auto * output : dag.getOutputs())
-    {
-        if (output != excluded_output)
-            to_visit.push_back(output);
-    }
-
-    while (!to_visit.empty())
-    {
-        const auto * current = to_visit.back();
-        to_visit.pop_back();
-
-        if (current == input)
-            return true;
-
-        if (!visited.insert(current).second)
-            continue;
-
-        for (const auto * child : current->children)
-            to_visit.push_back(child);
-    }
-
-    return false;
-}
-
-/// Row-policy DAGs retain every required table column as a passthrough output. This output is
-/// removed by the no-rescoring rewrite together with the vector column, unlike an expression
-/// that consumes the input and must therefore prevent the rewrite.
-static const ActionsDAG::Node * findPassthroughOutput(const ActionsDAG & dag, const ActionsDAG::Node * input)
-{
-    for (const auto * output : dag.getOutputs())
-    {
-        if (output == input || (output->type == ActionsDAG::ActionType::ALIAS && output->children.at(0) == input))
-            return output;
-    }
-
-    return nullptr;
 }
 
 bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, Stack & stack, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
@@ -484,56 +438,117 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     if (optimize_plan)
     {
         auto search_column = vector_search_parameters.value().column;
-        const ColumnsDescription & storage_columns = read_from_mergetree_step->getStorageMetadata()->getColumns();
-
-        /// If any output other than the ORDER BY distance expression still consumes the vector column -
-        /// the column itself (rare situation), an alias of it, or an expression over it (e.g. `length(vec)`) -
-        /// the column cannot be removed from the read header, so skip the optimization.
-        if (const auto * search_column_input = findSearchColumnInput(expression, search_column, storage_columns))
+        /// The name of the search column extracted from the `ORDER BY` clause is sometimes the plain column name
+        /// (the qualifier is stripped when the distance function reads an `INPUT` node directly), while the nodes of
+        /// the DAGs checked below keep the qualified name, e.g. `__table1.vec`. Recover the exact name among the
+        /// DAG inputs from the distance function's argument and match both forms exactly - a suffix match would
+        /// conflate an unrelated dotted column such as `n.vec` with a search column `vec`.
+        String search_column_input_name = search_column;
+        if (const auto * sort_output_node = expression.tryFindInOutputs(sort_column))
         {
-            const ActionsDAG::Node * sort_column_output = expression.tryFindInOutputs(sort_column);
-            if (anyOutputConsumesInput(expression, search_column_input, sort_column_output))
-                optimize_plan = false;
-        }
-
-        /// Same check for the filter/PREWHERE step: the rewrite below removes only the vector column
-        /// output from its DAG, so e.g. a filter condition `length(vec) = 2` would keep the vector
-        /// column INPUT alive while the column disappears from the read header.
-        if (optimize_plan && filter_or_prewhere_node)
-        {
-            const ActionsDAG & filter_expression = prewhere_expression_step ? prewhere_expression_step->getExpression() : filter_step->getExpression();
-            if (const auto * search_column_input = findSearchColumnInput(filter_expression, search_column, storage_columns))
+            for (const auto * child : sort_output_node->children)
             {
-                if (anyOutputConsumesInput(filter_expression, search_column_input, findPassthroughOutput(filter_expression, search_column_input)))
-                    optimize_plan = false;
+                const auto * maybe_input = child;
+                if (maybe_input->type == ActionsDAG::ActionType::ALIAS)
+                    maybe_input = maybe_input->children.at(0);
+                if (maybe_input->type == ActionsDAG::ActionType::INPUT)
+                    search_column_input_name = maybe_input->result_name;
+            }
+        }
+        auto is_search_column = [&search_column, &search_column_input_name](const String & name)
+        {
+            return name == search_column || name == search_column_input_name;
+        };
+
+        /// Remove the distance-sort output from a copy of the projection DAG before checking
+        /// inputs. Apart from the distance expression itself, every remaining dependency must
+        /// be satisfiable from the reader header after the rewrite. In particular, a projection
+        /// such as `length(vec)` needs the physical vector column even though `vec` is not an
+        /// output node of the DAG.
+        auto pruned_projection_expression = expression.clone();
+        pruned_projection_expression.removeUnusedResult(sort_column);
+        pruned_projection_expression.removeUnusedActions();
+
+        for (const auto * input : pruned_projection_expression.getInputs())
+        {
+            if (is_search_column(input->result_name))
+            {
+                optimize_plan = false;
+                break;
             }
         }
 
-        /// Row-level filters are executed by ReadFromMergeTree and are not represented by a separate
-        /// plan node. Their ActionsDAG updates the read header and retains required table columns as
-        /// passthrough outputs. `replaceVectorColumnWithDistanceColumn` removes the direct vector-column
-        /// passthrough from both active and deferred row-policy DAGs, but any other output that consumes
-        /// the vector column must still prevent the rewrite. With FINAL, the row-level filter can already
-        /// be deferred before this pass runs, so check both carriers.
+        /// If the row policy reads the vector column (rare situation), skip the optimization as well. The policy
+        /// filter runs inside the reader on the read columns, and `replaceVectorColumnWithDistanceColumn` would
+        /// remove the physical vector column from the read list, leaving the policy without its input.
+        /// With FINAL, `deferFiltersAfterFinalIfNeeded` additionally carries the policy in the deferred filter,
+        /// which is applied after the merge on the read columns all the same. It copies the filter and clears
+        /// `query_info.row_level_filter` only when the pipeline is built, i.e. past every query plan
+        /// optimization, so today either carrier alone would do - both are checked so that the guard does not
+        /// depend on that ordering.
         if (optimize_plan)
         {
-            if (const auto & row_level_filter = read_from_mergetree_step->getRowLevelFilter())
+            for (const auto & row_level_filter :
+                 {read_from_mergetree_step->getRowLevelFilter(), read_from_mergetree_step->getDeferredRowLevelFilter()})
             {
-                const ActionsDAG & row_level_filter_expression = row_level_filter->actions;
-                if (const auto * search_column_input = findSearchColumnInput(row_level_filter_expression, search_column, storage_columns))
+                if (!row_level_filter)
+                    continue;
+
+                /// The analyzer keeps pass-through table columns among the policy DAG outputs.
+                /// Keep only the actual predicate before checking its dependencies: otherwise the
+                /// vector column used only by the distance sort looks like a policy input.
+                auto pruned_row_level_filter = row_level_filter->actions.clone();
+                pruned_row_level_filter.getOutputs() = {
+                    &pruned_row_level_filter.findInOutputs(row_level_filter->column_name)};
+                pruned_row_level_filter.removeUnusedActions();
+
+                for (const auto * input : pruned_row_level_filter.getInputs())
                 {
-                    if (anyOutputConsumesInput(row_level_filter_expression, search_column_input, findPassthroughOutput(row_level_filter_expression, search_column_input)))
+                    if (is_search_column(input->result_name))
+                    {
                         optimize_plan = false;
+                        break;
+                    }
+                }
+
+                if (!optimize_plan)
+                    break;
+            }
+        }
+
+        /// If the filter (or intermediate expression) step below the sort itself reads the vector column - e.g.
+        /// a plain `WHERE length(vec) > 0` that was not moved to `PREWHERE` - skip the optimization as well.
+        /// The step is rebuilt below on top of the reader header without the physical vector column, so a
+        /// predicate that reads it would be left without its input and the query would fail with
+        /// `NOT_FOUND_COLUMN_IN_BLOCK`. Detect it by pruning a copy of the step's DAG the same way the rebuild
+        /// does and checking whether the vector column survives among the required inputs.
+        std::optional<ActionsDAG> pruned_filter_expression;
+        if (optimize_plan && filter_or_prewhere_node)
+        {
+            const ActionsDAG & filter_expression
+                = prewhere_expression_step ? prewhere_expression_step->getExpression() : filter_step->getExpression();
+            pruned_filter_expression = filter_expression.clone();
+
+            String output_result_to_delete;
+            for (const auto * output_node : pruned_filter_expression->getOutputs())
+            {
+                if (output_node->type == ActionsDAG::ActionType::ALIAS && output_node->children.at(0)->result_name == search_column)
+                {
+                    output_result_to_delete = output_node->result_name;
+                    break;
                 }
             }
+            if (output_result_to_delete.empty())
+                output_result_to_delete = search_column; /// old analyzer
+            pruned_filter_expression->removeUnusedResult(output_result_to_delete);
+            pruned_filter_expression->removeUnusedActions();
 
-            if (const auto & deferred_row_level_filter = read_from_mergetree_step->getDeferredRowLevelFilter())
+            for (const auto * input : pruned_filter_expression->getInputs())
             {
-                const ActionsDAG & deferred_row_level_filter_expression = deferred_row_level_filter->actions;
-                if (const auto * search_column_input = findSearchColumnInput(deferred_row_level_filter_expression, search_column, storage_columns))
+                if (is_search_column(input->result_name))
                 {
-                    if (anyOutputConsumesInput(deferred_row_level_filter_expression, search_column_input, findPassthroughOutput(deferred_row_level_filter_expression, search_column_input)))
-                        optimize_plan = false;
+                    optimize_plan = false;
+                    break;
                 }
             }
         }
@@ -597,32 +612,18 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             const auto * new_output = &expression.addAlias(*distance_node, sort_column);
             expression.getOutputs().insert(expression.getOutputs().begin() + sort_column_pos, new_output);
 
-            /// Need to do same removal of the vector column from the Filter step
+            /// Need to do same removal of the vector column from the Filter step. The removal has already been
+            /// done on `pruned_filter_expression` above (where it also served as the bailout check).
             if (filter_or_prewhere_node)
             {
-                ActionsDAG & filter_expression = prewhere_expression_step ? prewhere_expression_step->getExpression() : filter_step->getExpression();
-                String output_result_to_delete;
-                for (const auto * output_node : filter_expression.getOutputs())
-                {
-                    if (output_node->type == ActionsDAG::ActionType::ALIAS && output_node->children.at(0)->result_name == search_column)
-                    {
-                        output_result_to_delete = output_node->result_name;
-                        break;
-                    }
-                }
-                if (output_result_to_delete.empty())
-                    output_result_to_delete = search_column; /// old analyzer
-                filter_expression.removeUnusedResult(output_result_to_delete);
-                filter_expression.removeUnusedActions();
-
                 /// Update the node with new Step
                 QueryPlanStepPtr new_step;
                 if (prewhere_expression_step)
-                    new_step = std::make_unique<ExpressionStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression));
+                    new_step = std::make_unique<ExpressionStep>(read_from_mergetree_step->getOutputHeader(), std::move(*pruned_filter_expression));
                 else
-                    new_step = std::make_unique<FilterStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+                    new_step = std::make_unique<FilterStep>(read_from_mergetree_step->getOutputHeader(), std::move(*pruned_filter_expression), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
                 new_step->setStepDescription(*filter_or_prewhere_node->step);
-               filter_or_prewhere_node->step = std::move(new_step);
+                filter_or_prewhere_node->step = std::move(new_step);
             }
         }
 
