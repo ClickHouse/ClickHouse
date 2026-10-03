@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-shared-merge-tree, no-parallel
+# Tags: no-replicated-database, no-shared-merge-tree, no-parallel, no-fasttest
 # no-replicated-database, no-shared-merge-tree: the test reloads the table and reads
 #   `system.detached_parts`, which a replicated table recovers from another replica.
 # no-parallel: `patch_part_index_write_empty` is server-global, so a concurrent lightweight
