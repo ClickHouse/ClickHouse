@@ -351,7 +351,7 @@ std::expected<void, PreformattedMessage> IStorage::supportsLightweightUpdate() c
     return std::unexpected(PreformattedMessage::create("Table with engine {} doesn't support lightweight updates", getName()));
 }
 
-QueryPipeline IStorage::updateLightweight(const MutationCommands &, ContextPtr)
+QueryPipeline IStorage::updateLightweight(const MutationCommands &, ContextPtr, LightweightUpdateSettings)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight updates are not supported by storage {}", getName());
 }

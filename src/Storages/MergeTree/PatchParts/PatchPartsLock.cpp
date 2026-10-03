@@ -2,6 +2,8 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/IdentifierNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -52,6 +54,33 @@ namespace ErrorCodes
 
 namespace
 {
+
+class CollectUpdateUsedColumnsVisitor : public ConstInDepthQueryTreeVisitor<CollectUpdateUsedColumnsVisitor>
+{
+public:
+    explicit CollectUpdateUsedColumnsVisitor(NameSet & used_) : used(used_) {}
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        const auto * identifier_node = node->as<IdentifierNode>();
+        if (!identifier_node)
+            return;
+
+        /// Writes use bare column names, but correlated reads can be table- or database-qualified.
+        /// Keep every possible qualification suffix because table scopes are not resolved here.
+        /// This can conservatively add conflicts for source-column name collisions.
+        /// Use parsed parts so dots inside a quoted column name are not treated as qualifiers.
+        IdentifierView identifier(identifier_node->getIdentifier());
+        while (!identifier.empty())
+        {
+            used.emplace(identifier.getFullName());
+            identifier.popFirst();
+        }
+    }
+
+private:
+    NameSet & used;
+};
 
 constexpr Int64 max_wait_chunk_ms = 3000;
 constexpr Int64 bad_version_backoff_ms = 50;
@@ -421,6 +450,7 @@ PlainLightweightUpdateLock::~PlainLightweightUpdateLock()
 UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands, const ContextPtr & context)
 {
     UpdateAffectedColumns res;
+    CollectUpdateUsedColumnsVisitor collect_used_columns(res.used);
 
     for (const auto & command : commands)
     {
@@ -436,8 +466,7 @@ UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands
             normalizeSetOperations(predicate, context);
 
         auto query_tree = buildQueryTree(predicate, context);
-        auto identifiers = collectIdentifiersFullNames(query_tree);
-        std::move(identifiers.begin(), identifiers.end(), std::inserter(res.used, res.used.end()));
+        collect_used_columns.visit(query_tree);
 
         if (!alter->update_assignments)
             continue;
@@ -451,8 +480,7 @@ UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands
             normalizeSetOperations(assignment_expression, context);
 
             query_tree = buildQueryTree(assignment_expression, context);
-            identifiers = collectIdentifiersFullNames(query_tree);
-            std::move(identifiers.begin(), identifiers.end(), std::inserter(res.used, res.used.end()));
+            collect_used_columns.visit(query_tree);
         }
     }
 
