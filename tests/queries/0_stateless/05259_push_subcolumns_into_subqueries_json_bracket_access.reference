@@ -1,0 +1,40 @@
+single key
+ReadFromMergeTree (default.t_push_subcolumns_json_bracket)
+Header: json.@`a` Dynamic
+1	Dynamic
+s	Dynamic
+\N	Dynamic
+1	Dynamic
+s	Dynamic
+\N	Dynamic
+typed path
+ReadFromMergeTree (default.t_push_subcolumns_json_bracket)
+Header: json.@`t` UInt32
+10	UInt32
+0	UInt32
+0	UInt32
+10	UInt32
+0	UInt32
+0	UInt32
+chain through a CTE
+ReadFromMergeTree (default.t_push_subcolumns_json_bracket)
+Header: json.@`c` Dynamic
+x
+2
+\N
+x
+2
+\N
+two levels of subqueries
+ReadFromMergeTree (default.t_push_subcolumns_json_bracket)
+Header: json.@`c` Dynamic
+{"d":"x"}
+{"d":2,"e":3}
+\N
+a key with a dot is not rewritten
+ReadFromMergeTree (default.t_push_subcolumns_json_bracket)
+Header: json JSON(t UInt32)
+a subcolumn of the exported value is not composed with the JSON path
+1	\N
+\N	s
+\N	\N

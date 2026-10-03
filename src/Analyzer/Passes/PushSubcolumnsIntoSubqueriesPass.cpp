@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -620,6 +621,30 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
         key_type->getDefaultSerialization()->serializeText(*key_column, 0, buffer, FormatSettings());
         subcolumn_path = String(DataTypeMap::KEY_SUBCOLUMN_PREFIX) + buffer.str();
     }
+    else if (
+        function_name == "arrayElement" && function_arguments.size() == 2 && column_node->getColumnType()->getTypeId() == TypeIndex::Object)
+    {
+        /// `json['key']` reads the combined subcolumn `json.@`key`` holding the path `key` together
+        /// with all its nested paths, like `FunctionToSubcolumnsPass::optimizeJSONArrayElementChain`
+        /// does for a single key. In a chain `json['a']['b']` the inner access is matched on its own,
+        /// so the subquery reads `json.@`a`` instead of the whole column.
+        const auto * constant_node = function_arguments[1]->as<ConstantNode>();
+        if (!constant_node || constant_node->getValue().getType() != Field::Types::String)
+            return {};
+
+        /// A dot in the key is stored escaped or not depending on `json_type_escape_dots_in_keys`,
+        /// which is not known here, so such keys are left as is.
+        const auto & key = constant_node->getValue().safeGet<String>();
+        if (key.find('.') != String::npos)
+            return {};
+
+        /// A typed path has its own type rather than `Dynamic`; the replacement casts the subcolumn
+        /// back to the result type of the original function.
+        subcolumn_path = DataTypeObject::getCombinedSubcolumnName(key);
+        subcolumn_type_override = column_node->getColumnType()->tryGetSubcolumnType(subcolumn_path);
+        if (!subcolumn_type_override)
+            return {};
+    }
     else if (function_name == "isNull" && function_arguments.size() == 1 && column_node->getColumnType()->getTypeId() == TypeIndex::Nullable)
     {
         const auto & nullable_type = assert_cast<const DataTypeNullable &>(*column_node->getColumnType());
@@ -644,13 +669,13 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
 
         subcolumn_path = type_id == TypeIndex::String ? "size" : "size0";
     }
-    else if (function_name == "tupleElement" && function_arguments.size() == 2 && column_node->getColumnType()->getTypeId() == TypeIndex::Tuple)
+    else if (function_name == "tupleElement" && function_arguments.size() == 2 && isTuple(removeNullable(column_node->getColumnType())))
     {
         const auto * constant_node = function_arguments[1]->as<ConstantNode>();
         if (!constant_node)
             return {};
 
-        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*column_node->getColumnType());
+        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*removeNullable(column_node->getColumnType()));
         const auto & element_names = tuple_type.getElementNames();
         const auto & element_types = tuple_type.getElements();
         const auto & value = constant_node->getValue();
@@ -671,11 +696,28 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
                 position = index > 0 ? index - 1 : static_cast<Int64>(element_types.size()) + index;
         }
 
-        if (!position || !function_node.getResultType()->equals(*element_types[*position]))
+        if (!position)
             return {};
 
         subcolumn_path = element_names[*position];
         requires_tuple_element_guards = true;
+
+        if (column_node->getColumnType()->isNullable())
+        {
+            /// Like in `FunctionToSubcolumnsPass`, `tupleElement` over `Nullable(Tuple(...))` fills
+            /// defaults for outer NULLs when the element cannot represent NULL, whereas the subcolumn
+            /// keeps the values beneath the parent null map, so only elements that can contain NULL
+            /// are read as subcolumns. The subcolumn of such an element is wrapped into the outer
+            /// null map and must have the result type of the original function.
+            if (!canContainNull(*function_node.getResultType()))
+                return {};
+
+            subcolumn_type_override = declared_subcolumn_type(subcolumn_path, function_node.getResultType());
+            if (!subcolumn_type_override)
+                return {};
+        }
+        else if (!function_node.getResultType()->equals(*element_types[*position]))
+            return {};
     }
     else if (function_name == "tupleElement" && function_arguments.size() == 2 && column_node->getColumnType()->getTypeId() == TypeIndex::QBit)
     {
@@ -1171,6 +1213,12 @@ QueryTreeNodePtr unwrapSubcolumnFunctions(
         if (!match || match->replacement_kind != ReplacementKind::Direct)
             return nullptr;
 
+        /// The value of a JSON path (`json['a']`) is `Dynamic`, and a subcolumn of it names a type
+        /// of the value (`x.Int64`), while a subcolumn of the combined JSON subcolumn names a nested
+        /// path (`json.@`a`.Int64` is the path `a.Int64`), so their paths do not compose.
+        if (function_node->getFunctionName() == "arrayElement" && match->column_node->getColumnType()->getTypeId() == TypeIndex::Object)
+            return nullptr;
+
         if (via_function_carrier)
             *via_function_carrier = *via_function_carrier || match->via_function_carrier
                 || (synthesized_carrier_reads && synthesized_carrier_reads->contains(function_node));
@@ -1262,7 +1310,8 @@ QueryTreeNodePtr buildSubcolumnProjectionNode(
             /// keep reading the whole tuple (mirrors tupleElementNameIsOrdinalOnly of
             /// `FunctionToSubcolumnsPass`). A source serving subcolumns from its own metadata
             /// does have the ordinal subcolumn.
-            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(inner_column->getColumnType().get());
+            auto inner_tuple_type = removeNullable(inner_column->getColumnType());
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(inner_tuple_type.get());
             if (!tuple_type
                 || tupleElementNameIsAmbiguousWhenFlattened(*tuple_type, subcolumn_path)
                 || sourceHasColumnCaseInsensitive(storage_snapshot, subcolumn_full_name)
