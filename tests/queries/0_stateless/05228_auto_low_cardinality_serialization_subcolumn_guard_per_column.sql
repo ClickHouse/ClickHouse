@@ -70,7 +70,8 @@ SELECT sum(length(body)), countIf(notEmpty(body)), sum(length(lc)), countIf(notE
 DROP TABLE t_auto_lc_guard_per_column;
 
 -- The default `auto_statistics_types` adds a cardinality statistic to every eligible column, so a plain
--- `String` column of a table with the feature enabled is a candidate and keeps the guard.
+-- `String` column of a table with the feature enabled is a candidate and keeps the guard. The default is
+-- set explicitly, because the test runner randomizes `auto_statistics_types`.
 DROP TABLE IF EXISTS t_auto_lc_guard_implicit;
 CREATE TABLE t_auto_lc_guard_implicit
 (
@@ -82,7 +83,8 @@ ORDER BY id
 SETTINGS
     max_uniq_number_for_low_cardinality = 1000,
     ratio_of_defaults_for_sparse_serialization = 0.9,
-    min_bytes_for_wide_part = 0;
+    min_bytes_for_wide_part = 0,
+    auto_statistics_types = 'basic, uniq_v2';
 
 SELECT 'implicit cardinality statistic: rewrite is skipped';
 SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT length(s) FROM t_auto_lc_guard_implicit) WHERE explain LIKE '%s.size%';
