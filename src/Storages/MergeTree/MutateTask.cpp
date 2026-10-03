@@ -120,6 +120,7 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -1979,6 +1980,13 @@ struct MutationContext
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<MergeTreeIndexPtr> text_indices_to_recalc;
     std::set<MergeTreeIndexPtr> indices_to_drop;
+    /// The expressions of `indices_to_recalc` and `text_indices_to_recalc`, materialized into the
+    /// block so that the writer reuses them instead of evaluating them itself. Held here rather
+    /// than appended where they are collected, because they have to be evaluated on the block the
+    /// TTL has already worked on - a column TTL resets its column, and a `MATERIALIZED` column
+    /// derived from it is recomputed, so an expression evaluated before that describes the old
+    /// values while the part stores the new ones.
+    ASTPtr indices_recalc_expr_list;
     /// True iff at least one index that currently lives inside the source part's skp_idx.packed
     /// is being recomputed or dropped. When set, the mutation rebuilds the archive (writer side)
     /// and stops hardlinking the source's archive (see collectFilesToSkip).
@@ -2590,6 +2598,23 @@ static bool hasAnyIndexFileOnDisk(
     }
 
     return false;
+}
+
+/// Materializes the skip index expressions collected for this mutation into the block. Must run
+/// after the TTL transforms: the writer reuses whatever expression column it finds in the block, so
+/// evaluating it earlier writes an index that describes the pre-TTL values of a column the TTL reset
+/// or of a `MATERIALIZED` column recomputed from one - the index then prunes granules that do match.
+static void addIndicesRecalculationTransform(QueryPipelineBuilder & builder, const MutationContextPtr & ctx)
+{
+    if (!ctx->indices_recalc_expr_list)
+        return;
+
+    auto syntax_result
+        = TreeRewriter(ctx->context).analyze(ctx->indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
+    auto expression = ExpressionAnalyzer(ctx->indices_recalc_expr_list, syntax_result, ctx->context).getActions(false);
+
+    builder.addTransform(std::make_shared<ExpressionTransform>(builder.getSharedHeader(), expression));
+    builder.addTransform(std::make_shared<MaterializingTransform>(builder.getSharedHeader()));
 }
 
 class MutateAllPartColumnsTask : public IExecutableTask
@@ -3300,6 +3325,8 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
+            addIndicesRecalculationTransform(*builder, ctx);
+
             /// Some columns may be present in the interpreter output only for
             /// projection/index recalculation (e.g. CLEAR COLUMN provides a default
             /// value so that dependent projections are rebuilt correctly). Such columns
@@ -3981,17 +4008,12 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
     if ((!ctx->indices_to_recalc.empty() || !ctx->text_indices_to_recalc.empty()) && builder.initialized())
     {
-        auto indices_recalc_syntax
-            = TreeRewriter(ctx->context).analyze(indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
-        auto indices_recalc_expr = ExpressionAnalyzer(indices_recalc_expr_list, indices_recalc_syntax, ctx->context).getActions(false);
-
         /// We can update only one column, but some skip idx expression may depend on several
         /// columns (c1 + c2 * c3). It works because this stream was created with help of
         /// MutationsInterpreter which knows about skip indices and stream 'in' already has
         /// all required columns.
         /// TODO move this logic to single place.
-        builder.addTransform(std::make_shared<ExpressionTransform>(builder.getSharedHeader(), indices_recalc_expr));
-        builder.addTransform(std::make_shared<MaterializingTransform>(builder.getSharedHeader()));
+        ctx->indices_recalc_expr_list = indices_recalc_expr_list;
     }
 }
 }
@@ -4263,6 +4285,13 @@ bool MutateTask::prepare()
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, rewrites_all_columns);
+
+    /// A part cannot be left with no columns: it could not be loaded or read.
+    if (new_columns.empty())
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+            "Cannot mutate part {}: none of its columns ({}) would remain, because the table does not have them "
+            "or the mutation removes them. Empty parts are not allowed",
+            ctx->source_part->name, fmt::join(ctx->source_part->getColumns().getNames(), ", "));
 
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());
     if (!new_columns_substreams.empty())

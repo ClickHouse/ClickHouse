@@ -76,12 +76,12 @@ void FinishSortingTransform::consume(Chunk chunk)
     /// in-memory representations. Materialize to keep them comparable.
     convertToFullIfNonNativeLowCardinality(chunk);
 
-    /// We don't support sorting by replicated columns because `compareAt` over a full column
-    /// does not accept a `ColumnReplicated`.
+    /// We don't support sorting by replicated or sparse columns because `compareAt` over a full column
+    /// does not accept a `ColumnReplicated` or a `ColumnSparse`.
     size_t num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
     for (const auto & desc : description_with_positions)
-        columns[desc.column_number] = columns[desc.column_number]->convertToFullColumnIfReplicated();
+        columns[desc.column_number] = columns[desc.column_number]->convertToFullIfWrapped();
     chunk.setColumns(std::move(columns), num_rows);
 
     /// Compact the remaining duplicated columns.
