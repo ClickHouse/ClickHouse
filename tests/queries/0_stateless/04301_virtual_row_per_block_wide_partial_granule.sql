@@ -1,4 +1,4 @@
-SET optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1, max_block_size = 2;
+SET optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1, max_block_size = 2;
 
 DROP TABLE IF EXISTS t;
 

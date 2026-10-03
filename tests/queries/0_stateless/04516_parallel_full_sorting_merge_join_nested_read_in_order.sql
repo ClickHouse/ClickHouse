@@ -57,7 +57,7 @@ SELECT 'analyzer virtual_row_on',
   = (SELECT (sum(s.k), sum(p.y), count()) FROM (SELECT l.k AS k FROM pfsmj_nrio_ord AS l INNER JOIN pfsmj_nrio_dim AS r ON l.d = r.d ORDER BY l.k SETTINGS join_algorithm = 'hash') AS s INNER JOIN pfsmj_nrio_probe AS p ON s.k = p.k SETTINGS join_algorithm = 'full_sorting_merge');
 
 SELECT 'analyzer virtual_row_per_block_on',
-    (SELECT (sum(s.k), sum(p.y), count()) FROM (SELECT l.k AS k FROM pfsmj_nrio_ord AS l INNER JOIN pfsmj_nrio_dim AS r ON l.d = r.d ORDER BY l.k SETTINGS join_algorithm = 'hash') AS s INNER JOIN pfsmj_nrio_probe AS p ON s.k = p.k SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4, optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1, query_plan_join_shard_by_pk_ranges = 0)
+    (SELECT (sum(s.k), sum(p.y), count()) FROM (SELECT l.k AS k FROM pfsmj_nrio_ord AS l INNER JOIN pfsmj_nrio_dim AS r ON l.d = r.d ORDER BY l.k SETTINGS join_algorithm = 'hash') AS s INNER JOIN pfsmj_nrio_probe AS p ON s.k = p.k SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4, optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1, query_plan_join_shard_by_pk_ranges = 0)
   = (SELECT (sum(s.k), sum(p.y), count()) FROM (SELECT l.k AS k FROM pfsmj_nrio_ord AS l INNER JOIN pfsmj_nrio_dim AS r ON l.d = r.d ORDER BY l.k SETTINGS join_algorithm = 'hash') AS s INNER JOIN pfsmj_nrio_probe AS p ON s.k = p.k SETTINGS join_algorithm = 'hash');
 
 -- A LEFT outer join in the subquery keeps every ordered row (also non-`LEFT ANY/ALL`); still correct.

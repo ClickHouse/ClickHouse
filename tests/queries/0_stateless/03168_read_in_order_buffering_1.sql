@@ -9,6 +9,10 @@ INSERT INTO t_read_in_order_1 SELECT number, number FROM numbers(1000000);
 
 SET max_threads = 8;
 SET optimize_read_in_order = 1;
+-- With virtual rows the buffering moved into VirtualRowReadAheadTransform (the setting
+-- still selects the buffer depth there), so a BufferChunks probe no longer sees it; pin
+-- the test to the plain path where BufferChunks presence follows the setting.
+SET read_in_order_use_virtual_row = 0;
 SET read_in_order_use_buffering = 1;
 SET use_skip_indexes_for_top_k = 0;
 SET use_top_k_dynamic_filtering = 0;

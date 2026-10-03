@@ -25,8 +25,8 @@ public:
         const std::optional<String> & filter_column_name_ = std::nullopt,
         bool use_average_block_sizes = false,
         bool apply_virtual_row_conversions = true,
-        size_t virtual_row_prefetch_window = 0,
-        bool have_all_inputs_ = true);
+        bool have_all_inputs_ = true,
+        bool input_read_ahead_ = true);
 
     String getName() const override { return "MergingSortedTransform"; }
 
