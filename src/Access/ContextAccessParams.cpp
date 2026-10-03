@@ -27,7 +27,8 @@ ContextAccessParams::ContextAccessParams(
     const Settings & settings_,
     const String & current_database_,
     const ClientInfo & client_info_,
-    const std::optional<UUID> & initial_user_id_)
+    const std::optional<UUID> & initial_user_id_,
+    const std::shared_ptr<const std::vector<UUID>> & initial_user_current_roles_)
     : user_id(user_id_)
     , full_access(full_access_)
     , use_default_roles(use_default_roles_)
@@ -44,6 +45,7 @@ ContextAccessParams::ContextAccessParams(
     , forwarded_address(client_info_.getLastForwardedForHost())
     , quota_key(client_info_.quota_key)
     , initial_user_id(initial_user_id_)
+    , initial_user_current_roles(initial_user_current_roles_)
 {
 }
 
@@ -100,6 +102,17 @@ String ContextAccessParams::toString() const
         out << separator() << "quota_key = " << quota_key;
     if (initial_user_id)
         out << separator() << "initial_user_id = " << *initial_user_id;
+    if (initial_user_current_roles)
+    {
+        out << separator() << "initial_user_current_roles = [";
+        for (size_t i = 0; i != initial_user_current_roles->size(); ++i)
+        {
+            if (i)
+                out << ", ";
+            out << (*initial_user_current_roles)[i];
+        }
+        out << "]";
+    }
     return out.str();
 }
 
@@ -141,6 +154,7 @@ bool operator ==(const ContextAccessParams & left, const ContextAccessParams & r
     CONTEXT_ACCESS_PARAMS_EQUALS(forwarded_address)
     CONTEXT_ACCESS_PARAMS_EQUALS(quota_key)
     CONTEXT_ACCESS_PARAMS_EQUALS(initial_user_id)
+    CONTEXT_ACCESS_PARAMS_EQUALS(initial_user_current_roles)
 
     #undef CONTEXT_ACCESS_PARAMS_EQUALS
 
@@ -193,6 +207,7 @@ bool operator <(const ContextAccessParams & left, const ContextAccessParams & ri
     CONTEXT_ACCESS_PARAMS_LESS(forwarded_address)
     CONTEXT_ACCESS_PARAMS_LESS(quota_key)
     CONTEXT_ACCESS_PARAMS_LESS(initial_user_id)
+    CONTEXT_ACCESS_PARAMS_LESS(initial_user_current_roles)
 
     #undef CONTEXT_ACCESS_PARAMS_LESS
 

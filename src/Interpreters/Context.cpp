@@ -365,6 +365,7 @@ namespace Setting
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsUInt64 prefetch_buffer_size;
+    extern const SettingsBool push_external_roles_in_interserver_queries;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsBool read_from_page_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsUInt64 page_cache_block_size;
@@ -469,6 +470,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
@@ -2535,11 +2537,25 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
         bool full_access = !user_id;
 
         std::optional<UUID> initial_user_id;
+        std::shared_ptr<const std::vector<UUID>> initial_user_current_roles;
         if (client_info.initial_user != client_info.current_user)
+        {
             initial_user_id = getAccessControl().find<User>(client_info.initial_user);
+            if (initial_user_id && client_info.current_roles
+                && getGlobalContext()->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
+            {
+                const auto & role_names = *client_info.current_roles;
+                auto role_ids = getAccessControl().find<Role>(role_names);
+                /// Fail closed as on the interserver path: dropping an unknown role could widen the filter.
+                if (role_ids.size() != role_names.size())
+                    throw Exception(ErrorCodes::ACCESS_DENIED,
+                        "Not all of the initiator's current roles are known on this node: [{}]", fmt::join(role_names, ", "));
+                initial_user_current_roles = std::make_shared<const std::vector<UUID>>(std::move(role_ids));
+            }
+        }
 
         return ContextAccessParams{
-            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, authentication_grants, *settings, current_database, client_info, initial_user_id};
+            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, authentication_grants, *settings, current_database, client_info, initial_user_id, initial_user_current_roles};
     };
 
     /// Check if the current access rights are still valid, otherwise get parameters for recalculating access rights.

@@ -235,7 +235,7 @@ public:
         const UUID & user_id,
         const boost::container::flat_set<UUID> & enabled_roles) const;
 
-    std::shared_ptr<const EnabledRowPolicies> tryGetDefaultRowPolicies(const UUID & user_id) const;
+    std::shared_ptr<const EnabledRowPolicies> tryGetRowPoliciesOfInitialUser(const UUID & user_id, const std::vector<UUID> * current_roles) const;
 
     std::shared_ptr<const EnabledQuota> getEnabledQuota(
         const UUID & user_id,

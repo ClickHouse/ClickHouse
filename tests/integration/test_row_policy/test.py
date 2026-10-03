@@ -919,6 +919,62 @@ def test_policy_on_distributed_table_via_role():
     node.query("DROP ROW POLICY 'role1_data_dist' ON dist_tbl")
 
 
+def test_initial_user_current_roles_on_secret_less_shard():
+    # Over a cluster without a secret, node2 filters the rows of the initial user with the roles that
+    # are active on the initiator: a role known on node2 but not granted there applies as it is, and a
+    # role unknown on node2 refuses the read.
+    try:
+        for current_node in nodes:
+            current_node.query(
+                """
+                DROP TABLE IF EXISTS t_roles;
+                CREATE TABLE t_roles (svc String) ENGINE = MergeTree ORDER BY svc;
+                INSERT INTO t_roles VALUES ('narrow'), ('secret');
+                CREATE ROLE OR REPLACE r_narrow;
+                CREATE ROLE OR REPLACE r_all;
+                CREATE ROW POLICY OR REPLACE p_narrow ON t_roles USING svc = 'narrow' TO r_narrow;
+                CREATE ROW POLICY OR REPLACE p_all ON t_roles USING 1 TO r_all;
+                CREATE USER OR REPLACE u_roles;
+                """
+            )
+        node.query(
+            """
+            CREATE TABLE t_roles_dist AS t_roles ENGINE = Distributed(test_local_cluster, default, t_roles);
+            CREATE ROLE OR REPLACE r_local;
+            CREATE ROW POLICY OR REPLACE p_local ON t_roles USING 1 TO r_local;
+            GRANT SELECT ON t_roles TO r_narrow, r_all, r_local;
+            GRANT SELECT ON t_roles_dist TO r_narrow, r_all, r_local;
+            GRANT r_narrow, r_all, r_local TO u_roles;
+            """
+        )
+        node2.query("GRANT r_all TO u_roles")
+
+        def read_as(role):
+            return f"SET ROLE {role}; SELECT svc FROM t_roles_dist ORDER BY svc"
+
+        assert node.query(read_as("r_narrow"), user="u_roles") == TSV(
+            [["narrow"], ["narrow"]]
+        )
+        assert node.query(read_as("r_all"), user="u_roles") == TSV(
+            [["narrow"], ["narrow"], ["secret"], ["secret"]]
+        )
+
+        error = node.query_and_get_error(read_as("r_local"), user="u_roles")
+        assert "ACCESS_DENIED" in error
+        assert "Not all of the initiator's current roles are known on this node" in error
+    finally:
+        node.query("DROP TABLE IF EXISTS t_roles_dist")
+        for current_node in nodes:
+            current_node.query(
+                """
+                DROP ROW POLICY IF EXISTS p_narrow, p_all, p_local ON t_roles;
+                DROP TABLE IF EXISTS t_roles;
+                DROP USER IF EXISTS u_roles;
+                DROP ROLE IF EXISTS r_narrow, r_all, r_local;
+                """
+            )
+
+
 def test_row_policy_filter_with_subquery():
     copy_policy_xml("no_filters.xml")
     assert node.query("SHOW POLICIES") == ""
