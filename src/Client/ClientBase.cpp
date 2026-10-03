@@ -3888,6 +3888,10 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                 return std::make_unique<ParserPrometheusQuery>(effective_settings[Setting::promql_database], effective_settings[Setting::promql_table], Field{effective_settings[Setting::promql_evaluation_time]});
             if (dialect == Dialect::polyglot)
                 return std::make_unique<ParserPolyglotQuery>(0, effective_settings[Setting::max_parser_depth], effective_settings[Setting::max_parser_backtracks], effective_settings[Setting::polyglot_dialect], end, effective_settings[Setting::allow_experimental_polyglot_dialect]);
+            /// Trino has statement shapes of its own, e.g. `SET SESSION dialect = 'kusto'`, which
+            /// `ParserQuery` rejects, so the `SET` mirroring below would never see that switch.
+            if (dialect == Dialect::trino)
+                return std::make_unique<ParserTrinoQuery>(0, effective_settings[Setting::max_parser_depth], effective_settings[Setting::max_parser_backtracks], end, effective_settings[Setting::enable_trino_dialect], effective_settings[Setting::allow_settings_after_format_in_insert], effective_settings[Setting::implicit_select]);
             return std::make_unique<ParserQuery>(end, effective_settings[Setting::allow_settings_after_format_in_insert], effective_settings[Setting::implicit_select]);
         };
 
@@ -3915,30 +3919,29 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
             if (effective_settings[Setting::dialect] == Dialect::kusto)
             {
                 /// `KQLLexer` never throws; on a malformed literal it produces an `Error`
-                /// token and stops. The bracket scan judges by the tokens before it (an
-                /// unclosed opener in front of the error still counts, like the SQL check's
-                /// early stop below), but the terminator scan must not stop there: in
-                /// `print (1x; SELECT 1` the `;` comes after the malformed `1x`, and the
-                /// user has still terminated the statement, so it is a syntax error to
-                /// submit rather than an unfinished one to keep open. Resume lexing right
-                /// after each `Error` token until the end of the buffer. A token produced
-                /// by resuming in the middle of a broken literal is not trustworthy, but
-                /// mistaking one for a `;` only submits the buffer, and the executor then
-                /// reports the real error.
-                const std::vector<KQLToken> kql_tokens = KQLLexer(statement_begin, end).tokenize();
-                for (const auto & token : kql_tokens)
-                    if (token.type == KQLTokenType::Semicolon)
-                        return false;
-                /// (`KQLLexer::makeError` makes an `Error` token cover at least one character,
-                /// so each round strictly advances.)
-                const char * resume_from = kql_tokens.back().isError() ? kql_tokens.back().end : end;
-                while (resume_from < end)
+                /// token and stops. Neither scan may stop there: in `print (1x; SELECT 1`
+                /// the `;` comes after the malformed `1x`, and in `print (1x)` so does the
+                /// `)` closing the opener, and both are complete statements with a syntax
+                /// error to submit rather than unfinished ones to keep open. Resume lexing
+                /// right after each `Error` token until the end of the buffer, and match
+                /// the brackets over all the tokens but the errors. A token produced by
+                /// resuming in the middle of a broken literal is not trustworthy, but a
+                /// misjudgement only changes whether <ENTER> submits or folds the buffer;
+                /// the executor reports the real error either way.
+                std::vector<KQLToken> kql_tokens;
+                for (const char * resume_from = statement_begin; resume_from < end;)
                 {
-                    const std::vector<KQLToken> resumed_tokens = KQLLexer(resume_from, end).tokenize();
-                    for (const auto & token : resumed_tokens)
+                    const std::vector<KQLToken> round_tokens = KQLLexer(resume_from, end).tokenize();
+                    for (const auto & token : round_tokens)
+                    {
                         if (token.type == KQLTokenType::Semicolon)
                             return false;
-                    resume_from = resumed_tokens.back().isError() ? resumed_tokens.back().end : end;
+                        if (!token.isError())
+                            kql_tokens.push_back(token);
+                    }
+                    /// (`KQLLexer::makeError` makes an `Error` token cover at least one character,
+                    /// so each round strictly advances.)
+                    resume_from = !round_tokens.empty() && round_tokens.back().isError() ? round_tokens.back().end : end;
                 }
                 std::vector<KQLTokenType> openers;
                 for (const auto & token : kql_tokens)
@@ -4288,6 +4291,29 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                 /// exactly as it does for any thrown parse error.
                 if (effective_settings[Setting::dialect] == Dialect::polyglot)
                     return false;
+
+                /// `ParserTrinoQuery` reports a syntax error in the translated statement by
+                /// throwing, so the end-of-input signal of `token_iterator.max()` is lost (and its
+                /// statement scan has advanced it to the end anyway). Trino SQL is close to
+                /// ClickHouse SQL -- it is parsed by `ParserQuery` after a token-level rewrite --
+                /// so judge where the statement stops parsing by probing it with `ParserQuery`.
+                /// With the dialect disabled, every statement but `SET` throws, which is an
+                /// error for the executor to report.
+                if (effective_settings[Setting::dialect] == Dialect::trino)
+                {
+                    if (!effective_settings[Setting::enable_trino_dialect])
+                        return false;
+                    if (has_unclosed_opener(statement_begin))
+                        return true;
+                    Tokens sql_tokens(statement_begin, end, 0, true);
+                    IParser::Pos sql_pos(sql_tokens, max_parser_depth, max_parser_backtracks);
+                    ParserQuery sql_parser(end, effective_settings[Setting::allow_settings_after_format_in_insert], effective_settings[Setting::implicit_select]);
+                    ASTPtr sql_ast;
+                    Expected sql_expected;
+                    if (sql_parser.parse(sql_pos, sql_ast, sql_expected))
+                        return false;
+                    return sql_pos.max().type == TokenType::EndOfStream;
+                }
 
                 /// PromQL and PRQL validate their entire statement with external
                 /// parsers and communicate syntax errors by throwing. Unlike the
