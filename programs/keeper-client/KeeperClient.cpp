@@ -3,7 +3,6 @@
 #include <Client/ClientBase.h>
 #include <Common/VersionNumber.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/Config/getConfigPath.h>
 #include <Client/ClientApplicationBase.h>
 #include <Common/EventNotifier.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -347,7 +346,7 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
             .binding("use-xid-64"));
 
     options.addOption(
-        Poco::Util::Option("config-file", "c", "if set, will try to get a connection string from clickhouse config. by default, `config.xml`, `config.yaml` or `config.yml` in the current directory")
+        Poco::Util::Option("config-file", "c", "if set, will try to get a connection string from clickhouse config. default `config.xml`")
             .argument("<file>")
             .binding("config-file"));
 
@@ -438,14 +437,6 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     Poco::Logger::root().setLevel(config().getString("log-level", default_log_level));
 
     EventNotifier::init();
-
-    const char * env_password = getenv("CLICKHOUSE_KEEPER_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
-    if (env_password && !config().has("password"))
-        config().setString("password", env_password);
-
-    const char * env_identity = getenv("CLICKHOUSE_KEEPER_IDENTITY"); // NOLINT(concurrency-mt-unsafe)
-    if (env_identity && !config().has("identity"))
-        config().setString("identity", env_identity);
 }
 
 bool KeeperClient::processQueryText(const String & text, bool is_interactive)
@@ -651,12 +642,7 @@ void KeeperClient::connectToKeeper()
     }
 #endif
 
-    /// A configuration file can be written in XML or in YAML, so the default one is looked up with
-    /// every supported extension, not only with `.xml`.
-    const String config_path
-        = config().has("config-file") ? config().getString("config-file") : getConfigPathForAnySupportedFormat("config.xml");
-
-    ConfigProcessor config_processor(config_path);
+    ConfigProcessor config_processor(config().getString("config-file", "config.xml"));
 
     /// This will handle a situation when clickhouse is running on the embedded config, but config.d folder is also present.
     ConfigProcessor::registerEmbeddedConfig("config.xml", "<clickhouse/>");
@@ -669,7 +655,7 @@ void KeeperClient::connectToKeeper()
 
     if (!config().has("host") && !config().has("port") && !keys.empty())
     {
-        LOG_INFO(getLogger("KeeperClient"), "Found keeper node in {}, will use it for connection", config_path);
+        LOG_INFO(getLogger("KeeperClient"), "Found keeper node in the config.xml, will use it for connection");
 
         for (const auto & key : keys)
         {
@@ -702,17 +688,10 @@ void KeeperClient::connectToKeeper()
     new_zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     new_zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
     new_zk_args.use_xid_64 = config().hasOption("use-xid-64");
-    new_zk_args.password = config().has("password")
-        ? config().getString("password")
-        : clickhouse_config.configuration->getString("zookeeper.password", "");
-
-    new_zk_args.identity = config().has("identity")
-        ? config().getString("identity")
-        : clickhouse_config.configuration->getString("zookeeper.identity", "");
-
+    new_zk_args.password = config().getString("password", "");
+    new_zk_args.identity = config().getString("identity", "");
     if (!new_zk_args.identity.empty())
         new_zk_args.auth_scheme = "digest";
-
     zk_args = new_zk_args;
     auto component_guard = Coordination::setCurrentComponent("KeeperClient::connectToKeeper");
     zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(new_zk_args));
@@ -751,7 +730,6 @@ int KeeperClient::main(const std::vector<String> & /* args */)
 }
 
 
-int mainEntryClickHouseKeeperClient(int argc, char ** argv);
 int mainEntryClickHouseKeeperClient(int argc, char ** argv)
 {
     try

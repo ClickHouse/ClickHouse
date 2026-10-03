@@ -11,7 +11,7 @@ namespace Poco
 }
 namespace DB
 {
-class FileLogSource final : public ISource
+class FileLogSource : public ISource
 {
 public:
     FileLogSource(
@@ -58,8 +58,6 @@ private:
     /// does not include end.
     size_t start;
     size_t end;
-
-    bool closed = false;
 };
 
 }

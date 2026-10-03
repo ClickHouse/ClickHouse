@@ -2,7 +2,6 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
-#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Access/Common/AccessEntityType.h>
 
 
@@ -15,15 +14,15 @@ struct MaskingPolicyName;
   * DROP ROLE [IF EXISTS] name [,...]
   * DROP QUOTA [IF EXISTS] name [,...]
   * DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...]
-  * DROP MASKING POLICY [IF EXISTS] name ON [database.]table
+  * DROP MASKING POLICY [IF EXISTS] name [,...] ON [database.]table [,...]
   * DROP [SETTINGS] PROFILE [IF EXISTS] name [,...]
   */
 class ASTDropAccessEntityQuery final : public IAST, public ASTQueryWithOnCluster
 {
 public:
-    AccessEntityType type{};
+    AccessEntityType type;
     bool if_exists = false;
-    boost::intrusive_ptr<ASTUserNamesWithHost> names;
+    Strings names;
     String storage_name;
     boost::intrusive_ptr<ASTRowPolicyNames> row_policy_names;
     std::shared_ptr<MaskingPolicyName> masking_policy_name;

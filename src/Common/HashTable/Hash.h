@@ -4,11 +4,9 @@
 #include <base/StringViewHash.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <base/PackedStringRef.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 
-#include <bit>
 #include <type_traits>
 
 
@@ -119,29 +117,13 @@ inline UInt64 intHashCRC32(T x, UInt64 updated_value)
     if (x == static_cast<T>(0.0))
         return intHashCRC32(0, updated_value);
 
-    UInt64 repr = 0;
+    UInt64 repr;
     if constexpr (sizeof(T) == sizeof(UInt32))
         repr = std::bit_cast<UInt32>(x);
     else
         repr = std::bit_cast<UInt64>(x);
 
     return intHashCRC32(repr, updated_value);
-}
-
-/// Default initial value for `updateWeakHash32` hashing chains (all bits set).
-inline constexpr UInt32 WEAK_HASH32_INITIAL_VALUE = ~UInt32(0);
-
-/// Canonical cross-column combiner for routing hashes (`grace_hash` joins, parallel-window
-/// partitioning, hash-join scatter).
-///
-/// Chains a FINALIZED per-row hash `value` with the prior accumulator `prior` using one
-/// hardware CRC32C step. Every column type combines its own finalized per-row hash with
-/// this exact function, which makes the composition representation-independent: two
-/// SQL-equal keys hash identically regardless of physical column representation (e.g. a
-/// materialized column versus a `ColumnConst`, `ColumnLowCardinality`, or `ColumnSparse`).
-inline UInt32 combineWeakHash32(UInt32 value, UInt32 prior)
-{
-    return static_cast<UInt32>(intHashCRC32(value, prior));
 }
 
 inline UInt32 updateWeakHash32(const UInt8 * pos, size_t size, UInt32 updated_value)
@@ -519,11 +501,11 @@ inline UInt32 intHash32(UInt64 key)
     key ^= salt;
 
     key = (~key) + (key << 18);
-    key = key ^ std::rotr(key, 31);
+    key = key ^ ((key >> 31) | (key << 33));
     key = key * 21;
-    key = key ^ std::rotr(key, 11);
+    key = key ^ ((key >> 11) | (key << 53));
     key = key + (key << 6);
-    key = key ^ std::rotr(key, 22);
+    key = key ^ ((key >> 22) | (key << 42));
 
     return static_cast<UInt32>(key);
 }
@@ -559,12 +541,3 @@ struct IntHash32
 
 template <>
 struct DefaultHash<std::string_view> : public StringViewHash {};
-
-template <>
-struct DefaultHash<PackedStringRef>
-{
-    size_t operator() (PackedStringRef key) const
-    {
-        return key.getHash();
-    }
-};

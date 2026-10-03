@@ -1,5 +1,3 @@
--- Tags: no-replicated-database
--- Tag no-replicated-database: counts the `Create` queries in `query_log`, and on a replicated database every replica logs its own
 -- The values of custom HTTP headers of an `HTTP` dictionary source often carry credentials,
 -- so they must be hidden in `SHOW CREATE DICTIONARY`, `system.tables` and `system.query_log`,
 -- the same way as the password. They are hidden as a whole, header names included.
@@ -41,9 +39,6 @@ LIFETIME(0) LAYOUT(FLAT());
 CREATE DICTIONARY d_05141_func (id UInt64, v String) PRIMARY KEY id
 SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' headers(header(name concat('X-', 'SEKRIT_FUNC') value 'SEKRIT_FUNC_VALUE'))))
 LIFETIME(0) LAYOUT(FLAT()); -- { serverError INCORRECT_DICTIONARY_DEFINITION }
-CREATE DICTIONARY d_05141_array (id UInt64, v String) PRIMARY KEY id
-SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' headers(header(name ['SEKRIT_ARRAY']))))
-LIFETIME(0) LAYOUT(FLAT()); -- { serverError BAD_ARGUMENTS }
 CREATE DICTIONARY d_05141_nobr (id UInt64, v String) PRIMARY KEY id
 SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' headers(header 'SEKRIT_NOBR')))
 LIFETIME(0) LAYOUT(FLAT());

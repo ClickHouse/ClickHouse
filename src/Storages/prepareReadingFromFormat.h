@@ -13,8 +13,6 @@ namespace DB
     struct FilterDAGInfo;
     using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
 
-    class ActionsDAG;
-
     struct ReadFromFormatInfo
     {
         /// Header that will return Source from storage.
@@ -44,32 +42,9 @@ namespace DB
 
         /// The list of hive partition columns. It shall be read from the path regardless if it is present in the file
         NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-        /// True if `format_header` has a hive partition column. Its values in the file are not the values
-        /// of the column, so filters and the top-K threshold must not be pushed into the format.
-        bool formatReadsHivePartitionColumns() const;
-        /// A row-level filter (row policy) is not stored here and does not change the headers. The source
-        /// applies it via `FormatFilterInfo` and keeps its input columns, because:
-        /// - `DEFAULT` expressions are computed after the format applied the filter and can depend on these columns;
-        /// - the output header of the reading step must not change when `optimizePrewhere` adds PREWHERE,
-        ///   because the steps above were built for the initial header.
         PrewhereInfoPtr prewhere_info;
+        FilterDAGInfoPtr row_level_filter;
     };
-
-    /// Inputs reachable by storage-level pushdown consumers. Pass to splitFilterDagForAllowedInputs to drop IN-subqueries which can't be used.
-    Block buildAllowedFilterInputs(
-        const StorageSnapshotPtr & storage_snapshot,
-        const Block & source_header,
-        const PrewhereInfoPtr & prewhere_info,
-        const FilterDAGInfoPtr & row_level_filter);
-
-    /// Eagerly materialise IN-subquery sets that a format-level KeyCondition can consume.
-    void prepareEagerKeyConditionSets(
-        const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
-        const StorageSnapshotPtr & storage_snapshot,
-        const Block & source_header,
-        const PrewhereInfoPtr & prewhere_info,
-        const FilterDAGInfoPtr & row_level_filter,
-        const ContextPtr & context);
 
     struct PrepareReadingFromFormatHiveParams
     {
@@ -77,7 +52,7 @@ namespace DB
         NamesAndTypesList file_columns;
         /// Columns which are read from path to data file.
         /// (Hive partition columns).
-        UnorderedMapWithMemoryTracking<std::string, DataTypePtr> hive_partition_columns_to_read_from_file_path_map;
+        std::unordered_map<std::string, DataTypePtr> hive_partition_columns_to_read_from_file_path_map;
     };
 
     /// Get all needed information for reading from data in some input format.
@@ -102,25 +77,8 @@ namespace DB
     /// Returns columns_to_read from file.
     Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns);
 
-    ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const PrewhereInfoPtr & prewhere_info);
-
-    /// Lazy materialization (see optimizeLazyMaterialization2): split `info` into the info for the
-    /// main reading pass and the info for the lazy reading pass. The physical columns that the
-    /// format reads and nothing needs before the LIMIT (i.e. that are not in `required_names`, not
-    /// inputs of the PREWHERE, not virtual or hive partition columns, and not
-    /// pinned by a `DEFAULT` expression dependency) are deferred to the lazy pass. On success,
-    /// `info` is reduced to the remaining columns with a `__global_row_index` UInt64 column
-    /// appended to its source header, and the returned info describes the deferred columns alone
-    /// (no virtual columns, no filters). Returns std::nullopt (leaving `info` untouched) if there
-    /// is nothing to defer.
-    std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromFormatInfo & info, const NameSet & required_names);
+    ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info);
 
     /// Returns the serialization hints from the insertion table (if it's set in the Context).
     SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);
-
-    /// Clamp the user-controlled max_streams_for_files_processing_in_cluster_functions setting to the
-    /// same ceiling max_threads gets. The value flows into both num_streams and max_num_streams of the
-    /// *Cluster read steps and drives pipes.reserve()/pipe.resize(); unbounded it can overflow the pipe
-    /// vector (std::length_error) or exhaust memory.
-    size_t clampClusterFunctionNumStreams(UInt64 num_streams);
 }

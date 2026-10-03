@@ -2,7 +2,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/RowPolicyDefs.h>
-#include <Storages/getEffectiveRowPolicyFilter.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Interpreters/Context.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -28,12 +28,12 @@ StorageFromMergeTreeProjection::StorageFromMergeTreeProjection(
     StorageID storage_id_, StoragePtr parent_storage_, StorageMetadataPtr parent_metadata_, ProjectionDescriptionRawPtr projection_)
     : IStorage(storage_id_)
     , parent_storage(std::move(parent_storage_))
-    /// NOLINT(storage-cast): the table function resolves the source table before building this.
     , merge_tree(dynamic_cast<const MergeTreeData &>(*parent_storage))
     , parent_metadata(std::move(parent_metadata_))
     , projection(projection_)
 {
     setInMemoryMetadata(*projection->metadata);
+    setVirtuals(MergeTreeData::createVirtuals(*parent_metadata));
 }
 
 void StorageFromMergeTreeProjection::read(
@@ -49,7 +49,8 @@ void StorageFromMergeTreeProjection::read(
     context->checkAccess(AccessType::SELECT, parent_storage->getStorageID());
 
     const auto parent_storage_id = parent_storage->getStorageID();
-    auto row_policy_filter = getRowPolicyFilterForStorage(*parent_storage, context);
+    auto row_policy_filter = context->getRowPolicyFilter(
+        parent_storage_id.getDatabaseName(), parent_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
 
     const bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
 
@@ -68,10 +69,6 @@ void StorageFromMergeTreeProjection::read(
             throw Exception(ErrorCodes::ACCESS_DENIED,
                 "Cannot enforce the row policy of table {} on projection `{}` without the analyzer",
                 parent_storage_id.getNameForLogs(), projection->name);
-
-        for (const auto & policy : row_policy_filter->policies)
-            if (context->hasQueryContext())
-                context->getQueryContext()->addUsedRowPolicy(policy->getFullName().toString());
 
         FilterDAGInfo filter_info;
         try
