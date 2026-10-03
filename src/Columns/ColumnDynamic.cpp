@@ -1697,7 +1697,7 @@ void ColumnDynamic::fixDynamicStructure()
     getVariantColumn().fixDynamicStructure();
 }
 
-ColumnDynamic::StatisticsPtr ColumnDynamic::getOrCalculateStatistics() const
+ColumnDynamic::StatisticsPtr ColumnDynamic::getOrCalculateStatistics(const CheckCancellationCallback & check_cancellation) const
 {
     if (statistics)
         return statistics;
@@ -1709,6 +1709,12 @@ ColumnDynamic::StatisticsPtr ColumnDynamic::getOrCalculateStatistics() const
     const auto & shared_variant = getSharedVariant();
     for (size_t i = 0; i != shared_variant.size(); ++i)
     {
+        /// Decoding a type per row is not free, and the shared variant holds one entry per row that
+        /// did not fit the dynamic structure, so this loop is unbounded from the caller's point of
+        /// view. Give the caller a chance to abort it.
+        if (check_cancellation && i % CANCELLATION_CHECK_PERIOD_ROWS == 0)
+            check_cancellation();
+
         auto value = shared_variant.getDataAt(i);
         ReadBufferFromMemory buf(value);
         auto type = decodeDataType(buf);
@@ -1722,7 +1728,7 @@ ColumnDynamic::StatisticsPtr ColumnDynamic::getOrCalculateStatistics() const
     return calculated_statistics;
 }
 
-void ColumnDynamic::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnDynamic::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns, const CheckCancellationCallback & check_cancellation)
 {
     /// Assumes dynamic structure has already been set by `takeExactDynamicStructureFrom` or `chooseDynamicStructureForMerge`.
     Statistics new_statistics;
@@ -1731,7 +1737,7 @@ void ColumnDynamic::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking
     for (const auto & source_column : source_columns)
     {
         const auto & source_dynamic = assert_cast<const ColumnDynamic &>(*source_column);
-        const auto & source_statistics = source_dynamic.getOrCalculateStatistics();
+        const auto & source_statistics = source_dynamic.getOrCalculateStatistics(check_cancellation);
 
         /// For variant statistics: if the variant is in our dynamic structure, add directly;
         /// otherwise accumulate in shared variant candidates.
@@ -1791,7 +1797,7 @@ void ColumnDynamic::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
     {
         if (!variants_source_columns[i].empty())
-            variant_col.getVariantByGlobalDiscriminator(i).takeOrCalculateStatisticsFrom(variants_source_columns[i]);
+            variant_col.getVariantByGlobalDiscriminator(i).takeOrCalculateStatisticsFrom(variants_source_columns[i], check_cancellation);
     }
 }
 
