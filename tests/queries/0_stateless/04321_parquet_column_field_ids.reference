@@ -70,7 +70,10 @@ BAD_ARGUMENTS
 is not an integer
 BAD_ARGUMENTS
 == error: negative id ==
-must be non-negative
+must be positive
+BAD_ARGUMENTS
+== error: zero id ==
+must be positive
 BAD_ARGUMENTS
 == error: id in the Iceberg reserved range ==
 reserved by Iceberg

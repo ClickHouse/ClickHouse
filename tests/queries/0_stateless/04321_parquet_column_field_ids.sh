@@ -210,6 +210,13 @@ SELECT 1 AS a
 SETTINGS engine_file_truncate_on_insert = 1,
          output_format_parquet_column_field_ids = {'a': '-1'};
 
+-- Iceberg readers reject user columns with field_id 0, so it is rejected on write as well.
+SELECT '== error: zero id ==';
+INSERT INTO FUNCTION file('${ERR}10.parquet', 'Parquet')
+SELECT 1 AS a
+SETTINGS engine_file_truncate_on_insert = 1,
+         output_format_parquet_column_field_ids = {'a': '0'};
+
 -- Iceberg reserves field ids above 2147483447 for its metadata fields (e.g. _row_id); a data column
 -- written with such an id would be silently ignored when the file is read as an Iceberg table, so
 -- the override is rejected. 2147483540 is the reserved id of _row_id.
@@ -223,14 +230,14 @@ SETTINGS engine_file_truncate_on_insert = 1,
 -- a nested subfield of another column. Detected at field_id build time.
 SELECT '== error: dotted top-level name collides with nested path (auto-assign) ==';
 INSERT INTO FUNCTION file('${ERR}7.parquet', 'Parquet')
-SELECT (1)::Tuple(b UInt8) AS a, 2::UInt8 AS \`a.b\`
+SELECT tuple(1)::Tuple(b UInt8) AS a, 2::UInt8 AS \`a.b\`
 SETTINGS engine_file_truncate_on_insert = 1,
          output_format_parquet_auto_assign_field_ids = 1;
 
 SELECT '== error: dotted top-level name collides with nested path (overrides) ==';
 INSERT INTO FUNCTION file('${ERR}8.parquet', 'Parquet')
-SELECT (1)::Tuple(b UInt8) AS a, 2::UInt8 AS \`a.b\`
+SELECT tuple(1)::Tuple(b UInt8) AS a, 2::UInt8 AS \`a.b\`
 SETTINGS engine_file_truncate_on_insert = 1,
          output_format_parquet_column_field_ids = {'a': '1', 'a.b': '2'};
-" 2>&1 | grep -oE '^== error: .* ==$|BAD_ARGUMENTS|references unknown column|does not cover every output column|more than one column|is not an integer|must be non-negative|reserved by Iceberg|two output columns or nested fields flatten' \
+" 2>&1 | grep -oE '^== error: .* ==$|BAD_ARGUMENTS|references unknown column|does not cover every output column|more than one column|is not an integer|must be positive|reserved by Iceberg|two output columns or nested fields flatten' \
   | awk '/^== /{delete seen} !seen[$0]++'

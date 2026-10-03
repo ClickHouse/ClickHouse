@@ -92,7 +92,7 @@ namespace
     ///
     ///   1. The flattened schema paths must themselves be unique — if two output columns or
     ///      nested fields flatten to the same dotted key, the build is rejected.
-    ///   2. Every entry in `overrides` is applied verbatim. Negative ids, ids in the range Iceberg
+    ///   2. Every entry in `overrides` is applied verbatim. Non-positive ids, ids in the range Iceberg
     ///      reserves for its metadata fields, unknown paths,
     ///      duplicate paths and duplicate ids are rejected so users get a clear signal when
     ///      the setting drifts from the query's schema. Keys may be top-level column names
@@ -174,9 +174,11 @@ namespace
                     "output_format_parquet_column_field_ids value {} out of Int32 range", parsed_id);
             const Int32 id = static_cast<Int32>(parsed_id);
 
-            if (id < 0)
+            /// Iceberg readers reject a user column whose `field_id` is below 1, so such an id would
+            /// produce a file that cannot be read back as an Iceberg table.
+            if (id <= 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "output_format_parquet_column_field_ids value {} must be non-negative", id);
+                    "output_format_parquet_column_field_ids value {} must be positive", id);
             /// The whole point of writing `field_id`s is Iceberg compatibility, and Iceberg reserves
             /// the ids above `iceberg_max_user_field_id` for its own metadata fields: a data column
             /// carrying such an id is skipped as an unrecognized reserved field when the file is read
