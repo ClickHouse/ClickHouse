@@ -1,0 +1,5 @@
+value	v.typed_value.b.value
+JSON	{"a":21}
+JSON	{"a":42,"b":{"x":1},"c":true}
+Dynamic	Tuple(a Int32, b JSON, c Bool)	(42,'{"x":1}',true)
+Dynamic	JSON	{"a":21}

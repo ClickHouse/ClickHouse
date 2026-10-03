@@ -444,7 +444,9 @@ private:
     std::shared_ptr<StorageFile> storage;
     const Strings paths_snapshot;
     ReadFromFormatInfo info;
-    const bool need_only_count;
+    /// Not const: `updatePrewhereInfo` disables the count-only shortcut when a filter is attached
+    /// after this step was constructed.
+    bool need_only_count;
 
     size_t max_block_size;
     const size_t max_num_streams;

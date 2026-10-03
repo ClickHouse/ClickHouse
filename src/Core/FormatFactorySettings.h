@@ -1345,6 +1345,10 @@ Compression method for Parquet output format. Supported codecs: snappy, lz4, bro
 )", 0, \
         {"24.3", "lz4", "zstd", "Parquet/ORC/Arrow support many compression methods, including lz4 and zstd. ClickHouse supports each and every compression method. Some inferior tools, such as 'duckdb', lack support for the faster `lz4` compression method, that's why we set zstd by default."}, \
         {"23.3", "snappy", "lz4", "Use lz4 compression in Parquet output format by default"}) \
+    DECLARE(Bool, output_format_parquet_json_as_variant, false, R"(
+Write `JSON` columns as `Parquet` `VARIANT` instead of `Parquet` `JSON`.
+)", 0, \
+        {"26.10", false, false, "New setting to write `JSON` columns as `Parquet` `VARIANT` with the native writer."}) \
     DECLARE(Bool, output_format_parquet_parallel_encoding, true, R"(
 Do Parquet encoding in multiple threads.
 )", 0) \

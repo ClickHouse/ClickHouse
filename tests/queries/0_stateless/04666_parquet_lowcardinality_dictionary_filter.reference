@@ -1,0 +1,8 @@
+-- LowCardinality(String) with dictionary filter push-down
+200
+-- value that is not in the dictionary
+0
+-- LowCardinality(Nullable(String))
+200
+-- LowCardinality typed path of a shredded VARIANT
+200

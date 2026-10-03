@@ -1,0 +1,4 @@
+did:plc:a
+did:plc:b
+app.bsky.feed.post
+Prewhere filter column:  data.kind = 'commit'
