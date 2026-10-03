@@ -1,0 +1,4 @@
+recalculate only	0	5
+recalculate only	1	5
+drop expired parts	1	5
+part type	Wide
