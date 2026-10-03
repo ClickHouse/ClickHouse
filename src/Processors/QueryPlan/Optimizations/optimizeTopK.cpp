@@ -15,11 +15,24 @@
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionTopKFilter.h>
 
 namespace DB::QueryPlanOptimizations
 {
+
+/// True if the actions depend on the block they run on, which the threshold filter shrinks: a stateful
+/// function, or one not deterministic within a query (`blockSize`, `rand`, but not `today`).
+static bool dependsOnItsBlock(const ActionsDAG & actions)
+{
+    for (const auto & node : actions.getNodes())
+        if (node.type == ActionsDAG::ActionType::FUNCTION
+            && (node.function_base->isStateful() || !node.function_base->isDeterministicInScopeOfQuery()))
+            return true;
+
+    return false;
+}
 
 /// True if a value of this type can contain a floating-point number anywhere inside it - directly,
 /// or nested in a `Nullable`, `Array`, `Tuple`, `Map`, ... (`forEachChild` recurses on its own).
@@ -127,7 +140,7 @@ static size_t tryTopKForFormatSource(
     return 0;
 }
 
-size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
+size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     /// The dynamic-filtering path injects an internal `__topKFilter` function that
     /// is created on demand with a runtime threshold tracker and is not registered
@@ -192,6 +205,10 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     }
 
     auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
+
+    /// A plan can be optimized more than once (`StorageMerge` child plans, set subplans).
+    if (read_from_mergetree_step && read_from_mergetree_step->isSelectedForTopKFilterOptimization())
+        return 0;
 
     /// FINAL queries deduplicate overlapping parts via merging sorted transforms
     /// (e.g. `ReplacingSortedTransform`, `CollapsingSortedTransform`) which require
@@ -294,11 +311,20 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     const bool sort_column_is_variable_length = !sort_column.type->haveMaximumSizeOfValue();
     const auto * sort_column_tuple_type = typeid_cast<const DataTypeTuple *>(sort_column.type.get());
     bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
-        && !read_from_mergetree_step->getPrewhereInfo()
         && !isDynamic(sort_column.type)
         && !isVariant(sort_column.type)
         && (!sort_column_tuple_type || !sort_column_tuple_type->getElements().empty())
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
+
+    /// Refused before stamping: `applyParallelReplicas` keeps a stamped read local even if no filter is added later.
+    if (use_dynamic_filtering)
+    {
+        const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo();
+        if ((prewhere_info && dependsOnItsBlock(prewhere_info->prewhere_actions))
+            || (filter_step && dependsOnItsBlock(filter_step->getExpression()))
+            || (expression_step && dependsOnItsBlock(expression_step->getExpression())))
+            use_dynamic_filtering = false;
+    }
 
     /// When read-in-order optimization is enabled and the sort column is a prefix
     /// of the storage's sorting key, the engine will read data in sorted order.
@@ -322,47 +348,6 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         sorting_step->setTopKThresholdTracker(threshold_tracker);
     }
 
-    bool added_step = false;
-
-    if (use_dynamic_filtering)
-    {
-        auto new_prewhere_info = std::make_shared<PrewhereInfo>();
-        NameAndTypePair sort_column_name_and_type(sort_column_name, sort_column.type);
-        new_prewhere_info->prewhere_actions = ActionsDAG({sort_column_name_and_type});
-
-        /// Cannot use get() because need to pass an argument to constructor
-        /// auto filter_function = FunctionFactory::instance().get("__topKFilter",nullptr);
-        auto filter_function =  DB::createInternalFunctionTopKFilterResolver(threshold_tracker);
-        const auto & prewhere_node = new_prewhere_info->prewhere_actions.addFunction(
-                filter_function, {new_prewhere_info->prewhere_actions.getInputs().front()}, {});
-        new_prewhere_info->prewhere_actions.getOutputs().push_back(&prewhere_node);
-        new_prewhere_info->prewhere_column_name = prewhere_node.result_name;
-        new_prewhere_info->remove_prewhere_column = true;
-        new_prewhere_info->need_filter = true;
-
-        auto initial_header = read_from_mergetree_step->getOutputHeader();
-
-        LOG_TRACE(getLogger("optimizeTopK"), "New Prewhere {}", new_prewhere_info->prewhere_actions.dumpDAG());
-        read_from_mergetree_step->updatePrewhereInfo(new_prewhere_info);
-
-        auto updated_header = read_from_mergetree_step->getOutputHeader();
-        if (!blocksHaveEqualStructure(*initial_header, *updated_header))
-        {
-            auto dag = ActionsDAG::makeConvertingActions(
-                updated_header->getColumnsWithTypeAndName(),
-                initial_header->getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name, read_from_mergetree_step->getContext());
-
-            auto converting_step = std::make_unique<ExpressionStep>(updated_header, std::move(dag));
-            auto & converting_node = nodes.emplace_back();
-            converting_node.step = std::move(converting_step);
-
-            node->children.push_back(&converting_node);
-            std::swap(node->step, converting_node.step);
-            added_step = true;
-        }
-    }
-
     ///TopKThresholdTracker acts as a link between 3 components
     ///                                MergeTreeReaderIndex::canSkipMark() (skip whole granule using minmax index)
     ///                                  /
@@ -372,7 +357,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
     if (use_skip_index || use_dynamic_filtering)
     {
-        TopKFilterInfo info{sort_column_name, sort_column.type, num_sort_columns, n, sort_col_desc.direction, where_clause, threshold_tracker, /*condition_hash=*/ 0};
+        TopKFilterInfo info{sort_column_name, sort_column.type, num_sort_columns, n, sort_col_desc.direction, where_clause, threshold_tracker, /*condition_hash=*/ 0, /*dynamic_filter_pending=*/ use_dynamic_filtering};
 
         /// Used by `updateQueryConditionCache` to partition QCC entries by TopK plan.
         info.condition_hash = topKPlanHash(info.column_name, info.data_type, info.num_sort_columns, info.limit_n, sort_col_desc);
@@ -380,7 +365,155 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         read_from_mergetree_step->setTopKColumn(info);
     }
 
-    return added_step ? 1 : 0;
+    return 0;
+}
+
+/// The reader and the PREWHERE read steps find columns by name, so another node under the same name
+/// would be taken for this one.
+static bool hasResultNameClash(const ActionsDAG & dag, const ActionsDAG::Node * node)
+{
+    for (const auto & other : dag.getNodes())
+        if (&other != node && other.result_name == node->result_name)
+            return true;
+    return false;
+}
+
+PrewhereInfoPtr buildTopKDynamicFilterPrewhere(const PrewhereInfoPtr & existing_prewhere_info, const TopKFilterInfo & top_k_filter_info)
+{
+    auto filter_function = DB::createInternalFunctionTopKFilterResolver(top_k_filter_info.threshold_tracker);
+
+    auto prewhere_info = std::make_shared<PrewhereInfo>();
+    if (existing_prewhere_info)
+    {
+        /// A PREWHERE promoted after the read was stamped reaches this point unchecked.
+        if (dependsOnItsBlock(existing_prewhere_info->prewhere_actions))
+            return nullptr;
+
+        ActionsDAG combined = existing_prewhere_info->prewhere_actions.clone();
+        const auto * existing_filter_node = &combined.findInOutputs(existing_prewhere_info->prewhere_column_name);
+
+        /// Built in place: `ActionsDAG::mergeNodes` would replace new nodes with existing ones of the same name.
+        const ActionsDAG::Node * sort_column_node = nullptr;
+        for (const auto * input : combined.getInputs())
+        {
+            if (input->result_name == top_k_filter_info.column_name)
+            {
+                sort_column_node = input;
+                break;
+            }
+        }
+
+        if (sort_column_node)
+        {
+            /// The threshold tracker compares against values of `data_type`.
+            if (!sort_column_node->result_type->equals(*top_k_filter_info.data_type))
+                return nullptr;
+        }
+        else
+        {
+            /// A node under that name which is not one of the DAG's sources is not the read's column.
+            for (const auto & dag_node : combined.getNodes())
+                if (dag_node.result_name == top_k_filter_info.column_name)
+                    return nullptr;
+            sort_column_node = &combined.addInput(top_k_filter_info.column_name, top_k_filter_info.data_type);
+        }
+
+        const auto * filter_node = &combined.addFunction(filter_function, {sort_column_node}, {});
+        if (hasResultNameClash(combined, filter_node))
+            return nullptr;
+
+        /// Flat, with the threshold filter first: the children of the root `and` become the PREWHERE read
+        /// steps, in order, and the threshold filter reads only the sort column.
+        ActionsDAG::NodeRawConstPtrs conditions;
+        conditions.push_back(filter_node);
+        const bool existing_is_conjunction = existing_filter_node->type == ActionsDAG::ActionType::FUNCTION
+            && existing_filter_node->function_base && existing_filter_node->function_base->getName() == "and";
+        if (existing_is_conjunction)
+            conditions.insert(conditions.end(), existing_filter_node->children.begin(), existing_filter_node->children.end());
+        else
+            conditions.push_back(existing_filter_node);
+
+        FunctionOverloadResolverPtr func_builder_and
+            = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+        const auto * and_node = &combined.addFunction(func_builder_and, std::move(conditions), {});
+
+        if (hasResultNameClash(combined, and_node))
+            return nullptr;
+
+        auto & outputs = combined.getOutputs();
+        /// The PREWHERE step returns only its outputs, and the sort needs its column.
+        if (std::ranges::find(outputs, sort_column_node) == outputs.end())
+            outputs.push_back(sort_column_node);
+
+        if (existing_prewhere_info->remove_prewhere_column)
+            std::erase(outputs, existing_filter_node);
+        outputs.push_back(and_node);
+
+        prewhere_info->prewhere_actions = std::move(combined);
+        prewhere_info->prewhere_column_name = and_node->result_name;
+    }
+    else
+    {
+        NameAndTypePair sort_column_name_and_type(top_k_filter_info.column_name, top_k_filter_info.data_type);
+        ActionsDAG filter_dag({sort_column_name_and_type});
+        const auto * filter_node = &filter_dag.addFunction(filter_function, {filter_dag.getInputs().front()}, {});
+        filter_dag.getOutputs().push_back(filter_node);
+        prewhere_info->prewhere_column_name = filter_node->result_name;
+        prewhere_info->prewhere_actions = std::move(filter_dag);
+    }
+
+    prewhere_info->remove_prewhere_column = true;
+    prewhere_info->need_filter = !existing_prewhere_info || existing_prewhere_info->need_filter;
+    return prewhere_info;
+}
+
+void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
+{
+    if (node.children.size() != 1)
+        return;
+
+    auto * child_node = node.children.front();
+    auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
+    if (!read_from_mergetree_step || !read_from_mergetree_step->hasPendingTopKDynamicFilter())
+        return;
+
+    /// Reading in order makes the filter reject every later row, so the LIMIT cannot stop the read early.
+    /// The stamp stays: it still salts the query condition cache key and selects the skip-index marks.
+    if (read_from_mergetree_step->getInputOrder())
+    {
+        read_from_mergetree_step->clearPendingTopKDynamicFilter();
+        return;
+    }
+
+    const auto & top_k_filter_info = *read_from_mergetree_step->getTopKFilterInfo();
+    read_from_mergetree_step->clearPendingTopKDynamicFilter();
+
+    auto initial_header = read_from_mergetree_step->getOutputHeader();
+
+    auto prewhere_info = buildTopKDynamicFilterPrewhere(read_from_mergetree_step->getPrewhereInfo(), top_k_filter_info);
+    if (!prewhere_info)
+        return;
+
+    /// The reader resolves the prewhere column by name and then removes it, so the name must not be one the read produces.
+    if (initial_header->has(prewhere_info->prewhere_column_name))
+        return;
+
+    read_from_mergetree_step->updatePrewhereInfo(prewhere_info);
+    auto updated_header = read_from_mergetree_step->getOutputHeader();
+
+    if (!blocksHaveEqualStructure(*initial_header, *updated_header))
+    {
+        auto dag = ActionsDAG::makeConvertingActions(
+            updated_header->getColumnsWithTypeAndName(),
+            initial_header->getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name,
+            read_from_mergetree_step->getContext());
+
+        auto & converting_node = nodes.emplace_back();
+        converting_node.step = std::make_unique<ExpressionStep>(updated_header, std::move(dag));
+        converting_node.children.push_back(child_node);
+        node.children.front() = &converting_node;
+    }
 }
 
 }
