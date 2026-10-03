@@ -815,7 +815,7 @@ private:
         const ColumnsWithTypeAndName & arguments,
         size_t start_idx,
         size_t length,
-        const std::vector<size_t> & declared_positions = {}) const
+        const VectorWithMemoryTracking<size_t> & declared_positions = {}) const
     {
         auto block = getArgumentsBlock(arguments, start_idx, length, declared_positions);
         NullWriteBuffer measure_buf;
@@ -844,7 +844,7 @@ private:
     size_t measureConstArgumentBytes(const ColumnsWithTypeAndName & arguments, size_t start_idx) const
     {
         ColumnsWithTypeAndName const_arguments;
-        std::vector<size_t> declared_positions;
+        VectorWithMemoryTracking<size_t> declared_positions;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             if (arguments[i].column && isColumnConst(*arguments[i].column))
@@ -1079,7 +1079,7 @@ private:
         const ColumnsWithTypeAndName & arguments,
         size_t start_idx,
         size_t length,
-        const std::vector<size_t> & declared_positions = {}) const
+        const VectorWithMemoryTracking<size_t> & declared_positions = {}) const
     {
         const auto & declared_arguments = user_defined_function->getArguments();
         Block arguments_block;
