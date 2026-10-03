@@ -248,7 +248,7 @@ public:
         const Float64 right_decay_length = *tryGetExponentialTimeDecayingDecayLength(arguments[1].type);
         if (left_decay_length != right_decay_length)
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Function {} cannot add values with different decay lengths: {} and {}",
                 getName(),
                 left_decay_length,
