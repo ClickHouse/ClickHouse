@@ -1,6 +1,9 @@
 -- The state type of a -Sparkbar combinator over a DateTime64 x-axis must round-trip through its
 -- name: begin_x/end_x are DecimalField parameters and need ::Type suffixes to reparse.
 
+-- The expected epoch values in the state type depend on the time zone; pin it.
+SET session_timezone = 'UTC';
+
 SELECT toTypeName(countSparkbarState(3, toDateTime64('2024-01-01 00:00:00', 3), toDateTime64('2024-01-03 00:00:00', 3))(toDateTime64('2024-01-01 00:00:00', 3) + INTERVAL number DAY)) FROM numbers(3);
 
 -- CAST to the printed state type name must reparse it.
