@@ -553,6 +553,14 @@ void StorageMergeTree::alter(
         bool workers_disabled_for_readonly_commit = false;
         try
         {
+            if (statistics_changed)
+            {
+                /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                setInMemoryMetadata(new_metadata);
+            }
+
+            /// changeSettings derives the index filename escaping, so it must publish after new_metadata.
             changeSettings(new_metadata.settings_changes, table_lock_holder);
 
             /// The opposite transition, 0 -> 1, disables the workers before the commit as well. The
@@ -567,13 +575,6 @@ void StorageMergeTree::alter(
             {
                 disableBackgroundWorkers();
                 workers_disabled_for_readonly_commit = true;
-            }
-
-            if (statistics_changed)
-            {
-                /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
-                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-                setInMemoryMetadata(new_metadata);
             }
 
             /// A table that started read-only has none of the background workers that modify data:
@@ -742,6 +743,8 @@ void StorageMergeTree::alter(
             try
             {
                 changeSettings(new_metadata.settings_changes, table_lock_holder);
+                /// setProperties publishes new_metadata below, so it must carry the escaping derived from the new settings.
+                applyEscapeIndexFilenamesSetting(new_metadata);
                 checkTTLExpressions(new_metadata, old_metadata);
 
                 /// Validate setting-dependent metadata against the just-applied settings
