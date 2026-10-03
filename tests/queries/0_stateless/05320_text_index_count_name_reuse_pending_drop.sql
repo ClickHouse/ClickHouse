@@ -32,7 +32,14 @@ SELECT count() FROM t_txr WHERE hasToken(b, 'needle') SETTINGS use_skip_indexes 
 
 SELECT '-- after the mutations are applied, the count is still right';
 SYSTEM START MERGES t_txr;
+-- Wait the pending `DROP INDEX` out on its own, with a mutation that leaves `ix` alone. One
+-- mutation carrying both the drop and the materialization records `ix` in `indices_to_drop_names`
+-- and then skips rebuilding the index of that name, so it would remove the index instead of
+-- building it and the count below would pass on a row scan, without the index ever being read.
+ALTER TABLE t_txr UPDATE a = a WHERE 0 SETTINGS mutations_sync = 2;
 ALTER TABLE t_txr MATERIALIZE INDEX ix SETTINGS mutations_sync = 2;
+SELECT count() = 0 FROM system.parts
+WHERE database = currentDatabase() AND table = 't_txr' AND active AND secondary_indices_marks_bytes = 0;
 SELECT count() FROM t_txr WHERE hasToken(b, 'needle');
 
 DROP TABLE t_txr;
