@@ -27,6 +27,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageTableProxy.h>
 
 
 namespace DB
@@ -92,7 +93,10 @@ BlockIO InterpreterDeleteQuery::execute()
     query_ptr->as<ASTDeleteQuery &>().setDatabase(table_id.database_name);
 
     /// First check table storage for validations.
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    /// `DELETE` accesses the table anyway; resolve a `lazy_load_tables` stand-in so that the metadata
+    /// snapshot below is the engine's (with its projections) and the `MergeTreeData` cast succeeds,
+    /// otherwise `lightweight_mutation_projection_mode = 'throw'` would be silently ignored.
+    StoragePtr table = resolveLazyTable(DatabaseCatalog::instance().getTable(table_id, getContext()));
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
