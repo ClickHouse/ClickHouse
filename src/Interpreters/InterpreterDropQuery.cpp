@@ -652,7 +652,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 for (const auto & [id, _] : tables_to_drop)
                 {
                     auto time_series
-                        = castStorage<StorageTimeSeries>(database->tryGetTable(id.getTableName(), table_context), DeferredTable::Load);
+                        = castStorage<StorageTimeSeries>(database->tryGetTable(id.getTableName(), table_context), DeferredTable::Skip);
                     if (!time_series || !time_series->hasInnerTables())
                         continue;
                     for (auto target_kind : StorageTimeSeries::getTargetKinds())
