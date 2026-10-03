@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import itertools
 import logging
 import os
 import random
@@ -77,16 +78,21 @@ AST_FUZZER_ORACLE_THROW_EXIT_CODE = AST_FUZZER_ORACLE_THROW_ERROR_CODE & 0xFF
 
 def _last_exception(fuzzer_log: Path, error_code: int, error_name: str) -> str:
     """The exception that ended the run. Several codes share an exit code, so it is the proof.
-    Multi-line messages (e.g. health check `Details:`) run until the `(ERROR_NAME)` suffix."""
-    lines = Shell.get_output(f"tail -n1000 {fuzzer_log}", verbose=False).splitlines()
+    Multi-line messages (e.g. health check `Details:`) run until the `(ERROR_NAME)` suffix.
+    Searches the whole log: the terminal step's buffered stdout can flush after the exception."""
     marker = f"Code: {error_code}."
-    start = next((i for i in reversed(range(len(lines))) if marker in lines[i]), None)
-    if start is None:
+    line_number = Shell.get_output(
+        f"rg --text -n -F '{marker}' {fuzzer_log} | tail -n1 | cut -d: -f1",
+        verbose=False,
+    ).strip()
+    if not line_number:
         return ""
-    block = [lines[start][lines[start].index(marker) :]]
+    with open(fuzzer_log, "r", encoding="utf-8", errors="replace") as fh:
+        lines = list(itertools.islice(fh, int(line_number) - 1, int(line_number) + 99))
+    block = [lines[0][lines[0].index(marker) :].rstrip("\n")]
     if f"({error_name})" not in block[0]:
-        for line in lines[start + 1 : start + 100]:
-            block.append(line)
+        for line in lines[1:]:
+            block.append(line.rstrip("\n"))
             if f"({error_name})" in line:
                 break
     return "\n".join(block).strip()
