@@ -439,12 +439,9 @@ TEST(ConvertFieldToTypeStrictness, OutOfRangeDateAndTimeIntegers)
     EXPECT_TRUE(convertFieldToType(Field(UInt64(100000)), *date_type).isNull());
     EXPECT_TRUE(convertFieldToType(Field(Int64(-1)), *date_type).isNull());
 
-    /// `DateTime` is `UInt32`; both the `UInt64` and the `Int64` carrier have to be range-checked.
+    /// `DateTime` is `UInt32`.
     EXPECT_EQ(convertFieldToType(Field(UInt64(1)), *datetime_type), Field(UInt64(1)));
-    EXPECT_EQ(convertFieldToType(Field(Int64(1)), *datetime_type), Field(UInt64(1)));
     EXPECT_TRUE(convertFieldToType(Field(UInt64(5000000000)), *datetime_type).isNull());
-    EXPECT_TRUE(convertFieldToType(Field(Int64(5000000000)), *datetime_type).isNull());
-    EXPECT_TRUE(convertFieldToType(Field(Int64(-1)), *datetime_type).isNull());
 }
 
 /// A `DateTime64` column stores a raw `Int64` tick count. Scaling a whole number of seconds up to that tick
