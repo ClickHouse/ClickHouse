@@ -34,4 +34,9 @@ REGISTER_FUNCTION(ActionName)
     factory.registerFunction("__actionName", [](ContextPtr){ return FunctionActionName::create({}); }, FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
+REGISTER_FUNCTION(AliasMarker)
+{
+    factory.registerFunction<FunctionAliasMarker>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
+}
+
 }

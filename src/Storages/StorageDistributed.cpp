@@ -167,6 +167,7 @@ namespace Setting
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsUInt64 distributed_push_down_limit;
+    extern const SettingsBool enable_alias_marker;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsBool insert_allow_materialized_columns;
@@ -730,6 +731,82 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 namespace
 {
 
+/// Wraps `ALIAS` column references into `__aliasMarker(<defining expression>, <column>)` for distributed SQL
+/// transport. Only used when `enable_alias_marker` is set; `inlineAliasColumns` then inlines whatever is left
+/// (the `JOIN USING` keys, which this visitor does not touch).
+class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasColumnsVisitor>
+{
+    QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node) const
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node || !column_node->hasExpression())
+            return nullptr;
+
+        const auto & column_source = column_node->getColumnSourceOrNull();
+        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
+                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
+                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+            return nullptr;
+
+        auto column_expression = column_node->getExpression();
+        const String output_alias = column_node->hasAlias() ? column_node->getAlias() : String{};
+
+        QueryTreeNodes arguments;
+        arguments.reserve(2);
+        /// Preserve the original column reference in arg2 so normal analyzer passes
+        /// (alias/source uniquification) can still transform it consistently.
+        /// Before query is sent to shard this ColumnNode is materialized to String ConstantNode.
+        /// Clone the expression before mutating its alias below: getExpression() may return a node
+        /// shared elsewhere in the tree, and removeAlias() would otherwise be a side effect on it.
+        arguments.emplace_back(column_expression->clone());
+        arguments.emplace_back(std::make_shared<ColumnNode>(column_node->getColumn(), column_source));
+
+        auto alias_marker_node = std::make_shared<FunctionNode>("__aliasMarker");
+        auto & nodes = alias_marker_node->getArguments().getNodes();
+        nodes = std::move(arguments);
+        nodes[0]->removeAlias();
+        if (!output_alias.empty())
+            alias_marker_node->setAlias(output_alias);
+        resolveOrdinaryFunctionNodeByName(*alias_marker_node, "__aliasMarker", context);
+
+        return alias_marker_node;
+    }
+
+public:
+    explicit ReplaseAliasColumnsVisitor(ContextPtr context_) : context(std::move(context_)) {}
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (auto column_expression = getColumnNodeAliasExpression(node))
+            node = column_expression;
+    }
+
+    static bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
+    {
+        /// `JOIN USING` keys are left to `inlineAliasColumns`, which keeps the key name as an alias of the
+        /// inlined entry (`USING (x AS a)`) so the remote server can resolve the key.
+        if (const auto * join_node = parent_node->as<JoinNode>();
+            join_node && join_node->isUsingJoinExpression() && child_node.get() == join_node->getJoinExpression().get())
+            return false;
+
+        auto * function_node = parent_node->as<FunctionNode>();
+        if (!function_node || function_node->getFunctionName() != "__aliasMarker")
+            return true;
+
+        const auto & arguments = function_node->getArguments().getNodes();
+        if (arguments.size() < 2)
+            return true;
+
+        /// Do not recurse into __aliasMarker arg2.
+        /// It is an internal column-reference payload used only for later id materialization,
+        /// and visiting it here can re-expand aliases or create recursive rewrites.
+        return child_node.get() != arguments[1].get();
+    }
+
+private:
+    ContextPtr context;
+};
+
 class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
 {
 public:
@@ -879,6 +956,11 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
+    if (query_context->getSettingsRef()[Setting::enable_alias_marker])
+    {
+        ReplaseAliasColumnsVisitor replace_alias_columns_visitor(query_context);
+        replace_alias_columns_visitor.visit(query_tree_to_modify);
+    }
     inlineAliasColumns(query_tree_to_modify);
 
     const auto & settings = query_context->getSettingsRef();
@@ -895,7 +977,9 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         rewriteJoinToGlobalJoinIfNeeded(query_node.getJoinTreeNode());
     }
 
-    return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, /*allow_global_join_for_right_table*/ false);
+    auto shard_query_tree = buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, /*allow_global_join_for_right_table*/ false);
+    finalizeAliasMarkersForDistributedSerialization(shard_query_tree, query_context);
+    return shard_query_tree;
 }
 
 }
@@ -2539,6 +2623,32 @@ If the server ceased to exist or had a rough restart (for example, due to a hard
 When querying a `Distributed` table, `SELECT` queries are sent to all shards and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you do not have to transfer old data into it. Instead, you can write new data to it by using a heavier weight – the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
 
 When the `max_parallel_replicas` option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max_parallel_replicas](/reference/settings/session-settings/max#max_parallel_replicas).
+
+### ALIAS column handling {#distributed-alias-columns}
+
+When a `Distributed` table contains `ALIAS` columns and the query uses the analyzer (`enable_analyzer = 1`), the `enable_alias_marker` setting controls how `ALIAS` expressions are reconciled between the initiator and shards.
+
+With `enable_alias_marker = false` (default):
+- `ALIAS` columns are inlined in the distributed SQL sent to shards without markers.
+- On a mixed-version cluster (some shards running ClickHouse 26.5 or earlier, others running 26.6+), this is the safe setting because pre-26.6 shards do not understand the `__aliasMarker` function.
+- However, this can cause correctness issues: if a `Distributed` table has multiple `ALIAS` columns or is queried as part of a `Distributed`-over-`Distributed` stack, columns may be swapped or mismatched in the result, leading to `THERE_IS_NO_COLUMN` or `NUMBER_OF_COLUMNS_DOESNT_MATCH` exceptions.
+
+With `enable_alias_marker = true`:
+- `ALIAS` expressions are wrapped with the internal `__aliasMarker` function, preserving column identity across the initiator/shard boundary.
+- This fixes the correctness issues above by ensuring columns are reconciled by name instead of by position.
+- All shards in the cluster must recognize the `__aliasMarker` function, which requires ClickHouse 26.6 or newer on every shard.
+
+**Migration guidance**: During a rolling upgrade of a mixed-version cluster:
+1. Initially, keep `enable_alias_marker = false` on the initiator.
+2. Once all shards are upgraded to ClickHouse 26.6 or newer, set `enable_alias_marker = true` to enable the correctness fix.
+
+Example:
+
+```sql
+-- On the initiator, after cluster upgrade is complete:
+SET enable_alias_marker = 1;
+SELECT * FROM distributed_table_with_alias_columns;
+```
 
 To learn more about how distributed `in` and `global in` queries are processed, refer to [this](/reference/statements/in#distributed-subqueries) documentation.
 
