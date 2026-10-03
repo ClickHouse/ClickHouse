@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, memory-engine
+# Tags: no-parallel, no-fasttest, memory-engine
 # no-parallel: arms the server-wide fail points restore_pause_before_data_restore_tasks and
 # backup_pause_before_collecting_table_data.
 
