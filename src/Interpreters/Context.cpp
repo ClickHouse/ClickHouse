@@ -10,7 +10,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include <Common/config_version.h>
 #include "config.h"
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
@@ -88,7 +87,6 @@
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/WasmModuleManager.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Core/SettingsQuirks.h>
@@ -100,6 +98,7 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
+#include <Access/UsersConfigAccessStorage.h>
 #include <Access/Role.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsProfilesInfo.h>
@@ -490,6 +489,28 @@ namespace ErrorCodes
     extern const int SET_NON_GRANTED_ROLE;
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
+}
+
+namespace
+{
+constexpr std::string_view COMPATIBILITY_SETTING_NAME = "compatibility";
+
+/// The `MergeTree` settings `compatibility` gives, except those `constraints` refuse, as for `Settings`.
+MergeTreeSettings mergeTreeSettingsFromCompatibility(const String & compatibility, const SettingsConstraints & constraints)
+{
+    MergeTreeSettings from_compatibility;
+    from_compatibility.applyCompatibilitySetting(compatibility);
+    if (!constraints.restrictsCompatibility())
+        return from_compatibility;
+
+    MergeTreeSettings result;
+    for (const auto & change : from_compatibility.changes())
+    {
+        if (constraints.allowsValueFromCompatibility(settingFullName<MergeTreeSettings>(change.name), change.value))
+            result.set(change.name, change.value);
+    }
+    return result;
+}
 }
 
 /// Per-query deviations from the server-level distributed cache switches. The background and buffer
@@ -2247,13 +2268,38 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     if (!database.empty())
         DatabaseCatalog::instance().assertDatabaseExists(database);
 
+    /// Retroactively enforce constraints when applying a user's stored profiles at login: a user whose
+    /// SQL-defined settings or SQL-defined profiles violate the constraints (or `allow_feature_tier`)
+    /// must not be able to log in. Config-defined users are the admin's root configuration and are
+    /// trusted. For SQL-defined users we check the raw profile elements (so min/max-only and
+    /// writability-only elements are seen), but tolerate config-defined profiles in the chain for
+    /// compatibility (see `SettingsConstraints::check`).
+    /// The check uses what a new session starts from, before this context changes: `setUser` also switches
+    /// an existing context (`EXECUTE AS`, a view's definer), whose own settings say nothing about the target.
+    if (!isUserDefinedInConfig(user_id_))
+    {
+        auto global_context = getGlobalContext();
+        const auto & new_session_settings = global_context->getSettingsRef();
+        auto new_session_constraints = global_context->getSettingsConstraintsAndCurrentProfiles();
+        new_session_constraints->constraints.check(
+            new_session_settings, user->settings, SettingSource::USER, /* skip_config_defined_profiles= */ true);
+        new_session_constraints->constraints.check(
+            new_session_settings, enabled_roles->settings_from_enabled_roles, SettingSource::ROLE,
+            /* skip_config_defined_profiles= */ true);
+
+        /// A profile also reaches the user through its own `TO` clause, which neither list above holds.
+        SettingsProfileElements applied_profiles;
+        for (const auto & profile_id : enabled_profiles->profiles)
+            applied_profiles.emplace_back().parent_profile = profile_id;
+        new_session_constraints->constraints.check(
+            new_session_settings, applied_profiles, SettingSource::PROFILE, /* skip_config_defined_profiles= */ true);
+    }
+
     /// Apply user's profiles, constraints, settings, roles.
     std::lock_guard lock(mutex);
 
     setUserIDWithLock(user_id_, lock);
 
-    /// A profile can specify a value and a readonly constraint for same setting at the same time,
-    /// so we shouldn't check constraints here.
     setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
 
     setCurrentRolesWithLock(default_roles, lock);
@@ -2280,6 +2326,20 @@ void Context::setUserIDWithLock(const UUID & user_id_, const std::lock_guard<Con
 {
     user_id = user_id_;
     need_recalculate_access = true;
+}
+
+bool Context::isUserDefinedInConfig(const UUID & user_id_) const
+{
+    auto storage = getAccessControl().findStorage(user_id_);
+    return storage && storage->getStorageType() == UsersConfigAccessStorage::STORAGE_TYPE;
+}
+
+bool Context::isCurrentUserDefinedInConfigWithLock() const
+{
+    /// No acting user means an internal/server-initiated operation, which is trusted.
+    if (!user_id)
+        return true;
+    return isUserDefinedInConfig(*user_id);
 }
 
 void Context::setUserID(const UUID & user_id_)
@@ -2562,17 +2622,48 @@ void Context::setCurrentProfileWithLock(const String & profile_name, bool check_
 
 void Context::setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
 {
+    if (check_constraints)
+    {
+        /// Check the profile's settings against current constraints before resolving, because after
+        /// resolving the parent_profile references are already expanded and checkSettingsConstraints
+        /// would not see them. A config-defined admin is trusted to apply looser profiles (structural
+        /// rules still apply); a SQL-defined user must satisfy the constraints it is bound by.
+        SettingsProfileElements elements;
+        elements.emplace_back().parent_profile = profile_id;
+        getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(
+            *settings, elements, SettingSource::PROFILE, /* skip_config_defined_profiles= */ false,
+            /* actor_is_config_defined= */ isCurrentUserDefinedInConfigWithLock());
+    }
     auto profile_info = getAccessControl().getSettingsProfileInfo(profile_id);
-    setCurrentProfilesWithLock(*profile_info, check_constraints, lock);
+    setCurrentProfilesWithLock(*profile_info, /* check_constraints= */ false, lock);
 }
 
 void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
 {
     if (check_constraints)
         checkSettingsConstraintsWithLock(profiles_info.settings, SettingSource::PROFILE);
-    applySettingsChangesWithLock(profiles_info.settings, lock);
+    /// Installed first, so that a `compatibility` the profile sets is restricted by the constraints of the profile.
     settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
+    applySettingsChangesWithLock(profiles_info.settings, lock);
+    /// The new constraints decide anew what a `compatibility` set before may change.
+    if (!profiles_info.settings.tryGet(COMPATIBILITY_SETTING_NAME) && !(*settings)[Setting::compatibility].value.empty())
+    {
+        settings->set(COMPATIBILITY_SETTING_NAME, (*settings)[Setting::compatibility].value);
+        restrictSettingsChangedByCompatibilityWithLock(lock);
+    }
     contextSanityClampSettingsWithLock(*this, *settings, lock);
+}
+
+void Context::restrictSettingsChangedByCompatibilityWithLock(const std::lock_guard<ContextSharedMutex> &)
+{
+    if (!settings->hasSettingsChangedByCompatibility())
+        return;
+    auto constraints_and_profiles = getSettingsConstraintsAndCurrentProfilesWithLock();
+    const auto & constraints = constraints_and_profiles->constraints;
+    if (!constraints.restrictsCompatibility())
+        return;
+    settings->resetSettingsChangedByCompatibility(
+        [&](std::string_view name, const Field & value) { return constraints.allowsValueFromCompatibility(name, value); });
 }
 
 void Context::setCurrentProfile(const String & profile_name, bool check_constraints)
@@ -3532,6 +3623,12 @@ StoragePtr Context::getViewSource() const
     return view_source;
 }
 
+
+void Context::clearViewSource()
+{
+    view_source.reset();
+}
+
 bool Context::displaySecretsInShowAndSelect() const
 {
     return shared->server_settings[ServerSetting::display_secrets_in_show_and_select];
@@ -3594,6 +3691,8 @@ void Context::setSettingWithLock(std::string_view name, const String & value, co
         return;
     }
     settings->set(name, value);
+    if (name == COMPATIBILITY_SETTING_NAME)
+        restrictSettingsChangedByCompatibilityWithLock(lock);
     if (ContextAccessParams::dependsOnSettingName(name))
         need_recalculate_access = true;
     contextSanityClampSettingsWithLock(*this, *settings, lock);
@@ -3607,6 +3706,8 @@ void Context::setSettingWithLock(std::string_view name, const Field & value, con
         return;
     }
     settings->set(name, value);
+    if (name == COMPATIBILITY_SETTING_NAME)
+        restrictSettingsChangedByCompatibilityWithLock(lock);
     if (ContextAccessParams::dependsOnSettingName(name))
         need_recalculate_access = true;
 }
@@ -3683,7 +3784,11 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 
 void Context::checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source)
 {
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, profile_elements, source);
+    /// `CREATE/ALTER USER/ROLE/PROFILE` by a config-defined admin is trusted to create looser configurations,
+    /// but structural rules (readonly mode, source restrictions, `allow_feature_tier`) still apply; a
+    /// SQL-defined actor must additionally satisfy the constraints it is bound by.
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(
+        *settings, profile_elements, source, /* actor_is_config_defined= */ isCurrentUserDefinedInConfigWithLock());
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
@@ -3728,6 +3833,49 @@ void Context::checkSettingsConstraints(const AlterSettingsProfileElements & prof
 {
     SharedLockGuard lock(mutex);
     checkSettingsConstraintsWithLock(profile_elements, source);
+}
+
+void Context::checkSettingsConstraintsForOverwrite(const std::vector<UUID> & ids, const AccessEntityUpdate & update) const
+{
+    const auto & access_control = getAccessControl();
+    for (const auto & id : ids)
+    {
+        if (auto old_entity = access_control.tryRead(id))
+            checkRemovedSettings(old_entity, update(old_entity, id));
+    }
+}
+
+void Context::checkSettingsConstraintsForOverwrite(
+    const std::vector<std::shared_ptr<const IAccessEntity>> & new_entities, const String & storage_name) const
+{
+    const auto & access_control = getAccessControl();
+    for (const auto & new_entity : new_entities)
+    {
+        /// Only a same-name entity of the destination storage is replaced; one of a later storage is just hidden.
+        std::shared_ptr<const IAccessStorage> storage = storage_name.empty()
+            ? access_control.getStorageForInsertion(new_entity) : access_control.getStorageByName(storage_name);
+        auto id = storage->find(new_entity->getType(), new_entity->getName());
+        if (auto old_entity = id ? storage->tryRead(*id) : nullptr)
+            checkRemovedSettings(old_entity, new_entity);
+    }
+}
+
+void Context::checkRemovedSettings(const std::shared_ptr<const IAccessEntity> & old_entity, const std::shared_ptr<const IAccessEntity> & new_entity) const
+{
+    auto settings_of = [](const IAccessEntity & entity) -> const SettingsProfileElements &
+    {
+        if (const auto * user = typeid_cast<const User *>(&entity))
+            return user->settings;
+        if (const auto * role = typeid_cast<const Role *>(&entity))
+            return role->settings;
+        return typeid_cast<const SettingsProfile &>(entity).elements;
+    };
+
+    SharedLockGuard lock(mutex);
+    /// A config-defined admin may drop constraints freely.
+    if (isCurrentUserDefinedInConfigWithLock())
+        return;
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkRemovedSettings(settings_of(*old_entity), settings_of(*new_entity));
 }
 
 void Context::checkSettingsConstraints(const SettingChange & change, SettingSource source)
@@ -4111,16 +4259,10 @@ void Context::makeQueryContext()
     /// server-initiated queries such as background flushes of `Buffer` tables, streaming consumers
     /// (`Kafka`, `NATS`, `RabbitMQ`, `FileLog`, `ObjectStorageQueue`), `MaterializedPostgreSQL`
     /// replication, dictionary reloads, or asynchronous insert flushes - inherits the empty (zero)
-    /// client version of the global context. This server is the real initiator of such queries, so
-    /// fill the version with this server's version. Otherwise remote shards of any distributed
-    /// sub-query would treat the initiator as an ancient server and apply legacy compatibility
-    /// downgrades, and `RemoteQueryExecutor` rejects a zero version outright.
+    /// client version of the global context.
     /// Contexts created for real client queries overwrite the client info afterwards
     /// (see `Session::makeQueryContextImpl`), so this does not mask a client-reported version.
-    if (client_info.client_version_major == 0
-        && client_info.client_version_minor == 0
-        && client_info.client_version_patch == 0)
-        setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
+    setInitiatorVersionIfUnset();
 }
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
@@ -6016,7 +6158,7 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
     return shared->replicated_sends_throttler;
 }
 
-ThrottlerPtr Context::getRemoteReadThrottler() const
+ThrottlerPtr Context::getRemoteReadThrottler(std::optional<UInt64> bandwidth) const
 {
     ThrottlerPtr throttler;
     {
@@ -6028,17 +6170,24 @@ ThrottlerPtr Context::getRemoteReadThrottler() const
     if (auto process_list_element = getProcessListElementSafe())
         addThrottler(throttler, process_list_element->getUserNetworkThrottler());
 
-    if (auto bandwidth = getSettingsRef()[Setting::max_remote_read_network_bandwidth])
+    /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
+    if (!bandwidth)
+    {
+        SharedLockGuard settings_lock(mutex);
+        bandwidth = getSettingsRef()[Setting::max_remote_read_network_bandwidth];
+    }
+
+    if (*bandwidth)
     {
         std::lock_guard lock(mutex);
         if (!remote_read_query_throttler)
-            remote_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryRemoteReadThrottlerBytes, ProfileEvents::QueryRemoteReadThrottlerSleepMicroseconds);
+            remote_read_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryRemoteReadThrottlerBytes, ProfileEvents::QueryRemoteReadThrottlerSleepMicroseconds);
         throttler = remote_read_query_throttler;
     }
     return throttler;
 }
 
-ThrottlerPtr Context::getRemoteWriteThrottler() const
+ThrottlerPtr Context::getRemoteWriteThrottler(std::optional<UInt64> bandwidth) const
 {
     ThrottlerPtr throttler;
     {
@@ -6050,17 +6199,24 @@ ThrottlerPtr Context::getRemoteWriteThrottler() const
     if (auto process_list_element = getProcessListElementSafe())
         addThrottler(throttler, process_list_element->getUserNetworkThrottler());
 
-    if (auto bandwidth = getSettingsRef()[Setting::max_remote_write_network_bandwidth])
+    /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
+    if (!bandwidth)
+    {
+        SharedLockGuard settings_lock(mutex);
+        bandwidth = getSettingsRef()[Setting::max_remote_write_network_bandwidth];
+    }
+
+    if (*bandwidth)
     {
         std::lock_guard lock(mutex);
         if (!remote_write_query_throttler)
-            remote_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryRemoteWriteThrottlerBytes, ProfileEvents::QueryRemoteWriteThrottlerSleepMicroseconds);
+            remote_write_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryRemoteWriteThrottlerBytes, ProfileEvents::QueryRemoteWriteThrottlerSleepMicroseconds);
         throttler = remote_write_query_throttler;
     }
     return throttler;
 }
 
-ThrottlerPtr Context::getLocalReadThrottler() const
+ThrottlerPtr Context::getLocalReadThrottler(std::optional<UInt64> bandwidth) const
 {
     ThrottlerPtr throttler;
     {
@@ -6068,17 +6224,24 @@ ThrottlerPtr Context::getLocalReadThrottler() const
         throttler = shared->local_read_throttler;
     }
 
-    if (auto bandwidth = getSettingsRef()[Setting::max_local_read_bandwidth])
+    /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
+    if (!bandwidth)
+    {
+        SharedLockGuard settings_lock(mutex);
+        bandwidth = getSettingsRef()[Setting::max_local_read_bandwidth];
+    }
+
+    if (*bandwidth)
     {
         std::lock_guard lock(mutex);
         if (!local_read_query_throttler)
-            local_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
+            local_read_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
         throttler = local_read_query_throttler;
     }
     return throttler;
 }
 
-ThrottlerPtr Context::getLocalWriteThrottler() const
+ThrottlerPtr Context::getLocalWriteThrottler(std::optional<UInt64> bandwidth) const
 {
     ThrottlerPtr throttler;
     {
@@ -6086,11 +6249,18 @@ ThrottlerPtr Context::getLocalWriteThrottler() const
         throttler = shared->local_write_throttler;
     }
 
-    if (auto bandwidth = getSettingsRef()[Setting::max_local_write_bandwidth])
+    /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
+    if (!bandwidth)
+    {
+        SharedLockGuard settings_lock(mutex);
+        bandwidth = getSettingsRef()[Setting::max_local_write_bandwidth];
+    }
+
+    if (*bandwidth)
     {
         std::lock_guard lock(mutex);
         if (!local_write_query_throttler)
-            local_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalWriteThrottlerBytes, ProfileEvents::QueryLocalWriteThrottlerSleepMicroseconds);
+            local_write_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryLocalWriteThrottlerBytes, ProfileEvents::QueryLocalWriteThrottlerSleepMicroseconds);
         throttler = local_write_query_throttler;
     }
     return throttler;
@@ -6994,6 +7164,43 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) c
 }
 
 
+std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, bool treat_local_port_as_remote) const
+{
+    if (!treat_local_port_as_remote)
+        return getCluster(cluster_name);
+
+    /// Follow the resolution order of `tryGetCluster`, so that every cluster name accepted by the
+    /// plain overload (which validates the name at `CREATE DATABASE` time for the `Remote` and
+    /// `Cluster` database engines) is also accepted here. Only the static `remote_servers` case is
+    /// rebuilt from the configuration: the pre-built object treats the replica that matches the
+    /// server's own address as a local shard, which is wrong in clickhouse-local. The clusters of
+    /// the other sources already account for `treat_local_port_as_remote` on construction (see
+    /// `DatabaseReplicated::getClusterImpl`) or describe genuinely remote discovered replicas.
+    {
+        std::lock_guard lock(shared->clusters_mutex);
+
+        const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
+        const String config_prefix = "remote_servers." + cluster_name;
+        if (config.has(config_prefix))
+            return std::make_shared<Cluster>(config, *settings, "remote_servers", cluster_name, treat_local_port_as_remote);
+
+        if (auto res = getClustersImpl(lock)->getCluster(cluster_name))
+            return res;
+
+        if (shared->cluster_discovery)
+        {
+            if (auto res = shared->cluster_discovery->getCluster(cluster_name))
+                return res;
+        }
+    }
+
+    if (auto res = tryGetReplicatedDatabaseCluster(cluster_name))
+        return res;
+
+    throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Requested cluster '{}' not found", cluster_name);
+}
+
+
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
     std::shared_ptr<Cluster> res = nullptr;
@@ -7006,7 +7213,7 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
             res = shared->cluster_discovery->getCluster(cluster_name);
     }
 
-    if (res == nullptr && !cluster_name.empty())
+    if (res == nullptr)
         res = tryGetReplicatedDatabaseCluster(cluster_name);
 
     return res;
@@ -7762,16 +7969,16 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
 
 const MergeTreeSettings & Context::getMergeTreeSettings() const
 {
+    /// Before `shared->mutex`: elsewhere it is locked while the context mutex is held.
+    auto constraints_and_profiles = getSettingsConstraintsAndCurrentProfiles();
     std::lock_guard lock(shared->mutex);
 
     if (!shared->merge_tree_settings)
     {
         const auto & config = shared->getConfigRefWithLock(lock);
-        MergeTreeSettings mt_settings;
-
         /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
-        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+        auto mt_settings = mergeTreeSettingsFromCompatibility((*settings)[Setting::compatibility], constraints_and_profiles->constraints);
 
         mt_settings.loadFromConfig("merge_tree", config);
         shared->merge_tree_settings.emplace(mt_settings);
@@ -7782,16 +7989,16 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
 
 const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
 {
+    /// Before `shared->mutex`: elsewhere it is locked while the context mutex is held.
+    auto constraints_and_profiles = getSettingsConstraintsAndCurrentProfiles();
     std::lock_guard lock(shared->mutex);
 
     if (!shared->replicated_merge_tree_settings)
     {
         const auto & config = shared->getConfigRefWithLock(lock);
-        MergeTreeSettings mt_settings;
-
         /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
-        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+        auto mt_settings = mergeTreeSettingsFromCompatibility((*settings)[Setting::compatibility], constraints_and_profiles->constraints);
 
         mt_settings.loadFromConfig("merge_tree", config);
         mt_settings.loadFromConfig("replicated_merge_tree", config);
@@ -8123,9 +8330,13 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     bool check_constraints = false;
     setCurrentProfile(shared->system_profile_name, check_constraints);
 
-    applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
-    adjustSettingsForMakeDistributedPlan(*settings);
-    doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+    /// Not around `setCurrentProfile` above, which takes the same mutex itself.
+    {
+        std::lock_guard lock(mutex);
+        applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
+        adjustSettingsForMakeDistributedPlan(*settings);
+        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+    }
 
     makeBackgroundContext(config);
 
@@ -8332,10 +8543,12 @@ void Context::setClientInterface(ClientInfo::Interface interface)
 
 void Context::setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version)
 {
-    client_info.client_version_major = client_version_major;
-    client_info.client_version_minor = client_version_minor;
-    client_info.client_version_patch = client_version_patch;
-    client_info.client_tcp_protocol_version = client_tcp_protocol_version;
+    client_info.setClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
+}
+
+void Context::setInitiatorVersionIfUnset()
+{
+    client_info.setInitiatorVersionIfUnset();
 }
 
 void Context::setScriptQueryAndLineNumber(uint32_t query_number, uint32_t line_number)
@@ -8984,6 +9197,10 @@ void Context::reloadLongConnectionLimitConfig(size_t max_remote_read_connections
 ReadSettings Context::getReadSettings() const
 {
     ReadSettings res;
+
+    /// This mutex cannot be upgraded and the throttler getters below re-enter it exclusively, so it is
+    /// released as soon as the settings have been copied; nothing after the unlock reads `settings_ref`.
+    SharedLockGuard lock(mutex);
     const auto & settings_ref = getSettingsRef();
 
     std::string_view read_method_str = getSettingsRef()[Setting::local_filesystem_read_method].value;
@@ -9031,7 +9248,6 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_settings.skip_download_if_exceeds_per_query_cache_write_limit
         = settings_ref[Setting::filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit];
 
-    res.page_cache_settings.cache = getPageCache();
     res.use_page_cache_for_disks_without_file_cache = settings_ref[Setting::use_page_cache_for_disks_without_file_cache];
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
     res.use_page_cache_for_local_disks = settings_ref[Setting::use_page_cache_for_local_disks];
@@ -9091,16 +9307,12 @@ ReadSettings Context::getReadSettings() const
     res.local_fs_settings.mmap_threshold = settings_ref[Setting::min_bytes_to_use_mmap_io];
     res.priority = Priority{settings_ref[Setting::read_priority]};
 
-    res.remote_throttler = getRemoteReadThrottler();
-    res.local_throttler = getLocalReadThrottler();
-
     res.http_settings.max_tries = settings_ref[Setting::http_max_tries];
     res.http_settings.retry_initial_backoff_ms = settings_ref[Setting::http_retry_initial_backoff_ms];
     res.http_settings.retry_max_backoff_ms = settings_ref[Setting::http_retry_max_backoff_ms];
     res.http_settings.skip_not_found_url_for_globs = settings_ref[Setting::http_skip_not_found_url_for_globs];
     res.http_settings.make_head_request = settings_ref[Setting::http_make_head_request];
 
-    res.local_fs_settings.mmap_cache = getMMappedFileCache().get();
     res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
 
@@ -9110,12 +9322,26 @@ ReadSettings Context::getReadSettings() const
     res.distributed_cache_settings.validate();
 #endif
 
+    /// Read here so that the throttler getters below do not have to take this lock again.
+    const UInt64 remote_bandwidth = settings_ref[Setting::max_remote_read_network_bandwidth];
+    const UInt64 local_bandwidth = settings_ref[Setting::max_local_read_bandwidth];
+
+    lock.unlock();
+
+    res.page_cache_settings.cache = getPageCache();
+    res.local_fs_settings.mmap_cache = getMMappedFileCache().get();
+    res.remote_throttler = getRemoteReadThrottler(remote_bandwidth);
+    res.local_throttler = getLocalReadThrottler(local_bandwidth);
+
     return res;
 }
 
 WriteSettings Context::getWriteSettings() const
 {
     WriteSettings res;
+
+    /// The shared lock is released before the throttler getters, which take it exclusively.
+    SharedLockGuard lock(mutex);
     const auto & settings_ref = getSettingsRef();
 
     res.enable_filesystem_cache_on_write_operations = settings_ref[Setting::enable_filesystem_cache_on_write_operations];
@@ -9127,13 +9353,19 @@ WriteSettings Context::getWriteSettings() const
     res.s3_allow_parallel_part_upload = settings_ref[Setting::s3_allow_parallel_part_upload];
     res.azure_allow_parallel_part_upload = settings_ref[Setting::azure_allow_parallel_part_upload];
 
-    res.remote_throttler = getRemoteWriteThrottler();
-    res.local_throttler = getLocalWriteThrottler();
-
     res.write_through_distributed_cache = resolveWriteThroughDistributedCache();
 #if ENABLE_DISTRIBUTED_CACHE
     res.distributed_cache_settings.load(settings_ref);
 #endif
+
+    /// Read here so that the throttler getters below do not have to take this lock again.
+    const UInt64 remote_bandwidth = settings_ref[Setting::max_remote_write_network_bandwidth];
+    const UInt64 local_bandwidth = settings_ref[Setting::max_local_write_bandwidth];
+
+    lock.unlock();
+
+    res.remote_throttler = getRemoteWriteThrottler(remote_bandwidth);
+    res.local_throttler = getLocalWriteThrottler(local_bandwidth);
 
     return res;
 }
@@ -9312,8 +9544,15 @@ void Context::setPinnedStorageSnapshot(const UUID & table_uuid, StorageSnapshotP
 
 StorageSnapshotPtr Context::getPinnedStorageSnapshot(const UUID & table_uuid) const
 {
-    auto it = pinned_storage_snapshots.find(table_uuid);
-    return it != pinned_storage_snapshots.end() ? it->second : nullptr;
+    /// The population's reads run under contexts derived from the query context, not under the context the
+    /// pin was set on, so the query context is consulted too.
+    if (auto it = pinned_storage_snapshots.find(table_uuid); it != pinned_storage_snapshots.end())
+        return it->second;
+    if (!hasQueryContext())
+        return nullptr;
+    const auto & query_pins = getQueryContext()->pinned_storage_snapshots;
+    auto it = query_pins.find(table_uuid);
+    return it != query_pins.end() ? it->second : nullptr;
 }
 
 const ServerSettings & Context::getServerSettings() const

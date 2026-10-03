@@ -77,6 +77,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
 #include <Storages/PartitionCommands.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSinkPatch.h>
@@ -226,7 +227,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
-    extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_merge_selecting_sleep_ms;
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
     extern const MergeTreeSettingsUInt64 max_replicated_fetches_network_bandwidth;
@@ -239,6 +239,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 min_relative_delay_to_measure;
+    extern const MergeTreeSettingsUInt64 min_unreserved_disk_space_for_merge;
     extern const MergeTreeSettingsUInt64 parts_to_delay_insert;
     extern const MergeTreeSettingsBool remote_fs_zero_copy_path_compatible_mode;
     extern const MergeTreeSettingsString remote_fs_zero_copy_zookeeper_path;
@@ -3262,7 +3263,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
     auto clone_data_parts_from_source_table = [&] () -> size_t
     {
-        source_table = DatabaseCatalog::instance().tryGetTable(source_table_id, getContext());
+        /// Leaving this proxied would make the checks below read the source as not replicated.
+        source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(source_table_id, getContext()));
         if (!source_table)
         {
             LOG_DEBUG(log, "Can't use {} as source table for REPLACE PARTITION command. It does not exist.", source_table_id.getNameForLogs());
@@ -3394,7 +3396,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
         /// However, it's quite dangerous, because part may appear in source table.
         /// So we enqueue it for check only if no replicas of source table have part either.
         bool need_check = true;
-        if (auto * replicated_src_table = typeid_cast<StorageReplicatedMergeTree *>(source_table.get()))
+        if (auto * replicated_src_table = castStorage<StorageReplicatedMergeTree>(source_table, DeferredTable::Load).get())
         {
             String src_replica = replicated_src_table->findReplicaHavingPart(part_desc->src_part_name, false);
             if (!src_replica.empty())
@@ -3458,7 +3460,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                 throw Exception(ErrorCodes::UNFINISHED, "Checksums of {} is suddenly changed", part_desc->src_table_part->name);
 
             /// Don't do hardlinks in case of zero-copy at any side (defensive programming)
-            bool source_zero_copy_enabled = (*dynamic_cast<const MergeTreeData *>(source_table.get())->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
+            bool source_zero_copy_enabled = (*castStorage<MergeTreeData>(source_table, DeferredTable::Load)->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
             bool our_zero_copy_enabled = (*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
 
             IDataPartStorage::ClonePartParams clone_params
@@ -4608,6 +4610,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     deduplicate,
                     deduplicate_by_columns,
                     cleanup,
+                    /*bypass_min_unreserved_space=*/false,
                     nullptr,
                     merge_predicate->getVersion(),
                     future_merged_part->merge_type);
@@ -4759,6 +4762,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     bool deduplicate,
     const Names & deduplicate_by_columns,
     bool cleanup,
+    bool bypass_min_unreserved_space,
     ReplicatedMergeTreeLogEntryData * out_log_entry,
     int32_t log_version,
     MergeType merge_type)
@@ -4799,6 +4803,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.deduplicate = deduplicate;
     entry.deduplicate_by_columns = deduplicate_by_columns;
     entry.cleanup = cleanup;
+    entry.bypass_min_unreserved_space = bypass_min_unreserved_space;
     entry.create_time = time(nullptr);
 
     for (const auto & part : parts)
@@ -6572,7 +6577,6 @@ bool StorageReplicatedMergeTree::optimize(
     };
 
     auto zookeeper = getZooKeeperAndAssertNotReadonly();
-    const auto storage_settings_ptr = getSettings();
     auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
     std::vector<ReplicatedMergeTreeLogEntryData> merge_entries;
 
@@ -6605,7 +6609,18 @@ bool StorageReplicatedMergeTree::optimize(
             {
                 if (partition_id.empty())
                 {
-                    UInt64 max_source_parts_bytes_for_merge = (*storage_settings_ptr)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
+                    /// Same limit the queue re-derives in shouldExecuteLogEntry: seeding the selector
+                    /// from the raw setting would enqueue an entry that is then postponed forever.
+                    UInt64 max_source_parts_bytes_for_merge = CompactionStatistics::getMaxSourcePartsBytesForMerge(*this);
+
+                    /// Zero means that no merge can be executed right now (same check as in StorageMergeTree):
+                    /// selecting parts anyway would enqueue an entry that the queue postpones forever.
+                    if (max_source_parts_bytes_for_merge == 0)
+                        return std::unexpected(SelectMergeFailure{
+                            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                            .explanation = PreformattedMessage::create("Current value of max_source_parts_bytes is zero"),
+                        });
+
                     UInt64 max_result_part_rows = CompactionStatistics::getMaxResultPartRowsCount(*this);
 
                     return merger_mutator.selectPartsToMerge(
@@ -6678,6 +6693,15 @@ bool StorageReplicatedMergeTree::optimize(
             }
 
             ReplicatedMergeTreeLogEntryData merge_entry;
+            /// A non-empty partition_id means the parts came from selectAllPartsToMergeWithinPartition,
+            /// i.e. this is an OPTIMIZE ... FINAL / OPTIMIZE ... PARTITION entry: those bypass
+            /// min_unreserved_disk_space_for_merge when selecting parts, so the queue must not re-apply
+            /// the headroom, or the entry is postponed forever (see #80006). The empty-partition
+            /// (plain OPTIMIZE) path selected parts under the headroom-respecting limit instead.
+            /// With the setting disabled there is no headroom to bypass, and the bit stays off the
+            /// wire so mixed-version rolling upgrades keep parsing OPTIMIZE entries.
+            const bool bypass_min_unreserved_space = !partition_id.empty()
+                && (*getSettings())[MergeTreeSetting::min_unreserved_disk_space_for_merge] > 0;
             CreateMergeEntryResult create_result = createLogEntryToMergeParts(
                 zookeeper,
                 select_merge_result.value()->parts,
@@ -6688,6 +6712,7 @@ bool StorageReplicatedMergeTree::optimize(
                 deduplicate,
                 deduplicate_by_columns,
                 cleanup,
+                bypass_min_unreserved_space,
                 &merge_entry,
                 merge_predicate->getVersion(),
                 select_merge_result.value()->merge_type);
@@ -9447,7 +9472,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     const auto zookeeper = getZooKeeper();
 
     const bool zero_copy_enabled = (*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication]
-                || (*dynamic_cast<const MergeTreeData *>(source_table.get())->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
+                || (*src_data.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
 
     using Entry = std::unique_ptr<ReplicatedMergeTreeLogEntryData>;
     std::vector<Entry> entries(partitions.size());
@@ -9784,7 +9809,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
 void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::movePartitionToTable");
-    auto dest_table_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(dest_table);
+    auto dest_table_storage = castStorage<StorageReplicatedMergeTree>(dest_table, DeferredTable::Load);
     if (!dest_table_storage)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Table {} supports movePartitionToTable only for ReplicatedMergeTree family of table engines. "
@@ -9909,7 +9934,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
             /// Don't do hardlinks in case of zero-copy at any side (defensive programming)
             bool zero_copy_enabled = (*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication]
-                || (*dynamic_cast<const MergeTreeData *>(dest_table.get())->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
+                || (*dest_table_storage->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
 
             IDataPartStorage::ClonePartParams clone_params
             {
