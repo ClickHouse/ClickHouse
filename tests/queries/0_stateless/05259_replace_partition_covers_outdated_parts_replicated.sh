@@ -31,8 +31,9 @@ $CLICKHOUSE_CLIENT -q "
     -- Keep the outdated parts on disk until the simulated restart.
     SYSTEM STOP CLEANUP t_replace_cover_rep;
 
-    INSERT INTO t_replace_cover_rep SETTINGS async_insert = 0 VALUES (1, 1, 0);
-    INSERT INTO t_replace_cover_rep SETTINGS async_insert = 0 VALUES (1, 2, 0);
+    -- A retry after an injected Keeper fault allocates a new block number and would shift the part names.
+    INSERT INTO t_replace_cover_rep SETTINGS async_insert = 0, insert_keeper_fault_injection_probability = 0 VALUES (1, 1, 0);
+    INSERT INTO t_replace_cover_rep SETTINGS async_insert = 0, insert_keeper_fault_injection_probability = 0 VALUES (1, 2, 0);
 
     -- The mutation succeeds on \`1_1_1_0\` and keeps failing on \`1_0_0_0\`.
     ALTER TABLE t_replace_cover_rep UPDATE v = v + throwIf(k = 1) WHERE 1 SETTINGS mutations_sync = 0;
