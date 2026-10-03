@@ -698,7 +698,7 @@ struct RemoteCollectionTarget
 
 /// The collection a `remote*` identifier first argument names: `parseRemoteFunctionArguments` tries
 /// named collections before configured clusters. Returns null when the name is a cluster and the call
-/// is not in the collection form, and refuses otherwise - a collection the dump session cannot see
+/// cannot be in the collection form, and refuses otherwise - a collection the dump session cannot see
 /// would otherwise pass for a remote address and lose the dependency edge.
 const std::map<String, String> * tryGetRemoteNamedCollection(
     const ASTFunction & function, const String & name, const ClusterLocality & clusters)
@@ -706,17 +706,18 @@ const std::map<String, String> * tryGetRemoteNamedCollection(
     const auto & collections = clusters.named_collections();
     if (auto it = collections.find(name); it != collections.end())
         return &it->second;
-    /// A `key = value` second argument occurs only in the named-collection form, so that call never names a cluster.
+    /// A named collection takes only `key = value` or table-function arguments after its name, so any other one proves a cluster.
     const auto & arguments = function.arguments->children;
-    const auto * second = arguments.size() >= 2 ? arguments[1]->as<ASTFunction>() : nullptr;
-    const bool collection_form = second && second->name == "equals";
-    if (!collection_form && clusters.names().known.contains(name))
+    const bool may_be_collection = std::all_of(
+        std::next(arguments.begin()), arguments.end(), [](const ASTPtr & argument) { return argument->as<ASTFunction>() != nullptr; });
+    const bool is_cluster = clusters.names().known.contains(name);
+    if (is_cluster && !may_be_collection)
         return nullptr;
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
         "Cannot resolve {} of {} on the connected server for --dump-schema: {}, and a named collection may point at a local address",
         backQuoteIfNeed(name), function.formatForErrorMessage(),
-        collection_form ? "its `key = value` arguments name a named collection, and this session cannot read one of that name"
-                        : "it names neither a cluster nor a named collection this session can read");
+        is_cluster ? "a named collection of that name, which this session cannot read, would be read before the cluster"
+                   : "it names neither a cluster nor a named collection this session can read");
 }
 
 /// Reads a named-collection override value as text, the way `getKeyValueFromAST` does.

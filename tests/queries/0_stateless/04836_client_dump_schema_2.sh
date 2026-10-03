@@ -454,12 +454,24 @@ EOF
 $CLICKHOUSE_LOCAL --config-file "$NC_FORM_CONF" --path "$NC_FORM_PATH" --multiquery "
     CREATE DATABASE ${DB};
     CREATE TABLE ${DB}.zzz_src (id UInt64) ENGINE = MergeTree ORDER BY id;
-    CREATE VIEW ${DB}.aaa_reader (id UInt64) AS SELECT * FROM remote(dump_schema_nc_form, table = 'zzz_src');
+    CREATE VIEW ${DB}.aaa_positional (id UInt64) AS SELECT * FROM remote(dump_schema_nc_form, '${DB}', 'zzz_src');
 "
+NC_FORM_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_form.sql"
+if $CLICKHOUSE_LOCAL --config-file "$NC_FORM_CONF" --path "$NC_FORM_PATH" --dump-schema="${DB}" > "$NC_FORM_DUMP_FILE" 2>"$ERR_FILE"; then
+    SRC_LINE=$(grep -n "CREATE TABLE ${DB}\.zzz_src " "$NC_FORM_DUMP_FILE" | head -1 | cut -d: -f1)
+    READER_LINE=$(grep -n "CREATE VIEW ${DB}\.aaa_positional " "$NC_FORM_DUMP_FILE" | head -1 | cut -d: -f1)
+    [ -n "$SRC_LINE" ] && [ -n "$READER_LINE" ] && [ "$SRC_LINE" -lt "$READER_LINE" ] \
+        && echo 'OK: a positional call names the local cluster' || echo "FAIL: positional call (src=$SRC_LINE reader=$READER_LINE)"
+else
+    echo "FAIL: dump rejected: $(cat "$ERR_FILE")"
+fi
+rm -f "$NC_FORM_DUMP_FILE"
+$CLICKHOUSE_LOCAL --config-file "$NC_FORM_CONF" --path "$NC_FORM_PATH" --query "
+    CREATE VIEW ${DB}.aab_reader (id UInt64) AS SELECT * FROM remote(dump_schema_nc_form, table = 'zzz_src')"
 if $CLICKHOUSE_LOCAL --config-file "$NC_FORM_CONF" --path "$NC_FORM_PATH" --dump-schema="${DB}" > /dev/null 2>"$ERR_FILE"; then
     echo 'FAIL: dump read the named-collection form as the same-named cluster'
 else
-    echo "named-collection form over a same-named cluster refused: $(grep -c 'name a named collection, and this session cannot read one' "$ERR_FILE")"
+    echo "named-collection form over a same-named cluster refused: $(grep -c 'would be read before the cluster' "$ERR_FILE")"
 fi
 rm -rf "$NC_FORM_PATH" "$NC_FORM_CONF"
 
