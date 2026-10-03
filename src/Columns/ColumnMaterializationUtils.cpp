@@ -1,7 +1,6 @@
 #include <Columns/ColumnMaterializationUtils.h>
 
 #include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
@@ -17,8 +16,10 @@ ColumnPtr convertToSerialization(const ColumnPtr & column, const IDataType & typ
         return recursiveRemoveNonNativeLowCardinality(column);
 
     /// The column is written with non-native LowCardinality serialization, which requires a
-    /// ColumnLowCardinality in memory. Build it (the dictionary) from the full column.
-    auto full = recursiveRemoveSparse(column->convertToFullColumnIfConst());
+    /// ColumnLowCardinality in memory. Build it (the dictionary) from the full column. The dictionary
+    /// accepts only the plain nested column, so strip every representation wrapper first: for example,
+    /// `INSERT SELECT` through a `JOIN` or `ARRAY JOIN` can bring a lazily replicated column here.
+    auto full = column->convertToFullIfWrapped();
     if (full->lowCardinality())
         return full;
 

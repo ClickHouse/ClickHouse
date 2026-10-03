@@ -452,9 +452,14 @@ std::optional<SerializationInfoByName> StorageMerge::tryGetSerializationHints() 
     return result;
 }
 
-bool StorageMerge::hasAutomaticLowCardinalitySerialization(const String & column_name) const
+bool StorageMerge::hasAutomaticLowCardinalitySerialization(const String & /*column_name*/) const
 {
-    return traverseTablesUntil([&](const auto & table) { return table->hasAutomaticLowCardinalitySerialization(column_name); }) != nullptr;
+    /// Fail closed. The answer is used during query analysis, but `ReadFromMerge` enumerates the
+    /// matching tables again when it builds the read plan. A table created, attached or renamed into
+    /// the match set in between can store the column with automatic `LowCardinality` serialization,
+    /// and reading a subcolumn of such a column throws. The caller asks only about `String` and
+    /// `FixedString` columns, so this disables only their subcolumn rewrites over a `Merge` table.
+    return true;
 }
 
 bool StorageMerge::canMoveConditionsToPrewhere() const
