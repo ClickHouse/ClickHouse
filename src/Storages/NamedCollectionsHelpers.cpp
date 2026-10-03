@@ -151,7 +151,7 @@ std::pair<String, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context)
     return {res->first, std::get<Field>(res->second)};
 }
 
-std::map<String, Field> getParamsMapFromAST(ASTs asts, ContextPtr context)
+std::map<String, Field> getParamsMapFromAST(const ASTs & asts, ContextPtr context)
 {
     std::map<String, Field> params;
     for (const auto & ast : asts)

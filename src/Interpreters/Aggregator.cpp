@@ -689,7 +689,7 @@ class CompiledAggregateFunctionsHolder final : public CompiledExpressionCacheEnt
 public:
     explicit CompiledAggregateFunctionsHolder(CompiledAggregateFunctions compiled_function_, std::shared_ptr<CHJIT> jit_owner_)
         : CompiledExpressionCacheEntry(compiled_function_.compiled_module.size)
-        , compiled_aggregate_functions(compiled_function_)
+        , compiled_aggregate_functions(std::move(compiled_function_))
         , jit_owner(std::move(jit_owner_))
     {}
 
@@ -5489,7 +5489,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
 }
 
 
-bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, AggregatedDataVariants & result, bool & no_more_keys, std::atomic<bool> & is_cancelled) const
+bool Aggregator::mergeOnBlock(const Columns & columns, size_t rows, bool is_overflows, AggregatedDataVariants & result, bool & no_more_keys, std::atomic<bool> & is_cancelled) const
 {
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;

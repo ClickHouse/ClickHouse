@@ -122,7 +122,7 @@ PasteJoinTransform::PasteJoinTransform(
         UInt64 limit_hint_)
     : IMergingTransform<PasteJoinAlgorithm>(
         input_headers,
-        output_header,
+        std::move(output_header),
         /* have_all_inputs_= */ true,
         limit_hint_,
         /* always_read_till_end_= */ false,

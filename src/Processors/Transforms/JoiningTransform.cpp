@@ -49,7 +49,7 @@ JoiningTransform::JoiningTransform(
     FinishCounterPtr finish_counter_,
     RightRowsMatchCounterPtr match_counter_,
     bool emit_non_joined_)
-    : IProcessor({input_header}, {output_header})
+    : IProcessor({std::move(input_header)}, {std::move(output_header)})
     , join(std::move(join_))
     , on_totals(on_totals_)
     , emit_non_joined(emit_non_joined_)
@@ -281,7 +281,7 @@ Block JoiningTransform::readExecute(Chunk & chunk)
 }
 
 FillingRightJoinSideTransform::FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_)
-    : IProcessor({input_header}, {Block()}), join(std::move(join_)), finish_counter(std::move(finish_counter_))
+    : IProcessor({std::move(input_header)}, {Block()}), join(std::move(join_)), finish_counter(std::move(finish_counter_))
 {
     spillable = join->canSpillToDisk();
 }
@@ -422,7 +422,7 @@ bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
     SharedHeader output_header_,
     NonJoinedStreamBuilder non_joined_stream_builder_)
-    : IProcessor(InputPorts{Block()}, OutputPorts{output_header_})
+    : IProcessor(InputPorts{Block()}, OutputPorts{std::move(output_header_)})
     , non_joined_stream_builder(std::move(non_joined_stream_builder_))
 {
 }

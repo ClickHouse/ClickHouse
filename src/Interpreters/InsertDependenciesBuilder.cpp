@@ -210,7 +210,7 @@ class ViewErrorsRegistry
             if (is_set.test_and_set())
                 return false;
 
-            value = value_;
+            value = std::move(value_);
             return true;
         }
         bool isSet() const
@@ -552,15 +552,15 @@ public:
         StorageID inner_id_, StoragePtr inner_storage_, StorageMetadataPtr inner_metadata_,
         ContextPtr context_,
         bool async_insert_)
-        : ExceptionKeepingTransform(input_header, output_header)
+        : ExceptionKeepingTransform(std::move(input_header), std::move(output_header))
         , select_query(select_query_)
-        , source_id(source_id_)
+        , source_id(std::move(source_id_))
         , source_metadata(source_metadata_)
         , source_storage(source_storage_)
-        , view_id(view_id_)
+        , view_id(std::move(view_id_))
         , view_metadata(view_metadata_)
         , view_storage(view_storage_)
-        , inner_id(inner_id_)
+        , inner_id(std::move(inner_id_))
         , inner_metadata(inner_metadata_)
         , inner_storage(inner_storage_)
         , context(context_)
@@ -1052,7 +1052,7 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
 
     collectAllDependencies();
 
-    auto all_sinks_support_parallel_insert = std::ranges::all_of(storages, [&] (auto storage)
+    auto all_sinks_support_parallel_insert = std::ranges::all_of(storages, [&] (const auto & storage)
         { return isView(storage.first) || storage.second->supportsParallelInsert();});
 
     /// Fanning out the writing side to `max_insert_threads` sink chains also fans out the dependent
@@ -1342,7 +1342,7 @@ String InsertDependenciesBuilder::debugTree() const
     WriteBufferFromOwnString output_buffer;
 
     DependencyPath path;
-    std::function<void(StorageIDMaybeEmpty)> visit = [&](StorageIDMaybeEmpty id)
+    std::function<void(StorageIDMaybeEmpty)> visit = [&](const StorageIDMaybeEmpty & id)
     {
         path.pushBack(id);
         SCOPE_EXIT({
@@ -1578,7 +1578,7 @@ void InsertDependenciesBuilder::collectAllDependencies()
 {
     DependencyPath path;
 
-    std::function<void(StorageIDMaybeEmpty)> expand = [&] (StorageIDMaybeEmpty id)
+    std::function<void(StorageIDMaybeEmpty)> expand = [&] (const StorageIDMaybeEmpty & id)
     {
         path.pushBack(id);
         SCOPE_EXIT({
@@ -1642,7 +1642,7 @@ void InsertDependenciesBuilder::collectAllDependencies()
 }
 
 
-Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
+Chain InsertDependenciesBuilder::createSelect(const StorageIDMaybeEmpty & view_id) const
 {
     chassert(view_id != init_table_id);
 
@@ -1706,7 +1706,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
 }
 
 
-Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) const
+Chain InsertDependenciesBuilder::createPreSink(const StorageIDMaybeEmpty & view_id) const
 {
     chassert(!skip_destination_table);
     chassert(view_id == root_view);
@@ -1772,7 +1772,7 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
 }
 
 
-Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
+Chain InsertDependenciesBuilder::createSink(const StorageIDMaybeEmpty & view_id) const
 {
     /// view_id is empty for a direct INSERT into the table, non-empty when the table is a materialized
     /// view target. In the latter case the plain storage error names only the target, so add the view.
@@ -1792,7 +1792,7 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
 }
 
 
-Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) const
+Chain InsertDependenciesBuilder::createSinkImpl(const StorageIDMaybeEmpty & view_id) const
 {
     const auto & inner_table_id = inner_tables.at(view_id);
     const auto & inner_storage = storages.at(inner_table_id);
@@ -1845,7 +1845,7 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
 }
 
 
-Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) const
+Chain InsertDependenciesBuilder::createPostSink(const StorageIDMaybeEmpty & view_id) const
 {
     const auto & dependent_views_ids = dependent_views.at(view_id);
     if (dependent_views_ids.empty())
@@ -1900,7 +1900,7 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
 }
 
 
-static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
+static String getCleanQueryAst(const ASTPtr & q, ContextPtr context)
 {
     if (!q)
         return {};
@@ -1918,7 +1918,7 @@ static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 
 /// A half-built view can reach the log with its query stored but not its context. The context
 /// only supplies the log cut-off, so the init one stands in for a missing one.
-String InsertDependenciesBuilder::getViewQueryForLog(StorageID view_id) const
+String InsertDependenciesBuilder::getViewQueryForLog(const StorageID & view_id) const
 {
     auto query_it = select_queries.find(view_id);
     if (query_it == select_queries.end())
@@ -2030,7 +2030,7 @@ String InsertDependenciesBuilder::DependencyPath::debugInfo() const
 }
 
 
-QueryViewsLogElement::ViewStatus InsertDependenciesBuilder::getQueryViewStatus(std::exception_ptr exception, bool before_start)
+QueryViewsLogElement::ViewStatus InsertDependenciesBuilder::getQueryViewStatus(const std::exception_ptr & exception, bool before_start)
 {
     if (before_start)
         return QueryViewsLogElement::ViewStatus::EXCEPTION_BEFORE_START;
@@ -2069,7 +2069,7 @@ StorageIDMaybeEmpty InsertDependenciesBuilder::DependencyPath::parent(size_t inh
 }
 
 
-bool InsertDependenciesBuilder::isView(StorageIDMaybeEmpty id) const
+bool InsertDependenciesBuilder::isView(const StorageIDMaybeEmpty & id) const
 {
     return inner_tables.contains(id);
 }

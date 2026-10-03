@@ -115,7 +115,7 @@ void InputFormatErrorsLogger::writeErrors()
 
 void InputFormatErrorsLogger::logError(ErrorEntry entry)
 {
-    logErrorImpl(entry);
+    logErrorImpl(std::move(entry));
 }
 
 ParallelInputFormatErrorsLogger::~ParallelInputFormatErrorsLogger() = default;

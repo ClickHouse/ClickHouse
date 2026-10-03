@@ -348,7 +348,7 @@ void KeeperStorage::UncommittedState::cleanup(int64_t commit_zxid)
     for (auto it = session_and_auth.begin(); it != session_and_auth.end();)
     {
         auto & auths = it->second;
-        std::erase_if(auths, [commit_zxid](auto auth_pair) { return auth_pair.first <= commit_zxid; });
+        std::erase_if(auths, [commit_zxid](const auto & auth_pair) { return auth_pair.first <= commit_zxid; });
         if (auths.empty())
             it = session_and_auth.erase(it);
         else

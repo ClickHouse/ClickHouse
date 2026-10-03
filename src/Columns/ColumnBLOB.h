@@ -43,7 +43,7 @@ private:
     using FromBLOB = std::function<ColumnPtr(const BLOB &)>;
 
     ColumnBLOB(
-        ColumnWithTypeAndName wrapped_column_, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
+        const ColumnWithTypeAndName & wrapped_column_, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
         : rows(wrapped_column_.column->size())
         , wrapped_column(wrapped_column_.column)
     {
@@ -117,7 +117,7 @@ public:
     /// Creates serialized and compressed blob from the source column.
     static void toBLOB(
         BLOB & blob,
-        ColumnWithTypeAndName wrapped_column,
+        const ColumnWithTypeAndName & wrapped_column,
         CompressionCodecPtr codec,
         UInt64 client_revision,
         const std::optional<FormatSettings> & format_settings)

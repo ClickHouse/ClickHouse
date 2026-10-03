@@ -42,7 +42,7 @@ static ITransformingStep::Traits getTraits(bool preserves_sorting)
 }
 
 static Block addWindowFunctionResultColumns(const Block & block,
-    std::vector<WindowFunctionDescription> window_functions)
+    const std::vector<WindowFunctionDescription> & window_functions)
 {
     auto result = block;
 

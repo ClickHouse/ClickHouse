@@ -107,7 +107,7 @@ void setSnapshotTotals(
     set_delete_total(Iceberg::f_total_equality_deletes, added_equality_deletes);
 }
 
-bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var new_type)
+bool checkValidSchemaEvolution(const Poco::Dynamic::Var & old_type, const Poco::Dynamic::Var & new_type)
 {
     if (old_type.isString() && new_type.isString() && old_type.extract<String>() == new_type.extract<String>())
         return true;

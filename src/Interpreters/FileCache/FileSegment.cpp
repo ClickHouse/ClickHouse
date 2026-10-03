@@ -81,7 +81,7 @@ FileSegment::FileSegment(
     , background_download_enabled(background_download_enabled_)
     , size_in_filename(size_in_filename_)
     , download_state(download_state_)
-    , key_metadata(key_metadata_)
+    , key_metadata(std::move(key_metadata_))
     , queue_iterator(queue_iterator_)
     , cache(cache_)
 #ifdef DEBUG_OR_SANITIZER_BUILD

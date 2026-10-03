@@ -3267,7 +3267,7 @@ struct ConvertImplFromDynamicToColumn
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count,
-        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert,
+        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &)> & nested_convert,
         bool throw_on_null = false);
 };
 
@@ -3277,7 +3277,7 @@ struct ConvertImplFromVariantToColumn
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count,
-        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert,
+        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &)> & nested_convert,
         bool throw_on_null = false);
 };
 
@@ -5452,7 +5452,7 @@ private:
     template <typename ToDataType>
     WrapperType createBoolWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const;
 
-    WrapperType createUInt8ToBoolWrapper(DataTypePtr from_type, DataTypePtr to_type) const;
+    WrapperType createUInt8ToBoolWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type) const;
 
     WrapperType createStringWrapper(const DataTypePtr & from_type) const;
 
@@ -5599,7 +5599,7 @@ FunctionBasePtr createFunctionBaseCast(
     const char * name,
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
-    std::optional<CastDiagnostic> diagnostic,
+    const std::optional<CastDiagnostic> & diagnostic,
     CastType cast_type);
 
 }

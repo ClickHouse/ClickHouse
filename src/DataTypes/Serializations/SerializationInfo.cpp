@@ -127,13 +127,13 @@ void SerializationInfo::Data::addDefaults(size_t length)
 
 SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, const Settings & settings_)
     : settings(settings_)
-    , kind_stack(kind_stack_)
+    , kind_stack(std::move(kind_stack_))
 {
 }
 
 SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, const Settings & settings_, const Data & data_)
     : settings(settings_)
-    , kind_stack(kind_stack_)
+    , kind_stack(std::move(kind_stack_))
     , data(data_)
 {
 }

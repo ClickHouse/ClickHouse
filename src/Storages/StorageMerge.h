@@ -251,7 +251,7 @@ private:
     SelectQueryInfo getModifiedQueryInfo(const ContextMutablePtr & modified_context,
         const StorageWithLockAndName & storage_with_lock_and_name,
         const StorageSnapshotPtr & storage_snapshot,
-        Names required_column_names,
+        const Names & required_column_names,
         Names & column_names_as_aliases,
         bool & is_smallest_column_requested,
         Aliases & aliases) const;

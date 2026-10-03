@@ -36,7 +36,7 @@ TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases database
     log = getLogger("TablesLoader");
 }
 
-LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
+LoadTaskPtrs TablesLoader::loadTablesAsync(const LoadJobSet & load_after)
 {
     bool need_resolve_dependencies = !global_context->getConfigRef().has("ignore_table_dependencies_on_metadata_loading");
 
@@ -105,7 +105,7 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
     return result;
 }
 
-LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
+LoadTaskPtrs TablesLoader::startupTablesAsync(const LoadJobSet & startup_after)
 {
     LoadTaskPtrs result;
     std::unordered_map<String, LoadTaskPtrs> startup_database; /// database name -> all its tables startup tasks

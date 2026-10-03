@@ -42,7 +42,7 @@ namespace
     void updateUserFromQueryImpl(
         User & user,
         const ASTCreateUserQuery & query,
-        const std::vector<AuthenticationData> authentication_methods,
+        const std::vector<AuthenticationData> & authentication_methods,
         const boost::intrusive_ptr<ASTUserNameWithHost> & override_name,
         const std::optional<RolesOrUsersSet> & override_roles,
         const std::optional<RolesOrUsersSet> & override_default_roles,

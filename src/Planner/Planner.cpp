@@ -1786,7 +1786,7 @@ void addPreliminaryLimitStep(
 
 bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
-    const PlannerContextPtr planner_context,
+    const PlannerContextPtr & planner_context,
     const PlannerQueryProcessingInfo & query_processing_info,
     const QueryTreeNodePtr & query_tree,
     const SelectQueryOptions & select_query_options)

@@ -230,7 +230,7 @@ struct KeeperMemNodesStorage final : public KeeperNodesStorage
     bool
     createNode(
         const std::string & path,
-        String data,
+        const String & data,
         const KeeperNodeStats & stat,
         uint64_t * digest) TSA_NO_THREAD_SAFETY_ANALYSIS;
 

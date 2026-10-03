@@ -1700,7 +1700,7 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadata
     return persistent_components.schema_processor->getColumnMapperById(iceberg_table_state->schema_id);
 }
 
-KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableStateSnapshot actual_table_state_snapshot) const
+KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, const TableStateSnapshot & actual_table_state_snapshot) const
 {
     auto metadata_object = getMetadataJSONObject(
         actual_table_state_snapshot.metadata_file_path,

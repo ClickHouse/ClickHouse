@@ -60,7 +60,7 @@ public:
         StorageID id_)
         : job_to_execute(std::forward<Job>(job_to_execute_))
         , job_result_callback(std::forward<Callback>(job_result_callback_))
-        , id(id_) {}
+        , id(std::move(id_)) {}
 
     bool executeStep() override
     {

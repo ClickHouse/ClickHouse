@@ -230,7 +230,7 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
     /// Update values for key and value columns that should be stored as IColumn instead of Field.
     /// We are using IColumn instead of Field to keep values of non-aggregated columns correct
     /// for types that doesn't work well with getting/inserting Fields (like Variant/Dynamic/JSON).
-    auto update_column_value_in_row = [&](size_t col_num, Field value)
+    auto update_column_value_in_row = [&](size_t col_num, const Field & value)
     {
         if (row_columns[col_num])
         {

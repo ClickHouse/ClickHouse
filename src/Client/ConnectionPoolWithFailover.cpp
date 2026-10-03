@@ -139,7 +139,7 @@ std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(
     TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
     { return tryGetEntry(pool, timeouts, fail_message, settings, nullptr, async_callback); };
 
-    std::vector<TryResult> results = getManyImpl(settings, pool_mode, try_get_entry, skip_unavailable_endpoints, priority_func);
+    std::vector<TryResult> results = getManyImpl(settings, pool_mode, try_get_entry, skip_unavailable_endpoints, std::move(priority_func));
 
     std::vector<Entry> entries;
     entries.reserve(results.size());
@@ -173,7 +173,7 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
     { return tryGetEntry(pool, timeouts, fail_message, settings, &table_to_check, async_callback); };
 
-    return getManyImpl(settings, pool_mode, try_get_entry, skip_unavailable_endpoints, priority_func);
+    return getManyImpl(settings, pool_mode, try_get_entry, skip_unavailable_endpoints, std::move(priority_func));
 }
 
 std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyCheckedForInsert(

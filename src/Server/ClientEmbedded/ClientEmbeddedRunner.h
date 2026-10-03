@@ -36,7 +36,7 @@ public:
 
     void run(const NameToNameMap & envs, const String & starting_query = "");
 private:
-    void clientRoutine(NameToNameMap envs, String starting_query);
+    void clientRoutine(const NameToNameMap & envs, const String & starting_query);
 
     // This is used by server thread and client thread, be sure that server only gets them via getDescriptorsForServer.
     std::unique_ptr<IClientDescriptorSet> client_descriptors;

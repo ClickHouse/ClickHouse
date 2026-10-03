@@ -479,7 +479,7 @@ void dumpNodes(DB::KeeperStorage & storage, const std::string & output_file, con
 
     using PrintFunction = std::function<void(const std::string & key, const DB::KeeperNodeStats & stats, std::string_view data)>;
 
-    const auto print_nodes = [&](const PrintFunction print_function)
+    const auto print_nodes = [&](const PrintFunction & print_function)
     {
         std::queue<std::string> keys;
         keys.push("/");

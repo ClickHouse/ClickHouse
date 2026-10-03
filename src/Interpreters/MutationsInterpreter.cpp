@@ -708,7 +708,7 @@ static void validateUpdateColumns(
 /// because their sizes couldn't change, since sizes of all nested subcolumns must be consistent.
 static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumns(
     const String & column_name,
-    NameSet affected_materialized,
+    const NameSet & affected_materialized,
     const NamesAndTypesList & all_columns,
     const std::unordered_map<String, ASTPtr> & column_to_update_expression)
 {

@@ -35,7 +35,7 @@ public:
         SharedHeader header_,
         UInt64 max_block_size_,
         ContextPtr context_)
-        : ISource(header_)
+        : ISource(std::move(header_))
         , WithContext(context_)
         , max_block_size(max_block_size_)
 #if ENABLE_DISTRIBUTED_CACHE

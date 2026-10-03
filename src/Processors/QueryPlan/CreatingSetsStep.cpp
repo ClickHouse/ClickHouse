@@ -175,7 +175,7 @@ void CreatingSetsStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subqueries, ContextPtr context)
+void addCreatingSetsStep(QueryPlan & query_plan, const PreparedSets::Subqueries & subqueries, ContextPtr context)
 {
     SharedHeaders input_headers;
     input_headers.emplace_back(query_plan.getCurrentHeader());

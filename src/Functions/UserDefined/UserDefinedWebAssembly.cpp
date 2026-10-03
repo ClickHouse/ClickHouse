@@ -230,7 +230,7 @@ public:
 
     explicit WasmMemoryManagerV01(WasmCompartment * compartment_, StopToken stop_token_)
         : compartment(compartment_)
-        , stop_token(stop_token_)
+        , stop_token(std::move(stop_token_))
     {
     }
 
@@ -1087,7 +1087,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
 
     struct SettingStringFromSet
     {
-        SettingDefinition withDefault(String default_value) const
+        SettingDefinition withDefault(const String & default_value) const
         {
             return SettingDefinition(
                 [values_ = this->values](std::string_view name, Field & value) // NOLINT

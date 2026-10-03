@@ -147,7 +147,7 @@ private:
 
     struct Stream
     {
-        Stream(const DiskPtr & disk, const String & data_path, size_t offset, size_t file_size, bool limited_by_file_size, ReadSettings read_settings_)
+        Stream(const DiskPtr & disk, const String & data_path, size_t offset, size_t file_size, bool limited_by_file_size, const ReadSettings & read_settings_)
         {
             plain = disk->readFile(data_path, read_settings_.adjustBufferSize(file_size));
 

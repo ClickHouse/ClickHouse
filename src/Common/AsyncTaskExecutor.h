@@ -109,7 +109,7 @@ protected:
     virtual void clearAsyncEvent() = 0;
 
     /// Process exception caught while task execution. It's called after coroutine resume if exception happened.
-    virtual void processException(std::exception_ptr e) { std::rethrow_exception(e); }
+    virtual void processException(std::exception_ptr e) { std::rethrow_exception(std::move(e)); }
 
     /// Method that is called in cancel() before coroutine destruction.
     virtual void cancelBefore() { }

@@ -197,8 +197,8 @@ public:
     CancellationCode killMutation(const String & mutation_id) override;
 
     QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr query_context) override;
-    bool haveCommittingOps(const CommittingBlocks & committing_blocks, PartitionIdToMaxBlockPtr partitions, std::set<CommittingBlock::Op> ops) const;
-    void waitForCommittingOpsToFinish(zkutil::ZooKeeperPtr zookeeper, PartitionIdToMaxBlockPtr partitions, std::set<CommittingBlock::Op> ops, size_t backoff_ms, size_t sync_timeout_ms);
+    bool haveCommittingOps(const CommittingBlocks & committing_blocks, PartitionIdToMaxBlockPtr partitions, const std::set<CommittingBlock::Op> & ops) const;
+    void waitForCommittingOpsToFinish(zkutil::ZooKeeperPtr zookeeper, PartitionIdToMaxBlockPtr partitions, const std::set<CommittingBlock::Op> & ops, size_t backoff_ms, size_t sync_timeout_ms);
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
@@ -640,7 +640,7 @@ private:
                                              Coordination::Requests & ops, size_t & num_check_ops);
 
     /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
-    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {}, bool replace_zero_copy_lock=false);
+    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, const std::optional<HardlinkedFiles> & hardlinked_files = {}, bool replace_zero_copy_lock=false);
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
@@ -806,7 +806,7 @@ private:
         const StorageMetadataPtr & metadata_snapshot,
         const String & replica_path,
         DiskPtr replaced_disk,
-        String replaced_part_path);
+        const String & replaced_part_path);
 
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
@@ -1020,7 +1020,7 @@ private:
 
     std::vector<String> getZookeeperZeroCopyLockPaths() const;
     static void dropZookeeperZeroCopyLockPaths(zkutil::ZooKeeperPtr zookeeper,
-                                               std::vector<String> zero_copy_locks_paths, LoggerPtr logger);
+                                               const std::vector<String> & zero_copy_locks_paths, LoggerPtr logger);
 
     struct DataValidationTasks : public IStorage::DataValidationTasksBase
     {

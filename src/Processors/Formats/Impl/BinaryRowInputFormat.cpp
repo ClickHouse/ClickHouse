@@ -22,9 +22,9 @@ namespace ErrorCodes
 static constexpr auto TOO_MANY_COLUMNS_MESSAGE = "Suspiciously many columns in RowBinary header: {}";
 
 template <bool with_defaults>
-BinaryRowInputFormat<with_defaults>::BinaryRowInputFormat(ReadBuffer & in_, SharedHeader header, IRowInputFormat::Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+BinaryRowInputFormat<with_defaults>::BinaryRowInputFormat(ReadBuffer & in_, SharedHeader header, const IRowInputFormat::Params & params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
     : RowInputFormatWithNamesAndTypes<BinaryFormatReader<with_defaults>>(
-        header,
+        std::move(header),
         in_,
         params_,
         true,

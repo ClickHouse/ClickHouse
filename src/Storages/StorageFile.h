@@ -72,16 +72,16 @@ public:
     };
 
     /// From file descriptor
-    StorageFile(int table_fd_, CommonArguments args);
+    StorageFile(int table_fd_, const CommonArguments & args);
 
     /// From user's file
-    StorageFile(FileSource file_source_, CommonArguments args);
+    StorageFile(FileSource file_source_, const CommonArguments & args);
     StorageFile(FileSource file_source_, bool distributed_processing_, CommonArguments args);
 
     /// From table in database
-    StorageFile(const std::string & relative_table_dir_path, CommonArguments args);
+    StorageFile(const std::string & relative_table_dir_path, const CommonArguments & args);
 
-    explicit StorageFile(CommonArguments args);
+    explicit StorageFile(const CommonArguments & args);
 
     std::string getName() const override { return "File"; }
 
@@ -191,7 +191,7 @@ private:
         const ContextPtr & context,
         const std::optional<ArchiveInfo> & archive_info = std::nullopt);
 
-    void setStorageMetadata(CommonArguments args);
+    void setStorageMetadata(const CommonArguments & args);
 
     Strings getPathsSnapshot() const;
 

@@ -66,7 +66,7 @@ private:
 
 
 // Returns data written to table in Values format.
-static std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr context)
+static std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr & context)
 {
     using namespace DB;
     auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
@@ -106,7 +106,7 @@ static std::string writeData(int rows, DB::StoragePtr & table, const DB::Context
 }
 
 // Returns all table data in Values format.
-static std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
+static std::string readData(DB::StoragePtr & table, const DB::ContextPtr & context)
 {
     using namespace DB;
     auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);

@@ -164,7 +164,7 @@ struct ReplicatedMergeTreeLogEntryData
     void updateLastExeption(std::exception_ptr _exception)
     {
         last_exception_time_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds()) / 1000ull;
-        exception = _exception;
+        exception = std::move(_exception);
     }
 };
 

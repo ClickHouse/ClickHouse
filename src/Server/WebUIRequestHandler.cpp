@@ -95,7 +95,7 @@ namespace DB
 {
 
 static void handle(HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html,
-                   std::unordered_map<String, String> http_response_headers_override = {})
+                   const std::unordered_map<String, String> & http_response_headers_override = {})
 {
     applyHTTPResponseHeaders(response, http_response_headers_override);
     if (response.getContentType().empty())

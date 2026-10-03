@@ -251,7 +251,7 @@ private:
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;
     ObjectIterator prepared_iterator;
 
-    KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
+    KeyDescription getSortingKey(ContextPtr local_context, const Iceberg::TableStateSnapshot & actual_table_state_snapshot) const;
 
     void backgroundMetadataPrefetcherThread();
 

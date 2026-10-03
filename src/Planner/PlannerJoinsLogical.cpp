@@ -130,8 +130,8 @@ struct JoinOperatorBuildContext
         , planner_context(planner_context_)
         , left_table_expression_set(extractTableExpressionsSet(join_node.getLeftTableExpressionNodeTyped()))
         , right_table_expression_set(extractTableExpressionsSet(join_node.getRightTableExpressionNodeTyped()))
-        , left_header(left_header_)
-        , right_header(right_header_)
+        , left_header(std::move(left_header_))
+        , right_header(std::move(right_header_))
         , expression_actions(*left_header, *right_header)
         , join_operator(join_node.getKind(), join_node.getStrictness(), join_node.getLocality())
     {

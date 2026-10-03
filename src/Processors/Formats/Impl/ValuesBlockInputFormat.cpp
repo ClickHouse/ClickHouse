@@ -51,7 +51,7 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
     SharedHeader header_,
     const RowInputFormatParams & params_,
     const FormatSettings & format_settings_)
-    : ValuesBlockInputFormat(std::make_unique<PeekableReadBuffer>(in_), header_, params_, format_settings_)
+    : ValuesBlockInputFormat(std::make_unique<PeekableReadBuffer>(in_), std::move(header_), params_, format_settings_)
 {
 }
 

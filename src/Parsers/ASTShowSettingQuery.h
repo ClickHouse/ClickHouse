@@ -11,7 +11,7 @@ class ASTShowSettingQuery : public ASTQueryWithOutput
 {
 public:
     explicit ASTShowSettingQuery(String setting_name_)
-        : setting_name(setting_name_)
+        : setting_name(std::move(setting_name_))
     {}
 
     const String & getSettingName() const { return setting_name; }

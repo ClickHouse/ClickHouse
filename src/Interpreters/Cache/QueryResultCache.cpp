@@ -533,7 +533,7 @@ QueryResultCache::Key::Key(
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_,
     bool is_subquery_)
-    : header(header_)
+    : header(std::move(header_))
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
     , is_shared(is_shared_)

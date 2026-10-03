@@ -336,7 +336,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
                        const AllowedClientHosts & allowed_hosts,
                        const RolesOrUsersSet & default_roles,
                        const RolesOrUsersSet & grantees,
-                       const String default_database)
+                       const String & default_database)
     {
         column_name.insertData(name.data(), name.length());
         column_id.push_back(id.toUnderType());

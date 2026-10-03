@@ -46,8 +46,8 @@ void RefreshSet::Handle::rename(StorageID new_id, std::optional<StorageID> new_i
         parent_set->removeTaskLocked(id, iter);
         if (inner_table_id)
             parent_set->removeInnerTableLocked(*inner_table_id, inner_table_iter);
-        id = new_id;
-        inner_table_id = new_inner_table_id;
+        id = std::move(new_id);
+        inner_table_id = std::move(new_inner_table_id);
         iter = parent_set->addTaskLocked(id, task);
         if (inner_table_id)
             inner_table_iter = parent_set->addInnerTableLocked(*inner_table_id, task);
@@ -83,7 +83,7 @@ void RefreshSet::Handle::reset()
 
 RefreshSet::RefreshSet() = default;
 
-void RefreshSet::emplace(StorageID id, std::optional<StorageID> inner_table_id, const std::vector<StorageID> & dependencies, RefreshTaskPtr task)
+void RefreshSet::emplace(const StorageID & id, std::optional<StorageID> inner_table_id, const std::vector<StorageID> & dependencies, RefreshTaskPtr task)
 {
     std::lock_guard guard(mutex);
     const auto iter = addTaskLocked(id, task);
@@ -95,14 +95,14 @@ void RefreshSet::emplace(StorageID id, std::optional<StorageID> inner_table_id, 
     task->setRefreshSetHandleUnlock(Handle(this, id, inner_table_id, iter, inner_table_iter, dependencies));
 }
 
-RefreshTaskList::iterator RefreshSet::addTaskLocked(StorageID id, RefreshTaskPtr task)
+RefreshTaskList::iterator RefreshSet::addTaskLocked(const StorageID & id, RefreshTaskPtr task)
 {
     RefreshTaskList & list = tasks[id];
     list.push_back(task);
     return std::prev(list.end());
 }
 
-void RefreshSet::removeTaskLocked(StorageID id, RefreshTaskList::iterator iter)
+void RefreshSet::removeTaskLocked(const StorageID & id, RefreshTaskList::iterator iter)
 {
     const auto it = tasks.find(id);
     it->second.erase(iter);
@@ -110,14 +110,14 @@ void RefreshSet::removeTaskLocked(StorageID id, RefreshTaskList::iterator iter)
         tasks.erase(it);
 }
 
-RefreshTaskList::iterator RefreshSet::addInnerTableLocked(StorageID inner_table_id, RefreshTaskPtr task)
+RefreshTaskList::iterator RefreshSet::addInnerTableLocked(const StorageID & inner_table_id, RefreshTaskPtr task)
 {
     RefreshTaskList & list = inner_tables[inner_table_id];
     list.push_back(task);
     return std::prev(list.end());
 }
 
-void RefreshSet::removeInnerTableLocked(StorageID inner_table_id, RefreshTaskList::iterator inner_table_iter)
+void RefreshSet::removeInnerTableLocked(const StorageID & inner_table_id, RefreshTaskList::iterator inner_table_iter)
 {
     const auto it = inner_tables.find(inner_table_id);
     it->second.erase(inner_table_iter);

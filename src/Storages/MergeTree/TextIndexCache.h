@@ -50,7 +50,7 @@ public:
     }
 
     template <typename... Args>
-    static UInt128 hash(Args... args)
+    static UInt128 hash(const Args &... args)
     {
         SipHash hasher;
         (hasher.update(args),...);
@@ -103,7 +103,7 @@ public:
     {}
 
     template <typename... Args>
-    static UInt128 hash(Args... args)
+    static UInt128 hash(const Args &... args)
     {
         SipHash hasher;
         (hasher.update(args),...);
@@ -188,7 +188,7 @@ public:
     {}
 
     template <typename... Args>
-    static UInt128 hash(Args... args)
+    static UInt128 hash(const Args &... args)
     {
         SipHash hasher;
         (hasher.update(args),...);

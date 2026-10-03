@@ -42,7 +42,7 @@ private:
         bool for_disk_s3_ = true,
         const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; },
         bool client_restricts_server_credentials_ = true)
-        : uri(uri_)
+        : uri(std::move(uri_))
         , disk_name(disk_name_)
         , client(std::move(client_))
         , client_restricts_server_credentials(client_restricts_server_credentials_)

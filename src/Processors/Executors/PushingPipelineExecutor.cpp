@@ -18,7 +18,7 @@ class PushingSource : public ISource
 {
 public:
     explicit PushingSource(SharedHeader header, std::atomic_bool & input_wait_flag_)
-        : ISource(header)
+        : ISource(std::move(header))
         , input_wait_flag(input_wait_flag_)
     {}
 

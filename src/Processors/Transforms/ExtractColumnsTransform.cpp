@@ -10,7 +10,7 @@ ExtractColumnsTransform::ExtractColumnsTransform(SharedHeader header_, const Nam
 
 }
 
-Block ExtractColumnsTransform::transformHeader(Block header, const NamesAndTypesList & requested_columns_)
+Block ExtractColumnsTransform::transformHeader(const Block & header, const NamesAndTypesList & requested_columns_)
 {
     ColumnsWithTypeAndName columns;
     columns.reserve(requested_columns_.size());

@@ -701,7 +701,7 @@ struct SubtractIntervalImpl : public Transform
     }
 
     template <typename T>
-    auto execute(T t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
+    auto execute(const T & t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
     {
         Int64 negated = 0;
         negate(delta, negated);
@@ -841,12 +841,12 @@ struct Processor
 private:
     template <typename FromDataType, typename T>
     auto executeTransform(
-        T t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
+        const T & t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
     {
         if constexpr (supports_fixed_offset_dispatch<Transform, FromDataType>)
             return transform.template executeWithOffsetMode<fixed_offset>(t, delta, time_zone, utc_time_zone, scale);
         else
-            return transform.execute(t, delta, time_zone, utc_time_zone, scale);
+            return transform.execute(std::move(t), delta, time_zone, utc_time_zone, scale);
     }
 
     template <typename Value>

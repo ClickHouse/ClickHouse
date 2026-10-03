@@ -1140,7 +1140,7 @@ JSONBuilder::ItemPtr ExpressionActions::toTree() const
 }
 
 
-void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
+void ExpressionActionsChain::addStep(const NameSet & non_constant_inputs)
 {
     if (steps.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add action to empty ExpressionActionsChain");

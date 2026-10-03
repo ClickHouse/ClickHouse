@@ -131,7 +131,7 @@ class PocoHTTPResponse : public Aws::Http::Standard::StandardHttpResponse
 public:
     using SessionPtr = HTTPSessionPtr;
 
-    explicit PocoHTTPResponse(const std::shared_ptr<const Aws::Http::HttpRequest> request)
+    explicit PocoHTTPResponse(const std::shared_ptr<const Aws::Http::HttpRequest> & request)
         : Aws::Http::Standard::StandardHttpResponse(request)
         , body_stream(request->GetResponseStreamFactory())
     {

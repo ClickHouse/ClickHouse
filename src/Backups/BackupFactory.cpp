@@ -60,7 +60,7 @@ BackupFactory::CreateParams BackupFactory::CreateParams::getCreateParamsForBaseB
     read_params.use_same_s3_credentials_for_base_backup = use_same_s3_credentials_for_base_backup;
     read_params.use_same_password_for_base_backup = use_same_password_for_base_backup;
     if (read_params.use_same_password_for_base_backup)
-        read_params.password = old_password;
+        read_params.password = std::move(old_password);
     return read_params;
 }
 

@@ -99,16 +99,16 @@ public:
             const String & start_lsn,
             size_t max_block_size_,
             bool schema_as_a_part_of_table_name_,
-            StorageInfos storages_,
+            const StorageInfos & storages_,
             const String & name_for_logger);
 
     bool consume();
 
     /// Called from reloadFromSnapshot by replication handler. This method is needed to move a table back into synchronization
     /// process if it was skipped due to schema changes.
-    void updateNested(const String & table_name, StorageInfo nested_storage_info, Int32 table_id, const String & table_start_lsn);
+    void updateNested(const String & table_name, const StorageInfo & nested_storage_info, Int32 table_id, const String & table_start_lsn);
 
-    void addNested(const String & postgres_table_name, StorageInfo nested_storage_info, const String & table_start_lsn);
+    void addNested(const String & postgres_table_name, const StorageInfo & nested_storage_info, const String & table_start_lsn);
 
     void removeNested(const String & postgres_table_name);
 

@@ -6,7 +6,7 @@ TEST(OptimizeRE, analyze)
 {
     auto test_f = [](const std::string & regexp,
                      const std::string & required,
-                     std::vector<std::string> expect_alternatives = {},
+                     const std::vector<std::string> & expect_alternatives = {},
                      bool trival_expected = false,
                      bool has_capture_expected = false,
                      bool prefix_expected = false)

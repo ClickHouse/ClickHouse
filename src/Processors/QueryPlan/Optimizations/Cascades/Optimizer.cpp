@@ -376,7 +376,7 @@ static QueryPlanStepPtr cloneStepForBestPlan(const GroupExpression & expression)
     return step;
 }
 
-QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, ExpressionProperties required_properties)
+QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, const ExpressionProperties & required_properties)
 {
     const auto & cost_config = memo.getContext().cost_config;
 

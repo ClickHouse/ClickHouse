@@ -15,7 +15,7 @@ namespace DB
 struct LocalObjectStorageSettings
 {
     LocalObjectStorageSettings(String disk_name_, String key_prefix_, bool read_only_)
-        : disk_name(disk_name_), key_prefix(key_prefix_), read_only(read_only_)
+        : disk_name(std::move(disk_name_)), key_prefix(std::move(key_prefix_)), read_only(read_only_)
     {
     }
 

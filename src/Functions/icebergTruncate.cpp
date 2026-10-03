@@ -84,7 +84,7 @@ public:
         }
         else
         {
-            auto get_column_const = [] (const DataTypePtr data_type)
+            auto get_column_const = [] (const DataTypePtr & data_type)
             {
                 return ColumnWithTypeAndName(data_type->createColumnConst(1, data_type->getDefault()), data_type, "");
             };

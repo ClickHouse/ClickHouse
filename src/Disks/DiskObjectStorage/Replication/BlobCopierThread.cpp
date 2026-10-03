@@ -190,7 +190,7 @@ BlobCopierThread::BlobCopierThread(
     ClusterConfigurationPtr cluster_,
     MetadataStoragePtr metadata_storage_,
     ObjectStorageRouterPtr object_storages_)
-    : disk_name(disk_name_)
+    : disk_name(std::move(disk_name_))
     , cluster(std::move(cluster_))
     , metadata_storage(std::move(metadata_storage_))
     , object_storages(std::move(object_storages_))

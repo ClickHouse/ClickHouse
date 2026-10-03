@@ -20,7 +20,7 @@ namespace ErrorCodes
 Squashing::Squashing(SharedHeader header_, size_t min_block_size_rows_, size_t min_block_size_bytes_,
                      size_t max_block_size_rows_, size_t max_block_size_bytes_, bool squash_with_strict_limits_)
     : pending(squash_with_strict_limits_)
-    , header(header_)
+    , header(std::move(header_))
     , min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
     , max_block_size_rows(max_block_size_rows_)
@@ -71,7 +71,7 @@ Chunk Squashing::squash(Chunk && input_chunk, SharedHeader header)
     if (!squash_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no ChunksToSquash in ChunkInfoPtr");
 
-    return squash(std::move(squash_info->data), std::move(input_chunk.getChunkInfos()), header);
+    return squash(std::move(squash_info->data), std::move(input_chunk.getChunkInfos()), std::move(header));
 }
 
 Chunk Squashing::squash(ChunksWithOffsetsAndLengths && input_data, Chunk::ChunkInfoCollection && infos, SharedHeader header)
@@ -107,7 +107,7 @@ Chunk Squashing::squash(ChunksWithOffsetsAndLengths && input_data, Chunk::ChunkI
     {
         LOG_TEST(getLogger("squashing"), "Updating original block in deduplication info after squashing, rows: {}, input_chunks count {}, debug: {}",
             result.getNumRows(), input_data_size, deduplication_info->debug());
-        deduplication_info->updateOriginalBlock(result, header);
+        deduplication_info->updateOriginalBlock(result, std::move(header));
     }
 
     result.setChunkInfos(std::move(result_info));

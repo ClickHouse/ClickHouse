@@ -118,7 +118,7 @@ void ASTProjectionDeclaration::formatImpl(
 }
 
 void ASTProjectionDeclaration::formatBody(
-    WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+    WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, const FormatStateStacked & frame) const
 {
     if (query)
     {

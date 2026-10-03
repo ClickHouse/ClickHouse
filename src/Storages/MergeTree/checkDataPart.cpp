@@ -74,7 +74,7 @@ bool isRetryableException(std::exception_ptr exception_ptr)
 {
     try
     {
-        rethrow_exception(exception_ptr);
+        rethrow_exception(std::move(exception_ptr));
     }
 #if USE_AWS_S3
     catch (const S3Exception & s3_exception)

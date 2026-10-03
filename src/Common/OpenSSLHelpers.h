@@ -58,7 +58,7 @@ bool rsaSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::strin
 bool ecdsaP256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature);
 
 /// Generate Certificate Signing Request with given `subject(s)` and private key.
-std::string generateCSR(std::vector<std::string>, EVP_PKEY * pkey);
+std::string generateCSR(const std::vector<std::string> &, EVP_PKEY * pkey);
 
 /// Returns concatenation of error strings for all errors that OpenSSL has recorded, emptying the error queue.
 String getOpenSSLErrors();

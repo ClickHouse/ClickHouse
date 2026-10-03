@@ -219,7 +219,7 @@ class StorageKeeperMapSink final : public SinkToStorage
 
 public:
     StorageKeeperMapSink(StorageKeeperMap & storage_, SharedHeader header, ContextPtr context_)
-        : SinkToStorage(header), storage(storage_), context(std::move(context_))
+        : SinkToStorage(std::move(header)), storage(storage_), context(std::move(context_))
     {
         auto primary_key = storage.getPrimaryKey();
         chassert(primary_key.size() == 1);
@@ -381,7 +381,7 @@ public:
         KeyContainerIter end_,
         bool with_version_column_,
         ContextPtr context_)
-        : ISource(header)
+        : ISource(std::move(header))
         , WithContext(std::move(context_))
         , storage(storage_)
         , max_block_size(max_block_size_)
@@ -995,7 +995,7 @@ void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     });
 }
 
-void StorageKeeperMap::dropTableFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, String path_prefix_, String zk_root_path_, String uuid, LoggerPtr logger)
+void StorageKeeperMap::dropTableFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & path_prefix_, String zk_root_path_, const String & uuid, LoggerPtr logger)
 {
     auto zk_root_path_fs = fs::path(path_prefix_) / std::string_view{zk_root_path_}.substr(1);
     zk_root_path_ = zk_root_path_fs;

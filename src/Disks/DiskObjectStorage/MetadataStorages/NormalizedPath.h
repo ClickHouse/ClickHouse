@@ -12,6 +12,6 @@ public:
     NormalizedPath parent_path() const;
 };
 
-NormalizedPath normalizePath(std::string path);
+NormalizedPath normalizePath(const std::string & path);
 
 }

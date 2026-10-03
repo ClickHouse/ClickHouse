@@ -66,7 +66,7 @@ public:
 };
 
 DatabaseAtomic::DatabaseAtomic(
-    String name_,
+    const String & name_,
     String metadata_path_,
     UUID uuid,
     const String & logger_name,
@@ -78,7 +78,7 @@ DatabaseAtomic::DatabaseAtomic(
         DatabaseCatalog::getStoreDirPath() / "",
         logger_name,
         context_,
-        database_metadata_disk_settings_)
+        std::move(database_metadata_disk_settings_))
     , path_to_table_symlinks(DatabaseCatalog::getDataDirPath(name_) / "")
     , path_to_metadata_symlink(DatabaseCatalog::getMetadataDirPath(name_))
     , db_uuid(uuid)
@@ -87,8 +87,8 @@ DatabaseAtomic::DatabaseAtomic(
 }
 
 DatabaseAtomic::DatabaseAtomic(
-    String name_, String metadata_path_, UUID uuid, ContextPtr context_, DatabaseMetadataDiskSettings database_metadata_disk_settings_)
-    : DatabaseAtomic(name_, std::move(metadata_path_), uuid, "DatabaseAtomic (" + name_ + ")", context_, database_metadata_disk_settings_)
+    const String & name_, String metadata_path_, UUID uuid, ContextPtr context_, DatabaseMetadataDiskSettings database_metadata_disk_settings_)
+    : DatabaseAtomic(name_, std::move(metadata_path_), uuid, "DatabaseAtomic (" + name_ + ")", context_, std::move(database_metadata_disk_settings_))
 {
 }
 

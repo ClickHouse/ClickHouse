@@ -92,7 +92,7 @@ StoragePolicy::StoragePolicy(
 
         ::stableSort(
             volumes.begin(), volumes.end(),
-            [](const VolumePtr a, const VolumePtr b) { return a->volume_priority < b->volume_priority; });
+            [](const VolumePtr & a, const VolumePtr & b) { return a->volume_priority < b->volume_priority; });
     }
 
     if (volumes.empty() && name == DEFAULT_STORAGE_POLICY_NAME)

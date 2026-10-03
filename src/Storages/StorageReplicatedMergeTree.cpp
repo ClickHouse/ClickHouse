@@ -1480,7 +1480,7 @@ std::vector<String> StorageReplicatedMergeTree::getZookeeperZeroCopyLockPaths() 
     return result;
 }
 
-void StorageReplicatedMergeTree::dropZookeeperZeroCopyLockPaths(zkutil::ZooKeeperPtr zookeeper, std::vector<String> zero_copy_locks_paths,
+void StorageReplicatedMergeTree::dropZookeeperZeroCopyLockPaths(zkutil::ZooKeeperPtr zookeeper, const std::vector<String> & zero_copy_locks_paths,
                                                                 LoggerPtr logger)
 {
     for (const auto & zero_copy_locks_root : zero_copy_locks_paths)
@@ -2379,7 +2379,7 @@ bool StorageReplicatedMergeTree::getOpsToCheckPartChecksumsAndCommit(const ZooKe
     NameSet absent_part_paths_on_replicas;
 
     size_t prev_ops_size = ops.size();
-    getLockSharedDataOps(*part, zookeeper, replace_zero_copy_lock, hardlinked_files, ops);
+    getLockSharedDataOps(*part, zookeeper, replace_zero_copy_lock, std::move(hardlinked_files), ops);
 
     /// Checksums are checked here and `ops` is filled. In fact, the part is added to ZK just below, when executing `multi`.
     bool part_found = checkPartChecksumsAndAddCommitOps(zookeeper, part, ops, part->name, absent_part_paths_on_replicas);
@@ -2410,7 +2410,7 @@ bool StorageReplicatedMergeTree::getOpsToCheckPartChecksumsAndCommit(const ZooKe
 
 
 MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAndCommit(Transaction & transaction,
-    const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock)
+    const MutableDataPartPtr & part, const std::optional<HardlinkedFiles> & hardlinked_files, bool replace_zero_copy_lock)
 {
     auto zookeeper = std::make_shared<ZooKeeperWithFaultInjection>(getZooKeeper());
 
@@ -5874,7 +5874,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
     const StorageMetadataPtr & metadata_snapshot,
     const String & source_replica_path,
     DiskPtr replaced_disk,
-    String replaced_part_path)
+    const String & replaced_part_path)
 {
     auto zookeeper = getZooKeeper();
     const auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
@@ -8908,7 +8908,7 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
     return CancellationCode::CancelSent;
 }
 
-bool StorageReplicatedMergeTree::haveCommittingOps(const CommittingBlocks & committing_blocks, PartitionIdToMaxBlockPtr partitions, std::set<CommittingBlock::Op> ops) const
+bool StorageReplicatedMergeTree::haveCommittingOps(const CommittingBlocks & committing_blocks, PartitionIdToMaxBlockPtr partitions, const std::set<CommittingBlock::Op> & ops) const
 {
     {
         std::lock_guard lock(queue.state_mutex);
@@ -8967,7 +8967,7 @@ bool StorageReplicatedMergeTree::haveCommittingOps(const CommittingBlocks & comm
     return false;
 }
 
-void StorageReplicatedMergeTree::waitForCommittingOpsToFinish(zkutil::ZooKeeperPtr zookeeper, PartitionIdToMaxBlockPtr partitions, std::set<CommittingBlock::Op> ops, size_t backoff_ms, size_t sync_timeout_ms)
+void StorageReplicatedMergeTree::waitForCommittingOpsToFinish(zkutil::ZooKeeperPtr zookeeper, PartitionIdToMaxBlockPtr partitions, const std::set<CommittingBlock::Op> & ops, size_t backoff_ms, size_t sync_timeout_ms)
 {
     while (true)
     {

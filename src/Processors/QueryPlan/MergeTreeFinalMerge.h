@@ -72,7 +72,7 @@ Pipe buildFullFinalMergePipe(
 Pipe buildDistributedFinalPipe(
     const std::vector<DistributedReadBucket> & lanes,
     const StorageMetadataPtr & metadata_snapshot,
-    MergeTreeData::MergingParams merging_params,
+    const MergeTreeData::MergingParams & merging_params,
     size_t max_block_size_rows,
     bool enable_vertical_final,
     ContextPtr context,

@@ -1386,7 +1386,7 @@ size_t StorageFile::getMaxReadStreams(size_t num_streams, ContextPtr)
     return std::min(num_streams, std::max(1uz, files_to_read));
 }
 
-StorageFile::StorageFile(int table_fd_, CommonArguments args)
+StorageFile::StorageFile(int table_fd_, const CommonArguments & args)
     : StorageFile(args)
 {
     struct stat buf{};
@@ -1406,7 +1406,7 @@ StorageFile::StorageFile(int table_fd_, CommonArguments args)
     setStorageMetadata(args);
 }
 
-StorageFile::StorageFile(FileSource file_source_, CommonArguments args)
+StorageFile::StorageFile(FileSource file_source_, const CommonArguments & args)
     : StorageFile(args)
 {
     paths = std::move(file_source_.paths);
@@ -1428,7 +1428,7 @@ StorageFile::StorageFile(FileSource file_source_, bool distributed_processing_, 
     distributed_processing = distributed_processing_;
 }
 
-StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArguments args)
+StorageFile::StorageFile(const std::string & relative_table_dir_path, const CommonArguments & args)
     : StorageFile(args)
 {
     if (relative_table_dir_path.empty())
@@ -1448,7 +1448,7 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
     setStorageMetadata(args);
 }
 
-StorageFile::StorageFile(CommonArguments args)
+StorageFile::StorageFile(const CommonArguments & args)
     : IStorage(args.table_id)
     , format_name(args.format_name)
     , format_settings(args.format_settings)
@@ -1465,7 +1465,7 @@ StorageFile::StorageFile(CommonArguments args)
     /// If you know answers to these questions, consider adding a comment or something.
 }
 
-void StorageFile::setStorageMetadata(CommonArguments args)
+void StorageFile::setStorageMetadata(const CommonArguments & args)
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -2859,7 +2859,7 @@ public:
         std::string path_,
         const CompressionMethod compression_method_,
         const std::optional<FormatSettings> & format_settings_,
-        const String format_name_,
+        const String & format_name_,
         const ContextPtr & context_,
         int flags_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
@@ -2867,8 +2867,8 @@ public:
         , table_name_for_log(table_name_for_log_)
         , table_fd(table_fd_)
         , use_table_fd(use_table_fd_)
-        , base_path(base_path_)
-        , path(path_)
+        , base_path(std::move(base_path_))
+        , path(std::move(path_))
         , compression_method(compression_method_)
         , format_name(format_name_)
         , format_settings(format_settings_)
@@ -2887,7 +2887,7 @@ public:
         const std::string & path_,
         const CompressionMethod compression_method_,
         const std::optional<FormatSettings> & format_settings_,
-        const String format_name_,
+        const String & format_name_,
         const ContextPtr & context_,
         int flags_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
@@ -2895,7 +2895,7 @@ public:
         , table_name_for_log(table_name_for_log_)
         , table_fd(table_fd_)
         , use_table_fd(use_table_fd_)
-        , base_path(base_path_)
+        , base_path(std::move(base_path_))
         , path(path_)
         , compression_method(compression_method_)
         , format_name(format_name_)
@@ -3034,14 +3034,14 @@ public:
         String path_,
         const CompressionMethod compression_method_,
         const std::optional<FormatSettings> & format_settings_,
-        const String format_name_,
+        const String & format_name_,
         ContextPtr context_,
         int flags_)
         : PartitionedSink(partition_strategy_, context_, std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
-        , path(path_)
+        , path(std::move(path_))
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
-        , base_path(base_path_)
+        , base_path(std::move(base_path_))
         , compression_method(compression_method_)
         , format_name(format_name_)
         , format_settings(format_settings_)

@@ -156,7 +156,7 @@ static size_t getMin(std::map<String, size_t> container)
     return min_val;
 }
 
-static double getMean(std::map<String, size_t> container)
+static double getMean(const std::map<String, size_t> & container)
 {
     return 1.0 * static_cast<double>(getSum(container)) / static_cast<double>(container.size());
 }

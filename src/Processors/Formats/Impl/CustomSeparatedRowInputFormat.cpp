@@ -37,7 +37,7 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
     bool ignore_spaces_,
     const FormatSettings & format_settings_)
     : CustomSeparatedRowInputFormat(
-        header_, std::make_unique<PeekableReadBuffer>(in_buf_), params_, with_names_, with_types_, ignore_spaces_, format_settings_)
+        std::move(header_), std::make_unique<PeekableReadBuffer>(in_buf_), params_, with_names_, with_types_, ignore_spaces_, format_settings_)
 {
 }
 
@@ -50,7 +50,7 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
     bool ignore_spaces_,
     const FormatSettings & format_settings_)
     : RowInputFormatWithNamesAndTypes(
-        header_,
+        std::move(header_),
         *buf_,
         params_,
         false,
@@ -457,7 +457,7 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
             factory.registerInputFormat(format_name, [=](
                 ReadBuffer & buf,
                 const Block & sample,
-                IRowInputFormat::Params params,
+                const IRowInputFormat::Params & params,
                 const FormatSettings & settings)
             {
                 return std::make_shared<CustomSeparatedRowInputFormat>(std::make_shared<const Block>(sample), buf, params, with_names, with_types, ignore_spaces, settings);

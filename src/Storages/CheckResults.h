@@ -18,7 +18,7 @@ struct CheckResult
 
     CheckResult() = default;
     CheckResult(const String & fs_path_, bool success_, String failure_message_)
-        : fs_path(fs_path_), success(success_), failure_message(failure_message_)
+        : fs_path(fs_path_), success(success_), failure_message(std::move(failure_message_))
     {}
 };
 

@@ -19,7 +19,7 @@ class AsyncInsertsTest : public ::testing::TestPartResult
 {};
 
 
-std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size_t> offsets, std::vector<String> hashes)
+std::vector<Int64> testSelfDeduplicate(const std::vector<Int64> & data, std::vector<size_t> offsets, std::vector<String> hashes)
 {
     MutableColumnPtr column = DataTypeInt64().createColumn();
     for (auto datum : data)
@@ -61,7 +61,7 @@ std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size
 
 TEST(AsyncInsertsTest, testSelfDeduplicate)
 {
-    auto test_impl = [](std::vector<Int64> data, std::vector<size_t> offsets, std::vector<String> hashes, std::vector<Int64> answer)
+    auto test_impl = [](std::vector<Int64> data, std::vector<size_t> offsets, std::vector<String> hashes, const std::vector<Int64> & answer)
     {
         auto result = testSelfDeduplicate(data, offsets, hashes);
         ASSERT_EQ(answer, result);
@@ -123,9 +123,9 @@ std::vector<String> testSelfDeduplicateStrings(std::vector<String> data, std::ve
 
 TEST(AsyncInsertsTest, testSelfDeduplicateStrings)
 {
-    auto test_impl = [](std::vector<String> data, std::vector<size_t> offsets, std::vector<String> hashes, std::vector<String> answer)
+    auto test_impl = [](std::vector<String> data, std::vector<size_t> offsets, std::vector<String> hashes, const std::vector<String> & answer)
     {
-        auto result = testSelfDeduplicateStrings(data, offsets, hashes);
+        auto result = testSelfDeduplicateStrings(std::move(data), std::move(offsets), std::move(hashes));
         ASSERT_EQ(answer, result);
     };
     /// Two equal single-row blocks with no user token must collapse to one row.
@@ -177,9 +177,9 @@ std::vector<String> testPrewarmDataHashes(std::vector<String> data, std::vector<
 
 TEST(AsyncInsertsTest, testPrewarmDataHashes)
 {
-    auto test_impl = [](std::vector<String> data, std::vector<size_t> offsets, std::vector<String> answer)
+    auto test_impl = [](std::vector<String> data, std::vector<size_t> offsets, const std::vector<String> & answer)
     {
-        auto result = testPrewarmDataHashes(data, offsets);
+        auto result = testPrewarmDataHashes(std::move(data), std::move(offsets));
         ASSERT_EQ(answer, result);
     };
     /// Two equal single-row blocks: prewarm + clone must still deduplicate correctly.
@@ -198,8 +198,8 @@ TEST(AsyncInsertsTest, testPrewarmDataHashes)
 /// partition. Returns surviving rows in (partition, row) order. With prewarm the cached hash is
 /// carried into each per-partition copy; without it each copy recomputes — the result must match.
 std::vector<String> testPrewarmFilterToPartition(
-    std::vector<String> data, std::vector<size_t> token_offsets,
-    std::vector<UInt64> row_to_partition, size_t num_partitions, bool prewarm)
+    const std::vector<String> & data, std::vector<size_t> token_offsets,
+    const std::vector<UInt64> & row_to_partition, size_t num_partitions, bool prewarm)
 {
     MutableColumnPtr column = DataTypeString().createColumn();
     for (const auto & datum : data)
@@ -243,7 +243,7 @@ std::vector<String> testPrewarmFilterToPartition(
 
 TEST(AsyncInsertsTest, testPrewarmFilterToPartition)
 {
-    auto build = [](std::vector<String> data, std::vector<size_t> offsets, std::vector<UInt64> rtp, size_t parts)
+    auto build = [](const std::vector<String> & data, const std::vector<size_t> & offsets, const std::vector<UInt64> & rtp, size_t parts)
     {
         auto warm = testPrewarmFilterToPartition(data, offsets, rtp, parts, /*prewarm=*/true);
         auto cold = testPrewarmFilterToPartition(data, offsets, rtp, parts, /*prewarm=*/false);
@@ -268,7 +268,7 @@ TEST(AsyncInsertsTest, testPrewarmFilterToPartition)
 /// the per-partition copies, while without prewarm those copies start cold (cache filled lazily later).
 bool testPrewarmPopulatesCache(
     std::vector<String> data, std::vector<size_t> token_offsets,
-    std::vector<UInt64> row_to_partition, size_t num_partitions)
+    const std::vector<UInt64> & row_to_partition, size_t num_partitions)
 {
     auto build = [&](bool prewarm)
     {
@@ -320,7 +320,7 @@ TEST(AsyncInsertsTest, testPrewarmPopulatesCache)
 /// call because the guard tests the sink-level `deduplicate` (replicated_deduplication_window!=0), not
 /// `disabled`; but deduplicateSelf/getDeduplicationHashes early-return, so warming hashes is wasted work.
 /// Returns true iff prewarmDataHashes left every empty-token cache untouched on a disabled info.
-bool testPrewarmDisabledIsNoop(std::vector<String> data, std::vector<size_t> token_offsets)
+bool testPrewarmDisabledIsNoop(const std::vector<String> & data, std::vector<size_t> token_offsets)
 {
     MutableColumnPtr column = DataTypeString().createColumn();
     for (const auto & datum : data)

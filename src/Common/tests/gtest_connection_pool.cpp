@@ -246,7 +246,7 @@ static void wait_until(std::function<bool()> pred)
         sleepForMilliseconds(10);
 }
 
-static void echoRequest(String data, HTTPSession & session)
+static void echoRequest(const String & data, HTTPSession & session)
 {
     {
         Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1"); // HTTP/1.1 is required for keep alive

@@ -103,7 +103,7 @@ void TerminalKeystrokeInterceptor::stopIntercept()
     }
 }
 
-void TerminalKeystrokeInterceptor::run(TerminalKeystrokeInterceptor::CallbackMap map)
+void TerminalKeystrokeInterceptor::run(const TerminalKeystrokeInterceptor::CallbackMap & map)
 {
     constexpr auto intercept_interval_ms = std::chrono::milliseconds(200);
     std::unique_lock lock(stop_requested_mutex);

@@ -40,7 +40,7 @@ struct ChangelogDirTest
 {
     std::string path;
     bool drop;
-    explicit ChangelogDirTest(std::string path_, bool drop_ = true) : path(path_), drop(drop_)
+    explicit ChangelogDirTest(std::string path_, bool drop_ = true) : path(std::move(path_)), drop(drop_)
     {
         EXPECT_FALSE(fs::exists(path)) << "Path " << path << " already exists, remove it to run test";
         fs::create_directory(path);
@@ -146,7 +146,7 @@ LogEntryPtr getLogEntry(const std::string & s, size_t term);
 
 void waitDurableLogs(nuraft::log_store & log_store);
 
-void assertFileDeleted(std::string path);
+void assertFileDeleted(const std::string & path);
 
 nuraft::ptr<nuraft::log_entry>
 getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request);

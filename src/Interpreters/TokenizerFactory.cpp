@@ -97,7 +97,7 @@ TokenizerFactory::TokenizerFactory()
 
 void TokenizerFactory::registerTokenizer(const String & name, ITokenizer::Type type, Creator creator)
 {
-    if (!tokenizers.emplace(name, Entry{type, creator}).second)
+    if (!tokenizers.emplace(name, Entry{type, std::move(creator)}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TokenizerFactory: tokenizer '{}' is already registered", name);
 }
 

@@ -167,12 +167,12 @@ static FunctionNodePtr wrapExpressionNodeInFunctionWithSecondConstantStringArgum
 
 static FunctionNodePtr wrapExpressionNodeInSubcolumn(QueryTreeNodePtr expression, std::string subcolumn_name, const ContextPtr & context)
 {
-    return wrapExpressionNodeInFunctionWithSecondConstantStringArgument(expression, "getSubcolumn", subcolumn_name, context);
+    return wrapExpressionNodeInFunctionWithSecondConstantStringArgument(expression, "getSubcolumn", std::move(subcolumn_name), context);
 }
 
 static FunctionNodePtr wrapExpressionNodeInTupleElement(QueryTreeNodePtr expression, std::string subcolumn_name, const ContextPtr & context)
 {
-    return wrapExpressionNodeInFunctionWithSecondConstantStringArgument(expression, "tupleElement", subcolumn_name, context);
+    return wrapExpressionNodeInFunctionWithSecondConstantStringArgument(expression, "tupleElement", std::move(subcolumn_name), context);
 }
 
 /** Wrap expression node in tuple element function calls for nested paths.
@@ -468,7 +468,7 @@ std::pair<String, String> IdentifierResolver::tryGetTableNameHint(const Identifi
 QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(const Identifier & expression_identifier,
     size_t identifier_bind_size,
     const QueryTreeNodePtr & compound_expression,
-    String compound_expression_source,
+    const String & compound_expression_source,
     IdentifierResolveScope & scope,
     bool can_be_not_found)
 {

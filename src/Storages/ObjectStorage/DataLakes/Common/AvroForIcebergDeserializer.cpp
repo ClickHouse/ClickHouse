@@ -521,7 +521,7 @@ Field AvroForIcebergDeserializer::getValueFromRowByName(
     return result;
 }
 
-std::optional<std::string> AvroForIcebergDeserializer::tryGetAvroMetadataValue(std::string metadata_key) const
+std::optional<std::string> AvroForIcebergDeserializer::tryGetAvroMetadataValue(const std::string & metadata_key) const
 {
     auto it = metadata.find(metadata_key);
     if (it == metadata.end())

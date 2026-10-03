@@ -25,7 +25,7 @@ extern const char postgresql_output_format_cancel_mid_loop[];
 }
 
 PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
-    : IOutputFormat(header_, out_)
+    : IOutputFormat(std::move(header_), out_)
     , format_settings(settings_)
     , message_transport(&out)
 {

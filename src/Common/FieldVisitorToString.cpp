@@ -17,7 +17,7 @@ namespace ErrorCodes
 
 
 template <typename T>
-static inline String formatQuoted(T x)
+static inline String formatQuoted(const T & x)
 {
     WriteBufferFromOwnString wb;
 

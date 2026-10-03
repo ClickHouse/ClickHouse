@@ -72,7 +72,7 @@ std::vector<UInt64> collectedValues(const Chunks & chunks)
 class OneChunkSink final : public IProcessor
 {
 public:
-    explicit OneChunkSink(SharedHeader header_) : IProcessor({header_}, {}) { }
+    explicit OneChunkSink(SharedHeader header_) : IProcessor({std::move(header_)}, {}) { }
 
     String getName() const override { return "OneChunkSink"; }
 

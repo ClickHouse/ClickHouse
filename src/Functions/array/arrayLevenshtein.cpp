@@ -407,13 +407,13 @@ private:
     }
 
     template <typename ResultColumn, typename... Types>
-    bool tryLevenshteinNumber(VectorWithMemoryTracking<const ColumnArray *> columns, ResultColumn::Container & res_values) const
+    bool tryLevenshteinNumber(const VectorWithMemoryTracking<const ColumnArray *> & columns, ResultColumn::Container & res_values) const
     {
         return (levenshteinNumber<Types, ResultColumn>(columns, res_values) || ...);
     }
 
     template <typename ResultColumn, typename... Types>
-    bool tryLevenshteinString(VectorWithMemoryTracking<const ColumnArray *> columns, ResultColumn::Container & res_values) const
+    bool tryLevenshteinString(const VectorWithMemoryTracking<const ColumnArray *> & columns, ResultColumn::Container & res_values) const
     {
         return (levenshteinString<Types, ResultColumn>(columns, res_values) || ...);
     }
@@ -570,7 +570,7 @@ DataTypePtr FunctionArrayLevenshtein<SimpleLevenshtein>::getReturnTypeImpl(const
 template <>
 ColumnPtr FunctionArrayLevenshtein<SimpleLevenshtein>::execute(VectorWithMemoryTracking<const ColumnArray *> columns) const
 {
-    return levenshteinImpl(columns);
+    return levenshteinImpl(std::move(columns));
 }
 
 struct Weighted
@@ -582,7 +582,7 @@ struct Weighted
 template <>
 ColumnPtr FunctionArrayLevenshtein<Weighted>::execute(VectorWithMemoryTracking<const ColumnArray *> columns) const
 {
-    return weightedLevenshteinImpl(columns);
+    return weightedLevenshteinImpl(std::move(columns));
 }
 
 struct Similarity

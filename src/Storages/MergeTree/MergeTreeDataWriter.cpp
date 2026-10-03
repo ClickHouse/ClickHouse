@@ -325,7 +325,7 @@ void updateTTLInfoConst(MergeTreeDataPartTTLInfo & ttl_info, const ColumnConst &
 
 /// Computes ttls and updates ttl infos
 void updateTTL(
-    const ContextPtr context,
+    const ContextPtr & context,
     const TTLDescription & ttl_entry,
     IMergeTreeDataPart::TTLInfos & ttl_infos,
     MergeTreeDataPartTTLInfo & ttl_info,

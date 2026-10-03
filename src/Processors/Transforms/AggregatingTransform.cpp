@@ -131,7 +131,7 @@ namespace
     {
     public:
         explicit SourceFromNativeStream(SharedHeader header, TemporaryBlockStreamReaderHolder tmp_stream_)
-            : ISource(header)
+            : ISource(std::move(header))
             , tmp_stream(std::move(tmp_stream_))
         {}
 

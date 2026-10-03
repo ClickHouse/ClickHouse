@@ -14,7 +14,7 @@ namespace DB
 
 BuffersWriter::BuffersWriter(WriteBuffer & ostr_, SharedHeader header_, const FormatSettings & format_settings_)
     : ostr(ostr_)
-    , header(header_)
+    , header(std::move(header_))
     , format_settings(format_settings_)
 {
 }

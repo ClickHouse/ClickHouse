@@ -28,7 +28,7 @@ public:
 
     int main(const std::vector<String> & /*args*/) override;
 
-    void printCommandHelpMessage(String command_name) const;
+    void printCommandHelpMessage(const String & command_name) const;
     void printCommandHelpMessage(CommandPtr command) const;
     void printAvailableCommandsHelpMessage() const;
 
@@ -60,7 +60,7 @@ private:
 
     std::vector<String> getCompletions(const String & prefix) const;
 
-    std::vector<String> getEmptyCompletion(String command_name) const;
+    std::vector<String> getEmptyCompletion(const String & command_name) const;
 
     void runInteractive();
     void runInteractiveReplxx();

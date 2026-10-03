@@ -63,7 +63,7 @@ std::shared_ptr<ISource> multiColumnsSource(const DataTypes & type, const std::v
 }
 
 void validatePageIndex(
-    String path,
+    const String & path,
     std::optional<std::function<void(std::vector<bool>)>> validate_null_pages = std::nullopt,
     std::optional<std::function<void(std::vector<int64_t>)>> validate_null_counts = std::nullopt,
     bool expect_statistics_in_page_headers = true)
@@ -155,7 +155,7 @@ void validatePageIndex(
     }
 }
 
-void writeParquet(SourcePtr source, const FormatSettings & format_settings, String parquet_path)
+void writeParquet(SourcePtr source, const FormatSettings & format_settings, const String & parquet_path)
 {
     QueryPipelineBuilder pipeline_builder;
     pipeline_builder.init(Pipe(source));
@@ -335,14 +335,14 @@ TEST(Parquet, WriteParquetPageIndexParallel)
     writeParquet(source, format_settings, path);
     validatePageIndex(
         path,
-        [](auto null_pages)
+        [](const auto & null_pages)
         {
             for (auto null_page : null_pages)
             {
                 ASSERT_TRUE(!null_page);
             }
         },
-        [](auto null_counts)
+        [](const auto & null_counts)
         {
             for (auto null_count : null_counts)
             {
@@ -376,14 +376,14 @@ TEST(Parquet, WriteParquetPageIndexParallelPlainEnconding)
     writeParquet(source, format_settings, path);
     validatePageIndex(
         path,
-        [](auto null_pages)
+        [](const auto & null_pages)
         {
             for (auto null_page : null_pages)
             {
                 ASSERT_FALSE(null_page);
             }
         },
-        [](auto null_counts)
+        [](const auto & null_counts)
         {
             for (auto null_count : null_counts)
             {
@@ -413,14 +413,14 @@ TEST(Parquet, WriteParquetPageIndexParallelAllNull)
     writeParquet(source, format_settings, path);
     validatePageIndex(
         path,
-        [](auto null_pages)
+        [](const auto & null_pages)
         {
             for (auto null_page : null_pages)
             {
                 ASSERT_TRUE(null_page);
             }
         },
-        [](auto null_counts)
+        [](const auto & null_counts)
         {
             for (auto null_count : null_counts)
             {
@@ -453,14 +453,14 @@ TEST(Parquet, WriteParquetPageIndexSingleThread)
     writeParquet(source, format_settings, path);
     validatePageIndex(
         path,
-        [](auto null_pages)
+        [](const auto & null_pages)
         {
             for (auto null_page : null_pages)
             {
                 ASSERT_TRUE(!null_page);
             }
         },
-        [](auto null_counts)
+        [](const auto & null_counts)
         {
             for (auto null_count : null_counts)
             {

@@ -96,7 +96,7 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
         const auto & elem = block.getByPosition(i);
 
         ISerialization::SerializeBinaryBulkSettings settings;
-        settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
+        settings.getter = [&ostr](const ISerialization::SubstreamPath &) -> WriteBuffer * { return &ostr; };
         settings.position_independent_encoding = false;
         settings.low_cardinality_max_dictionary_size = 0;
 
@@ -123,7 +123,7 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     }
 
     ISerialization::DeserializeBinaryBulkSettings settings;
-    settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
+    settings.getter = [&](const ISerialization::SubstreamPath &) -> ReadBuffer * { return &istr; };
     settings.position_independent_encoding = false;
 
     size_t num_columns = block.columns();
@@ -199,7 +199,7 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
         return;
 
     ISerialization::DeserializeBinaryBulkSettings settings;
-    settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
+    settings.getter = [&](const ISerialization::SubstreamPath &) -> ReadBuffer * { return &istr; };
     settings.position_independent_encoding = false;
 
     size_t num_columns = block.columns() - 1;

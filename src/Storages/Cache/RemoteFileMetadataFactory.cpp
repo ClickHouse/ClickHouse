@@ -30,6 +30,6 @@ void RemoteFileMetadataFactory::registerRemoteFileMatadata(const String & name, 
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata class ({}) has already been registered.", name);
     }
-    remote_file_metadatas[name] = creator;
+    remote_file_metadatas[name] = std::move(creator);
 }
 }

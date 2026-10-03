@@ -314,7 +314,7 @@ private:
     const size_t array_partial_offsets_arg_index = is_pr ? 2 : 3;
     const size_t array_partial_offsets_size = is_pr ? 3 : 4;
 
-    static bool isConstBoolColumn(ColumnWithTypeAndName argument)
+    static bool isConstBoolColumn(const ColumnWithTypeAndName & argument)
     {
         if (!isBool(argument.type))
             return false;

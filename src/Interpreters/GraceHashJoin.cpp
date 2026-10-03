@@ -300,8 +300,8 @@ GraceHashJoin::GraceHashJoin(
     size_t external_join_threshold_)
     : log{getLogger("GraceHashJoin")}
     , table_join{std::move(table_join_)}
-    , left_sample_block{left_sample_block_}
-    , right_sample_block{right_sample_block_}
+    , left_sample_block{std::move(left_sample_block_)}
+    , right_sample_block{std::move(right_sample_block_)}
     , any_take_last_row{any_take_last_row_}
     , initial_num_buckets(initial_num_buckets_)
     , max_num_buckets(max_num_buckets_)

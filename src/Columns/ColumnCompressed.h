@@ -37,7 +37,7 @@ public:
     using Lazy = std::function<ColumnPtr()>;
 
     ColumnCompressed(size_t rows_, size_t bytes_, Lazy lazy_)
-        : rows(rows_), bytes(bytes_), lazy(lazy_)
+        : rows(rows_), bytes(bytes_), lazy(std::move(lazy_))
     {
     }
 

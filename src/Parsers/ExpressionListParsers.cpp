@@ -1140,7 +1140,7 @@ class FunctionLayer : public Layer
 {
 public:
     explicit FunctionLayer(String function_name_, bool allow_function_parameters_ = true, bool is_compound_name_ = false, bool is_operator_ = false)
-        : function_name(function_name_), allow_function_parameters(allow_function_parameters_), is_compound_name(is_compound_name_), is_operator(is_operator_) {}
+        : function_name(std::move(function_name_)), allow_function_parameters(allow_function_parameters_), is_compound_name(is_compound_name_), is_operator(is_operator_) {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {

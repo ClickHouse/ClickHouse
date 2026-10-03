@@ -22,14 +22,14 @@ class DatabaseAtomic : public DatabaseOrdinary
 {
 public:
     DatabaseAtomic(
-        String name_,
+        const String & name_,
         String metadata_path_,
         UUID uuid,
         const String & logger_name,
         ContextPtr context_,
         DatabaseMetadataDiskSettings database_metadata_disk_settings_ = {});
     DatabaseAtomic(
-        String name_,
+        const String & name_,
         String metadata_path_,
         UUID uuid,
         ContextPtr context_,

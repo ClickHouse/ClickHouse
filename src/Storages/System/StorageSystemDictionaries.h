@@ -12,7 +12,7 @@ class Context;
 class StorageSystemDictionaries final : public IStorageSystemOneBlock
 {
 public:
-    StorageSystemDictionaries(const StorageID & storage_id_, ColumnsDescription columns_description_);
+    StorageSystemDictionaries(const StorageID & storage_id_, const ColumnsDescription & columns_description_);
 
     std::string getName() const override { return "SystemDictionaries"; }
 

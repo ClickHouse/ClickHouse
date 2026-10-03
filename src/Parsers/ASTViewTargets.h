@@ -140,8 +140,8 @@ public:
 
     /// Formats information only about a specific target table.
     /// `time_series_version` may be set for a TimeSeries table (see TimeSeriesVersion.h), it affects the keywords.
-    void formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame, std::optional<UInt64> time_series_version = {}) const;
-    static void formatTarget(const ViewTarget & target, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame, std::optional<UInt64> time_series_version = {});
+    void formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, const FormatStateStacked & frame, std::optional<UInt64> time_series_version = {}) const;
+    static void formatTarget(const ViewTarget & target, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, const FormatStateStacked & frame, std::optional<UInt64> time_series_version = {});
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;

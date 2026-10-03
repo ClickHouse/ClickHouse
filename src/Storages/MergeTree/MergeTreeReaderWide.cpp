@@ -31,16 +31,16 @@ namespace ErrorCodes
 
 MergeTreeReaderWide::MergeTreeReaderWide(
     MergeTreeDataPartInfoForReaderPtr data_part_info_,
-    NamesAndTypesList columns_,
+    const NamesAndTypesList & columns_,
     const VirtualFields & virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     const MergeTreeSettingsPtr & storage_settings_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
     DeserializationPrefixesCache * deserialization_prefixes_cache_,
-    MarkRanges mark_ranges_,
-    MergeTreeReaderSettings settings_,
-    ValueSizeMap avg_value_size_hints_,
+    const MarkRanges & mark_ranges_,
+    const MergeTreeReaderSettings & settings_,
+    const ValueSizeMap & avg_value_size_hints_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
     : IMergeTreeReader(

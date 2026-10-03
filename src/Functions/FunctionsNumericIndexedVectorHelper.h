@@ -21,8 +21,8 @@ class FunctionNumericIndexedVectorHelper
 {
 public:
     ColumnPtr executeHelper(
-        const DataTypePtr index_type,
-        const DataTypePtr value_type,
+        const DataTypePtr & index_type,
+        const DataTypePtr & value_type,
         const Array & parameters,
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
@@ -32,8 +32,8 @@ public:
     }
 
     ColumnPtr executeResolveIndexType(
-        const DataTypePtr index_type,
-        const DataTypePtr value_type,
+        const DataTypePtr & index_type,
+        const DataTypePtr & value_type,
         const Array & parameters,
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
@@ -51,7 +51,7 @@ public:
 
     template <typename IndexType>
     ColumnPtr executeResolveValueType(
-        const DataTypePtr value_type,
+        const DataTypePtr & value_type,
         const Array & parameters,
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,

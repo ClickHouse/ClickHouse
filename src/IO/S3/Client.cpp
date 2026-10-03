@@ -950,7 +950,7 @@ RequestResult Client::processRequestResult(RequestResult && outcome) const
     return RequestResult(error);
 }
 
-void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const
+void Client::updateNextTimeToRetryAfterRetryableError(const Aws::Client::AWSError<Aws::Client::CoreErrors> & error, Int64 attempt_no) const
 {
     if (!client_configuration.s3_slow_all_threads_after_network_error && !client_configuration.s3_slow_all_threads_after_retryable_error)
         return;
@@ -1419,7 +1419,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
         for_disk_s3,
-        opt_disk_name,
+        std::move(opt_disk_name),
         context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],
         request_throttler,
         error_report);

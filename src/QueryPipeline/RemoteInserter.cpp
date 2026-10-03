@@ -113,7 +113,7 @@ void RemoteInserter::initialize()
 }
 
 
-void RemoteInserter::write(Block block)
+void RemoteInserter::write(const Block & block)
 {
     try
     {

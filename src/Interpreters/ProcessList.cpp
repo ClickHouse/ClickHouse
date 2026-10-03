@@ -608,7 +608,7 @@ void QueryStatus::ExecutorHolder::remove()
     executor = nullptr;
 }
 
-CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_ptr exception)
+CancellationCode QueryStatus::cancelQuery(CancelReason reason, const std::exception_ptr & exception)
 {
     {
         std::lock_guard<std::mutex> lock(cancel_mutex);

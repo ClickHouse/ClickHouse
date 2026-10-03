@@ -49,7 +49,7 @@ class DataTypeCustomFixedName : public IDataTypeCustomName
 private:
     String name;
 public:
-    explicit DataTypeCustomFixedName(String name_) : name(name_) {}
+    explicit DataTypeCustomFixedName(String name_) : name(std::move(name_)) {}
     String getName() const override { return name; }
 };
 

@@ -26,7 +26,7 @@ namespace postgres
 
 auto PoolWithFailover::connectionReestablisher(std::weak_ptr<PoolHolder> pool, size_t pool_wait_timeout)
 {
-    return [weak_pool = pool, pool_wait_timeout](UInt64 interval_milliseconds)
+    return [weak_pool = std::move(pool), pool_wait_timeout](UInt64 interval_milliseconds)
     {
         auto shared_pool = weak_pool.lock();
         if (!shared_pool)

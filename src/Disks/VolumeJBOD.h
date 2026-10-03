@@ -28,7 +28,7 @@ class VolumeJBOD : public IVolume
 {
 public:
     VolumeJBOD(String name_, Disks disks_, UInt64 max_data_part_size_, bool are_merges_avoided_, bool perform_ttl_move_on_insert_, VolumeLoadBalancing load_balancing_, UInt64 least_used_ttl_ms_)
-        : IVolume(name_, disks_, max_data_part_size_, perform_ttl_move_on_insert_, load_balancing_)
+        : IVolume(std::move(name_), std::move(disks_), max_data_part_size_, perform_ttl_move_on_insert_, load_balancing_)
         , are_merges_avoided(are_merges_avoided_)
         , least_used_ttl_ms(least_used_ttl_ms_)
     {

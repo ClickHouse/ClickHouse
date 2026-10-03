@@ -32,7 +32,7 @@ public:
         return header;
     }
 
-    void write(Block block);
+    void write(const Block & block);
     void onFinish();
 
     /// Send pre-serialized and possibly pre-compressed block of data, that will be read from 'input'.

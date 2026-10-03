@@ -39,7 +39,7 @@ void IQueryPlanStep::updateInputHeader(SharedHeader input_header, size_t idx)
             "Cannot update input header {} for step {} because it has only {} headers",
             idx, getName(), input_headers.size());
 
-    input_headers[idx] = input_header;
+    input_headers[idx] = std::move(input_header);
     updateOutputHeader();
 }
 

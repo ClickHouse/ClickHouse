@@ -96,7 +96,7 @@ public:
         const std::string & query_str_,
         SharedHeader sample_block_,
         const UInt64 max_block_size_)
-        : PostgreSQLSource<T>(tx_, query_str_, sample_block_, max_block_size_, false) {}
+        : PostgreSQLSource<T>(tx_, query_str_, std::move(sample_block_), max_block_size_, false) {}
 };
 
 }

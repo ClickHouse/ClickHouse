@@ -199,7 +199,7 @@ private:
         const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, IColumn::Filter & default_mask) const;
 
     template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, const T value); /// NOLINT
+    void setAttributeValueImpl(Attribute & attribute, const T & value);
 
     void setAttributeValue(Attribute & attribute, const Field & value);
 

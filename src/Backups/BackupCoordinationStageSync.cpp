@@ -86,7 +86,7 @@ void BackupCoordinationStageSync::State::merge(const State & other)
 }
 
 
-void BackupCoordinationStageSync::State::addErrorInfo(std::exception_ptr exception, const String & host)
+void BackupCoordinationStageSync::State::addErrorInfo(const std::exception_ptr & exception, const String & host)
 {
     if (!host_with_error && exception)
     {
@@ -115,7 +115,7 @@ BackupCoordinationStageSync::BackupCoordinationStageSync(
     , allow_concurrency(allow_concurrency_)
     , concurrency_counters(concurrency_counters_)
     , with_retries(with_retries_)
-    , schedule(schedule_)
+    , schedule(std::move(schedule_))
     , process_list_element(process_list_element_)
     , log(log_)
     , failure_after_host_disconnected_for_seconds(with_retries.getKeeperSettings().failure_after_host_disconnected_for_seconds)
@@ -1415,7 +1415,7 @@ void BackupCoordinationStageSync::setError(std::exception_ptr exception, bool th
 {
     try
     {
-        std::rethrow_exception(exception);
+        std::rethrow_exception(std::move(exception));
     }
     catch (const Exception & e)
     {

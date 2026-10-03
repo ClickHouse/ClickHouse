@@ -82,7 +82,7 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
 {
     if (&object_storage_to == this)
     {
-        copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
+        copyObject(object_from, object_to, read_settings, write_settings, std::move(object_to_attributes));
         return;
     }
 

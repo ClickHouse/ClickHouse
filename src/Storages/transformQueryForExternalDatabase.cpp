@@ -783,7 +783,7 @@ bool containsSourceColumn(const ASTPtr & node, const SourceColumnNames & source_
 
 String transformQueryForExternalDatabaseImpl(
     ASTPtr clone_query,
-    Names used_columns,
+    const Names & used_columns,
     const NamesAndTypesList & available_columns,
     IdentifierQuotingStyle identifier_quoting_style,
     LiteralEscapingStyle literal_escaping_style,

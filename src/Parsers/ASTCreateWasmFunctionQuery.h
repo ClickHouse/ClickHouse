@@ -56,7 +56,7 @@ public:
     void setReturnType(ASTPtr ast) { result_type_ast = children.emplace_back(std::move(ast)); }
     void setModuleName(ASTPtr ast) { module_name_ast = children.emplace_back(std::move(ast)); }
     void setModuleHash(ASTPtr ast) { module_hash_ast = children.emplace_back(std::move(ast)); }
-    void setModuleHash(String hash_str);
+    void setModuleHash(const String & hash_str);
     void setSourceFunctionName(ASTPtr ast) { source_function_name_ast = children.emplace_back(std::move(ast)); }
     void setAbi(ASTPtr ast) { abi_ast = children.emplace_back(std::move(ast)); }
     void setSettings(SettingsChanges settings_) { function_settings = std::move(settings_); }

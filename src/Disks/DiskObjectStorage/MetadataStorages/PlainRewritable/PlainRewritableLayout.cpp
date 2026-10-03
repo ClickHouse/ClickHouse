@@ -9,7 +9,7 @@
 namespace DB
 {
 
-PlainRewritableLayout::PlainRewritableLayout(std::string object_storage_common_key_prefix_)
+PlainRewritableLayout::PlainRewritableLayout(const std::string & object_storage_common_key_prefix_)
     : object_storage_common_key_prefix(object_storage_common_key_prefix_)
 {
 }

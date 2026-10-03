@@ -72,7 +72,7 @@ public:
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ContextPtr context_)
-        : ISource(header)
+        : ISource(std::move(header))
         , column_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases_cursor(std::move(databases_))

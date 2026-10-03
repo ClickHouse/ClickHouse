@@ -82,7 +82,7 @@ CachedOnDiskReadBufferFromFile::ReadInfo::ReadInfo(
     ThrottlerPtr local_throttler_)
     : cache_key(cache_key_)
     , source_file_path(source_file_path_)
-    , implementation_buffer_creator(impl_creator_)
+    , implementation_buffer_creator(std::move(impl_creator_))
     , use_external_buffer(use_external_buffer_)
     , cache_settings(cache_settings_)
     , local_fs_buffer_size(local_fs_buffer_size_)
@@ -136,7 +136,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , info(
         cache_key_,
         source_file_path_,
-        implementation_buffer_creator_,
+        std::move(implementation_buffer_creator_),
         use_external_buffer_,
         cache_settings_,
         local_fs_buffer_size_,

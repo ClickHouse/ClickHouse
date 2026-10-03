@@ -228,7 +228,7 @@ private:
 
 
     template <typename HaystackSource>
-    void dispatch(HaystackSource haystack_source, const IColumn * needle_column, PaddedPODArray<UInt8> & res_data) const
+    void dispatch(const HaystackSource & haystack_source, const IColumn * needle_column, PaddedPODArray<UInt8> & res_data) const
     {
         if (const ColumnString * needle = checkAndGetColumn<ColumnString>(needle_column))
             execute<HaystackSource, StringSource>(haystack_source, StringSource(*needle), res_data);
@@ -243,7 +243,7 @@ private:
     }
 
     template <typename HaystackSource>
-    void dispatchUTF8(HaystackSource haystack_source, const IColumn * needle_column, PaddedPODArray<UInt8> & res_data) const
+    void dispatchUTF8(const HaystackSource & haystack_source, const IColumn * needle_column, PaddedPODArray<UInt8> & res_data) const
     {
         if (const ColumnString * needle = checkAndGetColumn<ColumnString>(needle_column))
             execute<HaystackSource, UTF8StringSource>(haystack_source, UTF8StringSource(*needle), res_data);
@@ -254,7 +254,7 @@ private:
     }
 
     template <typename HaystackSource, typename NeedleSource>
-    static void execute(HaystackSource haystack_source, NeedleSource needle_source, PaddedPODArray<UInt8> & res_data)
+    static void execute(const HaystackSource & haystack_source, const NeedleSource & needle_source, PaddedPODArray<UInt8> & res_data)
     {
         if constexpr (is_case_insensitive)
             executeCaseInsensitive(haystack_source, needle_source, res_data);
@@ -315,7 +315,7 @@ private:
 
     template <typename NeedleSource>
     requires is_case_insensitive
-    static CaseInsensitiveComparator constCaseInsensitiveComparatorOf(NeedleSource needle_source)
+    static CaseInsensitiveComparator constCaseInsensitiveComparatorOf(const NeedleSource & needle_source)
     {
         if constexpr (std::is_same_v<NeedleSource, ConstSource<StringSource>> || std::is_same_v<NeedleSource, ConstSource<FixedStringSource>>)
         {

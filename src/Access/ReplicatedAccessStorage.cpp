@@ -32,7 +32,7 @@ ReplicatedAccessStorage::ReplicatedAccessStorage(
     bool throw_on_invalid_entities_)
     : IAccessStorage(storage_name_)
     , memory_storage(storage_name_, changes_notifier_, false)
-    , replicator(storage_name_, zookeeper_path_, get_zookeeper_, changes_notifier_, memory_storage, throw_on_invalid_entities_)
+    , replicator(storage_name_, zookeeper_path_, std::move(get_zookeeper_), changes_notifier_, memory_storage, throw_on_invalid_entities_)
     , backup_allowed(allow_backup_)
 {
     if (zookeeper_path_.empty())

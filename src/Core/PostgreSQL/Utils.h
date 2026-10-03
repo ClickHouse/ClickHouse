@@ -19,7 +19,7 @@ namespace postgres
 {
 
 ConnectionInfo formatConnectionString(
-    String dbname, String host, UInt16 port, String user, String password, UInt64 timeout,
+    const String & dbname, const String & host, UInt16 port, const String & user, const String & password, UInt64 timeout,
     const ConnectionSSLParams & ssl_params = {});
 
 String getConnectionForLog(const String & host, UInt16 port);

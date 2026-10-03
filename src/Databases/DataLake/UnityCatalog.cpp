@@ -26,7 +26,7 @@ namespace DB::ErrorCodes
 
 namespace
 {
-    bool hasValueAndItsNotNone(const std::string value, const Poco::JSON::Object::Ptr & object)
+    bool hasValueAndItsNotNone(const std::string & value, const Poco::JSON::Object::Ptr & object)
     {
         return object->has(value) && !object->isNull(value) && !object->get(value).isEmpty();
     }

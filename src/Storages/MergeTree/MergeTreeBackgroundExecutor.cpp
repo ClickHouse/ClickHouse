@@ -337,7 +337,7 @@ static void printExceptionWithRespectToAbort(LoggerPtr log, const String & query
 }
 
 template <class Queue>
-void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(StorageID id)
+void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(const StorageID & id)
 {
     std::vector<TaskRuntimeDataPtr> tasks_to_cancel;
     std::vector<TaskRuntimeDataPtr> tasks_to_wait;

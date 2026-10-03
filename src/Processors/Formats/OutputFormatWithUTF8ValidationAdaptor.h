@@ -16,7 +16,7 @@ class OutputFormatWithUTF8ValidationAdaptorBase : public Base
 {
 public:
     OutputFormatWithUTF8ValidationAdaptorBase(SharedHeader header, WriteBuffer & out_, bool validate_utf8)
-        : Base(header, out_)
+        : Base(std::move(header), out_)
     {
         bool values_can_contain_invalid_utf8 = false;
         for (const auto & type : this->getPort(IOutputFormat::PortKind::Main).getHeader().getDataTypes())

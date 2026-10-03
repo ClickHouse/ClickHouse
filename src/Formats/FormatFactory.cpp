@@ -1210,7 +1210,7 @@ void FormatFactory::setContentType(const String & name, const String & content_t
 
 void FormatFactory::setContentType(const String & name, ContentTypeGetter content_type)
 {
-    getOrCreateCreators(name).content_type = content_type;
+    getOrCreateCreators(name).content_type = std::move(content_type);
 }
 
 bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const

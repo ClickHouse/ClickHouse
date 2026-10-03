@@ -13,7 +13,7 @@ namespace DB
 
 
 CSVRowOutputFormat::CSVRowOutputFormat(WriteBuffer & out_, SharedHeader header_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
+    : IRowOutputFormat(std::move(header_), out_), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();

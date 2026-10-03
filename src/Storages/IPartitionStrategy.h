@@ -23,7 +23,7 @@ struct IPartitionStrategy
         std::string column_name;
     };
 
-    IPartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_);
+    IPartitionStrategy(const KeyDescription & partition_key_description_, const Block & sample_block_, ContextPtr context_);
 
     virtual ~IPartitionStrategy() = default;
 
@@ -92,7 +92,7 @@ struct PartitionStrategyFactory
  */
 struct WildcardPartitionStrategy : IPartitionStrategy
 {
-    WildcardPartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_);
+    WildcardPartitionStrategy(const KeyDescription & partition_key_description_, const Block & sample_block_, ContextPtr context_);
 
     ColumnPtr computePartitionKey(const Chunk & chunk) const override;
     std::string getPathForRead(const std::string & prefix) override;
@@ -107,7 +107,7 @@ struct WildcardPartitionStrategy : IPartitionStrategy
 struct HiveStylePartitionStrategy : IPartitionStrategy
 {
     HiveStylePartitionStrategy(
-        KeyDescription partition_key_description_,
+        const KeyDescription & partition_key_description_,
         const Block & sample_block_,
         ContextPtr context_,
         const std::string & file_format_,

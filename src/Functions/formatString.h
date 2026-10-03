@@ -40,7 +40,7 @@ struct FormatStringImpl
     /// Precondition: data.size() == offsets.size() == fixed_string_N.size() == constant_strings.size().
     template <bool has_column_string, bool has_column_fixed_string>
     static void format(
-        String pattern,
+        const String & pattern,
         const VectorWithMemoryTracking<const ColumnString::Chars *> & data,
         const VectorWithMemoryTracking<const ColumnString::Offsets *> & offsets,
         [[maybe_unused]] /* Because sometimes !has_column_fixed_string */ const VectorWithMemoryTracking<size_t> & fixed_string_N,

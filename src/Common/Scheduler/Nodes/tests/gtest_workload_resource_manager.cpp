@@ -1290,7 +1290,7 @@ struct TestQuery {
 
     void start(String workload, SlotCount max_threads_, UInt64 runtime_us = UInt64(-1))
     {
-        start(AllocateSlots, workload, max_threads_, runtime_us);
+        start(AllocateSlots, std::move(workload), max_threads_, runtime_us);
     }
 
     void start(AllocationType type, String workload, SlotCount max_threads_, UInt64 runtime_us = UInt64(-1))
@@ -2287,7 +2287,7 @@ struct TestAllocationArray
             approve_order += std::to_string(mem);
     }
 
-    TestAllocationArray & setWorkload(const String & workload, std::vector<size_t> indexes)
+    TestAllocationArray & setWorkload(const String & workload, const std::vector<size_t> & indexes)
     {
         ClassifierPtr c = t.manager->acquire(workload);
         ResourceLink link = c->get(resource);

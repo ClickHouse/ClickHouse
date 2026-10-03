@@ -56,7 +56,7 @@ public:
 
     const ComparisonGraph<ASTPtr> & getGraph() const;
 
-    ConstraintsExpressions getExpressions(ContextPtr context, const NamesAndTypesList & source_columns_) const;
+    ConstraintsExpressions getExpressions(const ContextPtr & context, const NamesAndTypesList & source_columns_) const;
 
     /// Rejects a constraint expression that changes the number of rows. `CheckConstraintsTransform` reads
     /// the constraint's result column by block row, so an `arrayJoin` inside it makes a row be checked

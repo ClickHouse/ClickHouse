@@ -63,7 +63,7 @@ public:
 
         const std::string hash;
 
-        Data(std::string cert_path, std::string key_path, std::string pass_phrase);
+        Data(const std::string & cert_path, const std::string & key_path, const std::string & pass_phrase);
         Data(KeyPair pkey, X509Certificate::List certs_chain, std::string hash);
     };
 

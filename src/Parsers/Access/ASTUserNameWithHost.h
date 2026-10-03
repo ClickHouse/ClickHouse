@@ -26,7 +26,7 @@ public:
 
     String getID(char) const override { return "UserNameWithHost"; }
     ASTPtr clone() const override;
-    void replace(String name_);
+    void replace(const String & name_);
 
     void writeJSON(WriteBuffer & out) const override;
     void readJSON(const Poco::JSON::Object & json) override;

@@ -295,7 +295,7 @@ PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & s
     return PaimonSnapshot(snapshot_json);
 }
 
-std::pair<std::vector<PaimonManifestFileMeta>, size_t> PaimonTableClient::getManifestMeta(String manifest_list_path, bool disable_filesystem_cache)
+std::pair<std::vector<PaimonManifestFileMeta>, size_t> PaimonTableClient::getManifestMeta(const String & manifest_list_path, bool disable_filesystem_cache)
 {
     /// read manifest list file
     Paimon::checkPathIsRelativeToTable(manifest_list_path, "manifest list");

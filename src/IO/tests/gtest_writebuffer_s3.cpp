@@ -288,7 +288,7 @@ struct Client : DB::S3::Client
     {}
 
     static std::shared_ptr<Client> CreateClient(
-        String bucket = "mock-s3-bucket",
+        const String & bucket = "mock-s3-bucket",
         bool is_s3express_bucket = false,
         std::string_view endpoint = {})
     {
@@ -943,7 +943,7 @@ public:
     }
 
     std::unique_ptr<WriteBufferFromS3> getWriteBuffer(
-        String file_name = "file",
+        const String & file_name = "file",
         const WriteSettings & write_settings = {},
         std::optional<ObjectAttributes> object_metadata = std::nullopt)
     {
@@ -2681,7 +2681,7 @@ TEST_P(SyncAsync, StrictUploadPartSize) {
     }
 }
 
-[[maybe_unused]] static String fillStringWithPattern(String pattern, int n)
+[[maybe_unused]] static String fillStringWithPattern(const String & pattern, int n)
 {
     String data;
     for (int i = 0; i < n; ++i)

@@ -64,7 +64,7 @@ static ActionsDAG makeReorderingActions(const Block & in_header, const GroupingS
 MergingAggregatedTransform::~MergingAggregatedTransform() = default;
 
 MergingAggregatedTransform::MergingAggregatedTransform(
-    SharedHeader header_, Aggregator::Params params, bool final, GroupingSetsParamsList grouping_sets_params, size_t output_streams_)
+    SharedHeader header_, const Aggregator::Params & params, bool final, const GroupingSetsParamsList & grouping_sets_params, size_t output_streams_)
     : IAccumulatingTransform(header_, std::make_shared<const Block>(appendGroupingIfNeeded(*header_, params.getHeader(*header_, final))))
     , output_streams(output_streams_)
 {
@@ -111,7 +111,7 @@ MergingAggregatedTransform::MergingAggregatedTransform(
     else
     {
         auto & groupiung_set = grouping_sets.emplace_back();
-        groupiung_set.params = std::make_shared<AggregatingTransformParams>(header_, std::move(params), final);
+        groupiung_set.params = std::make_shared<AggregatingTransformParams>(header_, params, final);
     }
 }
 

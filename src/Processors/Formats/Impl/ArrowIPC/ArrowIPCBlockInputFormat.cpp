@@ -98,7 +98,7 @@ bool dictionaryValueTypesEqual(const ArrowIPC::ArrowType & a, const ArrowIPC::Ar
 
 ArrowIPCBlockInputFormat::ArrowIPCBlockInputFormat(
     ReadBuffer & in_, SharedHeader header_, bool stream_, size_t max_block_size_, const FormatSettings & format_settings_)
-    : IInputFormat(header_, &in_)
+    : IInputFormat(std::move(header_), &in_)
     , stream(stream_)
     , max_block_size(max_block_size_)
     , block_missing_values(getPort().getHeader().columns())
