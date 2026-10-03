@@ -1,0 +1,15 @@
+plan	1
+point side line	1
+swapped line	1
+left not swapped	0
+column order
+2	29	29	0	29
+2	29	29	20	29
+2	29	29	40	29
+>= <=	1	1	8000
+> <=	1	1	5720
+>= <	1	1	3600
+> <	1	1	1780
+reversed spelling	1
+between	1
+orientation parity	1

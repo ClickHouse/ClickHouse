@@ -683,7 +683,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
 
 ## JOIN with inequality conditions for columns from different tables {#join-with-inequality-conditions-for-columns-from-different-tables}
 
-ClickHouse currently supports `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` with inequality conditions in addition to equality conditions. The inequality conditions are supported only for `hash`, `parallel_hash` and `grace_hash` join algorithms. A non equi condition that is evaluated during the join may not contain `arrayJoin`, because such a condition must preserve the number of rows; a condition that applies to one side only, and an equality key over `arrayJoin`, are extracted before the join and are unaffected; a non-disjunctive `ALL INNER JOIN` condition is also unaffected, because there the condition is applied after the join instead. Where the expansion depends on one side only, move it into an `ARRAY JOIN` in a subquery before the join; a condition whose `arrayJoin` argument reads columns from both sides has to be restructured.
+ClickHouse currently supports `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` with inequality conditions in addition to equality conditions. The inequality conditions are supported only for `hash`, `parallel_hash` and `grace_hash` join algorithms. A non equi condition that is evaluated during the join may not contain `arrayJoin`, because such a condition must preserve the number of rows; a condition that applies to one side only, and an equality key over `arrayJoin`, are extracted before the join and are unaffected; a non-disjunctive `ALL INNER JOIN` condition is also unaffected, because there the condition is applied after the join instead. Where the expansion depends on one side only, move it into an `ARRAY JOIN` in a subquery before the join; a condition whose `arrayJoin` argument reads columns from both sides has to be restructured. A `JOIN` whose `ON` section has two inequality comparisons between the tables can also be executed by the IEJoin algorithm — see [JOIN with only inequality conditions](#join-with-only-inequality-conditions).
 
 **Example**
 
@@ -729,6 +729,40 @@ key1    d    4    7    2            0    0    \N
 key1    e    5    5    5            0    0    \N
 key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
+```
+
+## JOIN with only inequality conditions {#join-with-only-inequality-conditions}
+
+A `JOIN` whose `ON` section has two inequality comparisons (`<`, `<=`, `>`, `>=`) between expressions of the joined tables can be executed with the sort-based IEJoin algorithm when `ie_join` is added to the [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) setting. Supported kinds are `ALL INNER/LEFT/RIGHT/FULL JOIN` and `SEMI`/`ANTI` `LEFT/RIGHT JOIN`; the join appears as an `IEJoin` step in `EXPLAIN`.
+
+The position of `ie_join` in the list sets its priority. Listed after other algorithms, IEJoin is used only when they do not apply, that is, when the `ON` section has no equality conditions. Listed first, it takes any join with two inequality conditions. The remaining conditions of the `ON` section (including equalities) are applied as a filter over the join result for `ALL INNER JOIN`, and for the other kinds they are evaluated inside the operator as a residual condition: a pair of rows matches only when it also passes them, and rows without any matching pair are emitted as unmatched. Without `ie_join` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other kinds are not supported.
+
+IEJoin accumulates both inputs in memory before joining: [`max_rows_in_join`](/reference/settings/session-settings/max-rows#max_rows_in_join) and [`max_bytes_in_join`](/reference/settings/session-settings/max-bytes#max_bytes_in_join) limit the accumulated input of both sides together, with the action on overflow set by [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode). The join operator itself runs in a single thread; only the pre-join sorts of the inputs are parallelized.
+
+An input carrying totals (`GROUP BY ... WITH TOTALS`) is not supported: once IEJoin claims the join, such a query fails instead of falling through to a later algorithm of the list.
+
+**Example**
+
+```sql
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
+SELECT t1.*, t2.* FROM t1 JOIN t2 ON t1.a < t2.a AND t1.b > t2.b;
+```
+
+## Band JOIN {#band-join}
+
+A special case of the inequality join is the band shape: the two inequality conditions bracket one expression of one table (the point side) between two expressions of the other table (the interval side) — `p.t >= i.lo AND p.t <= i.hi` with any mix of strict and loose bounds (`BETWEEN` desugars to this shape). Such a join can be executed with the dedicated band join algorithm when `band_join` is added to the [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) setting; the join appears as a `BandJoin` step in `EXPLAIN`.
+
+Supported kinds are the ones that keep unmatched rows of the point side only: `ALL INNER JOIN` with the point side as either table, and `ALL`/`SEMI`/`ANTI` `LEFT JOIN` (`RIGHT JOIN`) when the point side is the left (right) table. Other shapes and kinds fall through to the algorithms listed after `band_join` — for example, with `join_algorithm = 'band_join,ie_join'` a `FULL JOIN` with two inequality conditions is executed by IEJoin.
+
+The position of `band_join` in the list sets its priority the same way as for `ie_join`, and the remaining conditions of the `ON` section are handled the same way: applied as a filter over the join result for `ALL INNER JOIN`, evaluated inside the operator as a residual condition for the other kinds.
+
+Unlike IEJoin, only the interval side is accumulated in memory (sorted by the lower bound); the point side streams block-by-block, needs no sort or pipeline barrier, and is probed by binary search in parallel. [`max_rows_in_join`](/reference/settings/session-settings/max-rows#max_rows_in_join) and [`max_bytes_in_join`](/reference/settings/session-settings/max-bytes#max_bytes_in_join) therefore limit the accumulated interval side only, with the action on overflow set by [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode). As with IEJoin, an input carrying totals (`GROUP BY ... WITH TOTALS`) is not supported: once the band join claims the join, such a query fails instead of falling through to a later algorithm of the list.
+
+**Example**
+
+```sql
+SET join_algorithm = 'direct,parallel_hash,hash,band_join,ie_join';
+SELECT p.*, i.* FROM points AS p JOIN intervals AS i ON p.t >= i.lo AND p.t < i.hi;
 ```
 
 ## NULL and NaN values in JOIN keys {#null-values-in-join-keys}

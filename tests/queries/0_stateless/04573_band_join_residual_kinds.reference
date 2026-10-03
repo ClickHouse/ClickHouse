@@ -1,0 +1,16 @@
+left plan	1	1
+semi plan	1	1
+anti plan	1	1
+swapped plan	1	1
+left >= <=	1	1
+left > <	1	1
+semi >= <=	1	1
+semi > <	1	1
+anti >= <=	1	1
+anti > <	1	1
+right >= <=	1	1
+right semi >= <=	1	1
+right anti >= <=	1	1
+point-only residual	1	1
+left use_nulls parity	1
+left caps	1

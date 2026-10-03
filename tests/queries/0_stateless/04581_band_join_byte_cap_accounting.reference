@@ -1,0 +1,7 @@
+plan	1
+fat rows byte cap	1	180900	1
+residual byte cap	1	180900	1
+anti padded byte cap	1	100000
+residual cap parity	1
+fragmented index vs oracle	1
+fragmented residual vs oracle	1

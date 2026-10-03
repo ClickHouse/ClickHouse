@@ -4068,8 +4068,11 @@ When enabled, ClickHouse will provide exact value for rows_before_aggregation st
 )", 0, \
         {"24.8", false, false, "Provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation"}) \
     DECLARE(UInt64, max_rows_in_join, 0, R"(
-Limits the number of rows in the right-side data structure (typically a hash
-table) used when joining tables.
+Limits the number of rows in the data structure a join accumulates in memory.
+Which data that is depends on the algorithm: a hash table over the right-side
+table for the hash family, both accumulated inputs for `ie_join`, the
+accumulated interval side for `band_join` — see
+[`join_algorithm`](/operations/settings/settings#join_algorithm).
 
 This setting applies to [SELECT ... JOIN](/reference/statements/select/join)
 operations and the [Join](/reference/engines/table-engines/special/join) table engine.
@@ -4091,8 +4094,11 @@ Possible values:
 - `0` — Unlimited number of rows.
 )", 0) \
     DECLARE(UInt64, max_bytes_in_join, 0, R"(
-The maximum size in bytes of the right-side data structure (typically a hash
-table) used when joining tables.
+The maximum size in bytes of the data structure a join accumulates in memory.
+Which data that is depends on the algorithm: a hash table over the right-side
+table for the hash family, both accumulated inputs for `ie_join`, the
+accumulated interval side for `band_join` — see
+[`join_algorithm`](/operations/settings/settings#join_algorithm).
 
 This setting applies to [SELECT ... JOIN](/reference/statements/select/join)
 operations and the [Join table engine](/reference/engines/table-engines/special/join).
@@ -4132,7 +4138,8 @@ value honors this setting, including the ones that spill to disk: reaching the
 limit stops the query rather than triggering a spill. The exception is
 `legacy_join_size_limits_trigger_spilling`: with it on, the part of a join that
 already runs on disk spills further instead of acting on this setting.
-`ie_join` honors it as well, on the input it accumulates from both sides. `partial_merge` still
+`ie_join` honors it as well, on the input it accumulates from both sides, and `band_join` on the
+interval side it accumulates. `partial_merge` still
 handles the limits by switching strategy — see
 [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm).
 
@@ -4238,7 +4245,13 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
 
  The position in the list sets the priority: listed after other algorithms, as in the default value, IEJoin is used only when they do not apply (the `ON` section has no equality conditions); listed first, it is used whenever the `ON` section has two inequality conditions. The remaining conditions (including equalities) are applied as a filter over the join result for `ALL INNER JOIN`, and evaluated inside the operator as a residual condition affecting matching for the other kinds. When the `ON` section has more than two eligible inequality conditions, the two used by the algorithm are chosen by their estimated selectivity from the column min/max statistics (see the `basic` type in [Column statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)); when the estimates are unavailable (no statistics, or [`use_statistics`](#use_statistics) is disabled), the first two in syntax order are used. Without `ie_join` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other kinds are not supported.
 
- Both inputs are accumulated in memory before joining: [`max_rows_in_join`](/reference/settings/session-settings#max_rows_in_join) and [`max_bytes_in_join`](/reference/settings/session-settings#max_bytes_in_join) limit the accumulated input of both sides together (not just the right side), with the action on overflow set by [`join_overflow_mode`](/reference/settings/session-settings#join_overflow_mode); the sort indexes the operator builds on top of the accumulated input are not counted against the limit. The join operator itself runs in a single thread; only the pre-join sorts of the inputs are parallelized.
+ Both inputs are accumulated in memory before joining: [`max_rows_in_join`](/reference/settings/session-settings#max_rows_in_join) and [`max_bytes_in_join`](/reference/settings/session-settings#max_bytes_in_join) limit the accumulated input of both sides together (not just the right side), with the action on overflow set by [`join_overflow_mode`](/reference/settings/session-settings#join_overflow_mode); the sort indexes the operator builds on top of the accumulated input are not counted against the limit. The join operator itself runs in a single thread; only the pre-join sorts of the inputs are parallelized. An input carrying totals (`GROUP BY ... WITH TOTALS`) is not supported: the query fails instead of falling through to a later algorithm.
+
+- band_join
+
+ A specialization for the band shape of the inequality join: the `ON` section brackets one expression of one table (the point side) between two expressions of the other table (the interval side) — `t >= lo AND t <= hi` with any mix of strict and loose bounds (`BETWEEN` desugars to it). Only the interval side is accumulated in memory (sorted by the lower bound); the point side streams block-by-block and is probed by binary search, in parallel. Supports `ALL INNER JOIN` with the point side as either table, and `ALL`/`SEMI`/`ANTI` `LEFT JOIN` (`RIGHT JOIN`) when the point side is the left (right) table; other shapes and kinds fall through to the algorithms listed after it (e.g. `ie_join`).
+
+ The position in the list sets the priority the same way as for `ie_join`, and the remaining `ON` conditions (including equalities) are handled the same way: applied as a filter over the join result for `ALL INNER JOIN`, evaluated inside the operator as a residual condition for the other kinds. [`max_rows_in_join`](/reference/settings/session-settings#max_rows_in_join) and [`max_bytes_in_join`](/reference/settings/session-settings#max_bytes_in_join) limit the accumulated interval side only. As with `ie_join`, an input carrying totals (`GROUP BY ... WITH TOTALS`) is not supported: the query fails instead of falling through to a later algorithm.
 
 - parallel_full_sorting_merge
 
@@ -4263,6 +4276,7 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
 
 )", 0, \
         {"26.8", "direct,parallel_hash,hash", "direct,parallel_hash,hash,ie_join", "Appended `ie_join` to the default list, so a join whose `ON` section has only inequality conditions is executed with IEJoin instead of a `CROSS JOIN` with a filter. Being last, it is used only when the other algorithms do not apply."}, \
+        {"26.7", "direct,parallel_hash,hash", "direct,parallel_hash,hash", "New values 'ie_join' and 'band_join' (not enabled by default): 'ie_join' executes a JOIN with two inequality conditions in the ON section with the IEJoin algorithm (ALL INNER/LEFT/RIGHT/FULL and SEMI/ANTI LEFT/RIGHT kinds); 'band_join' executes the band shape (one expression bracketed between two expressions of the other table) with a streaming operator that materializes only the interval side."}, \
         {"24.12", "default", "direct,parallel_hash,hash", "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash"}) \
     DECLARE(UInt64, cross_to_inner_join_rewrite, 1, R"(
 Use inner join instead of comma/cross join if there are joining expressions in the WHERE section. Values: 0 - no rewrite, 1 - apply if possible for comma/cross, 2 - force rewrite all comma joins, cross - if possible

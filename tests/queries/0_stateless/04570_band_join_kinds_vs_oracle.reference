@@ -1,0 +1,21 @@
+left plan	1
+semi plan	1
+anti plan	1
+left >= <=	1	1
+left > <=	1	1
+left >= <	1	1
+left > <	1	1
+semi >= <=	1	1
+semi > <=	1	1
+semi >= <	1	1
+semi > <	1	1
+anti >= <=	1	1
+anti > <=	1	1
+anti >= <	1	1
+anti > <	1	1
+null keys	11	11	11	0
+empty left	400	400
+empty anti	400
+empty semi	0
+left caps	1
+anti caps	1

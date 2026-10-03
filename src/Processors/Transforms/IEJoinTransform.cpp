@@ -1,21 +1,16 @@
 #include <algorithm>
 #include <bit>
 #include <optional>
-#include <type_traits>
 
 #include <base/defines.h>
 #include <base/sort.h>
 
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Common/assert_cast.h>
 #include <Processors/Transforms/IEJoinTransform.h>
+#include <Processors/Transforms/JoinKeyEncoding.h>
 #include <Common/NaNUtils.h>
 #include <Common/iota.h>
 
@@ -35,99 +30,6 @@ static bool isInequalityOperator(JoinConditionOperator op)
         || op == JoinConditionOperator::Greater || op == JoinConditionOperator::GreaterOrEquals;
 }
 
-namespace
-{
-
-/// The fixed-width key fast path encodes a condition's key values once into UInt64 values whose
-/// unsigned order reproduces the column's `compareAt(..., nan_direction_hint = 1)` order exactly,
-/// including equality (the L1 merge tie policy and the frontier's non-strict comparisons depend
-/// on it). The hot loops then compare plain integers instead of calling the virtual comparator.
-
-/// Everything whose order is its underlying signed integer's order (signed integers, Date32,
-/// DateTime64, Decimal32/64, Enum8/16): offset the sign bit so the unsigned order matches.
-UInt64 encodeSignedKey(Int64 value)
-{
-    return static_cast<UInt64>(value) ^ (UInt64(1) << 63);
-}
-
-/// `compareAt` with nan_direction_hint = 1 treats every NaN, of either sign, as equal to other
-/// NaNs and greater than all numbers, and -0.0 as equal to +0.0. The plain total-order bit trick
-/// preserves neither (a negative NaN would sort below -inf), so every NaN maps to the greatest
-/// encoding and -0.0 is canonicalized to +0.0 before the trick. (NaN-keyed rows never enter the
-/// union - the validity mask in `materializeSide` excludes them - so the NaN mapping is defensive.)
-UInt64 encodeFloatKey(Float64 value)
-{
-    if (isNaN(value))
-        return ~UInt64(0);
-    UInt64 bits = std::bit_cast<UInt64>(value == 0.0 ? 0.0 : value);
-    return bits & (UInt64(1) << 63) ? ~bits : bits | (UInt64(1) << 63);
-}
-
-UInt64 encodeFloatKey(Float32 value)
-{
-    if (isNaN(value))
-        return ~UInt64(0);
-    UInt32 bits = std::bit_cast<UInt32>(value == 0.0f ? 0.0f : value);
-    return bits & (UInt32(1) << 31) ? ~bits : bits | (UInt32(1) << 31);
-}
-
-template <typename T>
-UInt64 encodeKeyValue(T value)
-{
-    if constexpr (std::is_floating_point_v<T>)
-        return encodeFloatKey(value);
-    else if constexpr (is_decimal<T>)
-        return encodeSignedKey(value.value);
-    else if constexpr (std::is_signed_v<T>)
-        return encodeSignedKey(value);
-    else
-        return static_cast<UInt64>(value);
-}
-
-/// Append the column's keys, encoded and XOR-ed with `flip_mask` (all-ones folds a descending
-/// sort direction into the unsigned order). The dispatch is on the column type: the order the
-/// encoding must reproduce is the column's own `compareAt`, so it covers exactly the types
-/// stored in these columns (integers, Date/DateTime/Enum/Bool over them, floats, Decimal32/64,
-/// DateTime64). Nullable encodes its nested column: rows with NULL keys never enter the union,
-/// so their cells are never read and need no sentinel. Returns false when the column has no
-/// fixed-width encoding (the caller then keeps the generic comparator).
-bool tryAppendEncodedKeys(const IColumn & column, UInt64 flip_mask, PaddedPODArray<UInt64> & out)
-{
-    const IColumn * data_column = &column;
-    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(data_column))
-        data_column = &nullable->getNestedColumn();
-
-    auto try_column_type = [&]<typename ColumnType>()
-    {
-        const auto * concrete = checkAndGetColumn<ColumnType>(data_column);
-        if (!concrete)
-            return false;
-
-        const auto & data = concrete->getData();
-        const size_t old_size = out.size();
-        out.resize(old_size + data.size());
-        for (size_t i = 0; i < data.size(); ++i)
-            out[old_size + i] = encodeKeyValue(data[i]) ^ flip_mask;
-        return true;
-    };
-
-    return try_column_type.operator()<ColumnUInt8>()
-        || try_column_type.operator()<ColumnUInt16>()
-        || try_column_type.operator()<ColumnUInt32>()
-        || try_column_type.operator()<ColumnUInt64>()
-        || try_column_type.operator()<ColumnInt8>()
-        || try_column_type.operator()<ColumnInt16>()
-        || try_column_type.operator()<ColumnInt32>()
-        || try_column_type.operator()<ColumnInt64>()
-        || try_column_type.operator()<ColumnFloat32>()
-        || try_column_type.operator()<ColumnFloat64>()
-        || try_column_type.operator()<ColumnDecimal<Decimal32>>()
-        || try_column_type.operator()<ColumnDecimal<Decimal64>>()
-        || try_column_type.operator()<ColumnDecimal<DateTime64>>();
-}
-
-}
-
 const char * toString(IEJoinKind kind)
 {
     switch (kind)
@@ -144,7 +46,7 @@ const char * toString(IEJoinKind kind)
 IEJoinAlgorithm::IEJoinAlgorithm(
     IEJoinKind kind_,
     const IEJoinConditions & conditions_,
-    std::optional<IEJoinResidualCondition> residual_,
+    std::optional<JoinResidualCondition> residual_,
     bool inputs_sorted_by_first_key_,
     const SharedHeaders & input_headers_,
     const SizeLimits & size_limits_,
@@ -155,7 +57,6 @@ IEJoinAlgorithm::IEJoinAlgorithm(
     , max_block_bytes(max_block_bytes_)
     , kind(kind_)
     , conditions(conditions_)
-    , residual(std::move(residual_))
     , inputs_sorted_by_first_key(inputs_sorted_by_first_key_)
     , size_limits(size_limits_)
 {
@@ -187,35 +88,8 @@ IEJoinAlgorithm::IEJoinAlgorithm(
         key_order[key_index].strict
             = conditions[key_index].op == JoinConditionOperator::Less || conditions[key_index].op == JoinConditionOperator::Greater;
 
-    if (residual)
-    {
-        const auto & sample = residual->actions->getSampleBlock();
-        if (sample.columns() != 1 || !sample.getByPosition(0).type->canBeUsedInBooleanContext())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition must have a single boolean output, got {}",
-                sample.dumpStructure());
-
-        const auto & required_columns = residual->actions->getRequiredColumnsWithTypes();
-        if (residual->inputs.size() != required_columns.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition requires {} columns, {} sources given",
-                required_columns.size(), residual->inputs.size());
-
-        size_t i = 0;
-        for (const auto & required_column : required_columns)
-        {
-            const auto & source = residual->inputs[i++];
-            if (source.side >= 2 || source.position >= input_headers[source.side]->columns())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition source ({}, {}) is out of range",
-                    source.side, source.position);
-
-            const auto & input_column = input_headers[source.side]->getByPosition(source.position);
-            if (!input_column.type->equals(*required_column.type))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition input {} has type {}, expected {}",
-                    required_column.name, input_column.type->getName(), required_column.type->getName());
-
-            residual_input_header.insert(ColumnWithTypeAndName(nullptr, required_column.type, required_column.name));
-        }
-        residual_input_positions = residual->actions->getInputPositions(residual_input_header);
-    }
+    if (residual_)
+        residual.emplace(std::move(*residual_), *input_headers[0], *input_headers[1]);
 }
 
 void IEJoinAlgorithm::initialize(Inputs inputs)
@@ -243,6 +117,13 @@ void IEJoinAlgorithm::consume(Input & input, size_t source_num)
 
     removeConstAndSparse(input);
 
+    /// Both inputs are materialized entirely, so the join size limits apply to their total.
+    /// Append-then-check, like `HashJoin`: the soft check fails at >=, so with
+    /// `join_overflow_mode = 'break'` the chunk that reaches the limit is kept and the rest
+    /// of both inputs is dropped.
+    if (size_limit_reached)
+        return;
+
     stat.num_blocks[source_num] += 1;
     stat.num_rows[source_num] += input.chunk.getNumRows();
     stat.num_bytes[source_num] += input.chunk.allocatedBytes();
@@ -265,6 +146,7 @@ void IEJoinAlgorithm::consume(Input & input, size_t source_num)
             stat.num_bytes[0] + stat.num_bytes[1],
             "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
     {
+        size_limit_reached = true;
         source_finished[0] = true;
         source_finished[1] = true;
     }
@@ -1132,41 +1014,11 @@ IColumn::Filter IEJoinAlgorithm::evaluateResidualMask(const ColumnUInt64 & left_
     produce_work += num_pairs;
 
     Columns expression_columns;
-    expression_columns.reserve(residual->inputs.size());
-    for (const auto & source : residual->inputs)
+    expression_columns.reserve(residual->sources().size());
+    for (const auto & source : residual->sources())
         expression_columns.push_back(side_columns[source.side][source.position]->index(source.side == 0 ? left_rows : right_rows, 0));
 
-    /// The mask is indexed by candidate pair, so the residual must return one row per pair.
-    /// `executeOnColumns` reports the count its actions produced through the same reference, so
-    /// comparing it is a backstop against a row-count-changing action; it compares totals only.
-    size_t num_rows_after_execute = num_pairs;
-    Columns results = residual->actions->executeOnColumns(
-        std::move(expression_columns), residual_input_header, residual_input_positions, num_rows_after_execute);
-    if (num_rows_after_execute != num_pairs)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Residual condition of IEJoin returned {} rows for {} candidate pairs",
-            num_rows_after_execute,
-            num_pairs);
-    }
-    ColumnPtr result = results.at(0)->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
-
-    IColumn::Filter mask(num_pairs);
-    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(result.get()))
-    {
-        const auto & null_map = nullable->getNullMapData();
-        const auto & values = assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
-        for (size_t row = 0; row < num_pairs; ++row)
-            mask[row] = !null_map[row] && values[row];
-    }
-    else
-    {
-        const auto & values = assert_cast<const ColumnUInt8 &>(*result).getData();
-        for (size_t row = 0; row < num_pairs; ++row)
-            mask[row] = values[row] ? 1 : 0;
-    }
-    return mask;
+    return residual->evaluateMask(std::move(expression_columns), num_pairs);
 }
 
 void IEJoinAlgorithm::appendPadded(Chunk & chunk, size_t side, size_t num_rows) const
@@ -1251,7 +1103,7 @@ IMergingAlgorithm::MergedStats IEJoinAlgorithm::getMergedStats() const
 IEJoinTransform::IEJoinTransform(
     IEJoinKind kind,
     const IEJoinConditions & conditions,
-    std::optional<IEJoinResidualCondition> residual,
+    std::optional<JoinResidualCondition> residual,
     bool inputs_sorted_by_first_key,
     SharedHeaders & input_headers,
     SharedHeader output_header,
