@@ -86,6 +86,8 @@ public:
 
     std::optional<size_t> totalBytes(ContextPtr) const override;
 
+    std::optional<String> getRefreshCursor(ContextPtr context) const override;
+
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,

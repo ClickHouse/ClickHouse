@@ -1,0 +1,11 @@
+round1	5	5
+plain insert	6	6
+round2	11	11
+round3	11	11
+writer features	['domainMetadata']
+1	1
+2	0
+3	1
+4	1
+no domainMetadata feature: refresh failed
+no domainMetadata feature	0
