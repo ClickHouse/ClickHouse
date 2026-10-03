@@ -28,24 +28,6 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 
-## query_plan_aggregation_in_order {#query_plan_aggregation_in_order}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "22.12"},{"label": "1"},{"label": "Enable some refactoring around query plan"}]}]}/>
-
-Toggles the aggregation in-order query-plan-level optimization.
-Only takes effect if setting [`query_plan_enable_optimizations`](/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) is 1.
-
-<Note>
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-</Note>
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-
 ## query_plan_convert_any_join_to_semi_or_anti_join {#query_plan_convert_any_join_to_semi_or_anti_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -69,6 +51,14 @@ Allow to convert `JOIN` to subquery with `IN` if output columns tied to only lef
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "1"},{"label": "Allow to convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values"}]}]}/>
 
 Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filters default values
+
+## query_plan_convert_outer_join_to_inner_join_transitively {#query_plan_convert_outer_join_to_inner_join_transitively}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to extend `query_plan_convert_outer_join_to_inner_join` to consider a filter further up the plan and conditions of an enclosing `JOIN`. Only has an effect when `query_plan_convert_outer_join_to_inner_join` is enabled."}]}]}/>
+
+Extend `query_plan_convert_outer_join_to_inner_join` to consider a filter further up the plan and conditions of an enclosing `JOIN`. Only has an effect when `query_plan_convert_outer_join_to_inner_join` is enabled.
 
 ## query_plan_direct_read_from_text_index {#query_plan_direct_read_from_text_index}
 
@@ -129,6 +119,25 @@ Possible values:
 
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) is 1.
+
+<Note>
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+</Note>
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+## query_plan_filter_push_down_below_limit_by {#query_plan_filter_push_down_below_limit_by}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New setting to control pushing a filter on the `LIMIT BY` key columns below the `LIMIT BY` step. Set it to false to keep the filter above the `LIMIT BY`."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to control pushing a filter on the `LIMIT BY` key columns below the `LIMIT BY` step. Set it to false to keep the filter above the `LIMIT BY`."}]}]}/>
+
+Toggles pushing filters on `LIMIT BY` key columns below the `LIMIT BY` step.
+Only takes effect if setting [query_plan_enable_optimizations](/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) is 1.
+It is read independently of [query_plan_filter_push_down](/reference/settings/session-settings/query-plan#query_plan_filter_push_down): the push-down pass also runs, with that setting off, once a `JOIN` runtime filter has been added.
 
 <Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
@@ -422,14 +431,6 @@ Use lazy materialization optimization for reading local Parquet files with the `
 
 Use lazy materialization optimization for reading Parquet files from object storage (including Iceberg tables): for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
 
-## query_plan_optimize_prewhere {#query_plan_optimize_prewhere}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Allow to push down filter to PREWHERE expression for supported storages"}]}]}/>
-
-Allow to push down filter to PREWHERE expression for supported storages
-
 ## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -491,22 +492,6 @@ Possible values:
 Toggles a query-plan-level optimization for `ORDER BY ... LIMIT BY` queries. When `LIMIT BY` columns are a prefix of the `ORDER BY` clause, each parallel sorted stream applies `LIMIT BY` before the streams are merged into one, reducing rows processed by the final merge and later pipeline stages. Speeds up queries where `LIMIT BY` discards a large fraction of rows.
 
 Only takes effect if setting [query_plan_enable_optimizations](/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) is 1.
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-
-## query_plan_read_in_order {#query_plan_read_in_order}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-Toggles the read in-order optimization query-plan-level optimization.
-Only takes effect if setting [`query_plan_enable_optimizations`](/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) is 1.
-
-<Note>
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-</Note>
 
 Possible values:
 
