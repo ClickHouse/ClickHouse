@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "routes": {
+    "ALTER DATABASE ... MODIFY COMMENT": [
+      "/docs/reference/statements/alter/database-comment",
+      "/docs/sql-reference/statements/alter/database-comment"
+    ],
+    "ALTER TABLE ... APPLY DELETED MASK": [
+      "/docs/reference/statements/alter/apply-deleted-mask",
+      "/docs/sql-reference/statements/alter/apply-deleted-mask"
+    ],
+    "ALTER TABLE ... APPLY PATCHES": [
+      "/docs/reference/statements/alter/apply-patches",
+      "/docs/sql-reference/statements/alter/apply-patches"
+    ],
+    "ALTER TABLE ... COLUMN": [
+      "/docs/reference/statements/alter/column",
+      "/docs/sql-reference/statements/alter/column"
+    ],
+    "ALTER TABLE ... CONSTRAINT": [
+      "/docs/reference/statements/alter/constraint",
+      "/docs/sql-reference/statements/alter/constraint"
+    ],
+    "ALTER TABLE ... DELETE": [
+      "/docs/reference/statements/alter/delete",
+      "/docs/sql-reference/statements/alter/delete"
+    ],
+    "ALTER TABLE ... INDEX": [
+      "/docs/reference/statements/alter/skipping-index",
+      "/docs/sql-reference/statements/alter/skipping-index"
+    ],
+    "ALTER TABLE ... MODIFY COMMENT": [
+      "/docs/reference/statements/alter/comment",
+      "/docs/sql-reference/statements/alter/comment"
+    ],
+    "ALTER TABLE ... MODIFY ORDER BY": [
+      "/docs/reference/statements/alter/order-by",
+      "/docs/sql-reference/statements/alter/order-by"
+    ],
+    "ALTER TABLE ... MODIFY QUERY": [
+      "/docs/reference/statements/alter/view",
+      "/docs/sql-reference/statements/alter/view"
+    ],
+    "ALTER TABLE ... MODIFY SAMPLE BY": [
+      "/docs/reference/statements/alter/sample-by",
+      "/docs/sql-reference/statements/alter/sample-by"
+    ],
+    "ALTER TABLE ... MODIFY SETTING": [
+      "/docs/reference/statements/alter/setting",
+      "/docs/sql-reference/statements/alter/setting"
+    ],
+    "ALTER TABLE ... MODIFY TTL": [
+      "/docs/reference/statements/alter/ttl",
+      "/docs/sql-reference/statements/alter/ttl"
+    ],
+    "ALTER TABLE ... PARTITION": [
+      "/docs/reference/statements/alter/partition",
+      "/docs/sql-reference/statements/alter/partition"
+    ],
+    "ALTER TABLE ... PROJECTION": [
+      "/docs/reference/statements/alter/projection",
+      "/docs/sql-reference/statements/alter/projection"
+    ],
+    "ALTER TABLE ... STATISTICS": [
+      "/docs/reference/statements/alter/statistics",
+      "/docs/sql-reference/statements/alter/statistics"
+    ],
+    "ALTER TABLE ... UPDATE": [
+      "/docs/reference/statements/alter/update",
+      "/docs/sql-reference/statements/alter/update"
+    ],
+    "APPLY modifier": [
+      "/docs/reference/statements/select/apply_modifier"
+    ],
+    "EXCEPT modifier": [
+      "/docs/reference/statements/select/except_modifier"
+    ],
+    "EXECUTE AS": [
+      "/docs/reference/statements/execute_as",
+      "/docs/sql-reference/statements/execute_as"
+    ],
+    "IN": [
+      "/docs/sql-reference/operators/in"
+    ],
+    "OFFSET FETCH": [
+      "/docs/reference/statements/select/offset",
+      "/docs/sql-reference/statements/select/offset"
+    ],
+    "ON CLUSTER": [
+      "/docs/reference/statements/distributed-ddl",
+      "/docs/sql-reference/distributed-ddl"
+    ],
+    "PARALLEL WITH": [
+      "/docs/reference/statements/parallel_with",
+      "/docs/sql-reference/statements/parallel_with"
+    ],
+    "REPLACE modifier": [
+      "/docs/reference/statements/select/replace_modifier"
+    ]
+  }
+}

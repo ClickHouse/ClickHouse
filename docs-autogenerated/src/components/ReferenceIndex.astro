@@ -1,0 +1,45 @@
+---
+import manifest from '@generated/data/manifest.json';
+import docsConfig from '@generated/mintlify/docs.json';
+import { getCollection } from 'astro:content';
+import { resolvePageData } from '@mintlify/astro/helpers';
+import type { DocsConfig } from '@mintlify/astro';
+
+import DocsLayout from '../layouts/DocsLayout.astro';
+import ReferenceSearch from './ReferenceSearch.astro';
+
+const referenceBaseRoute = manifest.channel === 'latest'
+  ? '/docs/reference'
+  : `/docs/reference/versions/${manifest.channel}`;
+const entries = await getCollection('reference');
+const sidebarTitleMap = Object.fromEntries(
+  entries.map((entry) => [entry.id, entry.data.sidebarTitle]),
+);
+const featureStateByRoute = Object.fromEntries(
+  entries
+    .filter((entry) => entry.data.featureState)
+    .map((entry) => [entry.data.route, entry.data.featureState]),
+) as Record<string, 'beta' | 'experimental'>;
+const page = resolvePageData(docsConfig as DocsConfig, {
+  currentPath: referenceBaseRoute,
+  titleMap: sidebarTitleMap,
+});
+const document = {
+  title: 'Search the ClickHouse reference',
+  description: 'Search the source-generated ClickHouse reference documentation.',
+  route: referenceBaseRoute,
+  stableId: 'reference:index',
+  entityKind: 'reference',
+  sourcePath: '',
+};
+---
+
+<DocsLayout
+  document={document}
+  sidebarEntries={page.sidebarEntries}
+  featureStateByRoute={featureStateByRoute}
+  showGeneratedBanner={false}
+  wideContent
+>
+  <ReferenceSearch />
+</DocsLayout>

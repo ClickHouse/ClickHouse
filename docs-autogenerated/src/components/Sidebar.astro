@@ -1,0 +1,215 @@
+---
+import manifest from '@generated/data/manifest.json';
+import type { NavEntry } from '@mintlify/astro/helpers';
+import InkeepTools from './InkeepTools.astro';
+import SidebarNode from './SidebarNode.astro';
+import VersionSelector from './VersionSelector.astro';
+
+interface Props {
+  entries: NavEntry[];
+  currentRoute: string;
+  stableId?: string;
+  featureStateByRoute?: Record<string, 'beta' | 'experimental'>;
+}
+
+const { entries, currentRoute, stableId, featureStateByRoute = {} } = Astro.props;
+const referenceBaseRoute = manifest.channel === 'latest'
+  ? '/docs/reference'
+  : `/docs/reference/versions/${manifest.channel}`;
+const publicAssetBaseRoute = `${referenceBaseRoute}/_site`;
+---
+
+<aside id="sidebar" class="sidebar" aria-label="Pages">
+  <div class="sidebar-brand-row">
+    <a class="sidebar-brand" href={referenceBaseRoute} aria-label="ClickHouse Documentation home page">
+      <img class="logo-light" src={`${publicAssetBaseRoute}/logo/light.svg`} alt="ClickHouse Docs" />
+      <img class="logo-dark" src={`${publicAssetBaseRoute}/logo/dark.svg`} alt="ClickHouse Docs" />
+    </a>
+
+    <div class="theme-preference" data-theme-preference-switch="pill" role="group" aria-label="Theme preference">
+      <button
+        class="theme-preference-switch-option"
+        type="button"
+        data-theme-choice="system"
+        data-theme-preference-value="system"
+        aria-label="Switch to system theme"
+      >
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4.5 15.5L9 14.5L13.5 15.5"></path>
+          <path d="M9 11.75V14.5"></path>
+          <path d="M14.25 2.75H3.75C2.64543 2.75 1.75 3.64543 1.75 4.75V9.75C1.75 10.8546 2.64543 11.75 3.75 11.75H14.25C15.3546 11.75 16.25 10.8546 16.25 9.75V4.75C16.25 3.64543 15.3546 2.75 14.25 2.75Z"></path>
+        </svg>
+      </button>
+      <button
+        class="theme-preference-switch-option"
+        type="button"
+        data-theme-choice="light"
+        data-theme-preference-value="light"
+        aria-label="Switch to light theme"
+      >
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 1.25V2.25"></path>
+          <path d="M14.48 3.52002L13.773 4.22702"></path>
+          <path d="M16.75 9H15.75"></path>
+          <path d="M14.48 14.4799L13.773 13.7729"></path>
+          <path d="M9 16.75V15.75"></path>
+          <path d="M3.52 14.4799L4.227 13.7729"></path>
+          <path d="M1.25 9H2.25"></path>
+          <path d="M3.52 3.52002L4.227 4.22702"></path>
+          <path d="M9 13.25C11.3472 13.25 13.25 11.3472 13.25 9C13.25 6.65279 11.3472 4.75 9 4.75C6.65279 4.75 4.75 6.65279 4.75 9C4.75 11.3472 6.65279 13.25 9 13.25Z"></path>
+        </svg>
+      </button>
+      <button
+        class="theme-preference-switch-option"
+        type="button"
+        data-theme-choice="dark"
+        data-theme-preference-value="dark"
+        aria-label="Switch to dark theme"
+      >
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M13 11.75C9.548 11.75 6.75 8.95201 6.75 5.50001C6.75 4.14801 7.183 2.90101 7.912 1.87801C4.548 2.50601 2 5.45301 2 9.00001C2 13.004 5.246 16.25 9.25 16.25C12.622 16.25 15.448 13.944 16.259 10.826C15.309 11.409 14.196 11.75 13 11.75Z"></path>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="sidebar-tools">
+    <InkeepTools />
+  </div>
+
+  <div class="sidebar-scroll">
+    <a
+      class="sidebar-home"
+      href={referenceBaseRoute}
+      aria-current={currentRoute === referenceBaseRoute ? 'page' : undefined}
+    >
+      Home
+    </a>
+    <ul class="sidebar-tree">
+      {entries.map((entry) => (
+        <SidebarNode
+          entry={entry}
+          currentRoute={currentRoute}
+          featureStateByRoute={featureStateByRoute}
+        />
+      ))}
+    </ul>
+  </div>
+
+  <VersionSelector stableId={stableId} />
+
+  <button class="language-selector" type="button">
+    <svg class="language-selector-icon" viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <polyline points="240 216 184 104 128 216"></polyline>
+      <line x1="144" y1="184" x2="224" y2="184"></line>
+      <line x1="96" y1="32" x2="96" y2="56"></line>
+      <line x1="32" y1="56" x2="160" y2="56"></line>
+      <path d="M128 56A96 96 0 0 1 32 152"></path>
+      <path d="M69.47 88A96 96 0 0 0 160 152"></path>
+    </svg>
+    <span>English</span>
+    <svg class="language-selector-chevron" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M6.5 2.75L12.75 9L6.5 15.25"></path>
+    </svg>
+  </button>
+</aside>
+
+<script>
+  const colorPreference = window.matchMedia('(prefers-color-scheme: dark)');
+  const sidebarScrollStorageKey = 'reference-sidebar-scroll-top';
+  let sidebarController: AbortController | undefined;
+  let sidebarLabelResizeObserver: ResizeObserver | undefined;
+  let sidebarScrollPosition = Number(sessionStorage.getItem(sidebarScrollStorageKey));
+  if (!Number.isFinite(sidebarScrollPosition) || sidebarScrollPosition < 0) {
+    sidebarScrollPosition = 0;
+  }
+
+  function saveSidebarScroll() {
+    const sidebarScroll = document.querySelector<HTMLElement>('.sidebar-scroll');
+    if (!sidebarScroll) return;
+    sidebarScrollPosition = sidebarScroll.scrollTop;
+    sessionStorage.setItem(sidebarScrollStorageKey, String(sidebarScrollPosition));
+  }
+
+  function restoreSidebarScroll() {
+    const sidebarScroll = document.querySelector<HTMLElement>('.sidebar-scroll');
+    if (sidebarScroll) sidebarScroll.scrollTop = sidebarScrollPosition;
+  }
+
+  function updateSidebarLabelOverflow() {
+    document.querySelectorAll<HTMLElement>('.sidebar-page-label').forEach((label) => {
+      const text = label.querySelector<HTMLElement>('.sidebar-page-label-text');
+      if (!text) return;
+      const overflow = Math.max(0, Math.ceil(text.scrollWidth - label.clientWidth));
+      label.classList.toggle('is-overflowing', overflow > 0);
+      label.style.setProperty('--sidebar-label-shift', `${-overflow}px`);
+      label.style.setProperty('--sidebar-label-duration', `${Math.max(800, overflow * 18)}ms`);
+    });
+  }
+
+  function resolvedTheme(preference: string) {
+    return preference === 'system'
+      ? (colorPreference.matches ? 'dark' : 'light')
+      : preference;
+  }
+
+  function applyTheme(preference: string) {
+    const theme = resolvedTheme(preference);
+    document.documentElement.dataset.themePreference = preference;
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    const themeButtons = document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]');
+    themeButtons.forEach((button) => {
+      button.setAttribute('aria-pressed', String(button.dataset.themeChoice === preference));
+    });
+  }
+
+  function initializeSidebar() {
+    sidebarController?.abort();
+    sidebarController = new AbortController();
+    sidebarLabelResizeObserver?.disconnect();
+    sidebarLabelResizeObserver = new ResizeObserver(updateSidebarLabelOverflow);
+    const themeButtons = document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]');
+
+    themeButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const preference = button.dataset.themeChoice ?? 'dark';
+        localStorage.setItem('reference-theme', preference);
+        applyTheme(preference);
+      }, { signal: sidebarController?.signal });
+    });
+
+    document.querySelector<HTMLElement>('.sidebar-scroll')?.addEventListener(
+      'scroll',
+      saveSidebarScroll,
+      { passive: true, signal: sidebarController.signal },
+    );
+    document.querySelectorAll<HTMLElement>('.sidebar-page-label').forEach((label) => {
+      sidebarLabelResizeObserver?.observe(label);
+    });
+
+    applyTheme(localStorage.getItem('reference-theme') ?? 'dark');
+    restoreSidebarScroll();
+    updateSidebarLabelOverflow();
+    void document.fonts.ready.then(updateSidebarLabelOverflow);
+  }
+
+  colorPreference.addEventListener('change', () => {
+    if (localStorage.getItem('reference-theme') === 'system') applyTheme('system');
+  });
+
+  document.addEventListener('astro:before-swap', (event) => {
+    saveSidebarScroll();
+    const currentRoot = document.documentElement;
+    const nextRoot = event.newDocument.documentElement;
+    if (currentRoot.dataset.theme) nextRoot.dataset.theme = currentRoot.dataset.theme;
+    if (currentRoot.dataset.themePreference) {
+      nextRoot.dataset.themePreference = currentRoot.dataset.themePreference;
+    }
+    nextRoot.classList.toggle('dark', currentRoot.classList.contains('dark'));
+  });
+
+  document.addEventListener('astro:after-swap', restoreSidebarScroll);
+  document.addEventListener('astro:page-load', initializeSidebar);
+  window.addEventListener('pagehide', saveSidebarScroll);
+</script>
