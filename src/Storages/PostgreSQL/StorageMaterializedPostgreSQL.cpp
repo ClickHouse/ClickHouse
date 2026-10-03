@@ -346,6 +346,14 @@ bool StorageMaterializedPostgreSQL::supportsOptimizationToSubcolumns() const
 }
 
 
+bool StorageMaterializedPostgreSQL::supportsSubcolumnOptimizationWithFinal() const
+{
+    if (auto nested = tryGetNested())
+        return nested->supportsSubcolumnOptimizationWithFinal();
+    return false;
+}
+
+
 IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes() const
 {
     if (auto nested = tryGetNested())
