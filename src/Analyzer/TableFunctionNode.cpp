@@ -126,8 +126,7 @@ void TableFunctionNode::updateTreeHashImpl(HashState & state, CompareOptions) co
 {
     const auto full_name = storage ? storage_id.getFullNameNotQuoted() : String{};
 
-    /// Hash a parameterized view by the qualified name `toASTImpl` sends to other servers, so that
-    /// names derived from the hash (e.g. of `IN` sets) are the same on the initiator and on the shards.
+    /// A parameterized view hashes the qualified name `toASTImpl` sends to shards: `IN` set names derive from this hash.
     const auto & name = isParameterizedView() ? full_name : table_function_name;
     state.update(name.size());
     state.update(name);
