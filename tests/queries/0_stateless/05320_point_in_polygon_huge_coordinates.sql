@@ -36,6 +36,11 @@ SELECT pointInPolygon((9e199, 5e199), CAST(CAST([(0., 0.), (1e200, 0.), (0., 1e2
 SELECT pointInPolygon((9e199, 5e199), CAST([(0., 0.), (1e200, 0.), (0., 1e200)] AS Variant(Array(Tuple(Float64, Float64)), UInt8))); -- { serverError BAD_ARGUMENTS }
 SELECT pointInPolygon((9e199, 5e199), CAST([(0., 0.), (1e200, 0.), (0., 1e200)] AS Dynamic)); -- { serverError BAD_ARGUMENTS }
 SELECT pointInPolygon((9e199, 5e199), materialize([(0., 0.), (1e200, 0.), (0., 1e200)])); -- { serverError BAD_ARGUMENTS }
+-- Each coordinate of an edge that crosses the point's ray is checked.
+SELECT pointInPolygon((0., 1.), materialize([(-1e200, 0.), (1., 0.), (0., 2.)])); -- { serverError BAD_ARGUMENTS }
+SELECT pointInPolygon((0., 1.), materialize([(0., 2.), (1., 0.), (-1e200, 0.)])); -- { serverError BAD_ARGUMENTS }
+SELECT pointInPolygon((0.5, 5.), materialize([(0., 0.), (1., 0.), (1., 1e200), (0., 10.)])); -- { serverError BAD_ARGUMENTS }
+SELECT pointInPolygon((0.5, 5.), materialize([(0., 10.), (1., 1e200), (1., 0.), (0., 0.)])); -- { serverError BAD_ARGUMENTS }
 SELECT pointInPolygon((0.9, 0.5), CAST(CAST([(0., 0.), (1., 0.), (0., 1.)] AS Ring) AS Geometry)), pointInPolygon((0.9, 0.5), materialize([(0., 0.), (1., 0.), (0., 1.)]));
 
 -- Up to 1e100 the polygon is evaluated, and primary key analysis prunes and agrees with the function.
