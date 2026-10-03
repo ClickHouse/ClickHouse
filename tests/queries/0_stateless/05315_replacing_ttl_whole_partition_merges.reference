@@ -1,0 +1,15 @@
+issue before	1	2	1
+issue older version visible	0
+issue after optimize	0
+drop older version visible	0
+drop after optimize	0
+partial older version visible	0
+partial after optimize	2	sentinel
+is_deleted visible rows	0
+is_deleted stored rows	0
+subset parts	all_1_1_0	1	0
+subset parts	all_2_3_1	1	1
+subset winner	3	1
+subset after optimize	0
+subset whole partition merge	TTLDeleteMerge
+missing column winner	3	1

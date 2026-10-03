@@ -1,0 +1,8 @@
+materialize winner	2	1
+materialize after optimize	0
+update winner	2	1
+modify winner	2	1
+only drop update winner	2	b!
+only drop materialize winner	2	b!
+only drop after optimize	0
+plain only drop	1	a!

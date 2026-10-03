@@ -1,0 +1,13 @@
+function_of_version	1
+key_only	0
+key_where_key	0
+key_where_other	1
+no_version	1
+other_column	1
+other_column_opt_out	0
+partition_key	0
+plain_merge_tree	0
+version_date_month	0
+version_day	0
+version_hour_minute	0
+version_where_other	1
