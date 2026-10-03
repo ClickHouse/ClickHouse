@@ -145,6 +145,8 @@ void QueryGraph::buildColumnEquivalences()
         if ((lhs_it != join_kinds.end() && !isInner(lhs_it->second.second))
             || (rhs_it != join_kinds.end() && !isInner(rhs_it->second.second)))
             continue;
+        if (null_supplying_subtree_relations.test(*lhs_rel) || null_supplying_subtree_relations.test(*rhs_rel))
+            continue;
 
         if (outer_join_conditions.contains(edge))
             continue;
@@ -368,8 +370,17 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
 
     std::shared_ptr<DPJoinEntry> best_plan;
 
+    /// Only DPsub with a conflict detector may plan a graph that `join_kinds` does not describe (see
+    /// `requires_conflict_detector`); another algorithm would reorder its semi/anti and outer joins
+    /// as if they were inner joins and quietly change the answer. It should never come to that, but
+    /// the damage would be wrong rows, so fail loudly rather than silently.
     for (const auto & algorithm : enabled_algorithms)
     {
+        if (query_graph.requires_conflict_detector && algorithm != JoinOrderAlgorithm::DPSUB)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Join order algorithm {} cannot plan a join graph that only DPsub with a conflict detector can reorder. "
+                "This graph should not have reached it.", toString(algorithm));
+
         LOG_TRACE(log, "Solving join order using {} algorithm", toString(algorithm));
         switch (algorithm)
         {
@@ -419,6 +430,7 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
     /// Carry the conflict-detector setting on the graph so DPsub (which only receives the
     /// `QueryGraph`) can decide whether to build its reordering constraints from CD-A/CD-C.
     query_graph.conflict_detector = optimization_settings.query_plan_optimize_join_order_conflict_detector;
+    query_graph.join_swap_table = optimization_settings.join_swap_table;
 
     JoinOrderOptimizer reorderer(
         std::move(query_graph),
