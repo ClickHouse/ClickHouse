@@ -17,6 +17,7 @@ namespace ErrorCodes
 }
 
 static constexpr size_t MAX_COMBINATION_RESULT_ELEMENTS = 1000000;
+static constexpr size_t MAX_COMBINATION_RESULT_BYTES = 1000000000;
 
 /// Compute C(n, k) exactly in O(k), return 0 if result > limit.
 /// Uses 128-bit intermediate to avoid overflow in result * (n - i)
@@ -91,6 +92,7 @@ public:
 
         size_t inner_pos = 0;
         size_t outer_pos = 0;
+        size_t total_bytes = 0;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -124,6 +126,20 @@ public:
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                     "Result of function {} would exceed {} total elements for array of length {} with k={}",
                     getName(), MAX_COMBINATION_RESULT_ELEMENTS, n, k);
+
+            /// The element cap alone does not bound memory for variable-size elements such as `String`,
+            /// so also cap the total byte size of the output. Every input element occurs equally often
+            /// in the result, namely `num_results * k / n` times, which is an exact integer.
+            size_t row_input_bytes = 0;
+            for (size_t i = 0; i < n; ++i)
+                row_input_bytes += arr_values.byteSizeAt(arr_begin + i);
+            const unsigned __int128 row_bytes
+                = static_cast<unsigned __int128>(num_results) * uk / n * row_input_bytes;
+            if (row_bytes > MAX_COMBINATION_RESULT_BYTES - total_bytes)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                    "Result of function {} would exceed {} total bytes for array of length {} with k={}",
+                    getName(), MAX_COMBINATION_RESULT_BYTES, n, k);
+            total_bytes += static_cast<size_t>(row_bytes);
 
             /// Generate combinations using iterative approach with index array
             std::vector<size_t> indices(k); // STYLE_CHECK_ALLOW_STD_CONTAINERS
@@ -160,7 +176,7 @@ public:
 
 REGISTER_FUNCTION(ArrayCombinations)
 {
-    FunctionDocumentation::Description description = "Returns all combinations of k elements from the input array. The order of elements inside each combination matches the original array order. To guard against excessive memory usage, the total number of output elements per block is capped at 1000000; exceeding this limit raises a `TOO_LARGE_ARRAY_SIZE` exception.";
+    FunctionDocumentation::Description description = "Returns all combinations of k elements from the input array. The order of elements inside each combination matches the original array order. To guard against excessive memory usage, the total number of output elements per block is capped at 1000000 and their total size at 1000000000 bytes; exceeding either limit raises a `TOO_LARGE_ARRAY_SIZE` exception.";
     FunctionDocumentation::Syntax syntax = "arrayCombinations(arr, k)";
     FunctionDocumentation::Arguments arguments = {
         {"arr", "The input array.", {"Array(T)"}},

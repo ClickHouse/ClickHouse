@@ -88,3 +88,13 @@ SELECT arrayCombinations([1, 2, 3], toInt8(2));
 SELECT arrayCombinations([1, 2, 3], toUInt16(2));
 SELECT arrayPartialPermutations([1, 2, 3], toInt32(2));
 SELECT arrayPartialPermutations([1, 2, 3], toUInt64(2));
+
+-- the output is also capped by total byte size, because the element cap alone does not bound
+-- memory for variable-size elements: 8! * 8 = 322560 elements is under the element cap, but each
+-- element is a 100000-byte string, so the result would take about 32 GB.
+SELECT arrayPermutations(arrayMap(_ -> repeat('x', 100000), range(8))) FORMAT Null; -- {serverError TOO_LARGE_ARRAY_SIZE}
+SELECT arrayPartialPermutations(arrayMap(_ -> repeat('x', 100000), range(10)), 6) FORMAT Null; -- {serverError TOO_LARGE_ARRAY_SIZE}
+SELECT arrayCombinations(arrayMap(_ -> repeat('x', 100000), range(18)), 9) FORMAT Null; -- {serverError TOO_LARGE_ARRAY_SIZE}
+-- small strings under both caps still work.
+SELECT length(arrayPermutations(arrayMap(x -> repeat('x', 1000), range(6))));
+SELECT length(arrayCombinations(arrayMap(x -> repeat('x', 1000), range(10)), 5));
