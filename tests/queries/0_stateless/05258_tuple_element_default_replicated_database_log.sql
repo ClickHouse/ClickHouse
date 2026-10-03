@@ -31,7 +31,7 @@ TAGS INNER COLUMNS
 -- Inner tables of `TimeSeries` are named `.inner_id.<kind>.<uuid>`.
 SELECT if(table LIKE '.inner_id.%', splitByChar('.', table)[3], table) AS t, name, type, default_kind, default_expression
 FROM system.columns
-WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name IN ('x', 'extra')
+WHERE database = currentDatabase() || '_1' AND name IN ('x', 'extra')
 ORDER BY t, name;
 
 -- The local replica normalizes the query again when it applies the entry, so the check above would pass even
