@@ -241,6 +241,11 @@ CREATE FUNCTION later_udf AS x -> x + 1;
 echo "view calling a later user-defined function, bad-select gate emitted: $(grep -c "$BADSEL_RE" "$DUMP_FILE")"
 echo "view calling a later user-defined function, warning: $(grep -c 'calls user-defined function later_udf,' "$ERR_FILE")"
 replay_local 'view calling a later user-defined function' 'mv%'
+make_dump "
+CREATE TABLE ${DB}.st (x UInt64 STATISTICS(tdigest)) ENGINE = MergeTree ORDER BY tuple();
+"
+echo "column STATISTICS, statistics gate emitted: $(grep -cE '^SET (allow_statistics|allow_experimental_statistics) = 1;' "$DUMP_FILE")"
+replay_local 'column STATISTICS' '%'
 # A projection's GROUP BY and ORDER BY keys can never be Variant or Dynamic, so only a window in it reads a gate.
 make_dump "
 CREATE TABLE ${DB}.proj (k UInt64, x UInt64, PROJECTION p_order (SELECT k, x ORDER BY x), PROJECTION p_group (SELECT x, count() GROUP BY x),

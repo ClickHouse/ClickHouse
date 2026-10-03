@@ -2396,6 +2396,7 @@ struct ReplayGateNeeds
     bool full_text_index = false;
     bool queue_hive_partitioning = false;
     bool url_wildcard = false;
+    bool statistics = false;
     std::set<String> codec_gates; /// `enable_<family>_codec` of the codecs the statements name
     std::set<String> data_lake_catalog_gates; /// gates of the known `catalog_type`s; `data_lake_catalog_database` keeps all
 };
@@ -2981,6 +2982,12 @@ ReplayGateNeeds collectReplayGateNeeds(
             needs.nullable_tuple_type |= type_needs.nullable_tuple;
         }
 
+        /// `allow_statistics` is read for every column STATISTICS (`getColumnsDescription`).
+        if (create->columns_list && create->columns_list->columns)
+            for (const auto & child : create->columns_list->columns->children)
+                if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getStatisticsDesc())
+                    needs.statistics = true;
+
         /// Codec gates come from the codec factory itself, for every column CODEC (`getColumnsDescription`).
         if (create->columns_list && create->columns_list->columns)
             for (const auto & child : create->columns_list->columns->children)
@@ -3214,6 +3221,7 @@ String replaySettingsPrelude(
         {"allow_experimental_unique_key", &ReplayGateNeeds::unique_key},
         {"allow_experimental_ytsaurus_table_engine", &ReplayGateNeeds::ytsaurus_table},
         {"allow_experimental_paimon_storage_engine", &ReplayGateNeeds::paimon_table},
+        {"allow_statistics", &ReplayGateNeeds::statistics},
     };
     auto shared_needed = [&needs](const String & name)
     {
