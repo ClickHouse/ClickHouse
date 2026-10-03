@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <base/TypeLists.h>
 
 namespace DB
 {
@@ -121,16 +122,13 @@ public:
         const auto * in = first_argument_column.get();
 
         ColumnPtr res;
-        if (!((res = execute<UInt8>(in, custom_message, custom_error_code))
-            || (res = execute<UInt16>(in, custom_message, custom_error_code))
-            || (res = execute<UInt32>(in, custom_message, custom_error_code))
-            || (res = execute<UInt64>(in, custom_message, custom_error_code))
-            || (res = execute<Int8>(in, custom_message, custom_error_code))
-            || (res = execute<Int16>(in, custom_message, custom_error_code))
-            || (res = execute<Int32>(in, custom_message, custom_error_code))
-            || (res = execute<Int64>(in, custom_message, custom_error_code))
-            || (res = execute<Float32>(in, custom_message, custom_error_code))
-            || (res = execute<Float64>(in, custom_message, custom_error_code))))
+        TypeListUtils::forEach(TypeListNativeNumber{}, [&]<typename T>(TypeList<T>)
+        {
+            if (!res)
+                res = execute<T>(in, custom_message, custom_error_code);
+        });
+
+        if (!res)
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
         }

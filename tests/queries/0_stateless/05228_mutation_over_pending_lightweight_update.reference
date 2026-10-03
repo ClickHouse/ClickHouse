@@ -1,8 +1,8 @@
 all_1_1_0_2
 all_5_5_0_6
 mutation_2.txt	1	[]
-mutation_4.txt	0	['Lightweight update with a lower version is not committed yet']
-mutation_6.txt	0	['Lightweight update with a lower version is not committed yet']
+mutation_4.txt	0	['Lightweight update with a lower block number is not committed yet']
+mutation_6.txt	0	['Lightweight update with a lower block number is not committed yet']
 on the fly
 1	0
 3	3
