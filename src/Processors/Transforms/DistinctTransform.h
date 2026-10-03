@@ -102,6 +102,8 @@ private:
     bool own_set_released = false;
     bool own_set_limit_reached = false;
     ColumnNumbers key_columns_pos;
+    /// Positions of the columns that are not constant in the header: only these are materialized.
+    ColumnNumbers non_constant_columns_pos;
     std::unique_ptr<SetVariants> data;
     Sizes key_sizes;
     std::unique_ptr<DistinctLowCardinalityFilter> lc_filter;

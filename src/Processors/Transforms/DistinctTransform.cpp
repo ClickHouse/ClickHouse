@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <bit>
+#include <limits>
 #include <vector>
 
 #include <Columns/ColumnsCommon.h>
+#include <Common/BitHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
@@ -14,6 +16,7 @@
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/HashTable/TwoLevelHashTable.h>
+#include <base/arithmeticOverflow.h>
 #include <base/types.h>
 
 static inline size_t intHash32(UInt64 x)
@@ -123,6 +126,7 @@ DistinctTransform::DistinctTransform(
     if (use_own_set)
     {
         key_columns_pos = calculateDistinctKeyColumnsPositions(*header_, columns_);
+        non_constant_columns_pos = calculateDistinctKeyColumnsPositions(*header_, {});
         data = std::make_unique<SetVariants>();
         lc_filter = std::make_unique<DistinctLowCardinalityFilter>();
     }
@@ -378,16 +382,13 @@ void DistinctTransform::transformWithOwnSet(Chunk & chunk)
     if (own_set_released)
         return;
 
-    /// Convert to full column, because SetVariant for sparse column is not implemented.
-    removeSpecialColumnRepresentations(chunk);
-    convertToFullIfConst(chunk);
-
-    const auto num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-
     /// Special case, - only const columns, return single row
     if (unlikely(key_columns_pos.empty()))
     {
+        removeSpecialColumnRepresentations(chunk);
+        convertToFullIfConst(chunk);
+
+        auto columns = chunk.detachColumns();
         for (auto & column : columns)
             column = column->cut(0, 1);
 
@@ -396,18 +397,70 @@ void DistinctTransform::transformWithOwnSet(Chunk & chunk)
         return;
     }
 
+    /// Convert to full columns, because `SetVariants` for sparse columns is not implemented. As in
+    /// `DistinctSetFilter`, columns that are constant in the header stay constant: expanding a wide
+    /// constant payload for every block could exceed the memory limit.
+    materializeChunk(chunk, non_constant_columns_pos);
+
+    const auto num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+
+    ColumnRawPtrs column_ptrs;
+    column_ptrs.reserve(key_columns_pos.size());
+    for (auto pos : key_columns_pos)
+        column_ptrs.emplace_back(columns[pos].get());
+
+    if (data->empty())
+    {
+        auto type = SetVariants::chooseMethod(column_ptrs, key_sizes);
+
+        /// A two-level table is usually slower than a single-level one on its own; it only pays off
+        /// because it can be probed in parallel bucket by bucket. Without a thread pool (e.g.
+        /// `max_threads = 1`) that never happens, so don't switch to it - the cost could never be
+        /// recovered. The same holds for a small `LIMIT`: reading stops long before the set grows
+        /// past `PARALLEL_DISTINCT_THRESHOLD`, which is what enables the parallel path.
+        if (!is_pre_distinct && pool && type == SetVariants::Type::hashed)
+            data->init(SetVariants::Type::hashed_two_level);
+        else
+            data->init(type);
+    }
+
     /// Preliminary hashing shares the query's remaining spill-threshold budget with the final transform
-    /// and other operators: once the query memory exceeds it, the set is released.
+    /// and other operators. As in the `DistinctSetFilter` path, the set is released before inserting
+    /// when the query memory already exceeds the threshold, or when the projected growth of the set
+    /// (assuming every row is new), the bloom filter about to be allocated and the filtering workspace
+    /// do not fit into the remaining budget.
     if (max_bytes_before_pass_through)
     {
-        const Int64 query_memory_usage = getCurrentQueryMemoryUsage();
-        if (query_memory_usage > static_cast<Int64>(max_bytes_before_pass_through))
+        const UInt64 query_memory_usage = std::max<Int64>(0, getCurrentQueryMemoryUsage());
+        const UInt64 available_memory = max_bytes_before_pass_through - std::min(max_bytes_before_pass_through, query_memory_usage);
+
+        size_t filtering_memory = roundUpToPowerOfTwoOrZero(
+            num_rows * sizeof(IColumn::Filter::value_type) + IColumn::Filter::pad_left + IColumn::Filter::pad_right) * 2;
+        for (const auto & column : columns)
+            filtering_memory += column->allocatedBytes();
+
+        size_t growth_memory = data->estimateGrowthMemory(column_ptrs, 0, num_rows);
+        if (key_columns_pos.size() == 1
+            && common::addOverflow(growth_memory, lc_filter->estimateGrowthMemory(*column_ptrs[0]), growth_memory))
+            growth_memory = std::numeric_limits<size_t>::max();
+        if (try_init_bf && data->getTotalRowCount() > set_limit_for_enabling_bloom_filter
+            && common::addOverflow(growth_memory, static_cast<size_t>(bloom_filter_bytes), growth_memory))
+            growth_memory = std::numeric_limits<size_t>::max();
+
+        if (filtering_memory > available_memory || growth_memory > available_memory - filtering_memory)
         {
             LOG_TRACE(getLogger("DistinctTransform"),
-                "Switching preliminary DISTINCT to pass-through: query memory exceeded the spill threshold "
-                "(query memory: {}, spill threshold: {})",
+                "Switching preliminary DISTINCT to pass-through: {} "
+                "(query memory: {}, spill threshold: {}, "
+                "estimated peak extra memory for growth: {}, filtering workspace: {})",
+                query_memory_usage > max_bytes_before_pass_through
+                    ? "query memory exceeded the spill threshold"
+                    : "projected allocations exceed the remaining spill-threshold budget",
                 formatReadableSizeWithBinarySuffix(query_memory_usage),
-                formatReadableSizeWithBinarySuffix(max_bytes_before_pass_through));
+                formatReadableSizeWithBinarySuffix(max_bytes_before_pass_through),
+                formatReadableSizeWithBinarySuffix(growth_memory),
+                formatReadableSizeWithBinarySuffix(filtering_memory));
 
             releaseOwnSet();
             ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);
@@ -415,11 +468,6 @@ void DistinctTransform::transformWithOwnSet(Chunk & chunk)
             return;
         }
     }
-
-    ColumnRawPtrs column_ptrs;
-    column_ptrs.reserve(key_columns_pos.size());
-    for (auto pos : key_columns_pos)
-        column_ptrs.emplace_back(columns[pos].get());
 
     std::optional<IColumn::Filter> lc_mask;
     if (key_columns_pos.size() == 1)
@@ -438,21 +486,6 @@ void DistinctTransform::transformWithOwnSet(Chunk & chunk)
             }
             return;
         }
-    }
-
-    if (data->empty())
-    {
-        auto type = SetVariants::chooseMethod(column_ptrs, key_sizes);
-
-        /// A two-level table is usually slower than a single-level one on its own; it only pays off
-        /// because it can be probed in parallel bucket by bucket. Without a thread pool (e.g.
-        /// `max_threads = 1`) that never happens, so don't switch to it - the cost could never be
-        /// recovered. The same holds for a small `LIMIT`: reading stops long before the set grows
-        /// past `PARALLEL_DISTINCT_THRESHOLD`, which is what enables the parallel path.
-        if (!is_pre_distinct && pool && type == SetVariants::Type::hashed)
-            data->init(SetVariants::Type::hashed_two_level);
-        else
-            data->init(type);
     }
 
     const auto old_set_size = data->getTotalRowCount();
