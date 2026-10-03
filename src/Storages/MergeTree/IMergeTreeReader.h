@@ -100,6 +100,10 @@ public:
 
     virtual void updateAllMarkRanges(const MarkRanges & ranges);
 
+    /// The mark ranges the reader reads until the next call; null = the whole part.
+    /// Readers with streams pass it on to them.
+    virtual void updateReadRequestMap(MarkRangesPtr request_map);
+
     StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
 
     /// Read hints (currently vector-search results) are per-reader state: they are set once after the
@@ -155,6 +159,7 @@ protected:
 
     const StorageSnapshotPtr storage_snapshot;
     MarkRanges all_mark_ranges;
+    MarkRangesPtr read_request_map;
     /// Last mark of `all_mark_ranges`, used as the right bound of ranged read requests on remote disks.
     /// Cached because the ranges can contain thousands of fragments and the bound is needed on every read.
     size_t last_mark_to_read = 0;

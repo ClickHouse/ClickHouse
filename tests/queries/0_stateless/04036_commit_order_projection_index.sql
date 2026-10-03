@@ -21,10 +21,10 @@ insert into mt_commit_order_idx select rand(), rand() from numbers(10);
 optimize table mt_commit_order_idx final;
 
 select 'reading all columns';
-SELECT explain FROM (explain indexes=1, projections=1 select *, _block_number, _block_offset from mt_commit_order_idx where (_block_number, _block_offset) = (3, 6) settings optimize_use_projections=1, optimize_move_to_prewhere=1, query_plan_optimize_prewhere=1) WHERE explain NOT LIKE '%Condition%';
+SELECT explain FROM (explain indexes=1, projections=1 select *, _block_number, _block_offset from mt_commit_order_idx where (_block_number, _block_offset) = (3, 6) settings optimize_use_projections=1, optimize_move_to_prewhere=1) WHERE explain NOT LIKE '%Condition%';
 
 select '';
 select 'reading indexed columns';
-SELECT explain FROM (explain indexes=1, projections=1 select b, _block_number, _block_offset from mt_commit_order_idx where (_block_number, _block_offset) = (3, 6) settings optimize_use_projections=1, optimize_move_to_prewhere=1, query_plan_optimize_prewhere=1) WHERE explain NOT LIKE '%Condition%';
+SELECT explain FROM (explain indexes=1, projections=1 select b, _block_number, _block_offset from mt_commit_order_idx where (_block_number, _block_offset) = (3, 6) settings optimize_use_projections=1, optimize_move_to_prewhere=1) WHERE explain NOT LIKE '%Condition%';
 
 drop table if exists mt_commit_order_idx sync;
