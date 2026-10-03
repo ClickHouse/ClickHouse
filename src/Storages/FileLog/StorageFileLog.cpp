@@ -1296,20 +1296,20 @@ bool StorageFileLog::updateFileInfos()
                 name_is_read[file_name] = fileNameMatches(file_name);
                 if (last_change.at(file_name) != i)
                     break;
-                /// Check if it is a regular file, and new file may be renamed or removed
-                if (std::filesystem::is_regular_file(file_path) && fileNameMatches(file_name))
+                /// Check if it is a regular file, and new file may be renamed or removed.
+                /// Another name of a file that is still read here (a hard link) is not read again.
+                if (!std::filesystem::is_regular_file(file_path) || !fileNameMatches(file_name)
+                    || isReadUnderOtherName(file_name, getInode(file_path)))
+                {
+                    name_is_read[file_name] = false;
+                    /// The file read under this name, if any, was replaced by one that is not read, e.g. a file moved in
+                    /// from elsewhere over a rotated file.
+                    if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                        it->second.status = FileStatus::REMOVED;
+                }
+                else
                 {
                     auto inode = getInode(file_path);
-
-                    /// Another name of a file that is still read here (a hard link) is not read again.
-                    if (isReadUnderOtherName(file_name, inode))
-                    {
-                        name_is_read[file_name] = false;
-                        /// The file read under this name, if any, was replaced.
-                        if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                            it->second.status = FileStatus::REMOVED;
-                        break;
-                    }
 
                     onFileAppeared(file_name, inode);
 
