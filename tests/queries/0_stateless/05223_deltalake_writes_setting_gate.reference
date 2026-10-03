@@ -1,0 +1,27 @@
+-- the compiled-in default is off (test profiles turn it on, so the cases below set it explicitly)
+allow_delta_lake_writes	0	Beta
+-- setting off: INSERT into the table function is rejected and names the setting
+allow_delta_lake_writes
+SUPPORT_IS_DISABLED
+versions: 1, data files: 0
+-- setting off: INSERT through an engine table is rejected the same way
+SUPPORT_IS_DISABLED
+versions: 1, data files: 0
+-- the experimental alias enables writes
+1
+versions: 2, data files: 1
+-- SET in the session enables writes
+2
+versions: 3, data files: 2
+-- a SETTINGS clause on the INSERT statement enables writes for that statement only:
+-- the next INSERT of the same session, without the clause, is rejected again
+3
+SUPPORT_IS_DISABLED
+versions: 4, data files: 3
+-- a read-only session cannot write even with the setting on (enabled before entering readonly)
+READONLY
+versions: 4, data files: 3
+-- the committed rows are exactly the three accepted inserts
+1
+2
+3
