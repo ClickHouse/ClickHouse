@@ -159,33 +159,20 @@ static void changeOwnership(const String & file_name, const String & user_name, 
     }
 }
 
-/// Whether the user at `user_path` in a users config has any authentication method other than an empty password or `no_password`.
-/// Checks the same carriers as `UsersConfigParser`: the flat fields of the user and every entry of `auth_methods`.
+/// Whether the authentication of the user at `user_path` in a users config is configured with anything but an empty flat `password`.
+/// The installer sets up a password by replacing the flat `password` with `password_sha256_hex`, which is valid only if
+/// the user has no other authentication method: `UsersConfigParser` allows only one flat method, rejects flat methods together
+/// with `auth_methods`, and allows `time_based_one_time_password` at the user level. Like `UsersConfigParser`, a method counts
+/// if it is present, even if its value is empty.
 static bool hasAuthentication(const Poco::Util::AbstractConfiguration & config, const std::string & user_path)
 {
-    auto has_authentication_at = [&](const std::string & path)
-    {
-        for (const auto * key : {"password", "password_sha256_hex", "password_scram_sha256_hex", "password_double_sha1_hex"})
-            if (!config.getString(path + "." + key, "").empty())
-                return true;
-        for (const auto * key : {"ldap", "kerberos", "ssl_certificates", "ssh_keys", "http_authentication"})
-            if (config.has(path + "." + key))
-                return true;
-        return false;
-    };
-
-    if (has_authentication_at(user_path))
+    if (!config.getString(user_path + ".password", "").empty())
         return true;
 
-    const std::string auth_methods_path = user_path + ".auth_methods";
-    if (config.has(auth_methods_path))
-    {
-        Poco::Util::AbstractConfiguration::Keys auth_methods;
-        config.keys(auth_methods_path, auth_methods);
-        for (const auto & auth_method : auth_methods)
-            if (has_authentication_at(auth_methods_path + "." + auth_method))
-                return true;
-    }
+    for (const auto * key : {"no_password", "password_sha256_hex", "password_scram_sha256_hex", "password_double_sha1_hex",
+             "ldap", "kerberos", "ssl_certificates", "ssh_keys", "http_authentication", "auth_methods", "time_based_one_time_password"})
+        if (config.has(user_path + "." + key))
+            return true;
 
     return false;
 }
@@ -954,6 +941,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             fs::create_directories(users_d);
         }
 
+        /// The XML users config that defines the effective default user, and the directory for its tweaks,
+        /// where the password for the default user is written to. It is the first XML users config unless the default user
+        /// is removed from it and defined in a later one: overriding it in the first one would create a new default user there,
+        /// which would shadow the later definition entirely.
+        fs::path default_user_config_file = users_config_file;
+        fs::path default_user_users_d = users_d;
 
         if (!has_users_xml_config)
         {
@@ -961,8 +954,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         }
         else if (!fs::exists(users_config_file))
         {
-            /// The server parses the users config according to its extension.
-            const auto users_config_extension = users_config_file.extension();
+            /// The server parses the users config according to its extension, case-insensitively, like `ConfigProcessor::parseConfig`.
+            std::string users_config_extension = users_config_file.extension().string();
+            toLowerASCII(users_config_extension);
             const bool is_yaml_users_config = users_config_extension == ".yaml" || users_config_extension == ".yml";
             std::string_view users_config_content = is_yaml_users_config
                 ? std::string_view(reinterpret_cast<const char *>(resource_users_yaml), std::size(resource_users_yaml))
@@ -1018,6 +1012,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
                 is_default_user_removed = false;
                 has_password_for_default_user = hasAuthentication(*configuration, "users.default");
+                if (i != 0)
+                {
+                    default_user_config_file = users_config_path;
+                    default_user_users_d = fs::path(users_config_path).replace_extension("d");
+                    fmt::print("The default user is defined in {}.\n", default_user_config_file.string());
+                }
                 break;
             }
         }
@@ -1137,12 +1137,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         else if (has_password_for_default_user)
         {
             fmt::print("{}Password for the default user is already specified. To remind or reset, see {} and {}.{}\n",
-                start_hilite, users_config_file.string(), users_d.string(), end_hilite);
+                start_hilite, default_user_config_file.string(), default_user_users_d.string(), end_hilite);
         }
         else if (!can_ask_password)
         {
             fmt::print("{}Password for the default user is an empty string. See {} and {} to change it.{}\n",
-                start_hilite, users_config_file.string(), users_d.string(), end_hilite);
+                start_hilite, default_user_config_file.string(), default_user_users_d.string(), end_hilite);
         }
         else
         {
@@ -1156,7 +1156,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
             if (!password.empty())
             {
-                std::string password_file = users_d / "default-password.xml";
+                if (!fs::exists(default_user_users_d))
+                {
+                    fmt::print("Creating config directory {} that is used for tweaks of users configuration.\n", default_user_users_d.string());
+                    fs::create_directories(default_user_users_d);
+                }
+                std::string password_file = default_user_users_d / "default-password.xml";
                 WriteBufferFromFile out(password_file);
 #if USE_SSL
                 std::vector<uint8_t> hash;
@@ -1193,7 +1198,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             }
             else
                 fmt::print("{}Password for the default user is an empty string. See {} and {} to change it.{}\n",
-                    start_hilite, users_config_file.string(), users_d.string(), end_hilite);
+                    start_hilite, default_user_config_file.string(), default_user_users_d.string(), end_hilite);
         }
 
         /** Set capabilities for the binary.
@@ -1253,6 +1258,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 changeOwnership(users_config_file, user, group, /* recursive= */ false);
             if (fs::exists(users_d) && is_outside_config_dir(users_d))
                 changeOwnership(users_d, user, group);
+            if (default_user_users_d != users_d && fs::exists(default_user_users_d) && is_outside_config_dir(default_user_users_d))
+                changeOwnership(default_user_users_d, user, group);
         }
 
         /// Symlink "preprocessed_configs" is created by the server, so "write" is needed.
@@ -1263,6 +1270,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             fs::permissions(config_d, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
         if (has_users_xml_config && fs::exists(users_d))
             fs::permissions(users_d, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
+        if (has_users_xml_config && default_user_users_d != users_d && fs::exists(default_user_users_d))
+            fs::permissions(default_user_users_d, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
 
         /// Readonly.
         if (fs::exists(main_config_file))
