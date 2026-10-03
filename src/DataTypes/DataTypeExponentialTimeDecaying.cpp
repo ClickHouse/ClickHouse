@@ -537,7 +537,7 @@ void assertExponentialTimeDecayingTypesCompatibleImpl(
 
         if (*left_decay_length != *right_decay_length)
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "{} cannot combine ExponentialTimeDecaying values with different decay lengths: {} and {}",
                 operation,
                 *left_decay_length,
