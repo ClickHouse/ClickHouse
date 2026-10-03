@@ -60,7 +60,7 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
 
     /// The distributed planner splits aggregation itself; shard-local heaps for that
     /// path are future work. `serialize_query_plan` is fine: `AggregatingStep::serialize`
-    /// carries `top_k` since plan serialization version 10, and omits it towards older
+    /// carries `top_k` since `Aggregating` step version 1, and omits it towards older
     /// followers (which then aggregate without the heap - the safe direction).
     if (settings.make_distributed_plan)
         return 0;

@@ -5,8 +5,8 @@ Correctness tests for `enable_group_by_top_k_optimization` under non-final
 Partial aggregation gets its top-K parameters from the Planner hook
 `applyTopKPushdownToPartialAggregation`.  It applies both when each node
 plans the query text itself and when the initiator ships a serialized plan
-(`AggregatingStep::serialize` carries top-K since plan serialization
-version 10), and only for queries with a real ORDER BY over a leading
+(`AggregatingStep::serialize` carries top-K since `Aggregating` step
+version 1), and only for queries with a real ORDER BY over a leading
 prefix of the GROUP BY keys:
 
   * with ORDER BY (`GROUP BY ... ORDER BY <prefix> LIMIT N`) - safe on the
@@ -485,8 +485,8 @@ def test_remote_partial_aggregation_top_k(start_cluster):
     """EXPLAIN must advertise the `Top-K` the followers actually run: on the
     text-planned path (`serialize_query_plan = 0`) the annotation comes from
     the follower planning the query text, on the serialized path from the
-    shipped plan (`AggregatingStep` carries the top-K payload since plan
-    serialization version 10).  Engagement itself is proven via profile
+    shipped plan (`AggregatingStep` carries the top-K payload since step
+    version 1).  Engagement itself is proven via profile
     events by `test_remote_partial_aggregation_follower_heap_engaged` and
     `test_remote_partial_aggregation_serialized_heap_engaged`."""
     table = "t_pr"
@@ -571,7 +571,7 @@ def test_remote_partial_aggregation_follower_heap_engaged(start_cluster):
 def test_remote_partial_aggregation_serialized_heap_engaged(start_cluster):
     """Follower-side proof for the serialized path: with
     `serialize_query_plan = 1` the shipped plan carries the top-K parameters
-    (plan serialization version 10) and the follower replicas must report
+    (`Aggregating` step version 1) and the follower replicas must report
     `AggregationTopKRowsSkipped`.  Result equality alone cannot distinguish a
     working remote heap from parameters silently dropped in serialization.
 
@@ -631,8 +631,8 @@ def test_parallel_replicas_order_by_serialize_query_plan(
     start_cluster, max_parallel_replicas
 ):
     """With `serialize_query_plan = 1` the initiator ships a serialized
-    sub-plan that carries the top-K parameters (plan serialization version
-    10), so the followers run the heap.  The result must match the
+    sub-plan that carries the top-K parameters (`Aggregating` step version
+    1), so the followers run the heap.  The result must match the
     optimization-off baseline - per-replica skipping and eviction must stay
     invisible after the initiator's merge, sort and limit."""
     table = "t_pr"

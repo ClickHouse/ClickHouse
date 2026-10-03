@@ -19,7 +19,7 @@
 -- 6. Trivial count works under Cascades
 1000
 -- 7. A read without clone support is rejected (fail-close)
--- 8. A forced projection is ignored (still correct)
+-- 8. A forced projection falls back to local execution (still correct)
 0	99500
 1	99700
 2	99900
@@ -40,7 +40,7 @@
 2	99900
 3	100100
 4	100300
--- 13. Exchange-free plan with a window falls back to local execution
+-- 13. Exchange-free plan with a window distributes
 499500
 -- 14. ANY join with join_any_take_last_row is not swapped (must return the last row)
 1001

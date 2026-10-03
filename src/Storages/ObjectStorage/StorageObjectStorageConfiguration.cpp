@@ -11,6 +11,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/Common.h>
 #include <Storages/StorageURL.h>
+#include <IO/CompressionMethod.h>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -34,11 +35,78 @@ namespace Setting
     extern const SettingsFileLikeEngineDefaultPartitionStrategy file_like_engine_default_partition_strategy;
 }
 
+std::optional<String> StorageObjectStorageConfiguration::tryGetDiskConfigurationPrefix(
+    const Poco::Util::AbstractConfiguration & config, const String & disk_name)
+{
+    static constexpr auto disks_section = "storage_configuration.disks.";
+    static constexpr size_t max_depth = 100;
+
+    String prefix = disks_section + disk_name;
+    if (!config.has(prefix))
+        return std::nullopt;
+
+    /// Layered disk configs (cache, encrypted) reference the next disk by name in their `disk`
+    /// key; the object storage settings live in the section of the innermost disk.
+    for (size_t depth = 0; config.has(prefix + ".disk"); ++depth)
+    {
+        if (depth >= max_depth)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too deep or cyclic `disk` references in configuration of disk {}", disk_name);
+
+        prefix = disks_section + config.getString(prefix + ".disk");
+        if (!config.has(prefix))
+            return std::nullopt;
+    }
+
+    /// Multi-location disks keep the backend object storage settings in per-location
+    /// subsections. The table's storage is a copy of the local location's backend
+    /// (see `DiskObjectStorage::getObjectStorage`), so pick the location marked `local`.
+    if (config.has(prefix + ".locations"))
+    {
+        Poco::Util::AbstractConfiguration::Keys locations;
+        config.keys(prefix + ".locations", locations);
+        if (locations.empty())
+            return std::nullopt;
+
+        for (const auto & location : locations)
+        {
+            if (config.getBool(prefix + ".locations." + location + ".local", false))
+                return prefix + ".locations." + location;
+        }
+
+        return prefix + ".locations." + locations.front();
+    }
+
+    return prefix;
+}
+
 void StorageObjectStorageConfiguration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
+
+    if (source_disk_name.has_value())
+    {
+        /// The settings of a disk come from the server config and the server-level settings only. Apply
+        /// them under the global context, exactly as the config reload of the disk itself does (see
+        /// `DiskSelector::updateFromConfig`): the query context would leak the session's `s3_*`/`azure_*`
+        /// overrides into the table's long-lived copy of the disk's object storage, and they would stick,
+        /// because a later query with default settings does not mark them as changed and cannot revert them.
+        auto global_context = context->getGlobalContext();
+        const auto & config = global_context->getConfigRef();
+        const auto disk_config_prefix = tryGetDiskConfigurationPrefix(config, *source_disk_name);
+        if (!disk_config_prefix)
+            return;
+
+        /// The table works through a private copy of the disk's object storage (see `DataLakeConfiguration::fromDisk`),
+        /// so rebuilding its client cannot affect the disk. The settings of a disk come from the server config, not from
+        /// the query, so `isStaticConfiguration` does not apply: the object storage itself decides whether the settings
+        /// its client is built from have changed.
+        options.allow_client_change = true;
+        object_storage_ptr->applyNewSettings(config, *disk_config_prefix + ".", global_context, options);
+        return;
+    }
+
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
 
@@ -269,6 +337,13 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
             partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
     }
 
+    /// The `hive` strategy builds its read glob from the compression method (see
+    /// `HiveStylePartitionStrategy::getPathForRead`), and table reads set `throw_on_zero_files_match = false`,
+    /// so reject a misspelled codec on `CREATE` rather than let the table look empty. Only on `CREATE`:
+    /// loading existing metadata must not throw, since that would abort server startup.
+    if (is_create_query && partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
+        chooseCompressionMethod(/* path */ "", compression_method);
+
     partition_strategy = PartitionStrategyFactory::get(
         partition_strategy_type,
         partition_by,
@@ -277,7 +352,8 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
         format,
         getRawPath().hasGlobsIgnorePlaceholders(),
         getRawPath().hasPartitionWildcard(),
-        partition_columns_in_data_file);
+        partition_columns_in_data_file,
+        compression_method);
 
     if (partition_strategy)
     {
@@ -346,6 +422,11 @@ std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_part
 }
 
 void StorageObjectStorageConfiguration::check(ContextPtr)
+{
+    checkFormat();
+}
+
+void StorageObjectStorageConfiguration::checkFormat() const
 {
     /// `auto` is a sentinel meaning the format must be inferred from the data; it is not a real format
     /// name and is resolved (and thus validated) during schema/format inference. Skipping it here lets

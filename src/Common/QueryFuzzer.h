@@ -28,6 +28,7 @@ namespace DB
 
 class ASTExpressionList;
 class ASTFunction;
+class ASTIdentifier;
 class ASTOrderByElement;
 class ASTCreateQuery;
 class ASTInsertQuery;
@@ -261,6 +262,7 @@ private:
     NameToNameMap last_query_parameters;
     /// Counter for generating unique injected parameter names (fuzz_param_0, fuzz_param_1, ...).
     uint32_t param_counter = 0;
+    static constexpr uint32_t max_query_parameters = 10;
 
     // Various helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);
@@ -275,6 +277,9 @@ private:
     /// Builds a reference to a virtual column (`_part`, `_row_exists`, `_path`, ...),
     /// occasionally qualified with a known table name.
     ASTPtr makeFuzzedVirtualColumn();
+    /// Builds the string literal naming a data part that `OPTIMIZE ... DRY RUN PARTS` and the
+    /// `PART` forms of `ALTER` take.
+    ASTPtr makeFuzzedPartName();
     ASTPtr getRandomExpressionList(size_t nproj);
     DataTypePtr fuzzDataType(DataTypePtr type);
     /// Fuzz every element of a type list in place. Returns true if any element changed.
@@ -325,7 +330,8 @@ private:
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
-    void fuzzRefreshStrategy(ASTRefreshStrategy & strategy);
+    void swapEngineToCollapsing(ASTStorage & storage, ASTExpressionList * columns_list);
+    void fuzzRefreshStrategy(ASTRefreshStrategy & strategy, bool allow_incremental);
     void fuzzTableStorage(ASTStorage & storage);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
@@ -361,9 +367,11 @@ private:
     void fuzzTableFunctionName(ASTPtr & table_function);
     void fuzzClusterFunctionArguments(ASTFunction & fn);
     void fuzzMergeFunctionArguments(ASTFunction & fn);
+    String makeFuzzedLikePattern();
     String makeBraceExpansion();
     String makeRemoteHostDescriptor(bool secure);
     void wrapTableAsDistributed(ASTTableExpression & table);
+    void callTableAsParameterizedView(ASTTableExpression & table);
     void wrapTableAsMerge(ASTTableExpression & table);
     void replaceTableExpressionWithFunction(ASTTableExpression & table, ASTPtr replaced, ASTPtr wrapped);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
@@ -385,6 +393,9 @@ private:
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
     String generateParamValue();
+    ASTPtr makeQueryParameter(const String & type, const String & value);
+    ASTPtr makeLimitExpression(const Field & value);
+    ASTPtr makeParameterizedIdentifier(const ASTIdentifier & ident);
     void checkIterationLimit();
 
     void extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op, int negProb);
