@@ -94,6 +94,11 @@ public:
         const ActionsDAG::Node * predicate, ContextPtr context, const AlternativeKeyExpressionPtr & alternative_key) const;
 
     MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
+    /// Format changed `.idx` (v1) -> `.idx2` (v2); a part may hold either.
+    MergeTreeIndexSubstreams getPotentialSubstreams() const override
+    {
+        return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}, {MergeTreeIndexSubstream::Type::Regular, "", ".idx"}};
+    }
     using IMergeTreeIndex::getPhysicalFormat;
     MergeTreeIndexFormat getPhysicalFormat(
         const MergeTreeDataPartChecksums & checksums,

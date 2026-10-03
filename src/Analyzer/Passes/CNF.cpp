@@ -12,8 +12,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/logical.h>
 
-#include <DataTypes/IDataType.h>
-
 #include <Common/checkStackSize.h>
 
 namespace DB
@@ -137,10 +135,13 @@ public:
         {
             if (add_negation)
             {
-                if (function_name == "and")
-                    function_node->resolveAsFunction(or_function_resolver);
-                else
-                    function_node->resolveAsFunction(and_function_resolver);
+                /// Negate a new node: the formula can reference this one from several places.
+                const auto & resolver = function_name == "and" ? or_function_resolver : and_function_resolver;
+                auto negated_node = std::make_shared<FunctionNode>(resolver->getName());
+                negated_node->getArguments().getNodes() = function_node->getArguments().getNodes();
+                negated_node->resolveAsFunction(resolver);
+                node = std::move(negated_node);
+                function_node = node->as<FunctionNode>();
             }
 
             auto & arguments = function_node->getArguments().getNodes();
@@ -214,12 +215,12 @@ public:
                 return true;
 
             auto & other_node = arguments[1 - and_node_id];
-            auto & and_function_arguments = arguments[and_node_id]->as<FunctionNode &>().getArguments().getNodes();
+            const auto & and_function_arguments = arguments[and_node_id]->as<FunctionNode &>().getArguments().getNodes();
 
-            auto lhs = createFunctionNode(or_resolver, other_node->clone(), std::move(and_function_arguments[0]));
+            auto lhs = createFunctionNode(or_resolver, other_node->clone(), and_function_arguments[0]);
             num_atoms += countAtoms(other_node);
 
-            auto rhs = createFunctionNode(or_resolver, std::move(other_node), std::move(and_function_arguments[1]));
+            auto rhs = createFunctionNode(or_resolver, other_node, and_function_arguments[1]);
             node = createFunctionNode(and_resolver, std::move(lhs), std::move(rhs));
 
             return visit(node, num_atoms);
@@ -238,7 +239,7 @@ private:
 class CollectGroupsVisitor
 {
 public:
-    void visit(QueryTreeNodePtr & node)
+    void visit(const QueryTreeNodePtr & node)
     {
         CNF::OrGroup or_group;
         visitImpl(node, or_group);
@@ -249,14 +250,14 @@ public:
     CNF::AndGroup and_group;
 
 private:
-    void visitImpl(QueryTreeNodePtr & node, CNF::OrGroup & or_group)
+    void visitImpl(const QueryTreeNodePtr & node, CNF::OrGroup & or_group)
     {
         checkStackSize();
 
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !isLogicalFunction(*function_node))
         {
-            or_group.insert(CNFAtomicFormula{false, std::move(node)});
+            or_group.insert(CNFAtomicFormula{false, node});
             return;
         }
 
@@ -264,8 +265,8 @@ private:
 
         if (name == "and")
         {
-            auto & arguments = function_node->getArguments().getNodes();
-            for (auto & argument : arguments)
+            const auto & arguments = function_node->getArguments().getNodes();
+            for (const auto & argument : arguments)
             {
                 CNF::OrGroup argument_or_group;
                 visitImpl(argument, argument_or_group);
@@ -275,74 +276,18 @@ private:
         }
         else if (name == "or")
         {
-            auto & arguments = function_node->getArguments().getNodes();
-            for (auto & argument : arguments)
+            const auto & arguments = function_node->getArguments().getNodes();
+            for (const auto & argument : arguments)
                 visitImpl(argument, or_group);
         }
         else
         {
             chassert(name == "not");
-            auto & arguments = function_node->getArguments().getNodes();
-            or_group.insert(CNFAtomicFormula{true, std::move(arguments[0])});
+            const auto & arguments = function_node->getArguments().getNodes();
+            or_group.insert(CNFAtomicFormula{true, arguments[0]});
         }
     }
 };
-
-/// Whether a type can hold a `NaN` by itself, not looking at the nested types. `Dynamic` and `JSON`
-/// can carry a value of any type, including a floating point one, and `DataTypeDynamic::forEachChild`
-/// has nothing to enumerate (`DataTypeObject::forEachChild` enumerates only the typed paths), so both
-/// have to be judged by the type itself.
-bool typeCanHoldNaNItself(const IDataType & type)
-{
-    WhichDataType which(type);
-    return which.isFloat() || which.isDynamic() || which.isObject();
-}
-
-/// Whether the type, or a type nested in it, can hold a `NaN`.
-bool typeCanHoldNaN(const IDataType & type)
-{
-    if (typeCanHoldNaNItself(type))
-        return true;
-
-    bool result = false;
-    type.forEachChild([&](const IDataType & child) { result = result || typeCanHoldNaNItself(child); });
-    return result;
-}
-
-/// Whether an argument of a comparison can be a `NaN`. A literal is judged by its value, anything
-/// else by its type.
-bool argumentCanBeNaN(const QueryTreeNodePtr & argument)
-{
-    if (const auto * constant = argument->as<ConstantNode>())
-    {
-        const auto & value = constant->getValue();
-        /// A `Tuple` or `Array` constant can still hide a `NaN` in an element, so only a plain
-        /// floating point literal is decided by its value here.
-        if (value.getType() == Field::Types::Float64)
-            return value.isNaN();
-    }
-
-    const auto & type = argument->getResultType();
-    return type && typeCanHoldNaN(*type);
-}
-
-/// `NaN` fails every ordered comparison, so for a `NaN` argument `NOT (x < c)` is true while
-/// `x >= c` is false: the two are complementary over a totally ordered domain only. Inverting such a
-/// comparison would silently drop the `NaN` rows from the result.
-bool inversionKeepsComparisonSemantics(const FunctionNode & function_node)
-{
-    static const std::unordered_set<std::string_view> ordered_comparisons
-        = {"less", "lessOrEquals", "greater", "greaterOrEquals"};
-
-    if (!ordered_comparisons.contains(function_node.getFunctionName()))
-        return true;
-
-    for (const auto & argument : function_node.getArguments())
-        if (argumentCanBeNaN(argument))
-            return false;
-
-    return true;
-}
 
 std::optional<CNFAtomicFormula> tryInvertFunction(
     const CNFAtomicFormula & atom, const ContextPtr & context, const std::unordered_map<std::string, std::string> & inverse_relations)
@@ -351,14 +296,11 @@ std::optional<CNFAtomicFormula> tryInvertFunction(
     if (!function_node)
         return std::nullopt;
 
-    if (!inversionKeepsComparisonSemantics(*function_node))
-        return std::nullopt;
-
     if (auto it = inverse_relations.find(function_node->getFunctionName()); it != inverse_relations.end())
     {
-        auto inverse_function_resolver = FunctionFactory::instance().get(it->second, context);
-        function_node->resolveAsFunction(inverse_function_resolver);
-        return CNFAtomicFormula{!atom.negative, atom.node_with_hash.node};
+        auto inverted_node = atom.node_with_hash.node->clone();
+        inverted_node->as<FunctionNode &>().resolveAsFunction(FunctionFactory::instance().get(it->second, context));
+        return CNFAtomicFormula{!atom.negative, std::move(inverted_node)};
     }
 
     return std::nullopt;
