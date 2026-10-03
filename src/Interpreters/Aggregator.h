@@ -178,6 +178,11 @@ public:
         bool bucket_top_k_ascending = false;
         size_t bucket_top_k_rank_index = 0;
 
+        /// Whether the adaptive aggregation prunes its merge by the top-K of `bucket_top_k` (see `AdaptiveTopKPruning`):
+        /// the count bins bound the ranks from above, which serves a descending order only, and a throw-mode group limit
+        /// needs every group counted, which a skipped unit is not.
+        bool adaptiveTopKPrunes() const { return bucket_top_k && !bucket_top_k_ascending && !max_rows_to_group_by; }
+
         /// A bound on the aggregate at `having_prefilter_count_index`, a no-argument `count()`, whose rejected
         /// groups may be skipped. The filter above stays authoritative, so skipping fewer is still correct.
         enum class HavingPrefilterOp : UInt8
@@ -494,8 +499,14 @@ public:
     /// to leave the result as is.
     static size_t singleLevelChunkRowsForFanOut(size_t rows, size_t output_streams);
 
+    /// Records the adaptive verdict of the run in the hash-table statistics when the run measured one (see
+    /// `adaptiveStagingVerdict`). The in-memory merge records it inside `prepareVariantsToMerge`; the external merge
+    /// never reaches that, so its finish path calls this instead.
+    void recordAdaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const;
+
     /// `adaptive_session` (or nullptr when the adaptive aggregation is off) puts the destination of the adaptive merge
-    /// in front of the tables and prepares its top-K pruning once the session is engaged.
+    /// in front of the tables and prepares its top-K pruning once the session is engaged. It also gives the adaptive
+    /// verdict of the run to the hash-table statistics.
     ManyAggregatedDataVariants prepareVariantsToMerge(
         ManyAggregatedDataVariants && data_variants, AdaptiveAggregationSession * adaptive_session) const;
 
@@ -790,6 +801,10 @@ private:
     /// Whether a frozen producer of the session may thaw at all: not with `adaptive_aggregator_disable_thaw`, and not
     /// under the top-K pruning.
     bool adaptiveMayThaw(const AdaptiveAggregationSession & shared) const;
+
+    /// The adaptive verdict of a finished run: whether its staged streams were repeat-dominated, so that later runs of
+    /// the query should not engage the adaptive aggregation, or nothing when the run measured nothing.
+    std::optional<bool> adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const;
 
     /// The thaw verdict of a frozen producer, checked between blocks: its own staged stream repeats its misses so much
     /// that its table would do better absorbing them in place (see the tuning constants in `AdaptiveAggregationImpl.h`).

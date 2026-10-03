@@ -180,8 +180,10 @@ void initDataVariantsWithSizeHint(
     ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
 }
 
-/// Collection and use of the statistics should be enabled.
-void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, const DB::StatsCollectingParams & params)
+/// Collection and use of the statistics should be enabled. `repeat_dominated` is the adaptive verdict of the run (see
+/// `Aggregator::adaptiveStagingVerdict`), if it measured one.
+void updateStatistics(
+    const DB::ManyAggregatedDataVariants & data_variants, std::optional<bool> repeat_dominated, const DB::StatsCollectingParams & params)
 {
     if (!params.isCollectionAndUseEnabled())
         return;
@@ -196,7 +198,16 @@ void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, cons
     const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
     ::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
-    DB::getHashTablesStatistics<DB::AggregationEntry>().update({.sum_of_sizes = sum_of_sizes, .median_size = *median_size}, params);
+
+    /// A run without a verdict of its own carries the stored one over, so that the runs the verdict keeps off the
+    /// adaptive path do not erase it: a query marked repeat-dominated is not measured again until its entry is evicted.
+    auto & stats = DB::getHashTablesStatistics<DB::AggregationEntry>();
+    if (!repeat_dominated)
+    {
+        const auto prev = stats.getSizeHint(params);
+        repeat_dominated = prev && prev->adaptive_staging_repeat_dominated;
+    }
+    stats.update({.sum_of_sizes = sum_of_sizes, .median_size = *median_size, .adaptive_staging_repeat_dominated = *repeat_dominated}, params);
 }
 
 DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)
@@ -1402,7 +1413,10 @@ void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggrega
     std::call_once(adaptive.session->init_flag, [&] { initAdaptiveSession(*adaptive.session); });
     /// A table that was written to disk freezes again with the records and the bins it already has.
     if (!adaptive.partitions)
+    {
         adaptive.partitions = std::make_unique<AdaptivePartitionBuffers>(adaptive.session->layout);
+        adaptive.session->frozen_producers.fetch_add(1, std::memory_order_relaxed);
+    }
     if (adaptive.session->top_k_pruning && !adaptive.count_bins)
         adaptive.count_bins = std::make_unique<UInt16[]>(adaptive_count_bins);
     adaptive.freeze();
@@ -2454,6 +2468,7 @@ bool Aggregator::executeOnBlock(Columns columns,
             frozen.staged_bytes,
             static_cast<double>(frozen.thaw_sampled_records) / static_cast<double>(frozen.distinct_sampled_hashes.size()));
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationThaws);
+        adaptive->session->repeat_dominated_producers.fetch_add(1, std::memory_order_relaxed);
         adaptive->standDown();
     }
 
@@ -5214,7 +5229,8 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
 
     LOG_TRACE(log, "Merging aggregated data");
 
-    updateStatistics(data_variants, params.stats_collecting_params);
+    updateStatistics(
+        data_variants, adaptive_session ? adaptiveStagingVerdict(*adaptive_session) : std::nullopt, params.stats_collecting_params);
 
     ManyAggregatedDataVariants non_empty_data;
     non_empty_data.reserve(data_variants.size());

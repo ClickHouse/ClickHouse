@@ -207,6 +207,11 @@ struct AdaptiveAggregationSession
     /// Set by the first freeze when the aggregation feeds `ORDER BY count() DESC LIMIT n`, or the same by `uniqExact` or
     /// `uniqExactIf` (see `AdaptiveTopKPruning`).
     std::unique_ptr<AdaptiveTopKPruning> top_k_pruning;
+
+    /// The producers whose tables froze at least once, and those of them whose staged streams were repeat-dominated,
+    /// which they showed by thawing. Together they make the verdict of the run (see `Aggregator::adaptiveStagingVerdict`).
+    std::atomic<size_t> frozen_producers{0};
+    std::atomic<size_t> repeat_dominated_producers{0};
 };
 
 using AdaptiveAggregationSessionPtr = std::shared_ptr<AdaptiveAggregationSession>;

@@ -1708,6 +1708,11 @@ void AggregatingTransform::initGenerate()
                 [](const Aggregator & aggregator) { return aggregator.hasTemporaryData(); });
     };
 
+    /// The external merge bypasses `prepareVariantsToMerge`, which is where the adaptive verdict of the run is
+    /// normally recorded.
+    if (adaptive_engaged && aggregator_has_temporary_data())
+        params->aggregator.recordAdaptiveStagingVerdict(*adaptive_context->session);
+
     if (!aggregator_has_temporary_data())
     {
         if (!skip_merging)

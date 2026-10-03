@@ -48,13 +48,25 @@ struct AggregationEntry
     bool shouldBeUpdated(const AggregationEntry & new_entry) const
     {
         return new_entry.sum_of_sizes < sum_of_sizes / 2 || sum_of_sizes < new_entry.sum_of_sizes || new_entry.median_size < median_size / 2
-            || median_size < new_entry.median_size;
+            || median_size < new_entry.median_size || new_entry.adaptive_staging_repeat_dominated != adaptive_staging_repeat_dominated;
     }
 
-    std::string dump() const { return fmt::format("sum_of_sizes={}, median_size={}", sum_of_sizes, median_size); }
+    std::string dump() const
+    {
+        return fmt::format(
+            "sum_of_sizes={}, median_size={}, adaptive_staging_repeat_dominated={}",
+            sum_of_sizes,
+            median_size,
+            adaptive_staging_repeat_dominated);
+    }
 
     size_t sum_of_sizes = 0; // used to determine if it's better to convert aggregation to two-level from the beginning
     size_t median_size = 0; // roughly the size we're going to preallocate on each thread
+    /// Whether most of the threads of a run of the query thawed their frozen tables, because their own staged streams
+    /// kept repeating the missed keys (see `Aggregator::adaptiveStagingVerdict`): freezing cannot pay for such a query,
+    /// so later runs do not engage the adaptive aggregation at all. Runs without a verdict of their own carry the
+    /// stored one over (see `updateStatistics`).
+    bool adaptive_staging_repeat_dominated = false;
 };
 
 struct HashJoinEntry
