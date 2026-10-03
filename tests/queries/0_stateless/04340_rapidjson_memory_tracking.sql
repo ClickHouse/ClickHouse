@@ -26,3 +26,10 @@ SETTINGS allow_simdjson = 0, max_memory_usage = 48000000; -- { serverError MEMOR
 -- untracked DOM would have parsed successfully instead.
 SELECT length(JSONMergePatch(concat('{"a":0', repeat(',"a":0', 1000000), '}')))
 SETTINGS max_memory_usage = 24000000; -- { serverError MEMORY_LIMIT_EXCEEDED }
+
+-- The DOM is now rewound between rows, so one block's worth of documents no longer accumulates in
+-- the parser's pool. Before that, the pool grew to max_block_size times one document's DOM and this
+-- query could not run under this limit.
+SELECT count() FROM zeros(65536)
+WHERE NOT ignore(JSONExtractInt(materialize(concat(repeat('{"a":', 100), '1', repeat('}', 100))), 'a'))
+SETTINGS allow_simdjson = 0, max_block_size = 65536, max_threads = 1, max_memory_usage = 150000000;

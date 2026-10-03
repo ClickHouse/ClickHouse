@@ -1,7 +1,9 @@
 #include <LocalServer.h>
 
+#include <Server/StartupWarnings.h>
 #include <sys/resource.h>
 #include <exception>
+#include <Common/Config/getConfigPath.h>
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/PerCPUMemory.h>
@@ -22,9 +24,11 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DatabaseAtomic.h>
+#include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
+#include <Interpreters/CancellationChecker.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
@@ -41,6 +45,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ThreadStackSize.h>
 #include <Common/ThreadStatus.h>
+#include <Common/ThreadFuzzer.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
@@ -51,6 +56,7 @@
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/StackTrace.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
@@ -58,20 +64,24 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
-#include <Parsers/registerStatements.h>
+#include <Parsers/registerParsers.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
 #include <filesystem>
@@ -92,6 +102,7 @@
 #include <Poco/ThreadPool.h>
 
 #include <algorithm>
+#include <thread>
 
 #include "config.h"
 
@@ -124,6 +135,7 @@ namespace Setting
     extern const SettingsString default_format;
     extern const SettingsSeconds http_receive_timeout;
     extern const SettingsSeconds http_send_timeout;
+    extern const SettingsBool fsync_metadata;
     extern const SettingsBool implicit_select;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
@@ -200,6 +212,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_per_cpu_untracked_memory;
     extern const ServerSettingsUInt64 per_cpu_untracked_memory_thread_buffer;
+    extern const ServerSettingsUInt64 min_allocation_size_to_log_stack_trace;
     extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
@@ -216,6 +229,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
+    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_size;
+    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_free_size;
+    extern const ServerSettingsUInt64 iceberg_manifest_decode_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -242,6 +258,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_keep_alive_requests;
     extern const ServerSettingsBool asynchronous_metrics_enable_heavy_metrics;
     extern const ServerSettingsUInt32 asynchronous_heavy_metrics_update_period_s;
+    extern const ServerSettingsString logger_log;
 }
 
 namespace ErrorCodes
@@ -306,12 +323,11 @@ Poco::Util::LayeredConfiguration & LocalServer::getClientConfiguration()
     return config();
 }
 
-void LocalServer::processError(std::string_view) const
+void LocalServer::processError(std::string_view query) const
 {
-    if (ignore_error)
-        return;
-
-    if (is_interactive)
+    /// `--ignore-error` asks to carry on with the next statement, not to hide what went wrong, so
+    /// the exception is reported here rather than rethrown - rethrowing it would end the run.
+    if (is_interactive || ignore_error)
     {
         String message;
         if (server_exception)
@@ -327,7 +343,10 @@ void LocalServer::processError(std::string_view) const
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         fmt::print(stderr, "Received exception:\n{}\n", message);
-        fmt::print(stderr, "\n");
+        if (is_interactive)
+            fmt::print(stderr, "\n");
+        else
+            fmt::print(stderr, "(query: {})\n", query);
 #pragma clang diagnostic pop
     }
     else
@@ -367,19 +386,32 @@ void LocalServer::initialize(Poco::Util::Application & self)
     std::string config_path;
     if (getClientConfiguration().has("config-file"))
         config_path = getClientConfiguration().getString("config-file");
-    else if (config_path.empty() && fs::exists("config.xml"))
-        config_path = "config.xml";
-    else if (config_path.empty())
+    /// A configuration file can be written in XML or in YAML, so `config.xml`, `config.yaml` and
+    /// `config.yml` in the current directory are all picked up.
+    else if (auto path_in_current_directory = tryGetConfigPath("config"))
+        config_path = *path_in_current_directory;
+    else
         config_path = getLocalConfigPath(home_path).value_or("");
 
-    if (fs::exists(config_path))
+    /// The names of the merge directories are derived from the name of the main config file, see
+    /// `ConfigProcessor::getConfigMergeFiles`, so without a config file there is nothing to derive
+    /// them from and a `config.d` in the current directory would be silently ignored. Process a
+    /// config embedded in the binary in place of the missing file, taking the current directory as
+    /// the base config path: then `./config.d` and `./conf.d` are merged into it, and running
+    /// `clickhouse-local` in a directory with a `config.d` does not additionally require creating
+    /// an otherwise empty `config.xml` next to it.
+    if (!fs::exists(config_path))
     {
-        ConfigProcessor config_processor(config_path);
-        ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
-        auto loaded_config = config_processor.loadConfig();
-        getClientConfiguration().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
-        loaded_config_path = config_path;
+        config_path = "config.xml";
+        ConfigProcessor::registerEmbeddedConfig(config_path, "<clickhouse/>");
     }
+
+    ConfigProcessor config_processor(config_path);
+    const fs::path config_dir = fs::path(config_path).parent_path();
+    ConfigProcessor::setConfigPath(config_dir.empty() ? fs::path(".") : config_dir);
+    auto loaded_config = config_processor.loadConfig();
+    getClientConfiguration().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+    loaded_config_path = config_path;
 
     /// Use <echo_formatted/>, <echo_query_id/>, <enable_progress_table_toggle/> unless the
     /// corresponding dashed CLI option is specified. Shared with `clickhouse-client`.
@@ -475,6 +507,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::max_format_parsing_thread_pool_size],
         server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
         server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
+
+    getIcebergManifestDecodeThreadPool().initialize(
+        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
+        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
+        server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
 }
 
 
@@ -517,6 +554,43 @@ void deferSystemDatabaseTables(ContextPtr context, IDatabase & system_database)
     attachSystemTableOne(context, system_database);
 }
 
+/// The UUID from `metadata/<name>.sql` if it defines an `Atomic` database, otherwise Nil.
+UUID tryReadAtomicDatabaseUUID(const String & name, ContextPtr context)
+{
+    auto db_disk = context->getDatabaseDisk();
+    auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(name);
+    if (!db_disk->existsFile(metadata_file_path))
+        return UUIDHelpers::Nil;
+
+    auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, context, db_disk, metadata_file_path);
+    const auto & create = ast->as<const ASTCreateQuery &>();
+    if (!create.storage || !create.storage->engine || create.storage->engine->name != "Atomic")
+        return UUIDHelpers::Nil;
+    return create.uuid;
+}
+
+/// Records the database like `CREATE DATABASE` does, so that runs with another default database attach it.
+void writeMissingDatabaseMetadataFile(const IDatabase & database, ContextPtr context)
+{
+    auto db_disk = context->getDatabaseDisk();
+    const String database_name = database.getDatabaseName();
+    auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
+    if (db_disk->existsFile(metadata_file_path))
+        return;
+
+    String statement = fmt::format("ATTACH DATABASE {} UUID '{}'\nENGINE = Atomic\n", TABLE_WITH_UUID_NAME_PLACEHOLDER, toString(database.getUUID()));
+    auto metadata_tmp_file_path = DatabaseCatalog::getMetadataTmpFilePath(database_name);
+    db_disk->createDirectories(DatabaseCatalog::getMetadataDirPath());
+    db_disk->removeFileIfExists(metadata_tmp_file_path);
+    writeMetadataFile(
+        db_disk,
+        /*file_path=*/metadata_tmp_file_path,
+        /*content=*/statement,
+        /*fsync_metadata=*/context->getSettingsRef()[Setting::fsync_metadata]);
+    /// Does not replace the metadata of another database with this name.
+    db_disk->moveFile(metadata_tmp_file_path, metadata_file_path);
+}
+
 DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
 {
     auto overlay = std::make_shared<DatabaseOverlay>(name_, context);
@@ -537,6 +611,9 @@ DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPt
             symlink_path = symlink_path.parent_path();
         default_database_uuid = parse<UUID>(symlink_path.filename());
     }
+    /// The file is written on the first run, before any table creates the symlink.
+    else if (UUID uuid_from_metadata_file = tryReadAtomicDatabaseUUID(name_, context); uuid_from_metadata_file != UUIDHelpers::Nil)
+        default_database_uuid = uuid_from_metadata_file;
     else
         default_database_uuid = UUIDHelpers::generateV4();
 
@@ -1139,34 +1216,30 @@ void LocalServer::setupUsers()
     /// is attached (and thus safe to grant SELECT on implicitly) only when this is enabled.
     access_control.setUserQueryLogEnabled(config.getBool("query_log.enable_user_query_log", true));
 
-    /// Apply user-level configuration from a loaded config file (including those
-    /// auto-discovered via `getLocalConfigPath`, e.g. `~/.clickhouse-local/config.xml`).
-    if (!loaded_config_path.empty())
-    {
-        const auto config_dir = fs::path{loaded_config_path}.remove_filename().string();
-        bool has_user_directories = getClientConfiguration().has("user_directories");
-        String users_config_path = getClientConfiguration().getString("users_config", "");
+    /// Apply user-level configuration from the config processed in `initialize`: a config file
+    /// auto-discovered via `getLocalConfigPath` (e.g. `~/.clickhouse-local/config.xml`), or the
+    /// merge directories of the current directory processed on top of the embedded config.
+    const auto config_dir = fs::path{loaded_config_path}.remove_filename().string();
+    bool has_user_directories = getClientConfiguration().has("user_directories");
+    String users_config_path = getClientConfiguration().getString("users_config", "");
 
-        if (users_config_path.empty() && has_user_directories)
-            users_config_path = getClientConfiguration().getString("user_directories.users_xml.path");
+    if (users_config_path.empty() && has_user_directories)
+        users_config_path = getClientConfiguration().getString("user_directories.users_xml.path");
 
-        /// Anchor relative paths to the config's directory, not the cwd.
-        /// Otherwise a missing `users.xml` silently falls back to `./users.xml`,
-        /// which could grant `access_management` to the default user.
-        if (!users_config_path.empty() && fs::path(users_config_path).is_relative())
-            users_config_path = fs::path(config_dir) / users_config_path;
+    /// Anchor relative paths to the config's directory, not the cwd.
+    /// Otherwise a missing `users.xml` silently falls back to `./users.xml`,
+    /// which could grant `access_management` to the default user.
+    if (!users_config_path.empty() && fs::path(users_config_path).is_relative())
+        users_config_path = fs::path(config_dir) / users_config_path;
 
-        if (users_config_path.empty())
-            users_config = getConfigurationFromXMLString(minimal_default_user_xml);
-        else
-        {
-            ConfigProcessor config_processor(users_config_path);
-            const auto loaded_config = config_processor.loadConfig();
-            users_config = loaded_config.configuration;
-        }
-    }
-    else
+    if (users_config_path.empty())
         users_config = getConfigurationFromXMLString(minimal_default_user_xml);
+    else
+    {
+        ConfigProcessor config_processor(users_config_path);
+        const auto loaded_config = config_processor.loadConfig();
+        users_config = loaded_config.configuration;
+    }
     if (users_config)
         global_context->setUsersConfig(users_config);
     else
@@ -1249,7 +1322,7 @@ try
     }
 
     registerInterpreters();
-    registerStatements();
+    registerParsers();
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
@@ -1259,10 +1332,26 @@ try
     registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
+    QueryPlanStepRegistry::registerPlanSteps();
 
     processConfig();
 
+    /// `workerFunction()` returns only on `terminateThread()`, so it must not hold a slot of a
+    /// bounded pool. SCOPE_EXIT is LIFO, so registering this guard before the `cleanup()` one keeps
+    /// the checker running while `cleanup()` waits for listener connections to drain.
+    std::thread cancellation_thread;
+
+    SCOPE_EXIT({
+        if (cancellation_thread.joinable())
+        {
+            CancellationChecker::getInstance().terminateThread();
+            cancellation_thread.join();
+        }
+    });
+
     SCOPE_EXIT({ cleanup(); });
+
+    cancellation_thread = std::thread([] { CancellationChecker::getInstance().workerFunction(); });
 
     initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")),
         toProgressOption(config().getString("progress-table", "default")));
@@ -1359,6 +1448,7 @@ void LocalServer::updateLoggerLevel(const String & logs_level)
 
 void LocalServer::processConfig()
 {
+    auto component_guard = Coordination::setCurrentComponent("LocalServer::processConfig");
     if (!queries.empty() && !queries_files.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
@@ -1407,6 +1497,10 @@ void LocalServer::processConfig()
     global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::LOCAL);
+
+    ThreadFuzzer::instance().setup();
+    addBuildWarnings(global_context);
+    addMergeTreeArenaPoolWarnings(global_context);
 
     tryInitPath();
 
@@ -1466,6 +1560,10 @@ void LocalServer::processConfig()
 
     CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
         server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
+
+    /// clickhouse-local never creates a trace collector, so the setter reports the refusal here.
+    MemoryTracker::setMinAllocationSizeToLogStackTrace(
+        server_settings[ServerSetting::min_allocation_size_to_log_stack_trace]);
 
     per_cpu_memory.setBudgetCapacity(server_settings[ServerSetting::max_per_cpu_untracked_memory]);
     per_cpu_memory.setThreadBuffer(server_settings[ServerSetting::per_cpu_untracked_memory_thread_buffer]);
@@ -1735,6 +1833,11 @@ void LocalServer::processConfig()
     /// taken back out below, once `client_context` exists.
     applyCmdSettings(global_context);
 
+    /// After the default profile and command-line settings: the first access to `MergeTreeSettings`
+    /// caches them, and it must see the final `compatibility` value.
+    std::string server_log_path = !server_logs_file.empty() ? server_logs_file : server_settings[ServerSetting::logger_log];
+    addEnvironmentWarnings(global_context, logger(), global_context->getPath(), server_log_path);
+
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
@@ -1765,6 +1868,10 @@ void LocalServer::processConfig()
         /// Lock path directory before read
         fs::create_directories(fs::path(path));
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
+
+        /// With `--only-system-tables` the directory is only inspected, so the default database is not recorded in it.
+        if (!server_default_database.empty() && !getClientConfiguration().has("only-system-tables"))
+            writeMissingDatabaseMetadataFile(*DatabaseCatalog::instance().getDatabase(server_default_database), global_context);
 
         if (fs::exists(fs::path(path) / "metadata"))
         {

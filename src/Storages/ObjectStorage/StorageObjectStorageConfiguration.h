@@ -10,6 +10,7 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/PartitionCommands.h>
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
 #include <Storages/StorageFactory.h>
@@ -129,6 +130,8 @@ public:
     virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;
 
+    virtual String getDataSourceDescriptionForNamespace(const String &) const { return getDataSourceDescription(); }
+
     virtual StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const = 0;
 
     /// Add/replace structure and format arguments in the AST arguments if they have 'auto' values.
@@ -150,6 +153,8 @@ public:
     virtual bool isDataLakeConfiguration() const { return false; }
     virtual bool isIcebergConfiguration() const { return false; }
 
+    virtual bool supportsFullyQualifiedPaths() const { return false; }
+
     virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
     virtual bool supportsTotalBytes(ContextPtr, ObjectStorageType) const { return false; }
@@ -160,6 +165,8 @@ public:
     virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
 
     virtual std::shared_ptr<IDataLakeMetadata> getExternalMetadata() { return {}; }
+
+    virtual void setExplicitMetadataFilePath(const String & /*path*/) {}
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
 
@@ -197,6 +204,8 @@ public:
     virtual bool supportsParallelInsert() const { return false; }
     virtual bool supportsWrites() const { return true; }
 
+    virtual bool supportsCreateFromExistingTableInCatalog() const { return false; }
+
     virtual bool supportsPartialPathPrefix() const { return true; }
 
     virtual ObjectIterator iterate(
@@ -211,6 +220,13 @@ public:
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
     virtual void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context);
+
+    /// For a table created on top of a server disk: the config section of the disk that holds the
+    /// backend object storage settings. Follows `disk` references of layered disk configs (e.g. a
+    /// cache disk over an S3 disk resolves to the S3 disk's section) and descends into the local
+    /// location's subsection for multi-location disks. Returns std::nullopt when the disk is not
+    /// present in the config (e.g. a custom disk created from SQL).
+    static std::optional<String> tryGetDiskConfigurationPrefix(const Poco::Util::AbstractConfiguration & config, const String & disk_name);
 
     virtual void create(
         ObjectStoragePtr object_storage,
@@ -259,12 +275,26 @@ public:
         }
     }
 
+    virtual void checkAlterPartitionIsPossible(ObjectStoragePtr /*object_storage*/, ContextPtr /*context*/, const PartitionCommands & /*commands*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter partition commands are not supported by storage {}", getEngineName());
+    }
+
     virtual void alter(
         ObjectStoragePtr /*object_storage*/,
         const AlterCommands & /*params*/,
         ContextPtr /*context*/,
         const StorageID & /*storage_id*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/) {}
+
+    virtual Pipe alterPartition(
+        const PartitionCommands & /* commands */,
+        ContextPtr /* context */,
+        std::shared_ptr<DataLake::ICatalog> /* catalog */,
+        StorageID /* storage_id */)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter partition commands are not supported by storage {}", getEngineName());
+    }
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
@@ -281,7 +311,12 @@ public:
         return nullptr;
     }
 
-    virtual bool optimize(ObjectStoragePtr /*object_storage*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    virtual bool optimize(
+        ObjectStoragePtr /*object_storage*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr /*context*/,
+        const std::optional<FormatSettings> & /*format_settings*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support optimize", getTypeName());
     }
@@ -372,7 +407,11 @@ public:
     /// DDL does not depend on the setting at attach time.
     String url_overridden_by_base_setting;
 
+    std::optional<String> source_disk_name;
+
 protected:
+    void checkFormat() const;
+
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;

@@ -44,6 +44,8 @@ void registerInputFormatJSONColumns(FormatFactory & factory)
         }
     );
     factory.markFormatSupportsSubsetOfColumns("JSONColumns");
+    /// Data in this format is commonly stored in `.json` files, but the `json` extension infers as `JSON`.
+    factory.registerFileExtension("json", "JSONColumns", /*used_for_format_inference=*/ false);
 
     factory.setDocumentation("JSONColumns", Documentation{
         .description = R"DOCS_MD(
@@ -53,16 +55,16 @@ void registerInputFormatJSONColumns(FormatFactory & factory)
 
 ## Description {#description}
 
-:::tip
+<Tip>
 The output of the JSONColumns* formats provides the ClickHouse field name and then the content of each row in the table for that field;
 visually, the data is rotated 90 degrees to the left.
-:::
+</Tip>
 
 In this format, all data is represented as a single JSON Object.
 
-:::note
+<Note>
 The `JSONColumns` format buffers all data in memory and then outputs it as a single block, so, it can lead to high memory consumption.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 

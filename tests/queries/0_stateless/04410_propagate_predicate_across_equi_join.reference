@@ -1,0 +1,32 @@
+inner eq	2
+left between	2
+non-key	0
+full join	1
+setting off	1
+multi-clause	2
+non-indexed target	1
+left, filter on rhs	1
+non-deterministic	1
+result match	0
+left unmatched keys	(15,10,4999985)	1
+computed key	1
+computed key correctness	0
+computed target key	1
+computed target key correctness	0
+filtered target prunes	1
+filtered computed target key	1
+inner eq rhs	2
+both sides propagate	2	2
+both sides propagate correctness	0
+any inner	2
+any inner correctness	0
+any left	2
+any left unmatched keys	(15,10,4999985)	1
+semi left	2
+semi left correctness	0
+legacy any inner	2
+legacy any left	2
+distinct target	1
+sorted target	2
+key vs key	1
+key vs key correctness	0

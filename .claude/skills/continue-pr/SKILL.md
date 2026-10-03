@@ -133,7 +133,7 @@ git fetch origin "$BASE_BRANCH"
 git merge-base --is-ancestor "origin/$BASE_BRANCH" HEAD || echo "needs merge"
 ```
 
-If the branch is behind the base branch and is red (some checks didn't pass), or if it is behind the base branch for more than a week (regardless of checks success), or has conflicts, merge:
+If the branch is behind the base branch and is red (some checks didn't pass), or if it is behind the base branch for more than a week (regardless of checks success), or has conflicts, or the merge queue removed the PR after its last commit (see step 4), merge:
 
 ```bash
 git merge "origin/$BASE_BRANCH"
@@ -151,7 +151,35 @@ If there are merge conflicts:
 
 ### 4. Analyze CI status and fix failures
 
-Use the CI analysis tool to fetch reports:
+**First, check whether the merge queue rejected the PR.** The PR's own CI runs on its head commit, but the merge queue re-tests the PR merged with the latest base branch (a `gh-readonly-queue/<base>/pr-<N>-<base-sha>` ref, workflow `MergeQueueCI`). A PR can therefore be all green and `CLEAN` yet keep being rejected - typically a semantic conflict: a test added on the base branch that pins behaviour this PR changes, or an API the PR uses that was changed on the base branch. Look for the latest merge-queue event:
+
+```bash
+gh api graphql -f query="
+{
+  repository(owner: \"${REPO%%/*}\", name: \"${REPO#*/}\") {
+    pullRequest(number: $PR_NUMBER) {
+      mergeQueueEntry { state }
+      commits(last: 1) { nodes { commit { oid committedDate } } }
+      timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT]) {
+        nodes { __typename ... on RemovedFromMergeQueueEvent { createdAt reason beforeCommit { oid } } }
+      }
+    }
+  }
+}"
+```
+
+If the last event is a `RemovedFromMergeQueueEvent` (with a reason other than `merged`) newer than the last commit, and the PR is not back in the queue, the rejection is the first failure to fix. `beforeCommit.oid` is the merge-queue commit that was tested. `fetch_ci_report.js` with the PR URL detects this case and adds the failed jobs of that merge-queue run to its output (marked with a ⚠️ line and listed under `MergeQueueCI`). To look at the run directly, take its report links from the commit statuses (the check runs link to GitHub Actions jobs instead):
+
+```bash
+MQ_SHA=<beforeCommit.oid>
+gh api "repos/$REPO/commits/$MQ_SHA/statuses" --paginate \
+    --jq '.[] | select(.state != "success") | "\(.context)\t\(.state)\t\(.target_url)"'
+node .claude/tools/fetch_ci_report.js "<a praktika.html?REF=gh-readonly-queue/...&sha=$MQ_SHA&name_0=MergeQueueCI&name_1=<job> URL from above>" --failed
+```
+
+The per-job JSON is also directly at `https://s3.amazonaws.com/clickhouse-test-reports/REFs/gh-readonly-queue/<base>/pr-<N>-<base-sha>/$MQ_SHA/mergequeueci/result_<job>.json` (gzip-compressed; the build log is `.../mergequeueci/<job>/job.log`). To fix the rejection, merge the latest base branch (step 3) even if the PR is otherwise current, reproduce the failure on the merged tree, and fix it in the PR - adapt the code to the changed API, or update a newly added test when the PR intentionally changes the behaviour it pins (say so in the commit message and the PR comment). Do not re-add the PR to the merge queue yourself, and do not dismiss a merge-queue failure as flaky without the same evidence as for any other failure.
+
+Then fetch the PR's own CI reports:
 
 ```bash
 node .claude/tools/fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/$PR_NUMBER" --failed --cidb

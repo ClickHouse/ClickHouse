@@ -89,6 +89,20 @@ inline UInt64 & getInlineCountState(AggregateDataPtr & ptr)
     return getCountState(reinterpret_cast<AggregateDataPtr>(&ptr));
 }
 
+/// What a conversion that materializes only some of the bucket's groups - the Top-K one or the HAVING
+/// pre-filter - reports to the runtime dataflow statistics about the groups it did not materialize.
+struct UntruncatedAggregationKeys
+{
+    /// What every group's key - kept or skipped - would occupy materialized.
+    UInt64 bytes = 0;
+
+    /// A bounded copy of those keys, in key order, or empty. The statistics divide the byte count by a
+    /// compression ratio, which the emitted chunk can only misrepresent: it holds the kept groups, and
+    /// a conversion that rejected every group leaves no row there at all - and without a ratio the byte
+    /// count is dropped instead of estimated.
+    Columns sample_columns;
+};
+
 /** Aggregates the source of the blocks.
   */
 class Aggregator final
@@ -164,6 +178,21 @@ public:
         bool bucket_top_k_ascending = false;
         size_t bucket_top_k_count_index = 0;
 
+        /// A bound on the aggregate at `having_prefilter_count_index`, a no-argument `count()`, whose rejected
+        /// groups may be skipped. The filter above stays authoritative, so skipping fewer is still correct.
+        enum class HavingPrefilterOp : UInt8
+        {
+            Disabled,
+            Greater,
+            GreaterOrEqual,
+            Less,
+            LessOrEqual,
+            Equal,
+        };
+        HavingPrefilterOp having_prefilter_op = HavingPrefilterOp::Disabled;
+        UInt64 having_prefilter_threshold = 0;
+        size_t having_prefilter_count_index = 0;
+
         bool enable_producing_buckets_out_of_order_in_aggregation = true;
 
         /// Merge the per-thread single-level hash tables in parallel, partitioned by the key hash,
@@ -204,6 +233,73 @@ public:
         /// whole-block merge stage (`mergeBlocks` in `MergingAggregatedBucketTransform`) keeps
         /// `prealloc_serialized`, where it is a win.
         bool aggregation_in_order = false;
+
+        /// With `group_by_overflow_mode = ANY`: once any aggregation stream exceeds
+        /// `max_rows_to_group_by`, freeze a single shared set of exactly `max_rows_to_group_by`
+        /// kept keys and restrict every parallel stream to that set, so that the aggregate values
+        /// of the returned keys stay exact. Without it the cutoff is per-stream: a key kept by one
+        /// stream and rejected by another loses the other stream's rows and comes out of the merge
+        /// with an undercounted value. Set by the trivial `GROUP BY ... LIMIT` optimization for
+        /// local single-stage aggregation (see `addAggregationStep` in the planner); requires
+        /// `ANY` overflow mode without an overflow row.
+        /// For the fixed hash map methods (8/16-bit keys) the cutoff stays inert and the
+        /// aggregation is exact and complete — see `Aggregator::shared_kept_keys_cutoff_inert`.
+        /// See `ManyAggregatedData::SharedKeptKeys` for the protocol.
+        bool shared_kept_keys_for_overflow_any = false;
+
+        /// Runtime arbitration between the kept-keys cutoff and external aggregation, shared by
+        /// every stream (and every `Aggregator`) of one aggregation step. Spilled buckets would
+        /// bypass the restriction to the kept keys, so before the kept keys are frozen the two
+        /// exclude each other, decided by whichever fires first:
+        /// - a stream that needs to spill before any freeze permanently abandons the cutoff
+        ///   (`checkLimits` stops capping the tables, no rows have been dropped anywhere, and the
+        ///   aggregation completes exactly, spilling as it would without the optimization);
+        /// - a freeze locks the cutoff in, and from then on only a table already rebuilt to the
+        ///   kept keys may spill.
+        /// After a freeze, capping the number of keys is not by itself a memory bound: the kept
+        /// keys are bounded, but their aggregate states are not (`uniqExact`, `groupArray`,
+        /// `topK`, the exact quantiles), so external aggregation has to stay available. A table
+        /// rebuilt to the kept keys holds nothing but kept keys, so flushing it to disk cannot
+        /// leak a dropped key into the result; the flush empties the table, which under
+        /// `no_more_keys` would drop the remaining rows of the kept keys, so the `Aggregator`
+        /// re-seeds it from `AggregatedDataVariants::kept_keys_seed` right after the flush and
+        /// keeps aggregating exactly.
+        /// A table that has not been rebuilt yet may not spill — it still holds arbitrary keys.
+        /// Created by `AggregatingStep` when the cutoff is armed; null otherwise.
+        struct SharedKeptKeysControl
+        {
+            enum class State : UInt8
+            {
+                Armed,
+                Frozen,
+                Abandoned,
+            };
+
+            std::atomic<State> state{State::Armed};
+
+            /// The freezing stream claims the cutoff before dismantling its hash table.
+            /// Fails when a spill has abandoned the cutoff or another stream froze it first.
+            bool tryFreeze()
+            {
+                State expected = State::Armed;
+                return state.compare_exchange_strong(expected, State::Frozen);
+            }
+
+            /// A stream that needs to spill abandons the cutoff. Fails (the spill must be
+            /// skipped) when the kept keys are already frozen.
+            bool tryAbandon()
+            {
+                State expected = State::Armed;
+                return state.compare_exchange_strong(expected, State::Abandoned) || expected == State::Abandoned;
+            }
+
+            bool isAbandoned() const
+            {
+                return state.load() == State::Abandoned;
+            }
+        };
+
+        std::shared_ptr<SharedKeptKeysControl> shared_kept_keys_control;
 
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
@@ -327,17 +423,78 @@ public:
     /// time the last finisher assembles the merge.
     void flushPendingChunks(AdaptiveAggregationProducer & adaptive) const;
 
-    /// The production-time memory valve: claims a bounded batch of staged chunks under the
-    /// sweep lock, drains it into a producer-local table outside the lock, and writes that
-    /// table through the ordinary external machinery; a sub-floor tail accumulates in the
-    /// session's shared table instead. Producers over the trigger block on the claim
+    /// The production-time memory valve: claims batches of staged chunks bounded in records
+    /// and in bytes under the sweep lock, drains each into a producer-local table outside the
+    /// lock, and writes that table through the ordinary external machinery, until the query is
+    /// back under the threshold or only a tail too small for a part is left, which accumulates
+    /// in the session's shared table instead. Producers over the trigger block on the claim
     /// deliberately - pausing production is the backpressure that makes the bound hold.
-    void drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession & shared) const;
+    /// Returns how many staged records this sweep took out of the backlog, which is zero when
+    /// it found nothing to claim: the trigger is reached by every producer on every block.
+    size_t drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession & shared) const;
+
+    /// One claim of the sweep: a full batch drained into a producer-local table and written,
+    /// after which it returns true so the sweep claims again; or the tail drained into the
+    /// shared table, nothing to claim, the query under the threshold, or a declined
+    /// reservation, after which it returns false and the sweep ends. `drained_records_out`
+    /// reports what this claim drained, which the two endings that drain nothing leave at zero.
+    bool drainStagedChunksBatchUnderMemoryPressure(
+        AdaptiveAggregationSession & shared,
+        PaddedPODArray<AggregateDataPtr> & places_scratch,
+        size_t & drained_records_out) const;
 
     /// The finish drain: converts everything still enqueued into disk-mergeable form when the
-    /// merge goes external, spilling at the part floor as it goes, and throws if anything
+    /// merge goes external, spilling at the part bound as it goes, and throws if anything
     /// would be left behind.
     void drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) const;
+
+    /// How large a pressure-drained part may grow, how many records fill one on the states
+    /// alone, and how many detached bytes may be in flight to the writer at once. The sweeps
+    /// are the valve that holds the query under `max_bytes_before_external_group_by`, so their
+    /// own working set - the batch a sweep claims, the table it drains that batch into, the
+    /// residue the tails share and the writes in flight - is sized from that threshold instead
+    /// of from an absolute constant, or the valve costs more memory than it sheds. Without a
+    /// threshold to size against, the part bound is unlimited and the absolute ceilings stand.
+    /// The per-record charge is read from the drain table's variant, because the hash cell
+    /// of a `keys128` or `keys256` table is not that of a `UInt64` or a string key.
+    size_t adaptivePressurePartBytes() const;
+    size_t adaptiveDrainRecordBytes(AggregatedDataVariants::Type type) const;
+    size_t adaptivePressurePartRecords(AggregatedDataVariants::Type type) const;
+    size_t adaptivePressureDetachedBytesBudget() const;
+
+    /// The bytes a claimed batch is expected to occupy once drained into a table of the given
+    /// variant: the per-record cells and aggregate states of the destination table, plus the
+    /// batch's own staged bytes, which stay resident beside that table until the drain
+    /// returns. Saturating, because an absurd product only means "ask for the whole budget".
+    size_t estimateAdaptiveDrainBytes(AggregatedDataVariants::Type type, size_t records, size_t staged_bytes) const;
+
+    /// One claim of a drain, from the chunks in order starting at `begin`: the batch takes the
+    /// next chunk while the batch with it stays under both targets, and is closed before the
+    /// chunk that would take it to either, which is left for the next claim, so the table a
+    /// drain builds stays under the bound the targets were sized to. Only a first chunk that is
+    /// over a target alone is taken regardless, because a chunk is claimed whole. A claim that
+    /// reached a target, or was closed before the chunk that would have reached it, is full - a
+    /// part of its own; one that ran out of chunks is the tail.
+    struct StagedChunkClaim
+    {
+        /// One past the last chunk claimed.
+        size_t end = 0;
+        size_t records = 0;
+        size_t staged_bytes = 0;
+        bool full = false;
+    };
+    StagedChunkClaim claimStagedChunksToBound(
+        const std::vector<StagedChunkPtr> & chunks,
+        size_t begin,
+        AggregatedDataVariants::Type type,
+        size_t records_target,
+        size_t bytes_target) const;
+
+    /// For a producer back on the baseline path, which cannot free the shared drain table by
+    /// flushing its own: writes that table out regardless of the part floor, then returns query
+    /// memory sampled with none of it resident and no detached table in flight. Empty when no
+    /// producer ever froze, so there is no shared table, or when the query was cancelled.
+    std::optional<Int64> releaseAdaptiveDrainResidue(AdaptiveAggregationSession & shared) const;
 
     /** This array serves two purposes.
       *
@@ -399,8 +556,15 @@ public:
       * If final = false, then ColumnAggregateFunction is created as the aggregation columns with the state of the calculations,
       *  which can then be combined with other states (for distributed query processing).
       * If final = true, then columns with ready values are created as aggregate columns.
+      * A non-zero `max_rows_per_block` caps the size of the emitted single-level chunks below `max_block_size`.
       */
-    AggregatedChunks convertToChunks(AggregatedDataVariants & data_variants, bool final) const;
+    AggregatedChunks convertToChunks(AggregatedDataVariants & data_variants, bool final, size_t max_rows_per_block = 0) const;
+
+    /// A single-level result smaller than `max_block_size` is converted to one chunk, and a `Resize`
+    /// hands out whole chunks, so everything downstream of it runs in one thread. Returns a chunk size
+    /// that splits `rows` into about one chunk per output stream, never below 512 rows per chunk, or 0
+    /// to leave the result as is.
+    static size_t singleLevelChunkRowsForFanOut(size_t rows, size_t output_streams);
 
     /// `adaptive_session` (or nullptr when the adaptive aggregation is off) feeds the
     /// thaw verdict into the hash-table statistics next to the observed sizes.
@@ -508,6 +672,14 @@ private:
     AggregatedDataVariants::Type method_chosen_for_in_order;
 
     Sizes key_sizes;
+
+    /// `shared_kept_keys_for_overflow_any` is requested, but `method_chosen` uses a fixed hash
+    /// map (8/16-bit keys), where the cutoff is both useless and broken: the tables are bounded
+    /// by the key space (at most 65536 cells), so capping them buys nothing, and the implicit-zero
+    /// maps cannot represent a kept key with a zero inline `count()` state (such a cell reads as
+    /// absent, so the seeded keys would be lost and their rows dropped). `checkLimits` ignores
+    /// `max_rows_to_group_by` in that case and the aggregation stays exact and complete.
+    bool shared_kept_keys_cutoff_inert = false;
 
     HashMethodContextPtr aggregation_state_cache;
 
@@ -782,10 +954,19 @@ private:
         const std::vector<MutableStagedChunkPtr> & minis,
         StagedChunk & chunk) const;
 
-    /// The single publication point: finishes the chunk (builds its preparation in place,
-    /// checks the structural invariants in debug builds) and hands it over as immutable to
-    /// the session's backlog.
+    /// The single publication point: checks the structural invariants in debug builds, cuts
+    /// the chunk at the part bound if it is over it, and enqueues the result.
     void publishStagedChunk(AdaptiveAggregationSession & shared, MutableStagedChunkPtr block) const;
+
+    /// Finishes one chunk (builds its preparation in place) and hands it over as immutable to
+    /// the session's backlog.
+    void enqueueStagedChunk(AdaptiveAggregationSession & shared, MutableStagedChunkPtr block) const;
+
+    /// Cuts a chunk whose drain is estimated over `adaptivePressurePartBytes` into pieces
+    /// along bucket boundaries, each estimated within the bound where a single bucket allows;
+    /// empty when the chunk fits as it is, so no copy is made in the common case.
+    std::vector<MutableStagedChunkPtr> splitStagedChunkAtPartBound(
+        const AdaptiveAggregationSession & shared, const StagedChunk & chunk) const;
 
     /// Builds the staged chunk's shared preparation: the aggregate-function instructions over
     /// its argument columns, in the chunk's own stable storage.
@@ -839,6 +1020,7 @@ private:
         size_t key_start,
         bool has_only_one_value_since_last_reset,
         bool all_keys_are_const,
+        bool all_places_are_non_null,
         bool use_compiled_functions) const;
 
     /// For case when there are no keys (all aggregate into one row).
@@ -961,16 +1143,52 @@ private:
     /// Used for single level merge.
     void resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_variants) const;
 
+    bool havingPrefilterKeeps(UInt64 count) const
+    {
+        switch (params.having_prefilter_op)
+        {
+            case Params::HavingPrefilterOp::Greater: return count > params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::GreaterOrEqual: return count >= params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::Less: return count < params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::LessOrEqual: return count <= params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::Equal: return count == params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::Disabled: return true;
+        }
+        return true;
+    }
+
+    /// `allow_having_prefilter` is sound only on a final conversion of a complete bucket; each caller establishes that.
+    /// `untruncated_keys`, when non-null, receives what every group's key - kept or skipped - would occupy
+    /// materialized, measured one key at a time on a single reused row, so the accounting stays bounded,
+    /// together with a bounded sample of those keys.
     template <typename Method, typename Table>
     requires MapAggregationMethod<Method>
-    Chunks
-    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const;
+    Chunks convertToBlockImpl(
+        Method & method,
+        Table & data,
+        Arena * arena,
+        Arenas & aggregates_pools,
+        bool final,
+        size_t rows,
+        bool return_single_block,
+        size_t max_rows_per_block = 0,
+        bool allow_having_prefilter = false,
+        UntruncatedAggregationKeys * untruncated_keys = nullptr) const;
 
     /// A set method skips the inline-count and compiled-function paths; it only emits keys.
     template <typename Method, typename Table>
     requires SetAggregationMethod<Method>
-    Chunks
-    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const;
+    Chunks convertToBlockImpl(
+        Method & method,
+        Table & data,
+        Arena * arena,
+        Arenas & aggregates_pools,
+        bool final,
+        size_t rows,
+        bool return_single_block,
+        size_t max_rows_per_block = 0,
+        bool allow_having_prefilter = false,
+        UntruncatedAggregationKeys * untruncated_keys = nullptr) const;
 
     template <typename Mapped>
     void insertAggregatesIntoColumns(
@@ -990,7 +1208,7 @@ private:
     template <typename Method, typename Table>
     requires SetAggregationMethod<Method>
     Chunks convertToBlockImplKeysOnly(
-        Method & method, Table & data, Arenas & aggregates_pools, bool final, bool return_single_block) const;
+        Method & method, Table & data, Arenas & aggregates_pools, bool final, bool return_single_block, size_t max_rows_per_block) const;
 
     template <typename Method, typename Table>
     Chunks convertToBlockImplFinal(
@@ -999,14 +1217,18 @@ private:
         Arena * arena,
         Arenas & aggregates_pools,
         bool use_compiled_functions,
-        bool return_single_block) const;
+        bool return_single_block,
+        size_t max_rows_per_block,
+        bool allow_having_prefilter,
+        UntruncatedAggregationKeys * untruncated_keys) const;
 
     template <typename Method, typename Table>
     Chunks
-    convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows, bool return_single_block) const;
+    convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows, bool return_single_block, size_t max_rows_per_block) const;
 
-    /// `topk_full_key_bytes`, when non-null and the bucket goes through the Top-K conversion,
-    /// receives the byte size all of the bucket's keys would occupy materialized: the runtime
+    /// `untruncated_keys`, when non-null and the bucket goes through a conversion that materializes
+    /// only some of its groups (the Top-K one or the HAVING pre-filter), receives the byte size all
+    /// of the bucket's keys would occupy materialized: the runtime
     /// dataflow statistics must describe the untruncated aggregation output (it prices the
     /// shipping term of the parallel-replicas plan, where the partial aggregation materializes
     /// every group), so the chunk of a truncated conversion cannot be measured as is.
@@ -1020,7 +1242,7 @@ private:
         Arena * arena,
         bool final,
         Int32 bucket,
-        UInt64 * topk_full_key_bytes,
+        UntruncatedAggregationKeys * untruncated_keys,
         size_t * full_group_count) const;
 
     AggregatedChunk convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
@@ -1031,14 +1253,14 @@ private:
     template <typename Method>
     requires MapAggregationMethod<Method>
     AggregatedChunk convertOneBucketToChunkTopK(
-        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const;
+        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys) const;
 
     /// `bucket_top_k` ranks groups by a lone `count()`, so it is never set for a set method, which has no
     /// aggregate functions at all. This overload exists only because the call site tests it at run time.
     template <typename Method>
     requires SetAggregationMethod<Method>
     AggregatedChunk convertOneBucketToChunkTopK(
-        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const;
+        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys) const;
 
     /// `full_group_count`, when non-null, receives the merged bucket's group count (see
     /// `convertOneBucketToChunk`).
@@ -1054,9 +1276,10 @@ private:
     AggregatedChunk prepareChunkAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     AggregatedChunks prepareChunksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
 
+    /// A non-zero `max_rows_per_block` caps the size of the emitted chunks below `max_block_size`.
     template <bool return_single_block>
     std::conditional_t<return_single_block, AggregatedChunk, AggregatedChunks>
-    prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
+    prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final, size_t max_rows_per_block = 0) const;
 
     template <typename Method>
     AggregatedChunks prepareChunksAndFillTwoLevelImpl(AggregatedDataVariants & data_variants, Method & method, bool final) const;
@@ -1172,6 +1395,16 @@ private:
       */
     bool checkLimits(size_t result_size, bool & no_more_keys) const;
 
+    /// Arbitration between an external-aggregation spill and the kept-keys cutoff
+    /// (see `Params::SharedKeptKeysControl`). Always true when the cutoff is not armed.
+    /// May permanently abandon the cutoff, so call it only when the spill would proceed.
+    bool spillAllowedUnderKeptKeysCutoff(bool no_more_keys, const AggregatedDataVariants & result) const;
+
+    /// Re-inserts the frozen kept keys, with empty states, into a table just emptied by a spill,
+    /// so the remaining rows of those keys keep being aggregated (see
+    /// `Params::SharedKeptKeysControl`). No-op unless the table is restricted to the kept keys.
+    void reseedKeptKeysAfterSpill(AggregatedDataVariants & result) const;
+
     void ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const;
 
     /// Check if data variants use fixed-size hash tables (key8/key16) suitable for parallel merge
@@ -1223,7 +1456,8 @@ private:
         size_t row_begin, size_t row_end,
         const AggregateFunctionInstruction * inst,
         AggregateDataPtr * places,
-        Arena * arena);
+        Arena * arena,
+        bool all_places_are_non_null);
 
     static void addBatchSinglePlace(
         size_t row_begin, size_t row_end,
