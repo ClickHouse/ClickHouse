@@ -20,9 +20,6 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
         std::string masked_value;
         if (!value.tryGet<std::string>(masked_value))
             return {};
-        /// `processURL` reads a value starting with `http` as a url, with a shared access signature after '?'.
-        if (masked_value.starts_with("http"))
-            return masked_value.find_first_of("?#@") == std::string::npos ? fmt::format("'{}'", masked_value) : std::string("'[HIDDEN]'");
         DB::maskAzureConnectionStringSecrets(masked_value);
         return fmt::format("'{}'", masked_value);
     }},

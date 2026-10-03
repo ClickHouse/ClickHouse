@@ -12,6 +12,7 @@ namespace DB
 {
 
 /** Hides the values of `AccountKey`, `SharedAccessSignature` (any case) and any value with '?' or '@' in an Azure connection string.
+  * A '?', '#' or '@' still shown after that is the query, fragment or userinfo of a url, so the whole string is hidden.
   */
 inline bool maskAzureConnectionStringSecrets(std::string & str)
 {
@@ -55,12 +56,18 @@ inline bool maskAzureConnectionStringSecrets(std::string & str)
         part_begin = part_end + 1;
     }
 
-    if (!masked)
-        return false;
+    if (masked)
+    {
+        result.append(str, copied, std::string::npos);
+        str = std::move(result);
+    }
 
-    result.append(str, copied, std::string::npos);
-    str = std::move(result);
-    return true;
+    if (str.find_first_of("?#@") != std::string::npos)
+    {
+        str = "[HIDDEN]";
+        return true;
+    }
+    return masked;
 }
 
 /** The range `[begin, end)` of the password in a URI of the form `scheme://user:password@host`, or
