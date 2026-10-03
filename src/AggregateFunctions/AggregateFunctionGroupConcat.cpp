@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionGroupConcat.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 
 namespace DB
@@ -101,6 +102,20 @@ void GroupConcatImpl<has_limit>::add(
     }
     else
         cur_data.insert(columns[0], serialization, row_num, arena);
+}
+
+template <bool has_limit>
+void GroupConcatImpl<has_limit>::addBatchSparseSinglePlace(
+    size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena * arena) const
+{
+    /// `groupConcat` is order-dependent, so rows must be processed in input order. The inherited
+    /// implementation adds all non-default values first and then the default rows, which would reorder the result.
+    const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+    const auto * values = &column_sparse.getValuesColumn();
+    auto offset_it = column_sparse.getIterator(row_begin);
+
+    for (size_t row = row_begin; row < row_end; ++row, ++offset_it)
+        add(place, &values, offset_it.getValueIndex(), arena);
 }
 
 template <bool has_limit>

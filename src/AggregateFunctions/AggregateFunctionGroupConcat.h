@@ -59,6 +59,8 @@ public:
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override;
+    void addBatchSparseSinglePlace(
+        size_t row_begin, size_t row_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override;
     void mergeImpl(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override;
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t> version) const override;
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override;
