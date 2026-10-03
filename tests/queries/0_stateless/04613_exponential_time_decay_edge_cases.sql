@@ -146,11 +146,10 @@ SELECT round(
         exponentialTimeDecayedSum(decaying_value),
         toFloat64(100)),
     6)
-FROM
-(
-    SELECT exponentialTimeDecaying(10)(1, toFloat64(0)) AS decaying_value
-    UNION ALL
-    SELECT exponentialTimeDecaying(10)(2, toFloat64(100)) AS decaying_value
+FROM VALUES(
+    'decaying_value ExponentialTimeDecaying(10)',
+    ((1., 0., 10.)),
+    ((2., 100., 10.))
 );
 
 -- The cutoff applies while finalized rows are added, not while aggregate states

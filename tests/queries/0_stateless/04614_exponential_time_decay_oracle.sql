@@ -75,11 +75,11 @@ ENGINE = Memory;
 INSERT INTO time_decay_layout_compatible_insert
 SELECT CAST(
     (1., 0., 20.),
-    'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)'); -- { serverError BAD_ARGUMENTS }
+    'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 INSERT INTO time_decay_layout_compatible_insert
 SELECT CAST(
     (1., 0., 10.),
-    'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, BAD_ARGUMENTS }
+    'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT count() = 0 FROM time_decay_layout_compatible_insert;
 DROP TABLE time_decay_layout_compatible_insert;
 
@@ -91,11 +91,11 @@ ENGINE = Memory;
 INSERT INTO time_decay_nested_layout_compatible_insert
 SELECT CAST(
     [(1., 0., 20.)],
-    'Array(Tuple(sign Float64, signed_unit_time Float64, decay_length Float64))'); -- { serverError BAD_ARGUMENTS }
+    'Array(Tuple(sign Float64, signed_unit_time Float64, decay_length Float64))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 INSERT INTO time_decay_nested_layout_compatible_insert
 SELECT CAST(
     [(1., 0., 10.)],
-    'Array(Tuple(sign Float64, signed_unit_time Float64, decay_length Float64))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, BAD_ARGUMENTS }
+    'Array(Tuple(sign Float64, signed_unit_time Float64, decay_length Float64))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT count() = 0 FROM time_decay_nested_layout_compatible_insert;
 DROP TABLE time_decay_nested_layout_compatible_insert;
 
@@ -113,13 +113,13 @@ SELECT
     1,
     CAST(
         (1., 0., 20.),
-        'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)'); -- { serverError BAD_ARGUMENTS }
+        'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 INSERT INTO time_decay_layout_compatible_simple_aggregate_insert
 SELECT
     1,
     CAST(
         (1., 0., 10.),
-        'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, BAD_ARGUMENTS }
+        'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT count() = 0 FROM time_decay_layout_compatible_simple_aggregate_insert;
 DROP TABLE time_decay_layout_compatible_simple_aggregate_insert;
 
