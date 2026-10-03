@@ -121,20 +121,20 @@ void IOutputFormat::writeFramingPayloadBoundary(FramedPacketKind kind)
 void IOutputFormat::consumeQueryResultPreview(Chunk chunk)
 {
     /// A preview can be rendered only under a framing format, and only while the main output has
-    /// not started yet: after the main prefix is written, rendering a preview would corrupt the
+    /// not started yet: after the main prefix is written, a preview packet would interleave with the
     /// main document, and such a preview is stale anyway (previews precede the result).
-    if (!framing || finalized || !need_write_prefix)
+    if (!framing || !query_result_preview_format_creator || finalized || !need_write_prefix)
         return;
 
     framing->beginPayload(FramedPacketKind::Preview);
-    writePrefix();
-    consume(std::move(chunk));
-    writeSuffix();
-    writeFramingPayloadBoundary(FramedPacketKind::Preview);
 
-    /// The preview was rendered as a self-contained document of the payload format; reset the
-    /// formatter so the main output later starts from scratch, as if no preview was written.
-    resetFormatter();
+    /// The preview is rendered by a fresh formatter, which is finalized so that the payload is a
+    /// complete document of the format; this formatter and its state are not touched.
+    auto preview_format = query_result_preview_format_creator(out);
+    preview_format->write(getPort(PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns()));
+    preview_format->finalize();
+
+    writeFramingPayloadBoundary(FramedPacketKind::Preview);
 }
 
 void IOutputFormat::work()
