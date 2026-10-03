@@ -223,14 +223,6 @@ UInt64 ColumnTuple::getNumberOfDefaultRows() const
     return num_rows - num_non_default;
 }
 
-bool ColumnTuple::hasOnlyTypeDefaults() const
-{
-    for (const auto & col : columns)
-        if (!col->hasOnlyTypeDefaults())
-            return false;
-    return true;
-}
-
 std::string_view ColumnTuple::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
@@ -456,6 +448,18 @@ void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::
 
     for (auto & column : columns)
         column->deserializeAndInsertFromArena(in, settings);
+}
+
+void ColumnTuple::skipSerializedInArena(ReadBuffer & in) const
+{
+    if (columns.empty())
+    {
+        in.ignore(1);
+        return;
+    }
+
+    for (const auto & column : columns)
+        column->skipSerializedInArena(in);
 }
 
 void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const

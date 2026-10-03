@@ -68,6 +68,10 @@ CompressionCodecZSTD::CompressionCodecZSTD(int level_, int window_log_)
     , enable_long_range(true)
     , window_log(window_log_)
 {
+    ASTs arguments;
+    arguments.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(level)));
+    arguments.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(window_log)));
+    setCodecDescription("ZSTD", arguments);
 }
 
 CompressionCodecZSTD::CompressionCodecZSTD(int level_)
@@ -75,14 +79,9 @@ CompressionCodecZSTD::CompressionCodecZSTD(int level_)
     , enable_long_range(false)
     , window_log(0)
 {
-}
-
-ASTPtr CompressionCodecZSTD::getCodecDesc() const
-{
-    ASTs arguments{make_intrusive<ASTLiteral>(static_cast<UInt64>(level))};
-    if (enable_long_range)
-        arguments.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(window_log)));
-    return makeCodecDescription("ZSTD", arguments);
+    ASTs arguments;
+    arguments.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(level)));
+    setCodecDescription("ZSTD", arguments);
 }
 
 void registerCodecZSTD(CompressionCodecFactory & factory)

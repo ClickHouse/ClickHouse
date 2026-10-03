@@ -70,11 +70,9 @@ UInt32 CompressionCodecZXC::doDecompressData(const char * source, UInt32 source_
 CompressionCodecZXC::CompressionCodecZXC(int level_)
     : level(level_)
 {
-}
-
-ASTPtr CompressionCodecZXC::getCodecDesc() const
-{
-    return makeCodecDescription("ZXC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(level))});
+    ASTs arguments;
+    arguments.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(level)));
+    setCodecDescription("ZXC", arguments);
 }
 
 void registerCodecZXC(CompressionCodecFactory & factory)

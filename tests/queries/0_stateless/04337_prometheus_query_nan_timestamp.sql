@@ -1,6 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-replicated-database
 -- ^^ ANTLR4 support is disabled in the fast-test build, and the PromQL
--- grammar requires it.
+-- grammar requires it. The experimental TimeSeries table engine does not
+-- round-trip through DatabaseReplicated.
 
 -- Regression test: a non-finite Float64 (NaN/inf) argument used as a
 -- timestamp/duration in prometheusQuery / prometheusQueryRange must produce a

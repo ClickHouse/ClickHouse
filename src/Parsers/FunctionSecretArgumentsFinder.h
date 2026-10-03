@@ -171,6 +171,11 @@ protected:
     void findS3FunctionSecretArguments(bool is_cluster_function);
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function);
     bool maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0);
+    /// Whether the arguments an `AzureBlobStorage(named_collection, ...)` destination or table takes
+    /// from `start` can be shown: only an argument written here can carry a credential, and each has
+    /// to be readable enough to tell that it does not. `positional_limit` bounds the plain literals
+    /// read beside the overrides: one filename for a backup locator, none for a table engine.
+    bool azureCollectionArgumentsAreShowable(size_t start, size_t positional_limit);
     /// Masks the secrets of every URL form (`url`/`urlCluster` table functions, the `URL` table
     /// engine, and their named-collection variants): the userinfo password of the url positional or a
     /// named `url = ...` override, and the `headers(...)` values at any position. `url` is at
@@ -179,6 +184,18 @@ protected:
 
     bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const;
     static bool tryGetStringFromArgument(const AbstractFunction::Argument & argument, String * res, bool allow_identifier = true);
+
+    /// `BackupInfo` keeps named overrides and a trailing map for every backup engine, including the
+    /// ones that read neither, so an argument that is not a plain literal can carry a credential.
+    static bool hasOnlyLiteralArguments(const AbstractFunction & function);
+
+    /// Whether a backup locator names its destination with exactly the literal arguments its engine
+    /// accepts, and therefore holds no credential. An engine that takes fewer rejects the rest only
+    /// after the statement has been formatted for logging, so the count has to be checked here too.
+    static bool isCredentialFreeBackupLocator(const AbstractFunction & function);
+
+    /// Hides every argument, for a shape whose valid slots cannot be established.
+    void maskEveryArgument();
 
     void findRemoteFunctionSecretArguments();
 
@@ -206,6 +223,10 @@ protected:
     void findDataLakeCatalogSecretArguments();
     void findBackupDatabaseSecretArguments();
     void findBackupNameSecretArguments();
+
+    /// A backup destination reads a different signature than the table engine of the same name, so the
+    /// table-engine rule leaves an argument it does not model visible.
+    void findAzureBlobStorageBackupSecretArguments();
 
     /// Whether a specified argument can be the name of a named collection?
     bool isNamedCollectionName(size_t arg_idx) const;

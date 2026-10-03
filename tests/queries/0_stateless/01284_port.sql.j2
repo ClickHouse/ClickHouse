@@ -24,8 +24,7 @@ select port{{ suffix }}('http://foobar.com/', toUInt16(80));
 /* NUMBER_OF_ARGUMENTS_DOESNT_MATCH */ select port{{ suffix }}('', 1, 1); -- { serverError 42 }
 
 --
--- An IPv6 (IP-literal) host is parsed by getURLHostRFC(), but not by getURLHost().
--- A host without a dot is parsed by neither.
+-- Known limitations of domain() (getURLHost())
 --
 select 'ipv6';
 select port{{ suffix }}('http://[2001:db8::8a2e:370:7334]/');
