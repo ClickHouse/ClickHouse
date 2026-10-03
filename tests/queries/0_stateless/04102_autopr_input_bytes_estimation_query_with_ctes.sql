@@ -32,7 +32,7 @@ WITH cte AS (SELECT number FROM numbers(1000)) SELECT COUNT(*) FROM test.hits WH
 -- CTE referenced by name directly in the IN clause.
 WITH cte AS (SELECT number FROM numbers(1000)) SELECT COUNT(*) FROM test.hits WHERE CounterID IN cte FORMAT Null SETTINGS log_comment='04102_query_4';
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 

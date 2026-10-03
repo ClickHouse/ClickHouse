@@ -55,7 +55,7 @@ SELECT key, sum(value), min(s), count() FROM t_agg_in_order GROUP BY key FORMAT 
 SELECT key, sum(value) FROM t_agg_in_order WHERE key % 10000 < 1000 GROUP BY key, value FORMAT Null
     SETTINGS log_comment='agg_in_order_group_by_key', max_threads=4;
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 

@@ -40,7 +40,7 @@ SELECT COUNT(*) FROM t WHERE a <= 10101 FORMAT Null SETTINGS log_comment='query_
 
 SELECT a, s FROM t WHERE s LIKE '1%' ORDER BY a DESC LIMIT 10 FORMAT Null SETTINGS log_comment='query_8';
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 

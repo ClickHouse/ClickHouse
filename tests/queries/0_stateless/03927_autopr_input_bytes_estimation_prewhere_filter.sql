@@ -26,7 +26,7 @@ SELECT CounterID, URL, Referer FROM test.hits WHERE WatchID < 461189223036738000
 SELECT CounterID, URL, Referer FROM test.hits WHERE WatchID < 5550265976347679000 FORMAT Null SETTINGS log_comment='03927_autopr_input_bytes_estimation_prewhere_filter_21';
 SELECT CounterID, URL, Referer FROM test.hits WHERE WatchID < 6509275139329711000 FORMAT Null SETTINGS log_comment='03927_autopr_input_bytes_estimation_prewhere_filter_22';
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 

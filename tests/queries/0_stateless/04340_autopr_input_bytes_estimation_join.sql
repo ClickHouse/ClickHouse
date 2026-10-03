@@ -70,7 +70,7 @@ SELECT t2.payload FROM ij_small AS t1 RIGHT JOIN ij_big AS t2 USING (key) FORMAT
 DROP TABLE ij_big;
 DROP TABLE ij_small;
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 
