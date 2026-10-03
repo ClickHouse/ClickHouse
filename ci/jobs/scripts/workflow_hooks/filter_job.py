@@ -131,6 +131,8 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/functional_tests/export_coverage.py",
     "ci/jobs/scripts/coverage_selection.py",
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
+    # Defines the `ci-coverage` label that switches between the coverage jobs and their replacements.
+    "ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
     # Both set LLVM_PROFILE_FILE for the servers, i.e. whether their profiles
     # are continuous-mode kill-safe.
     "ci/jobs/scripts/clickhouse_proc.py",
@@ -141,6 +143,9 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/workflows/pull_request.py",
     "tests/clickhouse-test",
     "tests/config/",
+    # Select the tests of the `ParallelReplicas` and `AsyncInsert` configurations.
+    "tests/parallel_replicas_blacklist.txt",
+    "tests/async_insert_blacklist.txt",
 )
 
 
@@ -757,10 +762,14 @@ def should_skip_job(job_name):
 
     # If only CI scripts changed (no product code), run a minimal set of tests
     # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
-    # The coverage family and its `arm_binary` replacements are already handled above,
-    # so this only narrows down the other plain (non-coverage) test jobs.
-    if changed_files and all(
-        f.startswith("ci/") and f.endswith(".py") for f in changed_files
+    # The coverage family and its `arm_binary` replacements are already handled above and must run
+    # in full when they run at all, so this only narrows down the other plain (non-coverage) test jobs.
+    if (
+        changed_files
+        and all(f.startswith("ci/") and f.endswith(".py") for f in changed_files)
+        and job_name not in COVERAGE_REPLACEMENT_JOBS
+        and "llvm_coverage" not in job_name
+        and "excluded_from_llvm" not in job_name
     ):
         if JobNames.STATELESS in job_name:
             match = re.search(r"(\d)/\d", job_name)
