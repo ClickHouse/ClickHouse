@@ -2399,8 +2399,8 @@ the partition or sorting key.
 )", 0, \
         {"25.4", true, false, "New setting to allow summing of partition or sorting key columns"}) \
     DECLARE(Bool, allow_coalescing_columns_in_partition_or_order_key, false, R"(
-When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
-the partition or sorting key.
+When enabled, allows coalescing columns in a CoalescingMergeTree or VersionedCoalescingMergeTree
+table to be used in the partition or sorting key.
 )", 0, \
         {"25.6", false, false, "New setting to allow coalescing of partition or sorting key columns."}) \
     DECLARE(Bool, allow_dimensions_outside_sorting_key, false, R"(

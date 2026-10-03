@@ -30,7 +30,11 @@ public:
         const String & sum_function_map_name,
         bool remove_default_values,
         bool aggregate_all_columns,
-        bool allow_tuple_element_aggregation);
+        bool allow_tuple_element_aggregation,
+        /// If non-empty, for every aggregated column the value of the row with the maximum
+        /// version is kept (later rows win ties) instead of the value of the last row.
+        /// Used by VersionedCoalescingMergeTree, requires aggregate_all_columns.
+        const String & version_column = {});
 
     const char * getName() const override { return "SummingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -41,6 +45,18 @@ public:
 
     struct AggregateDescription;
     struct MapDescription;
+
+    /// How versioned coalescing normalizes the version values into UInt256, keeping their order.
+    enum class VersionKind : UInt8
+    {
+        Unsigned,   /// Unsigned integers up to 64 bits, Date, DateTime.
+        Signed,     /// Signed integers up to 64 bits, Date32, DateTime64, Time, Time64.
+        Float,      /// BFloat16, Float32 and Float64.
+        UInt128,
+        Int128,
+        UInt256,
+        Int256,
+    };
 
     /// This structure define columns into one of three types:
     /// * columns which values not needed to be aggregated
@@ -78,6 +94,14 @@ public:
         SharedHeader origin_header;
 
         bool allow_tuple_element_aggregation = false;
+
+        /// For versioned coalescing: positions of the version column and of the per-column
+        /// versions map in the header, the index of the version column's description,
+        /// and how the version values are normalized for comparison and storage.
+        std::optional<size_t> version_column_number;
+        std::optional<size_t> column_versions_number;
+        std::optional<size_t> version_desc_number;
+        VersionKind version_kind = VersionKind::Unsigned;
     };
 
     /// Specialization for SummingSortedTransform. Inserts only data for non-aggregated columns.

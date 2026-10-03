@@ -399,7 +399,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     if (!global_ctx->merging_params.is_deleted_column.empty())
         key_columns.emplace(global_ctx->merging_params.is_deleted_column);
 
-    /// Force version column for Replacing mode and VersionedCollapsing mode
+    /// Force version column for Replacing, VersionedCollapsing and VersionedCoalescing modes
     if (!global_ctx->merging_params.version_column.empty())
         key_columns.emplace(global_ctx->merging_params.version_column);
 
@@ -428,6 +428,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         case MergeTreeData::MergingParams::Summing:
         case MergeTreeData::MergingParams::Aggregating:
         case MergeTreeData::MergingParams::Coalescing:
+        case MergeTreeData::MergingParams::VersionedCoalescing:
             for (const auto & column : global_ctx->storage_columns)
                 key_columns.emplace(column.name);
             break;
@@ -949,6 +950,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
     }
 
+    /// Merges of VersionedCoalescingMergeTree read and write the per-column versions.
+    if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCoalescing)
+        addMergingColumn(global_ctx, ColumnVersionsColumn::name, ColumnVersionsColumn::type);
+
     if ((*merge_tree_settings)[MergeTreeSetting::materialize_statistics_on_merge])
     {
         global_ctx->gathered_data.statistics = ColumnsStatistics(global_ctx->metadata_snapshot->getColumns());
@@ -1400,6 +1405,7 @@ bool MergeTask::canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx)
         case MergeTreeData::MergingParams::Summing:
         case MergeTreeData::MergingParams::Aggregating:
         case MergeTreeData::MergingParams::Coalescing:
+        case MergeTreeData::MergingParams::VersionedCoalescing:
         case MergeTreeData::MergingParams::Graphite:
             return false;
     }
@@ -2958,8 +2964,9 @@ public:
                 break;
 
             case MergeTreeData::MergingParams::Coalescing:
+            case MergeTreeData::MergingParams::VersionedCoalescing:
                 merged_transform = std::make_shared<CoalescingSortedTransform>(
-                    header, input_streams_count, sort_description, merging_params.columns_to_sum, partition_and_sorting_required_columns, merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, merging_params.allow_tuple_element_aggregation);
+                    header, input_streams_count, sort_description, merging_params.columns_to_sum, partition_and_sorting_required_columns, merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, merging_params.allow_tuple_element_aggregation, merging_params.version_column);
                 break;
 
             case MergeTreeData::MergingParams::Graphite:
