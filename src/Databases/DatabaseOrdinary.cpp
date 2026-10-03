@@ -616,6 +616,12 @@ void DatabaseOrdinary::loadTableLazy(
     {
         if (auto collection_name = tryGetUsedNamedCollectionName(query.storage->engine->name, query.storage->engine->arguments->children))
             NamedCollectionFactory::instance().addDependency(*collection_name, table_id);
+
+        /// The table function target of a `Remote` table can reference collections of its own, see
+        /// `registerStorageRemote`.
+        const auto & engine_name = query.storage->engine->name;
+        if (engine_name == "Remote" || engine_name == "RemoteSecure")
+            addNestedTableFunctionNamedCollectionDependencies(query.storage->engine->arguments, table_id);
     }
 
     auto proxy = std::make_shared<StorageTableProxy>(

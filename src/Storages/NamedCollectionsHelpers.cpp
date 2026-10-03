@@ -9,6 +9,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/assert_cast.h>
@@ -305,6 +306,23 @@ std::optional<std::string> tryGetUsedNamedCollectionName(const String & engine_n
     }
 
     return collection_name;
+}
+
+void addNestedTableFunctionNamedCollectionDependencies(const ASTPtr & ast, const StorageID & dependent_table_id)
+{
+    if (!ast)
+        return;
+
+    if (const auto * function = ast->as<ASTFunction>();
+        function && function->arguments && TableFunctionFactory::instance().isTableFunctionName(function->name))
+    {
+        if (auto collection_name = getCollectionName(function->arguments->children))
+            NamedCollectionFactory::instance().getAndAddDependency(
+                *collection_name, /* throw_unknown_collection = */ false, dependent_table_id);
+    }
+
+    for (const auto & child : ast->children)
+        addNestedTableFunctionNamedCollectionDependencies(child, dependent_table_id);
 }
 
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(

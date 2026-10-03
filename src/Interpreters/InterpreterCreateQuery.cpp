@@ -39,6 +39,7 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -2655,6 +2656,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// engine does: `DROP NAMED COLLECTION` is blocked while the table exists.
         if (const auto collection_name = table_function->getUsedNamedCollectionName(); !collection_name.empty())
             NamedCollectionFactory::instance().addDependency(collection_name, res->getStorageID());
+        /// A nested table function target, e.g. `remote('addr', url(nc, ...))`, is persisted along with
+        /// the outer function and can reference collections of its own.
+        if (const auto * table_function_node = table_function_ast->as<ASTFunction>())
+            addNestedTableFunctionNamedCollectionDependencies(table_function_node->arguments, res->getStorageID());
     }
     else
     {

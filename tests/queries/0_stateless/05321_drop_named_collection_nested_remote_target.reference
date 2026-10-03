@@ -1,0 +1,5 @@
+--- CREATE TABLE ... AS remote(..., url(nc)) ---
+--- ENGINE = Remote(..., url(nc)) ---
+--- remote(addr_nc, database = url(target_nc)) holds both collections ---
+--- the collections can be dropped once the tables are gone ---
+0

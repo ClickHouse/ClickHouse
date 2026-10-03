@@ -24,6 +24,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
@@ -153,6 +154,8 @@ std::pair<String, StoragePtr> createTableFromAST(
         /// registered, so that `DROP NAMED COLLECTION` stays blocked after a server restart.
         if (const auto collection_name = table_function->getUsedNamedCollectionName(); !collection_name.empty())
             NamedCollectionFactory::instance().addDependency(collection_name, storage->getStorageID());
+        if (const auto * table_function_node = table_function_ast->as<ASTFunction>())
+            addNestedTableFunctionNamedCollectionDependencies(table_function_node->arguments, storage->getStorageID());
 
         return {ast_create_query.getTable(), storage};
     }

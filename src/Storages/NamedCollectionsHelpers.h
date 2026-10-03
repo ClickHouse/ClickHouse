@@ -41,6 +41,16 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 /// metadata during loading, not a query of a user.
 std::optional<std::string> tryGetUsedNamedCollectionName(const String & engine_name, const ASTs & asts);
 
+/// Registers the dependency of `dependent_table_id` on every named collection referenced by a table
+/// function nested in `ast` (`ast` itself included): a `Remote` engine or a `remote` table function
+/// persists its table function target, e.g. `remote('addr', url(nc, ...))`, and resolves it only at
+/// read time, so the collection the target uses must be held for as long as the table exists. A table
+/// function references a collection by an identifier as its first argument; as the same identifier can
+/// mean something else for some table functions (a cluster name for `remote`, a database name for
+/// `merge`), the dependency is registered only when a collection with that name exists, which can only
+/// make the drop of a same-named collection stricter.
+void addNestedTableFunctionNamedCollectionDependencies(const ASTPtr & ast, const StorageID & dependent_table_id);
+
 /// Helper function to get named collection for dictionary source.
 /// Dictionaries have collection name as name argument of dict configuration and other arguments are overrides.
 /// Also registers the dictionary as a dependency of the named collection, so that
