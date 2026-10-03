@@ -124,12 +124,16 @@ bool TableFunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) 
 
 void TableFunctionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
-    state.update(table_function_name.size());
-    state.update(table_function_name);
+    const auto full_name = storage ? storage_id.getFullNameNotQuoted() : String{};
+
+    /// Hash a parameterized view by the qualified name `toASTImpl` sends to other servers, so that
+    /// names derived from the hash (e.g. of `IN` sets) are the same on the initiator and on the shards.
+    const auto & name = isParameterizedView() ? full_name : table_function_name;
+    state.update(name.size());
+    state.update(name);
 
     if (storage)
     {
-        auto full_name = storage_id.getFullNameNotQuoted();
         state.update(full_name.size());
         state.update(full_name);
     }
