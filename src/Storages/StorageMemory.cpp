@@ -195,14 +195,6 @@ VirtualColumnsDescription StorageMemory::createVirtuals()
 
 StorageMemory::~StorageMemory() = default;
 
-void StorageMemory::setData(std::unique_ptr<BlocksWithCounts> new_data)
-{
-    /// The new version is one above whatever is currently published. Writers are serialized (see the
-    /// declaration), so reading the current version here and publishing version+1 is race-free.
-    new_data->version = data.get()->version + 1;
-    data.set(std::move(new_data));
-}
-
 StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
     /// A pinned snapshot is captured in advance for atomic `CREATE MATERIALIZED VIEW ... POPULATE`,
@@ -288,6 +280,9 @@ void StorageMemory::setData(std::unique_ptr<BlocksWithCounts> new_data)
     /// The replaced blocks are dropped inside this scope, unless a reader still holds them.
     MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
     auto replaced = data.get();
+    /// The new version is one above whatever is currently published. Writers are serialized (see the
+    /// declaration), so reading the current version here and publishing version+1 is race-free.
+    new_data->version = replaced->version + 1;
     data.set(std::move(new_data));
 }
 
