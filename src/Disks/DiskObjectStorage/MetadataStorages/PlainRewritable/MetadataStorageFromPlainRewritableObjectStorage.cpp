@@ -382,12 +382,15 @@ PlainRewritableRemoteLayout MetadataStorageFromPlainRewritableObjectStorage::lis
         }
 
         /// Directories whose `prefix.path` did not change since the base are taken from it without reading.
+        /// Only a strong ETag proves that: a weak or missing one may stay the same after a rewrite (a rename).
         {
             std::vector<DirectoryObject> directories_to_load;
             for (auto & directory : directories)
             {
                 if (const auto it = base_by_remote_path.find(directory.remote_path);
-                    it != base_by_remote_path.end() && it->second->second.etag == directory.metadata->etag)
+                    it != base_by_remote_path.end()
+                    && directory.metadata->isEtagUsableAsCacheKey()
+                    && it->second->second.etag == directory.metadata->etag)
                 {
                     remote_layout[it->second->first] = it->second->second;
                     ++reused_directories;
