@@ -1,15 +1,12 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/LazyOutputFormat.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
-#include <Interpreters/ProcessList.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
-#include <Common/ThreadPool.h>
 
 namespace DB
 {
@@ -92,12 +89,6 @@ static void threadFunction(
 }
 
 
-void PullingAsyncPipelineExecutor::setCancelCallback(std::function<bool()> callback, uint64_t interactive_timeout_ms_)
-{
-    cancel_callback = std::move(callback);
-    interactive_timeout_ms = interactive_timeout_ms_;
-}
-
 bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
 {
     if (!data)
@@ -105,7 +96,6 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
         data = std::make_unique<Data>();
         data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
         data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
-        data->executor->setStepProfiler(pipeline.getStepProfiler());
         data->lazy_format = lazy_format.get();
 
         auto func = [&, thread_group = CurrentThread::getGroup()]()
@@ -118,12 +108,10 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
 
     data->rethrowExceptionIfHas();
 
-    const bool time_limit_exceeded = pipeline.process_list_element && !pipeline.process_list_element->checkTimeLimitSoft();
-    if (time_limit_exceeded)
-        data->executor->cancel(PipelineExecutor::ExecutionStatus::CancelledByTimeout);
+    bool is_execution_finished
+        = !data->executor->checkTimeLimitSoft() || (lazy_format ? lazy_format->isFinished() : data->is_finished.load());
 
-    const bool execution_finished = time_limit_exceeded || (lazy_format ? lazy_format->isFinished() : data->is_finished.load());
-    if (execution_finished)
+    if (is_execution_finished)
     {
         /// If lazy format is finished, we don't cancel pipeline but wait for main thread to be finished.
         data->is_finished = true;
@@ -132,17 +120,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
         return false;
     }
 
-    /// When a cancel callback is set and no explicit timeout was requested, use the interactive timeout
-    /// to periodically poll the callback (e.g. to check for Cancel packets during scalar subquery execution).
-    uint64_t effective_timeout = milliseconds;
-    if (cancel_callback && milliseconds == 0)
-        effective_timeout = interactive_timeout_ms;
-
-    chunk = lazy_format->getChunk(effective_timeout);
-
-    if (cancel_callback)
-        cancel_callback();
-
+    chunk = lazy_format->getChunk(milliseconds);
     data->rethrowExceptionIfHas();
     return true;
 }

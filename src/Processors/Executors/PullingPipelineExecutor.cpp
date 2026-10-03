@@ -1,11 +1,10 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/PullingOutputFormat.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
-#include <Interpreters/ProcessList.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Sources/NullSource.h>
 
 namespace DB
 {
@@ -52,14 +51,10 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
     {
         executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
         executor->setReadProgressCallback(pipeline.getReadProgressCallback());
-        executor->setStepProfiler(pipeline.getStepProfiler());
     }
 
-    if (pipeline.process_list_element && !pipeline.process_list_element->checkTimeLimitSoft())
-    {
-        executor->cancel(PipelineExecutor::ExecutionStatus::CancelledByTimeout);
+    if (!executor->checkTimeLimitSoft())
         return false;
-    }
 
     if (!executor->executeStep(&has_data_flag))
         return false;
