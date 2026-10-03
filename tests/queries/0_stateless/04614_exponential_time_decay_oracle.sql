@@ -171,6 +171,12 @@ SELECT exponentialTimeDecayedAvg(10)(toFloat64(1), toFloat64(0)); -- { serverErr
 SELECT exponentialTimeDecayedCount(10)(toFloat64(0)); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecaying(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_FUNCTION }
 
+-- User-supplied type names must apply the same experimental gate to both
+-- finalized values and aggregate-state types, including combinator wrappers.
+SELECT defaultValueOfTypeName('ExponentialTimeDecaying(10)'); -- { serverError ILLEGAL_COLUMN }
+SELECT defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayedSum(10), Float64, Float64)'); -- { serverError BAD_ARGUMENTS }
+SELECT defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayedSumIf(10), Float64, Float64, UInt8)'); -- { serverError BAD_ARGUMENTS }
+
 -- Existing metadata must remain attachable for recovery, but new CREATE and
 -- ALTER operations cannot persist the experimental type without opting in.
 ATTACH TABLE time_decay_feature_gate;

@@ -1,21 +1,15 @@
-#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
-#include <Core/Settings.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_time_decay_aggregate_functions;
-}
 
 namespace ErrorCodes
 {
@@ -32,12 +26,14 @@ public:
     static constexpr auto name = "defaultValueOfTypeName";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionDefaultValueOfTypeName>(
-            !context || context->getSettingsRef()[Setting::allow_experimental_time_decay_aggregate_functions]);
+        const auto validation_settings = context
+            ? DataTypeValidationSettings::forNonStorageDefinition(context->getSettingsRef())
+            : DataTypeValidationSettings{};
+        return std::make_shared<FunctionDefaultValueOfTypeName>(validation_settings);
     }
 
-    explicit FunctionDefaultValueOfTypeName(bool allow_experimental_time_decay_aggregate_functions_)
-        : allow_experimental_time_decay_aggregate_functions(allow_experimental_time_decay_aggregate_functions_)
+    explicit FunctionDefaultValueOfTypeName(const DataTypeValidationSettings & data_type_validation_settings_)
+        : data_type_validation_settings(data_type_validation_settings_)
     {
     }
 
@@ -67,14 +63,7 @@ public:
                 getName());
 
         auto result_type = DataTypeFactory::instance().get(col_type_const->getValue<String>());
-        if (!allow_experimental_time_decay_aggregate_functions
-            && containsExponentialTimeDecaying(result_type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Type {} is experimental and disabled by default. Enable it with setting "
-                "allow_experimental_time_decay_aggregate_functions",
-                result_type->getName());
-
+        validateDataType(result_type, data_type_validation_settings);
         return result_type;
     }
 
@@ -85,7 +74,7 @@ public:
     }
 
 private:
-    const bool allow_experimental_time_decay_aggregate_functions;
+    const DataTypeValidationSettings data_type_validation_settings;
 };
 
 }
