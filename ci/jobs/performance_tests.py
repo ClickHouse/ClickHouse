@@ -153,6 +153,7 @@ SKIPPED_TESTS_TABLE = "perf_skipped_tests_v1"
 RUN_ERRORS_TABLE = "perf_run_errors_v1"
 METRIC_CHANGES_TABLE = "perf_metric_changes_v1"
 FLAMEGRAPH_STACKS_TABLE = "perf_flamegraph_stacks_v1"
+FLAMEGRAPH_CHUNK_ROWS = 250_000
 
 # --- Performance dashboard gate -------------------------------------------
 # The dashboard reads the tables this job uploads in the REPORT stage and
@@ -1073,7 +1074,7 @@ def export_system_logs(servers):
     return True
 
 
-def insert_into_cidb(cidb, info, table, query, data, deadline):
+def insert_into_cidb(cidb, info, table, query, data, deadline, token_suffix=""):
     """Run a REPORT-stage INSERT into `table`. Returns None on success and the
     reason of the failure otherwise.
 
@@ -1082,7 +1083,7 @@ def insert_into_cidb(cidb, info, table, query, data, deadline):
     (`last_rejected`) is retried while another attempt fits. Every attempt
     carries the same `insert_deduplication_token`, so the server drops a
     resent block that an attempt abandoned by the client did commit."""
-    token = f"{info.pr_number}/{info.sha}/{info.job_name}/{get_check_start_time()}/{table}"
+    token = f"{info.pr_number}/{info.sha}/{info.job_name}/{get_check_start_time()}/{table}{token_suffix}"
     settings = {"insert_deduplication_token": token}
     if deadline is None:
         if cidb.do_insert_query(
@@ -1165,8 +1166,18 @@ def run_report_upload(cfg, cidb, info, reference_sha, tested_sha, compare_agains
     return error
 
 
-def insert_flamegraph_stacks(cidb, info, reference_sha, tested_sha, compare_against_release, deadline):
-    """Build and upload the merged flamegraph stacks TSV."""
+def split_into_chunks(data, rows):
+    """Split TSV `data` into pieces of at most `rows` lines."""
+    lines = data.splitlines(keepends=True)
+    return ["".join(lines[i : i + rows]) for i in range(0, len(lines), rows)]
+
+
+def insert_flamegraph_stacks(
+    cidb, info, reference_sha, tested_sha, compare_against_release, deadline, nightly=False
+):
+    """Build and upload the merged flamegraph stacks TSV. A nightly run uploads
+    it in chunks of `FLAMEGRAPH_CHUNK_ROWS`, each with its own dedup token,
+    so that no INSERT outlasts the socket timeout."""
     if not build_flamegraph_upload_tsv():
         return True
 
@@ -1186,14 +1197,26 @@ def insert_flamegraph_stacks(cidb, info, reference_sha, tested_sha, compare_agai
         CUR_SHA=escape_sql_string(tested_sha),
         **insert_metadata,
     )
-    line_count = data.count("\n")
+    chunks = split_into_chunks(data, FLAMEGRAPH_CHUNK_ROWS) if nightly else [data]
     print(f"Do insert flamegraph stacks query: >>>\n{query}\n<<<")
-    error = insert_into_cidb(cidb, info, FLAMEGRAPH_STACKS_TABLE, query, data, deadline)
-    if error is None:
-        print(f"Inserted [{line_count}] flamegraph stack rows")
-    else:
-        print(f"Inserted [{line_count}] flamegraph stack rows - failed: {error}")
-    return error is None
+    ok = True
+    for i, chunk in enumerate(chunks):
+        line_count = chunk.count("\n")
+        error = insert_into_cidb(
+            cidb,
+            info,
+            FLAMEGRAPH_STACKS_TABLE,
+            query,
+            chunk,
+            deadline,
+            token_suffix=f"/{i}" if nightly else "",
+        )
+        if error is None:
+            print(f"Inserted [{line_count}] flamegraph stack rows")
+        else:
+            print(f"Inserted [{line_count}] flamegraph stack rows - failed: {error}")
+            ok = False
+    return ok
 
 
 def match_reference_debug_info():
@@ -3010,6 +3033,7 @@ def main():
                     tested_sha=tested_sha,
                     compare_against_release=compare_against_release,
                     deadline=upload_deadline,
+                    nightly=nightly,
                 )
             except Exception:
                 traceback.print_exc()
