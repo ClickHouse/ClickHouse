@@ -8319,10 +8319,11 @@ function serverPredatesDefaultSessionUser(version) {
         && (major < 26 || (major === 26 && minor < 7));
 }
 
-/// Only in-flight probes are shared. Settled compatibility decisions are deliberately not cached:
-/// server_address may route different paths to different backends, and a backend may be upgraded
-/// while /play stays open, so a sticky result can authenticate a later request as the wrong user.
+/// Share in-flight probes and remember the successful compatibility classification for the exact
+/// endpoint + credential tuple. A real authentication failure drops the settled classification so
+/// the next request re-probes and can adapt if the backend behind that endpoint changed.
 const authProbeRequests = new Map();
+const authProbeResults = new Map();
 
 function getAuthProbeKey(server_address, user, password) {
     return JSON.stringify([server_address, user, password]);
@@ -8370,6 +8371,11 @@ function getSharedServerStatusProbe(server_address, user, password) {
     let probe = authProbeRequests.get(key);
     if (!probe) {
         probe = probeServerStatus(server_address, user, password)
+            .then(result => {
+                if (result)
+                    authProbeResults.set(key, result.use_legacy_default_user);
+                return result;
+            })
             .finally(() => authProbeRequests.delete(key));
         authProbeRequests.set(key, probe);
     }
@@ -8382,8 +8388,21 @@ async function getRequestAuthHeaders(user, password, server_address) {
     if (!needs_legacy_default_probe)
         return getAuthHeaders(user, password);
 
+    const key = getAuthProbeKey(server_address, user, password);
+    if (authProbeResults.has(key))
+        return getAuthHeaders(user, password, authProbeResults.get(key));
+
     const probe = await getSharedServerStatusProbe(server_address, user, password);
     return getAuthHeaders(user, password, !!(probe && probe.use_legacy_default_user));
+}
+
+function invalidateRequestAuthOnFailure(response, server_address, user, password) {
+    if (response.ok)
+        return;
+
+    const code = response.headers.get('X-ClickHouse-Exception-Code');
+    if (code === '192' || code === '193' || code === '194' || code === '516')
+        authProbeResults.delete(getAuthProbeKey(server_address, user, password));
 }
 
 /// `quiet` runs a background panel-maintenance query without touching the main result pane:
@@ -8417,6 +8436,7 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
     let response;
     try {
         response = await fetch(url, { method: "POST", body: query, headers: await getRequestAuthHeaders(user, password, server_address) });
+        invalidateRequestAuthOnFailure(response, server_address, user, password);
     } catch (e) {
         if (!quiet && belongs_to_active_connection()) {
             clear();
@@ -11162,6 +11182,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
 
         const fetch_options = { method: "POST", body: query, signal: abortController.signal, headers: await getRequestAuthHeaders(user, password, server_address) };
         response = await fetch(use_framing ? framing_url : url, fetch_options);
+        invalidateRequestAuthOnFailure(response, server_address, user, password);
 
         /// Detect image results (e.g. `FORMAT PNG`) by the response `Content-Type` rather than by
         /// parsing the query, so any format that emits an image is rendered inline as a picture.
@@ -11182,6 +11203,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         if (use_framing && !response.ok && !content_type.startsWith('text/event-stream') && await queryIsReadOnly(query)) {
             use_framing = false;
             response = await fetch(url, fetch_options);
+            invalidateRequestAuthOnFailure(response, server_address, user, password);
             content_type = response.headers.get('Content-Type') ?? '';
         }
 
@@ -11210,6 +11232,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 framed_error_stream = null;
                 use_framing = false;
                 response = await fetch(url, fetch_options);
+                invalidateRequestAuthOnFailure(response, server_address, user, password);
                 content_type = response.headers.get('Content-Type') ?? '';
             }
         }
@@ -18071,6 +18094,7 @@ async function loadCompletions() {
             body: COMPLETION_QUERY,
             headers: await getRequestAuthHeaders(user_elem.value, password_elem.value, url_elem.value),
         });
+        invalidateRequestAuthOnFailure(response, url_elem.value, user_elem.value, password_elem.value);
         /// The connection settings changed while loading — discard this stale result.
         if (generation !== connectionGeneration) {
             return;
