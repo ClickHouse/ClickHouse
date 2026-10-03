@@ -393,6 +393,15 @@ def test_a_restart_rewires_only_the_tables_whose_structure_changed(monkeypatch):
 
     assert len(instance.queries) == 1
     dropped = instance.queries[0]
+    # The rows of the stale `_watcher` view reach its `_sender` table through
+    # the async insert queue, which must be flushed before the sends and drops
+    statements = dropped.splitlines()
+    assert statements[:4] == [
+        "SYSTEM FLUSH ASYNC INSERT QUEUE system.metric_log_sender;",
+        "SYSTEM FLUSH DISTRIBUTED system.metric_log_sender;",
+        "DROP VIEW IF EXISTS system.metric_log_watcher SYNC;",
+        "DROP TABLE IF EXISTS system.metric_log_sender SYNC;",
+    ]
     assert "DROP VIEW IF EXISTS system.metric_log_watcher SYNC" in dropped
     assert "DROP TABLE IF EXISTS system.metric_log_sender SYNC" in dropped
     assert "query_log" not in dropped

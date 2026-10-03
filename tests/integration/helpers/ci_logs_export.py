@@ -655,8 +655,12 @@ def _refresh_after_start(cluster, instance):
     stale = [table for table, _, _ in changed if table in known]
     if stale:
         # Send out what the stale `_sender` tables still hold, it has the old
-        # structure and goes to the destination table of the old hash
-        statements = "".join(
+        # structure and goes to the destination table of the old hash. The
+        # flush of the discovery ran the stale `_watcher` views, and their rows
+        # sit in the asynchronous insert queue until it is flushed, as in
+        # `_shutdown_statements`.
+        senders = ", ".join(f"system.{table}_sender" for table in stale)
+        statements = f"SYSTEM FLUSH ASYNC INSERT QUEUE {senders};\n" + "".join(
             f"SYSTEM FLUSH DISTRIBUTED system.{table}_sender;\n"
             f"DROP VIEW IF EXISTS system.{table}_watcher SYNC;\n"
             f"DROP TABLE IF EXISTS system.{table}_sender SYNC;\n"
