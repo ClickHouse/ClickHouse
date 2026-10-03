@@ -142,7 +142,8 @@ private:
     std::shared_ptr<IRestoreCoordination> makeRestoreCoordination(bool on_cluster, const RestoreSettings & restore_settings, const ContextPtr & context) const;
 
     /// Sends a BACKUP or RESTORE query to other hosts.
-    void sendQueryToOtherHosts(const ASTBackupQuery & backup_or_restore_query, const ClusterPtr & cluster,
+    /// Returns the path of the node the query was queued under in the distributed DDL queue.
+    String sendQueryToOtherHosts(const ASTBackupQuery & backup_or_restore_query, const ClusterPtr & cluster,
         size_t only_shard_num, size_t only_replica_num, ContextMutablePtr context, const AccessRightsElements & access_to_check,
         const ZooKeeperRetriesInfo & retries_info) const;
 

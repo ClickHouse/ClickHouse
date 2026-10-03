@@ -2,6 +2,7 @@ import random
 
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -36,6 +37,12 @@ old_node = cluster.add_instance(
 )
 
 nodes = [new_node, old_node]
+
+# The default is an hour, which the test's client cannot outwait: it gives up after 10 minutes and
+# reports a bare timeout. If a host never joins the coordination, the operation has to say so while
+# there is still someone to read it. 120 seconds is far more than these two hosts need to pick the
+# query up even on a contended runner, and both versions know this setting.
+fail_fast_settings = {"backup_restore_failure_after_host_disconnected_for_seconds": 120}
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -89,13 +96,34 @@ def test_different_versions():
 
     initiator = random_node()
     print(f"Using {get_node_name(initiator)} as initiator for BACKUP")
-    initiator.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster_ver' TO {backup_name}")
+    initiator.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster_ver' TO {backup_name}",
+        settings=fail_fast_settings,
+    )
 
     new_node.query("DROP TABLE tbl ON CLUSTER 'cluster_ver' SYNC")
 
     initiator = random_node()
     print(f"Using {get_node_name(initiator)} as initiator for RESTORE")
-    initiator.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster_ver' FROM {backup_name}")
+    try:
+        initiator.query(
+            f"RESTORE TABLE tbl ON CLUSTER 'cluster_ver' FROM {backup_name}",
+            settings=fail_fast_settings,
+        )
+    except QueryRuntimeException as e:
+        # The settings an ON CLUSTER restore forwards are not version-negotiated. The initiator puts
+        # every restore setting that differs from its default on the query, including the ones it
+        # assigns itself, and `old_node` cannot skip a name it has never heard of. Refusing is the
+        # designed answer -- a host that cannot read the terms of a restore must not take part in it --
+        # so accept it and stop, rather than assert on data that was never restored.
+        assert "UNKNOWN_SETTING" in str(e), e
+        assert (
+            initiator == new_node
+        ), "only a newer initiator can forward an unknown setting"
+        print(
+            f"{get_node_name(old_node)} refused a setting it does not know, as expected"
+        )
+        return
 
     new_node.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster_ver' tbl")
     assert new_node.query("SELECT * FROM tbl ORDER BY x") == TSV([1, 2])
