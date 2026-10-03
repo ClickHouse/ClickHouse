@@ -630,6 +630,21 @@ static NameSet getKeyColumns(const MutationsInterpreter::Source & source, const 
     return key_columns;
 }
 
+/// Same as getKeyColumns, with a key subcolumn replaced by its storage column.
+static NameSet getKeyStorageColumns(const MutationsInterpreter::Source & source, const StorageMetadataPtr & metadata_snapshot)
+{
+    NameSet key_storage_columns;
+    const auto & columns = metadata_snapshot->getColumns();
+    for (const auto & name : getKeyColumns(source, metadata_snapshot))
+    {
+        if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+            key_storage_columns.insert(column->getNameInStorage());
+        else
+            key_storage_columns.insert(name);
+    }
+    return key_storage_columns;
+}
+
 static void validateUpdateColumns(
     const MutationsInterpreter::Source & source,
     const StorageMetadataPtr & metadata_snapshot,
@@ -881,7 +896,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     }
 
     /// Return the transitive MATERIALIZED closure of changed columns.
-    auto affected_materialized_closure = [&](const NameSet & changed_base_columns) -> NameSet
+    auto affected_materialized_closure = [&](const NameSet & changed_base_columns, const NameSet & unchanged_columns = {}) -> NameSet
     {
         NameSet affected;
         NameSet reachable = changed_base_columns;
@@ -891,7 +906,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             changed = false;
             for (const auto & [mat_column, deps] : materialized_column_dependencies)
             {
-                if (reachable.contains(mat_column))
+                if (reachable.contains(mat_column) || unchanged_columns.contains(mat_column))
                     continue;
                 if (std::ranges::any_of(deps, [&](const auto & d) { return reachable.contains(d); }))
                 {
@@ -1006,9 +1021,10 @@ void MutationsInterpreter::prepare(bool dry_run)
         patch_affected_materialized = affected_materialized_closure(patch_updated_columns);
 
     /// CLEAR uses only the readable dependency closure.
+    /// A key column keeps its stored value: a new one would break the part's sort order, primary index or partition.
     NameSet clear_affected_materialized;
     if (!clear_column_names.empty())
-        clear_affected_materialized = affected_materialized_closure(clear_column_names);
+        clear_affected_materialized = affected_materialized_closure(clear_column_names, getKeyStorageColumns(source, metadata_snapshot));
 
     /// Recomputed MATERIALIZED columns also invalidate their stored artifacts.
     NameSet all_affected_materialized;
