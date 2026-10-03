@@ -1,17 +1,12 @@
-order	[(0,50,51),(0,60,62),(0,1,101),(0,3,203)]
-order after optimize	[(0,50,51),(0,60,62),(0,1,101),(0,3,203)]
-index	[(0,1,101),(0,3,203),(0,5,305)]
-index WHERE mx = 203	1
-index countIf(mx = 203)	1
-partition parts	['5']
-partition	[(0,1,5),(0,2,5)]
-partition WHERE p = 5	2
-subcolumn	[(0,1,101),(0,3,203),(0,5,305)]
-subcolumn WHERE m.a = 203	1
-subcolumn countIf(m.a = 203)	1
-chain	[(0,1,0,201,2010,201,1),(0,3,0,403,4030,403,1)]
-chain WHERE k = 201	1
-chain countIf(k = 201)	1
-version	[(1,0,10)]
+order	[(1,50,51),(2,60,62),(100,1,101),(200,3,203)]
+partition	[(5,1,5),(5,2,5)]
+subcolumn	[(100,1,101),(200,3,203)]
+chain	[(100,1,200,201),(200,3,400,403)]
+version	[(1,10,10)]
+absent	[(1,10,10,20),(1,30,1,31),(2,5,5,10)]
+absent after optimize	[(1,10,10,20),(1,30,1,31),(2,5,5,10)]
+late	[(0,3,1,-3,1),(0,1,1,-1,1)]
+late after optimize	[(0,3,1,-3,1),(0,1,1,-1,1)]
+nonkey	[(0,1,1,2),(0,3,1,6)]
 unfinished mutations	0
-finished mutations	6
+finished mutations	3
