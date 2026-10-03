@@ -1072,8 +1072,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     /// context of `TablesLoader` is a copy of the global context, whose settings are the
                     /// `system_profile` snapshot rather than the policy an operator sets in `default_profile`
                     /// (see `Context::getDefaultProfileSettings`), so checking it would refuse existing
-                    /// tables on restart whenever `system_profile` does not repeat the opt-in.
-                    if (!isLoadingFromExistingMetadata(args.mode))
+                    /// tables on restart whenever `system_profile` does not repeat the opt-in. Replays of a
+                    /// definition the initiator already committed (`Replicated`-database DDL, recovery from
+                    /// metadata stored in Keeper, Shared Catalog) are not judged against the replaying
+                    /// session either: a secondary refusing it would retry its queue entry forever.
+                    if (!isLoadingFromExistingMetadata(args.mode) && !is_ddl_replay && !is_stored_definition
+                        && !is_shared_catalog_replay)
                         CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings));
 
                     try
