@@ -2,6 +2,7 @@
 #include <numeric>
 #include <optional>
 
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
@@ -14,6 +15,7 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationSpills;
     extern const Event AdaptiveAggregationSpilledRecords;
     extern const Event AdaptiveAggregationSpilledBytes;
+    extern const Event AdaptiveAggregationFrozenTableSpills;
 }
 
 namespace DB
@@ -102,6 +104,32 @@ UInt32 Aggregator::adaptiveBucketToMerge(const AdaptiveAggregationSession & shar
     return shared.top_k_pruning ? shared.top_k_pruning->bucket_order[claim] : claim;
 }
 
+void Aggregator::spillFrozenAdaptiveTable(
+    AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t max_temp_file_size) const
+{
+    /// A frozen table admits no new keys, so it grows only through states that keep growing after the freeze, in the
+    /// arena or in heap memory of their own; others would free little for the write. A table with the probe bypassed
+    /// absorbs no rows at all.
+    if (std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase).sampled_hits < adaptive_frozen_spill_min_hits
+        || !result.hasData())
+        return;
+    const bool states_grow = !all_aggregates_has_trivial_destructor
+        || std::ranges::any_of(aggregate_functions, [](const IAggregateFunction * function) { return function->allocatesMemoryInArena(); });
+    if (!states_grow)
+        return;
+
+    /// The table goes to disk as a part of the ordinary external aggregation, which the merge reads next to the staged
+    /// records. The producer then learns its keys again in an empty single-level table, which the frozen kernel pairs
+    /// with its two-level twin, and freezes again at the same bounds.
+    const size_t keys = result.sizeWithoutOverflowRow();
+    result.convertToTwoLevel();
+    writeToTemporaryFile(result, max_temp_file_size);
+    result.resetToSingleLevel();
+    adaptive.learnAgain();
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationFrozenTableSpills);
+    LOG_TRACE(log, "Adaptive aggregation: wrote the frozen table of {} keys to disk over the external-aggregation threshold", keys);
+}
+
 void Aggregator::spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive) const
 {
     auto & partitions = *adaptive.partitions;
@@ -186,33 +214,30 @@ AggregatedDataVariantsPtr Aggregator::createAdaptiveExternalMergeDestination() c
     return destination;
 }
 
-/// The flushed variants' sizes are meaningless by the time the external path finishes, so a
-/// stored entry keeps its sizes: only the verdict is written, and only when the session staged
-/// enough records to trust the thaw sampler. Runs without a measurement leave the entry alone.
-void Aggregator::recordAdaptiveStagingVerdict(AdaptiveAggregationSession & shared) const
+bool Aggregator::adaptiveMayThaw(const AdaptiveAggregationSession & shared) const
 {
-    const auto & stats_params = params.stats_collecting_params;
-    if (!stats_params.isCollectionAndUseEnabled())
-        return;
+    /// Under the top-K pruning the frozen tables pay even for a repetitive stream: the merge skips the units whose
+    /// groups cannot reach the top, which a thawed table, a source of every unit, would no longer allow.
+    return !params.adaptive_aggregator_disable_thaw && !shared.top_k_pruning;
+}
 
-    bool measured = false;
-    bool repeat_dominated = false;
-    {
-        std::lock_guard lock(shared.thaw_sample_mutex);
-        measured = shared.staged_records >= adaptive_thaw_min_staged_records;
-        repeat_dominated = shared.thaw_all.load(std::memory_order_relaxed);
-    }
-    if (!measured)
-        return;
+bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const
+{
+    if (!adaptiveMayThaw(*adaptive.session))
+        return false;
 
-    auto & stats = getHashTablesStatistics<AggregationEntry>();
-    AggregationEntry entry{.sum_of_sizes = 0, .median_size = 0, .adaptive_staging_repeat_dominated = repeat_dominated};
-    if (const auto prev = stats.getSizeHint(stats_params))
-    {
-        entry.sum_of_sizes = prev->sum_of_sizes;
-        entry.median_size = prev->median_size;
-    }
-    stats.update(entry, stats_params);
+    /// The verdict compares the wasted staged bytes per distinct key, (repeat - 1) * bytes per record, against the
+    /// bound, rearranged onto a common denominator so the arithmetic stays integral:
+    /// (sampled - distinct) * staged_bytes > bound * distinct * staged_records. The products are widened to 128 bits:
+    /// a giant near-unique stream (billions of staged records times their bytes) overflows 64, and a wrapped product
+    /// could thaw a healthy stream.
+    const auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
+    const size_t distinct = frozen.distinct_sampled_hashes.size();
+    return frozen.staged_records >= adaptive_thaw_min_staged_records
+        && frozen.staged_records * adaptive_thaw_staged_share_inverse >= frozen.rows
+        && frozen.thaw_sampled_records > distinct
+        && static_cast<UInt128>(frozen.thaw_sampled_records - distinct) * frozen.staged_bytes
+            > static_cast<UInt128>(adaptive_thaw_wasted_bytes_per_key) * distinct * frozen.staged_records;
 }
 
 }

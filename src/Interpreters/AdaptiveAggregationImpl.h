@@ -58,26 +58,26 @@ constexpr size_t adaptive_merge_unit_records = 16'384;
 /// the counts of a top 10 even when its groups have only a few hundred rows each.
 constexpr size_t adaptive_count_bins_per_bucket = 1024;
 constexpr size_t adaptive_count_bins = ADAPTIVE_AGGREGATION_NUM_BUCKETS * adaptive_count_bins_per_bucket;
-/// A thread gives up on freezing once it has consumed this many times the freeze threshold
-/// in rows while holding fewer keys than the threshold. High-cardinality streams freeze
-/// within a couple of blocks and skewed streams at roughly threshold / (1 - hot share) rows,
-/// so only repeat-dominated tables (average multiplicity above the multiple) ever give up.
-/// The value balances two bounds: it caps the tolerated hot share at 1 - 1/multiple (a 90%
-/// hot key still freezes with a wide margin), and it must fire within the rows one thread
-/// sees on a medium table at a wide fan-out (a 64-thread scan of 50M rows gives each thread
-/// less than a million rows).
-constexpr size_t adaptive_freeze_give_up_row_multiple = 16;
+/// A frozen table whose aggregate states own heap memory is written to disk over the external-aggregation threshold
+/// only once it has absorbed this many rows since it froze (see `Aggregator::spillFrozenAdaptiveTable`): the write
+/// empties the table, which then learns its keys anew, so a table that was just written must not be written again on
+/// every block while the query stays over the threshold.
+constexpr size_t adaptive_frozen_spill_min_hits = 65'536;
 
-/// The thaw guard, for the failure the give-up cannot see: the table filled and froze, but
-/// the stream behind it keeps repeating the same missing keys instead of bringing rare ones.
+/// The thaw guard: the table filled and froze, but the stream behind it keeps repeating the
+/// same missing keys instead of bringing rare ones.
 /// Staged misses are supposed to be rare keys, each staged about once. A key's first staged
 /// record is the price of storing it once, repaid by the merge working on deduplicated keys;
 /// every repeat is bytes the baseline would have absorbed as a cheap in-place update. The
-/// verdict therefore weighs the repeats by the records' bytes: the stream thaws once the
+/// verdict therefore weighs the repeats by the records' bytes: a thread thaws once the
 /// wasted staged bytes per distinct key, (repeat factor - 1) * bytes per record, exceed the
-/// bound. The repeat factor is estimated over a shared sparse sample of staged hashes.
-/// Repeats of a key collapse onto one sample entry across all threads, so the estimate does
-/// not depend on how a key's occurrences spread over the threads. The weighting separates the shapes by how
+/// bound. Each thread decides on its own stream: its baseline table would absorb only the
+/// repeats it sees itself, and a key that every thread stages once costs no more than the
+/// one cell per thread the baseline would keep. The repeat factor is estimated over a sparse
+/// sample of the thread's staged hashes. The repeats weigh only while the staged records are
+/// at least a share of the rows the frozen table saw (`adaptive_thaw_staged_share_inverse`):
+/// a table that absorbs nearly every row in place loses little to a sliver of repeated misses,
+/// and its thaw would give up the frozen table's merge. The weighting separates the shapes by how
 /// much a repeat costs. A near-unique stream has repeat ~ 1, so its wasted bytes are ~ 0 and
 /// it can never fire, no matter how heavy its records are. A stream of narrow fixed-width
 /// records pays ~ 24 bytes per repeat (a numeric key plus the bookkeeping), so it crosses the
@@ -88,11 +88,12 @@ constexpr size_t adaptive_freeze_give_up_row_multiple = 16;
 /// repeat ~ 3, a 90-byte string argument at repeat ~ 5, high-repeat count streams land in the
 /// kilobytes), and every shape that wins when kept engaged wastes at most ~ 275 (fixed-width
 /// arguments up to repeat ~ 12.5, count streams far below). `adaptive_thaw_min_staged_records`
-/// is the evidence floor before the verdict may fire. It is in records rather than bytes
-/// because the repeat estimate's confidence comes from the number of sampled observations.
+/// is the evidence floor of a thread before its verdict may fire. It is in records rather than
+/// bytes because the repeat estimate's confidence comes from the number of sampled observations.
 constexpr UInt64 adaptive_thaw_sample_mask = 0xFF;
-constexpr size_t adaptive_thaw_min_staged_records = 524'288;
+constexpr size_t adaptive_thaw_min_staged_records = 65'536;
 constexpr size_t adaptive_thaw_wasted_bytes_per_key = 300;
+constexpr size_t adaptive_thaw_staged_share_inverse = 4;
 
 /// The record layout of the aggregate arguments that general payloads stage, fixed for the query by the header.
 /// The fixed-size arguments come first, at fixed offsets and in the form `RowDataStore` uses (a Nullable field is a
@@ -193,21 +194,6 @@ struct AdaptiveAggregationSession
     };
     std::array<SpilledBucket, ADAPTIVE_AGGREGATION_NUM_BUCKETS> spilled_buckets;
 
-    /// The thaw sampler (see the tuning constants above). The producers fold a sparse sample of
-    /// their staged record hashes in here; repeats of a key collapse onto one entry across all
-    /// threads, so sampled records per distinct sampled hash estimates the repeat factor of the
-    /// staged stream as a whole, independently of how a key's occurrences spread over the threads.
-    std::mutex thaw_sample_mutex;
-    HashSet<UInt64> distinct_sampled_hashes;
-    size_t thaw_sampled_records = 0;
-    size_t staged_records = 0;
-    /// The staged records' estimated footprint: key bytes, variable-width argument bytes and the per-record
-    /// bookkeeping. It measures the same records as `staged_records` and the sample.
-    size_t staged_bytes = 0;
-    /// Set once the staged stream proves repeat-dominated; every thread then thaws its local
-    /// table at the next block and returns to the baseline path for good.
-    std::atomic<bool> thaw_all{false};
-
     /// Set by the first freeze when the aggregation feeds `ORDER BY count() DESC LIMIT n`, or the same by `uniqExact` or
     /// `uniqExactIf` (see `AdaptiveTopKPruning`).
     std::unique_ptr<AdaptiveTopKPruning> top_k_pruning;
@@ -237,10 +223,10 @@ struct AdaptiveAggregationProducer
     explicit AdaptiveAggregationProducer(AdaptiveAggregationSessionPtr shared_) : session(std::move(shared_)) { }
 
     /// The thread starts learning: the local table inserts as usual while the freeze rule
-    /// watches its growth. Rows consumed here feed the give-up rule (see `executeOnBlock`).
+    /// watches its growth (see `executeOnBlock`). A frozen table that was written to disk
+    /// under memory pressure learns again from empty.
     struct LearningState
     {
-        size_t rows_seen = 0;
     };
 
     /// The adaptive phase proper: the local table only updates the keys it already holds
@@ -248,27 +234,31 @@ struct AdaptiveAggregationProducer
     /// sampling: when the frozen table turns out to hold almost none of the stream's keys
     /// (a uniform high-cardinality distribution), probing it is pure overhead on every row;
     /// after the sample window the kernel switches to staging every row without the lookup.
+    /// Until then `sampled_hits` is also the count of rows the table absorbed, which is what
+    /// grows its states (see `adaptive_frozen_spill_min_hits`); with the probe bypassed, the
+    /// table absorbs nothing.
     struct FrozenState
     {
         size_t sampled_rows = 0;
         size_t sampled_hits = 0;
         bool bypass_local_probe = false;
+
+        /// The thaw evidence of this thread (see `Aggregator::adaptiveStagingRepeats`): the rows the frozen table saw,
+        /// the records it staged and their estimated footprint (key bytes, variable-width argument bytes and the
+        /// per-record bookkeeping), and a sparse sample of the staged hashes, whose occurrences per distinct sampled
+        /// hash estimate the repeat factor of the thread's staged stream.
+        size_t rows = 0;
+        size_t staged_records = 0;
+        size_t staged_bytes = 0;
+        size_t thaw_sampled_records = 0;
+        HashSet<UInt64> distinct_sampled_hashes;
     };
 
-    /// Terminal: the thread aggregates exactly as with the feature off, keeping only the
-    /// reason it stood down.
+    /// Terminal: the thread aggregates exactly as with the feature off. It stands down at its
+    /// thaw, once its own staged stream proves to repeat its misses (see
+    /// `Aggregator::adaptiveStagingRepeats`).
     struct BaselineState
     {
-        enum class Reason
-        {
-            /// The give-up rule: the table stayed far below the freeze threshold across
-            /// many times that many rows, so the stream is repeat-dominated locally.
-            TooFewDistinctKeys,
-            /// The global thaw: the session-wide staged-key sample proved the whole stream
-            /// repeat-dominated (see `appendDelayedRecords`).
-            RepeatedStagedKeys,
-        };
-        Reason reason;
     };
 
     using Phase = std::variant<LearningState, FrozenState, BaselineState>;
@@ -279,7 +269,8 @@ struct AdaptiveAggregationProducer
     bool isBaseline() const { return std::holds_alternative<BaselineState>(phase); }
 
     void freeze() { phase = FrozenState{}; }
-    void standDown(BaselineState::Reason reason) { phase = BaselineState{.reason = reason}; }
+    void learnAgain() { phase = LearningState{}; }
+    void standDown() { phase = BaselineState{}; }
 
     AdaptiveAggregationSessionPtr session;
 

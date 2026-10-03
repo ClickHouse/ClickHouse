@@ -76,8 +76,7 @@ namespace ProfileEvents
     extern const Event AggregationBucketTopKConversions;
     extern const Event AggregationHavingPrefilterGroupsSkipped;
     extern const Event AdaptiveAggregationLocalFreezes;
-    extern const Event AdaptiveAggregationGiveUps;
-    extern const Event AdaptiveAggregationPressureStandDowns;
+    extern const Event AdaptiveAggregationThaws;
 }
 
 namespace CurrentMetrics
@@ -1401,8 +1400,10 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
 void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const
 {
     std::call_once(adaptive.session->init_flag, [&] { initAdaptiveSession(*adaptive.session); });
-    adaptive.partitions = std::make_unique<AdaptivePartitionBuffers>(adaptive.session->layout);
-    if (adaptive.session->top_k_pruning)
+    /// A table that was written to disk freezes again with the records and the bins it already has.
+    if (!adaptive.partitions)
+        adaptive.partitions = std::make_unique<AdaptivePartitionBuffers>(adaptive.session->layout);
+    if (adaptive.session->top_k_pruning && !adaptive.count_bins)
         adaptive.count_bins = std::make_unique<UInt16[]>(adaptive_count_bins);
     adaptive.freeze();
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationLocalFreezes);
@@ -2403,35 +2404,16 @@ bool Aggregator::executeOnBlock(Columns columns,
             = executeImplUntilAdaptiveFreeze(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data());
         if (split < row_end)
         {
-            if (adaptive->session->thaw_all.load(std::memory_order_relaxed))
-            {
-                /// The thaw verdict outranks the crossing: stand down now and finish the block
-                /// on the baseline path (the between-blocks hook then treats this producer as
-                /// baseline, with the ordinary conversion checks).
-                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::RepeatedStagedKeys);
-                executeImpl(
-                    result,
-                    split,
-                    row_end,
-                    key_columns,
-                    aggregate_functions_instructions.data(),
-                    no_more_keys,
-                    /*all_keys_are_const=*/false,
-                    params.overflow_row ? result.without_key : nullptr);
-            }
-            else
-            {
-                freezeAdaptive(result, *adaptive);
-                executeFrozen(
-                    columns,
-                    split,
-                    row_end,
-                    result,
-                    key_columns,
-                    aggregate_functions_instructions.data(),
-                    *adaptive,
-                    /*all_keys_are_const=*/false);
-            }
+            freezeAdaptive(result, *adaptive);
+            executeFrozen(
+                columns,
+                split,
+                row_end,
+                result,
+                key_columns,
+                aggregate_functions_instructions.data(),
+                *adaptive,
+                /*all_keys_are_const=*/false);
         }
     }
     else
@@ -2457,85 +2439,64 @@ bool Aggregator::executeOnBlock(Columns columns,
             >= std::min(adaptive_spill_min_bytes, params.max_bytes_before_external_group_by / (2 * params.max_threads)))
         spillAdaptivePartitions(*adaptive);
 
+    /// The thread's staged stream proved to repeat its misses (see `adaptiveStagingRepeats`): thaw and return to the
+    /// baseline checks below, permanently. The table resumes ordinary insertion; the records staged so far stay in the
+    /// producer's partitions and the merge drains them.
+    if (adaptive && adaptive->isFrozen() && adaptiveStagingRepeats(*adaptive))
+    {
+        const auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive->phase);
+        LOG_TRACE(
+            log,
+            "Adaptive aggregation: thawed the local table at {} keys after {} rows and {} staged records ({} bytes, repeat factor {:.2f})",
+            result_size,
+            frozen.rows,
+            frozen.staged_records,
+            frozen.staged_bytes,
+            static_cast<double>(frozen.thaw_sampled_records) / static_cast<double>(frozen.distinct_sampled_hashes.size()));
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationThaws);
+        adaptive->standDown();
+    }
+
     if (adaptive && !adaptive->isBaseline())
     {
-        if (adaptive->session->thaw_all.load(std::memory_order_relaxed))
+        /// The freeze replaces the local two-level conversion: from now on the local table
+        /// only updates the keys it already holds, so it stays single-level and bounded by
+        /// the threshold, and the frozen kernel pairs it with its two-level twin.
+        if (adaptive->isLearning())
         {
-            /// The staged stream proved repeat-dominated (see `publishDelayedRecords`): thaw and
-            /// return to the baseline checks below, permanently. The table resumes ordinary
-            /// insertion; the records staged so far stay published and the merge drains them.
-            /// A thread that has not frozen yet stands down the same way, so that it does not
-            /// freeze against the verdict.
-            if (adaptive->isFrozen())
-                LOG_TRACE(log, "Adaptive aggregation: thawed the local table at {} keys", result_size);
-            adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::RepeatedStagedKeys);
+            /// The byte twin of the key-count freeze bound. The measure is the local
+            /// table's own footprint, its hash-table buffer plus its arenas, checked
+            /// between blocks like the baseline's conversion thresholds; the mid-block
+            /// freeze crossing checks only the key count, so a byte-triggered freeze
+            /// lands on a block boundary.
+            const bool freeze_bytes_reached = params.adaptive_aggregator_freeze_threshold_bytes
+                && result.allocatedBytes() >= params.adaptive_aggregator_freeze_threshold_bytes;
+            /// The condition on which the baseline converts its table to two-level freezes a learning table
+            /// instead, so a learning table never needs the conversion: the adaptive merge gives it the
+            /// bucket-parallel merge the conversion is for. It catches what the two bounds above cannot see, a
+            /// few groups whose states own heap memory (`uniqExact` per region): the query's tracked memory, the
+            /// measure of the conversion, counts that memory, and the table's own footprint does not. Summed over
+            /// every thread, it can freeze a table before the table reaches its own bounds, which only stages more
+            /// of its stream.
+            const bool two_level_reached = worthConvertToTwoLevel(
+                params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
+            if ((result_size >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached || two_level_reached)
+                && result.isConvertibleToTwoLevel())
+                freezeAdaptive(result, *adaptive);
         }
-        else
-        {
-            /// The freeze replaces the local two-level conversion: from now on the local table
-            /// only updates the keys it already holds, so it stays single-level and bounded by
-            /// the threshold, and the frozen kernel pairs it with its two-level twin.
-            if (adaptive->isLearning())
-            {
-                /// The byte twin of the key-count freeze bound. The measure is the local
-                /// table's own footprint, its hash-table buffer plus its arenas, checked
-                /// between blocks like the baseline's conversion thresholds; the mid-block
-                /// freeze crossing checks only the key count, so a byte-triggered freeze
-                /// lands on a block boundary. The query-wide tracked memory is deliberately
-                /// not used: it sums every thread's allocations, so it would freeze all the
-                /// tables off each other's growth.
-                const bool freeze_bytes_reached = params.adaptive_aggregator_freeze_threshold_bytes
-                    && result.allocatedBytes() >= params.adaptive_aggregator_freeze_threshold_bytes;
-                if ((result_size >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached)
-                    && result.isConvertibleToTwoLevel())
-                    freezeAdaptive(result, *adaptive);
-            }
 
-            if (adaptive->isFrozen())
-            {
-                /// Checking the constraints.
-                if (!checkLimits(result_size, no_more_keys))
-                    return false;
+        /// Checking the constraints.
+        if (!checkLimits(result_size, no_more_keys))
+            return false;
 
-                return true;
-            }
+        /// A learning table stays below every freeze bound, the two-level condition among them, so like a small
+        /// baseline table it neither converts nor spills. A frozen one is written to disk over the
+        /// external-aggregation threshold when its states grow (see `spillFrozenAdaptiveTable`).
+        if (adaptive->isFrozen() && params.max_bytes_before_external_group_by
+            && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
+            spillFrozenAdaptiveTable(result, *adaptive, current_memory_usage + params.min_free_disk_space);
 
-            /// A table that consumed this many rows while staying below the freeze threshold in
-            /// keys is repeat-dominated and will not freeze in practice: either the group count
-            /// plateaus below the threshold (few groups with fat states, e.g. `uniqExact` per
-            /// region, where the freeze would foreclose the byte-triggered conversion and its
-            /// bucket-parallel merge), or the hot share is so extreme that staging the sliver of
-            /// a tail cannot pay. The thread falls back to the baseline checks below, permanently.
-            auto & learning = std::get<AdaptiveAggregationProducer::LearningState>(adaptive->phase);
-            learning.rows_seen += row_end - row_begin;
-            if (learning.rows_seen >= adaptive_freeze_give_up_row_multiple * params.adaptive_aggregator_freeze_threshold
-                && result_size < params.adaptive_aggregator_freeze_threshold)
-            {
-                const size_t rows_seen = learning.rows_seen;
-                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
-                ProfileEvents::increment(ProfileEvents::AdaptiveAggregationGiveUps);
-                LOG_TRACE(log, "Adaptive aggregation: giving up on freezing after {} rows at {} keys", rows_seen, result_size);
-            }
-
-            /// A learning table has no frozen twin to pair with and nothing staged, so unlike the
-            /// frozen one it can join the baseline path for good and spill through the branch below.
-            if (params.max_bytes_before_external_group_by
-                && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
-            {
-                if (adaptive->isLearning())
-                    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureStandDowns);
-                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
-            }
-
-            if (!adaptive->isBaseline())
-            {
-                /// Checking the constraints.
-                if (!checkLimits(result_size, no_more_keys))
-                    return false;
-
-                return true;
-            }
-        }
+        return true;
     }
 
     bool worth_convert_to_two_level = worthConvertToTwoLevel(

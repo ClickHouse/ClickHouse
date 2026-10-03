@@ -782,6 +782,14 @@ private:
     /// perform the identical transition.
     void freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const;
 
+    /// Whether a frozen producer of the session may thaw at all: not with `adaptive_aggregator_disable_thaw`, and not
+    /// under the top-K pruning.
+    bool adaptiveMayThaw(const AdaptiveAggregationSession & shared) const;
+
+    /// The thaw verdict of a frozen producer, checked between blocks: its own staged stream repeats its misses so much
+    /// that its table would do better absorbing them in place (see the tuning constants in `AdaptiveAggregationImpl.h`).
+    bool adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const;
+
     /// The frozen consume path: rows whose key the local table holds are aggregated in place,
     /// the other rows are appended to the producer's partitions as delayed records for the merge.
     void executeFrozen(
@@ -877,6 +885,12 @@ private:
     /// Writes the producer's staged records to the session's spill streams, a partition block at a time, and frees
     /// them; the producer then keeps appending into new chunks. Called over the external-aggregation threshold.
     void spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive) const;
+
+    /// Writes the producer's frozen table to disk as a part of the ordinary external aggregation when its aggregate
+    /// states grow after the freeze and the table has absorbed `adaptive_frozen_spill_min_hits` rows since it froze,
+    /// then lets the producer learn its keys again in an empty single-level table. Called over the
+    /// external-aggregation threshold.
+    void spillFrozenAdaptiveTable(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t max_temp_file_size) const;
 
     void executeAggregateInstructions(
         Arena * aggregates_pool,

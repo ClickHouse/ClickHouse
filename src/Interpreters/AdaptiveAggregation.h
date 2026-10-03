@@ -20,18 +20,21 @@ namespace DB
 /// bytes, plus a run-length count when the only aggregate is count, or the row's aggregate-argument values
 /// otherwise; it never points into the source block, so the block is released.
 ///
-/// Two guards hand the work back to the baseline path, with its ordinary byte-triggered
-/// two-level conversion, when freezing cannot pay. A table that consumes many times the
-/// threshold in rows while staying below it in keys gives up on freezing, per thread: the
-/// stream has few groups (typically with fat states, which want the conversion and its
-/// bucket-parallel merge). And when the staged stream as a whole proves to repeat the same keys
-/// over and over, every thread thaws its table. A key's first staged record is the price of
-/// storing it once; every repeat is bytes the baseline would have absorbed as a cheap
-/// in-place update. The thaw therefore fires once the wasted staged bytes per distinct key
-/// exceed a bound, which stands repetitive streams down early in proportion to how heavy
-/// their keys and arguments are. The thaw verdict is remembered in the hash-table
-/// statistics, so later runs of the query skip the engagement altogether instead of
-/// re-measuring the stream.
+/// A table also freezes where the baseline would convert it to two-level, which catches the few
+/// groups whose states own heap memory (`uniqExact` per region): such a table never fills in keys
+/// or in its own footprint, and the adaptive merge gives it the bucket-parallel merge the conversion
+/// is for. A table that reaches no bound is small and keeps learning, like a small baseline table;
+/// a frozen one whose states keep growing is written to disk over the external-aggregation
+/// threshold and learns again from empty.
+///
+/// One guard hands the work back to the baseline path when freezing cannot pay: when a thread's
+/// staged stream proves to repeat the same keys over and over, the thread thaws its table. A key's
+/// first staged record is the price of storing it once; every repeat is bytes the baseline would
+/// have absorbed as a cheap in-place update. The thaw therefore fires once the wasted staged bytes
+/// per distinct key exceed a bound, which stands repetitive streams down early in proportion to how
+/// heavy their keys and arguments are, but only while the staged records are a fair share of the
+/// thread's rows: a table that absorbs nearly every row in place loses little to a sliver of
+/// repeated misses.
 ///
 /// Merge phase: at the end of input every thread hands its partitions to the session and its local table converts
 /// to two-level. The merge task owning bucket b then merges the bucket's partitions a few at a time: it drains every

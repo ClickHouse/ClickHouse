@@ -1024,8 +1024,6 @@ The server successfully detected this situation and will download merged part fr
     \
     M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.", ValueType::Number) \
     M(AdaptiveAggregationLocalFreezes, "How many local hash tables the adaptive aggregation froze at the freeze threshold.", ValueType::Number) \
-    M(AdaptiveAggregationGiveUps, "How many threads gave up on freezing in the adaptive aggregation because their stream held few distinct keys.", ValueType::Number) \
-    M(AdaptiveAggregationPressureStandDowns, "How many threads in the adaptive aggregation left the learning phase for good because memory pressure crossed the external aggregation threshold, so their local tables spill through the ordinary external aggregation.", ValueType::Number) \
     M(AdaptiveAggregationThaws, "How many times the adaptive aggregation thawed the local tables because the staged stream proved repeat-dominated.", ValueType::Number) \
     M(AdaptiveAggregationProbeBypasses, "How many threads stopped probing their frozen local table in the adaptive aggregation because almost no row hit it.", ValueType::Number) \
     M(AdaptiveAggregationStagedRecords, "How many delayed records the adaptive aggregation staged into its partition buffers.", ValueType::Number) \
@@ -1034,6 +1032,7 @@ The server successfully detected this situation and will download merged part fr
     M(AdaptiveAggregationSpills, "How many times a thread of the adaptive aggregation wrote its staged records to disk because the query crossed the external aggregation threshold.", ValueType::Number) \
     M(AdaptiveAggregationSpilledRecords, "How many staged records the adaptive aggregation wrote to disk under memory pressure.", ValueType::Number) \
     M(AdaptiveAggregationSpilledBytes, "How many bytes of staged records the adaptive aggregation wrote to disk under memory pressure, before compression.", ValueType::Bytes) \
+    M(AdaptiveAggregationFrozenTableSpills, "How many times a thread of the adaptive aggregation wrote its frozen local table to disk because the query crossed the external aggregation threshold while the table's aggregate states kept growing.", ValueType::Number) \
     M(AdaptiveAggregationMergeUnits, "How many merge units, runs of the partitions of a two-level bucket merged in one table, the adaptive aggregation merged and converted.", ValueType::Number) \
     M(AdaptiveAggregationPrunedUnits, "How many merge units the adaptive aggregation skipped without draining them, because no group in them could reach the top of `ORDER BY count() DESC LIMIT n`.", ValueType::Number) \
     M(AdaptiveAggregationPrunedRecords, "How many staged records the adaptive aggregation's merge skipped, because their group could not reach the top of `ORDER BY count() DESC LIMIT n`.", ValueType::Number) \
