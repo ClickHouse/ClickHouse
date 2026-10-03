@@ -1771,7 +1771,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     pipes.reserve(num_streams);
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(
+        info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag, context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
     format_filter_info->need_row_numbers = VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns);
 
     for (size_t i = 0; i < num_streams; ++i)
@@ -2675,6 +2676,7 @@ public:
     }
 
     StoragePtr getNested() const override { return nested; }
+    StoragePtr tryGetNested() const override { return nested; }
     /// The table was created with `ENGINE = URL(...)`; report it as such for consistency with
     /// `SHOW CREATE TABLE` and `system.tables`, even though reads/writes go to the delegate.
     String getName() const override { return "URL"; }
@@ -2884,7 +2886,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
     /// and must stay loadable after a revoke; every other statement introduces one to check.
     const bool from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
     if (!from_existing_metadata)
-        context->checkAccess(AccessType::TABLE_ENGINE, String(engine_name));
+        context->checkAccess(AccessType::TABLE_ENGINE, engine_name);
 
     const auto & storages = StorageFactory::instance().getAllStorages();
     auto it = storages.find(engine_name);
@@ -2926,6 +2928,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
         /// `format = auto` that would force re-inference (and external I/O) on every `ATTACH`/restart.
         if (const auto * file = typeid_cast<const StorageFile *>(delegate_storage.get()))
             resolved_format = file->getFormatName();
+        /// NOLINT(storage-cast): the delegate is created right here, it never comes from the catalog.
         else if (const auto * object_storage = typeid_cast<const StorageObjectStorage *>(delegate_storage.get()))
             resolved_format = object_storage->getFormatName();
         else

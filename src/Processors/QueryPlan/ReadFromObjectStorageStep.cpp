@@ -124,7 +124,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
-        filter_actions_dag,
+        info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag,
         context,
         configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
         query_info.row_level_filter,
