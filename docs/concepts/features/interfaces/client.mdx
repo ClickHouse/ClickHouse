@@ -192,6 +192,73 @@ Exception on client:
 Code: 36. DB::Exception: Unknown command `/hepl`. Maybe you meant: ['/help']. Type `/` at the beginning of the line to see all the commands. (BAD_ARGUMENTS)
 ```
 
+### Running queries in the background {#background-jobs}
+
+In an interactive `clickhouse-client` session, you can continue using the prompt while a query executes. Start a query in the background with `\bg`, or press `Ctrl+B` to detach an eligible foreground query that is already running. The client assigns the query a numeric job ID and spools output produced while it is detached so that it does not get mixed with output at the prompt.
+
+These client-managed jobs are different from [server-side background queries](/operations/background-queries). The server-side `run_query_in_background` setting detaches a query from the connection that submitted it and discards any `SELECT` result:
+
+|                                | Client-managed background job                              | Server setting `run_query_in_background`                        |
+|--------------------------------|-----------------------------------------------------------|-----------------------------------------------------------------|
+| Owner                          | The current `clickhouse-client` process                   | The ClickHouse server                                           |
+| After `clickhouse-client` exits | The job is cancelled                                      | The detached query continues                                    |
+| Query result                   | Spooled locally for later retrieval with `\fg`            | Discarded                                                       |
+| Monitoring and cancellation    | `\jobs`, `\fg`, and `\cancel`                             | `system.processes`, `system.query_log`, and `KILL QUERY`         |
+
+Use the server setting for work such as `INSERT ... SELECT` that must survive a client disconnect. Use a client-managed job when you want to keep using the same interactive client and retrieve a `SELECT` result later. The two mechanisms cannot be combined in one query.
+
+| Command             | Description                                                                                           |
+|---------------------|-------------------------------------------------------------------------------------------------------|
+| `\bg <query>`       | Start one SQL statement in the background and print its job ID                                        |
+| `\jobs`             | List each job's status, elapsed time, spool size, query ID, and query preview                          |
+| `\fg <job_id>`      | Print and remove a finished job; if it is still running, return to the prompt                          |
+| `\cancel <job_id>`  | Request cancellation of a running job, or remove a finished job and discard its spooled output       |
+
+`\jobs` includes the latest server-reported read rows and bytes, throughput, estimated completion percentage, writes, CPU, memory, and temporary-disk usage when those metrics are available. CPU is shown as a recent rate while a job runs and as an average after it becomes terminal. Metrics continue updating for both queries started with `\bg` and foreground queries detached with `Ctrl+B`.
+
+To move a foreground query into the background, press `Ctrl+B` while it is running. The client prints the assigned job ID and returns to a prompt. Output already written to the terminal remains there; `\fg` later replays only the bytes produced after detachment. Start the query with `\bg` when you need its complete output to be replayed as one unit.
+
+Foreground detachment currently supports `SELECT` queries and has stricter limits than `\bg`. It requires an append-compatible, TTY-friendly format and uncompressed standard output, and is disabled while a pager is active. Formats with document-level framing, such as `JSON` and `XML`, are not eligible. Use `nopager` before starting the query if necessary. Queries that use `INTO OUTFILE`, read client-side input, or use command-line external tables or scalars cannot be detached. Network compression is independent of result-output compression and does not prevent detachment.
+
+After detachment, the job and the prompt use independent server connections. Server-side session state on the job's connection, including temporary tables and an open transaction, is therefore not available at the new prompt. Avoid detaching a query when you need to continue using that state interactively.
+
+`Ctrl+B` is also the default command prefix in `tmux`, which can consume it before `clickhouse-client` receives it. With the default `tmux` configuration, press `Ctrl+B` twice to send a literal `Ctrl+B` to the client.
+
+For example:
+
+```text
+:) \bg SELECT count() FROM large_table
+Background job 1 started
+
+:) SELECT version()
+
+:) \jobs
+[1] running  0.7 sec  0.00 B  <query-id>  SELECT count() FROM large_table
+
+:) \fg 1
+Background job 1 is still running
+
+:) \cancel 1
+```
+
+`\fg` does not wait for a running job. Once a job finishes, the command prints its spooled result or error and removes it from the job list. If the output format is not safe to write directly to a terminal, such as `RowBinary`, the client asks for confirmation first. Declining the replay keeps the job and its spool; use `\fg` again to retry or `\cancel` to discard it.
+
+Cancellation of a running job is asynchronous, so the job might remain in a running state briefly after you request it. For a terminal job, `\cancel` immediately removes the job and discards its spooled output without displaying it.
+
+A job's result and diagnostics occupy local temporary storage until they are consumed by `\fg`, discarded with `\cancel` after the job terminates, or removed when the client exits. Keep the available disk space in mind when running a query that returns a large result.
+
+The possible statuses shown by `\jobs` are `starting`, `running`, `succeeded`, `failed`, and `cancelled`.
+
+`\bg` accepts exactly one executable SQL statement. It rejects comment-only input and statements whose effects would be limited to the job's private session, such as `SET <setting>`, `USE`, session-level `SET ROLE`, and temporary table DDL. Persistent `SET DEFAULT ROLE` statements are allowed. It also rejects command-line external tables or scalars, query-level settings profiles, and a query whose `SETTINGS` clause contains `run_query_in_background`; choose either client-managed or server-managed background execution.
+
+Background jobs support `INSERT` only as `INSERT ... SELECT`, where the server produces the inserted rows. Client-fed forms such as inline `VALUES`, `INFILE`, `input()`, or data from standard input are not supported.
+
+Background jobs belong to the current client process and do not continue after the client exits. A job takes a snapshot of the current database and client-side query settings when it starts, but uses an independent server connection. Server-side session state, including temporary tables, an active role selected with `SET ROLE`, and settings applied only through a named profile, is not carried to that connection. Later `USE` or `SET` commands at the main prompt do not affect the job.
+
+Exiting the client requests cancellation and waits for background workers to stop; an in-progress connection or handshake can delay exit for as long as its configured connection timeout.
+
+These commands are available only in interactive `clickhouse-client`; they are not available in batch mode or in `clickhouse-local`.
+
 ### Query processing information {#processing-info}
 
 When processing a query, the client shows:
@@ -227,6 +294,7 @@ An argument of `\d` that continues the `SHOW TABLES` query instead of naming a t
 
 - `Alt (Option) + Shift + e` - open editor with the current query. It is possible to specify the editor to use with the environment variable `EDITOR`. By default, `vim` is used.
 - `Alt (Option) + #` - comment line.
+- `Ctrl + b` - move an eligible running foreground query into a client-managed background job.
 - `Ctrl + r` - fuzzy history search.
 
 The full list with all available keyboard shortcuts is available at [replxx](https://github.com/AmokHuginnsson/replxx/blob/1f149bf/src/replxx_impl.cxx#L262).
