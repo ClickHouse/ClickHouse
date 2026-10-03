@@ -554,14 +554,19 @@ async function checkAuthHeaderTransport(js) {
         helpers.serverPredatesDefaultSessionUser('27.1.1.1') === false);
 
     const requestFunctions = [
-        ['auxiliaryQuery', 'headers: await getRequestAuthHeaders(user, password, server_address)'],
-        ['postImpl', 'headers: await getRequestAuthHeaders(user, password, server_address)'],
-        ['loadCompletions', 'headers: await getRequestAuthHeaders(user_elem.value, password_elem.value, url_elem.value)'],
+        ['auxiliaryQuery', 'headers: await getRequestAuthHeaders(user, password, server_address)',
+            'invalidateRequestAuthOnFailure(response, server_address, user, password)'],
+        ['postImpl', 'headers: await getRequestAuthHeaders(user, password, server_address)',
+            'invalidateRequestAuthOnFailure(response, server_address, user, password)'],
+        ['loadCompletions', 'headers: await getRequestAuthHeaders(user, password, server_address)',
+            'invalidateRequestAuthOnFailure(response, server_address, user, password)'],
     ];
-    for (const [name, headerCall] of requestFunctions) {
+    for (const [name, headerCall, invalidationCall] of requestFunctions) {
         const source = extractTopLevelFunction(js, name);
         check('auth-header-cases', `${name} resolves header authentication before the real request`,
             source.includes(headerCall), name);
+        check('auth-header-cases', `${name} invalidates a disproved auth classification`,
+            source.includes(invalidationCall), name);
         check('auth-header-cases', `${name} does not append credentials to its URL`,
             !/url \+= '&(?:user|password)=/.test(source), name);
     }
@@ -611,8 +616,8 @@ async function checkAuthHeaderTransport(js) {
             && pathCalls.length === beforeModernReuse,
         { modernHeadersAgain, pathCalls });
 
-    /// Two consumers racing the same connection (for example checkCredentials and Run) share only
-    /// the in-flight probe. The result disappears once settled, so it cannot become a sticky mode.
+    /// Two consumers racing the same connection (for example checkCredentials and Run) share one
+    /// in-flight probe, and the settled endpoint classification is then reused by later requests.
     const sharedCalls = [];
     const sharedHelpers = makeAuthHelpers(async (url, options) => {
         const explicit_default = options.headers['X-ClickHouse-User'] === 'default';
