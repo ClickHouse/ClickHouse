@@ -1,0 +1,8 @@
+-- metrics named like functions
+[('__name__','rate'),('job','a')]	1970-01-01 00:01:50.000	2.5
+[('__name__','time'),('job','b')]	1970-01-01 00:01:50.000	4
+[('job','a')]	1970-01-01 00:01:50.000	2.5
+-- whitespace before the parenthesis
+[('job','a')]	1970-01-01 00:01:50.000	2.5
+1970-01-01 00:01:50.000	1
+-- unknown functions
