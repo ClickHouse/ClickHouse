@@ -46,11 +46,20 @@ struct CodecValidationSettings
     /// An already accepted codec must not be re-judged by the current session, or existing tables could fail to load.
     static CodecValidationSettings trusted() { return {}; }
 
+    /// A newly admitted codec that will compress streams without a known value type must work on arbitrary bytes.
+    static CodecValidationSettings forUntypedByteStreams()
+    {
+        CodecValidationSettings result;
+        result.reject_type_sensitive_without_column_type = true;
+        return result;
+    }
+
     /// nullptr on trusted paths (every gated / suspicious codec is accepted).
     /// Otherwise a gated codec must be enabled by its dedicated setting.
     const Settings * settings = nullptr;
 
-    /// Used when a temporarily unavailable projection has no output type during `RESTORE`.
+    /// Require codecs that work on arbitrary bytes when no output type can be established,
+    /// including unavailable projections and part-wide MergeTree codec settings.
     bool reject_type_sensitive_without_column_type = false;
 
 private:

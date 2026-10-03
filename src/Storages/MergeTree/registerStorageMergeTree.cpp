@@ -962,6 +962,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
             args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
 
+        /// RESTORE supplies a new table from backup metadata but uses SECONDARY_CREATE, which skips
+        /// the ordinary MergeTree sanity check. Reject part-wide codecs that cannot write new parts
+        /// before the restored table is published; stored ATTACH and replica replay stay loadable.
+        if (args.is_restore_from_backup)
+            storage_settings->validatePartCodecSettings();
+
         /// What this query changes from the settings the server has in effect, which already include the
         /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A
         /// full-definition `ATTACH` states its settings itself, so it is checked like a `CREATE`.

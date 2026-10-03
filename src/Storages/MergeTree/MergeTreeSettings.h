@@ -109,6 +109,9 @@ struct MergeTreeSettings
 
     bool needSyncPart(size_t input_rows, size_t input_bytes) const;
     void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
+    /// Part-wide codecs are resolved without a column type. Validate them at fresh admission,
+    /// including RESTORE, before publishing metadata that cannot write new parts.
+    void validatePartCodecSettings() const;
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToSystemCompletionsColumns(MutableColumns & columns) const;
