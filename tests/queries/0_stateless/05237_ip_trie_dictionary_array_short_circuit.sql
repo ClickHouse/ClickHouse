@@ -1,5 +1,6 @@
 -- `dictGetOrDefault` of an `Array` attribute from an `ip_trie` dictionary for a mix of matching and
--- non-matching addresses. The default is only defined for the addresses that are not in the dictionary.
+-- non-matching addresses. The default is only defined for the addresses that are not in the dictionary
+-- and is different for each of them.
 
 DROP DICTIONARY IF EXISTS ip_trie_array_dictionary;
 DROP TABLE IF EXISTS ip_trie_array_source_table;
@@ -41,13 +42,13 @@ LIFETIME(MIN 0 MAX 0)
 LAYOUT(IP_TRIE());
 
 SELECT 'IPv4';
-SELECT ip, dictGetOrDefault('ip_trie_array_dictionary', 'array_value', toIPv4(ip), [toString(intDiv(1, is_missing))])
+SELECT ip, dictGetOrDefault('ip_trie_array_dictionary', 'array_value', toIPv4(ip), [concat(ip, '_', toString(intDiv(1, is_missing)))])
 FROM ip_trie_array_probe_table
 ORDER BY ip
 SETTINGS short_circuit_function_evaluation = 'enable';
 
 SELECT 'IPv6';
-SELECT ip, dictGetOrDefault('ip_trie_array_dictionary', 'array_value', IPv6StringToNum(ip), [toString(intDiv(1, is_missing))])
+SELECT ip, dictGetOrDefault('ip_trie_array_dictionary', 'array_value', IPv6StringToNum(ip), [concat(ip, '_', toString(intDiv(1, is_missing)))])
 FROM ip_trie_array_probe_v6_table
 ORDER BY ip
 SETTINGS short_circuit_function_evaluation = 'enable';
