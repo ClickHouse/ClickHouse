@@ -384,11 +384,12 @@ const std::unordered_map<String, String> & getRenames()
         {"url_encode", "encodeURLFormComponent"},
         {"url_decode", "decodeURLFormComponent"},
 
-        /// Bitwise.
+        /// Bitwise. bitwise_left_shift is mapped by a rewriter below: an untyped
+        /// Trino literal is INTEGER-wide, but ClickHouse would infer a minimal
+        /// width for it and silently shift within that narrow type.
         {"bitwise_and", "bitAnd"},
         {"bitwise_or", "bitOr"},
         {"bitwise_xor", "bitXor"},
-        {"bitwise_left_shift", "bitShiftLeft"},
         {"bitwise_right_shift_arithmetic", "bitShiftRight"},
 
         /// Binary. ClickHouse hash names are case-sensitive, so lowercase
@@ -836,14 +837,33 @@ const std::unordered_map<String, Rewriter> & getRewriters()
             requireArguments(function, arguments, 1, 1, "(value)");
             node = makeFunctionWithArguments("bitNot", {makeFunctionWithArguments("toInt64", {arguments[0]})});
         }},
+        {"bitwise_left_shift", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
+        {
+            /// An untyped Trino literal is INTEGER-wide, but ClickHouse infers a
+            /// minimal width for it, so e.g. bitwise_left_shift(1, 8) would shift
+            /// within UInt8 and return 0. Promote only an untyped literal value to
+            /// 64-bit; an explicitly typed value (e.g. TINYINT '1') keeps its Trino
+            /// width, and the shift count is never promoted - the result type of
+            /// `bitShiftLeft` is as wide as the widest of its two arguments, so a
+            /// 64-bit shift count would widen a narrow value as well.
+            requireArguments(function, arguments, 2, 2, "(value, shift)");
+            ASTPtr value = arguments[0];
+            if (value->as<ASTLiteral>())
+                value = makeFunctionWithArguments("toInt64", {value});
+            node = makeFunctionWithArguments("bitShiftLeft", {value, arguments[1]});
+        }},
         {"bitwise_right_shift", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
             /// Trino wants a logical (zero-fill) shift; ClickHouse shifts signed types arithmetically.
+            /// Promote an untyped literal like bitwise_left_shift does, so the
+            /// reinterpret below sees a 64-bit value instead of a narrow one.
             requireArguments(function, arguments, 2, 2, "(value, shift)");
+            ASTPtr value = arguments[0];
+            if (value->as<ASTLiteral>())
+                value = makeFunctionWithArguments("toInt64", {value});
             node = makeFunctionWithArguments(
                 "reinterpretAsInt64",
-                {makeFunctionWithArguments(
-                    "bitShiftRight", {makeFunctionWithArguments("reinterpretAsUInt64", {arguments[0]}), arguments[1]})});
+                {makeFunctionWithArguments("bitShiftRight", {makeFunctionWithArguments("reinterpretAsUInt64", {value}), arguments[1]})});
         }},
         {"bit_count", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
@@ -1258,22 +1278,6 @@ const std::unordered_map<String, Rewriter> & getRewriters()
             node = makeFunctionWithArguments(
                 "mapFromArrays",
                 {makeFunctionWithArguments("groupArray", {arguments[0]}), makeFunctionWithArguments("groupArray", {arguments[1]})});
-        }},
-        {"regr_slope", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
-        {
-            requireNotWindow(function);
-            requireArguments(function, arguments, 2, 2, "(y, x)");
-            node = makeFunctionWithArguments(
-                "tupleElement",
-                {makeFunctionWithArguments("simpleLinearRegression", {arguments[1], arguments[0]}), make_intrusive<ASTLiteral>(UInt64(1))});
-        }},
-        {"regr_intercept", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
-        {
-            requireNotWindow(function);
-            requireArguments(function, arguments, 2, 2, "(y, x)");
-            node = makeFunctionWithArguments(
-                "tupleElement",
-                {makeFunctionWithArguments("simpleLinearRegression", {arguments[1], arguments[0]}), make_intrusive<ASTLiteral>(UInt64(2))});
         }},
         {"min", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
         {

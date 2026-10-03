@@ -539,6 +539,14 @@ In case of non-graceful server termination, it is possible that we can have not 
 
 Default value: `21600` (6 hours).
 
+### `processing_state_cache_ttl_seconds` {#processing_state_cache_ttl_seconds}
+
+A file whose `processing` node in keeper is held by another server is remembered as `Processing` in the in-memory file status cache, so that the following listing passes skip it without asking keeper again.
+
+Unlike `Processed` and `Failed`, this state is not final: the other processor can release the file without committing it, for instance if it dies. This setting defines for how long the cached `Processing` state is trusted; after that the file is rechecked in keeper and processed if it is free again. Zero means to always recheck keeper.
+
+Default value: `300` (5 minutes).
+
 ## S3-related settings {#s3-settings}
 
 Engine supports all s3 related settings. For more information about S3 settings see [here](/reference/engines/table-engines/integrations/s3).
@@ -627,7 +635,7 @@ For more information about virtual columns see [here](/reference/engines/table-e
 - `*` — Substitutes any number of any characters except `/` including empty string.
 - `**` — Substitutes any number of any characters include `/` including empty string.
 - `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. Each string can itself contain the `*` and `?` wildcards, so `{csv,csv.*}` matches both `.csv` and `.csv.gz`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders. N and M can have leading zeroes e.g. `000..078`.
 
 Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) table function.
@@ -690,7 +698,7 @@ rows_processed:        5068534
 status:                Processed
 processing_start_time: 2023-10-13 13:09:48
 processing_end_time:   2023-10-13 13:10:31
-ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5068534,'SelectedBytes':198132283,'ContextLock':1,'S3QueueSetFileProcessingMicroseconds':2480,'S3QueueSetFileProcessedMicroseconds':9985,'S3QueuePullMicroseconds':273776,'LogTest':17}
+ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5068534,'SelectedBytes':198132283,'ContextLock':1,'S3QueuePullMicroseconds':273776,'LogTest':17}
 exception:
 ```
 
@@ -766,7 +774,7 @@ rows_processed:        5112621
 status:                Processed
 processing_start_time: 2023-10-13 13:09:48
 processing_end_time:   2023-10-13 13:10:12
-ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5112621,'SelectedBytes':198577687,'ContextLock':1,'S3QueueSetFileProcessingMicroseconds':1934,'S3QueueSetFileProcessedMicroseconds':17063,'S3QueuePullMicroseconds':5841972,'LogTest':17}
+ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5112621,'SelectedBytes':198577687,'ContextLock':1,'S3QueuePullMicroseconds':5841972,'LogTest':17}
 exception:
 ```
 )DOCS_MD",
