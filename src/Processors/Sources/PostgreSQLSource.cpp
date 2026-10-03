@@ -336,8 +336,8 @@ void PostgreSQLSource<T>::onCancel() noexcept
         if (!cancel)
             return;
 
-        /// The connection is ours to discard. Ask the server to cancel first, while the connection can still
-        /// address it, then take the transport away, which wakes the read whether or not the server obliged.
+        /// The connection is ours to discard. Ask the server to cancel, then take the transport away, which wakes the
+        /// read whether or not the server obliged.
         if (connection_holder)
         {
             /// A finish already under way has nothing left to wake, and its COMMIT must not be broken.

@@ -383,14 +383,18 @@ class CancelResettingProxy(StatementStallingProxy):
         self._reset = threading.Event()
         self._reset_done = threading.Event()
 
+    def connection_was_reset(self):
+        return self._reset_done.is_set()
+
     def _pump(self, source, destination, is_client_to_server):
-        first = True
+        head = b""
+        decided = not is_client_to_server
         is_cancel = False
         while not self._stop:
             try:
                 data = source.recv(4096)
             except socket.timeout:
-                if is_client_to_server and not is_cancel and self._reset.is_set():
+                if decided and is_client_to_server and not is_cancel and self._reset.is_set():
                     source.setsockopt(
                         socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
                     )
@@ -402,11 +406,16 @@ class CancelResettingProxy(StatementStallingProxy):
                 break
             if not data:
                 break
-            if is_client_to_server and first and data.startswith(self.CANCEL_REQUEST):
-                is_cancel = True
-                self._reset.set()
-                self._reset_done.wait(timeout=30)
-            first = False
+            if not decided:
+                head += data
+                if len(head) < len(self.CANCEL_REQUEST):
+                    continue
+                decided = True
+                data, head = head, b""
+                if data.startswith(self.CANCEL_REQUEST):
+                    is_cancel = True
+                    self._reset.set()
+                    self._reset_done.wait(timeout=30)
             try:
                 destination.sendall(data)
             except OSError:
@@ -829,6 +838,7 @@ ENGINE = PostgreSQL(
         query_thread.join(timeout=60)
         assert not query_thread.is_alive(), "cancelled query kept running"
         assert query_errors and "QUERY_WAS_CANCELLED" in query_errors[0], query_errors
+        assert proxy.connection_was_reset(), "the cancel arrived without the data connection being reset"
         assert node1.query("SELECT 1").strip() == "1"
     finally:
         node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC", ignore_error=True)
