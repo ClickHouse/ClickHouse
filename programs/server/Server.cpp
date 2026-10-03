@@ -111,7 +111,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
-#include <Parsers/registerStatements.h>
+#include <Parsers/registerParsers.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
@@ -1342,7 +1342,7 @@ try
 #endif
 
     registerInterpreters();
-    registerStatements();
+    registerParsers();
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
