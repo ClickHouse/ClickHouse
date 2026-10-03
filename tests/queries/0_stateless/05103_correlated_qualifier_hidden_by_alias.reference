@@ -42,3 +42,6 @@ the qualifier of a matcher follows the same rule
 a hidden name does not prune a JOIN side that carries a real column
 3
 0
+an enclosing materialized CTE is addressed by the name of the CTE
+2
+0

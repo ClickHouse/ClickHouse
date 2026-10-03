@@ -724,6 +724,16 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
 
             if (!outer_name.empty() && identifier.getParts().front() == outer_name)
                 return true;
+
+            /// A materialized CTE is registered under an internal temporary table name, but the enclosing
+            /// query addresses it by the name of the CTE.
+            if (!outer_table_expression_node->hasAlias())
+            {
+                if (const auto * outer_table_node = outer_table_expression_node->as<TableNode>();
+                    outer_table_node && outer_table_node->isMaterializedCTE()
+                    && identifier.getParts().front() == outer_table_node->getMaterializedCTE()->cte_name)
+                    return true;
+            }
         }
     }
 
