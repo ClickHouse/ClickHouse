@@ -279,9 +279,11 @@ ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS index_granularity = 1;
 
-INSERT INTO t_bulk_chunk_boundary SELECT number FROM numbers(65538);
--- A single part, so that the granule number of `x` is `x`.
-OPTIMIZE TABLE t_bulk_chunk_boundary FINAL;
+-- A single part, so that the granule number of `x` is `x`. Insert it as one block rather than merging
+-- afterwards: a merge of 65538 one-row granules is too slow in the sanitizer builds.
+INSERT INTO t_bulk_chunk_boundary SELECT number FROM numbers(65538)
+    SETTINGS max_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
+SELECT 'bulk chunk boundary parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_bulk_chunk_boundary' AND active;
 
 SELECT 'bulk chunk boundary parity',
     (SELECT count() FROM t_bulk_chunk_boundary WHERE x BETWEEN 65408 AND 65409
