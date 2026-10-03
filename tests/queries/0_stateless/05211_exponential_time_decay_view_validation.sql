@@ -22,6 +22,16 @@ SELECT exponentialTimeDecayingValueAt(value, 0) FROM time_decay_view;
 DROP VIEW time_decay_view;
 
 SET allow_experimental_time_decay_aggregate_functions = 0;
+
+-- Enabling the time-decay gate for view definitions must not make unrelated legacy
+-- type gates apply to views that historically skipped storage validation.
+SET enable_time_time64_type = 0;
+SET enable_nullable_tuple_type = 0;
+CREATE VIEW time_decay_parameterized_view AS SELECT {legacy_time:Time};
+DROP VIEW time_decay_parameterized_view;
+CREATE VIEW time_decay_parameterized_view AS SELECT {legacy_tuple:Nullable(Tuple(UInt8))};
+DROP VIEW time_decay_parameterized_view;
+
 CREATE VIEW time_decay_view AS SELECT value FROM time_decay_view_source; -- { serverError ILLEGAL_COLUMN }
 CREATE VIEW time_decay_parameterized_view AS SELECT {value:ExponentialTimeDecaying(10)}; -- { serverError ILLEGAL_COLUMN }
 ATTACH TABLE time_decay_attached (value ExponentialTimeDecaying(10)) ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }

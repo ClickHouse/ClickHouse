@@ -55,11 +55,13 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
 DataTypeValidationSettings DataTypeValidationSettings::forNonStorageDefinition(const DB::Settings & settings)
 {
     DataTypeValidationSettings result(settings);
-    /// Materialized and parameterized views skip storage-specific suspicious-type validation.
-    /// Preserve those exemptions while keeping the experimental time-decay gate explicit.
+    /// Views historically skipped data-type validation entirely. Preserve every
+    /// pre-existing exemption while keeping the experimental time-decay gate explicit.
     result.allow_suspicious_low_cardinality_types = true;
     result.allow_suspicious_fixed_string_types = true;
     result.allow_suspicious_variant_types = true;
+    result.enable_time_time64_type = true;
+    result.enable_nullable_tuple_type = true;
     return result;
 }
 
