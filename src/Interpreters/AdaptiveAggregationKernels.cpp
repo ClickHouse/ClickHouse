@@ -1124,8 +1124,8 @@ void NO_INLINE Aggregator::appendDelayedRecords(
     ///   Charging them would fire the thaw on streams where staging is in fact profitable. The
     ///   measured anchor is a stream of five UInt64 arguments at repeat 10: it stays a clear
     ///   adaptive win, and counting its forty fixed bytes per record would have thawed it.
-    /// - The sample receives the batch's routing hashes matching `hash & adaptive_thaw_sample_mask == 0`,
-    ///   about total / 64 of them. `thaw_sampled_records` counts every sampled occurrence, and
+    /// - The sample receives the batch's routing hashes matching `hash & 0xFF == 0`, about
+    ///   total / 256 of them. `thaw_sampled_records` counts every sampled occurrence, and
     ///   `distinct_sampled_hashes` collapses a key's repeats onto one entry.
     if (adaptiveMayThaw(*adaptive.session))
     {

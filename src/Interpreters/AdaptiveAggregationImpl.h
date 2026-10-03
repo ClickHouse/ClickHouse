@@ -84,21 +84,19 @@ constexpr size_t adaptive_frozen_spill_min_hits = 65'536;
 /// and its thaw would give up the frozen table's merge. The weighting separates the shapes by how
 /// much a repeat costs. A near-unique stream has repeat ~ 1, so its wasted bytes are ~ 0 and
 /// it can never fire, no matter how heavy its records are. A stream of narrow fixed-width
-/// records pays ~ 20 bytes per repeat (a numeric key plus the bookkeeping), so it crosses the
-/// bound only past repeat ~ 8 in a thread. A stream of wide keys or wide string arguments pays
-/// the whole record per repeat, so ~ 150-byte records cross already at repeat ~ 2. The bound of
-/// 150 splits the shapes measured per thread: the threads that want the thaw waste ~ 170 bytes
-/// per key and more (the `Referer` argument of a grouping by its domain, repeated ~ 2-3 times
-/// in a thread), and the threads that win when kept engaged waste at most ~ 50 (a count stream
-/// at repeat ~ 3, 80-byte string keys at repeat ~ 1.25, keys that repeat only across the
-/// threads ~ 5). `adaptive_thaw_min_staged_records` is the evidence floor of a thread before its
-/// verdict may fire, about 256 sampled records at the rate of `adaptive_thaw_sample_mask`. It is
-/// in records rather than bytes because the repeat estimate's confidence comes from the number
-/// of sampled observations; the dense sample lets a thread of heavy records decide before it
-/// stages tens of megabytes.
-constexpr UInt64 adaptive_thaw_sample_mask = 0x3F;
-constexpr size_t adaptive_thaw_min_staged_records = 16'384;
-constexpr size_t adaptive_thaw_wasted_bytes_per_key = 150;
+/// records pays ~ 24 bytes per repeat (a numeric key plus the bookkeeping), so it crosses the
+/// bound only past repeat ~ 13, where the pathological mid-cardinality streams live. A stream
+/// of wide keys or wide string arguments pays the whole record per repeat, so ~ 100-byte
+/// records cross already at repeat ~ 4. The bound of 300 splits the measured shapes: every
+/// shape that wants the thaw wastes at least ~ 440 bytes per key (a 90-byte string key at
+/// repeat ~ 3, a 90-byte string argument at repeat ~ 5, high-repeat count streams land in the
+/// kilobytes), and every shape that wins when kept engaged wastes at most ~ 275 (fixed-width
+/// arguments up to repeat ~ 12.5, count streams far below). `adaptive_thaw_min_staged_records`
+/// is the evidence floor of a thread before its verdict may fire. It is in records rather than
+/// bytes because the repeat estimate's confidence comes from the number of sampled observations.
+constexpr UInt64 adaptive_thaw_sample_mask = 0xFF;
+constexpr size_t adaptive_thaw_min_staged_records = 65'536;
+constexpr size_t adaptive_thaw_wasted_bytes_per_key = 300;
 constexpr size_t adaptive_thaw_staged_share_inverse = 4;
 
 /// The verdict of a run, which the hash-table statistics keep for the later runs of the query (see
