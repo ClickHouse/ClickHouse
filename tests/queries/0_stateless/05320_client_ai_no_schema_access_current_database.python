@@ -32,6 +32,9 @@ CASES = [
     ("unqualified_system_table_behind_in", "SELECT count() FROM default.ordinary WHERE x IN one", False),
     ("qualified_system_table", "SELECT count() FROM system.one", False),
     ("qualified_ordinary_table", "SELECT count() FROM default.ordinary", True),
+    # A CTE is not a table of `system`: its name has no row in `system.tables` for the current
+    # database, so it is not refused.
+    ("cte", "WITH c AS (SELECT 1 AS x) SELECT count() FROM c", True),
 ]
 
 SETUP = [

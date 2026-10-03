@@ -5093,6 +5093,14 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
         /// by name, because their engines are one per table (`SystemTables`, `SystemNumbers`, ...).
         if (isServerOwnedDatabaseForAIAgent(database))
         {
+            /// The server-owned databases list all of their tables in `system.tables`, so an
+            /// unqualified name without a row there is not one of their tables: it is a CTE of the
+            /// query or a column on the right-hand side of an `IN` (`USE system` followed by
+            /// `WITH c AS (...) SELECT * FROM c`). A CTE that shadows a real table of the database
+            /// is still judged as that table: which of the two a name means is not known here.
+            if (reference.database.empty() && !reference.table.empty() && !table_engines.contains({database, reference.table}))
+                continue;
+
             /// The static check of `validateReadOnlyQueryForAIAgent` only sees the database written
             /// in the query; an unqualified name reaches a server-owned database through the current
             /// database (e.g. after a confirmed `USE system`), which is only known here.

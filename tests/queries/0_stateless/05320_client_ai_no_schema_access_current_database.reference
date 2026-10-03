@@ -2,3 +2,4 @@ unqualified_system_table: BLOCKED
 unqualified_system_table_behind_in: BLOCKED
 qualified_system_table: BLOCKED
 qualified_ordinary_table: OK
+cte: OK
