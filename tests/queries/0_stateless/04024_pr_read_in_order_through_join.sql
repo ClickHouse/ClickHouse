@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- Regression test: parallel replicas coordination mode mismatch with read_in_order_through_join.
 -- The optimization can produce different results on the initiator and remote replicas
 -- (due to differences in plan construction), leading to "Replica decided to read in Default
@@ -15,7 +16,7 @@ CREATE TABLE payloads (Payload String, Id String) ENGINE = MergeTree ORDER BY tu
 INSERT INTO payloads SELECT concat('Payload ', toString(number)) AS Payload, toString(number) AS Id FROM numbers(100);
 
 SET enable_analyzer = 1;
-SET query_plan_read_in_order = 1, optimize_read_in_order = 1;
+SET optimize_read_in_order = 1;
 SET query_plan_read_in_order_through_join = 1;
 SET optimize_aggregation_in_order = 1;
 SET read_in_order_max_primary_key_ratio = 1.0;

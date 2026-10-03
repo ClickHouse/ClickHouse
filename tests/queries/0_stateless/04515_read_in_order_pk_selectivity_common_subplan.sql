@@ -26,7 +26,6 @@ INSERT INTO t_read_in_order_pk_common_subplan SELECT concat('path/', toString(nu
 -- Correlated subqueries are only supported by the analyzer.
 SET enable_analyzer = 1;
 SET max_threads = 4, enable_parallel_replicas = 0;
-SET query_plan_read_in_order = 1;
 -- Force the correlated subquery to be materialized as a common subplan and cloned through
 -- `materializeQueryPlanReferences` instead of being buffered in memory.
 SET correlated_subqueries_use_in_memory_buffer = 0;

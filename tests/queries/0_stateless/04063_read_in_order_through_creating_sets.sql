@@ -48,7 +48,7 @@ INSERT INTO data_b SELECT 'x', generateUUIDv4(), toDate('2024-01-01') + number %
 -- This test verifies the read-in-order optimization path through CreatingSetsStep;
 -- pin read_in_order_max_primary_key_ratio = 1.0 so the PK-selectivity fallback
 -- (added in the same PR) does not disable the very optimization we are exercising here.
-SET max_threads = 4, query_plan_read_in_order = 1, optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1, read_in_order_max_primary_key_ratio = 1.0;
+SET max_threads = 4, optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1, read_in_order_max_primary_key_ratio = 1.0;
 
 -- full_sorting_merge JOIN with IN subqueries: data tables must NOT use ReadPool/Thread
 SELECT
