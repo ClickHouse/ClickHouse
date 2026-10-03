@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: a CREATE with a SETTINGS clause needs the Azure table engines, which the fast test build does not have.
+
 -- The Azure table functions and engines pick their signature by the number of positional arguments,
 -- after `extra_credentials(...)` is taken out and without counting `key = value` arguments. Every
 -- statement is logged before it is validated, so the credential has to be hidden at the slot the
