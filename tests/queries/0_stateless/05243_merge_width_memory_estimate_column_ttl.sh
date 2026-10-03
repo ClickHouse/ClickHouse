@@ -61,7 +61,8 @@ SELECT sum(k), sum(w), count() FROM t_merge_width_column_ttl;
 
 SYSTEM FLUSH LOGS part_log;
 
-SELECT DISTINCT length(merged_from) FROM system.part_log
+-- A TTL merge may also take a single part to clear its expired column, so check only the upper bound.
+SELECT count() > 0, max(length(merged_from)) <= 2 FROM system.part_log
 WHERE database = currentDatabase() AND table = 't_merge_width_column_ttl' AND event_type = 'MergeParts';
 
 DROP TABLE t_merge_width_column_ttl;
