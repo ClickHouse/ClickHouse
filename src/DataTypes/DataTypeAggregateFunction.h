@@ -58,7 +58,7 @@ public:
 
     Field getDefault() const override;
 
-    /// Compares name, parameters, and argument types.
+    /// Compares name, state version, parameters, and argument types.
     /// When ignore_variant is false (default), also compares the state variant (Aggregation vs Window).
     static bool strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type, bool ignore_variant = false);
 
@@ -114,5 +114,15 @@ void pinCurrentStateVersionToAggregateFunctions(DataTypePtr & type);
 
 /// Checks type of any nested type is DataTypeAggregateFunction.
 bool hasAggregateFunctionType(const DataTypePtr & type);
+
+/// Whether all `AggregateFunction` types nested in `lhs` and `rhs` have the same state versions.
+/// `IDataType::equals` ignores the state version, so two equal types may still disagree here.
+bool haveSameAggregateStateVersions(const IDataType & lhs, const IDataType & rhs);
+
+/// Rebuilds `column` as a column of `type`, which must be equal to the column's own type except
+/// for the state versions of the nested `AggregateFunction` types. The states in memory do not depend
+/// on the version, but a column keeps the version it was created with and uses it when its states pass
+/// through an arena (e.g. in `groupArray`). The states are shared, not copied.
+ColumnPtr relabelAggregateStateVersions(const ColumnPtr & column, const DataTypePtr & type);
 
 }
