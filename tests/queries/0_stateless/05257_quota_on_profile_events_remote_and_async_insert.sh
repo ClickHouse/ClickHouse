@@ -34,6 +34,8 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_remote_05257 (a UInt32) ENGINE = MergeTr
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_remote_05257 SELECT number FROM numbers(10)"
 ${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE t_remote_05257 FINAL"
 ${CLICKHOUSE_CLIENT} -q "GRANT CREATE TEMPORARY TABLE, REMOTE ON *.* TO ${U1}"
+# With `serialize_query_plan` the initiator analyzes the remote table itself, under this user.
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_remote_05257 TO ${U1}"
 ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${Q1} FOR INTERVAL 100 year MAX SelectedParts = 1, SelectedRows = 1000 TO ${U1}"
 ${CLICKHOUSE_CLIENT} --user "${U1}" -q "SELECT sum(a) FROM remote('127.0.0.2', ${CLICKHOUSE_DATABASE}.t_remote_05257)"
 ${CLICKHOUSE_CLIENT} -q "SELECT profile_events['SelectedParts'], profile_events['SelectedRows'] FROM system.quotas_usage WHERE quota_name = '${Q1}'"
