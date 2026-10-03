@@ -15,6 +15,9 @@ BAD_ARGUMENTS
 OK: non-zero exit code
 BAD_ARGUMENTS
 piped stdin, exit code: 0
+OK: clickhouse-client non-zero exit code
+BAD_ARGUMENTS
+clickhouse-client piped stdin, exit code: 0
 --- merge()/loop() with constant-expression arguments name their local source ---
 OK: folded source dumped before aaa_merge_folded
 OK: folded source dumped before aab_loop_folded

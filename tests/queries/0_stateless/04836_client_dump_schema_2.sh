@@ -79,6 +79,14 @@ grep -o -m1 'BAD_ARGUMENTS' "$ERR_FILE"
 rm -f "$STDIN_FILE"
 printf '1\n' | $CLICKHOUSE_LOCAL --dump-schema > /dev/null 2>"$ERR_FILE"
 echo "piped stdin, exit code: $?"
+echo '1,2' > "$STDIN_FILE"
+$CLICKHOUSE_CLIENT --dump-schema="${DB}" < "$STDIN_FILE" > /dev/null 2>"$ERR_FILE"
+rc=$?
+[[ $rc -ne 0 ]] && echo 'OK: clickhouse-client non-zero exit code' || echo 'FAIL: clickhouse-client expected non-zero exit code'
+grep -o -m1 'BAD_ARGUMENTS' "$ERR_FILE"
+rm -f "$STDIN_FILE"
+printf '1\n' | $CLICKHOUSE_CLIENT --dump-schema="${DB}" > /dev/null 2>"$ERR_FILE"
+echo "clickhouse-client piped stdin, exit code: $?"
 
 echo '--- merge()/loop() with constant-expression arguments name their local source ---'
 # Each view reads its source only through folded merge()/loop() arguments.
