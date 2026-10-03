@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Tags: no-darwin
+# no-darwin: the macOS directory watcher diffs directory snapshots, so it does not keep the order of the events
+# in one pass, and when one name of a file is removed it reports the file's other names as removed and added again.
+
 # A FileLog file with several names in the directory (hard links, symbolic links) is read once, under one of
 # its names, and keeps being read from the same position whichever of its names it is read under.
 
