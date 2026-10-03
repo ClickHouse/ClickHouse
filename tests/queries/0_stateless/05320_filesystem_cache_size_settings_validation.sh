@@ -27,12 +27,14 @@ function create_cache_disk()
             -e 'disk_accepted' \
             -e 'must be defined in cache configuration' \
             -e 'cannot be specified at the same time' \
+            -e '`max_size` cannot be 0' \
             -e 'must be in range (0, 1]' \
             -e 'must not exceed `max_file_segment_size`'
 }
 
 create_cache_disk "cache_policy = 'LRU'"
 create_cache_disk "max_size = '1Mi', max_size_ratio_to_total_space = 0.5"
+create_cache_disk "max_size = 0"
 create_cache_disk "max_size_ratio_to_total_space = 0"
 create_cache_disk "max_size_ratio_to_total_space = 1.5"
 create_cache_disk "max_size_ratio_to_total_space = 1"

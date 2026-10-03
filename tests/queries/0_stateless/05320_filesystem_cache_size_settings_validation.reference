@@ -1,5 +1,6 @@
 must be defined in cache configuration
 cannot be specified at the same time
+`max_size` cannot be 0
 must be in range (0, 1]
 must be in range (0, 1]
 disk_accepted
