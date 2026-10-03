@@ -1,2 +1,11 @@
 1
-idle exchanges: stop propagated on every expected exchange stream
+idle exchanges	StreamingExchangeEarlyCloses	stage_2_0	3
+idle exchanges	StreamingExchangeEarlyCloses	stage_2_1	3
+idle exchanges	StreamingExchangeEarlyCloses	stage_2_2	3
+idle exchanges	StreamingExchangeEarlyCloses	stage_4_0	3
+idle exchanges	StreamingExchangeEarlyCloses	stage_4_1	3
+idle exchanges	StreamingExchangeEarlyCloses	stage_4_2	3
+idle exchanges	StreamingExchangeEarlyCloses	stage_5_0	3
+idle exchanges	reader stopped early	stage_0_0	1
+idle exchanges	reader stopped early	stage_0_1	1
+idle exchanges	reader stopped early	stage_0_2	1

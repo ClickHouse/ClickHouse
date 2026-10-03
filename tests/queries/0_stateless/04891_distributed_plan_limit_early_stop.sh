@@ -7,12 +7,8 @@
 # also depends on the streaming exchange sink flushing small chunks while its input is idle;
 # without that the first rows never reach the LIMIT within the timeout.
 #
-# The assertion is the propagation itself, not the elapsed time. Every exchange endpoint traces
-# the action it takes when the stop reaches it, and each stream between the LIMIT and the
-# sleeping scan must show both halves: the sink closing its input and the source sending
-# NoMoreDataNeeded upstream. A stream that merely ends by running out of data shows neither, so
-# a normal completion cannot pass for an early stop. `max_execution_time` is only a backstop
-# against a hang.
+# The stop is checked in the tasks' `system.query_log` rows, not by elapsed time;
+# `max_execution_time` is only a backstop against a hang.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -27,32 +23,21 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `max_rows_to_group_by` because the CI profile sets it and `make_distributed_plan` rejects
 # an aggregation with a row limit, and the join order because a swap makes the probe table
 # the build side, which also reads all input before the first row.
-# The two bucket counts are pinned because the expected set of exchange streams below is derived
-# from them.
+# The bucket counts are pinned because the reference is derived from them, and
+# `distributed_plan_fallback_to_local_execution` so a plan that cannot be distributed fails.
 COMMON_SETTINGS="make_distributed_plan = 1, enable_parallel_replicas = 0,
     distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_force_exchange_kind = 'Streaming',
     max_block_size = 1000, max_threads = 2, join_algorithm = 'hash',
     query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
     min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, max_rows_to_group_by = 0,
-    max_execution_time = 300"
+    max_execution_time = 300, distributed_plan_fallback_to_local_execution = 0"
 
-# Actions traced by an endpoint that received the stop while its own stage was idle. The receipt
-# of the packet is deliberately not among them: it predates the propagation this test guards.
-SINK_ACTIONS="'Closing input of exchange stream {}, no more data needed', 'Closing input of exchange stream {}, reader detached'"
-SOURCE_ACTIONS="'NoMoreDataNeeded from exchange stream {}, total rows: {}, bytes: {}', 'NoMoreDataNeeded from exchange stream {}, detaching reader'"
-
-# Streams between the LIMIT and the sleeping scan, as `EXPLAIN PLAN distributed = 1` lays them out:
-# the shuffle that carries the scan into the join (3 reader buckets x 3 join buckets) and the
-# gather directly below the LIMIT (3 join buckets x 1). The two dimension-table shuffles and
-# everything downstream of the LIMIT are excluded: they run out of data instead of being stopped.
-EXPECTED_STREAMS="arraySort(arrayConcat(
-    arrayMap(i -> 'exchange_0__' || toString(intDiv(i, 3)) || '_' || toString(i % 3), range(9)),
-    arrayMap(i -> 'exchange_2__' || toString(i) || '_0', range(3))))"
+PROBE_ROWS=300000
 
 $CLICKHOUSE_CLIENT --query "
 CREATE TABLE t_dp_limit_stop (x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1000;
-INSERT INTO t_dp_limit_stop SELECT number FROM numbers(300000);
+INSERT INTO t_dp_limit_stop SELECT number FROM numbers($PROBE_ROWS);
 CREATE TABLE t_dp_limit_stop_dim (x UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_dp_limit_stop_dim SELECT number FROM numbers(1000);
 "
@@ -72,54 +57,49 @@ function run_arm()
     SETTINGS $COMMON_SETTINGS, distributed_plan_execute_locally = $execute_locally"
 }
 
-# Remote worker tasks run under their own `query_id` and are only reachable through
-# `initial_query_id`, which `system.text_log` does not have. So resolve the query's own id from
-# its coordinator row in this database, then take every task of that query and correlate the log
-# rows by `query_id`. Worker tasks copy the global context, so their rows carry a different
-# `current_database` and must not be filtered by it. Local tasks instead share the initiator's
-# `query_id`, so the lookup below matches one row per task and has to aggregate to a single value.
+# Prints the stop counts and the reader checks from the `system.query_log` rows of the query's tasks.
 function assert_stop_propagated()
 {
     local label="$1"
     local query_id="$2"
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log, text_log"
+    # A `text_log` flush waits for every line the server logged, minutes in a busy flaky check.
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 
-    local root_query
-    root_query=$($CLICKHOUSE_CLIENT --query "
-        SELECT argMax(initial_query_id, event_time_microseconds) FROM system.query_log
-        WHERE event_date >= yesterday() AND type = 'QueryFinish'
-          AND current_database = currentDatabase() AND query_id = '$query_id'")
-    if [ -z "$root_query" ]; then
-        echo "$label: no coordinator row for $query_id"
+    # Remote task rows carry the worker's `current_database`, so only the initiator's row is filtered by it.
+    # The rows are counted, so all lookups read them locally rather than through parallel replicas.
+    local initiator_rows
+    initiator_rows=$($CLICKHOUSE_CLIENT --query "
+        SELECT count() FROM system.query_log
+        WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query
+          AND current_database = currentDatabase() AND query_id = '$query_id'
+        SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0")
+    if [ "$initiator_rows" != 1 ]; then
+        echo "$label: expected one finished initiator row for $query_id, found $initiator_rows"
         return
     fi
 
+    # A stage's sources stop only after its sink closed its input, so each count covers a whole hop.
+    # In-memory exchanges count nothing.
     $CLICKHOUSE_CLIENT --query "
-    WITH
-        $EXPECTED_STREAMS AS expected,
-        (
-            SELECT arraySort(groupArray(stream)) FROM
-            (
-                SELECT value1 AS stream FROM system.text_log
-                WHERE event_date >= yesterday()
-                  AND query_id IN (
-                      SELECT query_id FROM system.query_log
-                      WHERE event_date >= yesterday() AND type = 'QueryFinish'
-                        AND initial_query_id = '$root_query')
-                  AND message_format_string IN ($SINK_ACTIONS, $SOURCE_ACTIONS)
-                GROUP BY stream
-                HAVING countIf(message_format_string IN ($SINK_ACTIONS)) > 0
-                   AND countIf(message_format_string IN ($SOURCE_ACTIONS)) > 0
-            )
-        ) AS matched
-    SELECT '$label: ' || if(matched = expected,
-        'stop propagated on every expected exchange stream',
-        'MISMATCH missing=' || toString(arrayFilter(s -> NOT has(matched, s), expected)) ||
-        ' unexpected=' || toString(arrayFilter(s -> NOT has(expected, s), matched)))
-    SETTINGS max_rows_to_read = 0"
+    SELECT '$label', 'StreamingExchangeEarlyCloses', query AS task, ProfileEvents['StreamingExchangeEarlyCloses'] AS early_closes
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND type = 'QueryFinish' AND NOT is_initial_query
+      AND initial_query_id = '$query_id' AND early_closes > 0
+    ORDER BY task
+    SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0"
+
+    # The query waits for every stage, so if the stop never reaches the scan, the readers read all
+    # `PROBE_ROWS` rows and one of the 3 reads a third or more.
+    $CLICKHOUSE_CLIENT --query "
+    SELECT '$label', 'reader stopped early', query AS task, read_rows < $PROBE_ROWS / 3
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND type = 'QueryFinish' AND NOT is_initial_query
+      AND initial_query_id = '$query_id' AND startsWith(query, 'stage_0_')
+    ORDER BY task
+    SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0"
 }
 
-# The log lookups match by query id over a full day of rows, so the id has to be unique per run.
+# The lookups match by query id over a full day of rows, so the id has to be unique per run.
 # `CLICKHOUSE_TEST_UNIQUE_NAME` only varies with the database, and a run can be given a fixed
 # database for a whole pass over the suite, which would let an earlier run of this test answer them.
 RUN_ID="${CLICKHOUSE_TEST_UNIQUE_NAME}_$(random_str 8)"
