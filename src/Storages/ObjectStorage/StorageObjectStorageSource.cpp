@@ -214,6 +214,7 @@ namespace Setting
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool s3_validate_etag_on_read;
+    extern const SettingsBool use_orc_metadata_cache;
 }
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
@@ -1523,10 +1524,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         logIcebergFileStats(object_info, log);
 
+        const String format_name_lower = Poco::toLower(format_name);
+        const bool use_metadata_cache = object_info->getObjectMetadata()->isEtagUsableAsCacheKey()
+            && ((format_name_lower == "parquet" && context_->getSettingsRef()[Setting::use_parquet_metadata_cache])
+                || (format_name_lower == "orc" && context_->getSettingsRef()[Setting::use_orc_metadata_cache]));
+
         InputFormatPtr input_format;
-        if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
-            && (Poco::toLower(format_name) == "parquet")
-            && object_info->getObjectMetadata()->isEtagUsableAsCacheKey())
+        if (use_metadata_cache)
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())

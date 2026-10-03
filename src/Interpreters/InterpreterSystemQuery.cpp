@@ -528,6 +528,14 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");
 #endif
+        case Type::CLEAR_ORC_METADATA_CACHE:
+#if USE_ORC
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_ORC_METADATA_CACHE);
+            system_context->clearORCMetadataCache();
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for ORC");
+#endif
         case Type::CLEAR_POINT_IN_POLYGON_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_POINT_IN_POLYGON_CACHE);
             clearPointInPolygonCache();
@@ -2851,6 +2859,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         case Type::CLEAR_POINT_IN_POLYGON_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_POINT_IN_POLYGON_CACHE);
+            break;
+        case Type::CLEAR_ORC_METADATA_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_ORC_METADATA_CACHE);
             break;
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
