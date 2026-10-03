@@ -2,8 +2,9 @@
     <!-- numeric -->
     <query>SELECT count() FROM (SELECT DISTINCT if(number % 2, number % 30000000, rand() % 80000) FROM numbers_mt(100000000)) FORMAT Null</query>
 
-    <!-- complex key -->
-    <query>SELECT count() FROM (SELECT DISTINCT if(number % 10 > 0, number, rand() % 30000), materialize('string') FROM numbers_mt(20000000)) FORMAT Null</query>
+    <!-- complex key: about 80% of the rows are new, so preliminary `DISTINCT` does not abandon deduplication
+         (that needs at least 90%) while the bloom filter stays enabled (it needs at least 70%) -->
+    <query>SELECT count() FROM (SELECT DISTINCT if(number % 5 > 0, number, rand() % 30000), materialize('string') FROM numbers_mt(20000000)) FORMAT Null</query>
 
     <!-- high cardinality single string column (heavy key type) -->
     <query>SELECT count() FROM (SELECT DISTINCT toString(if(number % 2, number % 30000000, rand() % 80000)) FROM numbers_mt(50000000)) FORMAT Null</query>
