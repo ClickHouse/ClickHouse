@@ -74,9 +74,9 @@ namespace
 
     void visitStorageReplicatedDatabaseEngine(ASTStorage & storage)
     {
-        /// Precondition: engine_name == "Replicated"
+        chassert(storage.engine->name == "Replicated");
 
-        /// A definition written by an older server may hold `logs_to_keep` above `UInt32::max`, which `CREATE` now
+        /// A definition written by an older server may hold `logs_to_keep` above `MAX_LOGS_TO_KEEP`, which `CREATE` now
         /// rejects. Store the clamped value, the one the database actually runs with, so that the definition in the
         /// backup is accepted back, and so that a definition from an older backup compares equal to the definition
         /// of the database restored from it.
