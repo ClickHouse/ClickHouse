@@ -47,6 +47,10 @@ chain.log.2	32
 app.log	33
 -- earlier sorting hard link removed after attach
 chain.log.2	34
+-- hard link renamed to a matching name
+app.log	35
+-- matching hard link while detached
+app.log	36
 -- directory name with glob characters
 a.log	1
 -- errors

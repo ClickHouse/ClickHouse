@@ -231,6 +231,9 @@ private:
 
     bool fileNameMatches(const String & file_name) const;
 
+    /// The file is read under another name that still has it (a hard link).
+    bool isReadUnderOtherName(const String & file_name, UInt64 inode) const;
+
     size_t getTableDependentCount() const;
 
     /// Used in shutdown()

@@ -297,6 +297,7 @@ void StorageFileLog::loadFiles()
     auto absolute_path = std::filesystem::absolute(path);
     absolute_path = absolute_path.lexically_normal(); /// Normalize path.
 
+    std::vector<String> matching_files;
     /// Files that the glob excludes but whose inode has a stored meta, with that inode.
     std::vector<std::pair<String, UInt64>> rotated_files;
 
@@ -305,7 +306,7 @@ void StorageFileLog::loadFiles()
         path_is_directory = false;
         root_data_path = absolute_path.parent_path();
 
-        file_infos.file_names.push_back(absolute_path.filename());
+        matching_files.push_back(absolute_path.filename());
     }
     else
     {
@@ -339,31 +340,40 @@ void StorageFileLog::loadFiles()
             String file_name = dir_entry.path().filename();
             struct stat file_stat{};
             if (fileNameMatches(file_name))
-                file_infos.file_names.push_back(std::move(file_name));
+                matching_files.push_back(std::move(file_name));
             else if (stat(dir_entry.path().c_str(), &file_stat) == 0 && file_infos.meta_by_inode.contains(file_stat.st_ino))
                 rotated_files.emplace_back(std::move(file_name), file_stat.st_ino);
         }
     }
 
     /// Get files inode
-    for (const auto & file : file_infos.file_names)
+    std::vector<std::pair<String, UInt64>> found_files;
+    for (auto & file : matching_files)
     {
         auto inode = getInode(getFullDataPath(file));
-        file_infos.context_by_name.emplace(file, FileContext{.inode = inode});
+        found_files.emplace_back(std::move(file), inode);
     }
 
-    /// A file renamed to a non-matching name while it was read (log rotation) keeps being read, under one of its names:
-    /// the name it was read under, if that name still has it.
-    std::ranges::sort(rotated_files);
-    std::ranges::stable_partition(
-        rotated_files, [this](const auto & rotated) { return file_infos.meta_by_inode.at(rotated.second).file_name == rotated.first; });
-    for (auto & rotated : rotated_files)
+    /// A file with several names (hard links) is read under one of them: the name it was read under, if that name
+    /// still has it. A file renamed to a non-matching name while it was read (log rotation) keeps being read.
+    std::unordered_set<UInt64> inodes_with_name;
+    for (auto * files : {&found_files, &rotated_files})
     {
-        const UInt64 inode = rotated.second;
-        if (std::ranges::any_of(file_infos.context_by_name, [inode](const auto & file) { return file.second.inode == inode; }))
-            continue;
-        file_infos.context_by_name.emplace(rotated.first, FileContext{.inode = inode});
-        file_infos.file_names.push_back(std::move(rotated.first));
+        std::ranges::sort(*files);
+        std::ranges::stable_partition(
+            *files,
+            [this](const auto & file)
+            {
+                auto meta = file_infos.meta_by_inode.find(file.second);
+                return meta != file_infos.meta_by_inode.end() && meta->second.file_name == file.first;
+            });
+        for (auto & [file_name, inode] : *files)
+        {
+            if (!inodes_with_name.insert(inode).second)
+                continue;
+            file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
+            file_infos.file_names.push_back(std::move(file_name));
+        }
     }
 
     /// Update file meta or create file meta
@@ -1090,7 +1100,7 @@ Optional parameters:
 
 ## Description {#description}
 
-The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read.
+The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read. A file with several names in the directory (hard links) is read under one of them.
 
 A file that cannot be opened (a symlink whose target was removed, a file not readable by the server, or the file of a single-file table that was removed) is skipped with an error in the server log and retried until it can be opened while the table is loaded; a file that was missing is then read from its start. A symlink is read only if its target exists when the table finds it.
 
@@ -1200,6 +1210,20 @@ bool StorageFileLog::fileNameMatches(const String & file_name) const
     return !file_name_matcher || re2::RE2::FullMatch(file_name, *file_name_matcher);
 }
 
+bool StorageFileLog::isReadUnderOtherName(const String & file_name, UInt64 inode) const
+{
+    return std::ranges::any_of(
+        file_infos.context_by_name,
+        [&](const auto & file)
+        {
+            if (file.first == file_name || file.second.inode != inode || file.second.status == FileStatus::REMOVED)
+                return false;
+            /// The events of the other name may be not applied yet, e.g. it was removed right after the hard link was made.
+            struct stat file_stat{};
+            return stat(getFullDataPath(file.first).c_str(), &file_stat) == 0 && file_stat.st_ino == inode;
+        });
+}
+
 bool StorageFileLog::updateFileInfos()
 {
     if (!directory_watch)
@@ -1277,6 +1301,16 @@ bool StorageFileLog::updateFileInfos()
                 {
                     auto inode = getInode(file_path);
 
+                    /// Another name of a file that is still read here (a hard link) is not read again.
+                    if (isReadUnderOtherName(file_name, inode))
+                    {
+                        name_is_read[file_name] = false;
+                        /// The file read under this name, if any, was replaced.
+                        if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                            it->second.status = FileStatus::REMOVED;
+                        break;
+                    }
+
                     onFileAppeared(file_name, inode);
 
                     /// An added file is read from offset 0, so any on-disk meta
@@ -1330,11 +1364,8 @@ bool StorageFileLog::updateFileInfos()
                     auto inode = getInode(file_path);
 
                     /// Another name of a file that is still read here (a hard link) is not read again.
-                    const bool read_under_other_name = std::ranges::any_of(
-                        file_infos.context_by_name,
-                        [&](const auto & file)
-                        { return file.second.inode == inode && file.second.status != FileStatus::REMOVED && file.first != file_name; });
-                    if (!fileNameMatches(file_name) && ((!file_infos.meta_by_inode.contains(inode) && !renamed_from_read) || read_under_other_name))
+                    if (isReadUnderOtherName(file_name, inode)
+                        || (!fileNameMatches(file_name) && !file_infos.meta_by_inode.contains(inode) && !renamed_from_read))
                     {
                         /// The file read under this name, if any, was replaced by one that is not read.
                         if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
