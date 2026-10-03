@@ -269,7 +269,7 @@ bool parseOption(
     }
     else if (option == "csv" || option == "binary" || option == "text")
     {
-        /// The legacy spelling of the format: WITH [BINARY] [CSV].
+        /// The legacy spelling of the format: [WITH] [BINARY] [CSV].
         setFormat(option, node);
     }
     else if (option == "header")
