@@ -129,8 +129,7 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
     }
 }
 
-/// Like `visit`, and registers each alias the expression declares as soon as the aliased node is visited, so that
-/// the rest of the expression sees it.
+/// Like `visit`, but registers each alias as soon as its node is visited, so the rest of the expression sees it.
 void ApplyWithSubqueryVisitor::visitWithExpression(ASTPtr & ast, Data & data, bool export_aliases)
 {
     checkStackSize();

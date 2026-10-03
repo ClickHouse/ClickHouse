@@ -413,7 +413,6 @@ private:
         }
     }
 
-    /// The same rule as `ApplyWithSubqueryVisitor` uses.
     void collectWithExpressionAliases(const ASTPtr & ast) const
     {
         ApplyWithSubqueryVisitor::forEachExpressionAlias(
