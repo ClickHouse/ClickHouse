@@ -16,6 +16,7 @@ class Logger;
 
 namespace DB
 {
+struct Settings;
 
 class WebObjectStorage : public IObjectStorage, public WithContext
 {
@@ -62,6 +63,8 @@ public:
     const URLShards & getURLShards() const { return url_shards; }
     const HTTPHeaderEntries & getHeaders() const { return headers; }
     ContextPtr getRequestContext() const;
+    /// Set during initialization when background requests need the creating query's settings.
+    void setDefaultRequestSettings(const Settings & settings);
     ObjectStoragePtr cloneImpl() const override;
     std::vector<String> buildURLs(const std::string & path) const;
     std::vector<String> buildURLs(const std::string & path, size_t shard_index) const;
@@ -142,6 +145,7 @@ private:
     const URLShards url_shards;
     const HTTPHeaderEntries headers;
     const size_t max_directories_to_read;
+    std::shared_ptr<const Settings> default_request_settings;
     mutable std::mutex head_support_mutex;
     using HeadSupportLRUList = std::list<std::pair<String, HeadSupport>>;
     using HeadSupportLRUIndex = std::unordered_map<String, HeadSupportLRUList::iterator>;

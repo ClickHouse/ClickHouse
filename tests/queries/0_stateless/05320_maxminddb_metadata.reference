@@ -1,0 +1,18 @@
+{"_mmdb_metadata":{"node_count":43,"record_size":24,"ip_version":4,"database_type":"ClickHouse-MaxMindDB-Test","languages":["en","fr"],"binary_format_major_version":2,"binary_format_minor_version":0,"build_epoch":1790899200,"description":{"en":"ClickHouse functional test"}}}
+Tuple(node_count UInt32, record_size UInt16, ip_version UInt16, database_type String, languages Array(String), binary_format_major_version UInt16, binary_format_minor_version UInt16, build_epoch UInt64, description Map(String, String))
+2	['en']	['ClickHouse functional test']
+1.1.1.1	ClickHouse-MaxMindDB-Test	4	1790899200	['en','fr']	ClickHouse functional test
+8.8.8.8	ClickHouse-MaxMindDB-Test	4	1790899200	['en','fr']	ClickHouse functional test
+2	1
+Virtual metadata excluded from SELECT *
+4
+6
+8.8.8.8	ClickHouse-MaxMindDB-Test	1790899200
+9.9.9.9		0
+Error 36
+Error 36
+Error 36
+Error 36
+Error 36
+Reloaded payload and metadata from generation B
+1790899200

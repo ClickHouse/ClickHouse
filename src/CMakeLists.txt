@@ -233,6 +233,10 @@ if (TARGET ch_contrib::rocksdb)
     add_headers_and_sources(dbms Storages/RocksDB)
 endif()
 
+if (TARGET ch_contrib::maxminddb)
+    add_headers_and_sources(dbms Storages/MaxMindDB)
+endif()
+
 if (TARGET ch_contrib::aws_s3)
     add_headers_and_sources(dbms Common/S3)
     add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/S3)
@@ -907,6 +911,10 @@ endif ()
 
 if (TARGET ch_contrib::rocksdb)
     target_link_libraries(dbms PUBLIC ch_contrib::rocksdb)
+endif()
+
+if (TARGET ch_contrib::maxminddb)
+    target_link_libraries(dbms PUBLIC ch_contrib::maxminddb)
 endif()
 
 if (TARGET ch_contrib::libpqxx)

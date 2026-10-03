@@ -97,6 +97,10 @@ void registerStorageNATS(StorageFactory & factory);
 void registerStorageEmbeddedRocksDB(StorageFactory & factory);
 #endif
 
+#if USE_MAXMINDDB
+void registerStorageMaxMindDB(StorageFactory & factory);
+#endif
+
 #if USE_LIBPQXX
 void registerStoragePostgreSQL(StorageFactory & factory);
 void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
@@ -207,6 +211,10 @@ void registerStorages()
 
 #if USE_ROCKSDB
     registerStorageEmbeddedRocksDB(factory);
+#endif
+
+#if USE_MAXMINDDB
+    registerStorageMaxMindDB(factory);
 #endif
 
 #if USE_LIBPQXX
