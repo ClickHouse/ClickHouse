@@ -1,0 +1,29 @@
+<clickhouse>
+    <ldap_servers>
+        <openldap>
+            <host>openldap</host>
+            <port>1389</port>
+            <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+            <!-- `user_dn_detection` is not target-specific: `base_dn` is static and
+                 `search_filter` hardcodes `cn=janedoe`. With `lookup_bind_dn` configured,
+                 every `EXECUTE AS` would run the same query and resolve `final_user_dn`
+                 from the single matching entry, so a phantom user could be materialized
+                 by impersonating any name. `parseLDAPServer` rejects this shape with
+                 `BAD_ARGUMENTS`, the saved parse error is rethrown by `findLDAPUser`,
+                 and `EXECUTE AS` surfaces the configuration error rather than silently
+                 succeeding. -->
+            <lookup_bind_dn>cn=admin,dc=example,dc=org</lookup_bind_dn>
+            <lookup_password>clickhouse</lookup_password>
+            <user_dn_detection>
+                <base_dn>ou=users,dc=example,dc=org</base_dn>
+                <search_filter>(&amp;(objectClass=person)(cn=janedoe))</search_filter>
+            </user_dn_detection>
+        </openldap>
+    </ldap_servers>
+    <user_directories>
+        <ldap>
+            <server>openldap</server>
+        </ldap>
+    </user_directories>
+</clickhouse>

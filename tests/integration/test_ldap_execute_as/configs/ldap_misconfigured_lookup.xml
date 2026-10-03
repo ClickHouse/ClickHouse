@@ -1,0 +1,29 @@
+<clickhouse>
+    <ldap_servers>
+        <openldap>
+            <host>openldap</host>
+            <port>1389</port>
+            <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+            <!-- `lookup_bind_dn` and `lookup_password` set, but `user_dn_detection`
+                 deliberately omitted. `parseLDAPServer` rejects this shape with
+                 `BAD_ARGUMENTS: 'lookup_bind_dn' requires 'user_dn_detection'`,
+                 because the service-bind path needs `user_dn_detection` to confirm
+                 the user exists in the directory. Before the fix the resulting
+                 exception was caught and logged inside `setConfiguration`, the
+                 server was silently dropped from `ldap_client_params_blueprint`,
+                 and `EXECUTE AS` for any name on this directory degraded to
+                 `UNKNOWN_USER`. After the fix the parse error is remembered and
+                 surfaces as a query-time `BAD_ARGUMENTS` exception from
+                 `ExternalAuthenticators::findLDAPUser`, naming the offending
+                 server. -->
+            <lookup_bind_dn>cn=admin,dc=example,dc=org</lookup_bind_dn>
+            <lookup_password>clickhouse</lookup_password>
+        </openldap>
+    </ldap_servers>
+    <user_directories>
+        <ldap>
+            <server>openldap</server>
+        </ldap>
+    </user_directories>
+</clickhouse>
