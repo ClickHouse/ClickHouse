@@ -80,6 +80,13 @@ def test_iceberg_snapshot_reads(started_cluster_iceberg_with_spark, format_versi
     snapshot3_timestamp = datetime.now(timezone.utc)
     snapshot3_id = get_last_snapshot(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/")
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 300
+    cache_hit_query_id = f"{TABLE_NAME}_derived_metadata_cache_hit"
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", query_id=cache_hit_query_id)) == 300
+    instance.query("SYSTEM FLUSH LOGS")
+    assert int(instance.query(
+        f"SELECT ProfileEvents['IcebergStorageMetadataCacheHits'] FROM system.query_log "
+        f"WHERE type='QueryFinish' AND query_id='{cache_hit_query_id}'"
+    )) == 1
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY 1") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(300)"
     )
@@ -103,6 +110,16 @@ def test_iceberg_snapshot_reads(started_cluster_iceberg_with_spark, format_versi
         == instance.query("SELECT number, toString(number + 1) FROM numbers(100)")
     )
 
+    # Historical reads must not replace the parsed current-state cache entry.
+    current_after_history_query_id = f"{TABLE_NAME}_current_after_history"
+    assert int(instance.query(
+        f"SELECT count() FROM {TABLE_NAME}", query_id=current_after_history_query_id
+    )) == 300
+    instance.query("SYSTEM FLUSH LOGS")
+    assert int(instance.query(
+        f"SELECT ProfileEvents['IcebergStorageMetadataCacheHits'] FROM system.query_log "
+        f"WHERE type='QueryFinish' AND query_id='{current_after_history_query_id}'"
+    )) == 1
 
     assert (
         instance.query(
