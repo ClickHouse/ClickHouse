@@ -182,10 +182,7 @@ void initDataVariantsWithSizeHint(
 }
 
 /// Collection and use of the statistics should be enabled.
-void updateStatistics(
-    const DB::ManyAggregatedDataVariants & data_variants,
-    DB::AdaptiveAggregationSession * adaptive_session,
-    const DB::StatsCollectingParams & params)
+void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, const DB::StatsCollectingParams & params)
 {
     if (!params.isCollectionAndUseEnabled())
         return;
@@ -200,28 +197,7 @@ void updateStatistics(
     const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
     ::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
-
-    /// A run that staged enough records to trust the thaw sampler records the measured verdict;
-    /// any other run carries the stored verdict over, so that runs without an adaptive
-    /// measurement do not erase it. The verdict gates the admission of later runs (see
-    /// `AggregatingStep::canUseAdaptiveAggregator`), so a query marked repeat-dominated is not
-    /// re-measured until its cache entry is evicted.
-    bool repeat_dominated = false;
-    bool measured = false;
-    if (adaptive_session)
-    {
-        std::lock_guard lock(adaptive_session->thaw_sample_mutex);
-        measured = adaptive_session->staged_records >= DB::adaptive_thaw_min_staged_records;
-        repeat_dominated = adaptive_session->thaw_all.load(std::memory_order_relaxed);
-    }
-    if (!measured)
-    {
-        if (const auto prev = DB::getHashTablesStatistics<DB::AggregationEntry>().getSizeHint(params))
-            repeat_dominated = prev->adaptive_staging_repeat_dominated;
-    }
-
-    DB::getHashTablesStatistics<DB::AggregationEntry>().update(
-        {.sum_of_sizes = sum_of_sizes, .median_size = *median_size, .adaptive_staging_repeat_dominated = repeat_dominated}, params);
+    DB::getHashTablesStatistics<DB::AggregationEntry>().update({.sum_of_sizes = sum_of_sizes, .median_size = *median_size}, params);
 }
 
 DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)
@@ -5277,7 +5253,7 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
 
     LOG_TRACE(log, "Merging aggregated data");
 
-    updateStatistics(data_variants, adaptive_session, params.stats_collecting_params);
+    updateStatistics(data_variants, params.stats_collecting_params);
 
     ManyAggregatedDataVariants non_empty_data;
     non_empty_data.reserve(data_variants.size());

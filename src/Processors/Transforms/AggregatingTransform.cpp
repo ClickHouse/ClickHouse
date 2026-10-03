@@ -1708,16 +1708,6 @@ void AggregatingTransform::initGenerate()
                 [](const Aggregator & aggregator) { return aggregator.hasTemporaryData(); });
     };
 
-    if (adaptive_engaged && aggregator_has_temporary_data())
-    {
-        /// A producer on the baseline path spilled, so the merge goes external and the
-        /// bucket-parallel adaptive merge does not run: the staged records join the external
-        /// merge below as inputs of their own (see `AdaptiveStagedRecordsSource`). The external
-        /// merge bypasses `prepareVariantsToMerge`, which is where the thaw verdict is normally
-        /// recorded.
-        params->aggregator.recordAdaptiveStagingVerdict(*adaptive_context->session);
-    }
-
     if (!aggregator_has_temporary_data())
     {
         if (!skip_merging)

@@ -14,7 +14,6 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/HashTablesStatistics.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -364,19 +363,6 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
 
     if (params.group_by_two_level_threshold == 0 && params.group_by_two_level_threshold_bytes == 0)
         return "two-level aggregation is disabled";
-
-    /// A prior run measured the query's staged stream as repeat-dominated and thawed: freezing
-    /// cannot pay for this query, so do not engage it again. The verdict lives in the hash-table
-    /// statistics; a run without it takes the ordinary path with the statistics-driven
-    /// initialization, exactly as if the feature were off. A run that may not thaw does not ask:
-    /// the verdict is the thaw's, and keeping the tables frozen whatever the repeats is what the
-    /// user asked for.
-    if (params.stats_collecting_params.isCollectionAndUseEnabled() && !params.adaptive_aggregator_disable_thaw)
-    {
-        const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
-        if (hint && hint->adaptive_staging_repeat_dominated)
-            return "a prior run measured the staged stream as repeat-dominated";
-    }
 
     /// TODO (nihalzp): Support LowCardinality and Nullable keys.
     for (const auto & key : params.keys)

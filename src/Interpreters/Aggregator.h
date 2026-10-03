@@ -494,13 +494,8 @@ public:
     /// to leave the result as is.
     static size_t singleLevelChunkRowsForFanOut(size_t rows, size_t output_streams);
 
-    /// `adaptive_session` (or nullptr when the adaptive aggregation is off) feeds the
-    /// thaw verdict into the hash-table statistics next to the observed sizes.
-    /// Records the thaw verdict in the hash-table statistics when the session measured one.
-    /// The in-memory merge records it inside `prepareVariantsToMerge`; the external merge never
-    /// reaches that, so the finish path calls this instead.
-    void recordAdaptiveStagingVerdict(AdaptiveAggregationSession & shared) const;
-
+    /// `adaptive_session` (or nullptr when the adaptive aggregation is off) puts the destination of the adaptive merge
+    /// in front of the tables and prepares its top-K pruning once the session is engaged.
     ManyAggregatedDataVariants prepareVariantsToMerge(
         ManyAggregatedDataVariants && data_variants, AdaptiveAggregationSession * adaptive_session) const;
 
