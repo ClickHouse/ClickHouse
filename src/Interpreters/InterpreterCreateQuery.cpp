@@ -1032,10 +1032,22 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         {
             /// Copy secondary indexes but only the ones which were not implicitly created. These will be re-generated later again and need
             /// not be copied.
+            /// The copied indices become fresh metadata of the new table, so they are validated like on a
+            /// plain `CREATE`: an index grandfathered in the source table (e.g. over an `ALIAS` column that
+            /// hides an `IN` over a table) must not be copied into it.
             const auto & indices = as_storage_metadata->getSecondaryIndices();
             for (const auto & index : indices)
-                if (!index.isImplicitlyCreated())
+            {
+                if (index.isImplicitlyCreated())
+                    continue;
+
+                if (is_fresh_definition)
+                    properties.indices.push_back(IndexDescription::getIndexFromAST(
+                        index.definition_ast, properties.columns, /* is_implicitly_created = */ false, index.escape_filenames,
+                        getContext(), /* validate_expressions = */ true));
+                else
                     properties.indices.push_back(index);
+            }
 
             /// Copy projections.
             properties.projections = as_storage_metadata->getProjections().clone();
