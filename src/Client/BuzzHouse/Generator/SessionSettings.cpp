@@ -1455,6 +1455,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 10)); }, {"0", "1", "5", "10"}, false)},
     {"optimize_on_insert", trueOrFalseSetting},
+    {"optimize_or_has_any_chain", trueOrFalseSetting},
     {"optimize_or_like_chain", trueOrFalseSetting},
     {"optimize_or_like_chain_min_patterns",
      CHSetting(

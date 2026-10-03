@@ -1,0 +1,169 @@
+-- chain on one haystack is merged, needles keep their order without duplicates
+SELECT __table1.id AS id\nFROM default.t3448 AS __table1\nWHERE or(hasAny(__table1.letters, _CAST([\'o\', \'u\'], \'Array(String)\')), hasAny(__table1.letters, _CAST([\'u\'], \'Array(String)\')), hasAny(__table1.letters, _CAST([\'ą\'], \'Array(String)\')), hasAny(__table1.letters, _CAST([\'a\'], \'Array(String)\')))\nSETTINGS optimize_or_has_any_chain = 0
+SELECT __table1.id AS id\nFROM default.t3448 AS __table1\nWHERE hasAny(__table1.letters, _CAST([\'o\', \'u\', \'ą\', \'a\'], \'Array(String)\'))\nSETTINGS optimize_or_has_any_chain = 1
+-- other OR arguments keep their positions
+SELECT __table1.id AS id\nFROM default.t3448 AS __table1\nWHERE or(equals(__table1.id, 1), hasAny(__table1.letters, _CAST([\'a\', \'i\'], \'Array(String)\')), equals(length(__table1.letters), 7), empty(__table1.letters))
+-- nested ORs are flattened when calls are merged
+SELECT __table1.id AS id\nFROM default.t3448 AS __table1\nWHERE or(hasAny(__table1.letters, _CAST([\'a\', \'i\'], \'Array(String)\')), equals(length(__table1.letters), 5))
+SELECT __table1.id AS id\nFROM default.t3448 AS __table1\nWHERE or(hasAny(__table1.letters, _CAST([\'a\', \'i\'], \'Array(String)\')), equals(length(__table1.letters), 5), equals(__table1.id, 1))
+-- nested ORs are kept when nothing is merged
+SELECT __table1.id AS id\nFROM default.t3448 AS __table1\nWHERE or(or(hasAny(__table1.letters, _CAST([\'a\'], \'Array(String)\')), equals(length(__table1.letters), 5)), hasAny(__table1.lc, _CAST([\'i\'], \'Array(String)\')))
+-- a single hasAny is left alone
+SELECT __table1.id AS id\nFROM default.t3448 AS __table1\nWHERE or(hasAny(__table1.letters, _CAST([\'a\'], \'Array(String)\')), equals(__table1.id, 1))
+-- different haystacks form different groups
+SELECT __table1.id AS id\nFROM default.t3448 AS __table1\nWHERE or(hasAny(__table1.letters, _CAST([\'a\', \'i\'], \'Array(String)\')), hasAny(__table1.lc, _CAST([\'b\', \'c\'], \'Array(String)\')))
+-- needles of different types are not merged with each other
+SELECT __table1.id AS id\nFROM default.t3448 AS __table1\nWHERE or(hasAny(__table1.numbers, _CAST([1, 2], \'Array(UInt8)\')), hasAny(__table1.numbers, _CAST([300, 400], \'Array(UInt16)\')))
+-- non-deterministic haystack is not merged
+SELECT or(hasAny(array(modulo(rand(), 2)), _CAST([0], \'Array(UInt8)\')), hasAny(array(modulo(rand(), 2)), _CAST([1], \'Array(UInt8)\'))) AS `or(hasAny([modulo(rand(), 2)], [0]), hasAny([modulo(rand(), 2)], [1]))`\nFROM system.one AS __table1
+-- compatibility with 26.9 disables the rewrite
+SELECT __table1.id AS id\nFROM default.t3448 AS __table1\nWHERE or(hasAny(__table1.letters, _CAST([\'a\'], \'Array(String)\')), hasAny(__table1.letters, _CAST([\'i\'], \'Array(String)\')))\nSETTINGS compatibility = \'26.9\'
+-- results are the same with and without the rewrite
+letters	[1,2,6,7,9,10]	[1,2,6,7,9,10]	1
+letters and id	[1,2,3,4,6,8]	[1,2,3,4,6,8]	1
+numbers	[1,3,4,5]	[1,3,4,5]	1
+dates	[1,3]	[1,3]	1
+single date	[2,5]	[2,5]	1
+times	[1,4]	[1,4]	1
+enums	[1,3,4,5]	[1,3,4,5]	1
+nullable	[1,3,4,5]	[1,3,4,5]	1
+nested	[1,2,3,4,6,8]	[1,2,3,4,6,8]	1
+json	1	1	1
+aggregate states	1	1	1
+variants	1	1	1
+maps	1	1	1
+zeros	1	1	1
+nans	0	0	1
+low cardinality needles	[1,2,6,8]	[1,2,6,8]	1
+-- typed needles keep their type after merging
+SELECT __table1.id AS id\nFROM default.t3448 AS __table1\nWHERE hasAny(__table1.dates, _CAST([\'2020-01-01\', \'2020-01-03\'], \'Array(Date)\'))
+-- with aggregation, GROUP BY keys and expressions after aggregation are not rewritten, arguments of aggregate functions are
+SELECT\n    or(hasAny(__table1.letters, _CAST([\'a\'], \'Array(String)\')), hasAny(__table1.letters, _CAST([\'i\'], \'Array(String)\'))) AS r,\n    sum(hasAny(__table1.letters, _CAST([\'e\', \'o\'], \'Array(String)\'))) AS `sum(or(hasAny(letters, [\'e\']), hasAny(letters, [\'o\'])))`\nFROM default.t3448 AS __table1\nWHERE hasAny(__table1.letters, _CAST([\'u\', \'z\'], \'Array(String)\'))\nGROUP BY\n    hasAny(__table1.letters, _CAST([\'a\'], \'Array(String)\')),\n    hasAny(__table1.letters, _CAST([\'i\'], \'Array(String)\'))\nHAVING or(hasAny(__table1.letters, _CAST([\'a\'], \'Array(String)\')), hasAny(__table1.letters, _CAST([\'i\'], \'Array(String)\')))\nORDER BY or(hasAny(__table1.letters, _CAST([\'a\'], \'Array(String)\')), hasAny(__table1.letters, _CAST([\'i\'], \'Array(String)\'))) ASC
+SELECT\n    or(hasAny(__table1.letters, _CAST([\'a\'], \'Array(String)\')), hasAny(__table1.letters, _CAST([\'i\'], \'Array(String)\'))) AS k,\n    count() AS `count()`\nFROM default.t3448 AS __table1\nGROUP BY or(hasAny(__table1.letters, _CAST([\'a\'], \'Array(String)\')), hasAny(__table1.letters, _CAST([\'i\'], \'Array(String)\')))
+SELECT count() AS `count()`\nFROM default.t3448 AS __table1\nHAVING or(hasAny(groupArray(__table1.id), _CAST([1], \'Array(UInt8)\')), hasAny(groupArray(__table1.id), _CAST([2], \'Array(UInt8)\')))
+-- subqueries in expressions after aggregation are rewritten
+SELECT count() AS `count()`\nFROM default.t3448 AS __table1\nHAVING in(count(), (\n    SELECT count() AS `count()`\n    FROM default.t3448 AS __table1\n    WHERE hasAny(__table1.letters, _CAST([\'a\', \'i\'], \'Array(String)\'))\n))
+-- results of queries with aggregation
+0	7
+1	2
+1	3
+2
+3
+0	7
+1	2
+1	3
+1	3
+\N	9
+\N	12
+0	7
+1	2
+1	3
+\N	12
+0	7
+1	5
+\N	12
+7
+2
+3
+5	5
+0	1
+1	1
+2	1
+3	1
+4	1
+5	1
+6	1
+7	1
+8	1
+9	1
+10	1
+11	1
+-- an expression shared by an alias between WHERE and the expressions after aggregation is not rewritten
+1	6
+1	6
+1	5
+1	4
+1	7
+1	6
+-- the same for an expression shared between an aggregate function argument and a GROUP BY key
+0	0
+1	6
+0	0
+1	5
+-- the same for an expression from WITH used in a subquery
+1	6
+-- the same when only the subquery enables the optimization
+1	6
+-- an expression shared by an alias without aggregation is rewritten
+SELECT or(hasAny(__table1.letters, _CAST([\'a\', \'i\'], \'Array(String)\')), equals(__table1.id, 3)) AS k\nFROM default.t3448 AS __table1\nWHERE or(hasAny(__table1.letters, _CAST([\'a\', \'i\'], \'Array(String)\')), equals(__table1.id, 3))
+1	1
+2	1
+3	1
+6	1
+7	1
+9	1
+-- distributed queries
+1	1
+1	1
+2	1
+2	1
+6	1
+6	1
+7	1
+7	1
+8	0
+8	0
+9	1
+9	1
+10	0
+10	0
+10
+0	14
+1	4
+1	6
+0	14
+1	10
+0	20
+1	4
+2
+0	0
+0	0
+1	1
+1	1
+2	0
+2	0
+3	0
+3	0
+4
+-- server constants in the needles of a distributed query are calculated on each remote server
+SELECT count() AS `count()`\nFROM remote(\'127.0.0.{1,2}\', system.one) AS __table1\nWHERE or(hasAny(array(toString(__table1.dummy)), array(hostName())), hasAny(array(toString(__table1.dummy)), array(concat(hostName(), \'x\'))))
+2
+1	1
+1
+-- a chain of deterministic needles and a server constant merges only the deterministic ones
+SELECT count() AS `count()`\nFROM remote(\'127.0.0.{1,2}\', system.one) AS __table1\nWHERE or(hasAny(array(toUInt64(plus(__table1.dummy, 1))), _CAST([2, 3], \'Array(UInt64)\')), hasAny(array(toUInt64(plus(__table1.dummy, 1))), array(toUInt64(shardNum()))))
+1	1
+-- a server constant in the haystack is calculated on each remote server too
+1	1
+-- a server constant in the needles of a view subquery is calculated on each remote server
+2
+-- a Distributed table query calculates the server constants on each shard too
+1	1
+-- in a local query a server constant folds to a constant and the calls are merged
+SELECT __table1.id AS id\nFROM default.t3448 AS __table1\nWHERE hasAny(__table1.numbers, _CAST([\'0\'], \'Array(Int128)\'))
+0
+-- with the setting off the results are the same
+1	1
+-- the setting is taken from the scope of each subquery
+SELECT __table1.id AS id\nFROM\n(\n    SELECT\n        __table2.id AS id,\n        __table2.letters AS letters\n    FROM default.t3448 AS __table2\n    WHERE hasAny(__table2.letters, _CAST([\'a\', \'i\'], \'Array(String)\'))\n    SETTINGS optimize_or_has_any_chain = 1\n) AS __table1\nWHERE or(hasAny(__table1.letters, _CAST([\'u\'], \'Array(String)\')), hasAny(__table1.letters, _CAST([\'z\'], \'Array(String)\')))\nSETTINGS optimize_or_has_any_chain = 0
+SELECT __table1.id AS id\nFROM\n(\n    SELECT\n        __table2.id AS id,\n        __table2.letters AS letters\n    FROM default.t3448 AS __table2\n    WHERE or(hasAny(__table2.letters, _CAST([\'a\'], \'Array(String)\')), hasAny(__table2.letters, _CAST([\'i\'], \'Array(String)\')))\n    SETTINGS optimize_or_has_any_chain = 0\n) AS __table1\nWHERE hasAny(__table1.letters, _CAST([\'u\', \'z\'], \'Array(String)\'))\nSETTINGS optimize_or_has_any_chain = 1
+SELECT __table1.id AS id\nFROM default.t3448 AS __table1\nWHERE in(__table1.id, (\n    SELECT __table1.id AS id\n    FROM default.t3448 AS __table1\n    WHERE hasAny(__table1.letters, _CAST([\'a\', \'i\'], \'Array(String)\'))\n    SETTINGS optimize_or_has_any_chain = 1\n))\nSETTINGS optimize_or_has_any_chain = 0
+SELECT __table1.id AS id\nFROM\n(\n    SELECT __table2.id AS id\n    FROM default.t3448 AS __table2\n    WHERE hasAny(__table2.letters, _CAST([\'a\', \'i\'], \'Array(String)\'))\n    SETTINGS optimize_or_has_any_chain = 1\n) AS __table1\nSETTINGS compatibility = \'26.9\'
+[1,2,6,7,9]
+-- constants whose value has no common type of the elements are sent to remote servers with a cast
+{'a':1,'b':'x'}	Map(String, Variant(String, UInt8))
+[1,'a']	Variant(Array(Variant(String, UInt8)), UInt8)
+0	{'a':1,'b':'x'}
+0	{'a':1,'b':'x'}
+0	[1,'a']
+0	[1,'a']

@@ -27,6 +27,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NO_COMMON_TYPE;
+}
+
     ConstantNode::ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression_, bool is_deterministic_)
     : IQueryTreeNode(children_size)
     , constant_value(std::move(constant_value_))
@@ -76,6 +81,29 @@ bool ConstantNode::requiresCastCall(const DataTypePtr & field_type, const DataTy
         return true;
 
     return field_type->getTypeId() != data_type->getTypeId();
+}
+
+bool ConstantNode::valueRequiresCastCall() const
+{
+    /// `requiresCastCall` is always true for `NULL`, `Array` and `Tuple` values. Checking this first avoids
+    /// materializing the value as a `Field`, which is expensive for large arrays.
+    const auto & result_type = getResultType();
+    if (isArray(result_type) || isTuple(result_type) || isNull())
+        return true;
+
+    try
+    {
+        auto field_type = applyVisitor(FieldToDataType(), getValue());
+        return requiresCastCall(field_type, getResultType());
+    }
+    catch (const Exception & e)
+    {
+        /// `FieldToDataType` throws `NO_COMMON_TYPE` if the elements of a nested array or map have no common type,
+        /// e.g. for `Map(String, Variant(UInt8, String))`. The literal has no natural type then, so a cast is needed.
+        if (e.code() != ErrorCodes::NO_COMMON_TYPE)
+            throw;
+        return true;
+    }
 }
 
 bool ConstantNode::receivedFromInitiatorServer() const
@@ -247,22 +275,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     // Constant folding may lead to type transformation and literal on shard
     // may have a different type.
 
-    auto requires_cast = [this]()
-    {
-        try
-        {
-            auto field_type = applyVisitor(FieldToDataType(), getValue());
-            return requiresCastCall(field_type, getResultType());
-        }
-        catch (...)
-        {
-            /// FieldToDataType may throw for complex cases like mixed-type arrays.
-            /// If we can't determine the natural type, a cast is needed.
-            return true;
-        }
-    };
-
-    if (source_expression != nullptr || requires_cast())
+    if (source_expression != nullptr || valueRequiresCastCall())
     {
         /// For some types we cannot just get a field from a column, because it can loose type information during serialization/deserialization of the literal.
         /// For example, DateTime64 will return Field with Decimal64 and we won't be able to parse it to DateTine64 back in some cases.

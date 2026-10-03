@@ -5644,6 +5644,14 @@ Notice the `WHERE` clause is rewritten in CNF, but the result set is the identic
 
 Possible values: true, false
 )", 0) \
+    DECLARE(Bool, optimize_or_has_any_chain, true, R"(
+Merge `hasAny` calls with constant arrays that are combined with `OR` and check the same array into a single `hasAny` call: `hasAny(arr, [1, 2]) OR hasAny(arr, [3])` is rewritten to `hasAny(arr, [1, 2, 3])`.
+
+The calls are merged only when the checked expression is deterministic and the constant arrays have the same type. In a query with aggregation, the `GROUP BY` keys and the expressions calculated after aggregation (e.g. in `SELECT`, `HAVING` and `ORDER BY`) are not rewritten, except for the arguments of aggregate functions. Works only with the analyzer (`enable_analyzer = 1`).
+
+Possible values: true, false
+)", 0, \
+        {"26.10", false, true, "New setting to merge `hasAny` calls with constant arrays on the same expression in an `OR` chain into a single `hasAny` call."}) \
     DECLARE(Bool, optimize_or_like_chain, true, R"(
 Optimize multiple `OR LIKE/ILIKE/match` predicates on the same expression into a single `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8` (for pure-substring `%needle%` patterns) or `multiMatchAny` (for other patterns, when Hyperscan/Vectorscan is permitted). When neither fast path is applicable — for example when Hyperscan is disabled or unavailable, or the patterns are raw `match` regexps, not valid UTF-8, contain an embedded NUL, are end-anchored (do not end in an unescaped `%`; Vectorscan matches `$` before a final newline, so the rewrite would widen the filter), or the haystack is `FixedString`/`Enum` — the original `OR` chain is kept unchanged, because a combined `match` alternation over RE2 is consistently slower than the original short-circuit `OR`.
 

@@ -101,6 +101,10 @@ public:
     /// Check if conversion to AST requires wrapping with _CAST function.
     static bool requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type);
 
+    /// Check if conversion of the value to AST requires wrapping with _CAST function,
+    /// because the literal would be parsed back with a different type.
+    bool valueRequiresCastCall() const;
+
     /// Check if constant is a result of _CAST function constant folding.
     bool receivedFromInitiatorServer() const;
 
