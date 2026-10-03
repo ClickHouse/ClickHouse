@@ -1,3 +1,4 @@
+#include <fcntl.h>
 #include <cerrno>
 #include <ctime>
 #include <algorithm>
@@ -11,6 +12,7 @@
 #include <Common/Throttler.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
+#include <IO/preadNoWait.h>
 #include <Common/filesystemHelpers.h>
 #include <poll.h>
 #include <sys/stat.h>
@@ -24,6 +26,7 @@ namespace ProfileEvents
     extern const Event ReadBufferFromFileDescriptorRead;
     extern const Event ReadBufferFromFileDescriptorReadFailed;
     extern const Event ReadBufferFromFileDescriptorReadBytes;
+    extern const Event ReadBufferFromFileDescriptorPageCacheHitBytes;
     extern const Event DiskReadElapsedMicroseconds;
     extern const Event Seek;
 }
@@ -67,12 +70,23 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
         Stopwatch watch(profile_callback ? clock_type : CLOCK_MONOTONIC);
 
         ssize_t res = 0;
+        bool from_os_page_cache = false;
         size_t to_read = max_bytes - bytes_read;
         {
             CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
 
             if (use_pread)
-                res = ::pread(fd, to + bytes_read, to_read, offset + bytes_read);
+            {
+                if (detect_os_page_cache_reads)
+                {
+                    /// Fails with `EAGAIN` without waiting for the disk if the data is not in the page cache.
+                    /// In this and any other failure, the regular `pread` below reads the data or reports the error.
+                    res = preadNoWait(fd, to + bytes_read, to_read, offset + bytes_read);
+                    from_os_page_cache = res > 0;
+                }
+                if (!from_os_page_cache)
+                    res = ::pread(fd, to + bytes_read, to_read, offset + bytes_read);
+            }
             else
                 res = ::read(fd, to + bytes_read, to_read);
         }
@@ -90,7 +104,16 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
         {
             bytes_read += res;
             if (throttler)
-                throttler->throttle(res);
+            {
+                /// See the comment in `AsynchronousReadBufferFromFileDescriptor::nextImpl`.
+                if (from_os_page_cache)
+                {
+                    ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorPageCacheHitBytes, res);
+                    throttler->throttleOSPageCacheRead(res);
+                }
+                else
+                    throttler->throttle(res);
+            }
         }
 
 
@@ -114,6 +137,20 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
 
     return bytes_read;
+}
+
+
+void ReadBufferFromFileDescriptor::enableOSPageCacheReadsDetection(int flags)
+{
+    /// `RWF_NOWAIT` is ignored for `O_DIRECT` (see the comment in `ThreadPoolReader::submit`),
+    /// so such a read could reach the device while looking like it was served from the page cache.
+    /// The `O_DIRECT` check comes before `preadNoWaitUnavailableReason` for the same reason as there.
+    /// The detection costs an extra system call for the data that is not in the page cache,
+    /// which is why it is used only when there is a throttler to tell about it.
+    detect_os_page_cache_reads = use_pread
+        && throttler
+        && (flags == -1 || !(flags & O_DIRECT))
+        && preadNoWaitUnavailableReason().empty();
 }
 
 
