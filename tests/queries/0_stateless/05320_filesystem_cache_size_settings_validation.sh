@@ -25,7 +25,7 @@ function create_cache_disk()
         CREATE TABLE t (a Int32) ENGINE = MergeTree ORDER BY tuple()
         SETTINGS disk = disk(type = cache, name = 'cache', path = 'cache', disk = 'local_disk', $1);
         SELECT 'disk_accepted'" 2>&1); then
-        echo "$out"
+        echo "$out" | grep -o -F -e 'disk_accepted'
     else
         echo "$out" | grep -o -F \
             -e 'must be defined in cache configuration' \
