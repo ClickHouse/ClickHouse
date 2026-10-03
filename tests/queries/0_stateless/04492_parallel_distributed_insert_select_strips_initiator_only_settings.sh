@@ -32,7 +32,11 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE src (x UInt64) ENGINE = MergeTree ORDER BY
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst (x UInt64) ENGINE = MergeTree ORDER BY x"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO src SELECT number FROM numbers(10)"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE dist_src AS src ENGINE = Distributed(test_cluster_two_shards_localhost, ${CLICKHOUSE_DATABASE}, src, x)"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE dist_dst AS dst ENGINE = Distributed(test_cluster_two_shards_localhost, ${CLICKHOUSE_DATABASE}, dst, x)"
+# The destination is sharded by `rand()` on purpose: with a deterministic sharding key,
+# `distributedWriteFromClusterStorage` refuses to insert into the shards' local tables (the rows a cluster
+# table function hands to a shard cannot satisfy such a key) and falls back to the ordinary INSERT SELECT,
+# which would leave the `fileCluster` case below asserting nothing.
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE dist_dst AS dst ENGINE = Distributed(test_cluster_two_shards_localhost, ${CLICKHOUSE_DATABASE}, dst, rand())"
 
 mkdir -p "${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 DATA_FILE="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/data.csv"
