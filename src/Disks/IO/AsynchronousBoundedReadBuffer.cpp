@@ -16,6 +16,7 @@
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/Context.h>
 #include <base/getThreadId.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace CurrentMetrics
@@ -349,7 +350,11 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
     }
     else if (whence == SEEK_CUR)
     {
-        new_pos = static_cast<size_t>(getPosition()) + offset;
+        /// Keep the target signed until it is checked, so that a backward seek past the start cannot wrap around.
+        off_t target = 0;
+        if (common::addOverflow(static_cast<off_t>(getPosition()), offset, target) || target < 0)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Seek position is out of bound: {} {:+}", getPosition(), offset);
+        new_pos = static_cast<size_t>(target);
     }
     else
     {

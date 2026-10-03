@@ -287,6 +287,9 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
 
+    if (offset < 0)
+        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek position is out of bound: {}", offset);
+
     if (use_external_buffer)
     {
         /// In case use_external_buffer == true, the buffer manages seeks itself.
