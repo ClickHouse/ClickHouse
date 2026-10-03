@@ -6727,6 +6727,13 @@ class ClickHouseInstance:
                 self.with_installed_binary,
             )
 
+        if self.with_installed_binary:
+            # The main config.xml is copied from the current sources, so an older server version
+            # must not refuse to start on an element it does not know yet, such as `seccomp`.
+            write_embedded_config(
+                "0_common_skip_check_for_incorrect_settings.xml", self.config_d_dir
+            )
+
         if not self.cluster.with_dolor:
             write_embedded_config("0_common_instance_users.xml", users_d_dir)
             if self.with_installed_binary:
