@@ -1,0 +1,15 @@
+guard: every_keyword_examined=1 positions=22 nearly_all_inputs_parse=1
+SELECT NOT `not`
+SELECT * FROM t GROUP BY `cube`
+SELECT * FROM t GROUP BY `rollup`
+CREATE TABLE t (`not` Int32) ENGINE = MergeTree ORDER BY `not`
+CREATE VIEW v AS SELECT `not` + 1 FROM t
+SELECT NOT x
+SELECT NOT (x)
+SELECT 1 NOT IN (1)
+SELECT 1 IS NOT NULL
+SELECT count() FROM t GROUP BY a WITH ROLLUP
+SELECT count() FROM t GROUP BY a, b WITH CUBE
+SELECT `NOT` + 1
+SELECT notEmpty(x)
+SELECT cubeRoot(1)
