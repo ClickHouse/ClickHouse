@@ -65,9 +65,10 @@ open(dst, 'wb').write(data + varint(count << 1) + varint(len(payload) << 1) + pa
 # pipeline handoff the flaky check's ThreadFuzzer can sleep at.
 ROWS=500
 
-# The bound has to hold however deeply the schema nests.
-DEEP="number"
-for _ in $(seq 65); do DEEP="tuple($DEEP)"; done
+# The bound has to hold however deeply the schema nests. Spelled as a type name, because 65 nested
+# tuple() calls exceed the analyzer's stack budget under TSan.
+DEEP="UInt64"
+for _ in $(seq 65); do DEEP="Tuple($DEEP)"; done
 
 # An all-NULL column encodes to zero payload bytes, so nullrows.avro legitimately declares 1000 rows
 # in a few hundred bytes and deflate.avro 200000 in under a kilobyte.
@@ -90,7 +91,7 @@ $CLICKHOUSE_LOCAL -q "
     SELECT NULL AS a FROM numbers(1000)
     INTO OUTFILE '$DIR/nullrows-snappy.avro' TRUNCATE FORMAT Avro
     SETTINGS output_format_avro_codec = 'snappy';
-    SELECT $DEEP AS t FROM numbers(10)
+    SELECT defaultValueOfTypeName('$DEEP') AS t FROM numbers(10)
     INTO OUTFILE '$DIR/deep-snappy.avro' TRUNCATE FORMAT Avro
     SETTINGS output_format_avro_codec = 'snappy'"
 
