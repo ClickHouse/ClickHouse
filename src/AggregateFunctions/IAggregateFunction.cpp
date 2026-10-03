@@ -107,6 +107,12 @@ void IAggregateFunction::parallelizeMergePrepare(
         ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() with thread pool parameter isn't implemented for {} ", getName());
 }
 
+char * IAggregateFunction::serializeToMemory(ConstAggregateDataPtr __restrict, char *, std::optional<size_t>) const
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED, "Method serializeToMemory is not implemented for {}, it reported no serialized size bound", getName());
+}
+
 void IAggregateFunction::mergeStateFromDifferentVariant(
     AggregateDataPtr __restrict /*place*/, const IAggregateFunction & rhs, ConstAggregateDataPtr /*rhs_place*/, Arena * /*arena*/) const
 {
