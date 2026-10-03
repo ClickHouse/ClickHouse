@@ -11,6 +11,7 @@ SYSTEM STOP TTL MERGES t_materialize_ttl_drop_wide;
 INSERT INTO t_materialize_ttl_drop_wide SELECT number, toString(number),
     if(number % 2 = 0 OR number < 5, toDateTime('2000-01-01 00:00:00', 'UTC'), toDateTime('2100-01-01 00:00:00', 'UTC'))
 FROM numbers(10);
+SELECT 'source part type', partition, part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_materialize_ttl_drop_wide' AND active ORDER BY partition;
 
 ALTER TABLE t_materialize_ttl_drop_wide MATERIALIZE TTL SETTINGS mutations_sync = 1;
 SELECT 'recalculate only', id % 2 AS p, count() FROM t_materialize_ttl_drop_wide GROUP BY p ORDER BY p;

@@ -1,3 +1,5 @@
+source part type	0	Wide
+source part type	1	Wide
 recalculate only	0	5
 recalculate only	1	5
 drop expired parts	1	5
