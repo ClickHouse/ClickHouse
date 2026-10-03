@@ -107,6 +107,7 @@ namespace FailPoints
     extern const char mt_alter_settings_throw_before_metadata_commit[];
     extern const char mt_alter_settings_pause_before_metadata_commit[];
     extern const char mt_alter_readonly_pause_after_metadata_commit[];
+    extern const char mt_move_partition_pause_before_commit[];
     extern const char mt_alter_readonly_throw_in_start_background_workers[];
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
@@ -3690,6 +3691,13 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         merges_blocker = stopMergesAndWaitForPartition(partition_id);
     }
 
+    /// `REPLACE` removes the parts of the destination partition, so it must not interleave with the other
+    /// operations that alter the set of parts, like `MOVE PARTITION` from this table. That one reads the
+    /// parts to move, and later covers them with empty parts. If `REPLACE` removed them in between, the
+    /// empty parts would be committed over the parts that are already outdated and would intersect the
+    /// empty part covering the drop range, so the table could not be loaded after a restart.
+    auto operation_data_parts_lock = lockOperationsWithParts();
+
     auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr(local_context, false);
     auto my_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
@@ -4026,6 +4034,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     /// empty part set
     if (dst_parts.empty())
         return;
+
+    FailPointInjection::pauseFailPoint(FailPoints::mt_move_partition_pause_before_commit);
 
     /// Move new parts to the destination table. NOTE It doesn't look atomic.
     try
