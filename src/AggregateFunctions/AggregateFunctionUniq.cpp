@@ -220,7 +220,7 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
 void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false, .support_variant_argument = true };
 
     /// uniq documentation
     FunctionDocumentation::Description description_uniq = R"(

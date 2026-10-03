@@ -2104,7 +2104,8 @@ bool StorageMergeTree::merge(
     bool cleanup,
     const MergeTreeTransactionPtr & txn,
     PreformattedMessage & out_disable_reason,
-    bool optimize_skip_merged_partitions)
+    bool optimize_skip_merged_partitions,
+    ContextPtr query_context)
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
     StorageMetadataPtr metadata_snapshot;  // assigned under the lock below; used later when constructing the merge task
@@ -2215,7 +2216,7 @@ bool StorageMergeTree::merge(
         /// Copying a vector of columns `deduplicate by columns.
         IExecutableTask::TaskResultCallback f = [](bool) {};
         auto task = std::make_shared<MergePlainMergeTreeTask>(
-            *this, metadata_snapshot, deduplicate, deduplicate_by_columns, cleanup, merge_entry, table_lock_holder, f);
+            *this, metadata_snapshot, deduplicate, deduplicate_by_columns, cleanup, merge_entry, table_lock_holder, f, std::move(query_context));
 
         task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
 
@@ -3036,7 +3037,7 @@ bool StorageMergeTree::optimize(
                 /// merge inputs outlive any such task.
                 runner.enqueueAndKeepTrack(
                     [this, results, shared_partition_ids, next_partition_index, deduplicate, deduplicate_by_columns, cleanup, txn,
-                     optimize_skip_merged_partitions]
+                     optimize_skip_merged_partitions, local_context]
                     {
                         while (true)
                         {
@@ -3054,7 +3055,8 @@ bool StorageMergeTree::optimize(
                                     cleanup,
                                     txn,
                                     partition_reason,
-                                    optimize_skip_merged_partitions))
+                                    optimize_skip_merged_partitions,
+                                    local_context))
                                 (*results)[i] = std::unexpected(std::move(partition_reason));
                         }
                     });
@@ -3075,7 +3077,7 @@ bool StorageMergeTree::optimize(
             for (const String & partition_id : partition_ids)
             {
                 PreformattedMessage partition_reason;
-                if (!merge(true, partition_id, true, deduplicate, deduplicate_by_columns, cleanup, txn, partition_reason, optimize_skip_merged_partitions))
+                if (!merge(true, partition_id, true, deduplicate, deduplicate_by_columns, cleanup, txn, partition_reason, optimize_skip_merged_partitions, local_context))
                 {
                     failure_reason = std::move(partition_reason);
                     break;
@@ -3109,7 +3111,8 @@ bool StorageMergeTree::optimize(
                 cleanup,
                 txn,
                 disable_reason,
-                local_context->getSettingsRef()[Setting::optimize_skip_merged_partitions]))
+                local_context->getSettingsRef()[Setting::optimize_skip_merged_partitions],
+                local_context))
         {
             constexpr auto message = "Cannot OPTIMIZE table: {}";
             LOG_INFO(log, message, disable_reason.text);

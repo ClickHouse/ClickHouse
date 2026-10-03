@@ -156,6 +156,6 @@ SELECT avg(duration) AS avg_duration, toTypeName(avg_duration) FROM requests;
     FunctionDocumentation::Category category_avg = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_avg = {description_avg, syntax_avg, arguments_avg, parameters_avg, returned_value_avg, examples_avg, introduced_in_avg, category_avg};
 
-    factory.registerFunction("avg", {createAggregateFunctionAvg, documentation_avg}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("avg", {createAggregateFunctionAvg, documentation_avg, {.is_float_promoting = true}}, AggregateFunctionFactory::Case::Insensitive);
 }
 }

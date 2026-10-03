@@ -46,6 +46,7 @@ void addMergingFinal(
     const StorageMetadataPtr & metadata_snapshot,
     size_t max_block_size_rows,
     bool enable_vertical_final,
+    const Settings & settings,
     bool read_in_reverse)
 {
     auto header = pipe.getSharedHeader();
@@ -98,7 +99,7 @@ void addMergingFinal(
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<CoalescingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation);
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation, settings);
             }
         }
     };
@@ -181,7 +182,7 @@ Pipe buildFullFinalMergePipe(
                             { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
     if (!out_projection)
         out_projection = createProjection(pipe.getHeader());
-    addMergingFinal(pipe, sort_description, merging_params, metadata_snapshot, max_block_size_rows, enable_vertical_final);
+    addMergingFinal(pipe, sort_description, merging_params, metadata_snapshot, max_block_size_rows, enable_vertical_final, context->getSettingsRef());
     return pipe;
 }
 
@@ -235,7 +236,7 @@ Pipe buildDistributedFinalPipe(
         addLayerRangeFilterToPipe(pipe, primary_key, lane.borders, lane.index, *in_reverse_order, context);
         if (!out_projection)
             out_projection = createProjection(pipe.getHeader());
-        addMergingFinal(pipe, sort_description, merging_params, metadata_snapshot, max_block_size_rows, enable_vertical_final);
+        addMergingFinal(pipe, sort_description, merging_params, metadata_snapshot, max_block_size_rows, enable_vertical_final, settings);
         final_merge_pipes.emplace_back(std::move(pipe));
     }
 

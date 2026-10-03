@@ -97,6 +97,23 @@ public:
         return nested_func->getDefaultVersion();
     }
 
+    /// Forward the ML prediction hooks (used by evalMLMethod via ColumnAggregateFunction::predictValues), so that
+    /// a model trained with a filter -- this wrapper is the function stored in the resulting state's
+    /// AggregateFunction(...) type -- can still be used to predict. This wrapper shares the state of the nested
+    /// function, and the condition argument does not participate in prediction.
+    DataTypePtr getReturnTypeToPredict() const override { return nested_func->getReturnTypeToPredict(); }
+
+    void predictValues(
+        ConstAggregateDataPtr __restrict place,
+        IColumn & to,
+        const ColumnsWithTypeAndName & arguments,
+        size_t offset,
+        size_t limit,
+        ContextPtr context) const override
+    {
+        nested_func->predictValues(place, to, arguments, offset, limit, context);
+    }
+
     void create(AggregateDataPtr __restrict place) const override
     {
         nested_func->create(place);

@@ -125,6 +125,7 @@ FROM
         {
             assertBinary(name, argument_types);
             assertNoParameters(name, parameters);
+            assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionCrossTab<CramersVData>>(argument_types);
         },
         documentation,
@@ -133,6 +134,7 @@ FROM
         {
             assertBinary(name, argument_types);
             assertNoParameters(name, parameters);
+            assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionCrossTab<CramersVWindowData>>(argument_types);
         }
     });

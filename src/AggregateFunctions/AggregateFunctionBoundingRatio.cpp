@@ -17,7 +17,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -148,7 +148,7 @@ public:
         const auto * y_arg = arguments.at(1).get();
 
         if (!x_arg->isValueRepresentedByNumber() || !y_arg->isValueRepresentedByNumber())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "Illegal types of arguments of aggregate function {}, must have number representation.",
                             getName());
     }
@@ -253,7 +253,7 @@ FROM numbers(10)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    factory.registerFunction("boundingRatio", {createAggregateFunctionRate, documentation});
+    factory.registerFunction("boundingRatio", {createAggregateFunctionRate, documentation, {.is_float_promoting = true}});
 }
 
 }

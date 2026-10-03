@@ -2,8 +2,9 @@
 
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Interpreters/Aggregator.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <Interpreters/Context_fwd.h>
 #include <Core/SortDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
 {
@@ -20,7 +21,7 @@ public:
         time_t current_time_,
         bool force_,
         const Block & header_,
-        const MergeTreeData & storage_,
+        const ContextPtr & context,
         const StorageMetadataPtr & metadata_snapshot_);
 
     void execute(Block & block) override;
