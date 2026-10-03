@@ -29,6 +29,10 @@ namespace ErrorCodes
     extern const int DICTIONARIES_WAS_NOT_LOADED;
 }
 
+namespace ActionLocks
+{
+    extern const StorageActionBlockType ReloadExternalDictionaries;
+}
 
 namespace
 {
@@ -688,10 +692,32 @@ public:
         }
     }
 
+    ActionLock getActionLock()
+    {
+        std::lock_guard lock{mutex};
+        return reload_blocker.cancel();
+    }
+
+    void reloadBlockedObjects()
+    {
+        std::lock_guard lock{mutex};
+        /// Forced, because a blocked attempt may have been a reload for a changed config:
+        /// a non-forced one would clone the previous version and keep its old config.
+        for (auto & [name, info] : infos)
+            if (info.blocked)
+                startLoading(info, /* forced_to_reload = */ true);
+    }
+
     /// Starts reloading all the object which update time is earlier than now.
     /// The function doesn't touch the objects which were never tried to load.
     void reloadOutdated()
     {
+        if (reload_blocker.isCancelled())
+        {
+            LOG_DEBUG(log, "Reloading of outdated dictionaries is stopped.");
+            return;
+        }
+
         /// Iterate through all the objects and find loaded ones which should be checked if they need update.
         std::unordered_map<LoadablePtr, bool> should_update_map;
         {
@@ -812,6 +838,7 @@ private:
                 result.error_count = error_count;
                 result.loading_duration = loadingDuration();
                 result.config = config;
+                result.blocked = blocked;
                 return result;
             }
             else
@@ -832,6 +859,7 @@ private:
         size_t error_count = 0; /// Numbers of errors since last successful loading.
         std::exception_ptr exception; /// Last error occurred.
         TimePoint next_update_time = TimePoint::max(); /// Time of the next update, `TimePoint::max()` means "never".
+        bool blocked = false; /// Loading was blocked
     };
 
     void resetInfoToUnloaded(const String & name, Info & info)
@@ -924,6 +952,18 @@ private:
             if (!min_id)
                 min_id = getMinIDToFinishLoading(forced_to_reload);
 
+            bool reload_blocked = reload_blocker.isCancelled();
+
+            /// Stop immediately once a previous attempt within this wait already determined reload
+            /// is blocked, instead of re-triggering startLoading() below: a blocked attempt resets
+            /// loading_id back down to state_id (so retrying is possible once unblocked), which would
+            /// otherwise make this predicate see loading_id < min_id again on every wake-up and spawn
+            /// another doomed loading attempt forever.
+            if (reload_blocked && info->blocked)
+                return true; /// Stop if blocked
+
+            /// If reload is blocked the call to startLoading is still needed to obtain values
+            /// that have already been loaded
             if (info->loading_id < min_id)
                 startLoading(*info, forced_to_reload, *min_id);
 
@@ -941,6 +981,12 @@ private:
 
     void loadImpl(const FilterByNameFunction & filter, Duration timeout, bool forced_to_reload, std::unique_lock<std::mutex> & lock)
     {
+        if (reload_blocker.isCancelled())
+        {
+            LOG_DEBUG(log, "Cannot reload, dictionary reload is stopped.");
+            return;
+        }
+
         std::optional<size_t> min_id;
         auto pred = [&]
         {
@@ -953,10 +999,12 @@ private:
                 if (filter && !filter(name))
                     continue;
 
+                auto reload_blocked = reload_blocker.isCancelled();
+
                 if (info.loading_id < min_id)
                     startLoading(info, forced_to_reload, *min_id);
 
-                all_ready &= (info.state_id >= min_id);
+                all_ready &= ((reload_blocked && info.blocked) || info.state_id >= min_id);
             }
             return all_ready;
         };
@@ -1005,12 +1053,22 @@ private:
 
         putBackFinishedThreadsToPool();
 
+        /// Checked here (rather than trusted to be passed correctly by every caller) so that
+        /// SYSTEM STOP RELOAD DICTIONARIES is respected for every path that can trigger a load,
+        /// including config-driven reloads (setConfiguration) and eager initial loads
+        /// (enableAlwaysLoadEverything), not just the explicit reload/get paths.
+        bool reload_blocked = reload_blocker.isCancelled();
+
         /// All loadings have unique loading IDs.
         size_t loading_id = next_id_counter;
         ++next_id_counter;
         info.loading_id = loading_id;
         info.loading_start_time = std::chrono::system_clock::now();
         info.loading_end_time = TimePoint{};
+        /// Reset the stale flag from a previous blocked attempt: this attempt has not been
+        /// decided yet, so `blocked` (and thus `LoadResult::blocked`) must not read as true
+        /// while this fresh attempt is in progress.
+        info.blocked = false;
 
         LOG_TRACE(log, "Will load the object '{}' {}, force = {}, loading_id = {}", info.name, (enable_async_loading ? std::string("in background") : "immediately"), forced_to_reload, info.loading_id);
 
@@ -1020,7 +1078,7 @@ private:
             ThreadFromGlobalPool thread;
             try
             {
-                thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
+                thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, reload_blocked, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
             }
             catch (...)
             {
@@ -1032,7 +1090,7 @@ private:
         else
         {
             /// Perform the loading immediately.
-            doLoading(info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, false);
+            doLoading(info.name, loading_id, forced_to_reload, reload_blocked, min_id_to_finish_loading_dependencies_, false);
         }
     }
 
@@ -1071,7 +1129,7 @@ private:
     }
 
     /// Does the loading, possibly in the separate thread.
-    void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupPtr thread_group = {})
+    void doLoading(const String & name, size_t loading_id, bool forced_to_reload, bool reload_blocked, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupPtr thread_group = {})
     {
         /// The blocker below covers this thread only, not the pipeline threads of the loading query.
         if (thread_group)
@@ -1107,6 +1165,18 @@ private:
             loading_set.insert(name);
             SCOPE_EXIT({ loading_set.erase(name); });
 
+            /// If reload is blocked and there is no previous version then do not load the object.
+            /// Loading can proceed with the previous version even if reload is blocked so that
+            /// a object that has already been loaded can be accessed.
+            if (reload_blocked && !previous_version_as_base_for_loading)
+            {
+                LOG_TRACE(log, "Could not load object '{}': Reload is blocked", name);
+                LoadingGuardForAsyncLoad lock(async, mutex);
+                finishLoadingSingleObject(name, loading_id, reload_blocked, lock);
+                event.notify_all();
+                return;
+            }
+
             /// Loading.
             auto [new_object, new_exception] = loadSingleObject(name, *info->config, previous_version_as_base_for_loading);
             if (!new_object && !new_exception)
@@ -1116,14 +1186,14 @@ private:
             {
                 LoadingGuardForAsyncLoad lock(async, mutex);
                 saveResultOfLoadingSingleObject(name, loading_id, info->object, new_object, new_exception, info->error_count, lock);
-                finishLoadingSingleObject(name, loading_id, lock);
+                finishLoadingSingleObject(name, loading_id, false, lock);
             }
             event.notify_all();
         }
         catch (...)
         {
             LoadingGuardForAsyncLoad lock(async, mutex);
-            finishLoadingSingleObject(name, loading_id, lock);
+            finishLoadingSingleObject(name, loading_id, false, lock);
             throw;
         }
     }
@@ -1246,13 +1316,15 @@ private:
     }
 
     /// Removes the references to the loading thread from the maps.
-    void finishLoadingSingleObject(const String & name, size_t loading_id, const LoadingGuardForAsyncLoad &)
+    void finishLoadingSingleObject(const String & name, size_t loading_id, bool blocked, const LoadingGuardForAsyncLoad &)
     {
         Info * info = getInfo(name);
         if (info && (info->loading_id == loading_id))
         {
             info->loading_id = info->state_id;
+            info->blocked = blocked;
         }
+
         min_id_to_finish_loading_dependencies.erase(std::this_thread::get_id());
 
         /// Add `loading_id` to the list of recently finished loadings.
@@ -1329,6 +1401,7 @@ private:
     std::unordered_map<std::thread::id, size_t> min_id_to_finish_loading_dependencies;
     size_t next_id_counter = 1; /// should always be > 0
     mutable pcg64 rnd_engine{randomSeed()};
+    ActionBlocker reload_blocker;
 };
 
 
@@ -1678,6 +1751,16 @@ void ExternalLoader::reloadConfig(const String & repository_name) const
 void ExternalLoader::reloadConfig(const String & repository_name, const String & path) const
 {
     loading_dispatcher->setConfiguration(config_files_reader->read(repository_name, path));
+}
+
+ActionLock ExternalLoader::getActionLock()
+{
+    return loading_dispatcher->getActionLock();
+}
+
+void ExternalLoader::reloadBlockedObjects()
+{
+    loading_dispatcher->reloadBlockedObjects();
 }
 
 ExternalLoader::LoadableMutablePtr ExternalLoader::createOrCloneObject(
