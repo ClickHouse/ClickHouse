@@ -655,7 +655,8 @@ still be constrained by other settings).
 )", 0) \
     DECLARE(Bool, enable_row_mask_update_coalescing, true, R"(
 Coalesce adjacent singleton `UPDATE _row_exists = 0` commands while mutating a
-Wide part. The persisted mutation commands and their versions are unchanged.
+Wide part with Full storage. The persisted mutation commands and their
+versions are unchanged.
 Set to false to execute each command separately.
 )", 0, \
         {"26.10", false, true, "Enable row-mask update coalescing by default"}) \
