@@ -1,0 +1,9 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT sum(visibleWidth(materialize('The quick brown fox jumps over the lazy dog, again and again and again.'))) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT sum(visibleWidth(materialize('Съешь же ещё этих мягких французских булок, да выпей чаю.'))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(visibleWidth(materialize('你好世界，这是一个测试字符串。你好世界，这是一个测试字符串。'))) FROM numbers(1000000) FORMAT Null</query>
+</test>
