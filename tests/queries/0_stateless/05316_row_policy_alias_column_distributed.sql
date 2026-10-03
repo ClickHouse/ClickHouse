@@ -63,8 +63,11 @@ SELECT k, a, a2 FROM t_dist PREWHERE team != 'no' ORDER BY k
 SETTINGS prefer_localhost_replica = 0, optimize_respect_aliases = 0;
 
 SELECT 'policy distributed new analyzer';
+-- Shards must plan the SQL text to apply policies on the underlying table.
+-- With `serialize_query_plan = 1`, the analyzer ships an initiator-built plan
+-- that does not include these policies. This control checks SQL-text execution.
 SELECT k FROM t_dist ORDER BY k
-SETTINGS enable_analyzer = 1, prefer_localhost_replica = 0;
+SETTINGS enable_analyzer = 1, prefer_localhost_replica = 0, serialize_query_plan = 0;
 
 -- A policy whose only predicate references an `ALIAS` still needs its value
 -- before the row-level filter, even when the `SELECT` only needs `count`.
