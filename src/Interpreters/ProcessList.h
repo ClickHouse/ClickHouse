@@ -40,7 +40,7 @@ namespace DB
 
 struct Settings;
 class IAST;
-class PipelineExecutor;
+class IExecutor;
 
 struct ProcessListForUser;
 class QueryStatus;
@@ -183,20 +183,20 @@ protected:
 
     struct ExecutorHolder
     {
-        explicit ExecutorHolder(PipelineExecutor * e) : executor(e) {}
+        explicit ExecutorHolder(IExecutor * e) : executor(e) {}
 
         void cancel();
 
         void remove();
 
-        PipelineExecutor * executor;
+        IExecutor * executor;
         std::mutex mutex;
     };
 
     using ExecutorHolderPtr = std::shared_ptr<ExecutorHolder>;
 
     /// Container of PipelineExecutors to be cancelled when a cancelQuery is received
-    std::unordered_map<PipelineExecutor *, ExecutorHolderPtr> executors;
+    std::unordered_map<IExecutor *, ExecutorHolderPtr> executors;
 
     enum class QueryStreamsStatus : uint8_t
     {
@@ -298,10 +298,10 @@ public:
     void setAllDataSent() { is_all_data_sent = true; }
 
     /// Adds a pipeline to the QueryStatus
-    void addPipelineExecutor(PipelineExecutor * e);
+    void addPipelineExecutor(IExecutor * e);
 
     /// Removes a pipeline to the QueryStatus
-    void removePipelineExecutor(PipelineExecutor * e);
+    void removePipelineExecutor(IExecutor * e);
 
     /// Checks the query time limits (cancelled or timeout)
     bool checkTimeLimit();
@@ -381,15 +381,13 @@ struct ProcessListForUser
 
     ProcessListForUserInfo getInfo(bool get_profile_events = false) const;
 
-    /// Clears MemoryTracker for the user.
-    /// Sometimes it is important to reset the MemoryTracker, because it may accumulate skew
-    ///  due to the fact that there are cases when memory can be allocated while processing the query, but released later.
-    void resetTrackers()
+    /// The amount and the limits are left alone: each query settles what it holds when it ends, and the query
+    /// starting the period writes the limits itself (clearing them here would leave the user unlimited for a moment).
+    void startNewPeriod()
     {
         /// TODO: should we drop user_temp_data_on_disk here?
-        user_memory_tracker.reset();
-        /// Called when the user's last query leaves, so clear the sticky level too - the next query
-        /// must not inherit the previous one's cooldown.
+        user_memory_tracker.resetPeak();
+        /// The query starting the period must not inherit the cooldown left by the previous one.
         user_memory_pressure_monitor.reset();
 
         /// NOTE: we should not reset user_throttler here because TokenBucket throttling MUST account periods of inactivity for correct work
