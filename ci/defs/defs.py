@@ -811,7 +811,7 @@ class ArtifactConfigs:
         path=[
             f"{TEMP_DIR}/build/programs/*_fuzzer",
             f"{TEMP_DIR}/build/programs/*_fuzzer.options",
-            f"{TEMP_DIR}/build/programs/all.dict",
+            f"{TEMP_DIR}/build/programs/*.dict",
         ],
     )
     fuzzers_corpus = Artifact.Config(
