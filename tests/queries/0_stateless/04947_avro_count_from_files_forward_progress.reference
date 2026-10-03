@@ -27,6 +27,8 @@ optimize_count_from_files = 0
 1
 1
 1
+1
+1
 --- the count shortcut answers from the block header without decoding the payload
 502
 1

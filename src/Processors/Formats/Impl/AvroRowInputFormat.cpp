@@ -1286,19 +1286,10 @@ bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
     return false;
 }
 
-/// A header-only count is only as good as the library's check that a declared count fits the block,
-/// and that check runs against a materialized, CRC-verified size only for the `snappy` codec.
+/// A count taken from the block headers is only sound while the library checks every declared count against the payload.
 bool AvroRowInputFormat::supportsCountRows() const
 {
-    if (!file_reader_ptr)
-        return false;
-
-    const auto & metadata = file_reader_ptr->metadata();
-    auto it = metadata.find("avro.codec");
-    if (it == metadata.end())
-        return false;
-
-    return std::string_view(reinterpret_cast<const char *>(it->second.data()), it->second.size()) == "snappy";
+    return file_reader_ptr && file_reader_ptr->checksDeclaredObjectCount();
 }
 
 size_t AvroRowInputFormat::countRows(size_t max_block_size)

@@ -65,6 +65,10 @@ open(dst, 'wb').write(data + varint(count << 1) + varint(len(payload) << 1) + pa
 # pipeline handoff the flaky check's ThreadFuzzer can sleep at.
 ROWS=500
 
+# The bound has to hold however deeply the schema nests.
+DEEP="number"
+for _ in $(seq 65); do DEEP="tuple($DEEP)"; done
+
 # An all-NULL column encodes to zero payload bytes, so nullrows.avro legitimately declares 1000 rows
 # in a few hundred bytes and deflate.avro 200000 in under a kilobyte.
 $CLICKHOUSE_LOCAL -q "
@@ -85,6 +89,9 @@ $CLICKHOUSE_LOCAL -q "
     SETTINGS output_format_avro_codec = 'zstd';
     SELECT NULL AS a FROM numbers(1000)
     INTO OUTFILE '$DIR/nullrows-snappy.avro' TRUNCATE FORMAT Avro
+    SETTINGS output_format_avro_codec = 'snappy';
+    SELECT $DEEP AS t FROM numbers(10)
+    INTO OUTFILE '$DIR/deep-snappy.avro' TRUNCATE FORMAT Avro
     SETTINGS output_format_avro_codec = 'snappy'"
 
 # A negative object count never reaches zero by decrementing, so the count call used to spin here
@@ -94,6 +101,7 @@ avro_append_block "$DIR/ok.avro" "$DIR/negative.avro" -5 0
 avro_append_block "$DIR/ok.avro" "$DIR/negbytes.avro" 10 -1
 avro_append_block "$DIR/ok.avro" "$DIR/huge.avro" 1000000000 0
 avro_append_snappy_block "$DIR/ok-snappy.avro" "$DIR/huge-snappy.avro" 1000000000 8
+avro_append_snappy_block "$DIR/deep-snappy.avro" "$DIR/huge-deep-snappy.avro" 1000000000 8
 avro_append_block "$DIR/deflate.avro" "$DIR/huge-deflate.avro" 1000000000 0
 avro_append_block "$DIR/ok-zstd.avro" "$DIR/huge-zstd.avro" 1000000000 0
 
@@ -105,7 +113,7 @@ avro_append_snappy_block "$DIR/ok-snappy.avro" "$DIR/badpayload-snappy.avro" 2 8
 # Both fields inflated together, which passes a fit check that compares them to each other.
 avro_append_block "$DIR/ok.avro" "$DIR/inflated-both.avro" 1000000000 2000000000
 
-for f in ok nullrows deflate ok-snappy ok-zstd nullrows-snappy negative negbytes huge huge-snappy huge-deflate huge-zstd badpayload badpayload-snappy inflated-both; do
+for f in ok nullrows deflate ok-snappy ok-zstd nullrows-snappy negative negbytes huge huge-snappy huge-deep-snappy huge-deflate huge-zstd badpayload badpayload-snappy inflated-both; do
     [ -s "$DIR/$f.avro" ] || echo "MISSING FIXTURE $f.avro"
 done
 
@@ -143,7 +151,7 @@ $CLICKHOUSE_LOCAL -q "
 
 echo '--- a declared count the payload cannot hold is rejected at the header, not counted'
 for setting in 1 0; do
-    for f in huge.avro huge-snappy.avro; do
+    for f in huge.avro huge-snappy.avro huge-deep-snappy.avro; do
         $CLICKHOUSE_LOCAL -q "
             SELECT count() FROM file('$DIR/$f', Avro)
             $BOUND, optimize_count_from_files = $setting" 2>&1 | grep -c -F 'in block header cannot fit in'
@@ -162,7 +170,7 @@ $CLICKHOUSE_LOCAL -q "
 
 # Where the declared payload size is never materialized the shortcut must be declined and both
 # settings reach the read path: null only compares two fields of the same corrupted header, which
-# inflated-both passes, and deflate and zstd decompress lazily (ClickHouse/avro c488095932fb).
+# inflated-both passes, and deflate and zstd decompress lazily.
 echo '--- the shortcut is declined where the declared payload size is not verified'
 for f in inflated-both.avro badpayload.avro huge-deflate.avro huge-zstd.avro; do
     for setting in 1 0; do
