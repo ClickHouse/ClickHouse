@@ -3,7 +3,6 @@ import uuid
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import wait_condition
 
 cluster = ClickHouseCluster(__file__)
 
@@ -107,15 +106,8 @@ def insert_data(node, matching_rows, body_length):
 
 
 def parallel_replicas_coordinators(query_id):
-    """Names of the nodes that ran a parallel-replicas read, one entry per read.
+    """Names of the nodes that hosted a parallel-replicas reading coordinator """
 
-    `ParallelReplicasQueryCount` is counted where the reading coordinator lives. A `Distributed` hop
-    sends its sub-query to one replica of the shard, and that replica is the one that then reads the
-    `MergeTree` with parallel replicas, so the coordinator is on whichever replica of the instance was
-    picked - not on the server the outer cluster addressed. Every node has to be looked at.
-
-    How many replicas each read ended up using is deliberately not asserted: with data this small one
-    replica can serve the whole read before the other asks for work."""
     coordinators = []
     for node in nodes:
         # SYSTEM FLUSH LOGS is not cluster-aware, it has to be issued on each node separately.
@@ -123,7 +115,7 @@ def parallel_replicas_coordinators(query_id):
         reads = int(
             node.query(
                 f"""
-                SELECT sum(ProfileEvents['ParallelReplicasQueryCount'])
+                SELECT countIf(ProfileEvents['ParallelReplicasNumRequests'] > 0)
                 FROM system.query_log
                 WHERE initial_query_id = '{query_id}' AND type = 'QueryFinish'
                 SETTINGS enable_parallel_replicas = 0
@@ -131,33 +123,14 @@ def parallel_replicas_coordinators(query_id):
             )
         )
         coordinators += [node.name] * reads
-    return sorted(coordinators)
-
-
-def one_parallel_replicas_read_per_instance(coordinators):
-    return all(
-        sum(name in [node.name for node in instance_nodes] for name in coordinators) == 1
-        for _, instance_nodes in INSTANCES
-    )
-
-
-def wait_for_one_parallel_replicas_read_per_instance(query_id):
-    """A coordinator's own query can still be finishing when the initiator already has all the data."""
-    return wait_condition(
-        lambda: parallel_replicas_coordinators(query_id),
-        one_parallel_replicas_read_per_instance,
-        max_attempts=30,
-        delay=1,
-    )
+    return coordinators
 
 
 @pytest.mark.parametrize("prefer_localhost_replica", [0, 1])
 def test_parallel_replicas_over_distributed_over_distributed(
     start_cluster, prefer_localhost_replica
 ):
-    # Without parallel replicas the query is an ordinary two-hop distributed read, which is the oracle
-    # for the run below. The expected value is spelled out as well, so a bug that affects both paths
-    # equally still fails the test.
+    # Without parallel replicas
     assert (
         hub_nodes[0].query(QUERY, settings={"enable_parallel_replicas": 0}) == EXPECTED
     )
@@ -181,8 +154,9 @@ def test_parallel_replicas_over_distributed_over_distributed(
     )
 
     # Exactly one parallel-replicas read inside each instance, over that instance's own `default`
-    # cluster of two replicas. The outer cluster cannot use parallel replicas for its own hop, since
-    # each of its shards has a single replica, but that says nothing about the clusters below it.
-    # Without this the test would also pass when parallel replicas are silently turned off somewhere
-    # along the chain.
-    wait_for_one_parallel_replicas_read_per_instance(query_id)
+    # cluster of two replicas
+    coordinators = parallel_replicas_coordinators(query_id)
+    assert [
+        sum(name in [node.name for node in instance_nodes] for name in coordinators)
+        for _, instance_nodes in INSTANCES
+    ] == [1, 1], coordinators
