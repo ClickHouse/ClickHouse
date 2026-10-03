@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-import itertools
 import logging
 import os
 import random
@@ -83,23 +82,22 @@ def _last_exception(fuzzer_log: Path, error_code: int, error_name: str) -> str:
     That stdout can quote `Code: N.` too, so a match counts only once its suffix is found."""
     marker = f"Code: {error_code}. DB::Exception:"
     suffix = f"({error_name})"
-    line_numbers = Shell.get_output(
-        f"rg --text -n -F '{marker}' {fuzzer_log} | tail -n20 | cut -d: -f1",
-        verbose=False,
-    ).split()
-    for line_number in reversed(line_numbers):
-        with open(fuzzer_log, "r", encoding="utf-8", errors="replace") as fh:
-            lines = itertools.islice(fh, int(line_number) - 1, int(line_number) + 99)
-            first = next(lines)
-            block = [first[first.index(marker) :].rstrip("\n")]
-            if suffix not in block[0]:
-                for line in lines:
-                    block.append(line.rstrip("\n"))
-                    if suffix in line:
-                        break
-        if suffix in block[-1]:
-            return "\n".join(block).strip()
-    return ""
+    found = ""
+    # Open candidate blocks; one gives up after 100 lines without its suffix
+    candidates: list[list[str]] = []
+    with open(fuzzer_log, "r", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.rstrip("\n")
+            for block in candidates:
+                block.append(line)
+            if marker in line:
+                candidates.append([line[line.index(marker) :]])
+            if suffix in line:
+                # The oldest open block is the one whose message the suffix closes
+                found = "\n".join(candidates[0]).strip() if candidates else found
+                candidates = []
+            candidates = [block for block in candidates if len(block) < 100]
+    return found
 
 # A client-origin 241 line: "Code: 241" with NO "Received from" on the same line.
 # clickhouse-client raises 241 for its own --max_memory_usage_in_client cap (see
