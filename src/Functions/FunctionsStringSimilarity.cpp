@@ -604,7 +604,7 @@ For case-insensitive search or UTF-8 strings, use [`ngramSearchCaseInsensitive`]
         "SELECT ngramSearch('ClickHouse', 'Clicx')",
         R"(
 ┌─ngramSearch('ClickHouse', 'Clicx')─┐
-│                                 0.5 │
+│                                0.5 │
 └────────────────────────────────────┘
         )"
     }
@@ -752,7 +752,7 @@ For input strings longer than 32,768 bytes, it has the same shortcut and excepti
 
     FunctionDocumentation::Description description_ngram_search_case_insensitive_utf8 = R"(
 Provides a case-insensitive UTF-8 variant of [`ngramSearch`](#ngramSearch).
-Assumes `haystack` and `needle` are UTF-8 strings and ignores case. It uses 3-grams of Unicode code points.
+Assumes `haystack` and `needle` are UTF-8 strings. It uses 3-grams of Unicode code points and a byte-level case-folding approximation. This works for ASCII and most Cyrillic letters, but does not provide full Unicode case folding.
 It estimates the proportion of `needle` 3-gram hash-bucket entries matched by `haystack`. See [`ngramSearch`](#ngramSearch) for details of how the score is calculated.
 
 If `needle` is shorter than three Unicode code points, it has no 3-grams and the function returns `1`, regardless of `haystack`.
