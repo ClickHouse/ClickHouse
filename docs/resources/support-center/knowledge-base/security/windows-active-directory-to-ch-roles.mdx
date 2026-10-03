@@ -6,7 +6,7 @@ tags: ['Tools and Utilities']
 keywords: ['Windows']
 ---
 
-## Example
+## Example {#example}
 
 This example shows how AD users that belong to different AD security groups can be given role access in ClickHouse.  It also shows how a user may be added to multiple AD user groups so they can have access provided by multiple roles.
 
@@ -97,10 +97,16 @@ https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-
 	<ldap>
 		<server>marsnet2_ad</server>
 		<role_mapping>
-			<base_dn>OU=Groups,OU=ClickHouse,DC=marsnet2,DC=local</base_dn>
-			<search_filter>(&amp;(objectClass=group)(member={user_dn}))</search_filter>
-			<attribute>CN</attribute>
-			<scope>subtree</scope>
+			<base_dn>{user_dn}</base_dn>
+			<scope>base</scope>
+			<search_filter>(objectClass=*)</search_filter>
+			<attribute>memberOf</attribute>
+			<rdn_attribute>CN</rdn_attribute>
+			<groups>
+				<group>CN=clickhouse_ad_admins,OU=Groups,OU=ClickHouse,DC=marsnet2,DC=local</group>
+				<group>CN=clickhouse_ad_db1_users,OU=Groups,OU=ClickHouse,DC=marsnet2,DC=local</group>
+				<group>CN=clickhouse_ad_db2_users,OU=Groups,OU=ClickHouse,DC=marsnet2,DC=local</group>
+			</groups>
 			<prefix>clickhouse_</prefix>
 		</role_mapping>
 	</ldap>
@@ -112,11 +118,28 @@ https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-
 |ldap|This contains the settings for the ldap servers, in this AD that will be used|NA|
 |server|This is the tag that was define in the `<ldap_servers>` section|marsnet2_ad|
 |role_mapping|definition on how the users authenticated will be mapped between AD groups and ClickHouse roles|NA|
-|base_dn|AD path that the system will use to start search for AD groups|OU=Groups,OU=ClickHouse,DC=marsnet2,DC=local|
-|search_filter|ldap search filter to find the AD groups|`(&(objectClass=group)(member={user_dn}))`|
-|attribute|Which AD attribute field should be used to identify the user|CN|
-|scope|Which levels in the base DN the system should search for the groups|subtree|
+|base_dn|The entry to read; `{user_dn}` is the DN of the user who logged in, detected by `user_dn_detection`|`{user_dn}`|
+|scope|Read only the user's own entry|base|
+|search_filter|ldap search filter; the user's own entry always matches|`(objectClass=*)`|
+|attribute|The AD attribute listing the DNs of the groups the user is a direct member of|memberOf|
+|rdn_attribute|The part of each group DN that becomes the role name|CN|
+|groups|Allow-list of the AD groups that may grant ClickHouse roles. The full DN pins the OU, so a group with the same CN in another OU does not match|`CN=clickhouse_ad_admins,OU=Groups,OU=ClickHouse,DC=marsnet2,DC=local`|
 |prefix|Prefix for the names of the groups in AD, this prefix will be removed to find the roles in ClickHouse|clickhouse_|
+
+To grant roles through nested AD groups (`memberOf` lists direct memberships only), search the groups with the `LDAP_MATCHING_RULE_IN_CHAIN` rule instead, keeping `rdn_attribute` and `groups` as above:
+```
+<role_mapping>
+	<base_dn>OU=Groups,OU=ClickHouse,DC=marsnet2,DC=local</base_dn>
+	<scope>subtree</scope>
+	<search_filter>(&amp;(objectClass=group)(member:1.2.840.113556.1.4.1941:={user_dn}))</search_filter>
+	<attribute>dn</attribute>
+	<rdn_attribute>CN</rdn_attribute>
+	<groups>
+		<group>CN=clickhouse_ad_admins,OU=Groups,OU=ClickHouse,DC=marsnet2,DC=local</group>
+	</groups>
+	<prefix>clickhouse_</prefix>
+</role_mapping>
+```
 
 Refer to documentation for full set of options:
 https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-external-user-directory
