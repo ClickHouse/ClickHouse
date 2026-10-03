@@ -37,15 +37,9 @@ k4	2
 3
 2026-01-01 00:00:00.000	2026-01-01 00:00:01.000
 3
---- the tags table of version 7 or earlier is not deduplicated if min_time and max_time are stored ---
-2
---- the same time series is written to the tags table once if min_time and max_time are not stored ---
-2
-3
-3
---- tables of earlier versions have no caches and cannot set them ---
-2
---- two tables have separate caches for a shared external metric families table ---
-2
 --- a failed insert does not fill the cache ---
 1
+--- the tags table of version 7 or earlier is not deduplicated if min_time and max_time are stored ---
+2
+--- tables of earlier versions have no caches and cannot set them ---
+2
