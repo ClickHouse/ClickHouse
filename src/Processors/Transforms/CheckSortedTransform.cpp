@@ -1,6 +1,8 @@
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Columns/IColumn.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldVisitorDump.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Core/SortDescription.h>
 
@@ -13,8 +15,14 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
+namespace FailPoints
+{
+extern const char check_sorted_transform_pause[];
+extern const char check_sorted_transform_after_loop_pause[];
+}
+
 CheckSortedTransform::CheckSortedTransform(SharedHeader header, const SortDescription & sort_description)
-    : ISimpleTransform(header, header, false)
+    : ISimpleTransform(header, header, true)
 {
     for (const auto & column_description : sort_description)
         sort_description_map.emplace_back(column_description, header->getPositionByName(column_description.column_name));
@@ -64,12 +72,29 @@ void CheckSortedTransform::transform(Chunk & chunk)
 
     ++rows_read;
 
+    if (isCancelled())
+    {
+        LOG_TEST(getLogger("CheckSortedTransform"), "Cancelled before processing chunk");
+        stopReading();
+        chunk.clear();
+        return;
+    }
+
+    FailPointInjection::pauseFailPoint(FailPoints::check_sorted_transform_pause);
+
     if (!last_row.empty())
         check(last_row, 0, chunk_columns, 0);
 
     for (size_t i = 1; i < num_rows; ++i)
     {
         ++rows_read;
+        if (isCancelled())
+        {
+            LOG_TEST(getLogger("CheckSortedTransform"), "Cancelled during row processing");
+            stopReading();
+            chunk.clear();
+            return;
+        }
         check(chunk_columns, i - 1, chunk_columns, i);
     }
 
@@ -79,6 +104,16 @@ void CheckSortedTransform::transform(Chunk & chunk)
         auto column = chunk_column->cloneEmpty();
         column->insertFrom(*chunk_column, num_rows - 1);
         last_row.emplace_back(std::move(column));
+    }
+
+    FailPointInjection::pauseFailPoint(FailPoints::check_sorted_transform_after_loop_pause);
+
+    if (isCancelled())
+    {
+        LOG_TEST(getLogger("CheckSortedTransform"), "Cancelled after processing chunk");
+        stopReading();
+        chunk.clear();
+        return;
     }
 
     ++chunk_num;
