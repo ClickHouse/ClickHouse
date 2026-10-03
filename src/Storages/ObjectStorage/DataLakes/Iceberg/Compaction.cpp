@@ -187,6 +187,11 @@ static bool isCurrentManifestListAboveThreshold(
     return manifest_list_deserializer.rows() > threshold;
 }
 
+namespace
+{
+void checkIfIcebergHistorySupported(const IcebergHistory & history);
+}
+
 static Plan getPlan(
     IcebergHistory snapshots_info,
     const DataLakeStorageSettings & data_lake_settings,
