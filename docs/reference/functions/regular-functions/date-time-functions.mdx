@@ -1969,7 +1969,7 @@ makeDate(year, day_of_year)
 - `year` — Year number. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
 - `month` — Month number (1-12). [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
 - `day` — Day of the month (1-31). [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
-- `day_of_year` — Day of the year (1-365). [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
+- `day_of_year` — Day of the year (1-365, or 366 in leap years). [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
 
 **Returned value**
 
@@ -2022,7 +2022,7 @@ makeDate32(year, day_of_year)
 - `year` — Year number. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
 - `month` — Month number (1-12). [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
 - `day` — Day of the month (1-31). [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
-- `day_of_year` — Day of the year (1-365). [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
+- `day_of_year` — Day of the year (1-365, or 366 in leap years). [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
 
 **Returned value**
 
@@ -2191,7 +2191,7 @@ This function is non-deterministic: it can return different results for the same
 now([timezone])
 ```
 
-**Aliases**: `localtimestamp`, `current_timestamp`
+**Aliases**: `current_timestamp`, `localtimestamp`
 
 **Arguments**
 

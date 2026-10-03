@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "Operators",
           "pages": [
-            "reference/operators/index",
-            "reference/operators/exists",
-            "reference/operators/distributed-ddl"
+            "reference/operators/index"
           ]
         }
       ]
@@ -420,6 +418,7 @@
             "reference/engines/database-engines/index",
             "reference/engines/database-engines/atomic",
             "reference/engines/database-engines/backup",
+            "reference/engines/database-engines/cluster",
             "reference/engines/database-engines/datalake",
             "reference/engines/database-engines/dictionary",
             "reference/engines/database-engines/filesystem",
@@ -946,6 +945,7 @@
           ]
         },
         "reference/formats/SQLInsert",
+        "reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",
@@ -970,15 +970,6 @@
         "reference/formats/Values",
         "reference/formats/Vertical",
         "reference/formats/XML"
-      ]
-    },
-    {
-      "expandable": true,
-      "expanded": false,
-      "group": "Interfaces",
-      "pages": [
-        "reference/interfaces/specs/NativeProtocol",
-        "reference/interfaces/specs/NativeFormat"
       ]
     },
     {
