@@ -127,7 +127,7 @@ public:
             new_blocks_bytes += new_blocks.back().allocatedBytes();
             const auto & memory_settings = storage.getMemorySettingsRef();
             if (!memory_settings[MemorySetting::max_bytes_to_keep] && !memory_settings[MemorySetting::max_rows_to_keep])
-                checkTemporaryTableMemoryUsage(storage.total_size_bytes.load(std::memory_order_relaxed) + new_blocks_bytes);
+                checkTemporaryTableMemoryUsage(storage.data.get()->bytes + new_blocks_bytes);
         }
     }
 
@@ -167,7 +167,7 @@ public:
             new_data->blocks.erase(new_data->blocks.begin());
         }
 
-        checkTemporaryTableMemoryUsage(new_total_bytes);
+        checkTemporaryTableMemoryUsage(new_data->bytes);
 
         // append new data to modified storage table and commit
         new_data->blocks.insert(new_data->blocks.end(), new_blocks.begin(), new_blocks.end());

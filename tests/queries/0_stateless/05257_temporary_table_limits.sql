@@ -14,7 +14,7 @@ CREATE OR REPLACE TEMPORARY TABLE tmp3 (x UInt64); -- { serverError TOO_MANY_TAB
 SELECT count() FROM remote('127.0.0.{1,2}', numbers(10)) WHERE number GLOBAL IN (SELECT number FROM numbers(5));
 DROP TEMPORARY TABLE tmp1;
 CREATE TEMPORARY TABLE tmp3 (x UInt64);
-SELECT name FROM system.tables WHERE is_temporary ORDER BY name;
+SELECT name FROM system.tables WHERE database = '' AND is_temporary ORDER BY name;
 SET max_temporary_tables = 3;
 CREATE TEMPORARY TABLE tmp1 (x UInt64);
 DROP TEMPORARY TABLE tmp1;
@@ -31,7 +31,7 @@ INSERT INTO tmp_memory SELECT number FROM numbers(1000000) SETTINGS max_threads 
 SELECT count() FROM tmp_memory;
 -- Parallel sinks commit independently, but the table never exceeds the limit.
 INSERT INTO tmp_memory SELECT number FROM numbers(1000000) SETTINGS max_threads = 4, max_insert_threads = 4; -- { serverError TOO_MANY_BYTES }
-SELECT total_bytes <= 1048576 FROM system.tables WHERE is_temporary AND name = 'tmp_memory';
+SELECT total_bytes <= 1048576 FROM system.tables WHERE database = '' AND is_temporary AND name = 'tmp_memory';
 TRUNCATE TABLE tmp_memory;
 INSERT INTO tmp_memory SELECT number FROM numbers(1000);
 -- The limit is taken from the settings of the `INSERT` query.
@@ -42,7 +42,7 @@ DROP TEMPORARY TABLE tmp_memory;
 -- A temporary table with the default engine.
 SET default_temporary_table_engine = 'Memory';
 CREATE TEMPORARY TABLE tmp_default AS SELECT number FROM numbers(1000000); -- { serverError TOO_MANY_BYTES }
-SELECT engine, total_bytes <= 1048576 FROM system.tables WHERE is_temporary AND name = 'tmp_default';
+SELECT engine, total_bytes <= 1048576 FROM system.tables WHERE database = '' AND is_temporary AND name = 'tmp_default';
 DROP TEMPORARY TABLE tmp_default;
 -- The eviction by `max_rows_to_keep` happens before the check: each insert replaces the previous one.
 CREATE TEMPORARY TABLE tmp_evicting (x UInt64) ENGINE = Memory SETTINGS max_rows_to_keep = 50000;
