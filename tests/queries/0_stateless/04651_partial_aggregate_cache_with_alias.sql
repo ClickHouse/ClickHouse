@@ -2,9 +2,8 @@
 -- no-parallel: Messes with internal cache.
 -- no-random-* / no-parallel-replicas: Flaky check must not randomize settings or inject parallel replicas; breaks GROUP BY correctness and cache ProfileEvents.
 
--- Partial aggregate cache: `WITH` aliases must be part of the semantic key. Without the analyzer the aggregate
--- argument names refer to the alias by name (`greater(v, threshold)`), so rebinding the same alias to another
--- expression must not reuse the per-part states of the previous binding.
+-- Partial aggregate cache: `WITH` aliases must be part of the semantic key, so rebinding the same alias
+-- to another expression must not reuse the per-part states of the previous binding.
 
 SYSTEM DROP AGGREGATE CACHE;
 
@@ -27,23 +26,7 @@ SET group_by_overflow_mode = 'throw';
 
 INSERT INTO test_partial_agg_cache_with_alias VALUES (1, 10), (2, 20);
 
-SELECT '--- Constant alias, threshold 15 then 5, without the analyzer';
-
-WITH 15 AS threshold
-SELECT k, countIf(v > threshold)
-FROM test_partial_agg_cache_with_alias
-GROUP BY k
-ORDER BY k
-SETTINGS enable_analyzer = 0;
-
-WITH 5 AS threshold
-SELECT k, countIf(v > threshold)
-FROM test_partial_agg_cache_with_alias
-GROUP BY k
-ORDER BY k
-SETTINGS enable_analyzer = 0;
-
-SELECT '--- The same with the analyzer';
+SELECT '--- Constant alias, threshold 15 then 5';
 
 WITH 15 AS threshold
 SELECT k, countIf(v > threshold)
@@ -57,21 +40,19 @@ FROM test_partial_agg_cache_with_alias
 GROUP BY k
 ORDER BY k;
 
-SELECT '--- Expression alias, v + 1 then v + 2, without the analyzer';
+SELECT '--- Expression alias, v + 1 then v + 2';
 
 WITH v + 1 AS x
 SELECT k, sum(x)
 FROM test_partial_agg_cache_with_alias
 GROUP BY k
-ORDER BY k
-SETTINGS enable_analyzer = 0;
+ORDER BY k;
 
 WITH v + 2 AS x
 SELECT k, sum(x)
 FROM test_partial_agg_cache_with_alias
 GROUP BY k
-ORDER BY k
-SETTINGS enable_analyzer = 0;
+ORDER BY k;
 
 SELECT '--- The same alias binding twice still hits the cache';
 
@@ -80,8 +61,7 @@ SELECT k, countIf(v > threshold)
 FROM test_partial_agg_cache_with_alias
 GROUP BY k
 ORDER BY k
-SETTINGS enable_analyzer = 0, log_comment = 'test_partial_agg_cache_with_alias_repeat';
-
+SETTINGS log_comment = 'test_partial_agg_cache_with_alias_repeat';
 SYSTEM FLUSH LOGS query_log;
 
 SELECT

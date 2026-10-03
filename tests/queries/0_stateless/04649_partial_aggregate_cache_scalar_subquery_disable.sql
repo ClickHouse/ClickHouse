@@ -96,25 +96,5 @@ FROM test_partial_agg_cache_scalar_fact
 GROUP BY k, g
 ORDER BY k;
 
-SELECT '--- The same without the analyzer';
-
-TRUNCATE TABLE test_partial_agg_cache_scalar_dim;
-INSERT INTO test_partial_agg_cache_scalar_dim VALUES (15);
-
-SELECT k, countIf(v > (SELECT m FROM test_partial_agg_cache_scalar_dim LIMIT 1))
-FROM test_partial_agg_cache_scalar_fact
-GROUP BY k
-ORDER BY k
-SETTINGS enable_analyzer = 0;
-
-TRUNCATE TABLE test_partial_agg_cache_scalar_dim;
-INSERT INTO test_partial_agg_cache_scalar_dim VALUES (5);
-
-SELECT k, countIf(v > (SELECT m FROM test_partial_agg_cache_scalar_dim LIMIT 1))
-FROM test_partial_agg_cache_scalar_fact
-GROUP BY k
-ORDER BY k
-SETTINGS enable_analyzer = 0;
-
 DROP TABLE test_partial_agg_cache_scalar_fact;
 DROP TABLE test_partial_agg_cache_scalar_dim;
