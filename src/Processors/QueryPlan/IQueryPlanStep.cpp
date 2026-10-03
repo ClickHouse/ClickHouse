@@ -7,10 +7,12 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <fmt/format.h>
 #include <algorithm>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -50,15 +52,62 @@ void IQueryPlanStep::setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowSta
     dataflow_cache_updater = std::move(updater);
 }
 
-IQueryPlanStep::RemoveUnusedColumnsResult IQueryPlanStep::removeUnusedColumns(const std::vector<size_t> & /*required_output_positions*/, bool /*remove_inputs*/)
+IQueryPlanStep::PrunedInput IQueryPlanStep::PrunedInput::unchanged(const SharedHeader & header)
+{
+    return {.dropped_positions = {}, .header = header};
+}
+
+bool IQueryPlanStep::alignInputsWithPrunedChild(
+    ActionsDAG & dag, const std::vector<InputColumnUsage> & usages, const Block & old_header, const PrunedInput & pruned)
+{
+    std::vector<bool> kept(old_header.columns(), true);
+    for (size_t position : pruned.dropped_positions)
+        kept.at(position) = false;
+
+    const auto header_columns = mapHeaderColumnsToInputs(dag.getInputs(), old_header);
+
+    std::unordered_set<const ActionsDAG::Node *> kept_inputs;
+    ColumnsWithTypeAndName to_consume;
+    for (size_t position = 0; position < old_header.columns(); ++position)
+    {
+        const auto usage = usages.at(position);
+        if (!kept[position])
+        {
+            if (usage == InputColumnUsage::ReadNeeded || usage == InputColumnUsage::PassesThroughNeeded)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "The child dropped column {}, which the step needs", old_header.getByPosition(position).name);
+            continue;
+        }
+
+        if (!header_columns.passesThrough(position))
+            kept_inputs.insert(dag.getInputs()[header_columns.read_by[position]]);
+        else if (usage == InputColumnUsage::PassesThroughDropped)
+            to_consume.push_back(old_header.getByPosition(position));
+    }
+
+    const size_t kept_count = old_header.columns() - pruned.dropped_positions.size();
+    for (size_t position = kept_count; position < pruned.header->columns(); ++position)
+        to_consume.push_back(pruned.header->getByPosition(position));
+
+    bool changed = dag.removeUnusedActions(kept_inputs);
+    for (const auto & column : to_consume)
+        dag.addInput(column.name, column.type);
+
+    return changed || !to_consume.empty();
+}
+
+IQueryPlanStep::RemoveUnusedColumnsResult
+IQueryPlanStep::removeUnusedColumns(const std::vector<size_t> & /*unneeded_output_positions*/, const std::vector<PrunedInput> & /*inputs*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeUnusedColumns is not implemented for step {}", getName());
 }
 
-bool IQueryPlanStep::canRemoveColumnsFromOutput() const
+IQueryPlanStep::UnneededInputPositions
+IQueryPlanStep::getUnneededColumns(const std::vector<size_t> & /*unneeded_output_positions*/) const
 {
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getUnneededColumns is not implemented for step {}", getName());
 }
+
 
 bool IQueryPlanStep::hasCorrelatedExpressions() const
 {

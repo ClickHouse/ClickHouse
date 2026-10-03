@@ -1,6 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 
 #include <base/scope_guard.h>
@@ -437,108 +438,239 @@ bool JoinStepLogical::canRemoveUnusedColumns() const
         && !has_duplicated_condition_input(*input_headers.at(1), right_condition_input_names);
 }
 
-JoinStepLogical::RemoveUnusedColumnsResult JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs)
+JoinStepLogical::UnneededColumnsPlan
+JoinStepLogical::analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
 {
-    auto & actions_dag = *expression_actions.getActionsDAG();
-    const size_t original_input_count = actions_dag.getInputs().size();
-    ActionsDAG::NodeRawConstPtrs required_nodes;
-    ActionsDAG::NodeRawConstPtrs new_actions_after_join = actions_after_join;
+    const auto & actions_dag = *expression_actions.getActionsDAG();
+
+    UnneededColumnsPlan plan;
 
     /// For JoinStepLogical, the output header maps directly to DAG outputs (no pass-throughs).
-    /// Build a set of required DAG output positions.
-    std::set<size_t> required_positions_set(required_output_positions.begin(), required_output_positions.end());
+    const std::set<size_t> unneeded_positions_set(unneeded_output_positions.begin(), unneeded_output_positions.end());
 
-    /// Track which original output positions survive (required + non-removable like dummy).
-    std::vector<size_t> kept_output_positions;
-    kept_output_positions.reserve(required_output_positions.size());
-
-    bool removed_any_output = false;
+    ActionsDAG::NodeRawConstPtrs kept_output_nodes;
     const auto & dag_outputs = actions_dag.getOutputs();
-    for (size_t i = 0; i < dag_outputs.size(); ++i)
+    if (!unneeded_positions_set.empty() && *unneeded_positions_set.rbegin() >= dag_outputs.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Unneeded output position {} is out of range for the {} outputs of the join",
+            *unneeded_positions_set.rbegin(), dag_outputs.size());
+    for (size_t position = 0; position < dag_outputs.size(); ++position)
     {
-        const auto * output_node = dag_outputs[i];
-        if (required_positions_set.contains(i))
-        {
-            required_nodes.push_back(output_node);
-            kept_output_positions.push_back(i);
-        }
-        else if (!isDummyColumnOfThisStep(output_node))
-        {
-            /// Do not remove join_dummy_result from the outputs, because it was added to ensure at least one output column
-            removed_any_output = true;
-            new_actions_after_join.erase(
-                std::remove(new_actions_after_join.begin(), new_actions_after_join.end(), output_node), new_actions_after_join.end());
-        }
+        const auto * output_node = dag_outputs[position];
+        /// Do not remove join_dummy_result from the outputs, because it was added to ensure at least one
+        /// output column, so it is kept even when it is not required.
+        if (!unneeded_positions_set.contains(position) || isDummyColumnOfThisStep(output_node))
+            kept_output_nodes.push_back(output_node);
         else
+            plan.dropped_output_positions.push_back(position);
+    }
+
+    /// Nothing is left to output, so a dummy column takes the place of the removed ones.
+    plan.adds_dummy_output = kept_output_nodes.empty();
+
+    /// The join conditions have to be computed whether or not anything reads them.
+    for (const auto & join_action : join_operator.expression)
+        plan.extra_pruning_roots.push_back(join_action.getNode());
+
+    for (const auto & join_action : join_operator.residual_filter)
+        plan.extra_pruning_roots.push_back(join_action.getNode());
+
+    bool has_required_input_from_left = false;
+    bool has_required_input_from_right = false;
+    for (const auto * required_node : std::array{&kept_output_nodes, &plan.extra_pruning_roots})
+    {
+        for (const auto * node : *required_node)
         {
-            /// Dummy column kept even though not required.
-            required_nodes.push_back(output_node);
-            kept_output_positions.push_back(i);
+            const auto source_relations = JoinActionRef(node, expression_actions).getSourceRelations();
+            has_required_input_from_left |= source_relations.test(0);
+            has_required_input_from_right |= source_relations.test(1);
         }
     }
 
-    if (required_nodes.empty())
+    /// Keep one input of a side that nothing else needs, so that the side does not lose every column. The first input
+    /// of the side is taken: the inputs are not always all of the left side and then all of the right one, as an input
+    /// added later, such as one consuming a column a side appended, comes after all the others.
+    const auto & inputs = actions_dag.getInputs();
+    const auto keep_first_input_of = [&](size_t side)
+    {
+        if (getInputHeaders().at(side)->empty())
+            return;
+
+        const auto it = std::ranges::find_if(inputs, [&](const auto * input)
+        {
+            const JoinActionRef ref(input, expression_actions);
+            return side == 0 ? ref.fromLeft() : ref.fromRight();
+        });
+
+        if (it != inputs.end())
+            plan.extra_pruning_roots.push_back(*it);
+    };
+
+    if (!has_required_input_from_left)
+        keep_first_input_of(0);
+    if (!has_required_input_from_right)
+        keep_first_input_of(1);
+
+    if (kept_output_nodes.empty() && plan.extra_pruning_roots.empty() && !plan.adds_dummy_output)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No required output nodes, actions_dag: {}", actions_dag.dumpDAG());
+
+    /// What removeUnusedActions would keep. It folds constants before it collects the nodes to keep, and
+    /// folding clears the children of a folded node, so stop at such a node to see the same set.
+    /// ARRAY_JOIN is always a root there, and so is every input while inputs may not be removed.
+    auto roots = kept_output_nodes;
+    roots.insert(roots.end(), plan.extra_pruning_roots.begin(), plan.extra_pruning_roots.end());
+    for (const auto & node : actions_dag.getNodes())
+        if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
+            roots.push_back(&node);
+    const auto is_folded_constant = [](const ActionsDAG::Node * node) { return node->column && !node->children.empty(); };
+    const auto surviving_nodes = findReachableNodes(roots, is_folded_constant);
+
+    plan.removes_any_action = surviving_nodes.size() < actions_dag.getNodes().size();
+
+    if (!plan.removes_any_action && plan.dropped_output_positions.empty())
+    {
+        plan.unneeded_input_positions.resize(input_headers.size());
+        return plan;
+    }
+
+    /// Rebuild input headers from the surviving inputs. Every input reads a header column of its own,
+    /// so record the position each one reads rather than re-deriving it from the name once the others
+    /// are gone: a side whose header repeats a name would otherwise be rebuilt around the wrong column.
+    /// The positions of each side are collected in header order, which is the order of the new header.
+    std::array<ActionsDAG::NodeRawConstPtrs, 2> side_inputs;
+    for (const auto * input : inputs)
+    {
+        const auto ref = JoinActionRef(input, expression_actions);
+        chassert(ref.fromLeft() || ref.fromRight());
+        side_inputs[ref.fromLeft() ? 0 : 1].push_back(input);
+    }
+
+    for (size_t side = 0; side < 2; ++side)
+    {
+        const auto & header = *input_headers[side];
+        const auto header_columns = mapHeaderColumnsToInputs(side_inputs[side], header);
+
+        std::vector<bool> is_required_input(header.columns(), false);
+        for (size_t position = 0; position < header_columns.size(); ++position)
+        {
+            if (header_columns.passesThrough(position))
+                continue;
+
+            if (!surviving_nodes.contains(side_inputs[side][header_columns.read_by[position]]))
+                continue;
+
+            is_required_input[position] = true;
+        }
+
+        std::vector<size_t> positions;
+        for (size_t position = 0; position < is_required_input.size(); ++position)
+            if (!is_required_input[position])
+                positions.push_back(position);
+
+        plan.unneeded_input_positions.push_back(std::move(positions));
+    }
+
+    return plan;
+}
+
+JoinStepLogical::UnneededInputPositions JoinStepLogical::getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
+{
+    return analyzeUnneededColumns(unneeded_output_positions).unneeded_input_positions;
+}
+
+JoinStepLogical::RemoveUnusedColumnsResult
+JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs)
+{
+    const auto plan = analyzeUnneededColumns(unneeded_output_positions);
+
+    auto & actions_dag = *expression_actions.getActionsDAG();
+    auto & dag_outputs = actions_dag.getOutputs();
+
+    /// A dropped output goes away, and is erased from `actions_after_join` as well. The dropped positions are sorted,
+    /// so one walk over the outputs finds them.
+    const auto & dropped_positions = plan.dropped_output_positions;
+    ActionsDAG::NodeRawConstPtrs new_actions_after_join = actions_after_join;
+    ActionsDAG::NodeRawConstPtrs new_outputs;
+    new_outputs.reserve(dag_outputs.size() - dropped_positions.size() + (plan.adds_dummy_output ? 1 : 0));
+
+    size_t next_dropped = 0;
+    for (size_t position = 0; position < dag_outputs.size(); ++position)
+    {
+        const auto * output_node = dag_outputs[position];
+        if (next_dropped < dropped_positions.size() && dropped_positions[next_dropped] == position)
+        {
+            ++next_dropped;
+            new_actions_after_join.erase(
+                std::remove(new_actions_after_join.begin(), new_actions_after_join.end(), output_node), new_actions_after_join.end());
+            continue;
+        }
+
+        new_outputs.push_back(output_node);
+    }
+
+    if (plan.adds_dummy_output)
     {
         auto column_type = std::make_shared<DataTypeUInt8>();
         auto column = column_type->createColumnConst(0, 0);
         const auto * node = &actions_dag.addColumn(std::move(column), column_type, String(join_dummy_result_name));
         new_actions_after_join.push_back(node);
-        required_nodes.push_back(node);
-        actions_dag.getOutputs().push_back(node);
-        kept_output_positions.push_back(RemoveUnusedColumnsResult::NEWLY_ADDED_COLUMN_POSITION);
+        new_outputs.push_back(node);
+        dag_outputs.push_back(node);
     }
 
-    ActionsDAG::NodeRawConstPtrs new_outputs = required_nodes;
+    const bool changes_outputs = !dropped_positions.empty() || plan.adds_dummy_output;
 
-    for (const auto & join_action : join_operator.expression)
-        required_nodes.push_back(join_action.getNode());
+    /// An input reading a column its side keeps stays, also where nothing needs it any more; one reading a
+    /// column the side dropped goes. A column a side keeps beyond what the join reads, or appends, is
+    /// consumed by an input of its own, so that it stops here.
+    std::array<ActionsDAG::NodeRawConstPtrs, 2> side_inputs;
+    for (const auto * input : actions_dag.getInputs())
+        side_inputs[JoinActionRef(input, expression_actions).fromLeft() ? 0 : 1].push_back(input);
 
-    for (const auto & join_action : join_operator.residual_filter)
-        required_nodes.push_back(join_action.getNode());
-
-    if (required_nodes.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No required output nodes, actions_dag: {}", actions_dag.dumpDAG());
-
-    bool has_required_input_from_left = false;
-    bool has_required_input_from_right = false;
-    for (const auto * required_node : required_nodes)
+    std::unordered_set<const ActionsDAG::Node *> kept_inputs;
+    std::array<ColumnsWithTypeAndName, 2> to_consume;
+    for (size_t side = 0; side < 2; ++side)
     {
-        const auto source_relations = JoinActionRef(required_node, expression_actions).getSourceRelations();
-        has_required_input_from_left |= source_relations.test(0);
-        has_required_input_from_right |= source_relations.test(1);
-        if (has_required_input_from_left && has_required_input_from_right)
-            break;
+        const auto & old_header = *input_headers[side];
+        const auto & pruned = inputs.at(side);
+
+        std::vector<bool> kept(old_header.columns(), true);
+        for (size_t position : pruned.dropped_positions)
+            kept.at(position) = false;
+
+        for (size_t position : pruned.dropped_positions)
+            if (!std::ranges::binary_search(plan.unneeded_input_positions.at(side), position))
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "The {} side of the join dropped column {}, which the join reads",
+                    side == 0 ? "left" : "right", old_header.getByPosition(position).name);
+
+        const auto header_columns = mapHeaderColumnsToInputs(side_inputs[side], old_header);
+        for (size_t position = 0; position < header_columns.size(); ++position)
+            if (kept[position] && !header_columns.passesThrough(position))
+                kept_inputs.insert(side_inputs[side][header_columns.read_by[position]]);
+
+        const size_t kept_count = old_header.columns() - pruned.dropped_positions.size();
+        for (size_t position = kept_count; position < pruned.header->columns(); ++position)
+            to_consume[side].push_back(pruned.header->getByPosition(position));
     }
 
-    /// The inputs should be in the same order as input headers
-    if (!has_required_input_from_left && !actions_dag.getInputs().empty() && !getInputHeaders().at(0)->empty())
-    {
-        const auto * maybe_left_input = actions_dag.getInputs().front();
-        if (JoinActionRef(maybe_left_input, expression_actions).fromLeft())
-            required_nodes.push_back(maybe_left_input);
-    }
+    auto required_nodes = new_outputs;
+    required_nodes.insert(required_nodes.end(), plan.extra_pruning_roots.begin(), plan.extra_pruning_roots.end());
 
-    const auto number_of_left_inputs = input_headers.at(0)->columns();
-    if (!has_required_input_from_right && actions_dag.getInputs().size() > number_of_left_inputs && !getInputHeaders().at(1)->empty())
-    {
-        const auto * maybe_right_input = actions_dag.getInputs().at(number_of_left_inputs);
-        if (JoinActionRef(maybe_right_input, expression_actions).fromRight())
-            required_nodes.push_back(maybe_right_input);
-    }
-
-    const auto removed_any_actions = std::invoke(
+    const auto removed_any_action = std::invoke(
         [&]()
         {
-            actions_dag.getOutputs().swap(required_nodes);
-            SCOPE_EXIT({ actions_dag.getOutputs().swap(required_nodes); });
-            return actions_dag.removeUnusedActions(remove_inputs);
+            dag_outputs.swap(required_nodes);
+            SCOPE_EXIT({ dag_outputs.swap(required_nodes); });
+            return actions_dag.removeUnusedActions(kept_inputs);
         });
 
-    if (!removed_any_actions && !removed_any_output)
-        return {};
-
-    actions_dag.getOutputs().swap(new_outputs);
+    dag_outputs.swap(new_outputs);
     actions_after_join = std::move(new_actions_after_join);
+
+    for (size_t side = 0; side < 2; ++side)
+        for (const auto & column : to_consume[side])
+            expression_actions.addInput(column.name, column.type, side);
 
     /// Update source mapping since nodes may have been removed.
     {
@@ -551,52 +683,16 @@ JoinStepLogical::RemoveUnusedColumnsResult JoinStepLogical::removeUnusedColumns(
         expression_actions.resetNodeSources(std::move(node_sources));
     }
 
-    /// Check if any DAG inputs were actually removed.
-    const bool inputs_were_removed = remove_inputs && actions_dag.getInputs().size() < original_input_count;
+    RemoveUnusedColumnsResult result;
+    result.dropped_output_positions = dropped_positions;
+    result.step_changed = changes_outputs || removed_any_action || !to_consume[0].empty() || !to_consume[1].empty()
+        || !blocksHaveEqualStructure(*input_headers[0], *inputs[0].header)
+        || !blocksHaveEqualStructure(*input_headers[1], *inputs[1].header);
 
-    if (inputs_were_removed)
-    {
-        /// Rebuild input headers based on surviving DAG inputs.
-        /// Use source mapping to classify each surviving input as left (0) or right (1).
-        ActionsDAG::NodeRawConstPtrs surviving_left_inputs;
-        ActionsDAG::NodeRawConstPtrs surviving_right_inputs;
-        for (const auto * input_node : actions_dag.getInputs())
-        {
-            auto ref = JoinActionRef(input_node, expression_actions);
-            chassert(ref.fromLeft() || ref.fromRight());
-            if (ref.fromLeft())
-                surviving_left_inputs.push_back(input_node);
-            else if (ref.fromRight())
-                surviving_right_inputs.push_back(input_node);
-        }
+    if (result.step_changed)
+        updateInputHeaders({inputs[0].header, inputs[1].header});
 
-        auto build_new_header = [](const ActionsDAG::NodeRawConstPtrs & surviving_inputs, const Block & old_header)
-        {
-            auto positions = ActionsDAG::matchInputNodesToHeader(surviving_inputs, old_header).matched;
-            Block new_header;
-            for (size_t pos : positions)
-                new_header.insert(old_header.getByPosition(pos));
-            return std::pair{std::move(positions), std::make_shared<const Block>(std::move(new_header))};
-        };
-
-        auto [left_positions, new_left_header] = build_new_header(surviving_left_inputs, *input_headers[0]);
-        auto [right_positions, new_right_header] = build_new_header(surviving_right_inputs, *input_headers[1]);
-
-        updateInputHeaders({std::move(new_left_header), std::move(new_right_header)});
-
-        return {true, {std::move(left_positions), std::move(right_positions)}, std::move(kept_output_positions)};
-    }
-
-    updateOutputHeader();
-    return {true, {}, std::move(kept_output_positions)};
-}
-
-bool JoinStepLogical::canRemoveColumnsFromOutput() const
-{
-    if (output_header == nullptr)
-        return false;
-
-    return canRemoveUnusedColumns() && output_header->columns() > 1;
+    return result;
 }
 
 void JoinStepLogical::updateOutputHeader()

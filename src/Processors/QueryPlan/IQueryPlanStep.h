@@ -143,43 +143,69 @@ public:
 
     void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater);
 
-    /// Returns true if the step has implemented removeUnusedColumns.
+    /// Removing unused columns. Every list of positions below is a sorted list of positions in a header.
+
+    /// Returns true if the step can take part in removing unused columns: it implements removeUnusedColumns,
+    /// and getUnneededColumns unless it has no children to ask about.
     virtual bool canRemoveUnusedColumns() const { return false; }
 
+    /// What removeUnusedColumns did. The default is the answer when nothing changes.
     struct RemoveUnusedColumnsResult
     {
-        /// Sentinel for kept_output_positions entries that were added
-        /// (e.g., a dummy column in JoinStepLogical) and have no original output position.
-        static constexpr size_t NEWLY_ADDED_COLUMN_POSITION = std::numeric_limits<size_t>::max();
+        /// Whether the step itself changed: its expressions, its input headers, or the columns it outputs.
+        bool step_changed = false;
 
-        /// Whether the step was actually modified.
-        /// Needed to distinguish "removed all outputs" from "nothing changed",
-        /// since both can have empty required_input_positions and kept_output_positions.
-        bool changed = false;
-
-        /// Required input positions per child (outer index = child_id).
-        /// Empty outside vector means no inputs were changed.
-        /// Empty inside vector means the step doesn't require any inputs from the child.
-        std::vector<std::vector<size_t>> required_input_positions;
-
-        /// Which original output positions survived, in order.
-        /// Only meaningful if `changed` is true, otherwise it shouldn't be used.
-        /// Maps new output position to the original output position.
-        /// Entries with NEWLY_ADDED_COLUMN_POSITION indicate columns that weren't present in the original header.
-        std::vector<size_t> kept_output_positions;
+        /// The positions of the step's former output header that went away.
+        /// They are the subset of the given unneeded positions that the step can remove.
+        /// For example, a `FINAL` read keeps the columns of its sorting key.
+        /// The new output header has the remaining columns first, in their former order,
+        /// and may append columns of its own after them, such as the dummy column a join adds.
+        /// Appended columns are not in `dropped_output_positions`; only the header shows them.
+        std::vector<size_t> dropped_output_positions;
     };
 
-    /// Removes the unnecessary inputs and outputs from the step based on required_output_positions.
-    /// required_output_positions must be a sorted vector of indices into the step's current output header.
-    /// Each position uniquely identifies a column even when names are duplicated.
-    /// It is guaranteed that the output header of the step will contain all columns at those positions
-    /// and might contain some other columns too.
-    /// Can be used only if canRemoveUnusedColumns returns true.
-    /// The order of the remaining outputs must be preserved.
-    virtual RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & /*required_output_positions*/, bool /*remove_inputs*/);
+    /// Per child: the positions of the child's current output header the step does not need.
+    /// Always one entry per child; an empty entry means the step needs every column of that child.
+    using UnneededInputPositions = std::vector<std::vector<size_t>>;
 
-    /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
-    virtual bool canRemoveColumnsFromOutput() const;
+    /// What one column of a step's input header is to the step once the unused columns are gone.
+    enum class InputColumnUsage : uint8_t
+    {
+        ReadNeeded,           /// an input reads it, and what that input feeds is still needed
+        ReadDropped,          /// an input reads it, and nothing needs that input any more
+        PassesThroughNeeded,  /// no input reads it, and the caller asked for the column itself
+        PassesThroughDropped, /// no input reads it, and nobody asked for it
+    };
+
+    /// What a child produces once its own unused columns are gone:
+    /// its `dropped_output_positions` and its new output header.
+    /// The header has the remaining columns first, in their order, and may append new ones after them,
+    /// such as the dummy column a join adds.
+    /// The positions say what the child no longer produces, not what it was asked for:
+    /// a child that cannot drop columns drops none, and the step consumes the ones it does not need.
+    struct PrunedInput
+    {
+        std::vector<size_t> dropped_positions;
+        SharedHeader header;
+
+        /// A child that did not change.
+        static PrunedInput unchanged(const SharedHeader & header);
+    };
+
+    /// Removes what the step no longer needs once nobody needs the columns at `unneeded_output_positions`
+    /// of its current output header.
+    /// `inputs` has one `PrunedInput` per child: the children are pruned first, since columns are dropped bottom-up.
+    /// A column a child keeps that the step does not need is consumed by the step.
+    /// A column the child dropped must be one the step does not need.
+    /// The order of the remaining outputs is preserved.
+    /// Can be used only if canRemoveUnusedColumns returns true.
+    virtual RemoveUnusedColumnsResult removeUnusedColumns(
+        const std::vector<size_t> & /*unneeded_output_positions*/, const std::vector<PrunedInput> & /*inputs*/);
+
+    /// What removeUnusedColumns would not need of each child once nobody needs these outputs.
+    /// The children are to be pruned by that before the step itself is.
+    /// Can be used only if canRemoveUnusedColumns returns true, for a step with children.
+    virtual UnneededInputPositions getUnneededColumns(const std::vector<size_t> & /*unneeded_output_positions*/) const;
 
     /// Different Steps have different stages of execution.
     /// For example JoinStep has build and probe stages.
@@ -196,6 +222,15 @@ public:
     virtual StepAnalysisReport getAnalysisReport(StepProcessors /*step_processors*/) const { return {}; }
 
 protected:
+    /// For a step with one child and one expression: brings the inputs of `dag`, whose outputs are pruned
+    /// already, in line with the child's new header. An input reading a column the child keeps stays, also
+    /// where nothing needs it any more, and one reading a column the child dropped goes. A column the child
+    /// keeps or appends that the step neither reads nor passes on is consumed by a new input, so that it
+    /// stops here. `usages` says what each column of `old_header` is to the step. Returns whether anything
+    /// changed.
+    static bool alignInputsWithPrunedChild(
+        ActionsDAG & dag, const std::vector<InputColumnUsage> & usages, const Block & old_header, const PrunedInput & pruned);
+
     virtual void updateOutputHeader() = 0;
 
     SharedHeaders input_headers;

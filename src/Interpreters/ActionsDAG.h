@@ -234,9 +234,10 @@ public:
     /// If column is not in outputs, try to find it in nodes and insert back into outputs.
     bool tryRestoreColumn(const std::string & column_name);
 
-    /// Find column in result. Remove it from outputs.
-    /// If columns is in inputs and has no dependent nodes, remove it from inputs too.
-    /// Return true if column was removed from inputs.
+    /// Removes the output `column_name`, and the chain of nodes it is computed by - the output node, its only child, and
+    /// so on, down to an input or a column - up to the first node that another node or output still uses.
+    /// Returns true if the whole chain is gone, so that the DAG no longer reads the input at its end.
+    /// Throws if a node on the chain has more than one child.
     bool removeUnusedResult(const std::string & column_name);
 
     /// Remove node with <node_name> from outputs.
@@ -281,6 +282,8 @@ public:
     /// is safe to re-emit as a single Const COLUMN at the filter root - other outputs and
     /// representation-observing parents elsewhere in the DAG are never touched
     void foldFilterPredicateThroughMaterialize(const std::string & filter_column_name);
+    /// The same for the filter at `filter_output_position` of the outputs.
+    void foldFilterPredicateThroughMaterialize(size_t filter_output_position);
 
     /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
     /// outputs preserve their names via aliases when needed, dead nodes are pruned
