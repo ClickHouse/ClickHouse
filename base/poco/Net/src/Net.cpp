@@ -25,14 +25,56 @@ namespace Net {
 
 void Net_API initializeNetwork()
 {
+#if defined(POCO_OS_FAMILY_WINDOWS)
+	WORD    version = MAKEWORD(2, 2);
+	WSADATA data;
+	if (WSAStartup(version, &data) != 0)
+		throw NetException("Failed to initialize network subsystem");
+#endif
 }
 
 
 void Net_API uninitializeNetwork()
 {
+#if defined(POCO_OS_FAMILY_WINDOWS)
+	WSACleanup();
+#endif
 }
 
 
 } } // namespace Poco::Net
+
+
+#if defined(POCO_OS_FAMILY_WINDOWS) && !defined(POCO_NO_AUTOMATIC_LIB_INIT)
+
+	struct NetworkInitializer
+		/// Network initializer for windows statically
+		/// linked library. Winsock has to be started before any socket call and stopped
+		/// afterwards; on Unix there is no such requirement, which is why the two functions
+		/// above are empty there and nothing calls them explicitly.
+	{
+		NetworkInitializer()
+			/// Calls Poco::Net::initializeNetwork();
+		{
+			Poco::Net::initializeNetwork();
+		}
+
+		~NetworkInitializer()
+			/// Calls Poco::Net::uninitializeNetwork();
+		{
+			try
+			{
+				Poco::Net::uninitializeNetwork();
+			}
+			catch (...)
+			{
+				poco_unexpected();
+			}
+		}
+	};
+
+	const NetworkInitializer pocoNetworkInitializer;
+
+#endif
 
 

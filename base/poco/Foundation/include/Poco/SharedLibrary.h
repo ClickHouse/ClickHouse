@@ -21,7 +21,9 @@
 #include "Poco/Foundation.h"
 
 
-#if defined(hpux) || defined(_hpux)
+#if defined(POCO_OS_FAMILY_WINDOWS)
+#    include "Poco/SharedLibrary_WIN32U.h"
+#elif defined(hpux) || defined(_hpux)
 #    include "Poco/SharedLibrary_HPUX.h"
 #elif defined(POCO_OS_FAMILY_UNIX)
 #    include "Poco/SharedLibrary_UNIX.h"

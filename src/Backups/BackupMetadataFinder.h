@@ -10,7 +10,6 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Common/setThreadName.h>
 
-#include <filesystem>
 #include <future>
 
 
@@ -102,7 +101,7 @@ protected:
         String create_table_query_str;
         bool is_predefined_table = false;
         bool has_data = false;
-        std::filesystem::path data_path_in_backup;
+        String data_path_in_backup;
         std::optional<ASTs> partitions;
         DatabasePtr database;
         StoragePtr storage;
@@ -117,7 +116,7 @@ protected:
     LoggerPtr log;
 
     DDLRenamingMap renaming_map;
-    std::vector<std::filesystem::path> root_paths_in_backup;
+    Strings root_paths_in_backup;
 
     std::unordered_map<String, DatabaseInfo> database_infos TSA_GUARDED_BY(mutex);
     std::map<QualifiedTableName, TableInfo> table_infos TSA_GUARDED_BY(mutex);

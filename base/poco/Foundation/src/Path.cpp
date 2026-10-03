@@ -19,7 +19,9 @@
 #include <algorithm>
 
 
-#if defined(POCO_OS_FAMILY_UNIX)
+#if defined(POCO_OS_FAMILY_WINDOWS)
+#include "Path_WIN32U.cpp"
+#elif defined(POCO_OS_FAMILY_UNIX)
 #include "Path_UNIX.cpp"
 #endif
 

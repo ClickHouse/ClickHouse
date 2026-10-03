@@ -1,23 +1,31 @@
 #include <Common/Config/getLocalConfigPath.h>
+#include <base/pathToString.h>
 
 #include <Common/Config/getConfigPath.h>
 
+#include <filesystem>
 #include <vector>
 
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
 
 std::optional<std::string> getLocalConfigPath(const std::string & home_path)
 {
-    std::vector<std::string> names;
+    /// As in `getClientConfigPath`: the candidates stay `std::filesystem::path`, so that the
+    /// UTF-8 home directory is not round-tripped through the Windows active code page.
+    std::vector<fs::path> names;
     names.emplace_back("./clickhouse-local");
+
     if (!home_path.empty())
-        names.emplace_back(home_path + "/.clickhouse-local/config");
+        names.emplace_back(pathFromString(home_path) / ".clickhouse-local" / "config");
+
     names.emplace_back("/etc/clickhouse-local/config");
 
     for (const auto & name : names)
-        if (auto config_path = tryGetConfigPath(name))
+        if (auto config_path = tryGetConfigPath(pathToString(name)))
             return config_path;
 
     return std::nullopt;

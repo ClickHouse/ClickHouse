@@ -1,8 +1,10 @@
+#include <base/pathToString.h>
 #include <DisksApp.h>
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
+#include <Common/getUserHomePath.h>
 #include <Common/SignalHandlers.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/filesystemHelpers.h>
@@ -329,7 +331,9 @@ void DisksApp::registerCommands()
     command_descriptions.emplace("link", makeCommandLink());
     command_descriptions.emplace("write", makeCommandWrite());
     command_descriptions.emplace("read", makeCommandRead());
+#if !defined(OS_WINDOWS)
     command_descriptions.emplace("sed", makeCommandSed());
+#endif
     command_descriptions.emplace("read-bitmap", makeCommandReadBitmap());
     command_descriptions.emplace("mkdir", makeCommandMkDir());
     command_descriptions.emplace("switch-disk", makeCommandSwitchDisk());
@@ -427,16 +431,13 @@ String DisksApp::getCommandLineWithAliases(CommandPtr command) const
 
 void DisksApp::initializeHistoryFile()
 {
-    String home_path;
-    const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
-    if (home_path_cstr)
-        home_path = home_path_cstr;
+    const String home_path = getUserHomePath();
     if (config().has("history-file"))
         history_file = config().getString("history-file");
     else
         history_file = home_path + "/.disks-file-history";
 
-    if (!history_file.empty() && !fs::exists(history_file))
+    if (!history_file.empty() && !fs::exists(pathFromString(history_file)))
     {
         try
         {
@@ -489,7 +490,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         try
         {
             ConfigProcessor config_processor(config_path, false, false);
-            ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
+            ConfigProcessor::setConfigPath(pathToGenericString(pathFromString(config_path).parent_path()));
             auto loaded_config = config_processor.loadConfig();
             config().add(loaded_config.configuration.duplicate(), false, false);
         }
@@ -518,7 +519,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         auto log_path = config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log");
 
         log_file = new Poco::FileChannel;
-        log_file->setProperty(Poco::FileChannel::PROP_PATH, fs::weakly_canonical(log_path));
+        log_file->setProperty(Poco::FileChannel::PROP_PATH, pathToGenericString(fs::weakly_canonical(pathFromString(log_path))));
         log_file->setProperty(Poco::FileChannel::PROP_ROTATION, "100M");
         log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, "false");
@@ -555,7 +556,9 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::DISKS);
 
-    /// Print stacktrace in case of crash
+#if !defined(OS_WINDOWS)
+    /// Print stacktrace in case of crash. Windows reports a fault through Structured Exception
+    /// Handling rather than a signal, so there is no handler to install and no pipe to drain.
     {
         HandledSignals::instance().setupTerminateHandler();
         HandledSignals::instance().setupCommonDeadlySignalHandlers();
@@ -572,6 +575,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         signal_listener_thread.start(*signal_listener);
 #endif
     }
+#endif
 
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", &logger()));
@@ -607,11 +611,13 @@ DisksApp::~DisksApp()
 
     try
     {
+#if !defined(OS_WINDOWS)
 #if defined(OS_HAS_SIGNAL_HANDLERS)
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
 #endif
         HandledSignals::instance().reset();
+#endif
     }
     catch (...)
     {

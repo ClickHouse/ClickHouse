@@ -27,7 +27,7 @@ private:
 
     std::atomic<bool> is_trace_log_initialized = false;
     std::shared_ptr<TraceLog> trace_log_ptr;
-    bool symbolize = false;
+    [[maybe_unused]] bool symbolize = false;
 
     /// Use a thread that does not call `ThreadStatus::initGlobalProfiler` on startup:
     /// `initGlobalProfiler` reads `Context::hasTraceCollector`, which races with

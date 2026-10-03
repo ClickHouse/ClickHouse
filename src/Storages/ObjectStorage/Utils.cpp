@@ -19,6 +19,8 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Poco/UUIDGenerator.h>
+#include <Common/ObjectStorageKey.h>
+#include <base/pathToString.h>
 
 namespace DB
 {
@@ -154,10 +156,12 @@ std::string joinPathUnderPrefix(const std::string & prefix, const std::string & 
     if (prefix.empty())
         return path;
 
-    std::string_view key = path;
+    std::string key = path;
     if (key.starts_with("/"))
-        key.remove_prefix(1);
-    return fs::path(prefix) / key;
+        key.erase(0, 1);
+    /// The values are object storage keys, not filesystem paths: join them in string space, so
+    /// the separator stays a forward slash and the bytes stay UTF-8 on every host.
+    return appendObjectStorageKeySegment(prefix, key);
 }
 
 std::string relativizePathUnderPrefix(const std::string & prefix, const std::string & path)
@@ -165,7 +169,7 @@ std::string relativizePathUnderPrefix(const std::string & prefix, const std::str
     if (prefix.empty())
         return path;
 
-    return fs::relative(path, prefix).string();
+    return pathToGenericString(fs::relative(pathFromString(path), pathFromString(prefix)));
 }
 
 std::string formatObjectPath(

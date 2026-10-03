@@ -6,7 +6,9 @@
 #include <Interpreters/Context.h>
 #include <base/cgroupsv2.h>
 #include <base/find_symbols.h>
+#if !defined(OS_WINDOWS)
 #include <sys/resource.h>
+#endif
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>

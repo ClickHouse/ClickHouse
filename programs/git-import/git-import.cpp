@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -860,7 +861,7 @@ static void processFileChanges(
             readText(file_change.path, in);
         }
 
-        file_change.file_extension = std::filesystem::path(file_change.path).extension();
+        file_change.file_extension = pathToGenericString(std::filesystem::path(file_change.path).extension());
         /// It gives us extension in form of '.cpp'. There is a reason for it but we remove initial dot for simplicity.
         if (!file_change.file_extension.empty() && file_change.file_extension.front() == '.')
             file_change.file_extension = file_change.file_extension.substr(1, std::string::npos);

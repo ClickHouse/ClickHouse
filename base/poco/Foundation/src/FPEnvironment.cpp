@@ -23,7 +23,7 @@
 #include "FPEnvironment_DEC.cpp"
 #elif defined(sun) || defined(__sun)
 #include "FPEnvironment_SUN.cpp"
-#elif defined(POCO_OS_FAMILY_UNIX)
+#elif defined(POCO_OS_FAMILY_UNIX) || defined(POCO_OS_FAMILY_WINDOWS)
 #include "FPEnvironment_C99.cpp"
 #else
 #include "FPEnvironment_DUMMY.cpp"

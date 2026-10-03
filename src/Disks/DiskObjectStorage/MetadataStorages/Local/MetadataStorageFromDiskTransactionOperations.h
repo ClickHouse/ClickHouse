@@ -4,7 +4,10 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
-#include <unordered_set>
+#include <set>
+#include <utility>
+
+#include <base/types.h>
 
 namespace DB
 {
@@ -151,7 +154,11 @@ private:
 
     std::optional<std::string> temp_file_path;
     std::optional<std::string> temp_directory_path;
-    std::unordered_set<int64_t> visited_inodes;
+    /// (device id, file id) of every path seen by `traverseDirectory`, for cycle detection.
+    /// Not `st_ino` alone: an inode number repeats across filesystems, and on Windows the CRT's
+    /// `stat` reports it as zero for every file - `platformFileVersion` is what fills in a real
+    /// identity (the volume serial number and the NTFS file index) there.
+    std::set<std::pair<UInt64, UInt64>> visited_file_ids;
     std::vector<std::unique_ptr<WriteFileOperation>> write_operations;
     StoredObjects removed_objects;
 };

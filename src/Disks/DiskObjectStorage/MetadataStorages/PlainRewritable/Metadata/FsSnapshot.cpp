@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 
 #include <Common/Exception.h>
@@ -38,7 +39,7 @@ Ptr walk(Ptr node, const NormalizedPath & path)
 {
     for (const auto & step : path)
     {
-        const auto it = node->subdirectories.find(step);
+        const auto it = node->subdirectories.find(pathToGenericString(step));
         if (it == node->subdirectories.end())
             return nullptr;
 
@@ -58,7 +59,7 @@ void traverseNode(const std::string & path, const FsNodePtr & start, const std::
         auto [node_path, node] = std::move(unvisited.back());
         unvisited.pop_back();
 
-        observe(node_path, node);
+        observe(pathToGenericString(node_path), node);
 
         unvisited.reserve(unvisited.size() + node->subdirectories.size());
         for (const auto & [subdir, subnode] : node->subdirectories)
@@ -72,10 +73,10 @@ bool hasFileOnPath(const FsNodePtr & root, const NormalizedPath & path)
 
     for (const auto & step : path)
     {
-        if (!isVirtual(node) && node->info->files.contains(step))
+        if (!isVirtual(node) && node->info->files.contains(pathToGenericString(step)))
             return true;
 
-        const auto it = node->subdirectories.find(step);
+        const auto it = node->subdirectories.find(pathToGenericString(step));
         if (it == node->subdirectories.end())
             return false;
 
@@ -93,12 +94,12 @@ std::pair<FsNodePtr, FsNodePtr> clonePath(const FsNodePtr & start, const Normali
     for (const auto & step : path)
     {
         FsNodePtr cloned_child;
-        if (auto it = node->subdirectories.find(step); it != node->subdirectories.end())
+        if (auto it = node->subdirectories.find(pathToGenericString(step)); it != node->subdirectories.end())
             cloned_child = std::make_shared<FsNode>(*it->second);
         else
             cloned_child = std::make_shared<FsNode>();
 
-        node->subdirectories[step] = cloned_child;
+        node->subdirectories[pathToGenericString(step)] = cloned_child;
         node = std::move(cloned_child);
     }
 
@@ -110,8 +111,8 @@ void trimPath(FsNodePtr node, const NormalizedPath & path)
     std::vector<std::pair<FsNodePtr, std::string>> spine;
     for (const auto & step : path)
     {
-        spine.emplace_back(node, step);
-        node = node->subdirectories.at(step);
+        spine.emplace_back(node, pathToGenericString(step));
+        node = node->subdirectories.at(pathToGenericString(step));
     }
 
     for (const auto & [parent, name] : spine | std::views::reverse)
@@ -141,11 +142,11 @@ FsNodePtr moveTree(const FsNodePtr & root, const NormalizedPath & from, const No
     chassert(detached);
 
     const auto [without_subtree, cloned_from_parent] = clonePath(root, from.parent_path());
-    cloned_from_parent->subdirectories.erase(from.filename());
+    cloned_from_parent->subdirectories.erase(pathToGenericString(from.filename()));
     trimPath(without_subtree, from.parent_path());
 
     const auto [cloned_root, cloned_to_parent] = clonePath(without_subtree, to.parent_path());
-    cloned_to_parent->subdirectories[to.filename()] = detached;
+    cloned_to_parent->subdirectories[pathToGenericString(to.filename())] = detached;
 
     return cloned_root;
 
@@ -157,7 +158,7 @@ FsNodePtr unlinkTree(const FsNodePtr & root, const NormalizedPath & path)
     chassert(walk(root, path));
 
     const auto [cloned_root, cloned_parent] = clonePath(root, path.parent_path());
-    cloned_parent->subdirectories.erase(path.filename());
+    cloned_parent->subdirectories.erase(pathToGenericString(path.filename()));
     trimPath(cloned_root, path.parent_path());
 
     return cloned_root;
@@ -204,7 +205,9 @@ void FsSnapshot::moveDirectory(const std::string & from, const std::string & to)
     if (normalized_from.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Directory '{}' is root", normalized_from.string());
 
-    if (normalized_to.string().starts_with(normalized_from.string() + '/'))
+    const auto normalized_from_string = pathToGenericString(normalized_from);
+    const auto normalized_to_string = pathToGenericString(normalized_to);
+    if (normalized_to_string.starts_with(normalized_from_string + '/'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Directory '{}' can't be moved to '{}' inside itself", normalized_from.string(), normalized_to.string());
 
     if (walk(root, normalized_to))
@@ -252,14 +255,14 @@ void FsSnapshot::recordFile(const std::string & path, FileRemoteInfo info)
     if (isVirtual(node))
         throw Exception(ErrorCodes::CANNOT_CREATE_FILE, "Creation of a file under the virtual directory is not possible");
 
-    if (node->subdirectories.contains(normalized_path.filename()))
+    if (node->subdirectories.contains(pathToGenericString(normalized_path.filename())))
         throw Exception(ErrorCodes::CANNOT_CREATE_FILE, "There is a subdirectory '{}' under the path '{}'. Can't create file", normalized_path.filename().string(), normalized_path.parent_path().string());
 
-    if (node->info->files.contains(normalized_path.filename()))
+    if (node->info->files.contains(pathToGenericString(normalized_path.filename())))
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File '{}' already exists", normalized_path.string());
 
     auto new_directory_info = node->info.value();
-    new_directory_info.files.emplace(normalized_path.filename(), std::move(info));
+    new_directory_info.files.emplace(pathToGenericString(normalized_path.filename()), std::move(info));
     root = updateInfo(root, normalized_path.parent_path(), new_directory_info);
     remote_layout_files_delta += 1;
 }
@@ -276,11 +279,11 @@ void FsSnapshot::removeFile(const std::string & path)
     if (isVirtual(node))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Removal of a file under the virtual directory is not possible");
 
-    if (!node->info->files.contains(normalized_path.filename()))
+    if (!node->info->files.contains(pathToGenericString(normalized_path.filename())))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File '{}' does not exist", normalized_path.string());
 
     auto new_directory_info = node->info.value();
-    new_directory_info.files.erase(normalized_path.filename());
+    new_directory_info.files.erase(pathToGenericString(normalized_path.filename()));
     root = updateInfo(root, normalized_path.parent_path(), new_directory_info);
     remote_layout_files_delta -= 1;
 }
@@ -345,15 +348,15 @@ std::optional<DirectoryRemoteInfo> FsSnapshot::getDirectoryRemoteInfo(const std:
 std::optional<FileRemoteInfo> FsSnapshot::getFileRemoteInfo(const std::string & path) const
 {
     const auto normalized_path = normalizePath(path);
-    const auto directory_remote_info = getDirectoryRemoteInfo(normalized_path.parent_path());
+    const auto directory_remote_info = getDirectoryRemoteInfo(pathToGenericString(normalized_path.parent_path()));
 
     if (!directory_remote_info)
         return std::nullopt;
 
-    if (!directory_remote_info->files.contains(normalized_path.filename()))
+    if (!directory_remote_info->files.contains(pathToGenericString(normalized_path.filename())))
         return std::nullopt;
 
-    return directory_remote_info->files.at(normalized_path.filename());
+    return directory_remote_info->files.at(pathToGenericString(normalized_path.filename()));
 }
 
 bool FsSnapshot::existsFile(const std::string & path) const
@@ -365,7 +368,7 @@ bool FsSnapshot::existsFile(const std::string & path) const
     if (!node || isVirtual(node))
         return false;
 
-    return node->info->files.contains(normalized_path.filename());
+    return node->info->files.contains(pathToGenericString(normalized_path.filename()));
 }
 
 std::shared_ptr<FsNode> FsSnapshot::getRoot() const

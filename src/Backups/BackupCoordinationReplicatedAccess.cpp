@@ -1,8 +1,6 @@
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 
-#include <filesystem>
-
-namespace fs = std::filesystem;
+#include <Backups/BackupPathUtils.h>
 
 
 namespace DB
@@ -41,9 +39,9 @@ Strings BackupCoordinationReplicatedAccess::getFilePaths(const String & access_z
     /// for a backup of ReplicatedAccessStorage on different hosts.
     Strings res;
     res.reserve(file_paths.file_paths.size());
-    String filename = fs::path{*file_paths.file_paths.begin()}.filename();
+    String filename = backupPathBaseName(*file_paths.file_paths.begin());
     for (const auto & file_path : file_paths.file_paths)
-        res.emplace_back(fs::path{file_path}.replace_filename(filename));
+        res.emplace_back(joinBackupPath(backupPathParent(file_path), filename));
 
     return res;
 }

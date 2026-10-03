@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/Freeze.h>
 
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
@@ -116,7 +117,7 @@ void FreezeMetaData::clean(DiskPtr data_disk, const String & path)
 
 String FreezeMetaData::getFileName(const String & path)
 {
-    return fs::path(path) / "frozen_metadata.txt";
+    return pathToGenericString(fs::path(path) / "frozen_metadata.txt");
 }
 
 Unfreezer::Unfreezer(ContextPtr context) : local_context(context)
@@ -152,13 +153,13 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
 
         for (const auto & store_path : store_paths)
         {
-            if (!disk->existsDirectory(store_path))
+            if (!disk->existsDirectory(pathToGenericString(store_path)))
                 continue;
 
-            for (auto prefix_it = disk->iterateDirectory(store_path); prefix_it->isValid(); prefix_it->next())
+            for (auto prefix_it = disk->iterateDirectory(pathToGenericString(store_path)); prefix_it->isValid(); prefix_it->next())
             {
                 auto prefix_directory = store_path / prefix_it->name();
-                for (auto table_it = disk->iterateDirectory(prefix_directory); table_it->isValid(); table_it->next())
+                for (auto table_it = disk->iterateDirectory(pathToGenericString(prefix_directory)); table_it->isValid(); table_it->next())
                 {
                     auto table_directory = prefix_directory / table_it->name();
                     auto current_result_info = unfreezePartitionsFromTableDirectory(
@@ -173,10 +174,10 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
             }
         }
 
-        if (disk->existsDirectory(backup_path))
+        if (disk->existsDirectory(pathToGenericString(backup_path)))
         {
             /// After unfreezing we need to clear revision.txt file and empty directories
-            disk->removeRecursive(backup_path);
+            disk->removeRecursive(pathToGenericString(backup_path));
         }
     }
 
@@ -211,10 +212,10 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
 
     for (const auto & disk : disks)
     {
-        if (!disk->existsDirectory(table_directory))
+        if (!disk->existsDirectory(pathToGenericString(table_directory)))
             continue;
 
-        for (auto it = disk->iterateDirectory(table_directory); it->isValid(); it->next())
+        for (auto it = disk->iterateDirectory(pathToGenericString(table_directory)); it->isValid(); it->next())
         {
             const auto & partition_directory = it->name();
 

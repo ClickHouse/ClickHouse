@@ -2,9 +2,6 @@
 
 #include <Common/Exception.h>
 
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -43,16 +40,22 @@ ObjectStorageKey ObjectStorageKey::createAsRelative(String key_)
     return object_key;
 }
 
+String appendObjectStorageKeySegment(const String & prefix, const String & suffix)
+{
+    if (prefix.empty())
+        return suffix;
+    if (prefix.ends_with('/'))
+        return prefix + suffix;
+    return prefix + "/" + suffix;
+}
+
 ObjectStorageKey ObjectStorageKey::createAsRelative(String prefix_, String suffix_)
 {
     ObjectStorageKey object_key;
     object_key.prefix = std::move(prefix_);
     object_key.suffix = std::move(suffix_);
 
-    if (object_key.prefix.empty())
-        object_key.key = object_key.suffix;
-    else
-        object_key.key = fs::path(object_key.prefix) / object_key.suffix;
+    object_key.key = appendObjectStorageKeySegment(object_key.prefix, object_key.suffix);
 
     object_key.is_relative = true;
     return object_key;

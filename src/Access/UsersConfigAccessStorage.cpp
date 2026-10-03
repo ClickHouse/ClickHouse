@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/UsersConfigParser.h>
 #include <Access/AccessControl.h>
@@ -98,7 +99,7 @@ void UsersConfigAccessStorage::load(
     const zkutil::GetZooKeeper & get_zookeeper_function)
 {
     std::lock_guard lock{load_mutex};
-    path = std::filesystem::path{users_config_path}.lexically_normal();
+    path = pathToGenericString(std::filesystem::path{users_config_path}.lexically_normal());
     config_reloader.reset();
     auto zk_node_cache = std::make_unique<zkutil::ZooKeeperNodeCache>(get_zookeeper_function);
     config_reloader = std::make_unique<ConfigReloader>(

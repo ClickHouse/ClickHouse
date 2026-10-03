@@ -1,3 +1,7 @@
+/// Ships stack traces from the signal handler to the trace log over a pipe. Follows
+/// `QueryProfiler` and `SignalHandlers`, which are what feed it.
+#if !defined(OS_WINDOWS)
+
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/WriteHelpers.h>
 #include <Common/CPUID.h>
@@ -134,3 +138,5 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
 }
 
 }
+
+#endif

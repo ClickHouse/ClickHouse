@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <filesystem>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -12,8 +11,6 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -128,13 +125,18 @@ TransactionSession::TransactionSession(
 {
 }
 
-String TransactionSession::replicaTailPtrPath() const { return fs::path(replicas_path) / (toString(my_replica_id) + "_tail_ptr"); }
-String TransactionSession::replicaActivePath() const  { return fs::path(replicas_path) / (toString(my_replica_id) + "_active"); }
-String TransactionSession::replicaSessionPath() const { return fs::path(replicas_path) / (toString(my_replica_id) + "_session"); }
+/// These are ZooKeeper paths, not filesystem paths: they are always separated by `/`, and
+/// `replicas_path` is itself built by plain concatenation (see `TransactionManager`). Joining them
+/// with `std::filesystem::path` would use the platform's preferred separator - a backslash on
+/// Windows - and would not even convert back to `String` there, because `path::string_type` is
+/// `std::wstring`.
+String TransactionSession::replicaTailPtrPath() const { return replicas_path + "/" + toString(my_replica_id) + "_tail_ptr"; }
+String TransactionSession::replicaActivePath() const  { return replicas_path + "/" + toString(my_replica_id) + "_active"; }
+String TransactionSession::replicaSessionPath() const { return replicas_path + "/" + toString(my_replica_id) + "_session"; }
 
-String TransactionSession::replicaTailPtrPath(const UUID & id) const { return fs::path(replicas_path) / (toString(id) + "_tail_ptr"); }
-String TransactionSession::replicaActivePath(const UUID & id) const  { return fs::path(replicas_path) / (toString(id) + "_active"); }
-String TransactionSession::replicaSessionPath(const UUID & id) const { return fs::path(replicas_path) / (toString(id) + "_session"); }
+String TransactionSession::replicaTailPtrPath(const UUID & id) const { return replicas_path + "/" + toString(id) + "_tail_ptr"; }
+String TransactionSession::replicaActivePath(const UUID & id) const  { return replicas_path + "/" + toString(id) + "_active"; }
+String TransactionSession::replicaSessionPath(const UUID & id) const { return replicas_path + "/" + toString(id) + "_session"; }
 
 void TransactionSession::initSessionNode(const zkutil::ZooKeeperPtr & zookeeper)
 {

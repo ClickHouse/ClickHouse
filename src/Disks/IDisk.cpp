@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/IDisk.h>
 #include <Core/ServerUUID.h>
 #include <Core/UUID.h>
@@ -108,7 +109,12 @@ void IDisk::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_ba
 {
     for (const auto & file : files)
     {
-        bool keep_file = keep_all_batch_data || file_names_remove_metadata_only.contains(fs::path(file.path).filename());
+        /// `file.path` is a logical `IDisk` path, `/`-separated on every platform, so take its last component
+        /// as a string rather than through `std::filesystem`: on Windows that would decode the name
+        /// through the active code page and split it at `\` as well.
+        const size_t last_slash = file.path.rfind('/');
+        const std::string file_name = last_slash == std::string::npos ? file.path : file.path.substr(last_slash + 1);
+        bool keep_file = keep_all_batch_data || file_names_remove_metadata_only.contains(file_name);
         if (file.if_exists)
             removeSharedFileIfExists(file.path, keep_file);
         else
@@ -161,13 +167,13 @@ static void asyncCopy(
     }
     else /// Directory
     {
-        fs::path dest(to_path);
-        to_disk.createDirectories(dest);
+        fs::path dest = pathFromString(to_path);
+        to_disk.createDirectories(pathToGenericString(dest));
 
         /// Calling asyncCopy recursively is fine here. Each call will capture by reference what were already references
         /// dest is an exception, but it's passed as value, not reference
         for (auto it = from_disk.iterateDirectory(from_path); it->isValid(); it->next())
-            asyncCopy(from_disk, it->path(), to_disk, dest / it->name(), runner, read_settings, write_settings, cancellation_hook);
+            asyncCopy(from_disk, it->path(), to_disk, pathToGenericString(dest / it->name()), runner, read_settings, write_settings, cancellation_hook);
     }
 }
 
