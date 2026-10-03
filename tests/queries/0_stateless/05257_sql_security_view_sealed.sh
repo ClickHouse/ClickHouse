@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# Tag no-fasttest: interserver mode requires SSL
 
 # A view with `SQL SECURITY DEFINER` or `NONE` that hides rows is read through an opaque step,
 # so the invoker's expressions and predicates never see the rows the view drops.
