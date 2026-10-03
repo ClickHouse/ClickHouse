@@ -268,6 +268,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
     REGULAR(iceberg_slow_manifest_read) \
     PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \
+    PAUSEABLE_ONCE(hudi_pause_before_iterate) \
+    PAUSEABLE_ONCE(hudi_pause_in_listing_data_files) \
     REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
     ONCE(backup_from_snapshot_fail_after_batch) \
@@ -363,6 +365,7 @@ static struct InitFiu
     PAUSEABLE(atomic_populate_pause_before_subscription) \
     PAUSEABLE(atomic_populate_pause_after_view_publication) \
     PAUSEABLE(atomic_populate_pause_before_source_guard) \
+    PAUSEABLE(atomic_populate_pause_before_population) \
     PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     ONCE(mt_skip_scheduling_merge_once) \
