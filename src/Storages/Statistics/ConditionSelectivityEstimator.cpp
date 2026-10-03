@@ -33,6 +33,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TYPE_MISMATCH;
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 statistics_max_set_size_for_exact_selectivity_estimation;
@@ -119,6 +124,23 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
     /// Skip if the column statistics has outdated data type.
     /// It can happen after ALTER MODIFY COLUMN until mutations is not materialized in the data part.
     return column->type->equals(*stats->getDataType());
+}
+
+/// NDV is clamped by the caller to the estimated row count; the value range and NULL fraction
+/// describe the whole relation regardless of the filter.
+static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStatisticsPtr & stats)
+{
+    ColumnStats result;
+    result.num_distinct_values = num_distinct_values;
+    if (!stats)
+        return result;
+
+    auto estimate = stats->getEstimate();
+    result.min_value = std::move(estimate.estimated_min);
+    result.max_value = std::move(estimate.estimated_max);
+    if (estimate.estimated_null_count && estimate.rows_count)
+        result.null_fraction = std::min(1.0, static_cast<Float64>(*estimate.estimated_null_count) / static_cast<Float64>(estimate.rows_count));
+    return result;
 }
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const
@@ -217,7 +239,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
             continue;
 
         UInt64 cardinality = std::min(result.rows, estimator.estimateCardinality());
-        result.column_stats.emplace(column_name, cardinality);
+        result.column_stats.emplace(column_name, makeColumnStats(cardinality, estimator.stats));
     }
     return result;
 }
@@ -228,15 +250,14 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
     result.rows = total_rows;
     for (const auto & [column_name, estimator] : column_estimators)
     {
-        result.column_stats.emplace(column_name, estimator.estimateCardinality());
+        result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats));
     }
     return result;
 }
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const
 {
-    RPNBuilderTreeContext tree_context(getContext());
-    return estimateRelationProfile(metadata, RPNBuilderTreeNode(node, tree_context));
+    return estimateRelationProfile(metadata, RPNBuilderTreeNode(node, getContext()));
 }
 
 bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & data_parts) const
@@ -263,6 +284,22 @@ bool ConditionSelectivityEstimator::isStale(const RangesInDataParts & parts) con
             return true;
     }
     return false;
+}
+
+/// `<col>.null` names the stored NULL map of a Nullable `<col>`. Returns `<col>` when the name has
+/// that shape and the parent column is Nullable in storage.
+static std::optional<String> tryGetNullMapParentColumn(const String & column_name, const StorageInMemoryMetadata & metadata)
+{
+    auto dot_pos = column_name.rfind('.');
+    if (dot_pos == std::string::npos || column_name.compare(dot_pos + 1, std::string::npos, "null") != 0)
+        return {};
+
+    String parent_name = column_name.substr(0, dot_pos);
+    const ColumnDescription * parent_col = metadata.getColumns().tryGet(parent_name);
+    if (!parent_col || !isNullableOrLowCardinalityNullable(parent_col->type))
+        return {};
+
+    return parent_name;
 }
 
 bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
@@ -327,10 +364,9 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         {
             const bool is_in_operator = functionIsInOperator(func_name);
 
-            /// If the second argument is built from `ASTNode`, it should fall into next branch, which directly
-            /// extracts constant value from `ASTLiteral`. Otherwise we try to build `Set` from `ActionsDAG::Node`,
-            /// and extract constant value from it.
-            if (is_in_operator && !func.getArgumentAt(1).getASTNode())
+            /// The right-hand side of IN is a `Set` column: read the elements out of the set. Every other
+            /// comparison takes the branches below, which read the constant of the other argument directly.
+            if (is_in_operator)
             {
                 const auto & rhs = func.getArgumentAt(1);
                 if (!rhs.isConstant())
@@ -345,7 +381,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 /// built yet simply cannot be analysed, and the condition falls back to the default
                 /// selectivity, as it did for every subquery set before `ActionsDAG::Node::column`
                 /// became a `ColumnConst` and made these sets visible here.
-                auto prepared_set = future_set->getOrderedSetIfAlreadyBuilt(rhs.getTreeContext().getQueryContext());
+                auto prepared_set = future_set->getOrderedSetIfAlreadyBuilt(rhs.getContext());
                 if (!prepared_set || !prepared_set->hasExplicitSetElements())
                 {
                     ProfileEvents::increment(ProfileEvents::SelectivityEstimatorInSetNotBuilt);
@@ -362,7 +398,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 /// sort or the per-element probes. The atom is finalized rather than turned into ranges:
                 /// a scalar selectivity cannot intersect with other predicates on the same column, only
                 /// multiply.
-                const auto max_set_size = node.getTreeContext().getQueryContext()->getSettingsRef()
+                const auto max_set_size = node.getContext()->getSettingsRef()
                     [Setting::statistics_max_set_size_for_exact_selectivity_estimation];
                 if (max_set_size && columns[0]->size() > max_set_size)
                 {
@@ -420,6 +456,34 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
             else
                 return false;
 
+            /// `<col>.null != 0` is a truthiness test of the stored NULL map, so it selects exactly
+            /// the rows `IS NULL` does, and `= 0` the rows `IS NOT NULL` does. Recognising them keeps
+            /// the parent column's NULL count available instead of falling through to the flat default
+            /// below, which the subcolumn name would otherwise get for want of statistics of its own.
+            /// Only 0 qualifies: a NULL map byte only has to be non-zero to mean NULL, so `= 1` does
+            /// not select every NULL row.
+            const bool const_is_zero
+                = (const_value.getType() == Field::Types::UInt64 && const_value.safeGet<UInt64>() == 0)
+                || (const_value.getType() == Field::Types::Int64 && const_value.safeGet<Int64>() == 0);
+
+            if (metadata && const_is_zero && (func_name == "equals" || func_name == "notEquals"))
+            {
+                if (auto parent_name = tryGetNullMapParentColumn(column_name, *metadata))
+                {
+                    if (func_name == "notEquals")
+                    {
+                        out.function = RPNElement::FUNCTION_IS_NULL;
+                        out.null_check_columns.insert(*parent_name);
+                    }
+                    else
+                    {
+                        out.function = RPNElement::FUNCTION_IS_NOT_NULL;
+                        out.not_null_check_columns.insert(*parent_name);
+                    }
+                    return true;
+                }
+            }
+
             if (metadata)
             {
                 const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
@@ -455,16 +519,14 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     }
                     catch (const Exception & e)
                     {
-                        if (!isParseError(e.code()))
+                        if (!isParseError(e.code()) && e.code() != ErrorCodes::TYPE_MISMATCH)
                             throw;
 
-                        /// The string value is not valid for the column type (e.g. unknown enum element).
-                        /// For equality, the condition can never match, so selectivity is 0.
-                        /// For other operators, fall back to default unknown selectivity.
                         LOG_DEBUG(getLogger("ConditionSelectivityEstimator"),
                             "Cannot convert value to column type, skipping statistics estimation. The exception is : {}",
                             getCurrentExceptionMessage(false));
-                        if (func_name == "equals")
+
+                        if (func_name == "equals" && e.code() != ErrorCodes::TYPE_MISMATCH)
                         {
                             out.function = RPNElement::ALWAYS_FALSE;
                             return true;
@@ -556,19 +618,11 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     /// Bare `<col>.null` UInt8 subcolumn reference, e.g. `SELECT … WHERE x.null`. Treat it as `IS NULL`.
     if (!node.isFunction() && !node.isConstant() && metadata)
     {
-        String bare_column_name = node.getColumnName();
-
-        auto dot_pos = bare_column_name.rfind('.');
-        if (dot_pos != std::string::npos && bare_column_name.compare(dot_pos + 1, std::string::npos, "null") == 0)
+        if (auto parent_name = tryGetNullMapParentColumn(node.getColumnName(), *metadata))
         {
-            String parent_name = bare_column_name.substr(0, dot_pos);
-            const ColumnDescription * parent_col = metadata->getColumns().tryGet(parent_name);
-            if (parent_col && isNullableOrLowCardinalityNullable(parent_col->type))
-            {
-                out.function = RPNElement::FUNCTION_IS_NULL;
-                out.null_check_columns.insert(parent_name);
-                return true;
-            }
+            out.function = RPNElement::FUNCTION_IS_NULL;
+            out.null_check_columns.insert(*parent_name);
+            return true;
         }
     }
 

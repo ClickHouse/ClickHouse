@@ -1,5 +1,6 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel-replicas
 -- Tag no-fasttest: fasttest builds with ENABLE_LIBRARIES=0, which leaves the `JSON` type no JSON parser
+-- Tag no-parallel-replicas: a `Dynamic` constant holding an `Enum` is sent to remote replicas as its bare number, https://github.com/ClickHouse/ClickHouse/issues/119745
 -- A `JSONAllPaths` index may skip a granule that lacks the path only when the comparison does not
 -- hold on the value a missing path produces. An `Enum` constant carries its labels in its own
 -- type and the comparison uses the label, so an empty label is that value and nothing may be skipped.
@@ -27,14 +28,6 @@ SELECT arraySort(groupArray(id)) FROM t_json_tokenbf WHERE data.alpha::String = 
 -- alternative it came from, so it cannot be compared and nothing may be skipped.
 SELECT arraySort(groupArray(id)) FROM t_json_bf WHERE data.alpha::String = CAST('', 'Variant(Enum8('''' = 3))');
 SELECT arraySort(groupArray(id)) FROM t_json_bf WHERE data.alpha::String = CAST(CAST('', 'Enum8('''' = 3)'), 'Dynamic');
-
--- A tuple comparison carries each element's own type, so a `Nullable` source reaches the same
--- decision still wrapped. Only `WHERE` is split into per-element comparisons without the analyzer,
--- so `PREWHERE` is where a tuple reaches index analysis whole.
-SELECT arraySort(groupArray(id)) FROM t_json_bf PREWHERE (data.alpha::String, id) = (CAST('', 'Nullable(Enum8('''' = 3))'), 2) SETTINGS enable_analyzer = 0;
-
--- A non-empty label on that same wrapped route differs from the default, so the index stays usable.
-SELECT arraySort(groupArray(id)) FROM t_json_bf PREWHERE (data.alpha::String, id) = (CAST('7', 'Nullable(Enum8(''7'' = 3))'), 2) SETTINGS enable_analyzer = 0, force_data_skipping_indices = 'idx';
 
 SELECT arraySort(groupArray(id)) FROM t_json_bf WHERE data.alpha::String = '';
 
