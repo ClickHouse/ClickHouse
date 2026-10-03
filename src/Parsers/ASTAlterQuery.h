@@ -49,6 +49,7 @@ public:
 
         ADD_INDEX,
         DROP_INDEX,
+        RENAME_INDEX,
         MATERIALIZE_INDEX,
 
         ADD_CONSTRAINT,

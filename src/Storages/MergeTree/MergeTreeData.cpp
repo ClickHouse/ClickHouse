@@ -548,18 +548,6 @@ static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool
             sampling_column_type->getName());
 }
 
-static bool hasColumnsWithDynamicSubcolumns(const Block & block)
-{
-    for (const auto & column : block.getColumnsWithTypeAndName())
-    {
-        if (column.type->hasDynamicSubcolumns())
-            return true;
-    }
-
-    return false;
-}
-
-
 void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & relative_data_path_, bool attach, const std::string & date_column_name, bool need_create_directories)
 {
     auto settings = getSettings();
@@ -5475,6 +5463,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             AlterCommand::DROP_COLUMN,
             AlterCommand::MODIFY_COLUMN,
             AlterCommand::RENAME_COLUMN,
+            AlterCommand::RENAME_INDEX,
             AlterCommand::ADD_PROJECTION,
             AlterCommand::DROP_PROJECTION,
             AlterCommand::MODIFY_PROJECTION,
@@ -6141,6 +6130,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         if (command.type == AlterCommand::ADD_INDEX && !is_custom_partitioned)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER ADD INDEX is not supported for tables with the old syntax");
+        }
+        if (command.type == AlterCommand::RENAME_INDEX && !is_custom_partitioned)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER RENAME INDEX is not supported for tables with the old syntax");
         }
         if (command.type == AlterCommand::ADD_PROJECTION)
         {
@@ -8927,40 +8920,58 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl(DataPartsLock & /*
     are_columns_and_secondary_indices_sizes_calculated = true;
 }
 
-void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedLock & parts_lock, std::unique_lock<std::mutex> & /*sizes_lock*/) const
+void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedLock & parts_lock, std::unique_lock<std::mutex> & sizes_lock) const
 {
     if (are_columns_and_secondary_indices_sizes_calculated)
         return;
 
-    column_sizes.clear();
-    secondary_index_sizes.clear();
-    primary_index_size = {};
-
     auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
+    DataParts data_parts(committed_parts_range.begin(), committed_parts_range.end());
 
-    /// If we have columns with dynamic subcolumns like JSON, columns size calculation
-    /// can read a column sample from each part, it can be slow and we don't want to
-    /// do it under parts lock, so we create a copy of the data parts and release parts lock
-    /// before calculation.
-    ///
-    /// Note, the result will be still correct, since it is guarded by the
-    /// columns_and_secondary_indices_sizes_mutex.
-    auto storage_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    if (hasColumnsWithDynamicSubcolumns(storage_metadata_snapshot->getSampleBlock()))
+    /// A lazy per-part size calculation may acquire currently_processing_in_background_mutex via
+    /// getMutationsSnapshot() when secondary indices are present. MergeTree maintenance has the
+    /// opposite lock order: currently_processing_in_background_mutex -> parts lock -> sizes lock.
+    /// Release both table-level locks before warming the per-part caches to avoid that inversion.
+    parts_lock.unlock();
+    sizes_lock.unlock();
+
+    while (true)
     {
-        DataParts data_parts(committed_parts_range.begin(), committed_parts_range.end());
-        parts_lock.unlock();
+        for (const auto & part : data_parts)
+        {
+            if (!part->areColumnAndSecondaryIndexSizesCalculated())
+                part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+        }
+
+        /// Reacquire in the normal order and verify that the active set did not change while the
+        /// table-level locks were released. Contribution updates skip work while this aggregate is
+        /// invalid, so retrying with the new active set is enough to publish a consistent snapshot.
+        auto current_parts_lock = readLockParts();
+        sizes_lock.lock();
+
+        if (are_columns_and_secondary_indices_sizes_calculated)
+            return;
+
+        auto current_parts_range = getDataPartsStateRange(DataPartState::Active);
+        DataParts current_parts(current_parts_range.begin(), current_parts_range.end());
+        if (current_parts != data_parts)
+        {
+            data_parts = std::move(current_parts);
+            sizes_lock.unlock();
+            current_parts_lock.unlock();
+            continue;
+        }
+
+        column_sizes.clear();
+        secondary_index_sizes.clear();
+        primary_index_size = {};
 
         for (const auto & part : data_parts)
             addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
-    }
-    else
-    {
-        for (const auto & part : committed_parts_range)
-            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
-    }
 
-    are_columns_and_secondary_indices_sizes_calculated = true;
+        are_columns_and_secondary_indices_sizes_calculated = true;
+        return;
+    }
 }
 
 /// A part whose sizes are not computed yet cannot be accounted for without reading them from its
@@ -13812,9 +13823,27 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
     {
         for (const MutationCommand & mutation_command : commands)
         {
-            if (command.type == AlterCommand::DROP_INDEX && mutation_command.index_name == command.index_name)
+            const bool is_index_mutation = mutation_command.type == MutationCommand::Type::DROP_INDEX
+                || mutation_command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || mutation_command.type == MutationCommand::Type::RENAME_INDEX;
+            const auto & mutation_index_name = mutation_command.type == MutationCommand::Type::DROP_INDEX
+                ? mutation_command.column_name
+                : mutation_command.index_name;
+            const bool mutation_touches_source = is_index_mutation
+                && (mutation_index_name == command.index_name
+                    || (mutation_command.type == MutationCommand::Type::RENAME_INDEX && mutation_command.rename_to == command.index_name));
+            const bool mutation_touches_destination = is_index_mutation
+                && (mutation_index_name == command.rename_to
+                    || (mutation_command.type == MutationCommand::Type::RENAME_INDEX && mutation_command.rename_to == command.rename_to));
+
+            if (command.type == AlterCommand::DROP_INDEX && mutation_touches_source)
             {
                 throw_exception(mutation_name, "drop", "index", command.index_name);
+            }
+            else if (command.type == AlterCommand::RENAME_INDEX
+                     && (mutation_touches_source || mutation_touches_destination))
+            {
+                throw_exception(mutation_name, "rename", "index", command.index_name);
             }
             else if (command.type == AlterCommand::DROP_PROJECTION
                      && mutation_command.projection_name == command.projection_name)

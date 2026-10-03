@@ -562,7 +562,11 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     if (index_id_for_caches.empty())
     {
         const auto & part_storage = *state.part_info.getDataPartStorage();
-        index_id_for_caches = fmt::format("{}:{}:{}", part_storage.getDiskName(), part_storage.getFullPath(), state.index.getFileName());
+        index_id_for_caches = fmt::format(
+            "{}:{}:{}",
+            part_storage.getDiskName(),
+            part_storage.getFullPath(),
+            state.part_info.getAlterConversions()->getIndexOldFileName(state.index.index.name, state.index.index.escape_filenames));
     }
 
     is_empty = false;

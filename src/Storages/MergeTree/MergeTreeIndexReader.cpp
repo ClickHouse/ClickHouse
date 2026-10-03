@@ -104,8 +104,8 @@ void MergeTreeIndexReader::initStreamIfNeeded()
         return;
 
     const auto & checksums = data_part_info->getChecksums();
-    auto index_format = index->getDeserializedFormat(*data_part_info, index->getFileName());
-    auto index_name = index->getFileName();
+    const auto index_name = data_part_info->getAlterConversions()->getIndexOldFileName(index->index.name, index->index.escape_filenames);
+    auto index_format = index->getDeserializedFormat(*data_part_info, index_name);
     auto last_mark = getLastMark(all_mark_ranges);
 
     for (const auto & substream : index_format.substreams)
@@ -183,7 +183,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
     if (index->isVectorSimilarityIndex() && concrete_part && concrete_part->getState() == MergeTreeDataPartState::Active)
     {
         VectorSimilarityIndexCacheKey key{concrete_part->getDataPartStorage().getDiskName() + ":" + concrete_part->getRelativePathOfActivePart(),
-                                          index->getFileName(),
+                                          data_part_info->getAlterConversions()->getIndexOldFileName(index->index.name, index->index.escape_filenames),
                                           mark};
 
         granule = vector_similarity_index_cache->getOrSet(key, load_func);

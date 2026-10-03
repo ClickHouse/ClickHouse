@@ -35,6 +35,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify_column(Keyword::MODIFY_COLUMN);
     ParserKeyword s_alter_column(Keyword::ALTER_COLUMN);
     ParserKeyword s_rename_column(Keyword::RENAME_COLUMN);
+    ParserKeyword s_rename_index(Keyword::RENAME_INDEX);
     ParserKeyword s_comment_column(Keyword::COMMENT_COLUMN);
     ParserKeyword s_materialize_column(Keyword::MATERIALIZE_COLUMN);
 
@@ -249,6 +250,22 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 command->type = ASTAlterCommand::RENAME_COLUMN;
+            }
+            else if (s_rename_index.ignore(pos, expected))
+            {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                if (!parser_name.parse(pos, command_index, expected))
+                    return false;
+
+                if (!s_to.ignore(pos, expected))
+                    return false;
+
+                if (!parser_name.parse(pos, command_rename_to, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::RENAME_INDEX;
             }
             else if (s_materialize_column.ignore(pos, expected))
             {
@@ -1391,7 +1408,7 @@ When planning an `ALTER TABLE`, distinguish a metadata change from the work requ
 
 By default, `ALTER` queries on non-replicated tables wait for their work to complete. With `alter_sync = 0`, an `ALTER` that performs background work can return before that work finishes. For replicated tables, the query adds instructions for the appropriate actions to `ZooKeeper`, and the actions themselves are performed as soon as possible. The query can wait for these actions to be completed on all replicas.
 
-For `ALTER` queries that create mutations through the mutation execution path (including, but not limited to, `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, and `MATERIALIZE STATISTIC`), synchronicity is defined by the [mutations_sync](/reference/settings/session-settings/mutations#mutations_sync) setting.
+For `ALTER` queries that create mutations through the mutation execution path (including, but not limited to, `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `RENAME INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, and `MATERIALIZE STATISTIC`), synchronicity is defined by the [mutations_sync](/reference/settings/session-settings/mutations#mutations_sync) setting.
 
 For other `ALTER` queries, including `MODIFY COLUMN` rewrites, [alter_sync](/reference/settings/session-settings/alter#alter_sync) controls waiting.
 
@@ -2629,6 +2646,10 @@ The following operations are available:
 
 `ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name` - Removes index description from tables metadata and deletes index files from disk. Implemented as a [mutation](/reference/statements/alter/index#mutations).
 
+## RENAME INDEX {#rename-index}
+
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] RENAME INDEX [IF EXISTS] old_name TO new_name` - Renames a secondary index without rebuilding its data. Existing index files are renamed by a [mutation](/reference/statements/alter/index#mutations).
+
 ## MATERIALIZE INDEX {#materialize-index}
 
 `ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] name [IN PARTITION partition_name]` - Rebuilds the secondary index `name` for the specified `partition_name`. Implemented as a [mutation](/reference/statements/alter/index#mutations). If `IN PARTITION` part is omitted then it rebuilds the index for the whole table data.
@@ -2656,6 +2677,7 @@ Multiple `MATERIALIZE INDEX` clauses can appear in one `ALTER`. The covered case
         .syntax = R"(
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] RENAME INDEX [IF EXISTS] old_name TO new_name
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] name [IN PARTITION partition_name]
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [IN PARTITION partition_name]
 )",

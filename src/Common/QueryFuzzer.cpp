@@ -7747,6 +7747,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             case ASTAlterCommand::MODIFY_CONSTRAINT:
             case ASTAlterCommand::COMMENT_COLUMN:
             case ASTAlterCommand::RENAME_COLUMN:
+            case ASTAlterCommand::RENAME_INDEX:
             case ASTAlterCommand::MATERIALIZE_COLUMN:
             case ASTAlterCommand::MATERIALIZE_INDEX:
             case ASTAlterCommand::MATERIALIZE_PROJECTION:

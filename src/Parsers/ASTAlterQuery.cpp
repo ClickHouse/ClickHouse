@@ -496,6 +496,10 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         case ASTAlterCommand::MATERIALIZE_INDEX:
             require(index, "index");
             break;
+        case ASTAlterCommand::RENAME_INDEX:
+            require(index, "index");
+            require(rename_to, "rename_to");
+            break;
         case ASTAlterCommand::ADD_STATISTICS:
         case ASTAlterCommand::MODIFY_STATISTICS:
             require(statistics_decl, "statistics_decl");
@@ -826,6 +830,13 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
         }
+    }
+    else if (type == ASTAlterCommand::RENAME_INDEX)
+    {
+        ostr << "RENAME INDEX " << (if_exists ? "IF EXISTS " : "");
+        index->format(ostr, settings, state, frame);
+        ostr << " TO ";
+        rename_to->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::MATERIALIZE_INDEX)
     {

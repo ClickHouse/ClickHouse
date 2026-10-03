@@ -63,8 +63,13 @@ bool hasMaterializedTextIndex(
     for (const auto & index_desc : storage_snapshot->metadata->getSecondaryIndices())
     {
         if (index_desc.type == "text" && index_desc.name == text_index_name)
-            if (const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(&data_part_info_for_reader))
-                return loaded_part->getDataPart()->hasSecondaryIndex(index_desc.name, storage_snapshot->metadata);
+            if (dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(&data_part_info_for_reader))
+            {
+                const auto index_file_name = data_part_info_for_reader.getAlterConversions()->getIndexOldFileName(
+                    index_desc.name, storage_snapshot->metadata->escape_index_filenames);
+                return data_part_info_for_reader.getDataPart()->getStreamNameOrHashResolved(index_file_name, ".idx").has_value()
+                    || data_part_info_for_reader.getDataPart()->getStreamNameOrHashResolved(index_file_name, ".idx2").has_value();
+            }
     }
 
     return false;

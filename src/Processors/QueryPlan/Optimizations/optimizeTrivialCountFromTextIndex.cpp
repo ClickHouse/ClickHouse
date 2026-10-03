@@ -252,7 +252,8 @@ bool guardsHold(const ReadFromMergeTree & reading)
         return false;
 
     if (const auto & mutations = reading.getMutationsSnapshot();
-        mutations && (mutations->hasDataMutations() || mutations->hasPatchParts() || mutations->hasLightweightDeletedMask()))
+        mutations && (mutations->hasDataMutations() || mutations->hasPatchParts() || mutations->hasLightweightDeletedMask()
+            || mutations->hasMetadataMutations()))
         return false;
 
     if (reading.getStorageMetadata()->hasUniqueKey())

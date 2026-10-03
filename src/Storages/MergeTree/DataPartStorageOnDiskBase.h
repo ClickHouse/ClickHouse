@@ -102,6 +102,7 @@ public:
     /// from data.
     void filterPackedSkipIndicesArchiveTo(
         const NameSet & dropped_skip_index_archive_file_names,
+        const NameToNameVector & renamed_skip_index_archive_file_names,
         IDataPartStorage & new_storage,
         const WriteSettings & write_settings,
         const ReadSettings & read_settings,
