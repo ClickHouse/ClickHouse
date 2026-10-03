@@ -82,43 +82,61 @@ struct Bridge
     ssh_channel_callbacks_struct backend_cb{};
 };
 
-int onAuthPubkey(ssh_session, const char * user, ssh_key key, char /*signature_state*/, void * userdata)
+int onAuthPubkey(ssh_session, const char * user, ssh_key key, char signature_state, void * userdata)
 {
     auto * bridge = static_cast<Bridge *>(userdata);
+
+    /// libssh calls this twice per offered key: first with `SSH_PUBLICKEY_STATE_NONE` when the client
+    /// only asks whether the key is acceptable, then with `SSH_PUBLICKEY_STATE_VALID` once the client
+    /// has signed the session with the private key and libssh has verified the signature. Only the
+    /// latter proves possession of the key; anything else (a wrong signature) is rejected.
+    if (signature_state != SSH_PUBLICKEY_STATE_NONE && signature_state != SSH_PUBLICKEY_STATE_VALID)
+        return SSH_AUTH_DENIED;
+
+    /// Clients offer their keys one by one: a key that does not match is denied, and the next one is
+    /// evaluated afresh. The route is latched only for the key that authenticated the client.
+    if (bridge->routed)
+        return SSH_AUTH_DENIED;
+
     try
     {
         auto public_key = ssh::SSHPublicKey::createNonOwning(key);
         const String canonical = public_key.getType() + " " + public_key.getBase64Representation();
 
-        if (!bridge->routed)
+        RouteAttributes attributes;
+        attributes.protocol = ListenerProtocol::SSH;
+        attributes.user = user ? user : "";
+        attributes.authorized_key = canonical;
+        attributes.peer_address = bridge->peer.host().toString();
+
+        /// Pure routing only: hooks and waits use fibers and must not run inside this callback.
+        Router::Decision decision = bridge->ctx->router.routeStatic(attributes, bridge->ctx->listener);
+
+        /// The proxy logs in to the backend with its own bastion key, so the client's key is the only
+        /// credential: it must be explicitly listed in the allowlist of the matched rule. A route reached
+        /// without one (the listener's default pool, or a rule matching only on the user name, which the
+        /// client chooses freely) does not authorize anyone.
+        if (!decision.backend || !decision.authorized_key_matched)
         {
-            RouteAttributes attributes;
-            attributes.protocol = ListenerProtocol::SSH;
-            attributes.user = user ? user : "";
-            attributes.authorized_key = canonical;
-            attributes.peer_address = bridge->peer.host().toString();
-
-            /// Pure routing only: hooks and waits use fibers and must not run inside this callback.
-            bridge->backend = bridge->ctx->router.routeStatic(attributes, bridge->ctx->listener).backend;
-            bridge->routed = true;
-
-            if (bridge->backend)
-                LOG_DEBUG(bridge->log, "SSH {} key (user '{}') routed to backend {}",
-                    public_key.getType(), attributes.user, bridge->backend->name());
-            else
-                LOG_WARNING(bridge->log, "SSH {} key (user '{}') matched no backend; rejecting",
-                    public_key.getType(), attributes.user);
+            LOG_DEBUG(bridge->log, "SSH {} key (user '{}') is not in the allowlist of a routing rule with an available backend",
+                public_key.getType(), attributes.user);
+            return SSH_AUTH_DENIED;
         }
+
+        if (signature_state == SSH_PUBLICKEY_STATE_NONE)
+            return SSH_AUTH_SUCCESS;    /// The key is acceptable; the client proceeds to sign with it.
+
+        bridge->backend = decision.backend;
+        bridge->routed = true;
+        LOG_DEBUG(bridge->log, "SSH {} key (user '{}') routed to backend {}",
+            public_key.getType(), attributes.user, bridge->backend->name());
+        return SSH_AUTH_SUCCESS;
     }
     catch (...)
     {
         /// It is Ok to swallow the error: a failure to route means the key is not authorized.
         return SSH_AUTH_DENIED;
     }
-
-    /// The client is authorized by the fact that its key selects a backend; the real signature check
-    /// happens on the re-originated connection to that backend.
-    return bridge->backend ? SSH_AUTH_SUCCESS : SSH_AUTH_DENIED;
 }
 
 int onClientData(ssh_session, ssh_channel, void * data, uint32_t len, int is_stderr, void * userdata)
@@ -206,13 +224,19 @@ bool connectBackend(Bridge * bridge)
     const UInt64 timeout_ms = bridge->ctx->config.connect_timeout_ms;
     const long timeout_sec = static_cast<long>(timeout_ms / 1000);  // NOLINT(google-runtime-int)
     const long timeout_usec = static_cast<long>((timeout_ms % 1000) * 1000);  // NOLINT(google-runtime-int)
-    int no_strict = 0;
+    /// The backend's host key is verified against the configured `known_hosts_file` only (never the
+    /// user's or the system's files, and no `ssh_config` is read), before the bastion key is used.
+    int strict = 1;
+    int process_config = 0;
+    ssh_options_set(bridge->backend_session, SSH_OPTIONS_PROCESS_CONFIG, &process_config);
     ssh_options_set(bridge->backend_session, SSH_OPTIONS_HOST, backend.config().host.c_str());
     ssh_options_set(bridge->backend_session, SSH_OPTIONS_PORT_STR, std::to_string(port).c_str());
     ssh_options_set(bridge->backend_session, SSH_OPTIONS_USER, ssh_config.backend_user.c_str());
     ssh_options_set(bridge->backend_session, SSH_OPTIONS_TIMEOUT, &timeout_sec);
     ssh_options_set(bridge->backend_session, SSH_OPTIONS_TIMEOUT_USEC, &timeout_usec);
-    ssh_options_set(bridge->backend_session, SSH_OPTIONS_STRICTHOSTKEYCHECK, &no_strict);
+    ssh_options_set(bridge->backend_session, SSH_OPTIONS_STRICTHOSTKEYCHECK, &strict);
+    ssh_options_set(bridge->backend_session, SSH_OPTIONS_KNOWNHOSTS, ssh_config.known_hosts_file.c_str());
+    ssh_options_set(bridge->backend_session, SSH_OPTIONS_GLOBAL_KNOWNHOSTS, ssh_config.known_hosts_file.c_str());
 
     /// Feed the same backend-health accounting as `connectToBackend`, so that a dead `ssh_port`
     /// marks the backend down for passive health checks and its connect latency feeds the
@@ -229,6 +253,16 @@ bool connectBackend(Bridge * bridge)
     }
     const double latency_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
     backend.reportConnectSuccess(latency_ms);
+
+    /// Fail closed: without a matching host key the peer may be anyone answering at the backend's
+    /// address, and it must not receive the proxied session or the bastion's authentication.
+    if (const auto known = ssh_session_is_known_server(bridge->backend_session); known != SSH_KNOWN_HOSTS_OK)
+    {
+        LOG_ERROR(bridge->log, "The host key of SSH backend {} is not trusted (status {}, {}); add it to {}",
+            backend.name(), static_cast<int>(known), ssh_get_error(bridge->backend_session), ssh_config.known_hosts_file);
+        backend.reportError();
+        return false;
+    }
 
     if (ssh_pki_import_privkey_file(ssh_config.backend_key_file.c_str(), nullptr, nullptr, nullptr, &bridge->backend_key) != SSH_OK)
     {
@@ -328,6 +362,15 @@ void runSSHSession(int owned_fd, const FrontendContext & ctx)
     ssh_set_auth_methods(session.getInternalPtr(), SSH_AUTH_METHOD_PUBLICKEY);
     ssh_set_server_callbacks(session.getInternalPtr(), &bridge.server_cb);
 
+    /// Bound the blocking key exchange, so a client that stalls before completing it cannot hold the
+    /// borrowed thread for long. libssh sums the whole seconds and the microseconds.
+    const UInt64 handshake_timeout_ms = ctx.config.handshake_timeout_ms;
+    const long handshake_timeout_sec = static_cast<long>(handshake_timeout_ms / 1000);  // NOLINT(google-runtime-int)
+    const long handshake_timeout_usec = static_cast<long>((handshake_timeout_ms % 1000) * 1000);  // NOLINT(google-runtime-int)
+    if (ssh_options_set(session.getInternalPtr(), SSH_OPTIONS_TIMEOUT, &handshake_timeout_sec) != SSH_OK
+        || ssh_options_set(session.getInternalPtr(), SSH_OPTIONS_TIMEOUT_USEC, &handshake_timeout_usec) != SSH_OK)
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot set the SSH handshake timeout");
+
     session.handleKeyExchange();
 
     bridge.event = ssh_event_new();
@@ -418,6 +461,10 @@ void validateSSHKeys(const ProxyConfiguration & config)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
             "Cannot load the SSH backend key from '{}' specified in <proxy><ssh><backend_key_file>", config.ssh.backend_key_file);
     ssh_key_free(key);
+
+    if (::access(config.ssh.known_hosts_file.c_str(), R_OK) != 0)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Cannot read the SSH backend host keys from '{}' specified in <proxy><ssh><known_hosts_file>", config.ssh.known_hosts_file);
 }
 
 #else

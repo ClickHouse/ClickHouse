@@ -22,6 +22,14 @@
 #include <vector>
 
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int CANNOT_SCHEDULE_TASK;
+}
+}
+
 namespace DB::Proxy
 {
 
@@ -52,12 +60,22 @@ int runCheck(CheckTask * task) noexcept
 
 }
 
+#if USE_SSL
+HealthMonitor::HealthMonitor(const ProxyConfiguration & config_, Router & router_, Poco::Net::Context::Ptr client_tls_context_)
+    : config(config_)
+    , router(router_)
+    , client_tls_context(std::move(client_tls_context_))
+    , log(getLogger("ProxyHealth"))
+{
+}
+#else
 HealthMonitor::HealthMonitor(const ProxyConfiguration & config_, Router & router_)
     : config(config_)
     , router(router_)
     , log(getLogger("ProxyHealth"))
 {
 }
+#endif
 
 HealthMonitor::~HealthMonitor() = default;
 
@@ -97,12 +115,11 @@ std::vector<BackendPtr> HealthMonitor::collectBackends() const
 
 void HealthMonitor::checkBackend(Backend & backend, bool poll_resources)
 {
-    const UInt16 port = backend.config().tcp_port ? backend.config().tcp_port : 9000;
+    const UInt16 port = healthCheckPort(backend.config());
     const auto started = std::chrono::steady_clock::now();
     try
     {
-        FiberSocket socket = FiberSocket::connect(
-            Poco::Net::SocketAddress(backend.config().host, port), config.health_check.timeout_ms);
+        FiberSocket socket = FiberSocket::connect(resolveAddress(backend.config().host, port), config.health_check.timeout_ms);
         const double latency_ms = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - started).count();
         socket.close();
@@ -122,11 +139,25 @@ void HealthMonitor::checkBackend(Backend & backend, bool poll_resources)
 
 void HealthMonitor::pollResources(Backend & backend)
 {
-    const UInt16 port = backend.config().http_port ? backend.config().http_port : 8123;
+    const UInt16 port = backendPortFor(ListenerProtocol::HTTP, backend.config(), /*listener_port=*/ 0);
     try
     {
-        FiberSocket socket = FiberSocket::connect(
-            Poco::Net::SocketAddress(backend.config().host, port), config.health_check.timeout_ms);
+        const Poco::Net::SocketAddress address = resolveAddress(backend.config().host, port);
+        FiberSocket socket;
+        if (backend.config().secure)
+        {
+#if USE_SSL
+            /// A secure backend serves HTTPS only; poll it over TLS like the frontends connect to it.
+            chassert(client_tls_context);   /// Created at startup whenever any backend is secure.
+            socket = FiberSocket::connectTLS(address, config.health_check.timeout_ms, client_tls_context, backend.config().host);
+#else
+            return;
+#endif
+        }
+        else
+        {
+            socket = FiberSocket::connect(address, config.health_check.timeout_ms);
+        }
         socket.setTimeouts(config.health_check.timeout_ms, config.health_check.timeout_ms);
 
         const String credentials = base64Encode(backend.config().monitor_user + ":" + backend.config().monitor_password);
@@ -186,6 +217,15 @@ void HealthMonitor::superviseLoop()
     while (!stopped.load(std::memory_order_relaxed))
     {
         std::vector<BackendPtr> backends = collectBackends();
+
+        /// Dynamic backends can be evicted, so forget the throttle entries of the backends that are gone:
+        /// the map stays bounded, and a new backend allocated at a reused address starts afresh.
+        {
+            std::unordered_set<Backend *> current;
+            for (const auto & backend : backends)
+                current.insert(backend.get());
+            std::erase_if(last_resource_poll, [&](const auto & entry) { return !current.contains(entry.first); });
+        }
 
         /// Liveness is probed every `interval_ms`, but the more expensive resource poll is throttled to
         /// `resource_poll_interval_ms`. The decision is made here, in the single supervisor fiber, so that
@@ -247,8 +287,10 @@ void HealthMonitor::start()
     supervisor_future = std::make_unique<silk::FiberFuture>();
     if (silk::FiberScheduler::run(supervisor, SelfParam{this}, supervisor_future.get()) != 0)
     {
-        LOG_ERROR(log, "Cannot start the health monitoring fiber");
+        /// Passive marking-down is enabled together with health checks, and only the monitor brings
+        /// a backend back up: serving without it would drain the pools after a transient outage.
         supervisor_future = nullptr;
+        throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Cannot start the health monitoring fiber");
     }
 }
 

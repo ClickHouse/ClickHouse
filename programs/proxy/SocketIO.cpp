@@ -6,12 +6,17 @@
 
 #include <Common/Exception.h>
 
+#include <Poco/Net/IPAddress.h>
 #include <Poco/Timespan.h>
+
+#include <silk/fibers/fiber.h>
 
 #if USE_SSL
 #include <IO/SilkSecureFiberStreamSocketImpl.h>
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureStreamSocket.h>
+#include <Poco/Net/SecureStreamSocketImpl.h>
+#include <openssl/ssl.h>
 #endif
 
 namespace DB
@@ -30,6 +35,18 @@ namespace DB::Proxy
 static Poco::Timespan ms(UInt64 milliseconds)
 {
     return Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(milliseconds) * 1000);
+}
+
+Poco::Net::SocketAddress resolveAddress(const String & host, UInt16 port)
+{
+    Poco::Net::IPAddress ip;
+    if (Poco::Net::IPAddress::tryParse(host, ip))
+        return Poco::Net::SocketAddress(ip, port);
+
+    /// Name resolution is a blocking `getaddrinfo` call: leave the cooperative scheduler for its
+    /// duration, so a slow resolver blocks only this fiber's borrowed thread, not other connections.
+    silk::FiberScheduler::ThreadModeScope thread_mode;
+    return Poco::Net::SocketAddress(host, port);
 }
 
 FiberSocket FiberSocket::adopt(int fd)
@@ -65,6 +82,17 @@ FiberSocket FiberSocket::connectTLS(
     result.socket.setNoDelay(true);
     result.is_plaintext = false;
     return result;
+}
+
+String FiberSocket::tlsServerName()
+{
+    if (is_plaintext)
+        return {};
+    auto * impl = dynamic_cast<Poco::Net::SecureStreamSocketImpl *>(socket.impl());
+    if (!impl || !impl->ssl())
+        return {};
+    const char * name = SSL_get_servername(impl->ssl(), TLSEXT_NAMETYPE_host_name);
+    return name ? String(name) : String();
 }
 
 FiberSocket FiberSocket::adoptTLS(int fd, Poco::Net::Context::Ptr context)

@@ -23,8 +23,6 @@
 #include <sys/socket.h>
 
 #if USE_SSL
-#include <Interpreters/Context.h>
-#include <Server/ACME/Client.h>
 #include <Poco/Net/Context.h>
 #endif
 
@@ -218,27 +216,21 @@ void ProxyServer::bindAndListen()
 
 void ProxyServer::start(const Poco::Util::AbstractConfiguration & abstract_config)
 {
+    /// The ACME client of `clickhouse-server` depends on the server's `http_port`, its HTTP handler for
+    /// `/.well-known/acme-challenge/` and ZooKeeper coordination, none of which the proxy has.
+    /// Refuse the section instead of starting with certificate provisioning that cannot work.
+    if (abstract_config.has("acme"))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "ACME certificate provisioning is not supported by clickhouse-proxy; remove the 'acme' section "
+            "and provide the certificates in the 'openSSL.server' section");
+
 #if USE_SSL
     if (anySecureListener())
         server_tls_context = makeServerTLSContext(abstract_config);
     if (anyBackendSecure())
         client_tls_context = makeClientTLSContext(abstract_config);
-
-    if (abstract_config.has("acme"))
-    {
-        /// ACME needs a global context (for ZooKeeper coordination and the background refresh tasks).
-        /// The challenge is served by the HTTP frontend at /.well-known/acme-challenge/.
-        /// These are kept for the lifetime of the process on purpose.
-        static auto shared_context = Context::createShared();
-        static auto global_context = Context::createGlobal(shared_context.get());
-        global_context->makeGlobalContext();
-        global_context->setApplicationType(Context::ApplicationType::SERVER);
-        ACME::Client::instance().initialize(abstract_config);
-        acme_enabled = true;
-        LOG_INFO(log, "ACME certificate provisioning is enabled");
-    }
 #else
-    if (anySecureListener() || anyBackendSecure() || abstract_config.has("acme"))
+    if (anySecureListener() || anyBackendSecure())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "TLS features require a build with SSL support");
 #endif
 
@@ -256,7 +248,11 @@ void ProxyServer::start(const Poco::Util::AbstractConfiguration & abstract_confi
     bindAndListen();
 
     router = std::make_unique<Router>(config, config.health_check.enabled);
+#if USE_SSL
+    health = std::make_unique<HealthMonitor>(config, *router, client_tls_context);
+#else
     health = std::make_unique<HealthMonitor>(config, *router);
+#endif
 
     /// One shared, read-only handler context per listener.
     for (const auto & listener : config.listeners)
@@ -337,14 +333,6 @@ void ProxyServer::stop()
     /// process teardown. In-flight client connections are dropped.
     if (health)
         health->join();
-
-#if USE_SSL
-    if (acme_enabled)
-    {
-        ACME::Client::instance().shutdown();
-        acme_enabled = false;
-    }
-#endif
 
     if (silk_initialized)
     {

@@ -4,6 +4,7 @@
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 
@@ -50,7 +51,19 @@ public:
 
     BackendPtr choose(const std::vector<BackendPtr> & candidates) override
     {
-        return candidates[counter.fetch_add(1, std::memory_order_relaxed) % candidates.size()];
+        /// Weighted: within each cycle of `total_weight` requests, a backend receives `weight` of them.
+        UInt64 total_weight = 0;
+        for (const auto & backend : candidates)
+            total_weight += backend->config().weight;
+
+        UInt64 point = counter.fetch_add(1, std::memory_order_relaxed) % total_weight;
+        for (const auto & backend : candidates)
+        {
+            if (point < backend->config().weight)
+                return backend;
+            point -= backend->config().weight;
+        }
+        return candidates.back();
     }
 
 private:
@@ -109,18 +122,46 @@ public:
 
     BackendPtr choose(const std::vector<BackendPtr> & candidates) override
     {
-        /// Backends with unknown resource usage (not polled yet) are preferred to loaded ones:
-        /// treat unknown as zero. Ties are broken by the number of active connections.
-        BackendPtr best;
-        double best_cpu = 0;
+        /// CPU (in cores) and memory (in bytes) are not comparable, so each is normalized by its maximum
+        /// across the candidates, and a backend is as loaded as its scarcer resource, divided by its weight.
+        double max_cpu = 0;
+        double max_memory = 0;
         for (const auto & backend : candidates)
         {
-            double cpu = std::max(backend->cpuUsage(), 0.0) / backend->config().weight;
-            if (!best || cpu < best_cpu
-                || (cpu == best_cpu && backend->activeConnections() < best->activeConnections()))
+            max_cpu = std::max(max_cpu, backend->cpuUsage());
+            max_memory = std::max(max_memory, backend->memoryUsage());
+        }
+
+        const auto score = [&](const Backend & backend)
+        {
+            const double cpu_share = max_cpu > 0 ? backend.cpuUsage() / max_cpu : 0;
+            const double memory_share = max_memory > 0 ? backend.memoryUsage() / max_memory : 0;
+            return std::max(cpu_share, memory_share) / backend.config().weight;
+        };
+
+        /// Backends with unknown resource usage (not polled yet, or without monitoring credentials)
+        /// rank after every backend with known usage, so a mixed pool does not favor unmonitored
+        /// backends. Ties, and pools with no known usage at all, are broken by active connections.
+        BackendPtr best;
+        bool best_known = false;
+        double best_score = 0;
+        for (const auto & backend : candidates)
+        {
+            const bool known = backend->cpuUsage() >= 0 && backend->memoryUsage() >= 0;
+            const double backend_score = known ? score(*backend) : 0;
+            bool better = false;
+            if (!best || known != best_known)
+                better = !best || known;
+            else if (backend_score != best_score)
+                better = backend_score < best_score;
+            else
+                better = backend->activeConnections() < best->activeConnections();
+
+            if (better)
             {
                 best = backend;
-                best_cpu = cpu;
+                best_known = known;
+                best_score = backend_score;
             }
         }
         return best;

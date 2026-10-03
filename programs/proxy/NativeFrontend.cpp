@@ -9,6 +9,8 @@
 
 #include <base/scope_guard.h>
 
+#include <Poco/String.h>
+
 
 namespace DB::Proxy
 {
@@ -49,6 +51,13 @@ void handleNative(FiberSocket & client, const FrontendContext & ctx)
         LOG_WARNING(ctx.log, "Cannot parse native Hello: {}", getCurrentExceptionMessage(/*with_stacktrace=*/ false));
         return;
     }
+
+#if USE_SSL
+    /// On a TLS-terminating listener the handshake has completed by now (the Hello was read through
+    /// it), so the server name the client asked for is known: route `host` rules by it.
+    if (ctx.listener.secure)
+        attributes.host = Poco::toLower(client.tlsServerName());   /// DNS hostnames are case-insensitive.
+#endif
 
     RouteResult route = routeConnection(ctx, attributes);
     if (!route.backend)

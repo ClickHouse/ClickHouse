@@ -39,7 +39,28 @@ protocol or the inter-server replication protocol.
 | TLS by SNI    | `tls`               | By hostname (SNI), without decryption               |
 | Opaque stream | `stream`            | By peer address or default pool                     |
 
-Query-type routing (see below) applies to the HTTP protocol only.
+Query-type routing (see below) applies to the HTTP protocol only. On a TLS-terminating `native`
+listener, `host` rules match the server name (SNI) the client sent in the TLS handshake.
+
+## PostgreSQL {#postgresql}
+
+The proxy reads the user and the database from the cleartext `StartupMessage`. A client that asks to
+encrypt the connection first (`SSLRequest` or `GSSENCRequest`) is handled in one of two ways:
+
+- When a routing rule needs the user or the database, the proxy declines encryption, so the client
+  continues in cleartext (or disconnects, if it requires encryption) and its `StartupMessage` can be
+  routed by the rules.
+- Otherwise the connection is routed by peer address or the listener's default pool, and the bytes are
+  forwarded verbatim, so the backend negotiates encryption end to end.
+
+A `CancelRequest` arrives on a new connection, and the proxy does not track which backend serves the
+session it cancels. Its key is a random secret, so the proxy delivers the request to every available
+backend the listener can route to, and only the backend that issued the key acts on it.
+
+MySQL and PostgreSQL negotiate TLS in-band, and the proxy does not mediate that on the backend leg:
+a backend marked `<secure>1</secure>` cannot be used for these protocols. Such configurations are
+rejected at startup when they are visible statically (a listener's default pool, a rule restricted
+to these protocols), and such connections are refused otherwise.
 
 ## MySQL {#mysql}
 
@@ -55,7 +76,9 @@ the password. After authentication the connection is spliced byte for byte.
 When no routing rule needs the user or the database, MySQL connections are instead forwarded
 transparently and routed by peer address or the listener's default pool (no termination). Only
 `mysql_native_password` is mediated; TLS is not offered to the client on a MySQL listener so that the
-handshake stays readable.
+handshake stays readable. Because the client receives the proxy's greeting before the backend is
+chosen, the connection ID it learns from the greeting is not the backend's: use `KILL QUERY` with a
+query ID rather than killing a connection by the ID from the handshake.
 
 ## SSH {#ssh}
 
@@ -67,7 +90,12 @@ key during authentication. It routes by that key — a pool is chosen by which k
 two sessions (pty, shell, exec, and their input/output).
 
 Because the client's signature cannot be replayed to the backend, the proxy authorizes the client by
-its public key and logs in to the backend with a configured bastion key that the backend trusts:
+its public key and logs in to the backend with a configured bastion key that the backend trusts. The
+client must prove possession of the private key (libssh verifies its signature), and the key must be
+listed in the `authorized_key` / `authorized_key_file` allowlist of the rule that routes it: a route
+reached without an allowlist (the listener's default pool, or a rule matching only on the user name)
+authorizes no one. A client may offer several keys; each is checked until one matches. Before the
+bastion key is used, the backend's host key is verified against `known_hosts_file`:
 
 ```xml
 <proxy>
@@ -78,6 +106,7 @@ its public key and logs in to the backend with a configured bastion key that the
         <host_key_file>/etc/clickhouse-proxy/ssh_host_ed25519_key</host_key_file>
         <backend_user>default</backend_user>
         <backend_key_file>/etc/clickhouse-proxy/bastion_ed25519_key</backend_key_file>
+        <known_hosts_file>/etc/clickhouse-proxy/backends_known_hosts</known_hosts_file>
     </ssh>
     <pools>
         <pool>
@@ -101,16 +130,19 @@ its public key and logs in to the backend with a configured bastion key that the
 
 Each SSH connection borrows an OS thread for its lifetime (libssh drives its own blocking I/O), so
 SSH does not scale as cheaply as the byte-spliced protocols; it is intended for interactive and
-command sessions rather than very high connection counts.
+command sessions rather than very high connection counts. The key exchange is limited by
+`handshake_timeout_ms` and the authentication by `ssh.auth_timeout_ms`. SSH connections are routed
+inside the authentication callback, so the hooks (see below) are not run for them.
 
 Entries of an allowlist follow the `authorized_keys` syntax, `[options] <type> <base64> [comment]`;
 the options field, the comment, and `#` comment lines are ignored. A rule that specifies an
 allowlist from which no key can be parsed is rejected at startup, so a malformed allowlist can never
 degrade into a rule that accepts every key.
 
-An `ssh` listener requires both `host_key_file` and `backend_key_file`, and both key files are
-loaded once at startup: a missing, unreadable, or unparseable key — or a build without SSH support —
-fails the start instead of silently dropping every connection at runtime.
+An `ssh` listener requires `host_key_file`, `backend_key_file` and `known_hosts_file` (in the OpenSSH
+`known_hosts` format), and they are loaded once at startup: a missing, unreadable, or unparseable key
+— or a build without SSH support — fails the start instead of silently dropping every connection at
+runtime. A backend whose host key is not listed in `known_hosts_file` is refused.
 
 ## TLS {#tls}
 
@@ -129,9 +161,9 @@ A listener can handle TLS in three ways:
 - **Transparent** — the `tls` listener protocol. The proxy reads the SNI from the `ClientHello`,
   chooses a backend by hostname, and forwards the encrypted bytes without decrypting them.
 
-Certificates can be provisioned automatically with ACME (for example Let's Encrypt) by adding an
-`acme` section, exactly as for `clickhouse-server`. The ACME HTTP-01 challenge is served on the
-HTTP listeners at `/.well-known/acme-challenge/`.
+Certificates are read from the `openSSL.server` section and reloaded when they change. ACME
+certificate provisioning is not supported by the proxy: a configuration with an `acme` section is
+rejected at startup.
 
 ## Configuration {#configuration}
 
@@ -141,9 +173,8 @@ The whole configuration lives under a top-level `proxy` element. See
 ### Listeners {#listeners}
 
 Each `listener` binds a port and selects a protocol. The optional `<pool>` names the pool to use
-when no routing rule matches. The optional `<peek>` (`auto`, `none`, `credentials`, `query`)
-controls how deeply the proxy inspects the beginning of a connection; `auto` (the default) inspects
-only as much as the routing rules require.
+when no routing rule matches. The proxy inspects the beginning of a connection only as deeply as the
+routing rules require.
 
 ```xml
 <listener>
@@ -156,7 +187,11 @@ only as much as the routing rules require.
 ### Pools and backends {#pools-and-backends}
 
 A pool is a named group of backends with a load-balancing strategy. Listing several backends in one
-pool provides load balancing; a backend may specify per-protocol ports and a `<weight>`.
+pool provides load balancing; a backend may specify per-protocol ports (`tcp_port`, `http_port`,
+`mysql_port`, `postgresql_port`, `ssh_port`, `raw_port`) and a `<weight>`. An omitted port defaults to
+the standard port of the protocol; for a backend marked `<secure>1</secure>`, the native and HTTP
+defaults are the secure ports `9440` and `8443`. The default backend `<name>` is made of the host and
+all configured ports.
 
 ```xml
 <pool>
@@ -175,7 +210,10 @@ pool provides load balancing; a backend may specify per-protocol ports and a `<w
 ```
 
 The available load-balancing strategies are `random`, `round_robin`, `least_connections`,
-`lowest_latency` and `least_resources`. Strategies share a common interface and can be extended.
+`lowest_latency` and `least_resources`. All of them honor the backend `weight`. `least_resources`
+chooses the backend with the lowest CPU or memory usage (whichever is higher relative to the other
+backends of the pool); backends whose usage is unknown rank after those with known usage. Strategies
+share a common interface and can be extended.
 
 ### Routing rules {#routing-rules}
 
@@ -202,10 +240,23 @@ backends:
 </rule>
 ```
 
-The routing table is abstract: it exposes hooks that run a shell command when the host, user or
-database is unknown, when no backend of a pool is available, or the first time a user name or a
-database name is seen. A hook can, for example, provision a backend and wait for it to become
-available. Each hook is invoked as `<command> KIND PROTOCOL HOST USER DATABASE`.
+Backends created from a `backend_template` are kept in a set bounded by `max_dynamic_backends`
+(10000 by default), because the template captures come from the client: when the set is full, the
+idle ones are forgotten, and a connection that needs a new one beyond the limit is rejected.
+
+The proxy runs a shell command on these events, invoked as `<command> KIND PROTOCOL HOST USER DATABASE`:
+
+- `on_unknown` — no rule matched and the listener has no default pool. The routing table is static,
+  so this is a notification: the connection is rejected.
+- `on_no_backends` — no backend of the chosen pool is available. After the command succeeds, the
+  proxy waits up to `timeout_ms` for a backend of the pool to come up; the hook can, for example,
+  start the backends.
+- `on_first_seen_user`, `on_first_seen_database` — the first time a user name or a database name is
+  seen, for example to create it on demand. Concurrent connections with the same name wait for the
+  hook. A failed hook is retried by a later connection, and the set of seen names is bounded, so the
+  hook can run again for a name: it must be idempotent.
+
+A hook that runs longer than `timeout_ms` (60 seconds by default) is killed and counts as failed.
 
 ### Session stickiness {#session-stickiness}
 
@@ -222,9 +273,18 @@ Repeated connections can be pinned to the same backend, chosen by a consistent
 ### Health monitoring {#health-monitoring}
 
 The proxy periodically probes every backend with a TCP connection, records latency, and marks a
-backend down after a number of consecutive failures (bringing it back up when it recovers). If a
-backend has monitoring credentials (`<monitor_user>` / `<monitor_password>`), the proxy also polls
-its CPU and memory usage over HTTP, which the `least_resources` strategy uses.
+backend down after a number of consecutive failures (bringing it back up when it recovers). The
+probed port is the backend's `<health_check_port>` if set; otherwise the first configured port among
+`tcp_port`, `http_port`, `mysql_port`, `postgresql_port`, `ssh_port` and `raw_port`; otherwise the
+default native port. Set `health_check_port` for a backend that is used through several protocols to
+the port whose availability matters most: the health state is tracked per backend, not per protocol.
+If a backend has monitoring credentials (`<monitor_user>` / `<monitor_password>`), the proxy also polls
+its CPU and memory usage over HTTP (HTTPS for a secure backend), which the `least_resources` strategy
+uses.
+
+Host names of backends are resolved on each connection and probe, so a backend that moves to another
+address is followed; the resolution runs outside the cooperative scheduler, so a slow resolver does
+not stall other connections.
 
 ### HTTP extras {#http-extras}
 
@@ -255,7 +315,10 @@ whole thread stack.
 
 Plaintext connections (both legs unencrypted) are relayed with `splice(2)`, moving bytes through a
 kernel pipe without copying them into user space; a TLS-terminated leg falls back to a user-space
-copy because its bytes must be decrypted and re-encrypted.
+copy because its bytes must be decrypted and re-encrypted (as does a plaintext connection when the
+pipes cannot be created, for example at the file descriptor limit). When one side finishes sending,
+the end of its stream is forwarded as a half-close of a plaintext peer, so the other direction can
+still deliver the rest of the response.
 
 Two settings trade throughput against memory:
 

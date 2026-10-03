@@ -26,7 +26,7 @@ namespace DB::Proxy
 
 /// Build a server-side TLS context from the `openSSL.server.*` config section (certificate,
 /// key, verification mode, ciphers, protocols). Registers the context with CertificateReloader
-/// so certificates hot-reload and, when the `acme` section is present, come from the ACME provider.
+/// so certificates hot-reload.
 Poco::Net::Context::Ptr makeServerTLSContext(const Poco::Util::AbstractConfiguration & config);
 
 /// Build a client-side TLS context from the `openSSL.client.*` config section, used for the

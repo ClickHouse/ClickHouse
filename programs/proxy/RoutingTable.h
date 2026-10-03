@@ -21,6 +21,7 @@ public:
     {
         String pool_name;                       /// A reference to a configured pool, or
         std::optional<BackendConfig> backend;   /// a concrete backend produced by the rule.
+        bool authorized_key_matched = false;    /// The rule required, and matched, an SSH public key allowlist.
     };
 
     /// Returns the target of the first matching rule, or nothing if no rule matches.
@@ -33,6 +34,9 @@ public:
     /// Whether any rule applicable to this protocol needs the query type
     /// (and therefore the proxy has to peek into the first query).
     virtual bool needsQueryType(ListenerProtocol protocol) const = 0;
+
+    /// The names of the pools the rules applicable to this protocol may route to.
+    virtual std::vector<String> poolNames(ListenerProtocol protocol) const = 0;
 };
 
 /// A routing table defined by the <rules> section of the configuration.
@@ -44,6 +48,7 @@ public:
     std::optional<Target> resolve(const RouteAttributes & attributes) const override;
     bool needsCredentials(ListenerProtocol protocol) const override;
     bool needsQueryType(ListenerProtocol protocol) const override;
+    std::vector<String> poolNames(ListenerProtocol protocol) const override;
 
 private:
     struct Matcher

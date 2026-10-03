@@ -6,6 +6,13 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
+
+#include <fmt/format.h>
+
+#include <algorithm>
 #include <limits>
 #include <unordered_set>
 
@@ -57,28 +64,14 @@ ListenerProtocol parseListenerProtocol(const String & name)
         "Unknown listener protocol '{}'. Supported protocols: http, native, mysql, postgresql, ssh, tls, stream", name);
 }
 
-static PeekMode parsePeekMode(const String & name)
-{
-    if (name == "auto")
-        return PeekMode::Auto;
-    if (name == "none")
-        return PeekMode::None;
-    if (name == "credentials")
-        return PeekMode::Credentials;
-    if (name == "query")
-        return PeekMode::Query;
-    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-        "Unknown peek mode '{}'. Supported modes: auto, none, credentials, query", name);
-}
-
 UInt16 backendPortFor(ListenerProtocol protocol, const BackendConfig & backend, UInt16 listener_port)
 {
     switch (protocol)
     {
         case ListenerProtocol::HTTP:
-            return backend.http_port ? backend.http_port : 8123;
+            return backend.http_port ? backend.http_port : (backend.secure ? 8443 : 8123);
         case ListenerProtocol::Native:
-            return backend.tcp_port ? backend.tcp_port : 9000;
+            return backend.tcp_port ? backend.tcp_port : (backend.secure ? 9440 : 9000);
         case ListenerProtocol::MySQL:
             return backend.mysql_port ? backend.mysql_port : 9004;
         case ListenerProtocol::PostgreSQL:
@@ -89,6 +82,15 @@ UInt16 backendPortFor(ListenerProtocol protocol, const BackendConfig & backend, 
         case ListenerProtocol::Stream:
             return backend.raw_port ? backend.raw_port : listener_port;
     }
+}
+
+UInt16 healthCheckPort(const BackendConfig & backend)
+{
+    for (UInt16 port : {backend.health_check_port, backend.tcp_port, backend.http_port, backend.mysql_port,
+                        backend.postgresql_port, backend.ssh_port, backend.raw_port})
+        if (port)
+            return port;
+    return backend.secure ? 9440 : 9000;
 }
 
 /// Reads a required listening port and validates it fits in [1, 65535].
@@ -124,11 +126,22 @@ static BackendConfig loadBackend(const Poco::Util::AbstractConfiguration & confi
     backend.postgresql_port = parseOptionalPort(config, prefix + ".postgresql_port");
     backend.ssh_port = parseOptionalPort(config, prefix + ".ssh_port");
     backend.raw_port = parseOptionalPort(config, prefix + ".raw_port");
+    backend.health_check_port = parseOptionalPort(config, prefix + ".health_check_port");
     backend.secure = config.getBool(prefix + ".secure", false);
     backend.weight = config.getUInt(prefix + ".weight", 1);
     backend.monitor_user = config.getString(prefix + ".monitor_user", "");
     backend.monitor_password = config.getString(prefix + ".monitor_password", "");
-    backend.name = config.getString(prefix + ".name", backend.host + ":" + std::to_string(backend.tcp_port ? backend.tcp_port : 9000));
+    /// The default name identifies the whole endpoint set: backends on the same host that differ only in
+    /// a non-native port or in `secure` must not collapse into one name, which is used for duplicate
+    /// detection, consistent hashing and the status page.
+    String default_name = backend.host + ":" + std::to_string(backendPortFor(ListenerProtocol::Native, backend, 0));
+    for (const auto & [label, port] : {std::pair<const char *, UInt16>{"http", backend.http_port}, {"mysql", backend.mysql_port},
+            {"postgresql", backend.postgresql_port}, {"ssh", backend.ssh_port}, {"raw", backend.raw_port}})
+        if (port)
+            default_name += fmt::format(",{}={}", label, port);
+    if (backend.secure)
+        default_name += ",secure";
+    backend.name = config.getString(prefix + ".name", default_name);
 
     if (backend.weight == 0)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Backend '{}' has zero weight", backend.name);
@@ -145,8 +158,6 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
 
     res.listen_host = config.getString("proxy.listen_host", "0.0.0.0");
     res.listen_backlog = config.getUInt("proxy.listen_backlog", 4096);
-    res.display_name = config.getString("proxy.display_name", "ClickHouse proxy");
-    res.advertised_tcp_protocol_version = config.getUInt64("proxy.advertised_tcp_protocol_version", 0);
     res.connect_timeout_ms = config.getUInt64("proxy.connect_timeout_ms", 3000);
     res.handshake_timeout_ms = config.getUInt64("proxy.handshake_timeout_ms", 10000);
     res.send_timeout_ms = config.getUInt64("proxy.send_timeout_ms", 300000);
@@ -154,6 +165,7 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
     if (res.relay_buffer_size == 0)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "'proxy.relay_buffer_size' must be greater than zero");
     res.fiber_stack_size = config.getUInt("proxy.fiber_stack_size", 512 * 1024);
+    res.max_dynamic_backends = config.getUInt64("proxy.max_dynamic_backends", 10000);
 
     Poco::Util::AbstractConfiguration::Keys keys;
 
@@ -217,7 +229,6 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
         listener.host = config.getString(prefix + ".host", "");
         listener.port = parseRequiredPort(config, prefix + ".port");
         listener.secure = config.getBool(prefix + ".secure", false);
-        listener.peek = parsePeekMode(config.getString(prefix + ".peek", "auto"));
         listener.default_pool = config.getString(prefix + ".pool", "");
 
         if (listener.secure && (listener.protocol == ListenerProtocol::MySQL || listener.protocol == ListenerProtocol::PostgreSQL))
@@ -323,6 +334,7 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
     res.ssh.banner = config.getString("proxy.ssh.banner", "ClickHouse-proxy");
     res.ssh.backend_user = config.getString("proxy.ssh.backend_user", "default");
     res.ssh.backend_key_file = config.getString("proxy.ssh.backend_key_file", "");
+    res.ssh.known_hosts_file = config.getString("proxy.ssh.known_hosts_file", "");
     res.ssh.auth_timeout_ms = config.getUInt64("proxy.ssh.auth_timeout_ms", 10000);
 
     for (const auto & listener : res.listeners)
@@ -336,10 +348,47 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
             if (res.ssh.backend_key_file.empty())
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
                     "An 'ssh' listener requires the proxy backend key in <proxy><ssh><backend_key_file>");
+            if (res.ssh.known_hosts_file.empty())
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "An 'ssh' listener requires the host keys of the backends in <proxy><ssh><known_hosts_file>");
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "An 'ssh' listener requires a build with libssh (USE_SSH) on Linux");
 #endif
+        }
+    }
+
+    /// MySQL and PostgreSQL negotiate TLS in-band, after a plaintext preamble, and the proxy does not
+    /// mediate that on the backend leg: a secure backend on these protocols can never be reached.
+    /// Reject the configurations where it is visible statically; `connectToBackend` refuses the rest.
+    const auto check_no_secure_backends = [&](ListenerProtocol protocol, const PoolConfig & pool)
+    {
+        for (const auto & backend : pool.backends)
+            if (backend.secure)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "Backend '{}' of pool '{}' is secure, but it is used for the '{}' protocol, which negotiates TLS "
+                    "in-band; the proxy does not support a TLS backend leg for it", backend.name, pool.name, toString(protocol));
+    };
+    for (const auto & listener : res.listeners)
+        if ((listener.protocol == ListenerProtocol::MySQL || listener.protocol == ListenerProtocol::PostgreSQL)
+            && !listener.default_pool.empty())
+            check_no_secure_backends(listener.protocol, res.pools.at(listener.default_pool));
+    for (const auto & rule : res.rules)
+    {
+        for (const auto protocol : {ListenerProtocol::MySQL, ListenerProtocol::PostgreSQL})
+        {
+            if (rule.protocol.empty() || !std::ranges::any_of(res.listeners, [&](const auto & l) { return l.protocol == protocol; }))
+                continue;
+            std::vector<String> names;
+            boost::split(names, rule.protocol, boost::is_any_of(","));
+            if (!std::ranges::any_of(names, [&](String & name) { boost::trim(name); return parseListenerProtocol(name) == protocol; }))
+                continue;
+            if (!rule.pool.empty())
+                check_no_secure_backends(protocol, res.pools.at(rule.pool));
+            else if (rule.backend_template && rule.backend_template->secure)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "A routing rule for the '{}' protocol has a secure backend template, but this protocol negotiates "
+                    "TLS in-band; the proxy does not support a TLS backend leg for it", toString(protocol));
         }
     }
 

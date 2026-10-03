@@ -72,8 +72,13 @@ String classifyQuery(std::string_view query)
 
 FiberSocket connectToBackend(const FrontendContext & ctx, Backend & backend, bool encrypt)
 {
+    if (encrypt && (ctx.listener.protocol == ListenerProtocol::MySQL || ctx.listener.protocol == ListenerProtocol::PostgreSQL))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Backend {} is secure, but the {} protocol negotiates TLS in-band and the proxy does not support "
+            "a TLS backend leg for it", backend.name(), toString(ctx.listener.protocol));
+
     const UInt16 port = backendPortFor(ctx.listener.protocol, backend.config(), ctx.listener.port);
-    const Poco::Net::SocketAddress address(backend.config().host, port);
+    const Poco::Net::SocketAddress address = resolveAddress(backend.config().host, port);
 
     const auto started = std::chrono::steady_clock::now();
     try

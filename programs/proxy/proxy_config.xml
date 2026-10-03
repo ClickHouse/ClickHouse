@@ -16,9 +16,6 @@
         <!-- Address the listeners bind to unless they override it. -->
         <listen_host>0.0.0.0</listen_host>
 
-        <!-- Server name the proxy reports when it answers a hello packet on its own. -->
-        <display_name>ClickHouse proxy</display_name>
-
         <listeners>
             <listener>
                 <protocol>http</protocol>
@@ -148,9 +145,10 @@
             <by_peer_address>0</by_peer_address>
         </stickiness>
 
-        <!-- Optional hooks. Each runs: <command> KIND PROTOCOL HOST USER DATABASE -->
+        <!-- Optional hooks. Each runs: <command> KIND PROTOCOL HOST USER DATABASE
+             A hook is killed after timeout_ms. Hooks are not run for SSH connections. -->
         <hooks>
-            <!-- <on_unknown>/usr/local/bin/provision-backend</on_unknown> -->
+            <!-- <on_no_backends>/usr/local/bin/start-backends</on_no_backends> -->
             <!-- <on_first_seen_database>/usr/local/bin/create-database</on_first_seen_database> -->
             <timeout_ms>60000</timeout_ms>
         </hooks>
@@ -169,6 +167,9 @@
             <host_key_file>/etc/clickhouse-proxy/ssh_host_ed25519_key</host_key_file>
             <backend_user>default</backend_user>
             <backend_key_file>/etc/clickhouse-proxy/bastion_ed25519_key</backend_key_file>
+            <!-- The host keys of the backends, in the OpenSSH known_hosts format. The proxy refuses
+                 to log in to a backend whose host key is not listed here. -->
+            <known_hosts_file>/etc/clickhouse-proxy/backends_known_hosts</known_hosts_file>
         </ssh>
 
         <http>
@@ -185,7 +186,7 @@
         </http>
     </proxy>
 
-    <!-- TLS material for terminating listeners (<secure>1</secure>) and, optionally, ACME.
+    <!-- TLS material for terminating listeners (<secure>1</secure>) and secure backends.
     <openSSL>
         <server>
             <certificateFile>/etc/clickhouse-proxy/server.crt</certificateFile>

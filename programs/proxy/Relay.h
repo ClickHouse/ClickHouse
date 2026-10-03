@@ -10,9 +10,10 @@
 namespace DB::Proxy
 {
 
-/// Forward @p initial_to_backend to the backend, then splice the two connections until either side
-/// closes. Runs the two directions on separate fibers and updates the backend byte counters.
-/// Both sockets are left closed on return.
+/// Forward @p initial_to_backend to the backend, then relay the two connections until both directions
+/// have ended. A clean end of stream in one direction is forwarded as a half-close (for plaintext
+/// destinations), an error tears down both. Runs the two directions on separate fibers and updates the
+/// backend byte counters. Throws if the second fiber cannot be allocated.
 ///
 /// @p relay_timeout_ms is applied to both sockets: a frontend reads the handshake under the much
 /// shorter handshake timeout, but the relayed session that follows is long-lived, and an idle gap

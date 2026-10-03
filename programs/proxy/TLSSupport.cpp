@@ -81,7 +81,7 @@ Poco::Net::Context::Ptr makeServerTLSContext(const Poco::Util::AbstractConfigura
     if (config.getBool(prefix + SSLManager::CFG_PREFER_SERVER_CIPHERS, false))
         ctx->preferServerCiphers();
 
-    /// Install the per-connection certificate callback (also serves ACME-provisioned certificates)
+    /// Install the per-connection certificate callback
     /// and enable hot reload of the key pair on config change.
     CertificateReloader::instance().tryLoad(config, ctx->sslContext(), prefix);
 

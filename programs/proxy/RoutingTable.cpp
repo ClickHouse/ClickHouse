@@ -319,6 +319,7 @@ std::optional<IRoutingTable::Target> ConfigRoutingTable::resolve(const RouteAttr
             continue;
 
         Target target = rule.target;
+        target.authorized_key_matched = !rule.authorized_keys.empty();
         if (target.backend)
         {
             target.backend->name = substituteCaptures(target.backend->name, captures);
@@ -335,6 +336,15 @@ bool ConfigRoutingTable::needsCredentials(ListenerProtocol protocol) const
         if (appliesToProtocol(rule, protocol) && (rule.user.specified() || rule.database.specified()))
             return true;
     return false;
+}
+
+std::vector<String> ConfigRoutingTable::poolNames(ListenerProtocol protocol) const
+{
+    std::vector<String> res;
+    for (const auto & rule : rules)
+        if (appliesToProtocol(rule, protocol) && !rule.target.pool_name.empty())
+            res.push_back(rule.target.pool_name);
+    return res;
 }
 
 bool ConfigRoutingTable::needsQueryType(ListenerProtocol protocol) const

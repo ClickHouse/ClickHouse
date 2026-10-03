@@ -16,6 +16,10 @@
 namespace DB::Proxy
 {
 
+/// Resolve a backend address. A host name is resolved outside the cooperative scheduler,
+/// so that a slow DNS lookup does not stall the other fibers of the thread.
+Poco::Net::SocketAddress resolveAddress(const String & host, UInt16 port);
+
 /// A cooperative TCP endpoint backed by a silk fiber socket, optionally wrapped in TLS.
 /// All calls suspend the current fiber instead of blocking the OS thread.
 class FiberSocket
@@ -37,6 +41,10 @@ public:
 
     /// Adopt an accepted connection and terminate TLS on it (server-side handshake, silk fiber BIO).
     static FiberSocket adoptTLS(int fd, Poco::Net::Context::Ptr context);
+
+    /// The server name (SNI) the client sent in the TLS handshake of a TLS-terminated socket,
+    /// or an empty string. Only meaningful after the handshake, i.e. after the first read.
+    String tlsServerName();
 #endif
 
     /// Returns the number of bytes read, or 0 on end of stream.

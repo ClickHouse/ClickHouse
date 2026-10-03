@@ -14,6 +14,10 @@
 #include <map>
 #include <memory>
 
+#if USE_SSL
+#include <Poco/Net/Context.h>
+#endif
+
 namespace silk
 {
 class FiberFuture;
@@ -26,16 +30,21 @@ class Router;
 
 /// Actively monitors backend health and, optionally, resource usage.
 /// A supervisor fiber periodically probes every backend concurrently:
-///   - a TCP connect to the native port measures latency and liveness;
-///   - if the backend has monitoring credentials, an HTTP query reads its CPU and memory usage.
+///   - a TCP connect to the backend's health check port (see `healthCheckPort`) measures latency and liveness;
+///   - if the backend has monitoring credentials, an HTTP(S) query reads its CPU and memory usage.
 /// Backends are discovered from the router (both statically configured and dynamically created ones).
 class HealthMonitor
 {
 public:
+#if USE_SSL
+    /// @p client_tls_context is used to poll the resources of secure backends; may be null if there are none.
+    HealthMonitor(const ProxyConfiguration & config_, Router & router_, Poco::Net::Context::Ptr client_tls_context_);
+#else
     HealthMonitor(const ProxyConfiguration & config_, Router & router_);
+#endif
     ~HealthMonitor();
 
-    /// Spawn the supervisor fiber. Returns immediately.
+    /// Spawn the supervisor fiber. Returns immediately. Throws if the fiber cannot be started.
     void start();
     void stop() { stopped.store(true, std::memory_order_relaxed); }
 
@@ -50,15 +59,17 @@ public:
 private:
     const ProxyConfiguration & config;
     Router & router;
+#if USE_SSL
+    Poco::Net::Context::Ptr client_tls_context;
+#endif
     LoggerPtr log;
     std::atomic<bool> stopped {false};
 
     /// Last time each backend's resource usage was polled. Touched only by the supervisor fiber.
     /// Keyed by the `Backend` object identity rather than its name: backend names are unique only
     /// within a single pool, so two backends in different pools can share a name and would otherwise
-    /// clobber each other's throttle entry. Backends are never destroyed while the monitor runs
-    /// (the registry is append-only and `HealthMonitor` is torn down before the `Router`), so the
-    /// raw pointer is a stable, collision-free key.
+    /// clobber each other's throttle entry. Each cycle drops the entries of backends that are no longer
+    /// registered (evicted dynamic backends), so a stale pointer never outlives its backend's registration.
     std::map<Backend *, std::chrono::steady_clock::time_point> last_resource_poll;
 
     std::unique_ptr<silk::FiberFuture> supervisor_future;
