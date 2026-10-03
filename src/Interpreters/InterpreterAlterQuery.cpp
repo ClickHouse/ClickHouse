@@ -379,7 +379,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             /// materializes it in any case. Prepare the commands against the real storage.
             StoragePtr engine_table = resolveStorageProxyLoading(table);
             auto metadata_snapshot = engine_table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
-            alter_commands->validate(table, context);
+            alter_commands->validate(engine_table, context);
 
             bool share_nested = true;
             if (auto * merge_tree = castStorage<MergeTreeData>(engine_table, DeferredTable::Load).get())
@@ -398,6 +398,10 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 /// the table through a downcast, which a lazy-load stand-in defeats, and `mutate` below
                 /// materializes the stand-in in any case.
                 StoragePtr engine_table = resolveStorageProxyLoading(table);
+                /// Pin the current state of an external table (e.g. Iceberg) before validating, as
+                /// `InterpreterDeleteQuery` does: otherwise the mutation is validated against stale metadata
+                /// and executed against the state that `mutate` refreshes on entry.
+                engine_table->updateExternalDynamicMetadataIfExists(context);
                 auto metadata_snapshot = engine_table->getInMemoryMetadataPtr(context, true);
                 engine_table->checkMutationIsPossible(*mutation_commands, settings);
                 /// Checked ahead of the full validation below, which repeats it, so that a
