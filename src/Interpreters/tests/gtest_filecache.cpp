@@ -4539,6 +4539,38 @@ TEST_F(FileCacheTest, EfficiencyEvictedNoHitBytes)
     EXPECT_EQ(no_hit_bytes() - before, S);   /// B was served, so it adds nothing.
 }
 
+TEST_F(FileCacheTest, EfficiencyEvictedNoHitBytesAfterReload)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_no_hit_reload_test"));
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("efficiency_no_hit_reload_key");
+    auto no_hit_bytes = [] { return ProfileEvents::global_counters[ProfileEvents::FilesystemCacheEvictedNoHitBytes]; };
+
+    /// A file segment served from the cache before a restart.
+    {
+        auto cache = DB::FileCache("efficiency_no_hit_reload", efficiencyCacheSettings(W));
+        cache.initialize();
+        auto holder = cache.getOrSet(key, 0, S, /*file_size=*/S, {}, 0, user);
+        auto segment = get(holder, 0);
+        download(segment);
+        segment->markRead(0, S);
+    }
+
+    /// The cache loads it on startup as not served, so its eviction counts as no-hit.
+    auto cache = DB::FileCache("efficiency_no_hit_reload", efficiencyCacheSettings(W));
+    cache.initialize();
+    ASSERT_EQ(cache.getUsedCacheSize(), S);
+    const auto before = no_hit_bytes();
+    auto filler_key = FileCacheKey::fromPath("efficiency_no_hit_reload_filler");
+    for (size_t i = 0; i < 8; ++i)
+    {
+        auto holder = cache.getOrSet(filler_key, i * S, S, /*file_size=*/8 * S, {}, 0, user);
+        download(get(holder, 0));
+    }
+    EXPECT_EQ(no_hit_bytes() - before, S);
+}
+
 TEST_F(FileCacheTest, EfficiencySegmentWindows)
 {
     DB::ThreadStatus thread_status;
