@@ -12,7 +12,12 @@
 namespace DB
 {
 
-static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr)
+static ColumnPtr castColumn(
+    CastType cast_type,
+    const ColumnWithTypeAndName & arg,
+    const DataTypePtr & type,
+    InternalCastFunctionCache * cache,
+    bool fixed_string_to_string_strip_trailing_zeros = false)
 {
     if (arg.type->equals(*type) && cast_type != CastType::accurateOrNull)
         return arg.column;
@@ -28,21 +33,24 @@ static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & ar
             ""
         }
     };
-    auto get_cast_func = [from = arg, to = type, cast_type]
+    auto get_cast_func = [from = arg, to = type, cast_type, fixed_string_to_string_strip_trailing_zeros]
     {
-        return createInternalCast(from, to, cast_type, {}, nullptr);
+        return createInternalCast(from, to, cast_type, {}, nullptr, fixed_string_to_string_strip_trailing_zeros);
     };
 
-    FunctionBasePtr func_cast = cache ? cache->getOrSet(cast_type, from_name, to_name, std::move(get_cast_func)) : get_cast_func();
+    FunctionBasePtr func_cast = cache
+        ? cache->getOrSet(cast_type, from_name, to_name, fixed_string_to_string_strip_trailing_zeros, std::move(get_cast_func))
+        : get_cast_func();
 
     if (cast_type == CastType::accurateOrNull)
         return func_cast->execute(arguments, makeNullable(type), arg.column->size(), /* dry_run = */ false);
     return func_cast->execute(arguments, type, arg.column->size(), /* dry_run = */ false);
 }
 
-ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)
+ColumnPtr castColumn(
+    const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache, bool fixed_string_to_string_strip_trailing_zeros)
 {
-    return castColumn(CastType::nonAccurate, arg, type, cache);
+    return castColumn(CastType::nonAccurate, arg, type, cache, fixed_string_to_string_strip_trailing_zeros);
 }
 
 ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)

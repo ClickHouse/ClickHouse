@@ -32,6 +32,7 @@ namespace Setting
     extern const SettingsBool allow_execute_multiif_columnar;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool allow_lossy_numeric_supertype;
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
 }
 
 namespace ErrorCodes
@@ -65,14 +66,19 @@ public:
         return std::make_shared<FunctionMultiIf>(
             settings[Setting::allow_execute_multiif_columnar],
             settings[Setting::use_variant_as_common_type],
-            settings[Setting::allow_lossy_numeric_supertype]);
+            settings[Setting::allow_lossy_numeric_supertype],
+            settings[Setting::cast_fixed_string_to_string_strip_trailing_zeros]);
     }
 
     explicit FunctionMultiIf(
-        bool allow_execute_multiif_columnar_, bool use_variant_as_common_type_, bool allow_lossy_numeric_supertype_ = false)
+        bool allow_execute_multiif_columnar_,
+        bool use_variant_as_common_type_,
+        bool allow_lossy_numeric_supertype_ = false,
+        bool cast_fixed_string_to_string_strip_trailing_zeros_ = false)
         : allow_execute_multiif_columnar(allow_execute_multiif_columnar_)
         , use_variant_as_common_type(use_variant_as_common_type_)
         , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
+        , cast_fixed_string_to_string_strip_trailing_zeros(cast_fixed_string_to_string_strip_trailing_zeros_)
     {}
 
     String getName() const override { return name; }
@@ -230,7 +236,8 @@ public:
             else
             {
                 /// Cast all columns to result type.
-                converted_columns_holder.emplace_back(castColumn(source_col, return_type));
+                converted_columns_holder.emplace_back(
+                    castColumn(source_col, return_type, nullptr, cast_fixed_string_to_string_strip_trailing_zeros));
                 instruction.source = converted_columns_holder.back();
             }
 
@@ -540,6 +547,7 @@ private:
     const bool allow_execute_multiif_columnar;
     const bool use_variant_as_common_type;
     const bool allow_lossy_numeric_supertype;
+    const bool cast_fixed_string_to_string_strip_trailing_zeros;
 };
 
 }
@@ -604,9 +612,14 @@ FROM LEFT_RIGHT;
     factory.registerAlias("caseWithoutExpression", "multiIf");
 }
 
-FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool use_variant_as_common_type, bool allow_lossy_numeric_supertype)
+FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(
+    bool allow_execute_multiif_columnar,
+    bool use_variant_as_common_type,
+    bool allow_lossy_numeric_supertype,
+    bool cast_fixed_string_to_string_strip_trailing_zeros)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, use_variant_as_common_type, allow_lossy_numeric_supertype));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(
+        allow_execute_multiif_columnar, use_variant_as_common_type, allow_lossy_numeric_supertype, cast_fixed_string_to_string_strip_trailing_zeros));
 }
 
 }

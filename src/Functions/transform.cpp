@@ -8,6 +8,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/SipHash.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -16,6 +17,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashMap.h>
@@ -25,6 +27,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -78,15 +85,19 @@ namespace
     using TransformCachePtr = std::shared_ptr<const TransformCache>;
 
     /// Forward declaration; defined after FunctionTransform.
-    TransformCachePtr initializeTransformCache(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type);
+    TransformCachePtr initializeTransformCache(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool cast_fixed_string_to_string_strip_trailing_zeros);
 
     class FunctionTransform final : public IFunction
     {
     public:
         static constexpr auto name = "transform";
 
-        explicit FunctionTransform(TransformCachePtr cache_) : cache(std::move(cache_)) {}
-        FunctionTransform() = default;
+        FunctionTransform(TransformCachePtr cache_, bool cast_fixed_string_to_string_strip_trailing_zeros_)
+            : cache(std::move(cache_))
+            , cast_fixed_string_to_string_strip_trailing_zeros(cast_fixed_string_to_string_strip_trailing_zeros_)
+        {
+        }
 
         String getName() const override { return name; }
 
@@ -173,7 +184,7 @@ namespace
             std::call_once(cache_once_flag, [&]
             {
                 if (!cache)
-                    cache = initializeTransformCache(arguments, result_type);
+                    cache = initializeTransformCache(arguments, result_type, cast_fixed_string_to_string_strip_trailing_zeros);
             });
 
             const auto * in = arguments[0].column.get();
@@ -191,7 +202,7 @@ namespace
                         "Fourth argument of function {} must be a constant or at least as big as the second and third arguments",
                         getName());
                 }
-                default_non_const = castColumn(arguments[3], result_type);
+                default_non_const = castColumn(arguments[3], result_type, nullptr, cast_fixed_string_to_string_strip_trailing_zeros);
                 /// The column might be const on some blocks (e.g. when all values are NULL),
                 /// but the code below uses insertFrom which requires matching column types.
                 /// Convert to full column to avoid ColumnNullable.insertFrom(ColumnConst) mismatch.
@@ -201,14 +212,14 @@ namespace
 
             ColumnPtr in_cast = arguments[0].column;
             if (arguments.size() == 3)
-                in_cast = castColumn(arguments[0], result_type);
+                in_cast = castColumn(arguments[0], result_type, nullptr, cast_fixed_string_to_string_strip_trailing_zeros);
 
             auto column_result = result_type->createColumn();
             if (cache->is_empty)
             {
                 return default_non_const
                     ? default_non_const
-                    : castColumn(arguments[0], result_type);
+                    : castColumn(arguments[0], result_type, nullptr, cast_fixed_string_to_string_strip_trailing_zeros);
             }
             if (cache->table_num_to_idx)
             {
@@ -252,7 +263,7 @@ namespace
             ColumnsWithTypeAndName args = arguments;
             args[0].column = args[0].column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
 
-            auto impl = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTransform>(cache))->build(args);
+            auto impl = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTransform>(cache, cast_fixed_string_to_string_strip_trailing_zeros))->build(args);
 
             return impl->execute(args, result_type, input_rows_count, /* dry_run = */ false);
         }
@@ -678,6 +689,8 @@ namespace
 
         mutable TransformCachePtr cache;
         mutable std::once_flag cache_once_flag;
+        /// The casts here run without a query context, so the setting is passed to them explicitly.
+        const bool cast_fixed_string_to_string_strip_trailing_zeros;
 
     public:
         static void checkAllowedType(const DataTypePtr & type)
@@ -708,7 +721,8 @@ namespace
 
 
     /// Initialize the transform cache from the constant arguments.
-    TransformCachePtr initializeTransformCache(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
+    TransformCachePtr initializeTransformCache(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool cast_fixed_string_to_string_strip_trailing_zeros)
     {
         auto cache = std::make_shared<TransformCache>();
 
@@ -737,7 +751,9 @@ namespace
                 from_array_nested_type,
                 arguments[1].name
             },
-            from_type);
+            from_type,
+            nullptr,
+            cast_fixed_string_to_string_strip_trailing_zeros);
 
         cache->to_column = castColumn(
             {
@@ -745,7 +761,9 @@ namespace
                 typeid_cast<const DataTypeArray &>(*arguments[2].type).getNestedType(),
                 arguments[2].name
             },
-            result_type);
+            result_type,
+            nullptr,
+            cast_fixed_string_to_string_strip_trailing_zeros);
 
         const size_t size = cache->from_column->size();
         if (0 == size)
@@ -778,7 +796,7 @@ namespace
                     /// `String` resolves the value name.
                     /// Going through `convertFieldToType` here loses the source type and
                     /// silently falls back to raw numeric conversions, producing wrong values.
-                    ColumnPtr cast_column = castColumn(arguments[3], result_type);
+                    ColumnPtr cast_column = castColumn(arguments[3], result_type, nullptr, cast_fixed_string_to_string_strip_trailing_zeros);
                     if (const auto * cast_const = checkAndGetColumn<ColumnConst>(cast_column.get()))
                         cache->default_column = cast_const->getDataColumnPtr();
                     else
@@ -855,7 +873,16 @@ namespace
     {
     public:
         static constexpr auto name = "transform";
-        static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<FunctionTransformOverloadResolver>(); }
+        static FunctionOverloadResolverPtr create(ContextPtr context)
+        {
+            return std::make_unique<FunctionTransformOverloadResolver>(
+                context->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros]);
+        }
+
+        explicit FunctionTransformOverloadResolver(bool cast_fixed_string_to_string_strip_trailing_zeros_)
+            : cast_fixed_string_to_string_strip_trailing_zeros(cast_fixed_string_to_string_strip_trailing_zeros_)
+        {
+        }
 
         String getName() const override { return name; }
         bool isVariadic() const override { return true; }
@@ -952,10 +979,12 @@ namespace
             if (array_from && array_to)
             {
                 auto stripped_return_type = recursiveRemoveLowCardinality(return_type);
-                function = std::make_shared<FunctionTransform>(initializeTransformCache(args, stripped_return_type));
+                function = std::make_shared<FunctionTransform>(
+                    initializeTransformCache(args, stripped_return_type, cast_fixed_string_to_string_strip_trailing_zeros),
+                    cast_fixed_string_to_string_strip_trailing_zeros);
             }
             else
-                function = std::make_shared<FunctionTransform>();
+                function = std::make_shared<FunctionTransform>(nullptr, cast_fixed_string_to_string_strip_trailing_zeros);
 
             DataTypes data_types(arguments.size());
             for (size_t i = 0; i < arguments.size(); ++i)
@@ -963,6 +992,9 @@ namespace
 
             return std::make_unique<FunctionToFunctionBaseAdaptor>(function, data_types, return_type);
         }
+
+    private:
+        const bool cast_fixed_string_to_string_strip_trailing_zeros;
     };
 
 }

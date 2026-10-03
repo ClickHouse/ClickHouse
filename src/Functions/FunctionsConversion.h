@@ -138,8 +138,12 @@ struct FunctionConvertSettings
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
 
-    /// Note: context may be nullptr (i.e. via castColumn())
-    explicit FunctionConvertSettings(const ContextPtr & context, FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior_)
+    /// Note: context may be nullptr (i.e. via castColumn()). Then `fixed_string_to_string_strip_trailing_zeros_without_context`
+    /// stands for the setting `cast_fixed_string_to_string_strip_trailing_zeros`.
+    explicit FunctionConvertSettings(
+        const ContextPtr & context,
+        FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior_,
+        bool fixed_string_to_string_strip_trailing_zeros_without_context = false)
         /// Only use context settings if the overflow behavior was not explicitly via createFromSettings
         : date_time_overflow_behavior(context && datetime_overflow_behavior_ == default_date_time_overflow_behavior ? context->getSettingsRef()[Setting::date_time_overflow_behavior].value : datetime_overflow_behavior_)
         , precise_float_parsing(context && context->getSettingsRef()[Setting::precise_float_parsing])
@@ -151,7 +155,9 @@ struct FunctionConvertSettings
         , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
         , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
-        , cast_fixed_string_to_string_strip_trailing_zeros(context && context->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros])
+        , cast_fixed_string_to_string_strip_trailing_zeros(context
+              ? context->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros].value
+              : fixed_string_to_string_strip_trailing_zeros_without_context)
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
     {
@@ -5601,7 +5607,8 @@ private:
 /// `context` may be nullptr.
 FunctionConvertSettingsPtr createFunctionConvertSettings(
     const ContextPtr & context,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
+    bool fixed_string_to_string_strip_trailing_zeros_without_context = false);
 
 FunctionBasePtr createFunctionBaseCast(
     const FunctionConvertSettingsPtr & settings,
