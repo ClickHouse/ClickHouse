@@ -3,8 +3,10 @@
         Build the inputs once during setup so the measured queries are dominated
         by find_first_symbols rather than repeat/concat string construction.
 
-        The measured functions return empty results for these inputs, avoiding
-        large output copies as well. Each query scans about 256 MiB of payload.
+        The miss cases return empty results, avoiding large output copies.
+        Each miss query scans about 256 MiB of payload. The 4 KiB parameter
+        input also has a newline at byte 16 so firstLine covers the early-hit
+        SSE2 prefix without constructing strings inside the measured query.
     -->
     <settings>
         <max_threads>1</max_threads>
@@ -23,7 +25,7 @@
         INSERT INTO find_symbols_4k
         SELECT
             concat(repeat('a', 4095), toString(number % 10)),
-            concat('?', repeat('a', 4094), toString(number % 10))
+            concat('?', repeat('a', 15), '\n', repeat('a', 4078), toString(number % 10))
         FROM numbers(65536)
     </fill_query>
 
@@ -50,6 +52,12 @@
     <!-- Two symbols: the first URL-parameter scan looks for '?' or '#'. -->
     <query>SELECT extractURLParameters(plain) FROM find_symbols_4k FORMAT Null</query>
     <query>SELECT extractURLParameters(plain) FROM find_symbols_64k FORMAT Null</query>
+
+    <!--
+        Early hit: firstLine looks for '\r' or '\n'. The newline at byte 16
+        exercises the cheap SSE2 prefix before the AVX2 handoff.
+    -->
+    <query>SELECT firstLine(parameter_scan) FROM find_symbols_4k FORMAT Null</query>
 
     <!--
         Four symbols: the leading '?' makes the initial two-symbol scan finish
