@@ -42,3 +42,29 @@ WITH
     toStartOfInterval(t, INTERVAL 1 YEAR, origin) AS y
 SELECT countIf(m > t), countIf(q > t), countIf(y > t)
 FROM numbers(20000);
+
+-- A bucket start clipped by `addMonths` to the end of a shorter month is rounded to itself.
+SELECT 'Clipped';
+SELECT toStartOfInterval(toDateTime('2023-02-28 12:00:00'), INTERVAL 1 MONTH, toDateTime('2023-01-31 12:00:00'));
+SELECT toStartOfInterval(toDateTime('2023-02-28 11:59:59'), INTERVAL 1 MONTH, toDateTime('2023-01-31 12:00:00'));
+SELECT toStartOfInterval(toDateTime('2023-04-30 12:00:00'), INTERVAL 1 QUARTER, toDateTime('2023-01-31 12:00:00'));
+SELECT toStartOfInterval(toDateTime('2025-02-28 12:00:00'), INTERVAL 1 YEAR, toDateTime('2024-02-29 12:00:00'));
+SELECT toStartOfInterval(toDate('2023-02-28'), INTERVAL 1 MONTH, toDate('2023-01-31'));
+
+-- The same with a fractional origin before the epoch.
+WITH
+    toDateTime64('1969-01-29 23:59:59.500', 3) AS origin,
+    toDateTime64('1969-02-28 23:59:59.500', 3) AS boundary
+SELECT
+    toStartOfInterval(boundary, INTERVAL 1 MONTH, origin),
+    toStartOfInterval(boundary - toIntervalMillisecond(1), INTERVAL 1 MONTH, origin),
+    toStartOfInterval(toDateTime64('1969-01-31 23:59:59.500', 3), INTERVAL 1 MONTH, toDateTime64('1968-12-31 23:59:59.500', 3));
+
+-- Every bucket boundary is rounded to itself, and the value just before it is not.
+WITH
+    toDateTime64('1969-01-31 23:59:59.500', 3) AS origin,
+    toDateTime64(toStartOfInterval(origin + toIntervalDay(number * 13), INTERVAL 1 MONTH, origin), 3) AS boundary
+SELECT
+    countIf(toStartOfInterval(boundary, INTERVAL 1 MONTH, origin) != boundary),
+    countIf(boundary > origin AND toStartOfInterval(boundary - toIntervalMillisecond(1), INTERVAL 1 MONTH, origin) >= boundary)
+FROM numbers(200);
