@@ -42,7 +42,11 @@ done
 
 # Resolving `t` still succeeds, but `v` has no leaf to pin. The validation after `resolveStorages`
 # must notice the changed view and fall back to normal planning with the new definition.
-$CLICKHOUSE_CLIENT --query "CREATE OR REPLACE VIEW v AS SELECT a + 100 AS x FROM t"
+# The paused query still holds the old view, so the replacement must not wait for it to be dropped
+# for real: `database_atomic_wait_for_drop_and_detach_synchronously` is enabled in the test
+# configuration and would deadlock with the query this test is pausing on purpose (see `04811`).
+$CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously 0 \
+    --query "CREATE OR REPLACE VIEW v AS SELECT a + 100 AS x FROM t"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT query_plan_cache_pause_before_resolve_storages"
 
