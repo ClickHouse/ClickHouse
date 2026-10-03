@@ -18,7 +18,9 @@
           "ar/products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
           "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
-          "ar/products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get"
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-tags-get",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-private-endpoint-config-get"
         ]
       },
       {
@@ -56,18 +58,18 @@
       {
         "group": "UDF",
         "pages": [
-          "ar/products/cloud/api-reference/udf/udf-attach",
-          "ar/products/cloud/api-reference/udf/udf-attachment-get",
-          "ar/products/cloud/api-reference/udf/udf-detach",
-          "ar/products/cloud/api-reference/udf/udf-attachment-list",
-          "ar/products/cloud/api-reference/udf/udf-create",
-          "ar/products/cloud/api-reference/udf/udf-list",
-          "ar/products/cloud/api-reference/udf/udf-delete",
-          "ar/products/cloud/api-reference/udf/udf-get",
-          "ar/products/cloud/api-reference/udf/udf-upload-session-create",
-          "ar/products/cloud/api-reference/udf/udf-version-create",
-          "ar/products/cloud/api-reference/udf/udf-version-list",
-          "ar/products/cloud/api-reference/udf/udf-version-delete"
+          "POST /v1/organizations/{organizationId}/udfUploads/url",
+          "GET /v1/organizations/{organizationId}/udfs",
+          "POST /v1/organizations/{organizationId}/udfs",
+          "DELETE /v1/organizations/{organizationId}/udfs/{functionName}",
+          "GET /v1/organizations/{organizationId}/udfs/{functionName}",
+          "GET /v1/organizations/{organizationId}/udfs/{functionName}/attachments",
+          "DELETE /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
+          "GET /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
+          "PUT /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
+          "GET /v1/organizations/{organizationId}/udfs/{functionName}/versions",
+          "POST /v1/organizations/{organizationId}/udfs/{functionName}/versions",
+          "DELETE /v1/organizations/{organizationId}/udfs/{functionName}/versions/{version}"
         ]
       }
     ]
@@ -131,21 +133,21 @@
       {
         "group": "نقاط نهاية واجهة برمجة تطبيقات الاستعلام",
         "pages": [
-          "ar/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
-          "ar/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
-          "ar/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
-          "ar/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
-          "ar/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update"
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
+          "POST /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
+          "DELETE /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}",
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}",
+          "PUT /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}"
         ]
       },
       {
         "group": "الاستعلامات المحفوظة",
         "pages": [
-          "ar/products/cloud/api-reference/saved-queries/saved-query-create",
-          "ar/products/cloud/api-reference/saved-queries/saved-query-list",
-          "ar/products/cloud/api-reference/saved-queries/saved-query-delete",
-          "ar/products/cloud/api-reference/saved-queries/saved-query-get",
-          "ar/products/cloud/api-reference/saved-queries/saved-query-update"
+          "products/cloud/api-reference/saved-queries/saved-query-list",
+          "products/cloud/api-reference/saved-queries/saved-query-create",
+          "products/cloud/api-reference/saved-queries/saved-query-delete",
+          "products/cloud/api-reference/saved-queries/saved-query-get",
+          "products/cloud/api-reference/saved-queries/saved-query-update"
         ]
       }
     ]

@@ -18,7 +18,9 @@
           "ko/products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
           "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
-          "ko/products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get"
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-tags-get",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-private-endpoint-config-get"
         ]
       },
       {
@@ -56,18 +58,18 @@
       {
         "group": "UDF",
         "pages": [
-          "ko/products/cloud/api-reference/udf/udf-attach",
-          "ko/products/cloud/api-reference/udf/udf-attachment-get",
-          "ko/products/cloud/api-reference/udf/udf-detach",
-          "ko/products/cloud/api-reference/udf/udf-attachment-list",
-          "ko/products/cloud/api-reference/udf/udf-create",
-          "ko/products/cloud/api-reference/udf/udf-list",
-          "ko/products/cloud/api-reference/udf/udf-delete",
-          "ko/products/cloud/api-reference/udf/udf-get",
-          "ko/products/cloud/api-reference/udf/udf-upload-session-create",
-          "ko/products/cloud/api-reference/udf/udf-version-create",
-          "ko/products/cloud/api-reference/udf/udf-version-list",
-          "ko/products/cloud/api-reference/udf/udf-version-delete"
+          "POST /v1/organizations/{organizationId}/udfUploads/url",
+          "GET /v1/organizations/{organizationId}/udfs",
+          "POST /v1/organizations/{organizationId}/udfs",
+          "DELETE /v1/organizations/{organizationId}/udfs/{functionName}",
+          "GET /v1/organizations/{organizationId}/udfs/{functionName}",
+          "GET /v1/organizations/{organizationId}/udfs/{functionName}/attachments",
+          "DELETE /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
+          "GET /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
+          "PUT /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
+          "GET /v1/organizations/{organizationId}/udfs/{functionName}/versions",
+          "POST /v1/organizations/{organizationId}/udfs/{functionName}/versions",
+          "DELETE /v1/organizations/{organizationId}/udfs/{functionName}/versions/{version}"
         ]
       }
     ]
@@ -131,21 +133,21 @@
       {
         "group": "Query API endpoint",
         "pages": [
-          "ko/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
-          "ko/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
-          "ko/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
-          "ko/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
-          "ko/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update"
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
+          "POST /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
+          "DELETE /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}",
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}",
+          "PUT /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}"
         ]
       },
       {
         "group": "저장된 쿼리",
         "pages": [
-          "ko/products/cloud/api-reference/saved-queries/saved-query-create",
-          "ko/products/cloud/api-reference/saved-queries/saved-query-list",
-          "ko/products/cloud/api-reference/saved-queries/saved-query-delete",
-          "ko/products/cloud/api-reference/saved-queries/saved-query-get",
-          "ko/products/cloud/api-reference/saved-queries/saved-query-update"
+          "products/cloud/api-reference/saved-queries/saved-query-list",
+          "products/cloud/api-reference/saved-queries/saved-query-create",
+          "products/cloud/api-reference/saved-queries/saved-query-delete",
+          "products/cloud/api-reference/saved-queries/saved-query-get",
+          "products/cloud/api-reference/saved-queries/saved-query-update"
         ]
       }
     ]
