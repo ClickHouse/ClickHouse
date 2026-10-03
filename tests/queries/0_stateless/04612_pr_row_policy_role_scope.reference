@@ -1,0 +1,8 @@
+-- narrow role over parallel replicas: only 'narrow' visible
+narrow
+-- admin role over parallel replicas: both visible (no over-restriction)
+narrow
+secret
+-- parallel replicas were actually used for both queries
+1
+1
