@@ -1,5 +1,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
 #include <Common/Exception.h>
+#include <base/EnumReflection.h>
 
 namespace ProfileEvents
 {
@@ -61,11 +62,14 @@ std::shared_ptr<PlainRewritableMetrics> createPlainRewritableMetrics(ObjectStora
             });
         }
         case ObjectStorageType::None:
+        case ObjectStorageType::GCS:
         case ObjectStorageType::HDFS:
         case ObjectStorageType::Web:
         case ObjectStorageType::Max:
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not Implemented");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Metadata type 'plain_rewritable' is not implemented for {} object storage",
+                magic_enum::enum_name(object_storage_type));
         }
     }
 }

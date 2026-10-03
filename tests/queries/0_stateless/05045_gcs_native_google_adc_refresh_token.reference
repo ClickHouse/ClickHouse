@@ -1,0 +1,4 @@
+complete_triple: accepted
+partial_triple: rejected_by_validation
+token_uri_only: rejected_by_validation
+no_credentials: refused_for_credentials
