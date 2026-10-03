@@ -62,7 +62,6 @@ public:
     const URLShards & getURLShards() const { return url_shards; }
     const HTTPHeaderEntries & getHeaders() const { return headers; }
     ContextPtr getRequestContext() const;
-    ObjectStoragePtr cloneImpl() const override;
     std::vector<String> buildURLs(const std::string & path) const;
     std::vector<String> buildURLs(const std::string & path, size_t shard_index) const;
 
@@ -86,9 +85,7 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist( /// NOLINT
-        const StoredObjects & objects,
-        StoredObjects * successful_objects = nullptr) override;
+    void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;

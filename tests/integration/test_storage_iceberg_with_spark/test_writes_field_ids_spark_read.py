@@ -478,9 +478,9 @@ def test_writes_manifest_field_ids_spark_read(started_cluster_iceberg_with_spark
     assert ml_ids.get("partitions.element.contains_null") == 509, ml_ids
 
     # The partition spec field-id the manifest `partition` struct must reuse. The
-    # Iceberg spec numbers partition fields from 1000, so the single partition
-    # column gets partition field-id 1000.
-    expected_partition_field_id = 1000
+    # single partition column `id` is field-id 1 in the schema, so the spec assigns
+    # it partition field-id 1001 (ClickHouse numbers partition fields from 1001).
+    expected_partition_field_id = 1001
 
     # Manifest (`manifest_entry`) spec field-ids, on every manifest written.
     for manifest_schema in manifest_schemas:

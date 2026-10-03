@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-parallel, no-fasttest
+-- Tags: zookeeper, no-parallel
 
 DROP TABLE IF EXISTS t_hardware_error NO DELAY;
 

@@ -44,8 +44,6 @@ using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResourc
 class IStorageURLBase : public IStorage
 {
 public:
-    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override;
-
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -208,7 +206,7 @@ public:
     class DisclosedGlobIterator
     {
     public:
-        DisclosedGlobIterator(const String & uri_, bool split_uris_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context);
+        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context);
 
         String next();
         size_t size();
@@ -245,18 +243,12 @@ public:
 
     String getName() const override { return name; }
 
-    Status prepare() override;
-
     Chunk generate() override;
 
     void onFinish() override;
 
-    void cancel(CancelReason reason) noexcept override;
-
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
-    /// Returns no buffer when a hard teardown of the pipeline is noticed between the options while
-    /// nothing else reports the interruption - the caller must end the stream then, see initialize.
     static std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
         std::vector<String>::const_iterator & option,
         const std::vector<String>::const_iterator & end,
@@ -268,13 +260,9 @@ public:
         Poco::Net::HTTPBasicCredentials & credentials,
         const HTTPHeaderEntries & headers,
         bool glob_url,
-        bool delay_initialization,
-        ReadWriteBufferFromHTTP::CancellationPtr cancellation = nullptr);
+        bool delay_initialization);
 
 private:
-    /// Release the reader, the format and the HTTP buffer - see the definition.
-    void releaseReader();
-
     void addNumRowsToCache(const String & uri, size_t num_rows);
     std::optional<size_t> tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time);
 
@@ -302,12 +290,6 @@ private:
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     Poco::Net::HTTPBasicCredentials credentials;
-
-    /// Tells the buffers created by this source to stop retrying HTTP requests, see cancel. Also
-    /// remembers whether the cancellation is one after which the query must still succeed - a soft
-    /// `max_execution_time` with the `break` overflow mode, or a consumer that has enough data - so
-    /// that generate then discards the failure of the interrupted read instead of failing the query.
-    ReadWriteBufferFromHTTP::CancellationPtr cancellation = std::make_shared<ReadWriteBufferFromHTTP::Cancellation>();
 
     Map http_response_headers;
     bool http_response_headers_initialized = false;
@@ -392,8 +374,6 @@ public:
     bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
-
-    bool supportsTruncate() const override { return false; }
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 

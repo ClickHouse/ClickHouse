@@ -1,3 +1,4 @@
+-- Tags: no-old-analyzer
 drop table if exists test_qualify;
 create table test_qualify (number Int64) ENGINE = MergeTree ORDER BY (number);
 

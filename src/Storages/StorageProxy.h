@@ -19,8 +19,6 @@ public:
     String getName() const override { return "Proxy"; }
 
     bool isRemote() const override { return getNested()->isRemote(); }
-    bool readRequiresAnalyzedQuery() const override { return getNested()->readRequiresAnalyzedQuery(); }
-    std::vector<StoragePtr> getUnderlyingStorages() const override { return getNested()->getUnderlyingStorages(); }
     bool isView() const override { return getNested()->isView(); }
     bool supportsTruncate() const override { return getNested()->supportsTruncate(); }
     bool supportsSampling() const override { return getNested()->supportsSampling(); }
@@ -44,7 +42,6 @@ public:
     /// `StorageTableProxy` around a delegating storage (`Distributed`, `Merge`, `Buffer`, `Alias`)
     /// answering false would let a `_table`/`_database` filter incorrectly prune the child.
     bool readsFromOtherTables() const override { return getNested()->readsFromOtherTables(); }
-    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override { return getNested()->getMaxReadStreams(num_streams, context); }
     /// `AlterCommands::validate` checks these on the storage the ALTER is addressed to, which is
     /// the proxy itself for lazily loaded tables — forward them so support does not depend on the
     /// database's `lazy_load_tables` setting. Both are only queried while validating an ALTER,
@@ -70,6 +67,17 @@ public:
     {
         const auto nested_metadata = getNested()->getInMemoryMetadataPtr(context, false);
         return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata, context), info);
+    }
+
+    Pipe watch(
+        const Names & column_names,
+        const SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum & processed_stage,
+        size_t max_block_size,
+        size_t num_streams) override
+    {
+        return getNested()->watch(column_names, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
     void read(
@@ -115,9 +123,9 @@ public:
         IStorage::renameInMemory(new_table_id);
     }
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder, DDLGuardPtr & ddl_guard) override
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override
     {
-        getNested()->alter(params, context, alter_lock_holder, ddl_guard);
+        getNested()->alter(params, context, alter_lock_holder);
         auto nested_metadata = getNested()->getInMemoryMetadataPtr(context, true);
         IStorage::setInMemoryMetadata(*nested_metadata);
     }
@@ -186,22 +194,5 @@ public:
 
 };
 
-/// The storage behind any number of proxies, or the storage itself when it is not one. A proxy forwards
-/// many predicates but not its type, so code keyed on the concrete storage has to resolve it first.
-/// Resolving costs nothing once the nested storage has been materialized, which reading it already did.
-inline StoragePtr unwrapStorageProxy(const StoragePtr & storage)
-{
-    static constexpr size_t max_proxy_depth = 16;
-
-    StoragePtr nested_storage = storage;
-    for (size_t i = 0; i < max_proxy_depth && nested_storage; ++i)
-    {
-        const auto * proxy = dynamic_cast<const StorageProxy *>(nested_storage.get());
-        if (!proxy)
-            break;
-        nested_storage = proxy->getNested();
-    }
-    return nested_storage;
-}
 
 }

@@ -16,5 +16,68 @@
                 <port>9000</port>
             </node>
         </test_cluster_no_internal_replication>
+
+        <!-- With internal replication every replica of the shard is concatenated into one
+             directory name, so 10 ordinary replicas already exceed the 255-byte NAME_MAX. -->
+        <test_cluster_internal_replication_long_path>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica><host>not_existing_replica_00</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_01</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_02</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_03</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_04</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_05</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_06</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_07</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_08</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_09</host><port>9000</port></replica>
+            </shard>
+        </test_cluster_internal_replication_long_path>
+
+        <!-- One shard holding this server plus a remote destination whose name exceeds NAME_MAX. -->
+        <test_cluster_mixed_local_long_path>
+            <shard>
+                <replica><host>node</host><port>9000</port></replica>
+                <replica><host>cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc</host><port>9000</port></replica>
+            </shard>
+        </test_cluster_mixed_local_long_path>
+
+        <!-- The async-insert directory name is `user[:password]@host:port#default_database`, so a
+             long `default_database` alone exceeds the 255-byte NAME_MAX. 'default@node:9000#' is 18
+             bytes, so 237 database bytes are exactly at the limit and 238 are one over. -->
+        <test_cluster_long_default_database_at_limit>
+            <shard>
+                <replica>
+                    <host>node</host>
+                    <port>9000</port>
+                    <default_database>ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd</default_database>
+                </replica>
+            </shard>
+        </test_cluster_long_default_database_at_limit>
+
+        <test_cluster_long_default_database_over_limit>
+            <shard>
+                <replica>
+                    <host>node</host>
+                    <port>9000</port>
+                    <default_database>dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd</default_database>
+                </replica>
+            </shard>
+        </test_cluster_long_default_database_over_limit>
+
+        <!-- The password is part of the same name: 224 database bytes are 256 with it and 242
+             without, so this cluster is over the limit only because the password counts. -->
+        <test_cluster_long_default_database_password>
+            <shard>
+                <replica>
+                    <host>node</host>
+                    <port>9000</port>
+                    <user>default</user>
+                    <password>secret_112719</password>
+                    <default_database>dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd</default_database>
+                </replica>
+            </shard>
+        </test_cluster_long_default_database_password>
     </remote_servers>
 </clickhouse>

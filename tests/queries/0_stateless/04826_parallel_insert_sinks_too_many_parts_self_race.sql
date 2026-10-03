@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel
 -- - no-parallel - due to usage of fail points
 
 -- A plain INSERT fans out to `max_insert_threads` parallel sinks. The "too many parts" check must

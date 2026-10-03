@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-fasttest
+# Tags: long, no-parallel
 # - no-parallel - due to usage of fail points
 
 # FIXME: convert to .sql
@@ -49,8 +49,6 @@ function explain_indexes()
   local with_pr="$($CLICKHOUSE_CLIENT "${explain_opts[@]}" --enable_parallel_replicas=1 --automatic_parallel_replicas_mode=0 -q "$@" | {
     jq '.. | objects | select(has("Indexes")) | .Indexes[]? | select(.Type == "PrimaryKey") | .Distributed |= sort_by(.Address)'
   })"
-  # The fail point is server-global: disarm it as soon as the query that needs it is done.
-  $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas"
   if [ "$with_pr" != "$without_pr" ]; then
     echo "EXPLAIN indexes with and without parallel replicas differs:"
     echo "Without:"

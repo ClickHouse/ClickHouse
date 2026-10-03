@@ -18,10 +18,12 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 На этой странице описано использование движка таблицы `MySQL` для чтения данных из таблицы MySQL.
 
 <Note>
-  В ClickHouse Cloud вы также можете использовать [MySQL ClickPipe](/ru/integrations/clickpipes/mysql/index), чтобы легко переносить данные из таблиц MySQL в ClickHouse.
+  В ClickHouse Cloud вы также можете использовать [MySQL ClickPipe](/ru/integrations/clickpipes/mysql/index) (сейчас в публичной бете), чтобы легко переносить данные из таблиц MySQL в ClickHouse.
 </Note>
 
-## Подключение ClickHouse к MySQL с помощью движка таблицы MySQL {#connecting-clickhouse-to-mysql-using-the-mysql-table-engine}
+<div id="connecting-clickhouse-to-mysql-using-the-mysql-table-engine">
+  ## Подключение ClickHouse к MySQL с помощью движка таблицы MySQL
+</div>
 
 Движок таблицы `MySQL` позволяет подключить ClickHouse к MySQL. Операторы **SELECT** и **INSERT** можно выполнять как в ClickHouse, так и в таблице MySQL. В этой статье показаны основные способы использования движка таблицы `MySQL`.
 
@@ -163,6 +165,8 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
   </Step>
 </Steps>
 
-### Краткое описание {#summary}
+<div id="summary">
+  ### Краткое описание
+</div>
 
 Движок таблицы `MySQL` позволяет подключить ClickHouse к MySQL и обмениваться данными в обоих направлениях. Подробнее см. в документации по [движку таблицы MySQL](/ru/reference/functions/table-functions/mysql).

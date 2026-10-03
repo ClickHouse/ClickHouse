@@ -36,9 +36,7 @@ The rest of this guide covers the one-time configuration.
 
 ## How to configure your IdP {#how-to-configure-your-idp}
 
-If SAML is already enabled and you need admin access, see [Configure your admin user](#configure-your-admin-user) or [Troubleshooting](#troubleshooting).
-
-<Steps titleSize="h3">
+<Steps>
 <Step title="Access Organization settings" id="access-organization-settings">
 
 Click on your organization name in the lower left corner and select Organization details.
@@ -283,19 +281,6 @@ You will set up one application integration with a separate sign-on URL for each
 
 <AccordionGroup>
 
-<Accordion title="Admin permissions are missing after SAML sign-in">
-
-**Cause:** your new SAML account receives the configured default SAML role. If that role isn't **Admin**, the account won't have admin permissions, even if your original account has the **Admin** role. ClickHouse Cloud doesn't automatically link SAML and non-SAML accounts.
-
-**Fix:** sign in through SAML once so the new user appears in ClickHouse Cloud. Then log out and sign in with your original admin account to assign the **Admin** role to the SAML user:
-
-- For email-and-password accounts, use [the email sign-in link](https://console.clickhouse.cloud/?with=email) to bypass the automatic SAML redirect. The `email` in `?with=email` is a literal value, not a placeholder for your email address.
-- For Google or Microsoft accounts, select **Continue with Google** or **Continue with Microsoft**.
-
-Log out and sign in through SAML again to verify admin access before removing your original admin account. See [Configure your admin user](#configure-your-admin-user) for the full procedure.
-
-</Accordion>
-
 <Accordion title="There could be a misconfiguration in the system or a service outage">
 
 **Cause:** identity-provider-initiated login, which isn't supported.
@@ -350,13 +335,7 @@ No — only service-provider-initiated flows. Users navigate to `https://console
 
 <Accordion title="How do I use SAML SSO with multiple organizations?">
 
-ClickHouse Cloud supports multi-organization SSO with a separate connection per organization.
-
-Your first login to each organization must use its direct link (`https://console.clickhouse.cloud/?connection={organizationId}`). This first login provisions your account in that organization. If your organization has SCIM enabled, you can skip this step because your account will already be provisioned.
-
-For subsequent sign-ins, log in to any of your SAML organizations. Your other SAML organizations are available in the organization switcher in the console sidebar, and selecting one signs you into that organization through its SSO.
-
-If you don't want users on your domain routed to an organization automatically when they enter their email at `https://console.clickhouse.cloud`, open a support ticket to remove that behavior.
+ClickHouse Cloud supports multi-organization SSO with a separate connection per organization. Use the direct link (`https://console.clickhouse.cloud/?connection={organizationid}`) to log in to each one, and log out of one organization before logging into another. If you don't want users on your domain routed to an organization automatically when they enter their email at `https://console.clickhouse.cloud`, open a support ticket to remove that behavior.
 
 </Accordion>
 

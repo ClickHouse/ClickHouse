@@ -59,6 +59,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
 }
@@ -66,7 +68,6 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsString default_session_user;
-    extern const ServerSettingsUInt64 handshake_timeout_milliseconds;
 }
 
 using namespace MySQLProtocol;
@@ -89,7 +90,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
     extern const int OPENSSL_ERROR;
-    extern const int SOCKET_TIMEOUT;
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
 }
@@ -563,8 +563,6 @@ void MySQLHandler::run()
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(socket(), write_event);
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
 
-    in->setHandshakeTimeout(server.context()->getServerSettings()[ServerSetting::handshake_timeout_milliseconds]);
-
     try
     {
         Handshake handshake(server_capabilities, connection_id, VERSION_STRING + String("-") + VERSION_NAME,
@@ -615,8 +613,6 @@ void MySQLHandler::run()
         }
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
-
-        in->clearHandshakeTimeout();
 
         try
         {
@@ -727,24 +723,7 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     auto read_bytes = [this, &buf, &pos, &packet_size](size_t count) -> void {
         while (pos < count)
         {
-            /// Per call: `receiveBytes` restarts the socket timeout.
-            in->applyHandshakeDeadlineToSocket();
-
-            int ret = 0;
-            try
-            {
-                ret = socket().receiveBytes(buf.data() + pos, static_cast<uint32_t>(packet_size - pos));
-            }
-            catch (const Poco::TimeoutException &)
-            {
-                /// Report it the way the buffer does, not as Poco's bare "Timeout".
-                throw NetException(
-                    ErrorCodes::SOCKET_TIMEOUT,
-                    "Timeout exceeded while reading from socket (peer: {}, local: {}, {} ms)",
-                    socket().peerAddress().toString(),
-                    socket().address().toString(),
-                    socket().getReceiveTimeout().totalMilliseconds());
-            }
+            int ret = socket().receiveBytes(buf.data() + pos, static_cast<uint32_t>(packet_size - pos));
             if (ret == 0)
             {
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data. Bytes read: {}. Bytes expected: 3", std::to_string(pos));
@@ -770,12 +749,6 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
 
         /// Reading rest of HandshakeResponse.
         packet_size = PACKET_HEADER_SIZE + payload_size;
-
-        /// A well-formed client never sends more than the packet it declared in the
-        /// header. Without this check `packet_size - pos` underflows when pos > packet_size,
-        /// turning the copyData() below into an unbounded pre-auth read (read until EOF).
-        if (pos > packet_size)
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Malformed MySQL handshake packet: received {} bytes, but packet declares {}", pos, packet_size);
         WriteBufferFromOwnString buf_for_handshake_response;
         buf_for_handshake_response.write(buf.data(), pos);
         copyData(*packet_endpoint->in, buf_for_handshake_response, packet_size - pos);
@@ -907,7 +880,13 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
 
-        const auto & settings = query_context->getSettingsRef();
+        /// --- Workaround for Bug 56173.
+        auto settings = query_context->getSettingsCopy();
+        if (!settings[Setting::allow_experimental_analyzer])
+        {
+            settings[Setting::prefer_column_name_to_alias] = true;
+            query_context->setSettings(settings);
+        }
 
         /// Update timeouts
         socket().setReceiveTimeout(settings[Setting::receive_timeout]);
@@ -1087,20 +1066,14 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     max_packet_size = ssl_request.max_packet_size ? ssl_request.max_packet_size : MAX_PACKET_LENGTH;
     secure_connection = true;
 
-    const std::shared_ptr<ReadBufferFromPocoSocket> previous_in = in;
-
     ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
-    /// Not from the plaintext socket: the deadline clamped those, and they would be restored later.
-    const Settings & handshake_settings = server.context()->getSettingsRef();
-    ss->setReceiveTimeout(handshake_settings[Setting::receive_timeout]);
-    ss->setSendTimeout(handshake_settings[Setting::send_timeout]);
+    ss->setReceiveTimeout(socket().getReceiveTimeout());
+    ss->setSendTimeout(socket().getSendTimeout());
 
     in = std::make_shared<ReadBufferFromPocoSocket>(*ss);
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(*ss);
     sequence_id = 2;
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
-
-    in->adoptHandshakeDeadlineFrom(*previous_in);
 
     /// Reading HandshakeResponse from the secure socket, bounded the same way as on the plaintext
     /// path: read the packet header, reject an oversized declared payload before reading it, and

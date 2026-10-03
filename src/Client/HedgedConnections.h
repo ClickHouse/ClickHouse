@@ -1,5 +1,5 @@
 #pragma once
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
 
 #include <functional>
 #include <queue>
@@ -161,10 +161,6 @@ private:
 
     void disableChangingReplica(const ReplicaLocation & replica_location);
 
-    /// Stops the factory and retracts pending replica replacements: after the factory is
-    /// stopped no replacement can arrive, so a pending flag would never be cleared.
-    void stopChoosingReplicasAndRetractPending();
-
     void startNewReplica();
 
     void checkNewReplica();
@@ -217,7 +213,7 @@ private:
 
     Packet last_received_packet;
 
-    Epoll epoll{EpollNesting::HedgedConnections};
+    Epoll epoll;
     ContextPtr context;
     const Settings & settings;
     ThrottlerPtr throttler;
