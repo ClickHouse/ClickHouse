@@ -1505,8 +1505,7 @@ bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const 
 
     InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
 
-    /// Each replica runs the whole SELECT, so its FROM must be the table the replicas read in coordination,
-    /// not a subquery, a CTE or a view that a replica would read on its own.
+    /// Each replica runs the whole SELECT, so its FROM must be a table the replicas read in coordination.
     const auto * query_node = interpreter.getQueryTree()->as<QueryNode>();
     const auto * table_node = query_node ? query_node->getJoinTreeNode()->as<TableNode>() : nullptr;
     if (!table_node || !canUseTableForParallelReplicas(*table_node, query_node->getContext()))
