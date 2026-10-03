@@ -442,10 +442,11 @@ void textIndexValidator(const IndexDescription & index, bool attach, const Merge
 
 String getIndexFileName(const String & index_name, bool escape_filename);
 
-/// Check if an index substream file exists for the part. Returns true if the file is listed
-/// directly in checksums.txt (original or hashed name) OR if it's a virtual file inside
-/// skp_idx.packed (resolved through the storage overlay). Passing a null @storage skips
-/// the archive check, which is fine for callers that only see standalone per-file layouts.
+/// Check if the part owns an index substream file. Returns true if the file is listed
+/// directly in checksums.txt (original or hashed name) OR if it's a member of the part's
+/// skp_idx.packed archive (which is what checksums.txt lists then). A loose file on disk that
+/// is in neither is an orphan and does not count. Passing a null @storage skips the archive
+/// check, which is fine for callers that only see standalone per-file layouts.
 bool indexFileExistsInChecksums(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & path_prefix,
