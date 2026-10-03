@@ -255,8 +255,8 @@ ALTER TABLE time_decay_feature_gate
 
 -- Persisted metadata can still be reconstructed internally for recovery, but user
 -- expression conversion into or out of the experimental type requires opting in.
-SELECT toTypeName(CAST(tuple(1., 0., 10.), 'ExponentialTimeDecaying(10)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT toTypeName(_CAST(tuple(1., 0., 10.), 'ExponentialTimeDecaying(10)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTypeName(CAST(tuple(1., 0., 10.), 'ExponentialTimeDecaying(10)')); -- { serverError ILLEGAL_COLUMN }
+SELECT toTypeName(_CAST(tuple(1., 0., 10.), 'ExponentialTimeDecaying(10)')); -- { serverError ILLEGAL_COLUMN }
 
 -- All scalar operations on the experimental value type remain gated.
 SELECT exponentialTimeDecayingValueAt(value, toFloat64(1)) FROM time_decay_feature_gate; -- { serverError UNKNOWN_FUNCTION }
