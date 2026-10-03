@@ -4330,6 +4330,43 @@ FROM t_null
 └───────────────────────┘
 ```
 
+## IN in External Memory {#in-in-external-memory}
+
+The set that `IN` builds from a subquery or a table can be written to disk when it is too large to
+keep in memory. Lookups then read the set from disk, which requires additional disk I/O and can make
+queries slower. A list of values, such as `IN (1, 2, 3)`, and a table with the `Set` engine always
+stay in memory.
+
+Two settings control when spilling starts:
+
+- `max_bytes_before_external_set` sets a threshold in bytes of total query memory. It defaults to `0`
+  (disabled).
+- `max_bytes_ratio_before_external_set` sets a fraction of available memory under server or user
+  limits, measured at the start of execution. It defaults to `0` (disabled) and has no effect when
+  neither limit applies.
+
+When both thresholds apply, the smaller is used. A set is written to disk only once it takes at least
+16 MiB, or the threshold if it is smaller. For example, this query writes the set to disk once the set
+takes at least 16 MiB:
+
+```sql
+SELECT count()
+FROM numbers(10000000)
+WHERE number IN (SELECT number * 3 FROM numbers(10000000))
+SETTINGS max_bytes_before_external_set = 16777216;
+```
+
+`max_memory_usage` does not affect the ratio. To configure spilling relative to a query memory limit,
+set an absolute threshold below that limit. These thresholds do not cap memory usage. Leave room for
+other query processing and the spill itself.
+
+A set on disk cannot be used by the primary key or data skipping indexes. With `GLOBAL IN`, the
+temporary table that sends the result of the subquery to the remote servers stays in memory, while the
+sets that the remote servers build from it can be written to disk.
+
+Once a set is on disk, the whole subquery is read before the size limits of the set are checked:
+`max_rows_in_set` counts its distinct keys, and `max_bytes_in_set` counts only its part in memory.
+
 ## Distributed Subqueries {#distributed-subqueries}
 
 There are two options for `IN` operators with subqueries (similar to `JOIN` operators): normal `IN` / `JOIN` and `GLOBAL IN` / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
