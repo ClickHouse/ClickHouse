@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_ai_relevance_function>1</allow_experimental_ai_relevance_function>
+        </default>
+    </profiles>
+</clickhouse>

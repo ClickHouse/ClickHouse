@@ -49,6 +49,8 @@ ai_function_max_input_tokens_per_query	0
 ai_function_max_output_tokens_per_query	0
 ai_function_max_retries	1
 ai_function_request_timeout_sec	60
+ai_function_rerank_default_credentials	
+ai_function_rerank_max_batch_size	100
 ai_function_retry_initial_delay_ms	1000
 ai_function_text_default_credentials	
 ai_function_throw_on_error	1
@@ -171,6 +173,49 @@ result	Nullable(Float32)
 0
 -- aiSimilarity: out-of-range dimensions on empty input
 -- aiSimilarity: rejects anthropic provider
+-- aiRelevance: disabled without allow_experimental_ai_relevance_function
+-- aiRelevance: registered
+aiRelevance
+-- aiRelevance: too few arguments
+-- aiRelevance: too many arguments
+-- aiRelevance: wrong type for query argument (not a string)
+-- aiRelevance: wrong type for document argument (not a string)
+-- aiRelevance: wrong type for document argument (Array of String)
+-- aiRelevance: non-constant parameter map
+-- aiRelevance: wrong type for parameter argument (not a map)
+-- aiRelevance: missing credentials (no default, no map)
+-- aiRelevance: named collection missing provider
+-- aiRelevance: named collection missing model (and none in map)
+-- aiRelevance: model supplied via the parameter map resolves
+0
+-- aiRelevance: nonexistent named collection
+-- aiRelevance: model resolved from the named collection
+0
+-- aiRelevance: model in the parameter map overrides the named collection
+0
+-- aiRelevance: unknown provider name
+-- aiRelevance: unknown provider name on empty input
+-- aiRelevance: rejects openai provider (no reranking endpoint)
+-- aiRelevance: rejects anthropic provider (no reranking endpoint)
+-- aiGenerate: rejects cohere provider (no chat endpoint)
+-- aiEmbed: rejects cohere provider (no embedding endpoint)
+-- aiSimilarity: rejects cohere provider (no embedding endpoint)
+-- aiRelevance: unknown parameter key rejected
+-- aiRelevance: top_n is not a parameter of the scalar function
+-- aiRelevance: return type
+Nullable(Float32)
+-- aiRelevance: return type with Nullable(String) operands
+Nullable(Float32)
+-- aiRelevance: NULL / empty operands → NULL
+\N	a	\N
+q	\N	\N
+	a	\N
+q		\N
+\N	\N	\N
+-- aiRelevance: constant NULL / empty operands → NULL
+\N	\N	\N	\N
+-- aiRelevance: empty input executes
+0
 -- aiEmbed: DEFAULT survives INSERT (no exception)
 1	0
 -- aiGenerate: DEFAULT survives INSERT (no exception)
@@ -191,3 +236,5 @@ result	Nullable(Float32)
 1
 -- aiSimilarity: DEFAULT survives INSERT (no exception)
 1	1
+-- aiRelevance: DEFAULT survives INSERT (no exception)
+1	\N

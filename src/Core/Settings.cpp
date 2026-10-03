@@ -9928,7 +9928,7 @@ Minimum estimated ratio of join output rows to build-side rows to enable transfo
     /* ####################################################### */ \
     /* AI function settings */ \
     DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
-Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
+Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions, embedding, and reranking API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
 )", BETA, \
         {"26.4", 60, 60, "New setting"}) \
     DECLARE(UInt64, ai_function_max_retries, 1, R"(
@@ -9947,14 +9947,14 @@ If true (default), an AI function call that fails permanently after exhausting a
     DECLARE(UInt64, ai_function_max_input_tokens_per_query, 0, R"(
 Maximum total input (prompt) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
-This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). Providers that omit token usage (notably HuggingFace TEI) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
+This limit is only enforced for providers that report token usage in their response: a `usage` object (OpenAI, Anthropic, vLLM) or, for the reranking functions (`aiRelevance`), `meta.billed_units.input_tokens` (Cohere-compatible endpoints). Providers that omit token usage (notably HuggingFace TEI, and Cohere rerank endpoints that report only `search_units`) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
 )", BETA, \
         {"26.10", 1000000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."}, \
         {"26.4", 1000000, 1000000, "New setting"}) \
     DECLARE(UInt64, ai_function_max_output_tokens_per_query, 0, R"(
 Maximum total output (completion) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of output tokens per in-flight request, since a call's output tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
-This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to the embedding functions (`aiEmbed`, `aiSimilarity`), which never produce output tokens.
+This limit is only enforced for providers that report token usage in their response: a `usage` object (OpenAI, Anthropic, vLLM) or, for the reranking functions (`aiRelevance`), `meta.billed_units.output_tokens` (Cohere-compatible endpoints). It does not apply to the embedding functions (`aiEmbed`, `aiSimilarity`), which never produce output tokens.
 )", BETA, \
         {"26.10", 500000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."}, \
         {"26.4", 500000, 500000, "New setting"}) \
@@ -9980,6 +9980,14 @@ Name of the named collection used by the text AI functions (`aiGenerate`, `aiCla
 Name of the named collection used by the embedding functions (`aiEmbed`, `aiSimilarity`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. These functions take `model` as a required positional argument, not from the named collection. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint differs from a chat one.
 )", BETA, \
         {"26.8", "", "", "New setting"}) \
+    DECLARE(String, ai_function_rerank_default_credentials, "", R"(
+Name of the named collection used by the reranking functions (`aiRelevance`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. Like the text functions, `aiRelevance` reads `model` from its parameter map, falling back to the named collection's `model`. Kept separate from `ai_function_text_default_credentials` and `ai_function_embedding_default_credentials` because a reranking endpoint differs from both a chat and an embeddings one. Only used by `aiRelevance`, which requires `allow_experimental_ai_relevance_function`.
+)", EXPERIMENTAL, \
+        {"26.10", "", "", "New setting"}) \
+    DECLARE(NonZeroUInt64, ai_function_rerank_max_batch_size, 100, R"(
+Maximum number of documents to include in a single HTTP request made by the reranking functions (`aiRelevance`). Within a block, documents scored against the same query are grouped into batches of this size to reduce API call overhead. For example, 500 documents scored against one query with a batch size of 100 result in 5 HTTP requests. The default matches Cohere's billing, where one search unit covers one query with up to 100 documents.
+)", EXPERIMENTAL, \
+        {"26.10", 100, 100, "New setting"}) \
     DECLARE(Bool, ai_function_allow_insecure_endpoint, false, R"(
 If false (default), AI functions refuse to use a named-collection `endpoint` that would send prompts and API keys over an unencrypted connection to a remote host: any non-HTTPS endpoint whose host is not loopback is rejected with an exception. Loopback endpoints (e.g. a local `http://localhost` model server) are always allowed. Set to true to permit plaintext `http://` endpoints on remote hosts.
 )", BETA, \
@@ -10001,6 +10009,10 @@ Enable functions for funnel analysis.
     DECLARE(Bool, allow_experimental_nlp_functions, false, R"(
 Enable experimental functions for natural language processing.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_ai_relevance_function, false, R"(
+Enable the experimental `aiRelevance` function, which scores the relevance of a document to a query using a reranking model.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New experimental setting to enable the `aiRelevance` function."}) \
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \

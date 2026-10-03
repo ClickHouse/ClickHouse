@@ -1,6 +1,7 @@
 #include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/OpenAIProvider.h>
 #include <Functions/AI/AnthropicProvider.h>
+#include <Functions/AI/CohereProvider.h>
 #include <Common/Exception.h>
 
 #include <Poco/JSON/Parser.h>
@@ -62,10 +63,20 @@ AIProviderHTTPException::AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPSt
 {
 }
 
+void IAIProvider::call(const AIRequest & /*ai_request*/, const ConnectionTimeouts & /*timeouts*/, AIResponse & /*response*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This AI provider does not support chat completions");
+}
+
 void IAIProvider::embed(
     const AIEmbeddingRequest & /*ai_embedding_request*/, const ConnectionTimeouts & /*timeouts*/, AIEmbeddingResponse & /*response*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This AI provider does not support embeddings");
+}
+
+void IAIProvider::rerank(const AIRerankRequest & /*ai_rerank_request*/, const ConnectionTimeouts & /*timeouts*/, AIRerankResponse & /*response*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This AI provider does not support reranking");
 }
 
 AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key, const String & api_version)
@@ -74,9 +85,11 @@ AIProviderPtr createAIProvider(const String & provider_name, const String & endp
         return std::make_unique<OpenAIProvider>(endpoint, api_key);
     else if (provider_name == "anthropic")
         return std::make_unique<AnthropicProvider>(endpoint, api_key, api_version);
+    else if (provider_name == "cohere")
+        return std::make_unique<CohereProvider>(endpoint, api_key);
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Unknown AI provider '{}'. Supported: 'openai', 'anthropic', 'huggingface', 'tei'", provider_name);
+            "Unknown AI provider '{}'. Supported: 'openai', 'anthropic', 'cohere', 'huggingface', 'tei'", provider_name);
 }
 
 }
