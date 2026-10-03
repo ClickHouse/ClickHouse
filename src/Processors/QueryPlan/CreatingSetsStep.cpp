@@ -85,9 +85,9 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         set_settings.max_bytes_ratio_before_external_set,
         "max_bytes_ratio_before_external_set");
 
-    /// The transform applies these settings only when it builds the set itself. A set on disk is shared
-    /// through the prepared sets cache like one in memory.
-    std::optional<SetSpillSettings> spill_settings;
+    /// The defaults keep the set in memory. The transform applies these settings only when it builds the
+    /// set itself. A set on disk is shared through the prepared sets cache like one in memory.
+    SetSpillSettings spill_settings;
     if (max_bytes_before_external_set)
     {
         if (!build_settings.temp_data_on_disk)

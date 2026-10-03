@@ -873,7 +873,7 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
     SetAndKeyPtr set_and_key,
     const SizeLimits & limits,
     PreparedSetsCachePtr prepared_sets_cache,
-    std::optional<SetSpillSettings> spill_settings,
+    SetSpillSettings spill_settings,
     bool recoverable_build)
 {
     dropTotalsAndExtremes();

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <optional>
-
 #include <Processors/IProcessor_fwd.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -190,7 +188,7 @@ public:
         SetAndKeyPtr set_and_key,
         const SizeLimits & limits,
         PreparedSetsCachePtr prepared_sets_cache,
-        std::optional<SetSpillSettings> spill_settings,
+        SetSpillSettings spill_settings,
         bool recoverable_build = false);
 
     void addMaterializingCTETransform(
