@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/Port.h>
-#include <Common/ProcessorMemoryStats.h>
 #include <Common/Stopwatch.h>
 
 #include <atomic>
@@ -18,6 +17,8 @@ namespace DB
 {
 
 class IQueryPlanStep;
+
+class ISpillable;
 
 struct StorageLimits;
 using StorageLimitsList = std::list<StorageLimits>;
@@ -390,18 +391,9 @@ public:
     /// This counter is used to calculate the number of rows right before AggregatingTransform.
     virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
 
-    /// Returns true if processor can spill memory to disk.
-    /// Aggregate, join and sort processors can be spillable.
-    /// For unspillable processors, the memory usage is not tracked.
-    inline bool isSpillable() const { return spillable; }
-
-    virtual ProcessorMemoryStats getMemoryStats()
-    {
-        return {};
-    }
-
-    // If the in-memory data's size is not larger then bytes, it doesn't spill
-    virtual bool spillOnSize(size_t /*bytes*/) { return false; }
+    /// Memory spilling interface of the processor, nullptr if it cannot spill (see ISpillable).
+    /// For processors returning nullptr the memory usage is not tracked.
+    virtual ISpillable * getSpillable() { return nullptr; }
 
     /// True for a fan-out that cannot take its next input chunk until every one of its outputs has
     /// accepted a share of the current one, so it cannot progress while an output is undemanded.
@@ -412,7 +404,6 @@ protected:
     virtual void onCancel() noexcept {}
 
     std::atomic<bool> is_cancelled{false};
-    bool spillable = false;
 
 private:
     /// For:

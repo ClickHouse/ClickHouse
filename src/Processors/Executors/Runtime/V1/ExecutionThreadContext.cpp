@@ -1,16 +1,29 @@
 #include <ctime>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/Runtime/V1/ExecutionThreadContext.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/IProcessor.h>
+#include <Processors/ISpillable.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <base/types.h>
 #include <base/defines.h>
+#include <Common/Logger.h>
 #include <Common/MemorySpillScheduler.h>
 #include <Common/CurrentThread.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
+#include <Common/Scheduler/MemoryReservation.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
+
+namespace ProfileEvents
+{
+    extern const Event MemoryReservationSpilledBytes;
+    extern const Event MemoryReservationSpillingMicroseconds;
+}
 
 namespace DB
 {
@@ -70,10 +83,55 @@ static void executeJob(IProcessor & processor, ReadProgressCallback * read_progr
 {
     try
     {
-        if (processor.isSpillable() && CurrentThread::getGroup())
-            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(&processor);
+        ISpillable * spillable = processor.getSpillable();
+        MemoryReservation * reservation = nullptr;
+
+        if (spillable)
+        {
+            auto memory = spillable->getMemoryStats();
+            QueryStatusPtr process_list_element = read_progress_callback ? read_progress_callback->getProcessListElement() : nullptr;
+            reservation = process_list_element ? process_list_element->getMemoryReservation() : nullptr;
+            if (reservation)
+            {
+                reservation->updateReclaimable(spillable, memory.spillable_memory_bytes);
+                if (memory.spillable_memory_bytes > 0)
+                {
+                    if (auto spill_request = reservation->takeSpillRequest(spillable, memory.spillable_memory_bytes))
+                    {
+                        auto * memory_tracker = process_list_element->getMemoryTracker();
+                        const auto & logger = getLogger("Scheduler");
+
+                        LOG_TRACE(logger, "Spilling {}, of {} (tracked {})",
+                            formatReadableSizeWithBinarySuffix(spill_request),
+                            formatReadableSizeWithBinarySuffix(memory.spillable_memory_bytes),
+                            formatReadableSizeWithBinarySuffix(memory_tracker->get()));
+
+                        Stopwatch watch;
+                        size_t spilled = spillable->spill(spill_request);
+                        auto new_spillable_memory_bytes = spillable->getMemoryStats().spillable_memory_bytes;
+                        reservation->finishSpill(spillable, spill_request, new_spillable_memory_bytes, memory_tracker);
+
+                        LOG_TRACE(logger, "Spilled {}, remaining {}, tracked {} (took {} ms)",
+                            formatReadableSizeWithBinarySuffix(spilled),
+                            formatReadableSizeWithBinarySuffix(new_spillable_memory_bytes),
+                            formatReadableSizeWithBinarySuffix(memory_tracker->get()),
+                            watch.elapsedMilliseconds());
+                        ProfileEvents::increment(ProfileEvents::MemoryReservationSpilledBytes, spilled);
+                        ProfileEvents::increment(ProfileEvents::MemoryReservationSpillingMicroseconds, watch.elapsedMicroseconds());
+                    }
+                }
+            }
+            else if (memory.spillable_memory_bytes > 0 && CurrentThread::getGroup())
+                CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(spillable);
+        }
 
         processor.work();
+
+        if (spillable && reservation)
+        {
+            auto memory = spillable->getMemoryStats();
+            reservation->updateReclaimable(spillable, memory.spillable_memory_bytes);
+        }
 
         /// Update read progress only for source nodes.
         bool is_source = processor.getInputs().empty();

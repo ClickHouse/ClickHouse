@@ -554,6 +554,8 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
 
     stat.compressed_size += compressed_delta;
     stat.uncompressed_size += uncompressed_delta;
+    if (compressed_delta > 0)
+        spilled_bytes.fetch_add(compressed_delta, std::memory_order_relaxed);
 }
 
 TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(SharedHeader header_, std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_size)

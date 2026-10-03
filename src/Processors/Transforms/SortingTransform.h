@@ -102,7 +102,7 @@ public:
     ~SortingTransform() override;
 
 protected:
-    Status prepare() final;
+    Status prepare() override;
     void work() final;
 
     virtual void consume(Chunk chunk) = 0;

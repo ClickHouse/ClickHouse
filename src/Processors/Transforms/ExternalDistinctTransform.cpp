@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <type_traits>
+#include <utility>
 
 #include <Interpreters/Squashing.h>
 #include <Interpreters/sortBlock.h>
@@ -81,16 +82,119 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     , preferred_block_bytes(preferred_block_bytes_)
     , preserve_input_order(preserve_input_order_)
 {
+    registerProcessor();
+    spillable_registered = true;
 }
 
 ExternalDistinctTransform::~ExternalDistinctTransform() = default;
 
 size_t ExternalDistinctTransform::minBytesInRun() const
 {
-    return std::min(max_bytes_before_external_distinct, DEFAULT_BYTES_IN_RUN);
+    return max_bytes_before_external_distinct
+        ? std::min(max_bytes_before_external_distinct, DEFAULT_BYTES_IN_RUN) : DEFAULT_BYTES_IN_RUN;
+}
+
+ProcessorMemoryStats ExternalDistinctTransform::getMemoryStats() const
+{
+    ProcessorMemoryStats res;
+    if (const auto * hashing = std::get_if<Hashing>(&state); hashing && !hashing->input_finished && hashing->set.getTotalRowCount())
+    {
+        res.spillable_memory_bytes = hashing->set.getTotalByteCount();
+        /// Allow the bounded suppression extraction/sorting workspace.
+        res.need_reserved_memory_bytes = 2 * DEFAULT_BYTES_IN_RUN
+            + estimateSortingWorkspace(maxRowsInSortingUnit()) + 3 * tmp_data->getSettings().buffer_size;
+    }
+    else if (const auto * collecting = std::get_if<CollectingInput>(&state))
+    {
+        res.spillable_memory_bytes = collecting->sorted_bytes + collecting->pending.allocated_bytes;
+        if (res.spillable_memory_bytes)
+        {
+            res.need_reserved_memory_bytes = 3 * collecting->pending.allocated_bytes
+                + estimateSortingWorkspace(collecting->pending.rows)
+                + estimateRunWriteMemory(collecting->sorted_rows + collecting->pending.rows, res.spillable_memory_bytes);
+        }
+    }
+
+    return res;
+}
+
+size_t ExternalDistinctTransform::spill(size_t at_least_bytes)
+{
+    size_t bytes = getMemoryStats().spillable_memory_bytes;
+    if (!at_least_bytes || !bytes || isCancelled())
+        return 0;
+
+    if (auto * hashing = std::get_if<Hashing>(&state))
+    {
+        LOG_TRACE(log, "Switching DISTINCT to external mode: scheduler requested spilling (requested bytes: {}, set memory: {}, query memory: {})",
+            formatReadableSizeWithBinarySuffix(at_least_bytes),
+            formatReadableSizeWithBinarySuffix(bytes),
+            formatReadableSizeWithBinarySuffix(getCurrentQueryMemoryUsage()));
+        startSpilling(*hashing);
+        /// The extractor retains the set until its last key is materialized. Drain every suppression
+        /// run before settling the scheduler's request, keeping only one run's working columns alive.
+        while (auto * connecting = std::get_if<ConnectingSuppressionRun>(&state))
+        {
+            auto run = std::move(connecting->run);
+            auto keys = std::move(connecting->keys);
+            spillRun(std::move(run));
+            auto & extracting = state.emplace<ExtractingSuppression>(std::move(keys));
+            extractSuppressionRun(extracting);
+        }
+    }
+    else if (auto * collecting = std::get_if<CollectingInput>(&state))
+    {
+        flushSortingUnit(*collecting);
+        /// Spill a prefix of whole chunks so earlier runs still win ties for the first payload.
+        Chunks chunks;
+        bytes = 0;
+        size_t rows = 0;
+        for (auto & chunk : collecting->sorted_chunks)
+        {
+            bytes += chunk.allocatedBytes();
+            rows += chunk.getNumRows();
+            chunks.emplace_back(std::move(chunk));
+            if (bytes >= at_least_bytes)
+                break;
+        }
+        collecting->sorted_chunks.erase(collecting->sorted_chunks.begin(), collecting->sorted_chunks.begin() + chunks.size());
+        collecting->sorted_bytes -= bytes;
+        collecting->sorted_rows -= rows;
+
+        auto run = prepareRun(spill_layout->getInputRunHeader(), std::move(chunks), bytes,
+            spill_layout->getKeySortDescription(), MergeSorter::Mode::MergeUniqueChunks);
+        spillRun(std::move(run));
+    }
+
+    return isCancelled() ? 0 : bytes;
+}
+
+void ExternalDistinctTransform::spillRun(PreparedRun run)
+{
+    /// None of these processors have been connected yet, so writing does not depend on pipeline work.
+    while (run.progress.chunk || run.progress.merger)
+    {
+        if (run.progress.chunk)
+            run.sink->consume(std::move(run.progress.chunk));
+        if (run.progress.merger)
+            readRun(run.progress);
+    }
+    run.sink->onFinish();
+    run.source = std::make_shared<BufferingFromFileSource>(
+        run.source->getPort().getSharedHeader(), std::move(run.sink->getHolder()), log);
+    run.sink.reset();
+    spilled_runs.emplace_back(std::move(run));
 }
 
 IProcessor::Status ExternalDistinctTransform::prepare()
+{
+    const auto status = prepareImpl();
+    if (status == Status::Finished && std::exchange(spillable_registered, false))
+        unregisterProcessor();
+    return status;
+}
+
+IProcessor::Status ExternalDistinctTransform::prepareImpl()
 {
     if (outputs.front().isFinished())
     {
@@ -98,6 +202,9 @@ IProcessor::Status ExternalDistinctTransform::prepare()
         /// owned by the pipeline until destruction, outside the executor's preparation lock.
         return finish();
     }
+
+    if (!spilled_runs.empty())
+        return Status::UpdatePipeline;
 
     return std::visit([this]<typename Phase>(Phase & phase) -> Status
     {
@@ -415,7 +522,8 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
     /// arena storing string keys, and retained bitmaps marking seen `LowCardinality` dictionary entries.
     /// Filtering releases its masks and packed keys before spilling; `spill_memory` already includes
     /// any pending filtered output. The budget covers the larger workspace alongside possible set growth.
-    if (check_memory_budget(hashing.set.estimateGrowthMemory(input_chunk), std::max(filtering_memory, spill_memory)))
+    if (!max_bytes_before_external_distinct
+        || check_memory_budget(hashing.set.estimateGrowthMemory(input_chunk), std::max(filtering_memory, spill_memory)))
     {
         output_chunk = hashing.set.filter(std::move(input_chunk));
         processed_rows = input_rows;
@@ -486,7 +594,7 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
 
     /// Actual allocations and concurrent operators can consume more than the pre-insertion estimate.
     const Int64 query_memory_usage_after_insert = getCurrentQueryMemoryUsage();
-    if (query_memory_usage_after_insert > static_cast<Int64>(max_bytes_before_external_distinct))
+    if (max_bytes_before_external_distinct && query_memory_usage_after_insert > static_cast<Int64>(max_bytes_before_external_distinct))
     {
         LOG_TRACE(log, "Switching DISTINCT to external mode: query memory exceeded the spill threshold after insertion "
             "(query memory: {}, spill threshold: {})",
@@ -567,6 +675,9 @@ size_t ExternalDistinctTransform::maxRowsInSortingUnit() const
 
 bool ExternalDistinctTransform::fitsSortingBudget(size_t rows, size_t column_bytes, size_t additional_input_bytes) const
 {
+    if (!max_bytes_before_external_distinct)
+        return true;
+
     /// Buffered source chunks are already tracked; future input needs a separate allowance. Reserve
     /// space for copy-on-write mutation, column concatenation, and the sorted output while upstream
     /// owners may retain the source columns.
@@ -675,7 +786,8 @@ void ExternalDistinctTransform::collectInput(CollectingInput & collecting)
     const size_t run_bytes = collecting.sorted_bytes + pending.allocated_bytes;
     const size_t write_memory = estimateRunWriteMemory(run_rows, run_bytes);
     const size_t query_memory = std::max<Int64>(0, getCurrentQueryMemoryUsage());
-    const bool write_budget_exceeded = query_memory + write_memory > max_bytes_before_external_distinct;
+    const bool write_budget_exceeded = max_bytes_before_external_distinct
+        && query_memory + write_memory > max_bytes_before_external_distinct;
     const bool spill_budget_exceeded = sorting_budget_exceeded || write_budget_exceeded;
     if (first_run || spill_budget_exceeded || !can_coalesce || unit_full)
         flushSortingUnit(collecting);
@@ -719,7 +831,7 @@ ExternalDistinctTransform::PreparedRun ExternalDistinctTransform::prepareRun(
         .source = std::move(source),
         .initial_merge = {},
     };
-    if (!merge_registration)
+    if (!merge_registration && spilled_runs.empty())
         run.initial_merge = prepareMerge();
 
     return run;
@@ -775,7 +887,7 @@ size_t ExternalDistinctTransform::estimateRunWriteMemory(size_t rows, size_t all
 size_t ExternalDistinctTransform::selectTailSpillPrefix(const CollectingInput & collecting) const
 {
     const auto & chunks = collecting.sorted_chunks;
-    if (chunks.empty())
+    if (!max_bytes_before_external_distinct || chunks.empty())
         return 0;
 
     const size_t query_memory = std::max<Int64>(0, getCurrentQueryMemoryUsage());
@@ -922,7 +1034,7 @@ ExternalDistinctTransform::PreparedMerge ExternalDistinctTransform::prepareMerge
             /*increase_sort_description_compile_attempts=*/ false,
             minBytesInRun(),
             /*remerge_lowered_memory_bytes_ratio_=*/ 2.,
-            minBytesInRun(),
+            max_bytes_before_external_distinct ? minBytesInRun() : 0,
             max_bytes_before_external_distinct,
             tmp_data,
             min_free_disk_space));
@@ -948,7 +1060,7 @@ void ExternalDistinctTransform::connectMerge(PreparedMerge & prepared, Processor
     merge_registration.emplace(std::move(prepared.merger), inputs.back());
 }
 
-OutputPort & ExternalDistinctTransform::connectRun(PreparedRun & prepared, Processors & processors)
+void ExternalDistinctTransform::connectRunSource(PreparedRun & prepared, Processors & processors)
 {
     if (prepared.initial_merge)
         connectMerge(*prepared.initial_merge, processors);
@@ -957,9 +1069,14 @@ OutputPort & ExternalDistinctTransform::connectRun(PreparedRun & prepared, Proce
     auto & merger = *merge_registration->merger;
     merger.addInput(prepared.source->getPort().getHeader());
     connect(prepared.source->getPort(), merger.getInputs().back());
+    processors.emplace_back(prepared.source);
+}
+
+OutputPort & ExternalDistinctTransform::connectRun(PreparedRun & prepared, Processors & processors)
+{
+    connectRunSource(prepared, processors);
     outputs.emplace_back(prepared.sink->getPort().getHeader(), this);
     connect(outputs.back(), prepared.sink->getPort());
-    processors.emplace_back(prepared.source);
     processors.emplace_back(prepared.sink);
     return outputs.back();
 }
@@ -967,6 +1084,14 @@ OutputPort & ExternalDistinctTransform::connectRun(PreparedRun & prepared, Proce
 IProcessor::PipelineUpdate ExternalDistinctTransform::updatePipeline()
 {
     Processors processors;
+    if (!spilled_runs.empty())
+    {
+        for (auto & run : spilled_runs)
+            connectRunSource(run, processors);
+        spilled_runs.clear();
+        return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    }
+
     std::visit([this, &processors]<typename Phase>(Phase & phase)
     {
         if constexpr (std::is_same_v<Phase, ConnectingSuppressionRun> || std::is_same_v<Phase, ConnectingTailRun>)

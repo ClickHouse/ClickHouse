@@ -1,5 +1,6 @@
 #include <memory>
 #include <IO/WriteBufferFromString.h>
+#include <Common/Scheduler/CostUnit.h>
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/ISlotControl.h>
 #include <Common/ThreadPool.h>
@@ -13,10 +14,12 @@
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Processors/Executors/Runtime/V1/ExecutionThreadContext.h>
 #include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
 #include <Processors/Executors/Runtime/V1/ExecutingGraph.h>
+#include <Common/MemorySpillScheduler.h>
 #include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>

@@ -142,10 +142,11 @@ public:
     Status prepare() override;
     void work() override;
 
-    ProcessorMemoryStats getMemoryStats() override;
-    bool spillOnSize(size_t bytes) override;
+    ISpillable * getSpillable() override { return join->getSpillable(); }
 
 private:
+    Status prepareImpl();
+    bool spillable_registered = false;
     JoinPtr join;
     FinishCounterPtr finish_counter;
     Chunk chunk;

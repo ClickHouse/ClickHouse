@@ -1009,6 +1009,18 @@ The maximum number in `parallelism` is computed as a minimum between:
 2. The maximum number of query processing threads set in `max_threads`.
 </Note>
 
+#### Spilling in aggregation, sorting, and distinct steps {#explain-analyze-spilling}
+
+When a `GROUP BY`, `ORDER BY`, or `DISTINCT` step spills data to temporary storage, it reports:
+
+```txt
+Spill: spilled <compressed_bytes>
+```
+
+This is the cumulative number of compressed bytes written by the whole step, including its parallel processors.
+The total includes temporary files already consumed or deleted, and counts each write when data is spilled more than once.
+The line is omitted when no data was spilled.
+
 #### Join steps {#explain-analyze-join-steps}
 
 For a join step `EXPLAIN ANALYZE` prints lines comparing the join-order optimizer's estimates with what actually happened (see [Estimated vs. actual join metrics](#explain-analyze-join-estimation)) and per-side *participation* lines — `Left` and `Right` — followed by any lines specific to the join implementation. Every value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is covered (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), and so are the two implementations that setting cannot select: a `CROSS` or `COMMA` join and any `ON` section without a key equality, and the [`Join`](/reference/engines/table-engines/special/join) table engine. Most of them report both sides; some report only the side they materialize (for example `direct` prints only `Left:`).

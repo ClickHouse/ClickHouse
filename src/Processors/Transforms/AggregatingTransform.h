@@ -6,6 +6,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
+#include <Processors/ISpillable.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
@@ -150,7 +151,7 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
   * At aggregation step, every transform uses it's own AggregatedDataVariants structure.
   * At merging step, all structures pass to ConvertingAggregatedToChunksTransform.
   */
-class AggregatingTransform final : public IProcessor
+class AggregatingTransform final : public IProcessor, public ISpillable
 {
 public:
     AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_, size_t output_streams_ = 1);
@@ -177,10 +178,18 @@ public:
     void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
     void onCancel() noexcept override;
 
+    ISpillable * getSpillable() override { return this; }
+    ProcessorMemoryStats getMemoryStats() const override;
+    size_t spill(size_t at_least_bytes) override;
+    const TemporaryDataOnDiskScope * getSpillScope() const override { return params->aggregator.getSpillScope(); }
+
 protected:
     void consume(Chunk chunk);
 
 private:
+    Status prepareImpl();
+    bool spillable_registered = false;
+
     size_t getGeneratingStepGroup() const;
 
     /// Rebuilds `variants` to the shared kept key set (see ManyAggregatedData::SharedKeptKeys).

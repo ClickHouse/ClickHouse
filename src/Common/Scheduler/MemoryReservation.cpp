@@ -1,10 +1,16 @@
+#include <cstdlib>
+#include <mutex>
+#include <utility>
+#include <Common/Scheduler/CostUnit.h>
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/Scheduler/IAllocationQueue.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Processors/ISpillable.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 
 
 namespace ProfileEvents
@@ -15,12 +21,14 @@ namespace ProfileEvents
     extern const Event MemoryReservationDecreases;
     extern const Event MemoryReservationKilled;
     extern const Event MemoryReservationFailed;
+    extern const Event MemoryReservationReclaimableBytes;
 }
 
 namespace CurrentMetrics
 {
     extern const Metric MemoryReservationApproved;
     extern const Metric MemoryReservationDemand;
+    extern const Metric MemoryReservationReclaimable;
 }
 
 namespace DB
@@ -33,12 +41,20 @@ namespace ErrorCodes
     extern const int MEMORY_RESERVATION_ACQUISITION_TIMEOUT;
 }
 
-MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_,
+namespace
+{
+    /// Reclaimable total is not sent to the scheduler if it changed less than 1/RECLAIMABLE_REPORT_RATIO
+    constexpr ResourceCost RECLAIMABLE_REPORT_RATIO = 8;
+}
+
+MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_, ResourceCost min_bytes_to_spill_,
                                      std::chrono::steady_clock::time_point admission_deadline_)
     : ResourceAllocation(*link.allocation_queue, id_)
     , reserved_size(reserved_size_)
+    , min_bytes_to_spill(min_bytes_to_spill_)
     , approved_increment(CurrentMetrics::MemoryReservationApproved, 0)
     , demand_increment(CurrentMetrics::MemoryReservationDemand, 0)
+    , reclaimable_increment(CurrentMetrics::MemoryReservationReclaimable, 0)
 {
     chassert(link.allocation_queue);
     actual_size = reserved_size;
@@ -193,6 +209,116 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
     }
 }
 
+ResourceCost MemoryReservation::getTotalReclaimable()
+{
+    std::lock_guard lock(mutex);
+    return reclaimable_total;
+}
+
+void MemoryReservation::updateReclaimable(const ISpillable * spillable, ResourceCost total_bytes)
+{
+    if (total_bytes < min_bytes_to_spill)
+        total_bytes = 0;
+
+    {
+        std::lock_guard lock(mutex);
+        auto & entry = spillable->spill_accounting;
+        chassert(!entry.reservation || entry.reservation == this);
+        entry.reservation = this;
+        if (entry.reclaimable == total_bytes)
+            return;
+        ProfileEvents::increment(ProfileEvents::MemoryReservationReclaimableBytes, std::max<ResourceCost>(total_bytes - entry.reclaimable, 0));
+        reclaimable_total = reclaimable_total - entry.reclaimable + total_bytes;
+        entry.reclaimable = total_bytes;
+    }
+    reportReclaimable();
+}
+
+void MemoryReservation::removeReclaimable(const ISpillable * spillable)
+{
+    {
+        std::lock_guard lock(mutex);
+        auto & entry = spillable->spill_accounting;
+        /// Keep the in-progress guard until completion: another processor may still be spilling the shared object.
+        reclaimable_total -= std::exchange(entry.reclaimable, 0);
+    }
+    reportReclaimable(/*force=*/ true);
+}
+
+void MemoryReservation::reportReclaimable(bool force, ResourceCost settled_bytes)
+{
+    std::lock_guard report_lock(reclaimable_report_mutex);
+    ResourceCost total = 0;
+    {
+        std::lock_guard lock(mutex);
+        total = reclaimable_total;
+
+        /// No processor can service the remaining demand. Claimed requests are settled by `finishSpill` instead.
+        if (total == 0)
+            settled_bytes += std::exchange(enqueued_spill, 0);
+
+        /// A completion must settle its claim even if the estimate is unchanged or below the reporting threshold.
+        if (settled_bytes == 0)
+        {
+            if (total == reported_reclaimable)
+                return;
+            if (!force && reported_reclaimable != 0 && total != 0
+                && std::abs(total - reported_reclaimable) * RECLAIMABLE_REPORT_RATIO < reported_reclaimable)
+                return;
+        }
+        reported_reclaimable = total;
+        reclaimable_increment.changeTo(total);
+    }
+
+    if (settled_bytes > 0)
+        queue.finishSpill(*this, settled_bytes, total);
+    else
+        queue.setReclaimable(*this, total);
+}
+
+ResourceCost MemoryReservation::takeSpillRequest(const ISpillable * spillable, ResourceCost spillable_bytes)
+{
+    if (spillable_bytes <= 0 || spillable_bytes < min_bytes_to_spill)
+        return 0;
+
+    std::lock_guard lock(mutex);
+    if (kill_reason || fail_reason || removed || enqueued_spill <= 0)
+        return 0;
+
+    auto & entry = spillable->spill_accounting;
+    if (entry.in_progress)
+        return 0;
+
+    ResourceCost claim = std::min(spillable_bytes, enqueued_spill);
+    enqueued_spill -= claim;
+    ++spills_in_flight;
+    entry.in_progress = true;
+    return claim;
+}
+
+void MemoryReservation::finishSpill(const ISpillable * spillable, ResourceCost settled_bytes, ResourceCost new_spillable_memory_bytes, const MemoryTracker * memory_tracker)
+{
+    if (new_spillable_memory_bytes < min_bytes_to_spill)
+        new_spillable_memory_bytes = 0;
+
+    {
+        std::lock_guard lock(mutex);
+        chassert(spills_in_flight > 0);
+        --spills_in_flight;
+
+        auto & entry = spillable->spill_accounting;
+        chassert(entry.in_progress);
+        entry.in_progress = false;
+
+        reclaimable_total = reclaimable_total - entry.reclaimable + new_spillable_memory_bytes;
+        entry.reclaimable = new_spillable_memory_bytes;
+        reclaimable_increment.changeTo(reclaimable_total);
+    }
+
+    syncWithMemoryTracker(memory_tracker);
+    reportReclaimable(/*force=*/ true, settled_bytes);
+}
+
 void MemoryReservation::throwIfNeeded()
 {
     if (kill_reason)
@@ -223,6 +349,16 @@ void MemoryReservation::killAllocation(const std::exception_ptr & reason)
     metrics.killed++;
     kill_reason = reason;
     cv.notify_all(); // notify syncWithMemoryTracker
+}
+
+void MemoryReservation::spillAllocation(ResourceCost additional_bytes)
+{
+    {
+        std::lock_guard lock(mutex);
+        enqueued_spill += additional_bytes;
+    }
+    /// The last reclaimable estimate may have disappeared after the queue booked this request but before delivery.
+    reportReclaimable();
 }
 
 void MemoryReservation::increaseApproved(const IncreaseRequest & increase)
