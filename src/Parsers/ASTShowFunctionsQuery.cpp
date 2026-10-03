@@ -16,7 +16,7 @@ ASTPtr ASTShowFunctionsQuery::clone() const
 void ASTShowFunctionsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
 {
     ostr << "SHOW FUNCTIONS";
-    if (!like.empty())
+    if (has_like)
         ostr << (case_insensitive_like ? " ILIKE " : " LIKE ") << quoteString(like);
 }
 
