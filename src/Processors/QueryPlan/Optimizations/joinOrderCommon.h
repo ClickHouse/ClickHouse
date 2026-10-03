@@ -18,14 +18,26 @@ using PlanMemo = std::unordered_map<BitSet, DPJoinEntryPtr>;
 struct SelectivityEstimate
 {
     double value = 1.0;
+    /// Like `value`, but a key column without NDV statistics uses the row count of its relation
+    /// (an upper bound of its NDV) instead. Only reported by `EXPLAIN` as `estimated (NDV)`;
+    /// the cost model does not use it, because it says nothing about which side is the key.
+    double reported_value = 1.0;
     bool reliable = false;
     bool has_equi = false;
 };
 
 using SelectivityCache = std::unordered_map<JoinActionRef, SelectivityEstimate>;
 
-/// Number of distinct values of a join-key column, or nullopt when no real statistics are available.
-inline std::optional<UInt64> getColumnStats(
+struct ColumnDistinctValues
+{
+    /// Number of distinct values from real statistics, or nullopt when there are none.
+    std::optional<UInt64> ndv;
+    /// `ndv` if known, otherwise the row count of the column's relation; 0 when neither is known.
+    UInt64 upper_bound = 0;
+};
+
+/// Number of distinct values of a join-key column.
+inline ColumnDistinctValues getColumnStats(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
     const BitSet & rels,
@@ -40,15 +52,30 @@ inline std::optional<UInt64> getColumnStats(
         {
             auto col_it = it->second->column_stats.find(column_name);
             if (col_it != it->second->column_stats.end())
-                return col_it->second.num_distinct_values;
+                return {col_it->second.num_distinct_values, col_it->second.num_distinct_values};
+            return {{}, it->second->estimated_rows.value_or(0)};
         }
         return {};
     }
 
-    const auto & col_stats = relation_stats.at(rel_id.value()).column_stats;
-    if (auto it = col_stats.find(column_name); it != col_stats.end())
-        return it->second.num_distinct_values;
-    return {};
+    const auto & relation_stat = relation_stats.at(rel_id.value());
+    if (auto it = relation_stat.column_stats.find(column_name); it != relation_stat.column_stats.end())
+        return {it->second.num_distinct_values, it->second.num_distinct_values};
+    return {{}, relation_stat.estimated_rows.value_or(0)};
+}
+
+/// Accounts for an equality between key columns with the largest NDV `max_ndv` (0 if unknown)
+/// and the largest NDV upper bound `max_ndv_upper_bound` (0 if unknown), see `ColumnDistinctValues`.
+inline void applyEquiKeyDistinctValues(SelectivityEstimate & estimate, UInt64 max_ndv, UInt64 max_ndv_upper_bound)
+{
+    estimate.has_equi = true;
+    if (max_ndv > 0)
+    {
+        estimate.value = std::min(estimate.value, 1.0 / static_cast<double>(max_ndv));
+        estimate.reliable = true;
+    }
+    if (max_ndv_upper_bound > 0)
+        estimate.reported_value = std::min(estimate.reported_value, 1.0 / static_cast<double>(max_ndv_upper_bound));
 }
 
 inline SelectivityEstimate computeSelectivity(
@@ -67,15 +94,12 @@ inline SelectivityEstimate computeSelectivity(
     if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
         return estimate;
 
-    estimate.has_equi = true;
     auto lhs_ndv = getColumnStats(query_graph, dp_table, lhs.getSourceRelations(), lhs.getColumnName());
     auto rhs_ndv = getColumnStats(query_graph, dp_table, rhs.getSourceRelations(), rhs.getColumnName());
-    UInt64 max_ndv = std::max(lhs_ndv.value_or(0), rhs_ndv.value_or(0));
-    if (max_ndv > 0)
-    {
-        estimate.value = std::min(estimate.value, 1.0 / static_cast<double>(max_ndv));
-        estimate.reliable = true;
-    }
+    applyEquiKeyDistinctValues(
+        estimate,
+        std::max(lhs_ndv.ndv.value_or(0), rhs_ndv.ndv.value_or(0)),
+        std::max(lhs_ndv.upper_bound, rhs_ndv.upper_bound));
     return estimate;
 }
 
@@ -90,6 +114,7 @@ inline SelectivityEstimate computeSelectivity(
     {
         auto edge_estimate = computeSelectivity(query_graph, dp_table, expression_selectivity, *edge);
         estimate.value = std::min(estimate.value, edge_estimate.value);
+        estimate.reported_value = std::min(estimate.reported_value, edge_estimate.reported_value);
         estimate.reliable |= edge_estimate.reliable;
         estimate.has_equi |= edge_estimate.has_equi;
     }

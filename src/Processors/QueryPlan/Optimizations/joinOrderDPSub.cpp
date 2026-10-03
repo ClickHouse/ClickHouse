@@ -494,6 +494,7 @@ SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
             dpsub_data.class_visited[class_idx] = generation;
 
             UInt64 max_ndv = 0;
+            UInt64 max_ndv_upper_bound = 0;
             bool has_left = false;
             bool has_right = false;
             for (const auto & equiv_member : *dpsub_data.equiv_classes[class_idx])
@@ -503,25 +504,17 @@ SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
                     continue;
                 const UInt32 relation_bit = static_cast<UInt32>(1) << *relation;
                 if (left_mask & relation_bit)
-                {
                     has_left = true;
-                    max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()).value_or(0));
-                }
                 else if (right_mask & relation_bit)
-                {
                     has_right = true;
-                    max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()).value_or(0));
-                }
+                else
+                    continue;
+                auto ndv = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName());
+                max_ndv = std::max(max_ndv, ndv.ndv.value_or(0));
+                max_ndv_upper_bound = std::max(max_ndv_upper_bound, ndv.upper_bound);
             }
             if (has_left && has_right)
-            {
-                estimate.has_equi = true;
-                if (max_ndv > 0)
-                {
-                    estimate.value = std::min(estimate.value, 1.0 / static_cast<double>(max_ndv));
-                    estimate.reliable = true;
-                }
-            }
+                applyEquiKeyDistinctValues(estimate, max_ndv, max_ndv_upper_bound);
         }
     }
 

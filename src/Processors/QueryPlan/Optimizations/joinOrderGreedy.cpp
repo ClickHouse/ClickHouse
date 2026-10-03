@@ -112,7 +112,7 @@ DPJoinEntryPtr GreedyJoinOrderOptimizer::solve()
                     }
                     applied_edges = std::move(edges);
                     best_plan = std::make_shared<DPJoinEntry>(
-                        left, right, current_cost, selectivity.value, cardinality, std::move(join_operator));
+                        left, right, current_cost, selectivity.reported_value, cardinality, std::move(join_operator));
                     best_plan_equi_connected = equi_connected;
                     best_i = i;
                     best_j = j;
