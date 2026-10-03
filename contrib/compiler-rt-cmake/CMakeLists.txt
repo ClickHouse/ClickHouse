@@ -316,6 +316,9 @@ set(SANITIZER_COMMON_FLAGS
     # pointers too. Override compiler-rt's default -fomit-frame-pointer.
     -fno-omit-frame-pointer
     -funwind-tables
+    # From upstream SANITIZER_COMMON_CFLAGS (compiler-rt/CMakeLists.txt): the runtimes run before thread
+    # local storage is set up and inside interceptors and signal handlers, where reading the canary from
+    # %fs is not safe and __stack_chk_fail is itself interposable.
     -fno-stack-protector
     -fvisibility=hidden
     # A sanitizer runtime must never itself be instrumented: it would recurse
@@ -643,17 +646,19 @@ endif()
 # ============================================================
 #
 if (ENABLE_XRAY)
-    # XRay archive: common runtime + all three modes (FDR, basic, profiling) +
-    # per-arch trampolines + sanitizer_common (XRay reuses sanitizer_common's
-    # allocator and printing helpers).
+    # XRay archive: common runtime + per-arch trampolines + sanitizer_common
+    # (XRay reuses sanitizer_common's allocator and printing helpers).
     #
-    # Bundle list mirrors the OBJECT_LIBS for clang_rt.xray (STATIC) in
-    # contrib/llvm-project/compiler-rt/lib/xray/CMakeLists.txt:
-    #   RTXray (= XRAY_SOURCES + ${arch}_SOURCES) + RTXrayFDR + RTXrayBASIC +
-    #   RTXrayPROFILING + RTSanitizerCommon[+Libc].
-    # Upstream additionally builds clang_rt.xray-fdr/-basic/-profiling as
-    # separate archives so an application can link only the modes it uses;
-    # ClickHouse always wants all of them, so we collapse into one archive.
+    # The logging modes (FDR, basic, profiling) are deliberately NOT bundled:
+    # ClickHouse compiles with -fxray-modes=none (see
+    # cmake/xray_instrumentation.cmake) and drives instrumentation through
+    # custom handlers only. This archive is linked --whole-archive (the
+    # runtime's init lives in a preinit_array entry nothing references), so
+    # bundling a mode would run its static initializers in every executable;
+    # xray_fdr_logging's initializer crashes at startup on musl.
+    #
+    # xray_reject_modes.cpp (ours) makes a request for one of the dropped modes
+    # through XRAY_OPTIONS fail at startup instead of silently doing nothing.
     set(_xray_arch_cpp "")
     set(_xray_arch_asm "")
     if     (ARCH_AMD64)
@@ -677,13 +682,13 @@ if (ENABLE_XRAY)
     endif()
 
     set(_xray_combined_full "")
-    foreach (s ${XRAY_COMMON_SOURCES} ${XRAY_FDR_SOURCES} ${XRAY_BASIC_SOURCES}
-                ${XRAY_PROFILING_SOURCES} ${_xray_arch_cpp} ${_xray_arch_asm})
+    foreach (s ${XRAY_COMMON_SOURCES} ${_xray_arch_cpp} ${_xray_arch_asm})
         list(APPEND _xray_combined_full "${XRAY_DIR}/${s}")
     endforeach()
     foreach (s ${SANITIZER_COMMON_SOURCES} ${SANITIZER_COMMON_LIBC_SOURCES})
         list(APPEND _xray_combined_full "${SANCOMMON_DIR}/${s}")
     endforeach()
+    list(APPEND _xray_combined_full "${CMAKE_CURRENT_SOURCE_DIR}/xray_reject_modes.cpp")
 
     add_library(clang_rt_xray STATIC ${_xray_combined_full})
     target_include_directories(clang_rt_xray PRIVATE ${SANITIZER_INCLUDE_DIRS})
