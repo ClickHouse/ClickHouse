@@ -157,6 +157,7 @@ public:
         const ExpressionActionsSettings & actions_settings,
         bool enable_multiple_prewhere_read_steps,
         bool force_short_circuit_execution,
+        bool read_ahead_prewhere_columns,
         const ColumnsDescription * columns = nullptr);
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
@@ -184,10 +185,11 @@ private:
     const MergeTreeReaderSettings reader_settings;
     const MergeTreeReadTask::BlockSizeParams block_size_params;
 
-    /// Condition hash and human-readable condition under which granules fully filtered out by
-    /// PREWHERE are recorded in the query condition cache. Computed once at construction: the hash
-    /// of the PREWHERE condition if it is deterministic, or the hash of the deterministic condition
-    /// derived from it when it involves the current time (issue #115504). Empty when neither
+    /// Cache key and human-readable condition under which granules fully filtered out by PREWHERE
+    /// are recorded in the query condition cache. Computed once at construction from the hash of
+    /// the PREWHERE condition if it is deterministic (or only contains `__topKFilter` of a TopK read
+    /// with a TopK salt), or the hash of the deterministic condition derived from it when it involves
+    /// the current time (issue #115504), salted the same way as the consult side. Empty when none
     /// applies; then PREWHERE results are not cached.
     std::optional<std::pair<UInt64, String>> prewhere_condition_for_query_condition_cache;
 

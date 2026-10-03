@@ -25,9 +25,12 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
+
+#include <boost/functional/hash.hpp>
 
 namespace
 {
@@ -193,6 +196,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
           actions_settings,
           reader_settings_.enable_multiple_prewhere_read_steps,
           reader_settings_.force_short_circuit_execution,
+          reader_settings_.read_ahead_prewhere_columns,
           columns_))
     , reader_settings(reader_settings_)
     , result_header(transformHeader(pool->getHeader(), row_level_filter, prewhere_info))
@@ -215,7 +219,27 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
             {
                 if (VirtualColumnUtils::isDeterministic(output))
                 {
-                    prewhere_condition_for_query_condition_cache.emplace(output->getHash(), prewhere_info->prewhere_actions.getNames()[0]);
+                    prewhere_condition_for_query_condition_cache.emplace(
+                        queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_settings_salt),
+                        prewhere_info->prewhere_actions.getNames()[0]);
+                    break;
+                }
+
+                /// A TopK read composes the dynamic `__topKFilter` into the PREWHERE, so the
+                /// granules it drops depend on the running threshold. They can still be
+                /// recorded: for a fixed plan and data the threshold only tightens, so a
+                /// granule with no surviving rows has no row that could have reached the
+                /// final top-N. The entry is keyed with the TopK plan salt (mirroring the
+                /// WHERE write path in `updateQueryConditionCache` and the consult in
+                /// `filterPartsByQueryConditionCache`), so only the same TopK plan, part set,
+                /// and post-PREWHERE predicate ever reuses it. The consult side salts every
+                /// non-deterministic PREWHERE of a TopK read, so do the same here, also for a
+                /// condition involving the current time.
+                const auto & top_k_salt = reader_settings.query_condition_cache_top_k_salt;
+                std::optional<std::pair<UInt64, String>> condition;
+                if (top_k_salt && VirtualColumnUtils::isDeterministicAllowingTopKFilter(output))
+                {
+                    condition.emplace(output->getHash(), prewhere_info->prewhere_actions.getNames()[0]);
                 }
                 else if (reader_settings.use_query_condition_cache_for_time_conditions)
                 {
@@ -224,10 +248,25 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
                             TimeConditionRounding::Strengthen,
                             reader_settings.query_condition_cache_time_condition_grid_factor,
                             time(nullptr),
-                            /// The PREWHERE write path does not partition the key by the TopK plan,
-                            /// so a `__topKFilter` in PREWHERE must keep suppressing the write.
-                            /*allow_top_k_filter=*/false))
-                        prewhere_condition_for_query_condition_cache.emplace(derived->hash, derived->condition);
+                            /// Only a key salted with the TopK plan may look through a `__topKFilter`.
+                            /*allow_top_k_filter=*/top_k_salt.has_value()))
+                        condition.emplace(derived->hash, derived->condition);
+                }
+
+                if (condition && top_k_salt)
+                {
+                    /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
+                    /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is
+                    /// `unsigned long long`).
+                    size_t condition_hash = queryConditionCacheHash(condition->first, reader_settings.query_condition_cache_settings_salt);
+                    boost::hash_combine(condition_hash, *top_k_salt);
+                    prewhere_condition_for_query_condition_cache.emplace(condition_hash, std::move(condition->second));
+                }
+                else if (condition)
+                {
+                    prewhere_condition_for_query_condition_cache.emplace(
+                        queryConditionCacheHash(condition->first, reader_settings.query_condition_cache_settings_salt),
+                        std::move(condition->second));
                 }
                 break;
             }
@@ -257,6 +296,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     const ExpressionActionsSettings & actions_settings,
     bool enable_multiple_prewhere_read_steps,
     bool force_short_circuit_execution,
+    bool read_ahead_prewhere_columns,
     const ColumnsDescription * columns)
 {
     PrewhereExprInfo prewhere_actions;
@@ -290,7 +330,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     }
 
     if (prewhere_info &&
-        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns)))
+        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns, read_ahead_prewhere_columns)))
     {
         PrewhereExprStep prewhere_step
         {
@@ -488,7 +528,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                         /// QueryConditionCache is a coordinator feature; concrete part present here.
                         data_part_info->getDataPart()->storage.getStorageID().uuid,
                         part_name,
-                        queryConditionCacheHash(prewhere_condition_for_query_condition_cache->first, reader_settings.query_condition_cache_settings_salt),
+                        prewhere_condition_for_query_condition_cache->first,
                         prewhere_condition_for_query_condition_cache->second,
                         task->getPrewhereUnmatchedMarks(),
                         data_part_info->getIndexGranularity().getMarksCount(),
