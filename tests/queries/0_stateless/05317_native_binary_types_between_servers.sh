@@ -20,7 +20,7 @@ SELECT d, dynamicType(d) FROM remote('127.0.0.2', currentDatabase(), t_src) ORDE
 
 SELECT 'parallel replicas';
 SELECT d, dynamicType(d) FROM t_src ORDER BY toString(d)
-SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'parallel_replicas', load_balancing = 'in_order', distributed_replica_max_ignored_errors = 1000,
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0,
     automatic_parallel_replicas_mode = 0, enable_parallel_blocks_marshalling = 1, log_comment = '05317_parallel_replicas';
 
@@ -38,6 +38,11 @@ SELECT 'file read on a shard';
 INSERT INTO FUNCTION file(currentDatabase() || '_05317.native', Native) SELECT 5::UInt64 AS x SETTINGS engine_file_truncate_on_insert = 1;
 SELECT x FROM remote('127.0.0.2', file(currentDatabase() || '_05317.native', Native));
 EOF
+
+echo 'remote with server logs'
+$CLIENT_BINARY_TYPES --server_logs_file="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_05317_server_logs.txt" -q "SELECT d, dynamicType(d) FROM remote('127.0.0.2', currentDatabase(), t_src) ORDER BY toString(d) SETTINGS send_logs_level = 'trace'"
+[ -s "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_05317_server_logs.txt" ] && echo 'server logs received'
+rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_05317_server_logs.txt"
 
 echo 'secondary query from a client'
 $CLIENT_BINARY_TYPES --query_kind secondary_query -q "INSERT INTO t_dst VALUES (8)"
