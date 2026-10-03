@@ -496,12 +496,13 @@ async function checkAuthHeaderTransport(js) {
     const probeServerStatusSource = extractTopLevelFunction(js, 'probeServerStatus');
     const getSharedServerStatusProbeSource = extractTopLevelFunction(js, 'getSharedServerStatusProbe');
     const getRequestAuthHeadersSource = extractTopLevelFunction(js, 'getRequestAuthHeaders');
+    const invalidateRequestAuthOnFailureSource = extractTopLevelFunction(js, 'invalidateRequestAuthOnFailure');
 
     const makeAuthHelpers = (fetchImpl) => vm.runInNewContext(
         `${canSendRawSource}\n${getAuthHeadersSource}\n${serverPredatesDefaultSessionUserSource}\n` +
-        `const authProbeRequests = new Map();\n${getAuthProbeKeySource}\n${probeServerStatusSource}\n` +
-        `${getSharedServerStatusProbeSource}\n${getRequestAuthHeadersSource}\n` +
-        '({ getAuthHeaders, getRequestAuthHeaders, serverPredatesDefaultSessionUser })',
+        `const authProbeRequests = new Map();\nconst authProbeResults = new Map();\n${getAuthProbeKeySource}\n${probeServerStatusSource}\n` +
+        `${getSharedServerStatusProbeSource}\n${getRequestAuthHeadersSource}\n${invalidateRequestAuthOnFailureSource}\n` +
+        '({ getAuthHeaders, getRequestAuthHeaders, invalidateRequestAuthOnFailure, serverPredatesDefaultSessionUser })',
         { Headers, fetch: fetchImpl },
     );
     const helpers = makeAuthHelpers(async () => { throw new Error('unexpected fetch'); });
@@ -603,6 +604,13 @@ async function checkAuthHeaderTransport(js) {
             && pathCalls[pathCalls.length - 1].path === '/modern',
         { modernHeaders, pathCalls });
 
+    const beforeModernReuse = pathCalls.length;
+    const modernHeadersAgain = await pathHelpers.getRequestAuthHeaders('', 'secret', 'https://remote.example/modern');
+    check('auth-header-cases', 'settled modern compatibility is reused without another status probe',
+        modernHeadersAgain['X-ClickHouse-User'] === undefined
+            && pathCalls.length === beforeModernReuse,
+        { modernHeadersAgain, pathCalls });
+
     /// Two consumers racing the same connection (for example checkCredentials and Run) share only
     /// the in-flight probe. The result disappears once settled, so it cannot become a sticky mode.
     const sharedCalls = [];
@@ -624,11 +632,13 @@ async function checkAuthHeaderTransport(js) {
             && sharedB['X-ClickHouse-User'] === 'default',
         { sharedCalls, sharedA, sharedB });
 
-    /// The same exact endpoint can change underneath an open /play page during a rolling upgrade.
-    /// Because settled probes are not cached, the next request self-heals without a reload.
+    /// Keep a successful endpoint classification until a real authentication failure disproves it.
+    /// The next request must then re-probe, so a backend change can self-heal without a reload.
     let rollingLegacy = true;
+    const rollingCalls = [];
     const rollingHelpers = makeAuthHelpers(async (url, options) => {
         const explicit_default = options.headers['X-ClickHouse-User'] === 'default';
+        rollingCalls.push(options.headers);
         if (rollingLegacy && !explicit_default)
             return { ok: false, status: 403, json: async () => ({}) };
         return {
@@ -637,13 +647,23 @@ async function checkAuthHeaderTransport(js) {
             json: async () => ({ v: rollingLegacy ? '26.6.9.1' : '26.7.1.1', t: 1 }),
         };
     });
-    const beforeUpgrade = await rollingHelpers.getRequestAuthHeaders('', 'secret', 'https://remote.example/clickhouse');
+    const rollingAddress = 'https://remote.example/clickhouse';
+    const beforeUpgrade = await rollingHelpers.getRequestAuthHeaders('', 'secret', rollingAddress);
     rollingLegacy = false;
-    const afterUpgrade = await rollingHelpers.getRequestAuthHeaders('', 'secret', 'https://remote.example/clickhouse');
-    check('auth-header-cases', 'legacy-default compatibility self-heals after an endpoint upgrade',
+    const cachedAfterUpgrade = await rollingHelpers.getRequestAuthHeaders('', 'secret', rollingAddress);
+    const authFailure = {
+        ok: false,
+        headers: { get: name => name === 'X-ClickHouse-Exception-Code' ? '516' : null },
+    };
+    rollingHelpers.invalidateRequestAuthOnFailure(authFailure, rollingAddress, '', 'secret');
+    const callsBeforeReprobe = rollingCalls.length;
+    const afterUpgrade = await rollingHelpers.getRequestAuthHeaders('', 'secret', rollingAddress);
+    check('auth-header-cases', 'auth failure invalidates the endpoint classification and re-probes it',
         beforeUpgrade['X-ClickHouse-User'] === 'default'
-            && afterUpgrade['X-ClickHouse-User'] === undefined,
-        { beforeUpgrade, afterUpgrade });
+            && cachedAfterUpgrade['X-ClickHouse-User'] === 'default'
+            && afterUpgrade['X-ClickHouse-User'] === undefined
+            && rollingCalls.length === callsBeforeReprobe + 1,
+        { beforeUpgrade, cachedAfterUpgrade, afterUpgrade, rollingCalls });
 
     const completionUrlSource = js.match(/function buildCompletionUrl\(\) \{\n[\s\S]*?\n\}/);
     if (!completionUrlSource) throw new Error('buildCompletionUrl not found in play.html');
