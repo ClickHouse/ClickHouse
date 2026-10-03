@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -98,7 +99,8 @@ public:
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
         bool has_positions_,
-        NameSet columns_shadowing_map_subcolumns_);
+        NameSet columns_shadowing_map_subcolumns_,
+        JSONIndexArgumentTypes json_argument_types_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
@@ -170,7 +172,7 @@ private:
 
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
-        const RPNBuilderTreeNode & index_column_node,
+        const RPNBuilderTreeNode & argument_node,
         DataTypePtr value_type,
         Field value_field,
         RPNElement & out) const;
@@ -189,7 +191,7 @@ private:
     /// index's column.
     std::optional<String> tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const;
 
-    /// Everything a `keyValuePairs` index supports; currently only `m['key'] = 'value'`.
+    /// A `keyValuePairs` index in the (column, constant) shape; currently only `m['key'] = 'value'`.
     bool traverseMapElementKeyValueNode(
         const String & function_name,
         const RPNBuilderTreeNode & index_column_node,
@@ -197,6 +199,9 @@ private:
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out) const;
+
+    /// `mapContainsKeyValue(m, 'key', 'value')`: both pair tokens, searched as one `Any` query.
+    bool traverseMapContainsKeyValueNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
     VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;
     VectorWithMemoryTracking<String> stringToTokens(std::string_view raw) const;
@@ -221,6 +226,10 @@ private:
     static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
+    /// Argument types of the JSON index functions of this index, by position in `header`.
+    JSONIndexArgumentTypes json_argument_types;
+    /// Whether the index is defined over an `Array` column, whose positions restart for every element.
+    bool indexed_column_is_array = false;
     /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
     std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;

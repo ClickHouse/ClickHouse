@@ -549,10 +549,10 @@ void optimizeUsing(const ASTSelectQuery * select_query)
         expression_list = uniq_expressions_list;
 }
 
-void optimizeAggregationFunctions(ASTPtr & query)
+void optimizeAggregationFunctions(ASTPtr & query, const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns)
 {
     /// Move arithmetic operations out of aggregation functions
-    ArithmeticOperationsInAgrFuncVisitor::Data data;
+    ArithmeticOperationsInAgrFuncVisitor::Data data{tables_with_columns};
     ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
 }
 
@@ -672,7 +672,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Move arithmetic operations out of aggregation functions
     if (settings[Setting::optimize_arithmetic_operations_in_aggregate_functions])
-        optimizeAggregationFunctions(query);
+        optimizeAggregationFunctions(query, tables_with_columns);
 
     bool converted_to_cnf = false;
     if (settings[Setting::convert_query_to_cnf])
