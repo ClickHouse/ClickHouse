@@ -878,10 +878,35 @@ fn classify_object_store_error(
             ChLanceErrorKind::Unsupported
         }
         object_store::Error::Generic { source, .. } => {
-            classify_error_source(source.as_ref(), operation).unwrap_or(ChLanceErrorKind::Storage)
+            classify_error_source(source.as_ref(), operation)
+                .or_else(|| classify_http_status_error(source.as_ref()))
+                .unwrap_or(ChLanceErrorKind::Storage)
         }
         _ => ChLanceErrorKind::Storage,
     }
+}
+
+/// `object_store` maps the HTTP status of a failed `GET` / `HEAD` request to a typed error, but
+/// wraps a failed `LIST` request (the first request when a dataset has no version hint) into
+/// `Error::Generic`. The status is only kept by its private `RetryError`, so recover it from the
+/// `Server returned non-2xx status code: <status>` message of the error chain.
+fn classify_http_status_error(source: &(dyn StdError + 'static)) -> Option<ChLanceErrorKind> {
+    const STATUS_PREFIX: &str = "Server returned non-2xx status code: ";
+    let mut current = Some(source);
+    while let Some(error) = current {
+        let message = error.to_string();
+        if let Some(position) = message.find(STATUS_PREFIX) {
+            let status = &message[position + STATUS_PREFIX.len()..];
+            return match status.get(..3) {
+                Some("401") => Some(ChLanceErrorKind::Unauthenticated),
+                Some("403") => Some(ChLanceErrorKind::PermissionDenied),
+                Some("404") => Some(ChLanceErrorKind::NotFound),
+                _ => None,
+            };
+        }
+        current = error.source();
+    }
+    None
 }
 
 fn classify_error_source(
