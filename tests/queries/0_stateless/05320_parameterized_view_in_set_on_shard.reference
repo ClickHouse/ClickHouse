@@ -21,7 +21,9 @@ SELECT countIf(number IN (SELECT x FROM pv(p = 0))), countIf(number IN (SELECT x
 2	0
 SELECT countIf(number IN (SELECT x FROM v)) FROM dist SETTINGS analyzer_inline_views = 1;
 2
-SELECT countIf(number IN (SELECT x FROM pv(p = 0))) FROM data SETTINGS enable_parallel_replicas = 1,
+SELECT countIf(number IN (SELECT x FROM pv(p = 0))) FROM data SETTINGS enable_parallel_replicas = 2,
+    automatic_parallel_replicas_mode = 0, log_comment = '05320_parallel_replicas',
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', max_parallel_replicas = 3,
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0;
+1
 1
