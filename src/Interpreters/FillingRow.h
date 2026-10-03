@@ -30,10 +30,6 @@ class FillingRow
 
     void checkGeneratedValueFitsColumnType(const Field & value, size_t column_ind) const;
 
-    /// Throws when stepping from `current_value` produced a `next_value` that is not strictly further in the
-    /// sorting direction - the sequence wrapped around the column type, so continuing would generate garbage.
-    void checkStepAdvancesInSortingDirection(const Field & current_value, const Field & next_value, size_t column_ind) const;
-
     bool hasSomeConstraints(size_t pos) const;
     bool isConstraintsSatisfied(size_t pos) const;
 
@@ -53,6 +49,12 @@ public:
     void initUsingFrom(size_t from_pos = 0);
     void initUsingTo(size_t from_pos = 0);
     void updateConstraintsWithStalenessRow(const Columns& base_row, size_t row_ind);
+
+    /// Throws when filling from the current row towards a constraint past the range of a column type would
+    /// generate a value the column cannot hold. The per-value check in `next` rejects such a value too, but only
+    /// after generating every value up to the boundary of the type - 2^32 rows for `DateTime` - so this is checked
+    /// up front once the anchor of the filling is known.
+    void checkFillingTowardsConstraintsFitsColumnTypes();
 
     Field & operator[](size_t index) { return row[index]; }
     const Field & operator[](size_t index) const { return row[index]; }

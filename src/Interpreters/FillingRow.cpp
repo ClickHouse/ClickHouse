@@ -263,21 +263,36 @@ void FillingRow::checkGeneratedValueFitsColumnType(const Field & value, size_t c
             descr.fill_column_type->getName());
 }
 
-void FillingRow::checkStepAdvancesInSortingDirection(const Field & current_value, const Field & next_value, size_t column_ind) const
+void FillingRow::checkFillingTowardsConstraintsFitsColumnTypes()
 {
-    if (less(current_value, next_value, getDirection(column_ind)))
-        return;
+    for (size_t i = 0; i < size(); ++i)
+    {
+        const auto & descr = getFillDescription(i);
 
-    const auto & descr = getFillDescription(column_ind);
-    throw Exception(
-        ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-        "WITH FILL step does not advance the value {} of the ORDER BY column {} of type {} in the sorting direction: "
-        "the next value is {}. This means the sequence wrapped around the range of the column type, so continuing "
-        "would generate values the column cannot hold",
-        applyVisitor(FieldVisitorToString(), current_value),
-        sort_description[column_ind].column_name,
-        descr.fill_column_type->getName(),
-        applyVisitor(FieldVisitorToString(), next_value));
+        if (row[i].isNull() || constraints[i].isNull() || descr.fill_representable_min.isNull())
+            continue;
+
+        /// `doLongJump` advances by many steps at once, which lands exactly where the filling would get one step
+        /// at a time only for a step of a fixed length: a calendar step over months or years saturates the day
+        /// of the month, and a day step over `DateTime` follows the time zone. These are long enough to reach the
+        /// boundary of the type in a few thousand steps anyway, so they are left to the per-value check.
+        if (descr.step_kind && IntervalKind::Kind(*descr.step_kind) > IntervalKind::Kind::Hour)
+            continue;
+
+        const int direction = getDirection(i);
+        const Field & type_boundary = direction > 0 ? descr.fill_representable_max : descr.fill_representable_min;
+
+        /// A constraint within the range of the column type stops the filling before it could leave the range.
+        if (!less(type_boundary, constraints[i], direction))
+            continue;
+
+        Field last_value = doLongJump(descr, i, type_boundary);
+        Field next_value = last_value;
+        descr.step_func(next_value, 1);
+
+        if (less(last_value, next_value, direction) && less(next_value, constraints[i], direction))
+            checkGeneratedValueFitsColumnType(next_value, i);
+    }
 }
 
 bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
@@ -349,11 +364,11 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         if (!less(next_value, constraints[i], getDirection(i)))
             continue;
 
-        /// Checked only after the cut-offs above: a step that leaves the value unchanged (a fixed point of the
-        /// calendar arithmetic or of the float addition) has already ended the filling of this column, and a step
-        /// that turns back beyond the constraint stops the filling at the constraint the same way it always did.
-        /// Only a sequence that wrapped around the column type before the constraint is rejected.
-        checkStepAdvancesInSortingDirection(row[i], next_value, i);
+        /// A step that turns back overflowed the arithmetic of the fill (the `Int64` carrier of the integer types,
+        /// or the `Decimal64` ticks of `DateTime64`): the value it overflowed from lies past any constraint, so the
+        /// filling of this column has passed its constraint and stops here, like it does at any other overshoot.
+        if (!less(row[i], next_value, getDirection(i)))
+            continue;
 
         checkGeneratedValueFitsColumnType(next_value, i);
 
@@ -379,11 +394,10 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     if (!constraints[pos].isNull() && !less(next_value, constraints[pos], getDirection(pos)))
         return false;
 
-    /// Checked only after the cut-offs above: a step that leaves the value unchanged (a fixed point of the
-    /// calendar arithmetic or of the float addition) has already ended the filling, and a step that turns back
-    /// beyond the border stops the filling at the border the same way it always did. Only a sequence that
-    /// wrapped around the column type before the border is rejected.
-    checkStepAdvancesInSortingDirection(row[pos], next_value, pos);
+    /// A step that turns back overflowed the arithmetic of the fill (see the same check above): the filling has
+    /// passed its border and stops here.
+    if (!less(row[pos], next_value, getDirection(pos)))
+        return false;
 
     checkGeneratedValueFitsColumnType(next_value, pos);
 

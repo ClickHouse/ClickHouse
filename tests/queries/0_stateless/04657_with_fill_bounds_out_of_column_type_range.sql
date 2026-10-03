@@ -63,17 +63,25 @@ SELECT groupArray(x) FROM (SELECT toUInt8(250) AS x ORDER BY x ASC WITH FILL STA
 -- rejects the query before a wrapped bound could suppress the rows between the two input values.
 SELECT groupArray(x) FROM (SELECT arrayJoin([toUInt8(250), toUInt8(255)]) AS x ORDER BY x ASC WITH FILL STALENESS 20) SETTINGS max_block_size = 1; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 
-SELECT 'an INTERVAL step can never reach a TO out of range in the fill direction, so such a fill is rejected';
+SELECT 'an INTERVAL step over Date and DateTime leaves the column type before it could reach a TO out of range in the fill direction';
 
--- The calendar arithmetic of an INTERVAL step is performed in the column's own native type, so unlike a plain
--- numeric step it wraps around within the column domain and never reaches a TO outside of it: without the check
--- these fills generate wrapped-around values forever. The wraparound is detected as a step that turns back.
+-- The calendar arithmetic of an INTERVAL step over Date and DateTime does not stop near the boundary of the
+-- column type, so the sequence always passes that boundary before it could reach a TO outside of it (without the
+-- check these fills used to wrap around and generate values forever).
 SELECT * FROM (SELECT toDate(0) AS d ORDER BY d ASC WITH FILL FROM toDate(0) TO 70000 STEP INTERVAL 100 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
-SELECT * FROM (SELECT toDate('1970-03-05') AS d ORDER BY d ASC WITH FILL TO 70000 STEP INTERVAL 100 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT * FROM (SELECT toDateTime(0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime(0, 'UTC') TO 4294967297 STEP INTERVAL 50 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
--- Without FROM the fill is checked as it is generated. The calendar arithmetic of Date saturates at 1970-01-01
--- when going down, so a step that would go below it stops advancing the value and ends the fill there.
+-- Without FROM the fill is checked as it is generated: it is rejected when it generates a value past the boundary
+-- of the type before TO...
+SELECT * FROM (SELECT toDate('1970-03-05') AS d ORDER BY d ASC WITH FILL TO 70000 STEP INTERVAL 10 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT * FROM (SELECT toDateTime(0, 'UTC') AS t ORDER BY t ASC WITH FILL TO 5000000000 STEP INTERVAL 150 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- ...and it stops when its next value is past TO, even when that value is past the boundary of the type as well.
+SELECT count(), min(d), max(d) FROM (SELECT toDate('1970-03-05') AS d ORDER BY d ASC WITH FILL TO 70000 STEP INTERVAL 100 YEAR);
 SELECT count(), min(d), max(d) FROM (SELECT toDate('2020-01-01') AS d ORDER BY d DESC WITH FILL TO -5 STEP INTERVAL -1 YEAR);
+-- A small step towards a TO far out of range is rejected without generating every value up to the boundary of
+-- the type first (2^32 rows for DateTime).
+SELECT * FROM (SELECT toDateTime(5, 'UTC') AS t ORDER BY t ASC WITH FILL TO 4294967297 STEP INTERVAL 1 SECOND) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT * FROM (SELECT toDateTime(5, 'UTC') AS t ORDER BY t ASC WITH FILL TO 4294967297) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT * FROM (SELECT toDateTime(4294967290, 'UTC') AS t ORDER BY t DESC WITH FILL TO -2 STEP INTERVAL -1 SECOND) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 -- A TO out of range against the fill direction can never make filling take a single step: every possible
 -- anchor is already past it, so the query is a no-op.
 SELECT count(), min(d), max(d) FROM (SELECT toDate('2020-01-01') AS d ORDER BY d DESC WITH FILL TO 70000 STEP INTERVAL -1 YEAR);
@@ -161,32 +169,30 @@ SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9990-01-01 00:00:00', 
 SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9998-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('9998-06-01 00:00:00', 0, 'UTC') TO toDateTime64('9999-01-01 00:00:00', 0, 'UTC') STEP INTERVAL 1 YEAR);
 SELECT count() FROM (SELECT toDateTime64('9999-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t DESC WITH FILL TO toDateTime64('9999-01-01 00:00:00', 0, 'UTC') STEP INTERVAL -1 MONTH);
 
-SELECT 'an INTERVAL step that wraps around the column type before an in-range TO is rejected';
+SELECT 'an INTERVAL step that would leave the column type before an in-range TO stops at TO';
 
--- The calendar arithmetic of an INTERVAL step is performed in the storage type of the column, so a step whose
--- result would leave that type wraps around instead of crossing TO: the value it wrapped from is above the type
--- maximum, hence above TO, so filling has already overshot the bound and every value it generates from there on
--- is spurious - and the wrapped-around sequence keeps cycling below TO, so the query does not terminate either.
-SELECT t FROM (SELECT toDateTime('2106-01-01 00:00:00', 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime('2106-01-01 00:00:00', 'UTC') TO 4294967295 STEP INTERVAL 100 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
--- The wraparound may strike many steps after FROM.
-SELECT t FROM (SELECT toDateTime('2000-01-01 00:00:00', 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime('2000-01-01 00:00:00', 'UTC') TO 4294967295 STEP INTERVAL 50 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
--- Date wraps around its UInt16 the same way.
-SELECT d FROM (SELECT toDate('2148-01-01') AS d ORDER BY d ASC WITH FILL FROM toDate('2148-01-01') TO 65535 STEP INTERVAL 5 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
--- A sequence that crosses TO before it reaches the boundary of the storage type terminates and is accepted.
+-- The calendar arithmetic of an INTERVAL step over Date and DateTime used to wrap around the storage type of the
+-- column, and the wrapped-around sequence kept cycling below TO. A step past the boundary of the type is past
+-- any TO within it, so the fill stops there - even for a step longer than the whole span of the type, which used
+-- to wrap forward.
+SELECT groupArray(t) FROM (SELECT toDateTime('2106-01-01 00:00:00', 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime('2106-01-01 00:00:00', 'UTC') TO 4294967295 STEP INTERVAL 100 YEAR);
+SELECT groupArray(t) FROM (SELECT toDateTime('2000-01-01 00:00:00', 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime('2000-01-01 00:00:00', 'UTC') TO 4294967295 STEP INTERVAL 50 YEAR);
+SELECT groupArray(t) FROM (SELECT toDateTime('2100-01-01 00:00:00', 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime('2100-01-01 00:00:00', 'UTC') TO toDateTime('2106-01-01 00:00:00', 'UTC') STEP INTERVAL 10 YEAR);
+SELECT groupArray(t) FROM (SELECT toDateTime('1970-01-01 00:00:00', 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime('1970-01-01 00:00:00', 'UTC') TO toDateTime('2106-01-01 00:00:00', 'UTC') STEP INTERVAL 150 YEAR);
+SELECT groupArray(t) FROM (SELECT toDateTime('1970-01-01 00:00:00', 'UTC') AS t ORDER BY t ASC WITH FILL TO toDateTime('2106-01-01 00:00:00', 'UTC') STEP INTERVAL 150 YEAR);
+SELECT groupArray(d) FROM (SELECT toDate('2148-01-01') AS d ORDER BY d ASC WITH FILL FROM toDate('2148-01-01') TO 65535 STEP INTERVAL 5 YEAR);
 SELECT count(), min(t), max(t) FROM (SELECT toDateTime('2106-01-01 00:00:00', 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime('2106-01-01 00:00:00', 'UTC') TO toDateTime('2106-01-05 00:00:00', 'UTC') STEP INTERVAL 1 DAY);
 
-SELECT 'a numeric step that wraps the Int64 arithmetic carrier is rejected';
+SELECT 'a numeric step that overflows the Int64 arithmetic carrier stops at TO';
 
--- The arithmetic for all integer fill columns uses an Int64 carrier. Even though both bounds fit an Int64 column,
--- the final step below wraps from INT64_MAX - 1 to INT64_MIN and would resume generating out-of-order values.
-SELECT x FROM (SELECT toInt64(9223372036854775806) AS x ORDER BY x ASC WITH FILL FROM x TO toInt64(9223372036854775807) STEP 2) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
-SELECT x FROM (SELECT toInt64(-9223372036854775807) AS x ORDER BY x DESC WITH FILL FROM x TO toInt64(-9223372036854775808) STEP -2) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- The arithmetic for all integer fill columns uses an Int64 carrier. The step below overflows it after
+-- INT64_MAX - 1: the value it overflowed from is past TO, so the fill stops there.
+SELECT groupArray(x) FROM (SELECT toInt64(9223372036854775806) AS x ORDER BY x ASC WITH FILL FROM x TO toInt64(9223372036854775807) STEP 2);
+SELECT groupArray(x) FROM (SELECT toInt64(-9223372036854775807) AS x ORDER BY x DESC WITH FILL FROM x TO toInt64(-9223372036854775808) STEP -2);
+SELECT groupArray(x) FROM (SELECT toInt64(9223372036854775800) AS x ORDER BY x ASC WITH FILL TO 9223372036854775807 STEP 5);
 
-SELECT 'a step that wraps before the next data row is rejected';
-
--- With no TO, the next original row is the exclusive bound. Check the step at runtime too: the sequence starts
--- at INT64_MAX - 1, while its first step wraps to INT64_MIN before it can reach the next data row.
-SELECT x FROM (SELECT toInt64(9223372036854775807) AS x ORDER BY x ASC WITH FILL FROM toInt64(9223372036854775806) STEP 2) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- With no TO, the next original row is the exclusive bound: the first step from INT64_MAX - 1 overflows past it.
+SELECT groupArray(x) FROM (SELECT toInt64(9223372036854775807) AS x ORDER BY x ASC WITH FILL FROM toInt64(9223372036854775806) STEP 2);
 
 SELECT 'a generated value out of range of the column type is rejected at runtime';
 

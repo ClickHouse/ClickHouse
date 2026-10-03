@@ -17,6 +17,8 @@
 #include <Common/logger_useful.h>
 #include <IO/Operators.h>
 #include <base/arithmeticOverflow.h>
+#include <limits>
+#include <optional>
 #include <tuple>
 
 
@@ -67,6 +69,33 @@ static Int64 mulStepWrapping(Int64 step, Int64 jumps_count)
     return static_cast<Int64>(static_cast<UInt64>(step) * static_cast<UInt64>(jumps_count));
 }
 
+/** The calendar arithmetic of `Date` and `DateTime` returns the column's own storage type (`UInt16` / `UInt32`), so a
+  * step whose result does not fit it wraps around: `toDateTime('2100-01-01', 'UTC') + INTERVAL 10 YEAR` lands in
+  * 1973, and a step longer than the span of the type (`INTERVAL 150 YEAR` over `DateTime`) even wraps forward, to a
+  * value that is still ahead of the current one. Redo such a step in the wider calendar of `Date32` (day numbers)
+  * or `DateTime64(0)` (whole seconds), which agrees with the narrow one wherever the result fits, and return the
+  * result when it does not fit the storage type, so that the sequence stays monotonic: a border within the range of
+  * the type stops the filling there, and `FillingRow` rejects a value the column cannot hold instead of writing a
+  * wrapped-around one. Kinds whose result is not of the storage type (e.g. an hour step over `Date`) are left as is.
+  */
+template <typename Impl, typename T>
+static std::optional<Int64> calendarStepOutOfStorageType(T value, Int64 delta, const DateLUTImpl & date_lut, const DateLUTImpl & utc_time_zone)
+{
+    using NativeResult = decltype(Impl::execute(value, delta, date_lut, utc_time_zone, UInt16{}));
+
+    Int64 result = 0;
+    if constexpr (std::is_same_v<T, UInt16> && std::is_same_v<NativeResult, UInt16>)
+        result = Impl::execute(static_cast<Int32>(value), delta, date_lut, utc_time_zone, 0);
+    else if constexpr (std::is_same_v<T, UInt32> && std::is_same_v<NativeResult, UInt32>)
+        result = Impl::execute(DateTime64(static_cast<Int64>(value)), delta, date_lut, utc_time_zone, 0).value;
+    else
+        return {};
+
+    if (result < 0 || result > static_cast<Int64>(std::numeric_limits<T>::max()))
+        return result;
+    return {};
+}
+
 template <typename T>
 static FillColumnDescription::StepFunction getStepFunction(
     IntervalKind::Kind kind, Int64 step, const DateLUTImpl & date_lut, UInt16 scale = DataTypeDateTime64::default_scale)
@@ -77,8 +106,12 @@ static FillColumnDescription::StepFunction getStepFunction(
 #define DECLARE_CASE(NAME) \
         case IntervalKind::Kind::NAME: \
             return [step, scale, &date_lut](Field & field, Int64 jumps_count) { \
-                field = Add##NAME##sImpl::execute(static_cast<T>(\
-                    field.safeGet<T>()), mulStepWrapping(step, jumps_count), date_lut, utc_time_zone, scale); };
+                const auto value = static_cast<T>(field.safeGet<T>()); \
+                const Int64 delta = mulStepWrapping(step, jumps_count); \
+                if (const auto out_of_storage_type = calendarStepOutOfStorageType<Add##NAME##sImpl>(value, delta, date_lut, utc_time_zone)) \
+                    field = *out_of_storage_type; \
+                else \
+                    field = Add##NAME##sImpl::execute(value, delta, date_lut, utc_time_zone, scale); };
 
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
@@ -244,19 +277,19 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
   * `FillingRow::next`, which rejects it exactly when it generates a value the column cannot hold.
   *
   * An INTERVAL step makes an out-of-range TO in the fill direction fatal, so TO itself is the value required to fit.
-  * The step functions (see Add*Impl in FunctionDateOrDateTimeAddInterval.h) perform the calendar arithmetic in the
-  * column's own native integer type - UInt16 for Date, UInt32 for DateTime - so unlike a plain numeric step, which
-  * advances an Int64 that eventually exceeds any TO, an INTERVAL step wraps around within the column domain and can
-  * never reach a TO outside of it: `WITH FILL FROM toDate(0) TO 70000 STEP INTERVAL 100 YEAR` generates 1970-01-01
-  * and 2070-01-01, then wraps around 1990. (A TO on the other side - out of range against the fill direction -
-  * cannot reach this check: the FROM would lie even further out of range and is rejected first.)
+  * Over Date and DateTime the step does not wrap around the storage type but continues in the wider calendar of
+  * Date32 / DateTime64 (see `calendarStepOutOfStorageType`), which does not stop anywhere near the boundary of the
+  * storage type, so the sequence always generates a value past that boundary before it could reach such a TO:
+  * `WITH FILL FROM toDate(0) TO 70000 STEP INTERVAL 100 YEAR` generates 1970-01-01, 2070-01-01 and then 2170-01-01,
+  * which a Date column cannot hold. (A TO on the other side - out of range against the fill direction - cannot reach
+  * this check: the FROM would lie even further out of range and is rejected first.)
   *
-  * The wraparound only happens for Date and DateTime. For Date32 and DateTime64 the calendar arithmetic clamps
-  * at the boundaries of the representable calendar instead - the window [0000-01-01, 9999-12-31] of DateLUTImpl,
-  * which lies strictly inside the range of their storage type: adding an interval whose result would leave the
-  * calendar returns the value unchanged (see e.g. DateLUTImpl::addYearsOutOfRange). A step that no longer advances
-  * the value ends the filling (see `FillingRow::next`), so a TO beyond the calendar boundary simply lets the
-  * filling run up to the last value it can reach, and nothing is required to fit there.
+  * For Date32 and DateTime64 the calendar arithmetic clamps at the boundaries of the representable calendar instead
+  * - the window [0000-01-01, 9999-12-31] of DateLUTImpl, which lies strictly inside the range of their storage type:
+  * adding an interval whose result would leave the calendar returns the value unchanged (see e.g.
+  * DateLUTImpl::addYearsOutOfRange). A step that no longer advances the value ends the filling (see
+  * `FillingRow::next`), so a TO beyond the calendar boundary simply lets the filling run up to the last value it can
+  * reach, and nothing is required to fit there.
   */
 static std::optional<Field> fillValueRequiredToFitColumnType(const FillColumnDescription & descr, int direction)
 {
@@ -348,9 +381,9 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
     /// representable: `WITH FILL FROM 0 TO 256` over a UInt8 column generates 0..255, and so does
     /// `WITH FILL FROM 0 TO 257 STEP 3`, which stops at 255 - all of which fit. When the generated values depend
     /// on the data (no FROM), the bound is accepted and the generated values are checked in `FillingRow::next`.
-    /// An INTERVAL step over Date or DateTime can never reach a TO that is out of range in the fill direction at
-    /// all, so there the bound itself is required to fit; over Date32 and DateTime64 it stops at the calendar
-    /// boundary, so any TO is accepted.
+    /// An INTERVAL step over Date or DateTime always passes the boundary of the column type before it could reach
+    /// a TO that is out of range in the fill direction, so there the bound itself is required to fit; over Date32
+    /// and DateTime64 it stops at the calendar boundary, so any TO is accepted.
     if (!descr.fill_to.isNull() && !is_representable(descr.fill_to))
     {
         const auto required_value = fillValueRequiredToFitColumnType(descr, direction);
@@ -362,130 +395,6 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
                 applyVisitor(FieldVisitorToString(), descr.fill_to),
                 type->getName());
     }
-}
-
-/** The calendar arithmetic of an INTERVAL step over Date and DateTime is performed in the storage type of the
-  * column (see Add*Impl in FunctionDateOrDateTimeAddInterval.h), so a step whose result does not fit wraps around:
-  * `WITH FILL FROM toDateTime('2106-01-01 00:00:00', 'UTC') TO 4294967295 STEP INTERVAL 100 YEAR` jumps from 2106
-  * back to 2069 and keeps cycling below TO forever, even though TO itself is perfectly representable. A step that
-  * goes backwards is always such a wraparound, and the value it wrapped from is above the type maximum, hence
-  * above TO: the sequence has already overshot the bound, so every value generated from there on is spurious -
-  * out of order and past the TO the query asked for - whether or not the wrapped-around walk happens to land on
-  * a value beyond TO later on and terminate.
-  *
-  * With an explicit FROM the whole sequence the suffix generation walks is known up front - `FillingRow::next`
-  * advances it by one application of the step function at a time - so walk it here the same way and reject the
-  * query when it provably turns back before reaching TO. The walk is bounded: a sequence that takes more steps
-  * than the budget to settle (a fine-grained step over a huge span) is accepted as before - the walk must never
-  * misjudge a terminating sequence, and the calendar arithmetic has no closed form that could shortcut it.
-  *
-  * A step that leaves the value unchanged is not a failure: the calendar arithmetic returns its input unchanged
-  * when the result would leave the representable calendar (see e.g. DateLUTImpl::addYearsOutOfRange), and a step
-  * that no longer advances the value ends the filling (see `FillingRow::next`) - the sequence just stops at the
-  * last value it can reach. That is also all the calendar arithmetic of Date32 and DateTime64 ever does at the
-  * boundary: their calendar window lies strictly inside the range of the storage type, so they never wrap.
-  *
-  * Without FROM the sequence is anchored at a data value and nothing about it is provable up front (the per-value
-  * check in `FillingRow::next` still rejects a wraparound when it happens), and STALENESS replaces TO as the
-  * effective bound with the last data value plus the staleness, which the calendar arithmetic reaches in-domain.
-  */
-static void checkIntervalStepFillDoesNotWrap(const FillColumnDescription & descr, int direction)
-{
-    if (!descr.step_kind || descr.fill_from.isNull() || descr.fill_to.isNull() || !descr.fill_staleness.isNull())
-        return;
-
-    const WhichDataType which(descr.fill_column_type);
-    if (which.isDate32() || which.isDateTime64())
-        return;
-
-    /// A wraparound needs a value below TO to step across the boundary of the storage type. The calendar
-    /// arithmetic is monotonic, so probing one step from TO itself covers every value the walk visits: when the
-    /// probe advances in the fill direction and stays within the representable range, no value below TO can
-    /// reach the boundary, and the walk provably finds nothing - skip it. An ordinary fill over a big span with
-    /// a fine-grained step (a dashboard fill of a month by minutes) is skipped here; the walk runs only when TO
-    /// is within one step of the boundary.
-    Field probe = descr.fill_to;
-    descr.step_func(probe, 1);
-    const bool probe_advances = less(descr.fill_to, probe, direction);
-    const bool probe_representable = descr.fill_representable_min.isNull()
-        || (direction > 0 ? !accurateLess(descr.fill_representable_max, probe)
-                          : !accurateLess(probe, descr.fill_representable_min));
-    if (probe_advances && probe_representable)
-        return;
-
-    static constexpr size_t walk_budget = 65536;
-
-    Field value = descr.fill_from;
-    for (size_t i = 0; i < walk_budget && less(value, descr.fill_to, direction); ++i)
-    {
-        Field next = value;
-        descr.step_func(next, 1);
-
-        /// The filling stops here, see above.
-        if (equals(next, value))
-            return;
-
-        if (!less(value, next, direction))
-            throw Exception(
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL can never reach the TO value {}: starting from the FROM value {}, the INTERVAL step turns back at "
-                "value {} (the arithmetic wraps around the boundary of the ORDER BY column type), so filling would generate "
-                "values past the TO value in the wrong order",
-                applyVisitor(FieldVisitorToString(), descr.fill_to),
-                applyVisitor(FieldVisitorToString(), descr.fill_from),
-                applyVisitor(FieldVisitorToString(), value));
-
-        value = std::move(next);
-    }
-}
-
-/** Numeric filling advances integer values in the shared Int64 carrier. `FieldVisitorSum` deliberately uses
-  * unsigned arithmetic there so an overflow is well-defined, but a wrapped value is no longer monotonic. This can
-  * happen even when both bounds fit the column type: `FROM INT64_MAX - 1 TO INT64_MAX STEP 2` wraps while advancing
-  * the final generated value. With FROM and TO, find that final value exactly and verify that its next step still
-  * advances in the requested direction.
-  */
-static void checkNumericStepFillDoesNotWrap(const FillColumnDescription & descr, int direction)
-{
-    if (descr.step_kind || descr.fill_from.isNull() || descr.fill_to.isNull() || !descr.fill_staleness.isNull())
-        return;
-
-    const auto raw_value = [](const Field & field) -> std::optional<Int64>
-    {
-        if (field.getType() == Field::Types::Int64)
-            return field.safeGet<Int64>();
-        if (field.getType() == Field::Types::Decimal64)
-            return field.safeGet<DecimalField<Decimal64>>().getValue().value;
-        return {};
-    };
-
-    const auto from_raw = raw_value(descr.fill_from);
-    const auto to_raw = raw_value(descr.fill_to);
-    const auto step_raw = raw_value(descr.fill_step);
-    if (!from_raw || !to_raw || !step_raw)
-        return;
-
-    const Int128 span = direction > 0 ? static_cast<Int128>(*to_raw) - *from_raw : static_cast<Int128>(*from_raw) - *to_raw;
-    if (span <= 0)
-        return;
-
-    const Int128 step = *step_raw;
-    const Int128 jumps = (span - 1) / (step > 0 ? step : -step);
-    const Int64 last_raw = static_cast<Int64>(static_cast<Int128>(*from_raw) + jumps * step);
-
-    Field last = descr.fill_from.getType() == Field::Types::Decimal64
-        ? Field(DecimalField<Decimal64>(Decimal64(last_raw), descr.fill_from.safeGet<DecimalField<Decimal64>>().getScale()))
-        : Field(last_raw);
-    Field next = last;
-    descr.step_func(next, 1);
-
-    if (!less(last, next, direction))
-        throw Exception(
-            ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-            "WITH FILL can never reach the TO value {}: starting from the FROM value {}, the numeric step wraps around the Int64 arithmetic carrier at value {}, so filling would generate values past the TO value in the wrong order",
-            applyVisitor(FieldVisitorToString(), descr.fill_to),
-            applyVisitor(FieldVisitorToString(), descr.fill_from),
-            applyVisitor(FieldVisitorToString(), last));
 }
 
 static SortDescription deduplicateSortDescription(const SortDescription & sort_description, const Block & header)
@@ -565,8 +474,6 @@ FillingTransform::FillingTransform(
         }
 
         checkFillBoundsFitColumnType(descr, type, fill_description[i].direction);
-        checkIntervalStepFillDoesNotWrap(descr, fill_description[i].direction);
-        checkNumericStepFillDoesNotWrap(descr, fill_description[i].direction);
     }
     logDebug("fill description", dumpSortDescription(fill_description));
 
@@ -881,6 +788,8 @@ bool FillingTransform::generateSuffixIfNeeded(
         logDebug("generateSuffixIfNeeded", "will not generate suffix");
         return false;
     }
+
+    filling_row.checkFillingTowardsConstraintsFitsColumnTypes();
 
     Block interpolate_block;
     if (should_insert_first)

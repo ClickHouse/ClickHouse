@@ -19,7 +19,8 @@ STALENESS caps the sequence before TO, so the TO bound is not rejected
 7	5	23
 [250,251,252,253,254]
 [250]
-an INTERVAL step can never reach a TO out of range in the fill direction, so such a fill is rejected
+an INTERVAL step over Date and DateTime leaves the column type before it could reach a TO out of range in the fill direction
+2	1970-03-05	2070-03-05
 51	1970-01-01	2020-01-01
 1	2020-01-01	2020-01-01
 1	2020-01-01	2020-01-01
@@ -53,10 +54,19 @@ an INTERVAL step that stagnates at the calendar boundary before an in-range TO s
 10	9990-01-01 00:00:00	9999-01-01 00:00:00
 1	9998-06-01 00:00:00	9998-06-01 00:00:00
 5
-an INTERVAL step that wraps around the column type before an in-range TO is rejected
+an INTERVAL step that would leave the column type before an in-range TO stops at TO
+['2106-01-01 00:00:00']
+['2000-01-01 00:00:00','2050-01-01 00:00:00','2100-01-01 00:00:00']
+['2100-01-01 00:00:00']
+['1970-01-01 00:00:00']
+['1970-01-01 00:00:00']
+['2148-01-01']
 4	2106-01-01 00:00:00	2106-01-04 00:00:00
-a numeric step that wraps the Int64 arithmetic carrier is rejected
-a step that wraps before the next data row is rejected
+a numeric step that overflows the Int64 arithmetic carrier stops at TO
+[9223372036854775806]
+[-9223372036854775807]
+[9223372036854775800,9223372036854775805]
+[9223372036854775806,9223372036854775807]
 a generated value out of range of the column type is rejected at runtime
 [11,14,17,20,23,26,29,32,35,38,41,44,47,50,53,56,59,62,65,68,71,74,77,80,83,86,89,92,95,98,101,104,107,110,113,116,119,122,125,128,131,134,137,140,143,146,149,152,155,158,161,164,167,170,173,176,179,182,185,188,191,194,197,200,203,206,209,212,215,218,221,224,227,230,233,236,239,242,245,248,251,254]
 [127]
