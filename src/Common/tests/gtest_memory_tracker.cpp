@@ -100,16 +100,21 @@ void expectPeaks(const MemoryTrackerHierarchy & hierarchy, Int64 expected)
 /// Run `body` in a fresh thread whose thread-level memory tracker is attached to the
 /// custom hierarchy, with untracked-memory batching disabled so that every
 /// `CurrentMemoryTracker` call reaches the trackers immediately.
-void runInThread(MemoryTrackerHierarchy & hierarchy, const std::function<void(MemoryTracker &)> & body)
+void runAttachedTo(MemoryTracker & parent, const std::function<void(MemoryTracker &)> & body)
 {
     std::thread([&]
     {
         DB::ThreadStatus thread_status;
-        thread_status.memory_tracker.setParent(&hierarchy.process);
+        thread_status.memory_tracker.setParent(&parent);
         thread_status.untracked_memory_limit = 0;
 
         body(thread_status.memory_tracker);
     }).join();
+}
+
+void runInThread(MemoryTrackerHierarchy & hierarchy, const std::function<void(MemoryTracker &)> & body)
+{
+    runAttachedTo(hierarchy.process, body);
 }
 
 void expectMemoryLimitExceeded(Int64 size)
@@ -567,6 +572,105 @@ TEST(MemoryTrackerLargeAllocationTraceDefaults, RefusedWithoutTraceCollector)
     chargeAndRelease(QUALIFYING_ALLOCATION);
 
     EXPECT_EQ(tracedLargeAllocations(), before);
+}
+
+TEST(MemoryTracker, ReparentMovesWhatTheTrackerHolds)
+{
+    MemoryTrackerHierarchy hierarchy;
+    MemoryTracker queued_data{&hierarchy.process, VariableContext::Process, false};
+    runAttachedTo(queued_data, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::alloc(10 * MB); });
+    expectUsage(hierarchy, 10 * MB);
+
+    queued_data.reparent(&hierarchy.user);
+    EXPECT_EQ(queued_data.getParent(), &hierarchy.user);
+    expectNear(queued_data.get(), 10 * MB);
+    expectNear(hierarchy.process.get(), 0);
+    expectNear(hierarchy.user.get(), 10 * MB);
+
+    runAttachedTo(queued_data, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(10 * MB); });
+    expectNear(queued_data.get(), 0);
+    expectNear(hierarchy.user.get(), 0);
+}
+
+TEST(MemoryTracker, ReparentChecksTheLimitOfTheNewParent)
+{
+    MemoryTrackerHierarchy hierarchy;
+    MemoryTracker other_user{&total_memory_tracker, VariableContext::User, false};
+    other_user.setHardLimit(5 * MB);
+    runInThread(hierarchy, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::alloc(10 * MB); });
+
+    try
+    {
+        hierarchy.process.reparent(&other_user);
+        FAIL() << "Expected the move to exceed the limit of the new parent";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+    }
+
+    EXPECT_EQ(hierarchy.process.getParent(), &hierarchy.user);
+    expectUsage(hierarchy, 10 * MB);
+    expectNear(other_user.get(), 0);
+
+    runInThread(hierarchy, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(10 * MB); });
+}
+
+TEST(MemoryTracker, QuerySettlesWhatItStillHoldsWhenItEnds)
+{
+    const Int64 total_before = total_memory_tracker.get();
+    MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
+    auto query = std::make_unique<MemoryTracker>(&user, VariableContext::Process, false);
+    runAttachedTo(*query, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::alloc(10 * MB); });
+    expectNear(user.get(), 10 * MB);
+
+    /// Still allocated, so the server total keeps it, but the user does not.
+    query.reset();
+    EXPECT_EQ(user.get(), 0);
+    expectNear(total_memory_tracker.get() - total_before, 10 * MB);
+
+    runAttachedTo(total_memory_tracker, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(10 * MB); });
+}
+
+TEST(MemoryTracker, FreeingWhatAnotherQueryHoldsDoesNotCreditTheUser)
+{
+    const Int64 total_before = total_memory_tracker.get();
+    MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
+    auto holder = std::make_unique<MemoryTracker>(&user, VariableContext::Process, false);
+    MemoryTracker releaser{&user, VariableContext::Process, false};
+    runAttachedTo(*holder, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::alloc(10 * MB); });
+
+    /// The releaser never held it, so neither it nor the user is credited; only the server total is.
+    runAttachedTo(releaser, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(10 * MB); });
+    EXPECT_EQ(releaser.get(), 0);
+    expectNear(holder->get(), 10 * MB);
+    expectNear(user.get(), 10 * MB);
+    expectNear(total_memory_tracker.get() - total_before, 0);
+
+    /// The holder ends and settles its share, so the user is back at zero and the total is untouched.
+    holder.reset();
+    EXPECT_EQ(user.get(), 0);
+    expectNear(total_memory_tracker.get() - total_before, 0);
+}
+
+TEST(MemoryTracker, UserSettlesToZeroWhenItsLastQueryEnds)
+{
+    MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
+    auto query = std::make_unique<MemoryTracker>(&user, VariableContext::Process, false);
+    auto other_query = std::make_unique<MemoryTracker>(&user, VariableContext::Process, false);
+
+    /// Charged to the user without going through any query, so no query settles it when it ends.
+    runAttachedTo(user, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::alloc(10 * MB); });
+    expectNear(user.get(), 10 * MB);
+
+    query.reset();
+    expectNear(user.get(), 10 * MB);
+
+    other_query.reset();
+    EXPECT_EQ(user.get(), 0);
+
+    /// Give back to the server total what the user was relieved of.
+    runAttachedTo(total_memory_tracker, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(10 * MB); });
 }
 
 }
