@@ -7,6 +7,10 @@ using namespace DB;
 namespace
 {
 
+/// A window that the real time of a test never reaches the end of: the tests move to the next
+/// window only with `advance`.
+constexpr UInt64 W = 3600;
+
 /// `FileCacheEfficiency` with a manual used size.
 struct TestEfficiency
 {
@@ -32,7 +36,7 @@ void expectSnapshot(const FileCacheEfficiency::Snapshot & snapshot, UInt64 activ
 
 TEST(FileCacheEfficiency, SnapshotOfLastFullWindow)
 {
-    TestEfficiency t(10);
+    TestEfficiency t(W);
     t.used_size = 300;
 
     const auto window = t.efficiency.currentWindow();
@@ -43,47 +47,47 @@ TEST(FileCacheEfficiency, SnapshotOfLastFullWindow)
     /// The live window is not visible until it ends.
     expectSnapshot(t.efficiency.getSnapshot(), 0, 0, 0);
 
-    t.advance(10);
+    t.advance(W);
     expectSnapshot(t.efficiency.getSnapshot(), 50, 150, 100);
 }
 
 TEST(FileCacheEfficiency, StaleWindowUpdatesAreIgnored)
 {
-    TestEfficiency t(10);
+    TestEfficiency t(W);
     t.used_size = 100;
 
-    t.advance(10);
+    t.advance(W);
     EXPECT_EQ(t.efficiency.currentWindow(), 1);
     t.efficiency.addPassiveBytes(/*window=*/0, 100);
     t.efficiency.moveToActive(/*window=*/0, 100);
 
-    t.advance(10);
+    t.advance(W);
     expectSnapshot(t.efficiency.getSnapshot(), 0, 0, 100);
 }
 
 TEST(FileCacheEfficiency, WindowsWithoutRotation)
 {
-    TestEfficiency t(10);
+    TestEfficiency t(W);
     t.used_size = 100;
     t.efficiency.addPassiveBytes(t.efficiency.currentWindow(), 100);
 
     /// Windows 1 and 2 pass with no call; the last full window (2) had no hits.
-    t.advance(30);
+    t.advance(3 * W);
     expectSnapshot(t.efficiency.getSnapshot(), 0, 0, 100);
 }
 
 TEST(FileCacheEfficiency, NegativeAndInconsistentValuesAreClamped)
 {
-    TestEfficiency t(10);
+    TestEfficiency t(W);
     t.used_size = 50;
     const auto window = t.efficiency.currentWindow();
     t.efficiency.addPassiveBytes(window, 10);
     t.efficiency.moveToActive(window, 30);   /// more than passive: passive < 0, clamp it to 0
-    t.advance(10);
+    t.advance(W);
     expectSnapshot(t.efficiency.getSnapshot(), 30, 0, 20);
 
     t.efficiency.addPassiveBytes(t.efficiency.currentWindow(), -20);   /// passive < 0: clamp to 0
-    t.advance(10);
+    t.advance(W);
     expectSnapshot(t.efficiency.getSnapshot(), 0, 0, 50);
 }
 

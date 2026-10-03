@@ -26,6 +26,9 @@ disk="disk(
 
 read_settings=(
     --max_threads 1
+    --enable_parallel_replicas 0
+    --use_uncompressed_cache 0
+    --remote_filesystem_read_method read
     --enable_filesystem_cache 1
     --read_from_filesystem_cache_if_exists_otherwise_bypass_cache 0
     --filesystem_cache_allow_background_download 0

@@ -4241,6 +4241,9 @@ namespace
 /// One efficiency granule, and a file segment of 8 granules: reads in whole granules give exact values.
 constexpr size_t G = FileSegment::EFFICIENCY_GRANULE_SIZE;
 constexpr size_t S = 8 * G;
+/// An efficiency window that the real time of a test never reaches the end of: the tests move to
+/// the next window only with `shiftTimeForTesting`.
+constexpr UInt64 W = 3600;
 
 /// A small LRU cache that holds 8 file segments of `S` bytes.
 FileCacheSettings efficiencyCacheSettings(UInt64 window_sec)
@@ -4276,14 +4279,14 @@ TEST_F(FileCacheTest, EfficiencyWindow)
 {
     DB::ThreadStatus thread_status;
     auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_window_test"));
-    auto cache = DB::FileCache("efficiency_window", efficiencyCacheSettings(10));
+    auto cache = DB::FileCache("efficiency_window", efficiencyCacheSettings(W));
     cache.initialize();
 
     const auto & user = FileCache::getCommonOrigin();
     auto key = FileCacheKey::fromPath("efficiency_window_key");
     auto next_window = [&]
     {
-        cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
+        cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
         return cache.getEfficiency().getSnapshot();
     };
     auto expect = [&](const FileCacheEfficiency::Snapshot & snapshot, UInt64 active, UInt64 passive)
@@ -4381,7 +4384,7 @@ TEST_F(FileCacheTest, EfficiencyConcurrentFirstRead)
 {
     DB::ThreadStatus thread_status;
     auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_concurrent_test"));
-    auto cache = DB::FileCache("efficiency_concurrent", efficiencyCacheSettings(10));
+    auto cache = DB::FileCache("efficiency_concurrent", efficiencyCacheSettings(W));
     cache.initialize();
 
     const auto & user = FileCache::getCommonOrigin();
@@ -4396,7 +4399,7 @@ TEST_F(FileCacheTest, EfficiencyConcurrentFirstRead)
     for (auto & thread : threads)
         thread.join();
 
-    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
     const auto snapshot = cache.getEfficiency().getSnapshot();
     EXPECT_EQ(snapshot.active_bytes, S);
     EXPECT_EQ(snapshot.passive_bytes, 0);
@@ -4428,7 +4431,7 @@ TEST_F(FileCacheTest, EfficiencyLastGranuleCut)
     DB::ThreadStatus thread_status;
     auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_granule_test"));
     /// Alignment 1 makes the shrink exact.
-    auto settings = efficiencyCacheSettings(10);
+    auto settings = efficiencyCacheSettings(W);
     settings[FileCacheSetting::boundary_alignment] = 1;
     settings[FileCacheSetting::reserve_granularity] = 0;
     auto cache = DB::FileCache("efficiency_granule", settings);
@@ -4470,7 +4473,7 @@ TEST_F(FileCacheTest, EfficiencyStaleWindowDoesNotMoveBack)
 {
     DB::ThreadStatus thread_status;
     auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_stale_window_test"));
-    auto cache = DB::FileCache("efficiency_stale_window", efficiencyCacheSettings(10));
+    auto cache = DB::FileCache("efficiency_stale_window", efficiencyCacheSettings(W));
     cache.initialize();
 
     const auto & user = FileCache::getCommonOrigin();
@@ -4479,18 +4482,18 @@ TEST_F(FileCacheTest, EfficiencyStaleWindowDoesNotMoveBack)
     auto segment = get(holder, 0);
     download(segment);
 
-    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
     segment->markRead(0, G);
 
     /// A stale reader in window 0 must not move the segment back.
-    cache.getEfficiency().shiftTimeForTesting(-std::chrono::seconds(5));
+    cache.getEfficiency().shiftTimeForTesting(-std::chrono::seconds(W / 2));
     segment->markRead(G, G);
 
-    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(5));
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W / 2));
     segment->markRead(2 * G, G);
     EXPECT_EQ(FileSegment::getInfo(segment).efficiency.active_bytes, 2 * G);
 
-    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
     const auto snapshot = cache.getEfficiency().getSnapshot();
     EXPECT_EQ(snapshot.active_bytes, 2 * G);
     EXPECT_EQ(snapshot.passive_bytes, 6 * G);
@@ -4500,7 +4503,7 @@ TEST_F(FileCacheTest, EfficiencyEvictedNoHitBytes)
 {
     DB::ThreadStatus thread_status;
     auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_no_hit_test"));
-    auto cache = DB::FileCache("efficiency_no_hit", efficiencyCacheSettings(10));
+    auto cache = DB::FileCache("efficiency_no_hit", efficiencyCacheSettings(W));
     cache.initialize();
 
     const auto & user = FileCache::getCommonOrigin();
@@ -4540,7 +4543,7 @@ TEST_F(FileCacheTest, EfficiencySegmentWindows)
 {
     DB::ThreadStatus thread_status;
     auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_segment_windows_test"));
-    auto cache = DB::FileCache("efficiency_segment_windows", efficiencyCacheSettings(10));
+    auto cache = DB::FileCache("efficiency_segment_windows", efficiencyCacheSettings(W));
     cache.initialize();
 
     const auto & user = FileCache::getCommonOrigin();
@@ -4565,12 +4568,12 @@ TEST_F(FileCacheTest, EfficiencySegmentWindows)
     expect(S, 0, 0, std::nullopt, 0, 0);
 
     /// Window 1: a narrow read; the earlier hit window is window 0.
-    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
     segment->markRead(0, G);
     expect(G, 7 * G, 0, 1, S, 0);
 
     /// Window 2: no read; the latest hit window is window 1.
-    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
     expect(0, 0, S, 1, G, 7 * G);
 }
 
@@ -4578,7 +4581,7 @@ TEST_F(FileCacheTest, EfficiencyCacheWriterCountsOnlyAnotherFill)
 {
     DB::ThreadStatus thread_status;
     auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_cache_writer_test"));
-    auto cache = std::make_shared<DB::FileCache>("efficiency_cache_writer", efficiencyCacheSettings(10));
+    auto cache = std::make_shared<DB::FileCache>("efficiency_cache_writer", efficiencyCacheSettings(W));
     cache->initialize();
 
     const auto & user = FileCache::getCommonOrigin();
@@ -4627,7 +4630,7 @@ TEST_F(FileCacheTest, EfficiencyShrinkWithinWindow)
     DB::ThreadStatus thread_status;
     auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_shrink_test"));
     /// Alignment 1 makes the shrink exact.
-    auto settings = efficiencyCacheSettings(10);
+    auto settings = efficiencyCacheSettings(W);
     settings[FileCacheSetting::boundary_alignment] = 1;
     settings[FileCacheSetting::reserve_granularity] = 0;
     auto cache = DB::FileCache("efficiency_shrink", settings);
@@ -4661,7 +4664,7 @@ TEST_F(FileCacheTest, EfficiencyShrinkWithinWindow)
     segment->markRead(2 * G, 100);
     EXPECT_EQ(FileSegment::getInfo(segment).efficiency.active_bytes, G + 100);
 
-    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(10));
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
     const auto snapshot = cache.getEfficiency().getSnapshot();
     EXPECT_EQ(snapshot.active_bytes, G + 100);
     EXPECT_EQ(snapshot.passive_bytes, G);
