@@ -709,9 +709,9 @@ SELECT malformed IN
 ); -- { serverError BAD_ARGUMENTS }
 
 WITH CAST((1., 0., 10.), 'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)') AS plain
-SELECT plain IN
+SELECT tuple(plain) IN
 (
-    SELECT CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)')
+    SELECT tuple(CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)'))
     FROM numbers(0)
 ); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
