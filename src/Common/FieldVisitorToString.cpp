@@ -198,11 +198,31 @@ String convertObjectToString(const Object & object)
     return wb.str();
 }
 
+template <typename T>
+static inline String formatWithoutQuotes(const T & x)
+{
+    WriteBufferFromOwnString wb;
+    writeText(x, wb);
+    return wb.str();
+}
+
+String FieldVisitorToSettingValueString::operator() (const UInt128 & x) const { return formatWithoutQuotes(x); }
+String FieldVisitorToSettingValueString::operator() (const UInt256 & x) const { return formatWithoutQuotes(x); }
+String FieldVisitorToSettingValueString::operator() (const Int128 & x) const { return formatWithoutQuotes(x); }
+String FieldVisitorToSettingValueString::operator() (const Int256 & x) const { return formatWithoutQuotes(x); }
+
 String convertFieldToString(const Field & field)
 {
     if (field.getType() == Field::Types::Which::String)
         return field.safeGet<String>();
     return applyVisitor(FieldVisitorToString(), field);
+}
+
+String convertFieldToSettingValueString(const Field & field)
+{
+    if (field.getType() == Field::Types::Which::String)
+        return field.safeGet<String>();
+    return applyVisitor(FieldVisitorToSettingValueString(), field);
 }
 
 }

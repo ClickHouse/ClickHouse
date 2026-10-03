@@ -1504,7 +1504,14 @@ bool ParserBool::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return false;
 }
 
-static bool parseNumber(char * buffer, size_t size, bool negative, int base, Field & res)
+enum class ParseNumberResult
+{
+    Success,
+    NotAnInteger,
+    IntegerOverflow,
+};
+
+static ParseNumberResult parseNumber(char * buffer, size_t size, bool negative, int base, Field & res)
 {
     errno = 0;    /// Functions strto* don't clear errno.
 
@@ -1522,10 +1529,14 @@ static bool parseNumber(char * buffer, size_t size, bool negative, int base, Fie
         else
             res = uint_value;
 
-        return true;
+        return ParseNumberResult::Success;
     }
 
-    return false;
+    /// strtoull consumed the entire string but overflowed: this is a pure integer too large for UInt64.
+    if (pos_integer == buffer + size && errno == ERANGE)
+        return ParseNumberResult::IntegerOverflow;
+
+    return ParseNumberResult::NotAnInteger;
 }
 
 bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -1546,7 +1557,16 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!pos.isValid())
         return false;
 
-    auto try_read_float = [&](const char * it, const char * end)
+    auto make_literal = [&]
+    {
+        auto literal = make_intrusive<ASTLiteral>(res);
+        ++pos;
+        recordLiteralTokens(literal.get(), literal_begin, pos, expected);
+        node = literal;
+        return true;
+    };
+
+    auto try_read_float = [&](const char * it, const char * end, bool is_bare_word)
     {
         std::string buf(it, end); /// Copying is needed to ensure the string is 0-terminated.
         char * str_end = nullptr;
@@ -1561,23 +1581,27 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                                 "Token number cannot begin with minus, "
                                 "but parsed float number is less than zero.");
 
-            if (negative)
-                float_value = -float_value;
+            /// NaN and Inf stay as Float64 (they have no deferred-literal spelling).
+            if (is_bare_word || std::isnan(float_value) || std::isinf(float_value))
+            {
+                if (negative)
+                    float_value = -float_value;
 
-            /// Canonicalize NaN to a single representation, because negative NaN has
-            /// a different bit pattern but formats identically to positive NaN ("nan"),
-            /// breaking the AST formatting roundtrip consistency check.
-            if (std::isnan(float_value))
-                float_value = std::numeric_limits<Float64>::quiet_NaN();
+                if (std::isnan(float_value))
+                    float_value = std::numeric_limits<Float64>::quiet_NaN();
 
-            res = float_value;
+                res = float_value;
+            }
+            else
+            {
+                /// Defer the literal with its text. This includes a finite hex float (`0x1p4`): its
+                /// resolved Float64 would format as a decimal and no longer round-trip through the AST.
+                String number_str(negative ? "-" : "");
+                number_str.append(it, end);
+                res = NumberLiteral(std::move(number_str));
+            }
 
-            auto literal = make_intrusive<ASTLiteral>(res);
-            ++pos;
-            recordLiteralTokens(literal.get(), literal_begin, pos, expected);
-            node = literal;
-
-            return true;
+            return make_literal();
         }
 
         expected.add(pos, "number");
@@ -1587,7 +1611,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// NaN and Inf
     if (pos->type == TokenType::BareWord)
     {
-        return try_read_float(pos->begin, pos->end);
+        return try_read_float(pos->begin, pos->end, /*is_bare_word=*/ true);
     }
 
     if (pos->type != TokenType::Number)
@@ -1622,6 +1646,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     buf[size] = 0;
     char * start_pos = buf;
 
+    auto parse_result = ParseNumberResult::NotAnInteger;
     if (*start_pos == '0')
     {
         ++start_pos;
@@ -1632,16 +1657,9 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             ++start_pos;
             --size;
-            if (parseNumber(start_pos, size, negative, 2, res))
-            {
-                auto literal = make_intrusive<ASTLiteral>(res);
-                ++pos;
-                recordLiteralTokens(literal.get(), literal_begin, pos, expected);
-                node = literal;
-
-                return true;
-            }
-            return false;
+            if (parseNumber(start_pos, size, negative, 2, res) != ParseNumberResult::Success)
+                return false;
+            return make_literal();
         }
 
         /// hexadecimal
@@ -1649,15 +1667,9 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             ++start_pos;
             --size;
-            if (parseNumber(start_pos, size, negative, 16, res))
-            {
-                auto literal = make_intrusive<ASTLiteral>(res);
-                ++pos;
-                recordLiteralTokens(literal.get(), literal_begin, pos, expected);
-                node = literal;
-
-                return true;
-            }
+            /// An overflowing hexadecimal integer is not deferred: it stays a Float64 for compatibility.
+            if (parseNumber(start_pos, size, negative, 16, res) == ParseNumberResult::Success)
+                return make_literal();
         }
         else
         {
@@ -1667,28 +1679,25 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 ++start_pos;
                 --size;
             }
-            if (parseNumber(start_pos, size, negative, 10, res))
-            {
-                auto literal = make_intrusive<ASTLiteral>(res);
-                ++pos;
-                recordLiteralTokens(literal.get(), literal_begin, pos, expected);
-                node = literal;
-
-                return true;
-            }
+            parse_result = parseNumber(start_pos, size, negative, 10, res);
         }
     }
-    else if (parseNumber(start_pos, size, negative, 10, res))
-    {
-        auto literal = make_intrusive<ASTLiteral>(res);
-        ++pos;
-        recordLiteralTokens(literal.get(), literal_begin, pos, expected);
-        node = literal;
+    else
+        parse_result = parseNumber(start_pos, size, negative, 10, res);
 
-        return true;
+    if (parse_result == ParseNumberResult::Success)
+        return make_literal();
+
+    /// A decimal integer too large for UInt64 is deferred with its text and widened once the target type is known.
+    if (parse_result == ParseNumberResult::IntegerOverflow)
+    {
+        String number_str(negative ? "-" : "");
+        number_str.append(start_pos, size);
+        res = NumberLiteral(std::move(number_str));
+        return make_literal();
     }
 
-    return try_read_float(buf, buf + buf_size);
+    return try_read_float(buf, buf + buf_size, /*is_bare_word=*/ false);
 }
 
 

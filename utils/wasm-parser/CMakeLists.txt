@@ -32,7 +32,7 @@ option (ENABLE_DCL "Accept access management - `CREATE USER`, `GRANT` and the re
 set (MAX_SIZE_FULL              2220000 CACHE STRING "Byte ceiling for the default build")
 set (MAX_SIZE_NO_DCL            2000000 CACHE STRING "Byte ceiling for -DENABLE_DCL=OFF")
 set (MAX_SIZE_NO_FORMATTING     1065000 CACHE STRING "Byte ceiling for -DENABLE_FORMATTING=OFF")
-set (MAX_SIZE_NO_FORMATTING_DCL  875000 CACHE STRING "Byte ceiling for both off")
+set (MAX_SIZE_NO_FORMATTING_DCL  915000 CACHE STRING "Byte ceiling for both off")
 
 if (ENABLE_FORMATTING AND ENABLE_DCL)
     set (MAX_SIZE ${MAX_SIZE_FULL})

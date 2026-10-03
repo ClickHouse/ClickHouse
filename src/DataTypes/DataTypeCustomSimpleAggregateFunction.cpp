@@ -123,7 +123,7 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
                         parameters[i]->formatForErrorMessage(),
                         function_name);
 
-                params_row[i] = lit->value;
+                params_row[i] = lit->value.resolveNumberLiteral();
             }
         }
     }

@@ -61,7 +61,7 @@ void ASTCreateWorkloadQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSe
                 ostr << ", ";
             else
                 first = false;
-            ostr << change.name << " = " << applyVisitor(FieldVisitorToString(), change.value);
+            ostr << change.name << " = " << applyVisitor(FieldVisitorToSettingValueString(), change.value);
             if (!change.resource.empty())
             {
                 ostr << ' ' << "FOR" << ' ';

@@ -301,6 +301,10 @@ Field rescaleDecimal64Field(const Field & src, const ToDataType & to_type, bool 
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
+    /// A deferred number literal has no value to convert until it is resolved.
+    if (src.getType() == Field::Types::Number)
+        return convertFieldToTypeImpl(src.resolveNumberLiteral(), type, from_type_hint, format_settings, strict, convert_inexact_floats);
+
     if (from_type_hint && from_type_hint->equals(type))
     {
         return src;

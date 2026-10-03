@@ -25,17 +25,17 @@ throws_no_hint() { local out; out=$(cat); { echo "$out" | grep -qF "ILLEGAL_TYPE
 
 # Hint present (1): an all-numeric float-bearing Variant, top-level or nested in an Array element,
 # a Map value, or a Map key.
-$CH -q "SELECT min([toDecimal64(1, 2), 0.])" 2>&1 | has_hint
-$CH -q "SELECT sum(if(materialize(1), toDecimal64(1, 2), 0.))" 2>&1 | has_hint
+$CH -q "SELECT min([toDecimal64(1, 2), toFloat64(0)])" 2>&1 | has_hint
+$CH -q "SELECT sum(if(materialize(1), toDecimal64(1, 2), toFloat64(0)))" 2>&1 | has_hint
 $CH -q "SELECT avg(multiIf(materialize(1), toInt64(1), 0.))" 2>&1 | has_hint
-$CH -q "SELECT min(map('a', toDecimal64(1, 2), 'b', 0.))" 2>&1 | has_hint
-$CH -q "SELECT min(map(toDecimal64(1, 2), 1, 0., 2))" 2>&1 | has_hint
+$CH -q "SELECT min(map('a', toDecimal64(1, 2), 'b', toFloat64(0)))" 2>&1 | has_hint
+$CH -q "SELECT min(map(toDecimal64(1, 2), 1, toFloat64(0), 2))" 2>&1 | has_hint
 # argMin/argMax check the compared value argument, top-level or nested in an Array via forEachChild.
-$CH -q "SELECT argMin(1, if(materialize(1), toDecimal64(1, 2), 0.))" 2>&1 | has_hint
+$CH -q "SELECT argMin(1, if(materialize(1), toDecimal64(1, 2), toFloat64(0)))" 2>&1 | has_hint
 $CH -q "SELECT argMax(1, multiIf(materialize(1), toInt64(1), 0.))" 2>&1 | has_hint
-$CH -q "SELECT argMin(1, [if(materialize(1), toDecimal64(1, 2), 0.)])" 2>&1 | has_hint
+$CH -q "SELECT argMin(1, [if(materialize(1), toDecimal64(1, 2), toFloat64(0))])" 2>&1 | has_hint
 # The *ArgMin/*ArgMax combinators check the trailing key argument.
-$CH -q "SELECT sumArgMin(materialize(toInt64(1)), if(materialize(1), toDecimal64(1, 2), 0.))" 2>&1 | has_hint
+$CH -q "SELECT sumArgMin(materialize(toInt64(1)), if(materialize(1), toDecimal64(1, 2), toFloat64(0)))" 2>&1 | has_hint
 
 # Setting cannot help (1 = still rejected with ILLEGAL_TYPE_OF_ARGUMENT and no setting hint). An
 # integer-only set (no float) stays a Variant; a non-numeric branch is not numeric; and composite
@@ -47,12 +47,12 @@ $CH -q "SELECT argMax(1, if(materialize(toUInt8(1)), toInt64(1), toUInt64(2)))" 
 $CH -q "SELECT avgArgMax(materialize(toInt64(1)), if(materialize(toUInt8(1)), toInt64(1), toUInt64(2)))" 2>&1 | throws_no_hint
 $CH -q "SELECT min([toInt64(1), 'str'::String])" 2>&1 | throws_no_hint
 $CH -q "SELECT min([toInt64(1), toUInt64(2)])" 2>&1 | throws_no_hint
-$CH -q "SELECT min(if(materialize(1), [toDecimal64(1, 2)], [0.]))" 2>&1 | throws_no_hint
-$CH -q "SELECT max(if(materialize(1), map('a', toDecimal64(1, 2)), map('a', 0.)))" 2>&1 | throws_no_hint
+$CH -q "SELECT min(if(materialize(1), [toDecimal64(1, 2)], [toFloat64(0)]))" 2>&1 | throws_no_hint
+$CH -q "SELECT max(if(materialize(1), map('a', toDecimal64(1, 2)), map('a', toFloat64(0))))" 2>&1 | throws_no_hint
 
 # Setting on: the nested numeric Variants resolve to numeric supertypes and aggregate.
-$ON -q "SELECT min([toDecimal64(1, 2), 0.]), toTypeName([toDecimal64(1, 2), 0.])"
-$ON -q "SELECT min(map('a', toDecimal64(1, 2), 'b', 0.)), toTypeName(map('a', toDecimal64(1, 2), 'b', 0.))"
-$ON -q "SELECT min(map(toDecimal64(1, 2), 1, 0., 2)), toTypeName(map(toDecimal64(1, 2), 1, 0., 2))"
+$ON -q "SELECT min([toDecimal64(1, 2), toFloat64(0)]), toTypeName([toDecimal64(1, 2), toFloat64(0)])"
+$ON -q "SELECT min(map('a', toDecimal64(1, 2), 'b', toFloat64(0))), toTypeName(map('a', toDecimal64(1, 2), 'b', toFloat64(0)))"
+$ON -q "SELECT min(map(toDecimal64(1, 2), 1, toFloat64(0), 2)), toTypeName(map(toDecimal64(1, 2), 1, toFloat64(0), 2))"
 # A nullable numeric Map key resolves to Nullable(Float64), an invalid Map key, so it throws.
-$ON -q "SELECT min(map(materialize(toNullable(toDecimal64(1, 2))), 1, 0., 2))" 2>&1 | grep -qF "Map cannot have a key of type" && echo 1 || echo 0
+$ON -q "SELECT min(map(materialize(toNullable(toDecimal64(1, 2))), 1, toFloat64(0), 2))" 2>&1 | grep -qF "Map cannot have a key of type" && echo 1 || echo 0

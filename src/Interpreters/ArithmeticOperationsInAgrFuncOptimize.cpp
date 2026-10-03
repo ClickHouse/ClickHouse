@@ -156,8 +156,10 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func, const TablesWithColumns & 
         if (!isNonDecimalColumn(child_func_args[1], tables))
             return {};
 
+        /// A deferred NumberLiteral has no order defined; resolve it to a concrete numeric type first.
+        const Field first_value = first_literal->value.resolveNumberLiteral();
         bool need_reverse
-            = (child_func->name == "multiply" && first_literal->value < zeroField(first_literal->value)) || child_func->name == "minus";
+            = (child_func->name == "multiply" && first_value < zeroField(first_value)) || child_func->name == "minus";
         if (need_reverse)
             lower_name = get_reverse_aggregate_function_name(lower_name);
 
@@ -168,8 +170,9 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func, const TablesWithColumns & 
         if (!isNonDecimalColumn(child_func_args[0], tables))
             return {};
 
+        const Field second_value = second_literal->value.resolveNumberLiteral();
         bool need_reverse
-            = (child_func->name == "multiply" || child_func->name == "divide") && second_literal->value < zeroField(second_literal->value);
+            = (child_func->name == "multiply" || child_func->name == "divide") && second_value < zeroField(second_value);
         if (need_reverse)
             lower_name = get_reverse_aggregate_function_name(lower_name);
 

@@ -137,6 +137,16 @@ public:
 
     bool isDeterministic() const { return is_deterministic; }
 
+    /// Returns the original text of a NumberLiteral, if this constant was created from one.
+    /// Used for deferred type conversion: when the target type is known (e.g. Decimal, String),
+    /// parsing directly from the original text avoids precision loss through Float64.
+    bool hasNumberLiteralText() const { return !number_literal_text.empty(); }
+    const String & getNumberLiteralText() const { return number_literal_text; }
+
+    /// Carry the original text over to a re-typed copy of a NumberLiteral constant, so that a later
+    /// type-directed conversion still parses from the text instead of the already resolved value.
+    void setNumberLiteralText(String text) { number_literal_text = std::move(text); }
+
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
 
@@ -151,6 +161,7 @@ protected:
 private:
     ConstantValue constant_value;
     QueryTreeNodePtr source_expression;
+    String number_literal_text;  /// Original text from parser when this was a NumberLiteral
     bool is_deterministic = true;
     size_t mask_id = 0;
 

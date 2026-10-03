@@ -1174,6 +1174,7 @@ const std::unordered_map<String, Rewriter> & getRewriters()
                 case Field::Types::UInt64:
                 case Field::Types::Int64:
                 case Field::Types::Float64:
+                case Field::Types::Number:
                     element_type = "Array(Nullable(Float64))";
                     needle = makeFunctionWithArguments("toFloat64", {needle});
                     break;

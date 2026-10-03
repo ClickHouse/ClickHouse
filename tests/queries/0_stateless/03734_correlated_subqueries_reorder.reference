@@ -1,8 +1,8 @@
 Expression ((Project names + Projection))
 Actions: INPUT : 0 -> sum(__table1.l_extendedprice) Decimal(38, 2) : 0
-         COLUMN Const(Float64) -> 7._Float64 Float64 : 1
-         FUNCTION divide(sum(__table1.l_extendedprice) :: 0, 7._Float64 :: 1) -> divide(sum(__table1.l_extendedprice), 7._Float64) Float64 : 2
-         ALIAS divide(sum(__table1.l_extendedprice), 7._Float64) :: 2 -> avg_yearly Float64 : 1
+         COLUMN Const(Decimal128) -> \'7\'_Decimal(38, 2) Decimal(38, 2) : 1
+         FUNCTION divide(sum(__table1.l_extendedprice) :: 0, \'7\'_Decimal(38, 2) :: 1) -> divide(sum(__table1.l_extendedprice), \'7\'_Decimal(38, 2)) Decimal(38, 2) : 2
+         ALIAS divide(sum(__table1.l_extendedprice), \'7\'_Decimal(38, 2)) :: 2 -> avg_yearly Decimal(38, 2) : 1
 Positions: 1
   Aggregating
   Keys:
@@ -156,11 +156,11 @@ Positions: 1
               Type: INNER
                   ReadFromMergeTree (default.lineitem)
                   ReadFromMergeTree (default.part)
-6.428571428571429
-6.428571428571429
-6.428571428571429
-6.428571428571429
-6.428571428571429
-6.428571428571429
-6.428571428571429
-6.428571428571429
+6.42
+6.42
+6.42
+6.42
+6.42
+6.42
+6.42
+6.42

@@ -467,9 +467,9 @@ void NamedCollectionFromSQL::update(const ASTAlterNamedCollectionQuery & alter_q
     {
         auto it_override = alter_query.overridability.find(name);
         if (it_override != alter_query.overridability.end())
-            setOrUpdate<String, true>(name, convertFieldToString(value), it_override->second);
+            setOrUpdate<String, true>(name, convertFieldToSettingValueString(value), it_override->second);
         else
-            setOrUpdate<String, true>(name, convertFieldToString(value), {});
+            setOrUpdate<String, true>(name, convertFieldToSettingValueString(value), {});
     }
 
     for (const auto & key : alter_query.delete_keys)

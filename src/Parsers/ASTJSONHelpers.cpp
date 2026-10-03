@@ -70,6 +70,11 @@ static void writeFieldJSON(WriteBuffer & out, const FormatSettings & fs, const F
                 writeFloatText(x, out);
             break;
         }
+        case Field::Types::Number:
+            /// The original text, not a value already rounded to a concrete type.
+            out << ",\"value\":";
+            writeJSONString(field.safeGet<NumberLiteral>().value, out, fs);
+            break;
         case Field::Types::Bool:
             out << ",\"value\":" << (field.safeGet<UInt64>() != 0 ? "true" : "false");
             break;
