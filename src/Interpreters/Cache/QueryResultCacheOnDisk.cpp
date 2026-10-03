@@ -10,6 +10,7 @@
 #include <Formats/NativeWriter.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
@@ -50,6 +51,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int NOT_INITIALIZED;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
@@ -57,7 +59,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// On-disk entry layout, version 4:
+/// On-disk entry layout, version 5:
 ///
 ///     Fixed header (FIXED_HEADER_SIZE bytes):
 ///         char[8]  magic "QRCache1"
@@ -74,6 +76,7 @@ namespace
 ///         UInt8    is_shared
 ///         UInt8    has_user_id, [UInt128 user_id]
 ///         varUInt  number of user roles, [UInt128 role]...
+///         String   tag (setting `query_cache_tag`), so that `SYSTEM DROP QUERY CACHE TAG` can find the entry
 ///
 ///     Result payload (compressed with the codec from setting `query_cache_on_disk_codec`; the compression frames are
 ///     self-describing, so reading does not depend on the setting):
@@ -89,7 +92,7 @@ namespace
 ///         Per column of the header: UInt8 is_const, then a single-column Native block (the data column of a Const column with
 ///         one row, the column itself with `number of rows` rows otherwise)
 constexpr char ENTRY_MAGIC[8] = {'Q', 'R', 'C', 'a', 'c', 'h', 'e', '1'};
-constexpr UInt32 ENTRY_FORMAT_VERSION = 4;
+constexpr UInt32 ENTRY_FORMAT_VERSION = 5;
 constexpr size_t FIXED_HEADER_SIZE
     = sizeof(ENTRY_MAGIC) + sizeof(UInt32) + sizeof(UInt32) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt128);
 constexpr size_t TOTAL_SIZE_OFFSET_IN_FIXED_HEADER = sizeof(ENTRY_MAGIC) + sizeof(UInt32) + sizeof(UInt32);
@@ -189,6 +192,39 @@ Chunk readChunk(size_t num_columns, NativeReader & reader, ReadBuffer & in)
     }
 
     return Chunk(std::move(columns), num_rows);
+}
+
+/// The access metadata at the beginning of the body of an entry.
+struct AccessMetadata
+{
+    bool is_shared = false;
+    std::optional<UUID> user_id;
+    std::vector<UUID> current_user_roles;
+    String tag;
+};
+
+AccessMetadata readAccessMetadata(ReadBuffer & in, size_t body_size)
+{
+    AccessMetadata metadata;
+    UInt8 is_shared = 0;
+    readBinaryLittleEndian(is_shared, in);
+    metadata.is_shared = is_shared;
+    UInt8 has_user_id = 0;
+    readBinaryLittleEndian(has_user_id, in);
+    if (has_user_id)
+        metadata.user_id = readUUID(in);
+    size_t num_roles = 0;
+    readVarUInt(num_roles, in);
+    /// The access metadata is stored uncompressed, so the roles must fit into the entry. Checking that protects against
+    /// a huge allocation when the counter in a corrupt entry is nonsense.
+    if (num_roles > body_size / sizeof(UUID))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Malformed access metadata in an entry of the on-disk query result cache (number of roles: {})", num_roles);
+    metadata.current_user_roles.reserve(num_roles);
+    for (size_t i = 0; i < num_roles; ++i)
+        metadata.current_user_roles.push_back(readUUID(in));
+    readStringBinary(metadata.tag, in, body_size);
+    return metadata;
 }
 
 }
@@ -382,7 +418,7 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
         /// The serialization stops early once the bytes already written exceed the limit. `out.count()` only sees the compression
         /// frames flushed so far, so it is a lower bound of the final size: an entry rejected here would have been rejected by the
         /// exact check on the serialized size below as well, the remaining chunks are just not serialized in vain.
-        auto exceeds_limit = [&]() { return max_entry_size_in_bytes != 0 && out.count() > max_entry_size_in_bytes; };
+        auto exceeds_limit = [&]() { return out.count() > max_entry_size_in_bytes; };
 
         out.write(ENTRY_MAGIC, sizeof(ENTRY_MAGIC));
         writeBinaryLittleEndian(ENTRY_FORMAT_VERSION, out);
@@ -399,6 +435,7 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
         writeVarUInt(key.current_user_roles.size(), out);
         for (const auto & role : key.current_user_roles)
             writeUUID(role, out);
+        writeStringBinary(key.tag, out);
 
         {
             CompressedWriteBuffer compressed_out(out, CompressionCodecFactory::instance().get(codec_name));
@@ -429,7 +466,7 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
         out.finalize();
         data = std::move(out.str());
 
-        if (max_entry_size_in_bytes != 0 && data.size() > max_entry_size_in_bytes)
+        if (data.size() > max_entry_size_in_bytes)
         {
             LOG_TRACE(logger, "Skipped insert into the on-disk query result cache because the serialized query result is too big, query result size: {} (maximum size: {}), query: {}",
                 formatReadableSizeWithBinarySuffix(data.size(), 0), formatReadableSizeWithBinarySuffix(max_entry_size_in_bytes, 0), doubleQuoteString(key.query_string));
@@ -508,6 +545,82 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
     }
 }
 
+void QueryResultCacheOnDisk::clear(const Settings & settings, const std::optional<String> & tag)
+{
+    const String & cache_name = settings[Setting::query_cache_on_disk_cache_name].value;
+    if (cache_name.empty())
+        return;
+
+    FileCachePtr file_cache = FileCacheFactory::instance().get(cache_name); /// throws if no filesystem cache with this name exists
+    if (!file_cache->isInitialized())
+    {
+        /// The entries are still being loaded from disk, so they cannot be dropped: report it instead of pretending success.
+        throw Exception(ErrorCodes::NOT_INITIALIZED,
+            "Cannot clear the on-disk query result cache: filesystem cache {} is not initialized yet", backQuote(cache_name));
+    }
+
+    const auto & user_id = FileCache::getCommonOrigin().user_id;
+
+    /// The entries are ordinary keys of the filesystem cache, so find them by content: every key whose first segment is downloaded
+    /// is a candidate, and only the keys which start with the magic of an entry are removed. Collect the candidates first, the
+    /// filesystem cache must not be accessed from inside `iterate`.
+    std::unordered_set<FileCacheKey> candidates;
+    file_cache->iterate([&](const FileSegmentInfo & info)
+    {
+        if (info.range_left == 0 && info.state == FileSegment::State::DOWNLOADED)
+            candidates.insert(info.key);
+    }, user_id);
+
+    size_t num_removed = 0;
+    for (const auto & cache_key : candidates)
+    {
+        auto holder = file_cache->getDownloadedContiguousOrEmpty(cache_key, 0, FIXED_HEADER_SIZE, user_id);
+        if (holder->empty())
+            continue; /// removed or evicted in the meantime, or too small to be an entry
+
+        char fixed_header[FIXED_HEADER_SIZE];
+        createReadBufferFromSegments(*holder, FIXED_HEADER_SIZE)->readStrict(fixed_header, FIXED_HEADER_SIZE);
+        holder = nullptr;
+
+        if (memcmp(fixed_header, ENTRY_MAGIC, sizeof(ENTRY_MAGIC)) != 0)
+            continue; /// not an entry of the on-disk query result cache
+
+        ReadBufferFromMemory header_in(fixed_header, FIXED_HEADER_SIZE);
+        const std::optional<FixedHeader> header = parseFixedHeader(header_in);
+
+        /// An entry of an incompatible format can never be served, it is dropped regardless of the tag. Otherwise the tag of the
+        /// entry decides, and a corrupt entry (which can never be served either) is dropped as well. An entry which is not
+        /// complete (being written or partially evicted) is left alone: its tag is unknown, and it is not served until complete.
+        bool remove = !tag.has_value() || !header.has_value();
+        if (!remove)
+        {
+            holder = file_cache->getDownloadedContiguousOrEmpty(cache_key, 0, header->total_size, user_id);
+            if (holder->empty())
+                continue;
+
+            if (auto body = readCheckedBody(*holder, *header))
+            {
+                ReadBufferFromString body_in(*body);
+                remove = (readAccessMetadata(body_in, body->size()).tag == *tag);
+            }
+            else
+            {
+                remove = true;
+            }
+            holder = nullptr;
+        }
+
+        if (remove)
+        {
+            file_cache->removeKeyIfExists(cache_key, user_id);
+            ++num_removed;
+        }
+    }
+
+    LOG_DEBUG(getLogger("QueryResultCacheOnDisk"), "Removed {} entries from the on-disk query result cache in filesystem cache {}{}",
+        num_removed, backQuote(cache_name), tag ? fmt::format(" with tag {}", quoteString(*tag)) : "");
+}
+
 QueryResultCacheReader QueryResultCacheOnDisk::createReader(const QueryResultCache::Key & key) const
 {
     /// A non-shared entry is stored under a key which covers the access context, a shared entry under a key which does not, and the
@@ -574,29 +687,11 @@ std::optional<QueryResultCacheReader> QueryResultCacheOnDisk::tryCreateReader(co
         ReadBufferFromString body_in(*body);
         ReadBuffer * in = &body_in;
 
-        UInt8 is_shared = 0;
-        readBinaryLittleEndian(is_shared, *in);
-        UInt8 has_user_id = 0;
-        readBinaryLittleEndian(has_user_id, *in);
-        std::optional<UUID> user_id_of_entry;
-        if (has_user_id)
-            user_id_of_entry = readUUID(*in);
-        size_t num_roles = 0;
-        readVarUInt(num_roles, *in);
-        /// The access metadata is stored uncompressed, so the roles must fit into the entry. Checking that protects against
-        /// a huge allocation when the counter in a corrupt entry is nonsense.
-        if (num_roles > (fixed_header->total_size - FIXED_HEADER_SIZE) / sizeof(UUID))
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Malformed access metadata in an entry of the on-disk query result cache (number of roles: {})", num_roles);
-        std::vector<UUID> roles_of_entry;
-        roles_of_entry.reserve(num_roles);
-        for (size_t i = 0; i < num_roles; ++i)
-            roles_of_entry.push_back(readUUID(*in));
+        const AccessMetadata access = readAccessMetadata(*in, body->size());
 
-        const bool is_same_user_id = ((!user_id_of_entry.has_value() && !key.user_id.has_value())
-            || (user_id_of_entry.has_value() && key.user_id.has_value() && *user_id_of_entry == *key.user_id));
-        const bool is_same_current_user_roles = (roles_of_entry == key.current_user_roles);
-        if (!is_shared && (!is_same_user_id || !is_same_current_user_roles))
+        const bool is_same_user_id = (access.user_id == key.user_id);
+        const bool is_same_current_user_roles = (access.current_user_roles == key.current_user_roles);
+        if (!access.is_shared && (!is_same_user_id || !is_same_current_user_roles))
         {
             LOG_TRACE(logger, "Inaccessible query result found on disk for query {}", doubleQuoteString(key.query_string));
             return std::nullopt;

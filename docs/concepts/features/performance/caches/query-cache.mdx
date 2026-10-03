@@ -280,7 +280,7 @@ in-memory query cache, with `enable_writes_to_query_cache_on_disk = false`), the
 functions, system tables, or a non-`throw` overflow mode: these checks only protect against storing wrong results. Entries on disk are compressed with the codec specified by setting
 `query_cache_on_disk_codec` (`ZSTD(3)` by default). The server settings `max_entry_size_in_bytes` and `max_entry_size_in_rows` of the
 query cache limit the entries of both backends; each backend measures an entry the way it stores it, so on disk the byte limit applies to
-the serialized, compressed entry. All
+the serialized, compressed entry. Setting either of them to 0 disables writes to both backends. All
 other query cache settings (e.g. `query_cache_ttl`, `query_cache_min_query_duration`) apply to the query cache on disk in the same way as
 to the in-memory query cache, with the two exceptions below.
 
@@ -301,8 +301,11 @@ separately.
 The entries of the query cache on disk are ordinary entries of the filesystem cache, indistinguishable from other data cached in the
 same filesystem cache: they are not held from deletion and they are evicted by the same rules (e.g. least-recently-used) when the
 filesystem cache runs out of space. There are no separate limits on their total size or number - only the limits of the filesystem
-cache itself apply. Statement `SYSTEM DROP FILESYSTEM CACHE '<name>'` removes them together with everything else in the filesystem
-cache; `SYSTEM CLEAR QUERY CACHE` only clears the in-memory query cache. Likewise, system table
+cache itself apply. Statement `SYSTEM CLEAR QUERY CACHE` (and `SYSTEM CLEAR QUERY CACHE TAG 'tag'`) also removes the entries (with the
+given tag) of the query cache on disk from the filesystem cache selected by setting `query_cache_on_disk_cache_name` of the session
+(e.g. after `SET query_cache_on_disk_cache_name = 'query_results'`), and leaves the other data of the filesystem cache in place. To
+find the entries, it scans all keys of the filesystem cache. Statement `SYSTEM DROP FILESYSTEM CACHE '<name>'` removes them together
+with everything else in the filesystem cache. System table
 [system.query_cache](/reference/system-tables/query_cache) shows only the entries of the in-memory query cache. The number of query
 cache hits and misses on disk are shown as events "QueryCacheOnDiskHits" and "QueryCacheOnDiskMisses" in system table
 [system.events](/reference/system-tables/events). These are the breakdown of the on-disk backend alone, whereas "QueryCacheHits" and

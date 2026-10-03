@@ -3,7 +3,7 @@
 # cache on disk (setting `query_cache_on_disk_cache_name`) is enabled and both backends are probed: a miss in memory
 # followed by a hit on disk is one hit and no miss, and a lookup that consults only the disk still records a miss.
 # `QueryCacheOnDiskHits` / `QueryCacheOnDiskMisses` are the breakdown of the on-disk backend alone.
-# `clickhouse-local` is used because it disables the in-memory query cache (its entry size limits are 0), which makes
+# `clickhouse-local` is used because it disables the in-memory query cache (its maximum size is 0), which makes
 # every lookup in memory a miss, and because each process starts with all profile events at zero.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -3250,7 +3250,7 @@ static BlockIO executeQueryImpl(
 
                             const bool write_to_memory_cache = canWriteToQueryResultCacheInMemory(context);
                             QueryResultCacheOnDiskPtr write_to_on_disk_cache
-                                = (query_result_cache_on_disk && query_result_cache_on_disk->writesEnabled()) ? query_result_cache_on_disk : nullptr;
+                                = canWriteToQueryResultCacheOnDisk(context, query_result_cache_on_disk) ? query_result_cache_on_disk : nullptr;
 
                             const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
                             if (num_query_runs <= settings[Setting::query_cache_min_query_runs])

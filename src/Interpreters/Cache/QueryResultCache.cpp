@@ -238,12 +238,21 @@ bool canWriteToQueryResultCacheInMemory(ContextPtr context)
     return query_result_cache && query_result_cache->canStoreEntries();
 }
 
+bool canWriteToQueryResultCacheOnDisk(ContextPtr context, QueryResultCacheOnDiskPtr on_disk_cache)
+{
+    if (!on_disk_cache || !on_disk_cache->writesEnabled())
+        return false;
+    QueryResultCachePtr query_result_cache = context->getQueryResultCache();
+    return query_result_cache && query_result_cache->entrySizeLimitsAllowEntries();
+}
+
 bool hasQueryResultCacheWriteBackend(ContextPtr context, QueryResultCacheOnDiskPtr on_disk_cache)
 {
     /// Judge both backends by what can actually receive a write, not by the raw settings: an in-memory cache with zero limits
     /// (e.g. in `clickhouse-local`) or a configured but unavailable on-disk backend (e.g. a filesystem cache which is not initialized
-    /// yet) never stores anything, so it must not trigger the checks which protect against storing wrong results.
-    return canWriteToQueryResultCacheInMemory(context) || (on_disk_cache && on_disk_cache->writesEnabled());
+    /// yet), or a maximum entry size of 0, never stores anything, so it must not trigger the checks which protect against storing
+    /// wrong results.
+    return canWriteToQueryResultCacheInMemory(context) || canWriteToQueryResultCacheOnDisk(context, on_disk_cache);
 }
 
 bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, QueryResultCacheOnDiskPtr on_disk_cache, bool skip_context_check)
@@ -811,10 +820,15 @@ void QueryResultCacheWriter::finalizeWrite()
         /// size of the serialized entry inside `write`, because the in-memory weight says little about the bytes on disk (the
         /// per-column allocations differ from the `Native` framing plus the compression, in both directions). Only the row limit is
         /// the same for both backends, so it is checked here upfront.
-        /// A limit of 0 means no limit here: `clickhouse-local` disables the in-memory query result cache that way (it calls
-        /// `setQueryResultCache(0, 0, 0, 0)`), but the query result cache on disk is usable there.
+        /// A limit of 0 means that nothing may be cached, same as for the in-memory backend. The writer is normally not created then
+        /// (see `canWriteToQueryResultCacheOnDisk`), but the limits may have been reconfigured since.
         const size_t entry_size_in_rows = count_rows_in_chunks(*query_result);
-        if (max_entry_size_in_rows != 0 && entry_size_in_rows > max_entry_size_in_rows)
+        if (max_entry_size_in_bytes == 0 || max_entry_size_in_rows == 0)
+        {
+            LOG_TRACE(logger, "Skipped insert into the on-disk query result cache because the maximum entry size is 0, query: {}",
+                    doubleQuoteString(key.query_string));
+        }
+        else if (entry_size_in_rows > max_entry_size_in_rows)
         {
             LOG_TRACE(logger, "Skipped insert into the on-disk query result cache because the query result is too big, query result size in rows: {} (maximum size: {}), query: {}",
                     entry_size_in_rows, max_entry_size_in_rows, doubleQuoteString(key.query_string));
@@ -1056,7 +1070,7 @@ void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_
 
     /// A cache with a zero limit can not store entries, so no writer will ever insert into it again (see `canStoreEntries`).
     /// The eviction is lazy and happens only upon insert, hence drop the existing entries now, otherwise they would linger.
-    if (max_size_in_bytes == 0 || max_entries == 0 || max_entry_size_in_bytes_ == 0)
+    if (max_size_in_bytes == 0 || max_entries == 0 || max_entry_size_in_bytes_ == 0 || max_entry_size_in_rows_ == 0)
     {
         cache.clear();
         times_executed.clear();
@@ -1117,12 +1131,13 @@ void QueryResultCache::clear(const std::optional<String> & tag)
 
 bool QueryResultCache::canStoreEntries() const
 {
-    {
-        std::lock_guard lock(mutex);
-        if (max_entry_size_in_bytes == 0)
-            return false;
-    }
-    return cache.maxSizeInBytes() != 0 && cache.maxCount() != 0;
+    return entrySizeLimitsAllowEntries() && cache.maxSizeInBytes() != 0 && cache.maxCount() != 0;
+}
+
+bool QueryResultCache::entrySizeLimitsAllowEntries() const
+{
+    std::lock_guard lock(mutex);
+    return max_entry_size_in_bytes != 0 && max_entry_size_in_rows != 0;
 }
 
 size_t QueryResultCache::maxSizeInBytes() const

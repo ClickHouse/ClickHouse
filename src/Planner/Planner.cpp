@@ -3360,7 +3360,7 @@ void Planner::buildPlanForQueryNode()
         {
             const bool write_to_memory_cache = canWriteToQueryResultCacheInMemory(query_context);
             QueryResultCacheOnDiskPtr write_to_on_disk_cache
-                = (query_result_cache_on_disk && query_result_cache_on_disk->writesEnabled()) ? query_result_cache_on_disk : nullptr;
+                = canWriteToQueryResultCacheOnDisk(query_context, query_result_cache_on_disk) ? query_result_cache_on_disk : nullptr;
 
             if (write_to_memory_cache || write_to_on_disk_cache)
             {

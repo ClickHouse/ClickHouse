@@ -27,6 +27,10 @@ using QueryResultCacheOnDiskPtr = std::shared_ptr<const QueryResultCacheOnDisk>;
 /// Is the in-memory query result cache enabled for writes by the settings and able to store entries under the server configuration?
 bool canWriteToQueryResultCacheInMemory(ContextPtr context);
 
+/// Is the on-disk query result cache `on_disk_cache` (nullptr if there is none) enabled for writes by the settings and able to store
+/// entries under the server configuration (the maximum entry size of the query result cache applies to both backends)?
+bool canWriteToQueryResultCacheOnDisk(ContextPtr context, QueryResultCacheOnDiskPtr on_disk_cache);
+
 /// Can any backend of the query result cache store the result of the query? A configured but unavailable on-disk backend does not count,
 /// and neither does an in-memory cache with zero limits.
 bool hasQueryResultCacheWriteBackend(ContextPtr context, QueryResultCacheOnDiskPtr on_disk_cache);
@@ -183,6 +187,9 @@ public:
     /// Can the in-memory cache store an entry at all under the current server configuration? It can not if one of its limits is 0,
     /// e.g. in `clickhouse-local` or with `query_cache.max_size_in_bytes = 0`.
     bool canStoreEntries() const;
+
+    /// Do the maximum entry sizes allow any entry? A limit of 0 means that nothing may be cached, in both backends.
+    bool entrySizeLimitsAllowEntries() const;
 
     size_t maxSizeInBytes() const;
     size_t sizeInBytes() const;

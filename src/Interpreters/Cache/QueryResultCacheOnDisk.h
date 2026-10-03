@@ -36,6 +36,12 @@ public:
     /// initialized yet. Throws if the given name does not resolve to a configured filesystem cache.
     static std::shared_ptr<const QueryResultCacheOnDisk> getFromSettings(const Settings & settings);
 
+    /// Removes the entries of the on-disk query result cache (all of them, or only those with the given `query_cache_tag`) from the
+    /// filesystem cache named by setting `query_cache_on_disk_cache_name`, leaving all other data of the filesystem cache in place.
+    /// Does nothing if the setting is empty. Used by `SYSTEM DROP QUERY CACHE [TAG]`. The entries are found by scanning the keys of
+    /// the filesystem cache, so the cost is proportional to the number of keys in it.
+    static void clear(const Settings & settings, const std::optional<String> & tag);
+
     bool readsEnabled() const { return enable_reads; }
     bool writesEnabled() const { return enable_writes; }
 
@@ -45,7 +51,7 @@ public:
 
     /// Store the query result. Best-effort: an entry which cannot be written (no space, a concurrent writer, a fresh entry already
     /// exists) is skipped and the reason is logged, no exception is thrown.
-    /// `max_entry_size_in_bytes` (server setting `query_cache.max_entry_size_in_bytes`, 0 = unlimited) is enforced against the size
+    /// `max_entry_size_in_bytes` (server setting `query_cache.max_entry_size_in_bytes`) is enforced against the size
     /// of the serialized entry, i.e. exactly the bytes which end up in the filesystem cache, including the header, the access metadata
     /// and the compression framing. The in-memory weight of the result is not a good proxy for it in either direction.
     void write(const QueryResultCache::Key & key, const QueryResultCache::Entry & entry, size_t max_entry_size_in_bytes) const;
