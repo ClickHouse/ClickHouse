@@ -1102,7 +1102,7 @@ private:
                     const auto & partition = memory_buffer_partitions[cell.in_memory_partition_index];
                     char * serialized_columns_place = partition.getPlace(cell.index);
                     /// This is larger size than necessary but we don't know the exact size of serialized columns
-                    size_t size = partition.block_size;
+                    size_t size = partition.block_size - cell.index.offset_in_block;
                     ReadBufferFromString in({serialized_columns_place, size});
                     deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, in);
                     break;
@@ -1152,7 +1152,7 @@ private:
             {
                 char * key_data = block_data + key_in_block.offset_in_block;
                 /// This is larger size than necessary but we don't know the exact size of serialized columns
-                size_t size = configuration.read_buffer_blocks_size;
+                size_t size = configuration.block_size - key_in_block.offset_in_block;
                 ReadBufferFromString in({key_data, size});
                 deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, in);
 
