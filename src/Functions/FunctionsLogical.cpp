@@ -19,11 +19,20 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Columns/ColumnsCommon.h>
 
-#include <cstring>
 #include <algorithm>
+#include <cstring>
+#include <numeric>
+#include <optional>
 
+namespace ProfileEvents
+{
+    extern const Event ShortCircuitArgumentsReordered;
+}
 
 namespace DB
 {
@@ -38,6 +47,7 @@ Setting [`short_circuit_function_evaluation`](/reference/settings/session-settin
 If enabled, `val_i` is evaluated only if `(val_1 AND val_2 AND ... AND val_{i-1})` is `true`.
 
 For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)`.
+The order of evaluation can differ from the order of the arguments when it doesn't change the result and doesn't introduce exceptions, see setting [`short_circuit_function_evaluation_reorder_arguments`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation_reorder_arguments).
 Zero as an argument is considered `false`, non-zero values are considered `true`.
 )";
         FunctionDocumentation::Syntax syntax = "and(val1, val2[, ...])";
@@ -69,6 +79,7 @@ Setting [`short_circuit_function_evaluation`](/reference/settings/session-settin
 If enabled, `val_i` is evaluated only if `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` is `true`.
 
 For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)`.
+The order of evaluation can differ from the order of the arguments when it doesn't change the result and doesn't introduce exceptions, see setting [`short_circuit_function_evaluation_reorder_arguments`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation_reorder_arguments).
 Zero as an argument is considered `false`, non-zero values are considered `true`.
 )";
         FunctionDocumentation::Syntax syntax = "or(val1, val2[, ...])";
@@ -747,6 +758,33 @@ static void applyTernaryLogic(const IColumn::Filter & mask, IColumn::Filter & nu
         applyTernaryLogicImpl<false>(mask, null_bytemap);
 }
 
+/** Chooses the order in which `and`/`or` executes its arguments. The first argument is executed on all rows and stays
+  * first. An argument with statistics can be executed on more rows than in the original order: it cannot throw, it is
+  * not stateful and has no observable side effects, so this changes nothing but the time. An argument without
+  * statistics must be executed only on the rows that passed all the arguments preceding it in the original order.
+  * So these arguments stay in place, and split the arguments with statistics into groups, which are sorted by rank
+  * inside. Arguments that have not been executed yet go first in their group, to collect their statistics.
+  */
+static void orderArgumentsByStatistics(VectorWithMemoryTracking<size_t> & order, const VectorWithMemoryTracking<ShortCircuitArgumentStatistics *> & statistics)
+{
+    VectorWithMemoryTracking<double> ranks(order.size());
+    for (size_t i = 1; i < order.size(); ++i)
+        if (statistics[i])
+            ranks[i] = statistics[i]->getRank();
+
+    auto group_begin = order.begin() + 1;
+    while (group_begin != order.end())
+    {
+        auto group_end = std::find_if(group_begin, order.end(), [&](size_t i) { return statistics[i] == nullptr; });
+        /// The rank is negative for the arguments that have not been executed yet.
+        std::stable_sort(group_begin, group_end, [&](size_t lhs, size_t rhs) { return ranks[lhs] < ranks[rhs]; });
+        group_begin = group_end == order.end() ? group_end : group_end + 1;
+    }
+
+    if (!std::is_sorted(order.begin(), order.end()))
+        ProfileEvents::increment(ProfileEvents::ShortCircuitArgumentsReordered);
+}
+
 template <typename Impl, typename Name>
 ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
 {
@@ -771,10 +809,50 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (result_type->isNullable())
         nulls = std::make_unique<IColumn::Filter>(arguments[0].column->size(), 0);
 
-    MaskInfo mask_info{.has_ones = true, .has_zeros = false};
-    for (const auto & argument : arguments)
+    /// Statistics are present for the lazy arguments that are allowed to be executed before the arguments that
+    /// precede them (see ExpressionActions.cpp). They are used to choose the order in which the arguments are executed.
+    VectorWithMemoryTracking<ShortCircuitArgumentStatistics *> statistics(arguments.size());
+    bool has_statistics = false;
+    for (size_t i = 1; i < arguments.size(); ++i)
     {
-        mask_info = maskedExecuteAndUpdateMask(argument, mask, mask_info, inverted, nulls.get(), null_value);
+        if (const auto * column_function = checkAndGetShortCircuitArgument(arguments[i].column))
+        {
+            statistics[i] = column_function->getShortCircuitArgumentStatistics().get();
+            has_statistics |= statistics[i] != nullptr;
+        }
+    }
+
+    VectorWithMemoryTracking<size_t> order(arguments.size());
+    std::iota(order.begin(), order.end(), 0);
+    if (has_statistics)
+        orderArgumentsByStatistics(order, statistics);
+
+    MaskInfo mask_info{.has_ones = true, .has_zeros = false};
+    /// The number of rows that are still undecided, if it is known.
+    std::optional<size_t> undecided_rows = mask.size();
+    for (size_t i : order)
+    {
+        if (statistics[i])
+        {
+            size_t executed_rows = undecided_rows ? *undecided_rows : countBytesInFilter(mask);
+            Stopwatch watch;
+            mask_info = maskedExecuteAndUpdateMask(arguments[i], mask, mask_info, inverted, nulls.get(), null_value);
+            UInt64 elapsed = watch.elapsedNanoseconds();
+
+            if (!mask_info.has_ones)
+                undecided_rows = 0;
+            else if (!mask_info.has_zeros)
+                undecided_rows = mask.size();
+            else
+                undecided_rows = countBytesInFilter(mask);
+
+            statistics[i]->add(executed_rows, *undecided_rows, elapsed);
+        }
+        else
+        {
+            mask_info = maskedExecuteAndUpdateMask(arguments[i], mask, mask_info, inverted, nulls.get(), null_value);
+            undecided_rows.reset();
+        }
 
         /// Stop when every row has a decisive result.
         if (!mask_info.has_ones)
@@ -813,6 +891,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
         /// arguments, and combine it with the remaining function column arguments, use them as the input of
         /// `exeucteShortCircuit` to calculate the final result.
         ColumnRawPtrs not_short_circuit_args;
+        size_t last_not_short_circuit_arg_index = 0;
         VectorWithMemoryTracking<size_t> short_circuit_args_index;
         ColumnsWithTypeAndName new_args;
 
@@ -821,7 +900,10 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
             if (checkAndGetShortCircuitArgument(arguments[i].column))
                 short_circuit_args_index.emplace_back(i);
             else
+            {
                 not_short_circuit_args.emplace_back(arguments[i].column.get());
+                last_not_short_circuit_arg_index = i;
+            }
         }
 
         ColumnPtr partial_result = nullptr;
@@ -833,6 +915,14 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
             if (short_circuit_args_index.empty())
                 return partial_result;
             new_args.emplace_back(partial_result, result_type, "__partial_result");
+            for (const auto & index : short_circuit_args_index)
+                new_args.emplace_back(std::move(arguments[index]));
+        }
+        else if (not_short_circuit_args.size() == 1 && last_not_short_circuit_arg_index != 0)
+        {
+            /// The first argument is lazy, because it is heavy while another one is cheap (see `arguments_are_commutative`).
+            /// Start from the cheap one.
+            new_args.emplace_back(std::move(arguments[last_not_short_circuit_arg_index]));
             for (const auto & index : short_circuit_args_index)
                 new_args.emplace_back(std::move(arguments[index]));
         }

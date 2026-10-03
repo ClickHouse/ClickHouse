@@ -36,13 +36,15 @@ ColumnFunction::ColumnFunction(
     bool is_short_circuit_argument_,
     bool is_function_compiled_,
     bool recursively_convert_result_to_full_column_if_low_cardinality_,
-    bool allow_lazy_replicated_captures_)
+    bool allow_lazy_replicated_captures_,
+    ShortCircuitArgumentStatisticsPtr short_circuit_argument_statistics_)
     : elements_size(size)
     , function(function_)
     , is_short_circuit_argument(is_short_circuit_argument_)
     , recursively_convert_result_to_full_column_if_low_cardinality(recursively_convert_result_to_full_column_if_low_cardinality_)
     , is_function_compiled(is_function_compiled_)
     , allow_lazy_replicated_captures(allow_lazy_replicated_captures_)
+    , short_circuit_argument_statistics(std::move(short_circuit_argument_statistics_))
 {
     appendArguments(columns_to_capture);
 }
@@ -60,7 +62,8 @@ MutableColumnPtr ColumnFunction::cloneResized(size_t size) const
         is_short_circuit_argument,
         is_function_compiled,
         /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
-        allow_lazy_replicated_captures);
+        allow_lazy_replicated_captures,
+        short_circuit_argument_statistics);
 }
 
 ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
@@ -96,7 +99,8 @@ ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
         is_short_circuit_argument,
         is_function_compiled,
         /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
-        allow_lazy_replicated_captures);
+        allow_lazy_replicated_captures,
+        short_circuit_argument_statistics);
 }
 
 ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
@@ -114,7 +118,8 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
         is_short_circuit_argument,
         is_function_compiled,
         recursively_convert_result_to_full_column_if_low_cardinality,
-        allow_lazy_replicated_captures);
+        allow_lazy_replicated_captures,
+        short_circuit_argument_statistics);
 }
 
 Field ColumnFunction::operator[](size_t n) const
@@ -226,7 +231,8 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) 
         is_short_circuit_argument,
         is_function_compiled,
         recursively_convert_result_to_full_column_if_low_cardinality,
-        allow_lazy_replicated_captures);
+        allow_lazy_replicated_captures,
+        short_circuit_argument_statistics);
 }
 
 void ColumnFunction::filter(const Filter & filt)
@@ -270,7 +276,8 @@ ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
         is_short_circuit_argument,
         is_function_compiled,
         recursively_convert_result_to_full_column_if_low_cardinality,
-        allow_lazy_replicated_captures);
+        allow_lazy_replicated_captures,
+        short_circuit_argument_statistics);
 }
 
 ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
@@ -286,7 +293,8 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
         is_short_circuit_argument,
         is_function_compiled,
         recursively_convert_result_to_full_column_if_low_cardinality,
-        allow_lazy_replicated_captures);
+        allow_lazy_replicated_captures,
+        short_circuit_argument_statistics);
 }
 
 VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::scatter(size_t num_columns,
@@ -322,7 +330,8 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::scatter(size_t num_co
             is_short_circuit_argument,
             is_function_compiled,
             recursively_convert_result_to_full_column_if_low_cardinality,
-            allow_lazy_replicated_captures));
+            allow_lazy_replicated_captures,
+            short_circuit_argument_statistics));
     }
 
     return columns;
@@ -463,12 +472,17 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
         /// We shouldn't execute all arguments if this function is short circuit,
         /// because it will handle lazy executed arguments by itself.
         /// Execute only arguments with disabled lazy execution.
+        /// A function with commutative arguments can execute all of its arguments lazily,
+        /// starting from the ones that are already executed.
         if (function->isShortCircuit(settings, args))
         {
-            for (size_t i : settings.arguments_with_disabled_lazy_execution)
+            if (!settings.arguments_are_commutative)
             {
-                if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(columns[i].column))
-                    columns[i] = arg->reduce(dry_run);
+                for (size_t i : settings.arguments_with_disabled_lazy_execution)
+                {
+                    if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(columns[i].column))
+                        columns[i] = arg->reduce(dry_run);
+                }
             }
         }
         else
@@ -515,7 +529,8 @@ ColumnPtr ColumnFunction::recursivelyConvertResultToFullColumnIfLowCardinality()
         is_short_circuit_argument,
         is_function_compiled,
         /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ true,
-        allow_lazy_replicated_captures);
+        allow_lazy_replicated_captures,
+        short_circuit_argument_statistics);
 }
 
 void ColumnFunction::forEachMutableSubcolumn(MutableColumnCallback callback)

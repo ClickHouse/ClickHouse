@@ -355,6 +355,13 @@ public:
         /// Example: toTypeName(expr), even if expr contains functions that are not suitable for
         /// lazy execution (because of their simplicity), we shouldn't execute them at all.
         bool force_enable_lazy_execution{};
+        /// Does the result of the function not depend on the order in which its arguments are executed,
+        /// and can the function receive any of its arguments lazily? Example: and, or.
+        /// Then `arguments_with_disabled_lazy_execution` is only a preference: if the argument listed there
+        /// is heavy while another one is cheap, the cheap one is executed on all rows instead,
+        /// and the function is free to execute its lazy arguments in any order,
+        /// see `ExpressionActions` and `ShortCircuitArgumentStatistics`.
+        bool arguments_are_commutative{};
     };
 
     /** Function is called "short-circuit" if it's arguments can be evaluated lazily
@@ -374,6 +381,10 @@ public:
       * Suitability may depend on function arguments.
       */
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
+
+    /// True if the function might throw an exception while it is executed, for these argument types.
+    /// See `IFunction::canThrow`. The default is conservative.
+    virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
 
     /// True if the result depends only on argument values, not column names. formatRowNoNewline
     /// and toTypeName are counter examples. Default is conservative

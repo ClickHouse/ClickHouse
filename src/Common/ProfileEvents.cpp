@@ -435,6 +435,7 @@
     \
     M(CompileFunction, "Number of times a compilation of generated LLVM code (to create fused function for complex expressions) was initiated.", ValueType::Number) \
     M(CompiledFunctionExecute, "Number of times a compiled function was executed.", ValueType::Number) \
+    M(ShortCircuitArgumentsReordered, "Number of blocks on which the `and` or `or` function evaluated its arguments in an order different from the order in the query, according to the statistics collected on the previous blocks (setting `short_circuit_function_evaluation_reorder_arguments`).", ValueType::Number) \
     M(CompileExpressionsMicroseconds, "Total time spent for compilation of expressions to LLVM code.", ValueType::Microseconds) \
     M(CompileExpressionsBytes, "Number of bytes used for expressions compilation.", ValueType::Bytes) \
     M(CompileRegexpFunction, "Number of times a regular expression was JIT-compiled to machine code.", ValueType::Number) \
