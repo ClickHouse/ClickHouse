@@ -456,7 +456,14 @@ void StorageFileLog::deserialize()
         if (!metadata)
             continue;
 
-        file_infos.meta_by_inode.emplace(inode, metadata);
+        /// Meta files of one inode under several names describe the same file; the larger offset is how far it was read.
+        auto [it, inserted] = file_infos.meta_by_inode.emplace(inode, metadata);
+        if (!inserted)
+        {
+            if (it->second.last_writen_position < metadata.last_writen_position)
+                std::swap(it->second, metadata);
+            files_to_remove.push_back(getFullMetaPath(metadata.file_name));
+        }
     }
 
     for (const auto & file : files_to_remove)
