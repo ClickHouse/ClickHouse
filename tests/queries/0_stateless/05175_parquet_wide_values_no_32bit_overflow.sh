@@ -26,9 +26,10 @@ $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
 "
 
 # `FIXED_LEN_BYTE_ARRAY` shares that builder, so a wide `FixedString` has to be split the same way.
+# `toFixedString` pads the number with zero bytes, which keeps the values distinct without first
+# building a `String` column of the same 2 GiB next to the `FixedString` one.
 $CLICKHOUSE_LOCAL --max_memory_usage 0 --allow_suspicious_fixed_string_types 1 --query "
-    WITH repeat('x', 1000000) || repeat('x', 1000000) || repeat('x', 100000) AS wide
-    SELECT toFixedString(concat(toString(number), wide), 2100016) AS s
+    SELECT toFixedString(toString(number), 2100016) AS s
     FROM numbers(1024)
     FORMAT Parquet
 " > "$FILE"
