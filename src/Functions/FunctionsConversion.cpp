@@ -426,7 +426,8 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
     TypeIndex to_type_index = to_type->getTypeId();
     WhichDataType to(to_type_index);
     bool can_apply_accurate_cast = (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
-        && (which.isInt() || which.isUInt() || which.isFloat());
+        && (which.isInt() || which.isUInt() || which.isFloat()
+            || (which.isDecimal() && (to.isInt() || to.isUInt())));
     /// `Time` and `Time64` share the accurate temporal path: widening an exact `Time` value to
     /// `Time64(0)` must not change what `accurateCast` accepts.
     can_apply_accurate_cast |= (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
@@ -476,9 +477,9 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
             using LeftDataType = typename Types::LeftType;
             using RightDataType = typename Types::RightType;
 
-            if constexpr (IsDataTypeNumber<LeftDataType> || is_any_of<LeftDataType, DataTypeTime, DataTypeTime64>)
+            if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> || is_any_of<LeftDataType, DataTypeTime, DataTypeTime64>)
             {
-                if constexpr (IsDataTypeDateOrDateTimeOrTime<RightDataType>)
+                if constexpr ((IsDataTypeNumber<LeftDataType> || is_any_of<LeftDataType, DataTypeTime, DataTypeTime64>) && IsDataTypeDateOrDateTimeOrTime<RightDataType>)
                 {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE, ADDITIONS) \
 case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
