@@ -33,16 +33,34 @@ namespace
 /// A name is looked up in an enclosing scope only while `enable_global_with_statement` holds in the
 /// subquery's own context, so a CTE name that a subquery does not see is a table name there.
 /// The clause is clamped rather than rejected, so a subquery cannot widen the reader's constraints,
-/// and it is applied to a copy, so the AST keeps the clause as written.
+/// and it is applied to a copy, so the AST keeps the clause as written. This mirrors
+/// `applyQueryLevelSettings` in `QueryTreeBuilder`, including `SETTINGS name = DEFAULT`, which is
+/// parsed into `default_settings` rather than `changes`.
 ContextPtr getSubqueryContext(const ASTPtr & settings_ast, const ContextPtr & context)
 {
     if (!settings_ast)
         return context;
 
-    auto changes = settings_ast->as<const ASTSetQuery &>().changes;
+    const auto & set_query = settings_ast->as<const ASTSetQuery &>();
     auto subquery_context = Context::createCopy(context);
-    subquery_context->clampToSettingsConstraints(changes, SettingSource::QUERY);
-    subquery_context->applySettingsChanges(changes);
+
+    /// One change at a time, so that each is clamped against the context as the preceding changes left it.
+    for (const auto & change : set_query.changes)
+    {
+        SettingsChanges single_change{change};
+        subquery_context->clampToSettingsConstraints(single_change, SettingSource::QUERY);
+        subquery_context->applySettingsChanges(single_change);
+    }
+
+    if (!set_query.default_settings.empty())
+    {
+        auto allowed_resets = set_query.default_settings;
+        SettingsChanges clamped_resets;
+        subquery_context->clampSettingsConstraintsForSettingsReset(allowed_resets, clamped_resets, SettingSource::QUERY);
+        subquery_context->resetSettingsToDefaultValue(allowed_resets);
+        subquery_context->applySettingsChanges(clamped_resets);
+    }
+
     return subquery_context;
 }
 
