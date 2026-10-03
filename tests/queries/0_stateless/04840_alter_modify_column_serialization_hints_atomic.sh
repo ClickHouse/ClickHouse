@@ -44,9 +44,11 @@ run_case() {
     # Started only now, so the sink reads the already-published new metadata. Select-insert, not
     # inline-data: the inline form hands the hints to the input format, where a stale base-class
     # hint trips DataTypeTuple::getSerialization's assert_cast before the commit path covered here.
+    # Synchronous, so the running query is the one committing: a queued insert is committed later by
+    # a flush thread, possibly after the failpoint is disabled.
     $CLICKHOUSE_CLIENT --query "
         INSERT INTO $tbl SELECT 2, number, tuple(1, 0, '1', '0', '') FROM numbers(10)
-        SETTINGS insert_keeper_fault_injection_probability = 0
+        SETTINGS insert_keeper_fault_injection_probability = 0, async_insert_select_as_async_insert = 0
     " &
     local insert_pid=$!
 
