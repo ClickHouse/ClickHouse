@@ -3388,10 +3388,11 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
 /// - a `Date32`, because day numbers out of the type range are saturated to `0000-01-01` and
 ///   `9999-12-31` when formatted (see `ToStringMonotonicity`);
 /// - a type-erased type such as `Variant`, `Dynamic` or `Object`, whose alternatives render into a
-///   common text space: `toString(1::Variant(Int64, String))` equals `toString('1'::Variant(Int64, String))`.
+///   common text space: `toString(1::Variant(Int64, String))` equals `toString('1'::Variant(Int64, String))`;
+/// - a `Bool` when `bool_true_representation` and `bool_false_representation` coincide in `format_settings`.
 ///
 /// An unknown type is assumed to collapse, so that an undecidable case is never claimed to be injective.
-inline bool renderingCollapsesDistinctValues(const DataTypePtr & type)
+inline bool renderingCollapsesDistinctValues(const DataTypePtr & type, const FormatSettings & format_settings)
 {
     if (!type)
         return true;
@@ -3405,6 +3406,8 @@ inline bool renderingCollapsesDistinctValues(const DataTypePtr & type)
             collapses = collapses || !date_time64->getTimeZone().hasFixedOffset();
         else if (isFloat(nested) || isDate32(nested) || isVariant(nested) || isDynamic(nested) || isObject(nested))
             collapses = true;
+        else if (isUInt8(nested) && nested.getName() == "Bool")
+            collapses = collapses || format_settings.bool_true_representation == format_settings.bool_false_representation;
     };
 
     check(*type);
@@ -3461,7 +3464,7 @@ public:
             if (sample_columns.size() != 1)
                 return false;
 
-            return !renderingCollapsesDistinctValues(sample_columns.front().type);
+            return !renderingCollapsesDistinctValues(sample_columns.front().type, settings.format_settings);
         }
         else
             return false;

@@ -142,6 +142,17 @@ SELECT uniqExact(toString(x)) FROM (SELECT arrayJoin([reinterpretAsFloat64(toUIn
 SELECT count() FROM (SELECT 1 FROM (SELECT arrayJoin([reinterpretAsFloat64(toUInt64(0x7FF0000000000001)), reinterpretAsFloat64(toUInt64(0x7FF8000000000001))]) AS x) GROUP BY toString(x));
 SELECT count() FROM (SELECT 1 FROM (SELECT arrayJoin([reinterpretAsFloat64(toUInt64(0x7FF0000000000001)), reinterpretAsFloat64(toUInt64(0x7FF8000000000001))]) AS x) GROUP BY toString(x)) SETTINGS optimize_injective_functions_in_group_by = 0;
 
+
+SELECT 'coinciding boolean representations';
+-- With equal `bool_true_representation` and `bool_false_representation` both values of a `Bool` render as the same string.
+SELECT uniqExact(toString(b)) FROM (SELECT arrayJoin([false, true]) AS b) SETTINGS bool_true_representation = 'x', bool_false_representation = 'x';
+SELECT uniqExact(toString(b)) FROM (SELECT arrayJoin([false, true]) AS b) SETTINGS bool_true_representation = 'x', bool_false_representation = 'x', optimize_injective_functions_inside_uniq = 0;
+SELECT count() FROM (SELECT 1 FROM (SELECT arrayJoin([false, true]) AS b) GROUP BY toString(b)) SETTINGS bool_true_representation = 'x', bool_false_representation = 'x';
+SELECT count() FROM (SELECT 1 FROM (SELECT arrayJoin([false, true]) AS b) GROUP BY toString(b)) SETTINGS bool_true_representation = 'x', bool_false_representation = 'x', optimize_injective_functions_in_group_by = 0;
+SELECT count() FROM (SELECT b FROM (SELECT arrayJoin([false, true]) AS b) LIMIT 1 BY toString(b)) SETTINGS bool_true_representation = 'x', bool_false_representation = 'x';
+-- Distinct representations stay injective.
+SELECT count() FROM (SELECT 1 FROM (SELECT arrayJoin([false, true]) AS b) GROUP BY toString(b)) SETTINGS bool_true_representation = 'yes', bool_false_representation = 'no';
+
 DROP TABLE t_tz_fold;
 DROP TABLE t_window_fold;
 DROP TABLE t_window_pad;
