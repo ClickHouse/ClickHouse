@@ -194,6 +194,114 @@ struct LowCardinalityKeyGetterForJoin
     }
 };
 
+template <typename BaseMethod, typename Mapped>
+struct ConsecutiveKey64GetterForJoin
+{
+    using EmplaceResult = typename BaseMethod::EmplaceResult;
+    using FindResult = typename BaseMethod::FindResult;
+
+    static constexpr bool has_cheap_key_calculation = BaseMethod::has_cheap_key_calculation;
+    static constexpr bool has_cheap_key_holder = BaseMethod::has_cheap_key_holder;
+    static constexpr bool has_pre_computed_hashes = BaseMethod::has_pre_computed_hashes;
+
+    static_assert(FindResult::has_offset);
+    static_assert(!std::is_same_v<Mapped, void>);
+
+    BaseMethod base;
+    UInt64 cached_key = 0;
+    UInt64 last_prefetched_key = 0;
+    Mapped * cached_mapped = nullptr;
+    size_t cached_offset = 0;
+    bool cached_found = false;
+    bool cache_enabled = false;
+    bool has_cached_key = false;
+    bool has_last_prefetched_key = false;
+
+    ConsecutiveKey64GetterForJoin(
+        const ColumnRawPtrs & key_columns,
+        const Sizes & key_sizes,
+        const ColumnsHashing::HashMethodContextPtr & context)
+        : base(key_columns, key_sizes, context)
+    {
+    }
+
+    ALWAYS_INLINE void setConsecutiveProbeCacheEnabled(bool enabled)
+    {
+        cache_enabled = enabled;
+        has_cached_key = false;
+        has_last_prefetched_key = false;
+    }
+
+    ALWAYS_INLINE bool probeKeysEqual(size_t lhs, size_t rhs, Arena & pool) const
+    {
+        return base.getKeyHolder(lhs, pool) == base.getKeyHolder(rhs, pool);
+    }
+
+    ALWAYS_INLINE auto getKeyHolder(size_t row, Arena & pool) const
+    {
+        return base.getKeyHolder(row, pool);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE void prefetchKey(const Data & data, size_t row, Arena & pool)
+    {
+        const UInt64 key_value = base.getKeyHolder(row, pool);
+        if (!cache_enabled || !has_last_prefetched_key || key_value != last_prefetched_key)
+        {
+            data.prefetch(key_value);
+            last_prefetched_key = key_value;
+            has_last_prefetched_key = true;
+        }
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
+    {
+        return base.emplaceKey(data, row, pool);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & pool)
+    {
+        return base.getHash(data, row, pool);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
+    {
+        if (!cache_enabled)
+            return base.findKey(data, row, pool);
+
+        const UInt64 key_value = base.getKeyHolder(row, pool);
+        if (has_cached_key && key_value == cached_key)
+            return FindResult(cached_mapped, cached_found, cached_offset);
+
+        auto it = data.find(key_value);
+        const bool found = it;
+        const size_t offset = found ? data.offsetInternal(it) : 0;
+
+        cached_key = key_value;
+        cached_found = found;
+        cached_mapped = found ? &it->getMapped() : nullptr;
+        cached_offset = offset;
+        has_cached_key = true;
+
+        return FindResult(cached_mapped, cached_found, cached_offset);
+    }
+};
+
+template <bool use_cache, typename BaseMethod, typename Mapped>
+struct ProbeKeyGetterForJoin
+{
+    using Type = BaseMethod;
+};
+
+template <typename BaseMethod, typename Mapped>
+struct ProbeKeyGetterForJoin<true, BaseMethod, Mapped>
+{
+    using Type = ConsecutiveKey64GetterForJoin<BaseMethod, Mapped>;
+};
+
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key8, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt8, false, use_offset>;
@@ -317,5 +425,10 @@ struct KeyGetterForType
     using Mapped_t = typename JoinMappedType<Data>::Type;
     using Mapped = std::conditional_t<std::is_const_v<Data> && !std::is_void_v<Mapped_t>, const Mapped_t, Mapped_t>;
     using Type = typename KeyGetterForTypeImpl<type, Value, Mapped>::Type;
+
+    static constexpr bool use_consecutive_probe_cache
+        = type == HashJoin::Type::key64 && !std::is_void_v<Mapped>;
+
+    using ProbeType = typename ProbeKeyGetterForJoin<use_consecutive_probe_cache, Type, Mapped>::Type;
 };
 }
