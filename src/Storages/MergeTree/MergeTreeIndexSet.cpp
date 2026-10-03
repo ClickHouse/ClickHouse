@@ -285,18 +285,8 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
 
     IColumn::Filter filter(block.rows(), 0);
 
-    bool has_new_data = false;
-    switch (data.type)
-    {
-        case ClearableSetVariants::Type::EMPTY:
-            break;
-#define M(NAME) \
-        case ClearableSetVariants::Type::NAME: \
-            has_new_data = buildFilter(*data.NAME, index_column_ptrs, filter, *pos, rows_read, data); \
-            break;
-        APPLY_FOR_SET_VARIANTS(M)
-#undef M
-    }
+    const bool has_new_data
+        = data.callOnMethod([&](auto & method) { return buildFilter(method, index_column_ptrs, filter, *pos, rows_read, data); });
 
     if (has_new_data)
     {
@@ -377,17 +367,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
 {
     auto granule = std::make_shared<MergeTreeIndexGranuleSet>(index_name, index_sample_block, max_rows, std::move(columns), std::move(set_hyperrectangle));
 
-    switch (data.type)
-    {
-        case ClearableSetVariants::Type::EMPTY:
-            break;
-#define M(NAME) \
-        case ClearableSetVariants::Type::NAME: \
-            data.NAME->data.clear(); \
-            break;
-        APPLY_FOR_SET_VARIANTS(M)
-#undef M
-    }
+    data.callOnMethod([](auto & method) { method.data.clear(); });
 
     columns = index_sample_block.cloneEmptyColumns();
 

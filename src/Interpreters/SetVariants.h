@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/AggregationCommon.h>
@@ -353,6 +355,23 @@ struct SetVariantsTemplate: public Variant
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     void init(Type type_);
+
+    /// Calls `func` with the method of the set, which must be initialized, and returns what `func` returns.
+    /// The method is const for a const set.
+    template <typename Self, typename Func>
+    decltype(auto) callOnMethod(this Self & self, Func && func)
+    {
+        switch (self.type)
+        {
+            case Type::EMPTY:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The method of an uninitialized set is called");
+
+        #define M(NAME) case Type::NAME: return std::forward<Func>(func)(std::forward_like<Self &>(*self.NAME));
+            APPLY_FOR_SET_VARIANTS(M)
+        #undef M
+        }
+        UNREACHABLE();
+    }
 
     /// Estimates peak additional key-storage memory assuming every input row is new. Includes hash-table
     /// buffers and arena allocations. Requires an initialized set and materialized key columns matching

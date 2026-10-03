@@ -424,19 +424,7 @@ std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys(
             method, std::move(data), std::move(key_types), std::move(key_sizes));
     };
 
-    switch (data->type)
-    {
-        case SetVariants::Type::EMPTY:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Keys cannot be extracted from an uninitialized DISTINCT set");
-
-#define M(NAME) \
-        case SetVariants::Type::NAME: \
-            return create_extractor(*data->NAME);
-        APPLY_FOR_SET_VARIANTS(M)
-#undef M
-    }
-
-    UNREACHABLE();
+    return data->callOnMethod(create_extractor);
 }
 
 ColumnRawPtrs DistinctSetFilter::getKeyColumns(const Columns & columns) const
@@ -557,17 +545,7 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
     const auto old_set_size = data->getTotalRowCount();
     IColumn::Filter filter_values(num_rows);
 
-    switch (data->type)
-    {
-        case SetVariants::Type::EMPTY:
-            break;
-#define M(NAME) \
-        case SetVariants::Type::NAME: \
-            buildDistinctFilter(*data->NAME, column_ptrs, key_sizes, filter_values, num_rows, *data, mask); \
-        break;
-        APPLY_FOR_SET_VARIANTS(M)
-#undef M
-    }
+    data->callOnMethod([&](auto & method) { buildDistinctFilter(method, column_ptrs, key_sizes, filter_values, num_rows, *data, mask); });
 
     const auto new_set_size = data->getTotalRowCount();
     const size_t num_selected = new_set_size - old_set_size;
