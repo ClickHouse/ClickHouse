@@ -295,7 +295,7 @@ static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::fu
                 return true;
     }
 
-    for (auto * child_plan : step->getChildPlans())
+    for (auto * child_plan : step->getChildPlans(/*for_explain=*/ false))
         if (child_plan && checkQueryPlanActionDAGs(child_plan->getRootNode(), predicate))
             return true;
 

@@ -1,0 +1,16 @@
+<test>
+    <!-- Duplicate-heavy inputs approach a table-growth boundary while their existing keys and
+         spill workspace still fit. The threshold makes unnecessary spilling observable in CI. -->
+    <settings>
+        <max_threads>16</max_threads>
+        <max_block_size>65536</max_block_size>
+        <max_memory_usage>4294967296</max_memory_usage>
+        <max_bytes_ratio_before_external_distinct>0</max_bytes_ratio_before_external_distinct>
+        <optimize_distinct_in_order>0</optimize_distinct_in_order>
+    </settings>
+    <query>SELECT count() FROM (SELECT DISTINCT toUInt64(number % 2097151) AS k FROM numbers(8000000)) SETTINGS max_bytes_before_external_distinct = 100663296</query>
+    <query>SELECT count() FROM (SELECT DISTINCT toUInt8((number % 524287) % 251) AS a, toUInt64(number % 524287) AS b FROM numbers(4000000)) SETTINGS max_bytes_before_external_distinct = 100663296</query>
+    <query>SELECT count() FROM (SELECT DISTINCT toFixedString(toString(number % 131071), 64) AS k FROM numbers(4000000)) SETTINGS max_bytes_before_external_distinct = 100663296</query>
+    <!-- The high threshold measures the bulk-insertion path without spilling. -->
+    <query>SELECT count() FROM (SELECT DISTINCT number AS k FROM numbers(16000000)) SETTINGS max_bytes_before_external_distinct = 1099511627776</query>
+</test>

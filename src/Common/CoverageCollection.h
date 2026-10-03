@@ -26,6 +26,35 @@ void collectAndInsertCoverage(
     const std::vector<IndirectCallEntry> & indirect_calls,
     ContextPtr context);
 
+/// The distinct (file, line_start, line_end) regions of the given counters. Where several
+/// counters resolve to one region, it keeps the smallest `min_depth` and its branch flag
+/// (0 = code region, 1 = true branch, 2 = false branch).
+struct ResolvedCoverage
+{
+    std::vector<std::string> files;
+    std::vector<uint32_t> line_starts;
+    std::vector<uint32_t> line_ends;
+    std::vector<uint8_t> min_depths;
+    std::vector<uint8_t> branch_flags;
+};
+ResolvedCoverage resolveCoverage(const std::vector<CovCounter> & name_refs);
+
+/// Per-module coverage of the integration tests, which cannot rely on SQL: a test may
+/// protect the `default` user, fail the server startup on purpose, or stop or crash the
+/// server in any way. If `CLICKHOUSE_COVERAGE_TEST_NAME` is set, the process arms coverage
+/// for that name at startup, and every flush (`SYSTEM SET COVERAGE TEST`, exit, crash) is
+/// appended to `<dir of log_path>/coverage/<pid>.{lines,indirect_calls}.tsv` in the layout
+/// of `system.coverage_log` and `system.coverage_indirect_calls` without `time`, instead of
+/// being inserted into these tables.
+void initCoverageFromEnvironment(const std::string & log_path);
+
+/// Whether `initCoverageFromEnvironment` armed the file sink.
+bool isCoverageFileSinkEnabled();
+
+/// Flush the coverage of the current test to the files of `initCoverageFromEnvironment`.
+/// For exit and crash paths: never throws, reports errors to stderr. No-op without the file sink.
+void flushCoverageToFilesOnExit() noexcept;
+
 /// Returns the number of entries in the lazily-loaded coverage map.
 size_t getCoverageMapSize();
 
