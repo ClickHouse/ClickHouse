@@ -547,13 +547,21 @@ namespace
         if (const auto * value = get_new_value("version"); value && (SettingFieldUInt64{*value}.value < TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING))
             old_settings.removeSetting("id_type");
 
+        /// The same for the settings of the deduplication caches which exist from version 7.
+        if (const auto * value = get_new_value("version"); value && (SettingFieldUInt64{*value}.value < TimeSeriesVersion::MIN_WITH_DEDUPLICATION_CACHES))
+            old_settings.removeSettings({"metric_families_deduplication_cache_size_bytes", "metric_families_deduplication_cache_expiration_seconds",
+                                        "tags_deduplication_cache_size_bytes", "tags_deduplication_cache_expiration_seconds"});
+
         /// The default value of `recent_samples_ttl_seconds` is 345600 (4 days), so an absent setting doesn't disable the recent samples table.
         if (const auto * value = get_new_value("recent_samples_ttl_seconds"); value && (SettingFieldUInt64{*value}.value == 0))
             old_settings.removeSettings({"recent_samples_partition_by", "recent_samples_index_granularity"});
 
         /// The default value of `store_min_time_and_max_time` is true, so an absent setting doesn't disable the columns.
+        /// The deduplication cache of the tags table is used only without these columns.
         if (const auto * value = get_new_value("store_min_time_and_max_time"); value && !SettingFieldBool{*value}.value)
             old_settings.removeSettings({"aggregate_min_time_and_max_time", "filter_by_min_time_and_max_time"});
+        else
+            old_settings.removeSettings({"tags_deduplication_cache_size_bytes", "tags_deduplication_cache_expiration_seconds"});
     }
 
     /// Removes the settings copied from the old table which were written for its `id` type, if this table has another one.
