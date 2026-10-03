@@ -5,6 +5,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <AggregateFunctions/SingleValueData.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumn_fwd.h>
@@ -153,22 +154,66 @@ public:
         size_t row_end,
         AggregateDataPtr __restrict place,
         const IColumn ** columns,
-        const UInt8 *,
-        Arena * arena,
-        ssize_t) const override
+        const UInt8 * null_map,
+        Arena *,
+        ssize_t if_argument_pos) const override
     {
-        addBatchSinglePlace(row_begin, row_end, place, columns, arena, -1);
+        addFilteredBatchSinglePlace(row_begin, row_end, place, columns, null_map, if_argument_pos);
     }
 
     void addBatchSinglePlace(
-        size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *, ssize_t) const override
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena *,
+        ssize_t if_argument_pos) const override
     {
-        const auto & column = columns[0];
+        if (if_argument_pos >= 0)
+            addFilteredBatchSinglePlace(row_begin, row_end, place, columns, nullptr, if_argument_pos);
+        else
+            serializeRows(place, *columns[0], row_begin, row_end - row_begin);
+    }
 
+    /// Serializes the rows of `[row_begin, row_end)` that are not NULL in `null_map` and pass the `-If` condition.
+    /// They are filtered first and serialized in one bulk call, so the stream layout is the same as for
+    /// an unfiltered batch of the same rows.
+    void addFilteredBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        ssize_t if_argument_pos) const
+    {
+        const UInt8 * flags = nullptr;
+        if (if_argument_pos >= 0)
+            flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+
+        IColumn::Filter filter(row_end - row_begin);
+        for (size_t i = row_begin; i < row_end; ++i)
+            filter[i - row_begin] = (!null_map || !null_map[i]) && (!flags || flags[i]);
+
+        size_t rows_to_add = countBytesInFilter(filter);
+        if (rows_to_add == 0)
+            return;
+
+        if (rows_to_add == filter.size())
+        {
+            serializeRows(place, *columns[0], row_begin, row_end - row_begin);
+            return;
+        }
+
+        ColumnPtr filtered = columns[0]->cut(row_begin, row_end - row_begin)->filter(filter, rows_to_add);
+        serializeRows(place, *filtered, 0, rows_to_add);
+    }
+
+    void serializeRows(AggregateDataPtr __restrict place, const IColumn & column, size_t offset, size_t limit) const
+    {
         resetCalculatorIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
-        SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
+        SerializationInfoPtr info = type_ptr->getSerializationInfo(column);
         SerializationPtr type_serialization_ptr = type_ptr->getSerialization(*info);
 
         ISerialization::SerializeBinaryBulkSettings settings;
@@ -176,8 +221,8 @@ public:
         settings.getter = [place](ISerialization::SubstreamPath) -> WriteBuffer * { return data(place).calculator.get(); };
 
         ISerialization::SerializeBinaryBulkStatePtr state;
-        type_serialization_ptr->serializeBinaryBulkStatePrefix(*column, settings, state);
-        type_serialization_ptr->serializeBinaryBulkWithMultipleStreams(*column, row_begin, row_end - row_begin, settings, state);
+        type_serialization_ptr->serializeBinaryBulkStatePrefix(column, settings, state);
+        type_serialization_ptr->serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, state);
         type_serialization_ptr->serializeBinaryBulkStateSuffix(settings, state);
     }
 
