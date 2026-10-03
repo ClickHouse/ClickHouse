@@ -37,4 +37,20 @@ SELECT
    GROUP BY host;
 ```
 </Note>
+
+To see how far a running mutation has got, read `progress` and `bytes_to_do`:
+
+```sql
+SELECT
+   database,
+   table,
+   mutation_id,
+   parts_to_do,
+   formatReadableSize(bytes_to_do) AS remaining,
+   round(progress, 3) AS progress
+   FROM system.mutations WHERE NOT is_done;
+```
+
+`progress` is an estimate from 0 to 1 that weighs parts by their size on disk. It is `NULL` while the remaining work is not known yet, for example while an earlier `INSERT` is still running.
+
 We also recommend reading this recent [blog on updates and deletes](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse).
