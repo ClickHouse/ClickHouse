@@ -14170,6 +14170,22 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
     if ((*settings)[MergeTreeSetting::leader_election])
     {
+        /// Reject an unsupported `FREEZE` before the marker below is written, so that the rejected
+        /// command leaves nothing on the shared storage. Accumulated markers would also make
+        /// `SYSTEM UNFREEZE` refuse the path as if it held a real snapshot of a dropped table.
+        for (const auto & disk : getStoragePolicy()->getDisks())
+        {
+            if (!disk->isReadOnly() && !disk->isWriteOnce() && !disk->supportsHardLinks())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "FREEZE is not supported for a `leader_election` table on disk '{}' without hard links", disk->getName());
+        }
+    }
+
+    const bool has_matching_part = std::any_of(data_parts.begin(), data_parts.end(),
+        [&](const auto & part) { return matcher(part->info.getPartitionId()); });
+
+    if ((*settings)[MergeTreeSetting::leader_election] && has_matching_part)
+    {
         /// `SYSTEM UNFREEZE` gets only a path and resolves the table directory (by `UUID` or by
         /// database and table name) back to a loaded table to fence the removal. That resolution fails when the table was dropped locally,
         /// so mark the snapshot as owned by a lease: without the table there is no lease to check
