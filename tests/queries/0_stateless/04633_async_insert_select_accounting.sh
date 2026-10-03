@@ -278,7 +278,18 @@ ${CLICKHOUSE_CLIENT} --query_id="$KILL_ID" -q "
              $PINNED_SETTINGS_SQL
 " > "$KILL_OUT" 2>&1 &
 INSERT_PID=$!
-wait_for_query_to_start "$KILL_ID" 30
+# Kill only once the block is queued, so that the kill lands in the wait for the flush.
+KILL_QUEUED=0
+for _ in $(seq 1 60); do
+    KILL_QUEUED=$(${CLICKHOUSE_CLIENT} -q "
+        SELECT count()
+        FROM system.asynchronous_inserts
+        WHERE database = currentDatabase() AND table = 'test_04633_kill' AND has(entries.query_id, '$KILL_ID')
+    ")
+    [ "$KILL_QUEUED" -ge 1 ] && break
+    sleep 0.5
+done
+[ "$KILL_QUEUED" -ge 1 ] || echo "timed out waiting for query $KILL_ID to queue its block"
 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$KILL_ID' SYNC FORMAT Null"
 wait "$INSERT_PID"
 INSERT_EXIT=$?
@@ -301,9 +312,14 @@ ${CLICKHOUSE_CLIENT} -q "
       AND query_id = '$KILL_ID'
 "
 
-# A block queued before the kill landed is still flushed in the background: cancelling stops the wait, not the
-# write. Drain it before dropping the table.
-drain_queued_insert "$KILL_ID" test_04633_kill
+# The block was queued before the kill landed, so the queue still flushes it in the background:
+# cancelling stops the wait, not the write. Drain it before dropping the table.
+wait_for_log_rows asynchronous_insert_log 1 "
+    SELECT count()
+    FROM system.asynchronous_insert_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND database = currentDatabase() AND table = 'test_04633_kill'
+"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_04633_kill"
 
 # Case 7: `max_execution_time` expires in the same poll window as the flush completes. A ready
