@@ -648,7 +648,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 }
 
                 /// A `TimeSeries` table drops its inner tables in `dropInnerTableIfAny`, so they go first.
-                /// The inner-name rule below does not order them when the `TimeSeries` table is itself an inner table of a view.
                 for (const auto & [id, _] : tables_to_drop)
                 {
                     auto time_series
