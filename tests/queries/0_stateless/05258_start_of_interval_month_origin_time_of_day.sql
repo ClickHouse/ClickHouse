@@ -66,5 +66,5 @@ WITH
     toDateTime64(toStartOfInterval(origin + toIntervalDay(number * 13), INTERVAL 1 MONTH, origin), 3) AS boundary
 SELECT
     countIf(toStartOfInterval(boundary, INTERVAL 1 MONTH, origin) != boundary),
-    countIf(boundary > origin AND toStartOfInterval(boundary - toIntervalMillisecond(1), INTERVAL 1 MONTH, origin) >= boundary)
+    countIf(boundary > origin AND toStartOfInterval(if(boundary > origin, boundary - toIntervalMillisecond(1), origin), INTERVAL 1 MONTH, origin) >= boundary)
 FROM numbers(200);
