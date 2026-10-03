@@ -442,7 +442,7 @@ ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
 
 /// Whether a nested secret map child is a `key = value` argument whose value stays visible when the
 /// map is masked (the non-secret identifiers of `extra_credentials`; `headers` values are all hidden).
-static bool isNonSecretMapChild(const String & map_name, const IAST * arg)
+static bool isNonSecretMapChild(const String & map_name, const IAST * arg, bool azure_extra_credentials)
 {
     if (map_name != "extra_credentials")
         return false;
@@ -458,9 +458,9 @@ static bool isNonSecretMapChild(const String & map_name, const IAST * arg)
     const auto & key_ast = equals_func->arguments->children[0];
     if (const auto * key_literal = key_ast->as<ASTLiteral>())
         return key_literal->value.getType() == Field::Types::String
-            && FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_literal->value.safeGet<String>());
+            && FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_literal->value.safeGet<String>(), azure_extra_credentials);
     if (const auto * key_identifier = key_ast->as<ASTIdentifier>())
-        return FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_identifier->name());
+        return FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_identifier->name(), azure_extra_credentials);
     return false;
 }
 
@@ -1078,7 +1078,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         /// Known non-secret identifiers keep their values; a child that is not
                         /// `key = value` cannot be split into a visible key and a hidden value and may
                         /// be the secret itself, so it fails closed and is hidden whole.
-                        if (isNonSecretMapChild(function->name, inner_arg.get()))
+                        if (isNonSecretMapChild(function->name, inner_arg.get(), secret_arguments.azure_extra_credentials))
                             inner_arg->format(ostr, settings, state, nested_dont_need_parens);
                         else if (!formatNamedArgWithHiddenValue(inner_arg.get(), ostr, settings, state, nested_dont_need_parens))
                             ostr << "'[HIDDEN]'";

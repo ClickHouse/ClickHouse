@@ -11,26 +11,63 @@
 namespace DB
 {
 
-/** Mask the value of `<key>=<value>` in a connection string, where the value runs up to the next
-  * ';' or to the end of the string. Only the first occurrence is masked, and nothing is masked if
-  * the key is absent.
-  *
-  * This replaces the regular expressions `AccountKey=.*?(;|$)` and `SharedAccessSignature=.*?(;|$)`
-  * that used to be applied here, so that masking a secret does not require a regex engine.
+/** Hides the values of `AccountKey`, `SharedAccessSignature` (any case) and any value with '?' or '@' in an Azure connection string.
+  * A '?', '#' or '@' still shown after that is the query, fragment or userinfo of a url, so the whole string is hidden.
   */
-inline bool maskConnectionStringKey(std::string & str, std::string_view key_with_eq)
+inline bool maskAzureConnectionStringSecrets(std::string & str)
 {
-    size_t key_position = str.find(key_with_eq);
-    if (key_position == std::string::npos)
-        return false;
+    static constexpr std::array<std::string_view, 2> secret_keys = {"accountkey", "sharedaccesssignature"};
 
-    size_t value_begin = key_position + key_with_eq.length();
-    size_t value_end = str.find(';', value_begin);
-    if (value_end == std::string::npos)
-        value_end = str.length();
+    auto is_secret_key = [](std::string_view key)
+    {
+        auto is_space = [](char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r'; };
+        while (!key.empty() && is_space(key.front()))
+            key.remove_prefix(1);
+        while (!key.empty() && is_space(key.back()))
+            key.remove_suffix(1);
+        return std::any_of(secret_keys.begin(), secret_keys.end(), [&](std::string_view expected)
+        {
+            return std::equal(key.begin(), key.end(), expected.begin(), expected.end(),
+                [](char c, char lowercase) { return (('A' <= c && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c) == lowercase; });
+        });
+    };
 
-    str.replace(value_begin, value_end - value_begin, "[HIDDEN]");
-    return true;
+    std::string result;
+    size_t copied = 0;
+    bool masked = false;
+
+    for (size_t part_begin = 0; part_begin <= str.length();)
+    {
+        const size_t part_end = std::min(str.find(';', part_begin), str.length());
+        const std::string_view part = std::string_view(str).substr(part_begin, part_end - part_begin);
+        const size_t equals = part.find('=');
+        if (equals != std::string_view::npos)
+        {
+            const std::string_view value = part.substr(equals + 1);
+            if (is_secret_key(part.substr(0, equals)) || value.find_first_of("?@") != std::string_view::npos)
+            {
+                const size_t value_begin = part_begin + equals + 1;
+                result.append(str, copied, value_begin - copied);
+                result.append("[HIDDEN]");
+                copied = part_end;
+                masked = true;
+            }
+        }
+        part_begin = part_end + 1;
+    }
+
+    if (masked)
+    {
+        result.append(str, copied, std::string::npos);
+        str = std::move(result);
+    }
+
+    if (str.find_first_of("?#@") != std::string::npos)
+    {
+        str = "[HIDDEN]";
+        return true;
+    }
+    return masked;
 }
 
 /** The range `[begin, end)` of the password in a URI of the form `scheme://user:password@host`, or
