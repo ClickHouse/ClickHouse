@@ -113,11 +113,10 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
         const auto & canonical_outputs = canonical_dag.getOutputs();
 
         Names result(canonical_outputs.size());
-        RPNBuilderTreeContext tree_context(context);
         bool has_difference = false;
         for (size_t i = 0; i < canonical_outputs.size(); ++i)
         {
-            result[i] = RPNBuilderTreeNode(canonical_outputs[i], tree_context).getColumnName();
+            result[i] = RPNBuilderTreeNode(canonical_outputs[i], context).getColumnName();
             has_difference |= (result[i] != column_names[i]);
         }
 
