@@ -74,6 +74,9 @@
 #endif
 #include <Parsers/Trino/ParserTrinoQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
+#include <Parsers/LogsQL/LogsQLLexer.h>
+#include <Parsers/LogsQL/ParserLogsQLQuery.h>
+#include <Parsers/LogsQL/parseLogsQLQuery.h>
 
 #include <IO/Ask.h>
 #include <IO/CompressionMethod.h>
@@ -167,9 +170,14 @@ namespace Setting
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsString polyglot_dialect;
+    extern const SettingsBool allow_experimental_logsql_dialect;
+    extern const SettingsString logsql_database;
+    extern const SettingsString logsql_table;
+    extern const SettingsString logsql_time_column;
+    extern const SettingsString logsql_message_column;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
-    extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsDoubleAuto promql_evaluation_time;
     extern const SettingsBool into_outfile_create_parent_directories;
     extern const SettingsBool ignore_format_null_for_explain;
     extern const SettingsSnappyMode snappy_mode;
@@ -207,6 +215,9 @@ namespace ProfileEvents
 {
     extern const Event UserTimeMicroseconds;
     extern const Event SystemTimeMicroseconds;
+    extern const Event ThrottlerSleepMicroseconds;
+    extern const Event SchedulerIOReadWaitMicroseconds;
+    extern const Event SchedulerIOWriteWaitMicroseconds;
 }
 
 namespace
@@ -509,7 +520,7 @@ ClientBase::ClientBase(
     terminal_width = getTerminalWidth(in_fd_, err_fd_);
 }
 
-ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements)
+ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements, const char * raw_query_begin)
 {
     std::unique_ptr<IParserBase> parser;
     ASTPtr res;
@@ -704,6 +715,12 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
         else if (dialect == Dialect::polyglot)
             parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
+        else if (dialect == Dialect::logsql)
+            parser = std::make_unique<ParserLogsQLQuery>(
+                settings[Setting::logsql_database], settings[Setting::logsql_table],
+                settings[Setting::logsql_time_column], settings[Setting::logsql_message_column],
+                raw_query_begin ? raw_query_begin : pos, end, settings[Setting::allow_experimental_logsql_dialect], settings[Setting::max_parser_depth],
+                settings[Setting::max_query_size]);
         else if (dialect == Dialect::trino)
             parser = std::make_unique<ParserTrinoQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], end, settings[Setting::enable_trino_dialect], settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
         else
@@ -719,6 +736,9 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
                     res = Mongo::tryParseMongoQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
                 else
 #endif
+                if (dialect == Dialect::logsql)
+                    res = tryParseLogsQLQuery(*parser, pos, end, message, nullptr, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                else
                     res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
             }
             catch (const Exception & e)
@@ -741,6 +761,9 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
                 res = Mongo::parseMongoQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             else
 #endif
+            if (dialect == Dialect::logsql)
+                res = parseLogsQLQueryAndMovePosition(*parser, pos, end, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            else
                 res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
     }
@@ -1001,18 +1024,25 @@ try
             underlying_buf = std_out.get();
         }
 
+        /// The data written to stdout can mix with the progress only if it is displayed on the terminal,
+        /// either directly or through a pager. Otherwise (e.g., stdout is redirected to a pipe or a file),
+        /// clearing the progress on every flush only makes it flicker.
+        const bool output_goes_to_terminal = stdout_is_a_tty || !pager.empty();
+
         /// Use the flush callback wrapper to prevent progress flickering
         std_out_wrapper = std::make_unique<FlushCallbackWriteBuffer>(
             underlying_buf,
-            [this]()
+            [this, output_goes_to_terminal]()
             {
                 /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
-                if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
+                bool output_may_mix_with_progress = output_goes_to_terminal && (!select_into_file || select_into_file_and_stdout);
+
+                if (need_render_progress && tty_buf && output_may_mix_with_progress)
                 {
                     std::unique_lock lock(tty_mutex);
                     progress_indication.clearProgressOutput(*tty_buf, lock);
                 }
-                if (need_render_progress_table && tty_buf && (!select_into_file || select_into_file_and_stdout))
+                if (need_render_progress_table && tty_buf && output_may_mix_with_progress)
                 {
                     std::unique_lock lock(tty_mutex);
                     progress_table.clearTableOutput(*tty_buf, lock);
@@ -2154,6 +2184,9 @@ void ClientBase::onProfileEvents(Block & block)
 
         std::string_view user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
         std::string_view system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+        std::string_view throttler_sleep_name = ProfileEvents::getName(ProfileEvents::ThrottlerSleepMicroseconds);
+        std::string_view scheduler_io_read_wait_name = ProfileEvents::getName(ProfileEvents::SchedulerIOReadWaitMicroseconds);
+        std::string_view scheduler_io_write_wait_name = ProfileEvents::getName(ProfileEvents::SchedulerIOWriteWaitMicroseconds);
 
         HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)
@@ -2174,17 +2207,31 @@ void ClientBase::onProfileEvents(Block & block)
             if (value < 0)
                 continue;
 
+            /// These are `INCREMENT` rows, and the server may coalesce several queued
+            /// snapshots of the same remote host into one packet, so sum them up:
+            /// keeping only the last delta would understate the CPU time relative to
+            /// the "waited" figure below, which covers the whole interval.
             if (event_name == user_time_name)
-                thread_times[host_name].user_ms = value;
+                thread_times[host_name].user_ms += value;
             else if (event_name == system_time_name)
-                thread_times[host_name].system_ms = value;
+                thread_times[host_name].system_ms += value;
+            /// Time the query spent blocked in throttlers or waiting for the IO scheduler
+            /// (workload resource requests), summed up into a single "waited" figure.
+            else if (event_name == throttler_sleep_name || event_name == scheduler_io_read_wait_name || event_name == scheduler_io_write_wait_name)
+                thread_times[host_name].waited_us += value;
+            /// The rows below are `GAUGE` snapshots and can also come in several rows for one host:
+            /// from several queued snapshots of one source, or from several shards on one server.
+            /// Summing would multiply one source's usage by the number of coalesced snapshots,
+            /// and the packet carries no per-source identifier to tell the two cases apart, so
+            /// keep the gauge semantics and take the maximum. For several shards on one host this
+            /// shows the usage of the largest one.
             else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
-                thread_times[host_name].memory_usage = value;
+                thread_times[host_name].memory_usage = std::max(thread_times[host_name].memory_usage, static_cast<UInt64>(value));
             else if (event_name == MemoryTracker::PEAK_USAGE_EVENT_NAME)
-                thread_times[host_name].peak_memory_usage = value;
+                thread_times[host_name].peak_memory_usage = std::max(thread_times[host_name].peak_memory_usage, value);
             /// Keep the literal in sync with TemporaryDataOnDiskScope::USAGE_EVENT_NAME.
             else if (event_name == "TemporaryDataOnDiskUsage")
-                thread_times[host_name].temp_data_on_disk_usage = value;
+                thread_times[host_name].temp_data_on_disk_usage = std::max(thread_times[host_name].temp_data_on_disk_usage, static_cast<UInt64>(value));
         }
         progress_indication.updateThreadEventData(thread_times);
         progress_table.updateTable(block);
@@ -3211,6 +3258,8 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     if (this_query_begin >= all_queries_end)
         return MultiQueryProcessingStage::QUERIES_END;
 
+    const char * raw_query_begin = this_query_begin;
+
     // Remove leading empty newlines and other whitespace, because they
     // are annoying to filter in the query log. This is mostly relevant for
     // the tests.
@@ -3233,7 +3282,23 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     {
         Tokens tokens(this_query_begin, all_queries_end);
         IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
-        if (!token_iterator.isValid())
+        bool only_comments_left = !token_iterator.isValid();
+        if (client_context->getSettingsRef()[Setting::dialect] == Dialect::logsql)
+        {
+            /// LogsQL queries may start with tokens which the ClickHouse lexer considers erroneous,
+            /// e.g. `~"regexp"` or `!error`, so additionally check the end of the input
+            /// with the lexer of the dialect itself (it also knows about `# ...` comments).
+            only_comments_left = token_iterator->isEnd();
+            try
+            {
+                only_comments_left = only_comments_left || LogsQLLexer(this_query_begin, all_queries_end).isEnd();
+            }
+            catch (const Exception &) // NOLINT(bugprone-empty-catch)
+            {
+                /// Malformed input (e.g. an unterminated string): let the parser report it properly.
+            }
+        }
+        if (only_comments_left)
             return MultiQueryProcessingStage::QUERIES_END;
     }
 
@@ -3242,7 +3307,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     {
         parsed_query = parseQuery(this_query_end, all_queries_end,
             client_context->getSettingsRef(),
-            /*allow_multi_statements=*/ true);
+            /*allow_multi_statements=*/ true, raw_query_begin);
     }
     catch (const Exception & e)
     {
@@ -3254,11 +3319,32 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     {
         if (ignore_error)
         {
-            Tokens tokens(this_query_begin, all_queries_end);
-            IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
-            while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
-                ++token_iterator;
-            this_query_begin = token_iterator->end;
+            if (client_context->getSettingsRef()[Setting::dialect] == Dialect::logsql)
+            {
+                /// The ClickHouse lexer stops at the first LogsQL-only token (`~`, `!`, ...)
+                /// as at an erroneous one, which would resume parsing in the middle of the
+                /// failed statement. Skip to the next ';' with the lexer of the dialect itself.
+                try
+                {
+                    LogsQLLexer logsql_lexer(this_query_begin, all_queries_end);
+                    while (!logsql_lexer.isEnd() && !logsql_lexer.isKeyword(";"))
+                        logsql_lexer.nextToken();
+                    this_query_begin = logsql_lexer.isEnd() ? all_queries_end : logsql_lexer.backupState().current;
+                }
+                catch (const Exception &)
+                {
+                    /// Malformed input (e.g. an unterminated string): nothing more can be lexed.
+                    this_query_begin = all_queries_end;
+                }
+            }
+            else
+            {
+                Tokens tokens(this_query_begin, all_queries_end);
+                IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+                while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+                    ++token_iterator;
+                this_query_begin = token_iterator->end;
+            }
 
             /// Mirror the per-query reset at the top of `processParsedSingleQuery` so the skip
             /// matches the state a successful query would leave behind. Otherwise stale
@@ -4654,6 +4740,18 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setString("oauth-url", options["oauth-url"].as<std::string>());
     if (options.contains("oauth-client-id"))
         getClientConfiguration().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
+    if (options.contains("oauth-client-secret"))
+        getClientConfiguration().setString("oauth-client-secret", options["oauth-client-secret"].as<std::string>());
+    if (options.contains("oauth-client-auth"))
+        getClientConfiguration().setString("oauth-client-auth", options["oauth-client-auth"].as<std::string>());
+    if (options.contains("oauth-audience"))
+        getClientConfiguration().setString("oauth-audience", options["oauth-audience"].as<std::string>());
+    if (options.contains("oauth-scope"))
+        getClientConfiguration().setString("oauth-scope", options["oauth-scope"].as<std::string>());
+    if (options.contains("oauth-device-uri"))
+        getClientConfiguration().setString("oauth-device-uri", options["oauth-device-uri"].as<std::string>());
+    if (options.contains("oauth-token-uri"))
+        getClientConfiguration().setString("oauth-token-uri", options["oauth-token-uri"].as<std::string>());
 
     if (options.contains("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());

@@ -22,9 +22,8 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// A value derived from the block it is evaluated on, whose rows the threshold filter changes: stateful, or
-/// not deterministic within one query. Non-determinism across queries alone is not that - `today` returns
-/// one value for the whole query, while `blockSize` and `rand` are read off the block.
+/// True if the actions depend on the block they run on, which the threshold filter shrinks: a stateful
+/// function, or one not deterministic within a query (`blockSize`, `rand`, but not `today`).
 static bool dependsOnItsBlock(const ActionsDAG & actions)
 {
     for (const auto & node : actions.getNodes())
@@ -180,10 +179,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
 
     auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
 
-    /// A plan can be optimized more than once (StorageMerge child plans, set subplans). A second
-    /// run here would install a second `__topKFilter` and fold the part-set salt into
-    /// `condition_hash` twice. Only a MergeTree read carries that stamp; a format source is
-    /// handled below.
+    /// A plan can be optimized more than once (`StorageMerge` child plans, set subplans).
     if (read_from_mergetree_step && read_from_mergetree_step->isSelectedForTopKFilterOptimization())
         return 0;
 
@@ -292,9 +288,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
         && (!sort_column_tuple_type || !sort_column_tuple_type->getElements().empty())
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
 
-    /// Decided here rather than where the filter is built: `applyParallelReplicas` keeps a stamped read
-    /// local and runs before that, so stamping a read the filter is then refused on would cost
-    /// plan-based parallel replicas and add no filter.
+    /// Refused before stamping: `applyParallelReplicas` keeps a stamped read local even if no filter is added later.
     if (use_dynamic_filtering)
     {
         const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo();
@@ -359,9 +353,8 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
     return 0;
 }
 
-/// A second node under the same result name is indistinguishable from `node` downstream: the reader
-/// chain looks the filter column up by name, and `MergeTreeSplitPrewhereIntoReadSteps` hands a value
-/// computed by an earlier read step to a later one by name too.
+/// The reader and the PREWHERE read steps find columns by name, so another node under the same name
+/// would be taken for this one.
 static bool hasResultNameClash(const ActionsDAG & dag, const ActionsDAG::Node * node)
 {
     for (const auto & other : dag.getNodes())
@@ -370,47 +363,21 @@ static bool hasResultNameClash(const ActionsDAG & dag, const ActionsDAG::Node * 
     return false;
 }
 
-void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
+PrewhereInfoPtr buildTopKDynamicFilterPrewhere(const PrewhereInfoPtr & existing_prewhere_info, const TopKFilterInfo & top_k_filter_info)
 {
-    if (node.children.size() != 1)
-        return;
-
-    auto * child_node = node.children.front();
-    auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
-    if (!read_from_mergetree_step || !read_from_mergetree_step->hasPendingTopKDynamicFilter())
-        return;
-
-    /// Reading in sort order makes the threshold reject every row after the first `n`, so the LIMIT
-    /// can no longer cancel the pipeline early and the read degenerates into a full scan. The stamp
-    /// stays: it salts the query condition cache key and still selects skip-index marks.
-    if (read_from_mergetree_step->getInputOrder())
-    {
-        read_from_mergetree_step->clearPendingTopKDynamicFilter();
-        return;
-    }
-
-    const auto & top_k_filter_info = *read_from_mergetree_step->getTopKFilterInfo();
-    read_from_mergetree_step->clearPendingTopKDynamicFilter();
-
-    auto initial_header = read_from_mergetree_step->getOutputHeader();
-
-    /// Cannot use FunctionFactory::get because the resolver needs the threshold tracker.
     auto filter_function = DB::createInternalFunctionTopKFilterResolver(top_k_filter_info.threshold_tracker);
 
     auto prewhere_info = std::make_shared<PrewhereInfo>();
-    const auto & existing_prewhere_info = read_from_mergetree_step->getPrewhereInfo();
     if (existing_prewhere_info)
     {
         /// A PREWHERE promoted after the read was stamped reaches this point unchecked.
         if (dependsOnItsBlock(existing_prewhere_info->prewhere_actions))
-            return;
+            return nullptr;
 
         ActionsDAG combined = existing_prewhere_info->prewhere_actions.clone();
         const auto * existing_filter_node = &combined.findInOutputs(existing_prewhere_info->prewhere_column_name);
 
-        /// The condition has to be constructed in this DAG: `ActionsDAG::mergeNodes` identifies nodes
-        /// by result name alone, so folding a separately built DAG in binds the conjunction to
-        /// whatever already carries the generated filter column's name.
+        /// Built in place: `ActionsDAG::mergeNodes` would replace new nodes with existing ones of the same name.
         const ActionsDAG::Node * sort_column_node = nullptr;
         for (const auto * input : combined.getInputs())
         {
@@ -425,26 +392,23 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         {
             /// The threshold tracker compares against values of `data_type`.
             if (!sort_column_node->result_type->equals(*top_k_filter_info.data_type))
-                return;
+                return nullptr;
         }
         else
         {
             /// A node under that name which is not one of the DAG's sources is not the read's column.
             for (const auto & dag_node : combined.getNodes())
                 if (dag_node.result_name == top_k_filter_info.column_name)
-                    return;
+                    return nullptr;
             sort_column_node = &combined.addInput(top_k_filter_info.column_name, top_k_filter_info.data_type);
         }
 
         const auto * filter_node = &combined.addFunction(filter_function, {sort_column_node}, {});
         if (hasResultNameClash(combined, filter_node))
-            return;
+            return nullptr;
 
-        /// Keep the conjunction flat. `MergeTreeSplitPrewhereIntoReadSteps` splits on the direct
-        /// children of the root `and`, so nesting `and(__topKFilter, and(a, b))` would present two
-        /// children and collapse a multi-condition PREWHERE into a single read step.
-        /// The order of the conjuncts is the order of the read steps, and the threshold filter is
-        /// the cheapest condition here: it reads only the sort column.
+        /// Flat, with the threshold filter first: the children of the root `and` become the PREWHERE read
+        /// steps, in order, and the threshold filter reads only the sort column.
         ActionsDAG::NodeRawConstPtrs conditions;
         conditions.push_back(filter_node);
         const bool existing_is_conjunction = existing_filter_node->type == ActionsDAG::ActionType::FUNCTION
@@ -459,11 +423,10 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         const auto * and_node = &combined.addFunction(func_builder_and, std::move(conditions), {});
 
         if (hasResultNameClash(combined, and_node))
-            return;
+            return nullptr;
 
         auto & outputs = combined.getOutputs();
-        /// The sort column has to stay in the outputs, otherwise the PREWHERE step drops it from the
-        /// header and the sort loses its key.
+        /// The PREWHERE step returns only its outputs, and the sort needs its column.
         if (std::ranges::find(outputs, sort_column_node) == outputs.end())
             outputs.push_back(sort_column_node);
 
@@ -484,18 +447,45 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         prewhere_info->prewhere_actions = std::move(filter_dag);
     }
 
+    prewhere_info->remove_prewhere_column = true;
+    prewhere_info->need_filter = !existing_prewhere_info || existing_prewhere_info->need_filter;
+    return prewhere_info;
+}
+
+void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
+{
+    if (node.children.size() != 1)
+        return;
+
+    auto * child_node = node.children.front();
+    auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
+    if (!read_from_mergetree_step || !read_from_mergetree_step->hasPendingTopKDynamicFilter())
+        return;
+
+    /// Reading in order makes the filter reject every later row, so the LIMIT cannot stop the read early.
+    /// The stamp stays: it still salts the query condition cache key and selects the skip-index marks.
+    if (read_from_mergetree_step->getInputOrder())
+    {
+        read_from_mergetree_step->clearPendingTopKDynamicFilter();
+        return;
+    }
+
+    const auto & top_k_filter_info = *read_from_mergetree_step->getTopKFilterInfo();
+    read_from_mergetree_step->clearPendingTopKDynamicFilter();
+
+    auto initial_header = read_from_mergetree_step->getOutputHeader();
+
+    auto prewhere_info = buildTopKDynamicFilterPrewhere(read_from_mergetree_step->getPrewhereInfo(), top_k_filter_info);
+    if (!prewhere_info)
+        return;
+
     /// The reader resolves the prewhere column by name and then removes it, so the name must not be one the read produces.
     if (initial_header->has(prewhere_info->prewhere_column_name))
         return;
 
-    prewhere_info->remove_prewhere_column = true;
-    prewhere_info->need_filter = !existing_prewhere_info || existing_prewhere_info->need_filter;
-
     read_from_mergetree_step->updatePrewhereInfo(prewhere_info);
     auto updated_header = read_from_mergetree_step->getOutputHeader();
 
-    /// Changing the PREWHERE can change the read's output header (`updatePrewhereInfo` rebuilds it
-    /// and only the prewhere column itself is erased), so restore the structure the parent expects.
     if (!blocksHaveEqualStructure(*initial_header, *updated_header))
     {
         auto dag = ActionsDAG::makeConvertingActions(

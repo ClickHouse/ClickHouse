@@ -12,6 +12,7 @@ endif ()
 add_headers_and_sources(clickhouse_parsers ./Polyglot)
 add_headers_and_sources(clickhouse_parsers ./Trino)
 add_headers_and_sources(clickhouse_parsers ./Prometheus)
+add_headers_and_sources(clickhouse_parsers ./LogsQL)
 
 add_library(clickhouse_parsers ${clickhouse_parsers_headers} ${clickhouse_parsers_sources})
 target_link_libraries(clickhouse_parsers PUBLIC clickhouse_common_io clickhouse_common_access Poco::JSON)
@@ -27,8 +28,8 @@ if (TARGET ch_rust::polyglot)
     target_link_libraries(clickhouse_parsers PRIVATE ch_rust::polyglot)
 endif ()
 
-if (TARGET ch_contrib::antlr4_grammars)
-    target_link_libraries(clickhouse_parsers PRIVATE ch_contrib::antlr4_grammars)
+if (TARGET clickhouse_antlr4_grammars)
+    target_link_libraries(clickhouse_parsers PRIVATE clickhouse_antlr4_grammars)
 endif ()
 
 if(ENABLE_EXAMPLES)
