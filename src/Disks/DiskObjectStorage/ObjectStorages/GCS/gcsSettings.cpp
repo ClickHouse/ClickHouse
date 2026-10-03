@@ -322,6 +322,16 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
                 "or `no_sign_request` instead, or configure an `s3` disk to reach the bucket through the "
                 "S3-compatibility API", s3_only_key);
 
+    /// The storage class of an `s3` disk (`s3_storage_class_name`, or its alias `s3_storage_class`) is an S3
+    /// storage class sent with every upload. The native client does not set one, so the disk would silently
+    /// write in the bucket's default class instead of the requested tier.
+    for (const auto * storage_class_key : {"s3_storage_class_name", "s3_storage_class"})
+        if (!config.getString(config_prefix + "." + storage_class_key, "").empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The native GCS disk does not support `{}`: it uploads objects in the bucket's default storage class. "
+                "Remove it, or configure an `s3` disk to reach the bucket through the S3-compatibility API",
+                storage_class_key);
+
     /// `use_environment_credentials = 0` is part of the shared argument grammar a dynamic
     /// `disk(object_storage_type = gcs, ...)` inherits, and an operator may equally write it in a
     /// server-configured section. It means "do not resolve an ambient, server-managed identity",

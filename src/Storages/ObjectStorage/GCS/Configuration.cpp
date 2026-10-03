@@ -43,6 +43,11 @@ namespace S3AuthSetting
     extern const S3AuthSettingsUInt64 http_keep_alive_max_requests;
 }
 
+namespace S3RequestSetting
+{
+    extern const S3RequestSettingsString storage_class_name;
+}
+
 void StorageGCSConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
 {
     auto disk = context->getDisk(disk_name);
@@ -159,6 +164,14 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "S3 server-side encryption settings are not supported by the native GCS backend. "
             "Remove them or disable `use_native_gcs` to access the bucket through the S3-compatibility API");
+    /// `storage_class_name` names an S3 storage class (`STANDARD_IA`, `GLACIER_IR`, ...) that the
+    /// S3-compatibility path sends with every upload. GCS storage classes are a different set, and the
+    /// native `WriteObject` does not set one, so accepting the option would silently store the data in
+    /// the bucket's default class instead of the requested tier.
+    if (!s3_settings->request_settings[S3RequestSetting::storage_class_name].value.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`storage_class_name` is not supported by the native GCS backend: it uploads objects in the bucket's default "
+            "storage class. Remove it or disable `use_native_gcs` to access the bucket through the S3-compatibility API");
     /// The metadata-service OAuth mechanism of the S3-compatibility path (`http_client = gcp_oauth`
     /// with `service_account`, `metadata_service`, `request_token_path`) requests a token for the
     /// *named* service account from a configurable metadata endpoint. Application Default Credentials
