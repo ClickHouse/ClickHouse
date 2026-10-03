@@ -45,8 +45,10 @@ INSERT INTO t1 VALUES (1), (2);
 INSERT INTO t2 VALUES (2), (3);
 INSERT INTO t3 VALUES (7), (8);
 
+-- Because of the ANY join on constant key, the output row can be non-deterministic, any of the two result rows are acceptable, that's why the
+-- strange query with IN
 SELECT '-- outer join child under ANY INNER ON 1';
-SELECT * FROM (SELECT t1.c AS a, t2.c AS b FROM t1 RIGHT JOIN t2 ON t1.c = t2.c) AS sq ANY INNER JOIN t3 ON 1 ORDER BY ALL;
+SELECT t IN ((2,2,7), (0,3,7)) FROM (SELECT tuple(sq.a, sq.b, t3.c) AS t FROM (SELECT t1.c AS a, t2.c AS b FROM t1 RIGHT JOIN t2 ON t1.c = t2.c) AS sq ANY INNER JOIN t3 ON 1);
 
 SELECT '-- comma join child under ANY INNER ON 1';
 SELECT * FROM (SELECT t2.c AS b, t3.c AS d FROM t2, t3) AS sq ANY INNER JOIN t1 ON 1 ORDER BY ALL;

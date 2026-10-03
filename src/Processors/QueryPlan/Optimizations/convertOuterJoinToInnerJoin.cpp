@@ -50,6 +50,14 @@ static size_t tryConvertOuterJoinToInnerJoinLegacy(QueryPlan::Node * parent_node
     const auto & left_stream_input_header = join->getInputHeaders().front();
     const auto & right_stream_input_header = join->getInputHeaders().back();
 
+    /// A filter that is not deterministic within the query (`runningConcurrency`,
+    /// `rowNumberInAllBlocks`, `rand`, ...) observes the join output row set. Converting the
+    /// join changes that set even when the filter would drop the same rows later, so the
+    /// filter's per-row results change. The `JoinStepLogical` path has the same guard in
+    /// `filterResultForNotMatchedRows`.
+    if (dagContainsNonDeterministicFunction(filter_dag))
+        return 0;
+
     bool left_stream_safe = true;
     bool right_stream_safe = true;
 
