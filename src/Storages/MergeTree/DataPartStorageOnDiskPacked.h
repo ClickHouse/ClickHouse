@@ -86,10 +86,10 @@ public:
 
     /// Finalizes writer and writes buffered data into transaction.
     void precommitTransaction() override;
+    void undoTransaction() override;
 
 #if CLICKHOUSE_CLOUD
     TransactionCommitOutcomeVariant tryCommitTransaction(const TransactionCommitOptionsVariant & options) override;
-    void undoTransaction() override;
 #endif
 
     bool cloneCopiesWholeArchive(const ClonePartParams & params) const override;
