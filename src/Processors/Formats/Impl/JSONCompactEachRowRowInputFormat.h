@@ -43,7 +43,12 @@ private:
 class JSONCompactEachRowFormatReader : public FormatWithNamesAndTypesReader
 {
 public:
-    JSONCompactEachRowFormatReader(ReadBuffer & in_, bool yield_strings_, const FormatSettings & format_settings_);
+    JSONCompactEachRowFormatReader(
+        ReadBuffer & in_,
+        bool yield_strings_,
+        const FormatSettings & format_settings_,
+        const DataTypePtr & first_column_type_ = {},
+        bool allow_auto_without_type_ = false);
 
 
     bool parseRowStartWithDiagnosticInfo(WriteBuffer & out) override;
@@ -68,7 +73,9 @@ public:
 
     void skipRow() override;
 
+    void skipPrefixBeforeHeader() override;
     bool checkForSuffix() override;
+    bool hasWrappingArray() const { return data_in_square_brackets; }
 
     std::vector<String> readHeaderRow();
     std::vector<String> readNames() override { return readHeaderRow(); }
@@ -79,6 +86,9 @@ public:
     bool yieldStrings() const { return yield_strings; }
 private:
     bool yield_strings;
+    DataTypePtr first_column_type;
+    bool allow_auto_without_type = false;
+    bool data_in_square_brackets = false;
 };
 
 class JSONCompactEachRowRowSchemaReader final : public FormatWithNamesAndTypesSchemaReader
