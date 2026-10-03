@@ -55,8 +55,7 @@ private:
     /// Bytes of the current incomplete 8-byte word, little-endian. The bytes not received yet are zero.
     UInt64 current_word;
 
-    /// Little-endian value of `size` < 8 bytes. Never assemble it with byte stores into `current_word`:
-    /// the 8-byte load that follows cannot be store-forwarded.
+    /// Little-endian value of `size` < 8 bytes, built in a register to avoid a store-forwarding stall.
     static ALWAYS_INLINE UInt64 loadTail(const char * data, size_t size)
     {
         if (size >= 4)
