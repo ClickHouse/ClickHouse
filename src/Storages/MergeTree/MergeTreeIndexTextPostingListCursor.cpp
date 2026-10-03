@@ -851,7 +851,7 @@ namespace
 {
 
 /// Two-cursor intersection. The lagging cursor advances to the leading cursor's doc_id.
-void intersectTwo(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1, size_t row_offset, size_t effective_end)
+void intersectTwo(UInt8 * out, PostingListCursor * c0, PostingListCursor * c1, size_t row_offset, size_t effective_end)
 {
     while (c0->valid() && c1->valid())
     {
@@ -878,7 +878,7 @@ void intersectTwo(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1,
 }
 
 /// Three-cursor intersection. All cursors behind the maximum advance forward.
-void intersectThree(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1, PostingListCursorPtr c2, size_t row_offset, size_t effective_end)
+void intersectThree(UInt8 * out, PostingListCursor * c0, PostingListCursor * c1, PostingListCursor * c2, size_t row_offset, size_t effective_end)
 {
     while (c0->valid() && c1->valid() && c2->valid())
     {
@@ -907,7 +907,7 @@ void intersectThree(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c
 }
 
 /// Four-cursor intersection.
-void intersectFour(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1, PostingListCursorPtr c2, PostingListCursorPtr c3, size_t row_offset, size_t effective_end)
+void intersectFour(UInt8 * out, PostingListCursor * c0, PostingListCursor * c1, PostingListCursor * c2, PostingListCursor * c3, size_t row_offset, size_t effective_end)
 {
     while (c0->valid() && c1->valid() && c2->valid() && c3->valid())
     {
@@ -939,7 +939,7 @@ void intersectFour(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1
 }
 
 /// N-way leapfrog intersection (N <= 8): linear scan for min/max.
-void intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t effective_end)
+void intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t effective_end)
 {
     const size_t n = cursors.size();
     std::vector<uint32_t> vals(n);
@@ -1003,7 +1003,7 @@ struct HeapItem
 };
 
 /// N-way leapfrog intersection (N > 8): min-heap.
-void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t effective_end)
+void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t effective_end)
 {
     const size_t n = cursors.size();
 
@@ -1067,7 +1067,7 @@ void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursorPtr> 
 }
 
 /// Dispatch to the best leapfrog variant based on cursor count.
-void intersectLeapfrog(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t effective_end)
+void intersectLeapfrog(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t effective_end)
 {
     if (cursors.size() == 2)
     {
@@ -1135,13 +1135,13 @@ void finalizeCounters(UInt8 * out, size_t num_rows, UInt8 target)
 /// First cursor sets bits (linearOr), remaining cursors increment counters (linearAnd),
 /// then a final pass converts count == n into 1, everything else into 0.
 /// `out` must be passed with all-zero bytes.
-void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t num_rows)
+void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t num_rows, LazyPostingsStats & stats)
 {
     const PostingsApplyWindow first = cursors[0]->linearOr(out, row_offset, num_rows);
 
     if (first.empty())
     {
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyBruteForceEarlyExits);
+        ++stats.brute_force_early_exits;
         return;
     }
 
@@ -1153,7 +1153,7 @@ void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursorPtr> & 
 
         if (written.empty())
         {
-            ProfileEvents::increment(ProfileEvents::TextIndexLazyBruteForceEarlyExits);
+            ++stats.brute_force_early_exits;
             memset(out + (first.begin - row_offset), 0, first.end - first.begin);
             return;
         }
@@ -1172,9 +1172,63 @@ void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursorPtr> & 
 
 } // anonymous namespace
 
+void LazyPostingsStats::flush()
+{
+    if (brute_force_intersections)
+        ProfileEvents::increment(ProfileEvents::TextIndexLazyBruteForceIntersections, brute_force_intersections);
+    if (brute_force_early_exits)
+        ProfileEvents::increment(ProfileEvents::TextIndexLazyBruteForceEarlyExits, brute_force_early_exits);
+    if (leapfrog_intersections)
+        ProfileEvents::increment(ProfileEvents::TextIndexLazyLeapfrogIntersections, leapfrog_intersections);
+
+    *this = {};
+}
+
+void sortCursorsForUnion(std::vector<PostingListCursor *> & cursors)
+{
+    std::ranges::stable_sort(cursors,
+        [](const PostingListCursor * a, const PostingListCursor * b)
+        { return a->density() > b->density(); });
+}
+
+void sortCursorsForIntersection(std::vector<PostingListCursor *> & cursors)
+{
+    std::ranges::sort(cursors,
+        [](const PostingListCursor * a, const PostingListCursor * b)
+        { return a->cardinality() < b->cardinality(); });
+}
+
+TextIndexPostingsIntersectionAlgorithm chooseIntersectionAlgorithm(
+    const std::vector<PostingListCursor *> & cursors,
+    TextIndexPostingsIntersectionAlgorithm algorithm)
+{
+    const size_t n = cursors.size();
+    bool use_brute_force = algorithm == TextIndexPostingsIntersectionAlgorithm::BruteForce;
+
+    if (algorithm == TextIndexPostingsIntersectionAlgorithm::Auto)
+    {
+        double min_density = std::numeric_limits<double>::max();
+        double max_density = 0.0;
+
+        for (size_t i = 0; i < n; ++i)
+        {
+            min_density = std::min(min_density, cursors[i]->density());
+            max_density = std::max(max_density, cursors[i]->density());
+        }
+
+        use_brute_force = min_density * static_cast<double>(IPostingListBlockCodec::BLOCK_SIZE) >= max_density;
+    }
+
+    /// n < 256: brute-force uses UInt8 counters per row — would overflow with 256+ cursors.
+    if (n < 256 && use_brute_force)
+        return TextIndexPostingsIntersectionAlgorithm::BruteForce;
+
+    return TextIndexPostingsIntersectionAlgorithm::Leapfrog;
+}
+
 void lazyUnionPostingLists(
     IColumn & column,
-    const std::vector<PostingListCursorPtr> & cursors,
+    const std::vector<PostingListCursor *> & cursors,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows)
@@ -1184,23 +1238,18 @@ void lazyUnionPostingLists(
     auto & data = assert_cast<DB::ColumnUInt8 &>(column).getData();
     UInt8 * out = data.data() + column_offset;
 
-    /// Sort by descending density so the densest cursor fills the output buffer first.
-    auto sorted_cursors = cursors;
-    std::ranges::stable_sort(sorted_cursors,
-        [](const PostingListCursorPtr & a, const PostingListCursorPtr & b)
-        { return a->density() > b->density(); });
-
-    for (auto & cursor : sorted_cursors)
+    for (auto * cursor : cursors)
         cursor->linearOr(out, row_offset, num_rows);
 }
 
 void lazyIntersectPostingLists(
     IColumn & column,
-    const std::vector<PostingListCursorPtr> & cursors,
+    const std::vector<PostingListCursor *> & cursors,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows,
-    TextIndexPostingsIntersectionAlgorithm algorithm)
+    TextIndexPostingsIntersectionAlgorithm algorithm,
+    LazyPostingsStats & stats)
 {
     requireRowOffsetRepresentable(row_offset);
 
@@ -1219,50 +1268,29 @@ void lazyIntersectPostingLists(
         return;
     }
 
-    bool use_brute_force = algorithm == TextIndexPostingsIntersectionAlgorithm::BruteForce;
-
-    /// `Auto` picks leapfrog only where it can skip whole packed blocks of the densest list.
-    /// A block of that list spans about `BLOCK_SIZE / max_density` rows.
-    /// Over that span, the sparsest list has about `min_density * BLOCK_SIZE / max_density` postings.
-    /// Once that reaches one, leapfrog decodes every block anyway
-    /// and only adds a search per posting on top of the brute-force counting pass.
-    if (algorithm == TextIndexPostingsIntersectionAlgorithm::Auto)
+    if (algorithm == TextIndexPostingsIntersectionAlgorithm::BruteForce)
     {
-        double min_density = std::numeric_limits<double>::max();
-        double max_density = 0.0;
+        /// The brute-force counters are `UInt8`; `chooseIntersectionAlgorithm` keeps 256 or more cursors on leapfrog.
+        if (n >= 256)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Brute-force intersection of {} posting lists would overflow its counters", n);
 
-        for (size_t i = 0; i < n; ++i)
-        {
-            min_density = std::min(min_density, cursors[i]->density());
-            max_density = std::max(max_density, cursors[i]->density());
-        }
-
-        use_brute_force = min_density * static_cast<double>(IPostingListBlockCodec::BLOCK_SIZE) >= max_density;
-    }
-
-    /// Sort cursors by ascending cardinality. The sparsest cursor leads the intersection.
-    auto sorted_cursors = cursors;
-    std::ranges::sort(sorted_cursors,
-        [](const PostingListCursorPtr & a, const PostingListCursorPtr & b)
-        { return a->cardinality() < b->cardinality(); });
-
-    /// n < 256: brute-force uses UInt8 counters per row — would overflow with 256+ cursors.
-    if (n < 256 && use_brute_force)
-    {
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyBruteForceIntersections);
-        intersectBruteForce(out, sorted_cursors, row_offset, num_rows);
+        ++stats.brute_force_intersections;
+        intersectBruteForce(out, cursors, row_offset, num_rows, stats);
         return;
     }
 
+    if (algorithm != TextIndexPostingsIntersectionAlgorithm::Leapfrog)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersection algorithm must be resolved with chooseIntersectionAlgorithm before lazyIntersectPostingLists");
+
     for (size_t i = 0; i < n; ++i)
     {
-        sorted_cursors[i]->advance(static_cast<uint32_t>(row_offset));
-        if (!sorted_cursors[i]->valid() || sorted_cursors[i]->value() >= end)
+        cursors[i]->advance(static_cast<uint32_t>(row_offset));
+        if (!cursors[i]->valid() || cursors[i]->value() >= end)
             return;
     }
 
-    ProfileEvents::increment(ProfileEvents::TextIndexLazyLeapfrogIntersections);
-    intersectLeapfrog(out, sorted_cursors, row_offset, end);
+    ++stats.leapfrog_intersections;
+    intersectLeapfrog(out, cursors, row_offset, end);
 }
 
 }

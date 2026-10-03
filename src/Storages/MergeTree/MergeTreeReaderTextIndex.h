@@ -84,6 +84,35 @@ private:
     void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
     void fillColumnLazy(IColumn & column, size_t column_idx, size_t row_offset, size_t num_rows, PostingList & range_posting);
 
+    /// Cursors of one search column resolved once per part: the token-to-cursor lookups, the algorithm
+    /// choice and the cursor order depend only on the part, not on the granule, so `fillColumnLazy` builds
+    /// this on the first granule of the column and reuses it for the rest. Owns nothing: the cursors belong to
+    /// `lazy_cursors` / `prebuilt_cursors` and `direct_postings` to the granule's analyzer, and it is dropped
+    /// together with them in `resetCursors`.
+    struct ResolvedSearch
+    {
+        enum class Kind : uint8_t
+        {
+            /// Nothing can match: no needle tokens, a failed query, or nothing left to read.
+            Zeros,
+            /// Analyzer-folded postings and no lazy cursors: `direct_postings` is clipped to the window per granule.
+            DirectPostings,
+            /// Union (`Any`) or intersection (`All`) of `cursors`.
+            Cursors,
+        };
+
+        Kind kind = Kind::Zeros;
+        /// Sorted once: ascending cardinality for `All`, descending density for `Any`.
+        std::vector<PostingListCursor *> cursors;
+        TextSearchMode mode = TextSearchMode::Any;
+        /// `Auto` already resolved to a concrete algorithm.
+        TextIndexPostingsIntersectionAlgorithm algorithm = TextIndexPostingsIntersectionAlgorithm::Leapfrog;
+        const PostingList * direct_postings = nullptr;
+    };
+
+    /// Builds the `ResolvedSearch` of a column, creating the column's lazy and prebuilt cursors on the way.
+    ResolvedSearch resolveSearch(size_t column_idx);
+
     /// Fills a virtual column for an abandoned pattern query by evaluating the virtual column's
     /// default expression (the original search predicate) on the physical columns.
     /// Used when the dictionary scan was cut short and pattern tokens are incomplete.
@@ -164,6 +193,14 @@ private:
     /// Per-column synthetic cursor over the analyzer-folded postings of small/embedded tokens,
     /// combined with large-posting stream cursors. Dropped on the same triggers as `lazy_cursors`.
     std::vector<PostingListCursorPtr> prebuilt_cursors;
+
+    /// Per-column `ResolvedSearch`, empty until the first granule of the column is filled.
+    /// Dropped on the same triggers as `lazy_cursors`.
+    std::vector<std::optional<ResolvedSearch>> resolved_searches;
+
+    /// Counters of the lazy unions and intersections of the current `readRows` call, flushed into the profile
+    /// events once per call instead of once per granule.
+    LazyPostingsStats lazy_postings_stats;
 };
 
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(
