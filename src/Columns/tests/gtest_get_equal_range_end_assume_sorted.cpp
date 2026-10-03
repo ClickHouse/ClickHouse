@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -263,6 +265,213 @@ void runVectorTests(const char * name)
     }
 }
 
+/// Values of a sorted multi-column key: column 0 has runs of `leading_run` rows, and column k + 1 restarts at 0
+/// in every run of column k and has runs of `sub_runs[k]` rows there (0 means unique values).
+std::vector<std::vector<UInt64>> makeSortedKeyValues(size_t rows, size_t leading_run, const std::vector<size_t> & sub_runs)
+{
+    std::vector<std::vector<UInt64>> values(sub_runs.size() + 1, std::vector<UInt64>(rows));
+    for (size_t row = 0; row < rows; ++row)
+    {
+        values[0][row] = row / leading_run;
+        size_t offset = row % leading_run;
+        for (size_t k = 0; k < sub_runs.size(); ++k)
+        {
+            if (sub_runs[k] == 0)
+            {
+                values[k + 1][row] = row;
+                offset = 0;
+            }
+            else
+            {
+                values[k + 1][row] = offset / sub_runs[k];
+                offset %= sub_runs[k];
+            }
+        }
+    }
+    return values;
+}
+
+enum class KeyType : uint8_t
+{
+    UInt32,
+    UInt64,
+    String,
+    /// 0 is NULL (with arbitrary nested values and non-zero null map bytes), so it sorts first for hint -1.
+    NullableString,
+    /// 0 is NaN and 1 is -0.0 or +0.0 by row parity, so it sorts as the values for hint -1.
+    Float64WithNaNAndZeros,
+    /// Dictionary indices are in the reverse order of the values.
+    LowCardinalityString,
+};
+
+String sortableString(UInt64 value)
+{
+    char buf[32];
+    (void)snprintf(buf, sizeof(buf), "%08llu", static_cast<unsigned long long>(value));
+    return buf;
+}
+
+ColumnPtr makeKeyColumn(KeyType type, const std::vector<UInt64> & values)
+{
+    switch (type)
+    {
+        case KeyType::UInt32:
+        {
+            auto col = ColumnUInt32::create();
+            for (UInt64 v : values)
+                col->getData().push_back(static_cast<UInt32>(v));
+            return col;
+        }
+        case KeyType::UInt64:
+        {
+            auto col = ColumnUInt64::create();
+            for (UInt64 v : values)
+                col->getData().push_back(v);
+            return col;
+        }
+        case KeyType::String:
+        {
+            auto col = ColumnString::create();
+            for (UInt64 v : values)
+                col->insert(Field(sortableString(v)));
+            return col;
+        }
+        case KeyType::NullableString:
+        {
+            auto nested = ColumnString::create();
+            auto null_map = ColumnUInt8::create();
+            for (size_t row = 0; row < values.size(); ++row)
+            {
+                const bool is_null = values[row] == 0;
+                nested->insert(Field(sortableString(is_null ? (row * 7919) % 1000 : values[row])));
+                null_map->getData().push_back(is_null ? static_cast<UInt8>(1 + row % 255) : static_cast<UInt8>(0));
+            }
+            return ColumnNullable::create(std::move(nested), std::move(null_map));
+        }
+        case KeyType::Float64WithNaNAndZeros:
+        {
+            auto col = ColumnFloat64::create();
+            for (size_t row = 0; row < values.size(); ++row)
+            {
+                Float64 x = static_cast<Float64>(values[row]);
+                if (values[row] == 0)
+                    x = std::numeric_limits<Float64>::quiet_NaN();
+                else if (values[row] == 1)
+                    x = row % 2 ? -0.0 : 0.0;
+                col->getData().push_back(x);
+            }
+            return col;
+        }
+        case KeyType::LowCardinalityString:
+        {
+            auto type_lc = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+            auto builder = type_lc->createColumn();
+            const UInt64 max_value = values.empty() ? 0 : *std::max_element(values.begin(), values.end());
+            for (UInt64 v = max_value + 1; v > 0; --v)
+                builder->insert(Field(sortableString(v - 1)));
+            for (UInt64 v : values)
+                builder->insert(Field(sortableString(v)));
+            return builder->cut(max_value + 1, values.size());
+        }
+    }
+    UNREACHABLE();
+}
+
+bool keyEquals(const ColumnRawPtrs & key, size_t lhs, size_t rhs, int hint)
+{
+    return std::all_of(key.begin(), key.end(), [&](const IColumn * col) { return col->compareAt(lhs, rhs, *col, hint) == 0; });
+}
+
+size_t oracleKeyRangeEnd(const ColumnRawPtrs & key, size_t begin, size_t end, int hint)
+{
+    if (begin >= end)
+        return begin;
+    size_t r = begin + 1;
+    while (r < end && keyEquals(key, r, begin, hint))
+        ++r;
+    return r;
+}
+
+/// Checks the three multi-column overloads against `oracleKeyRangeEnd` for every `begin` and two ends, and adds
+/// the lengths of the runs it sees to `run_lengths`.
+void checkKeyAgainstOracle(const Columns & key_columns, int hint, const std::string & label, std::set<size_t> & run_lengths)
+{
+    const size_t n = key_columns.front()->size();
+    ColumnRawPtrs key;
+    for (const auto & col : key_columns)
+        key.push_back(col.get());
+
+    for (size_t row = 0; row + 1 < n; ++row)
+    {
+        int cmp = 0;
+        for (size_t i = 0; i < key.size() && cmp == 0; ++i)
+            cmp = key[i]->compareAt(row, row + 1, *key[i], hint);
+        ASSERT_LE(cmp, 0) << label << ": the key is not sorted at row " << row;
+    }
+
+    /// The key columns in reverse order after an unsorted column, selected back by `positions`.
+    auto unsorted = ColumnUInt64::create();
+    for (size_t row = 0; row < n; ++row)
+        unsorted->getData().push_back(row % 2);
+    ColumnRawPtrs with_other_columns{unsorted.get()};
+    std::vector<size_t> positions;
+    for (size_t i = key.size(); i > 0; --i)
+    {
+        with_other_columns.push_back(key[i - 1]);
+        positions.push_back(i);
+    }
+
+    SortDescription descr;
+    for (size_t i = 0; i < key.size(); ++i)
+        descr.emplace_back("k" + std::to_string(i), 1, hint);
+
+    for (size_t end : {n / 2, n})
+    {
+        for (size_t begin = 0; begin <= end; ++begin)
+        {
+            const size_t want = oracleKeyRangeEnd(key, begin, end, hint);
+            if (end == n && begin < end)
+                run_lengths.insert(want - begin);
+
+            ASSERT_EQ(getEqualRangeEndAssumeSorted(key, begin, end, hint), want) << label << ": columns begin=" << begin << " end=" << end;
+            ASSERT_EQ(getEqualRangeEndAssumeSorted(with_other_columns, positions, begin, end, hint), want)
+                << label << ": positions begin=" << begin << " end=" << end;
+            ASSERT_EQ(getEqualRangeEndAssumeSorted(key, descr, begin, end), want) << label << ": descr begin=" << begin << " end=" << end;
+        }
+    }
+}
+
+void runKeyTests(const std::vector<KeyType> & types, int hint, const std::vector<size_t> & last_sub_runs, std::set<size_t> & run_lengths)
+{
+    const std::vector<size_t> leading_runs{1, 7, 8, 9, 600};
+    const std::vector<size_t> sub_runs{1, 2, 7, 8, 9, 300, 0};
+
+    for (size_t leading_run : leading_runs)
+    {
+        for (size_t sub_run : sub_runs)
+        {
+            for (size_t last_sub_run : last_sub_runs)
+            {
+                std::vector<size_t> key_sub_runs{sub_run};
+                if (types.size() > 2)
+                    key_sub_runs.push_back(last_sub_run);
+
+                const size_t rows = std::max<size_t>(3 * leading_run, 40);
+                const auto values = makeSortedKeyValues(rows, leading_run, key_sub_runs);
+                Columns key_columns;
+                for (size_t i = 0; i < types.size(); ++i)
+                    key_columns.push_back(makeKeyColumn(types[i], values[i]));
+
+                const std::string label = "types=" + std::to_string(static_cast<int>(types[0])) + "," + std::to_string(static_cast<int>(types[1]))
+                    + " leading_run=" + std::to_string(leading_run) + " sub_runs=" + std::to_string(sub_run) + "," + std::to_string(last_sub_run);
+                checkKeyAgainstOracle(key_columns, hint, label, run_lengths);
+                if (::testing::Test::HasFatalFailure())
+                    return;
+            }
+        }
+    }
+}
+
 }
 
 TEST(SortedEqualRuns, ColumnVectorIntegers)
@@ -440,4 +649,71 @@ TEST(SortedEqualRuns, ColumnNullableDefaultPath)
         auto col = makeSortedNullable(p, 0, false);
         checkAgainstOracle(*col, 1, "ColumnNullable no-NULL");
     }
+}
+
+namespace
+{
+
+/// Runs shorter than, equal to and longer than the linear probe of the whole-key search must all occur.
+void runKeyTestsWithCoverage(const std::vector<KeyType> & types, int hint, const std::vector<size_t> & last_sub_runs)
+{
+    std::set<size_t> run_lengths;
+    runKeyTests(types, hint, last_sub_runs, run_lengths);
+    for (size_t len : {1, 2, 7, 8, 9, 300})
+        EXPECT_TRUE(run_lengths.contains(len)) << "no run of length " << len;
+}
+
+}
+
+TEST(SortedEqualRuns, MultiColumnKeyUInt64String)
+{
+    runKeyTestsWithCoverage({KeyType::UInt64, KeyType::String}, 1, {1});
+}
+
+TEST(SortedEqualRuns, MultiColumnKeyStringString)
+{
+    runKeyTestsWithCoverage({KeyType::String, KeyType::String}, 1, {1});
+}
+
+TEST(SortedEqualRuns, MultiColumnKeyNullableStringFloat64)
+{
+    runKeyTestsWithCoverage({KeyType::NullableString, KeyType::Float64WithNaNAndZeros}, -1, {1});
+}
+
+TEST(SortedEqualRuns, MultiColumnKeyLowCardinalityStringUInt32)
+{
+    runKeyTestsWithCoverage({KeyType::LowCardinalityString, KeyType::UInt32}, 1, {1});
+}
+
+TEST(SortedEqualRuns, MultiColumnKeyThreeColumns)
+{
+    runKeyTestsWithCoverage({KeyType::UInt64, KeyType::String, KeyType::UInt32}, 1, {1, 3, 8, 300});
+}
+
+TEST(SortedEqualRuns, MultiColumnHelperSingleAndNoColumns)
+{
+    for (const auto & p : makePatterns())
+    {
+        auto col = makeSortedString(p);
+        const ColumnRawPtrs key{col.get()};
+        const std::vector<size_t> positions{0};
+        SortDescription descr;
+        descr.emplace_back("s", 1, 1);
+
+        const size_t n = col->size();
+        for (size_t end : {n / 2, n})
+        {
+            for (size_t begin = 0; begin <= end; ++begin)
+            {
+                const size_t want = oracleRangeEnd(*col, begin, end, 1);
+                ASSERT_EQ(getEqualRangeEndAssumeSorted(key, begin, end, 1), want) << "columns begin=" << begin << " end=" << end;
+                ASSERT_EQ(getEqualRangeEndAssumeSorted(key, positions, begin, end, 1), want) << "positions begin=" << begin << " end=" << end;
+                ASSERT_EQ(getEqualRangeEndAssumeSorted(key, descr, begin, end), want) << "descr begin=" << begin << " end=" << end;
+            }
+        }
+    }
+
+    /// Without key columns all rows have the same key.
+    const ColumnRawPtrs no_key;
+    EXPECT_EQ(getEqualRangeEndAssumeSorted(no_key, 3, 10, 1), 10u);
 }
