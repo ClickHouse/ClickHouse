@@ -19,7 +19,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-SETTINGS="use_query_condition_cache = 1, max_threads = 1"
+# The query condition cache is fed by the filter the Parquet reader applies, so pin the `PREWHERE`
+# optimization: with a randomized `query_plan_optimize_prewhere = 0` the reader may read every
+# row group unfiltered, nothing is cached, and both repeats would read the whole file.
+SETTINGS="use_query_condition_cache = 1, max_threads = 1, query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1"
 
 TAG="05258_${CLICKHOUSE_DATABASE}"
 DATA_FILE_RELATIVE="${CLICKHOUSE_TEST_UNIQUE_NAME}/05258.parquet"
