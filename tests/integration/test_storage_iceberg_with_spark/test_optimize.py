@@ -191,6 +191,7 @@ def test_optimize_manifest_per_file_stats(started_cluster_iceberg_with_spark):
 
     assert data_entries_checked > 0
 
+
 def create_external_optimize_table(
     started_cluster_iceberg_with_spark,
     instance,
