@@ -402,6 +402,35 @@ ASTPtr ProjectionDescription::validateDeclaredColumnCodec(
     return codec;
 }
 
+void ProjectionDescription::validateDynamicDefaultCodec(const ASTProjectionDeclaration & declaration)
+{
+    if (!declaration.columns)
+        return;
+
+    for (const auto & child : declaration.columns->children)
+    {
+        const auto & column = child->as<const ASTColumnDeclaration &>();
+        const auto codec_ast = column.getCodec();
+        const auto * codec = codec_ast ? codec_ast->as<ASTFunction>() : nullptr;
+        if (!codec || !codec->arguments || codec->arguments->children.size() <= 1)
+            continue;
+
+        for (const auto & stage : codec->arguments->children)
+        {
+            const auto * identifier = stage->as<ASTIdentifier>();
+            const auto * function = stage->as<ASTFunction>();
+            if ((identifier && identifier->name() == DEFAULT_CODEC_NAME)
+                || (function && function->name == DEFAULT_CODEC_NAME))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Column {} in projection {} cannot combine Default with other codecs: the part default "
+                    "can change through table settings, compression configuration, or TTL recompression. "
+                    "Use an explicit codec instead",
+                    backQuote(column.name), backQuote(declaration.name));
+        }
+    }
+}
+
 void ProjectionDescription::validateDeclaredColumnCodecs(
     const ProjectionDescription & projection,
     const ContextPtr & query_context,
@@ -415,6 +444,7 @@ void ProjectionDescription::validateDeclaredColumnCodecs(
         return;
 
     const auto & declaration = projection.definition_ast->as<const ASTProjectionDeclaration &>();
+    validateDynamicDefaultCodec(declaration);
     if (!declaration.columns)
         return;
 

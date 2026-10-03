@@ -120,6 +120,11 @@ struct ProjectionDescription
         const String & column_name,
         const String & projection_name);
 
+    /// A projection codec chain must remain valid when a part's default codec changes.
+    /// A lone Default is equivalent to an omitted codec; a mixed chain cannot be checked
+    /// against every table, config, and TTL recompression default at admission time.
+    static void validateDynamicDefaultCodec(const ASTProjectionDeclaration & declaration);
+
     /// Check declared codecs against the session's settings and the lossless projection rule. Must be called from a query's
     /// validation phase: `getProjectionFromAST` runs on stored metadata too, and on the `CREATE` path it
     /// is reached with the global context, so a check placed there would both miss the user's settings

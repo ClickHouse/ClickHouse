@@ -2555,6 +2555,13 @@ try
     /// that table through this same finalizer, so inspect the already-published inner metadata
     /// without installing declarations on the view or rewriting the inner table after publication.
     const bool has_candidate_projections = !candidate_projections.empty() || candidate_projections.hasUnavailable();
+    if (has_candidate_projections
+        && projection_source != ProjectionDefinitionSource::PreviouslyAccepted
+        && !context->getClientInfo().is_replicated_database_internal
+        && !isSecondaryProjectionMetadataReplay(context))
+        for (const auto & definition : candidate_projections.getDefinitionsInDeclarationOrder())
+            ProjectionDescription::validateDynamicDefaultCodec(definition->as<const ASTProjectionDeclaration &>());
+
     StoragePtr projection_storage = storage;
     bool projections_belong_to_inner_table = false;
     if (has_candidate_projections)
