@@ -92,6 +92,7 @@ PartProperties buildPartProperties(
         .size = part->getExistingBytesOnDisk(),
         .age = current_time - part->modification_time,
         .rows = part->rows_count,
+        .has_lightweight_delete = part->hasLightweightDelete(),
         .general_ttl_info = buildGeneralTTLInfo(metadata_snapshot, part),
         .recompression_ttl_info = buildRecompressTTLInfo(metadata_snapshot, part, current_time),
     };

@@ -163,16 +163,24 @@ size_t getColumnsMergedOnHorizontalStageOfVerticalMerge(const ChooseContext & ct
     for (const auto & projection : metadata.getProjections())
         key_columns.insert_range(projection.getRequiredColumns());
 
-    if (metadata.hasRowsTTL())
-        for (const auto & column : metadata.getRowsTTL().expression_columns)
-            key_columns.insert(column.name);
-    for (const auto & where_ttl : metadata.getRowsWhereTTLs())
+    /// A vertical merge that removes expired values merges the columns of the rows, move and recompression
+    /// TTL expressions on the horizontal stage.
+    auto add_ttl_expression_columns = [&](const TTLDescription & ttl)
     {
-        for (const auto & column : where_ttl.expression_columns)
+        for (const auto & column : ttl.expression_columns)
             key_columns.insert(column.name);
-        for (const auto & column : where_ttl.where_expression_columns)
+        for (const auto & column : ttl.where_expression_columns)
             key_columns.insert(column.name);
-    }
+    };
+
+    if (metadata.hasRowsTTL())
+        add_ttl_expression_columns(metadata.getRowsTTL());
+    for (const auto & where_ttl : metadata.getRowsWhereTTLs())
+        add_ttl_expression_columns(where_ttl);
+    for (const auto & move_ttl : metadata.getMoveTTLs())
+        add_ttl_expression_columns(move_ttl);
+    for (const auto & recompression_ttl : metadata.getRecompressionTTLs())
+        add_ttl_expression_columns(recompression_ttl);
 
     /// The merge merges at least one column even when the key is empty (`ORDER BY tuple()`).
     return std::max<size_t>(1, key_columns.size());
@@ -205,20 +213,53 @@ bool tableCanMergeVertically(const ChooseContext & ctx)
     return gathering_columns >= settings[MergeTreeSetting::vertical_merge_algorithm_min_columns_to_activate];
 }
 
-/// Whether a merge that also removes expired values may still run vertically, see
-/// `MergeTask::canVerticalTTLDelete`. Whether the source parts carry lightweight deletes (which rule it out
-/// too) is not known here.
+/// Whether a merge that also removes expired values may still run vertically, following the checks of
+/// `MergeTask::canVerticalTTLDelete` that depend on the table. The check on lightweight deletes depends on
+/// the range, see `rangeCanMergeVerticallyWhileRemovingExpiredValues`.
 bool tableCanMergeVerticallyWhileRemovingExpiredValues(const ChooseContext & ctx)
 {
     const auto & metadata = ctx.metadata_snapshot;
 
-    if (ctx.merging_params.mode != MergeTreeData::MergingParams::Ordinary)
-        return false;
+    using Mode = MergeTreeData::MergingParams;
+    switch (ctx.merging_params.mode)
+    {
+        case Mode::Ordinary:
+        case Mode::Replacing:
+        case Mode::Collapsing:
+        case Mode::VersionedCollapsing:
+            break;
+        case Mode::Summing:
+        case Mode::Aggregating:
+        case Mode::Coalescing:
+        case Mode::Graphite:
+            return false;
+    }
+
     if (!ctx.merge_tree_settings[MergeTreeSetting::vertical_merge_optimize_ttl_delete])
         return false;
     if (metadata.hasAnyGroupByTTL() || metadata.hasAnyColumnTTL())
         return false;
     return metadata.hasRowsTTL() || metadata.hasAnyRowsWhereTTL();
+}
+
+/// Whether a merge of `range` that removes expired values may still run vertically: on top of the checks of
+/// `tableCanMergeVerticallyWhileRemovingExpiredValues`, no source part and no patch part applied on the merge
+/// may carry a lightweight delete, see `MergeTask::hasLightweightDelete`. The properties of the patch parts
+/// known here do not tell whether they carry one, so any patch part applied on the merge rules it out.
+bool rangeCanMergeVerticallyWhileRemovingExpiredValues(const ChooseContext & ctx, PartsRangeView range)
+{
+    if (!tableCanMergeVerticallyWhileRemovingExpiredValues(ctx))
+        return false;
+
+    for (const auto & part : range)
+        if (part.has_lightweight_delete)
+            return false;
+
+    if (ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge]
+        && !ctx.predicate.getPatchesToApplyOnMerge(PartsRange(range.begin(), range.end())).empty())
+        return false;
+
+    return true;
 }
 
 /// Whether a merge of `range` will remove expired values, following how
@@ -288,7 +329,7 @@ bool predictVerticalMerge(const ChooseContext & ctx, PartsRangeView range)
     if (!wide_part || !full_storage)
         return false;
 
-    if (rangeRemovesExpiredValues(ctx, range) && !tableCanMergeVerticallyWhileRemovingExpiredValues(ctx))
+    if (rangeRemovesExpiredValues(ctx, range) && !rangeCanMergeVerticallyWhileRemovingExpiredValues(ctx, range))
         return false;
 
     return sum_rows >= settings[MergeTreeSetting::vertical_merge_algorithm_min_rows_to_activate]
