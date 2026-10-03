@@ -1929,7 +1929,9 @@ class SettingsRandomizer:
         "min_external_table_block_size_bytes": lambda: random.choice([0, 1, 100000000]),
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
-        "parallel_replicas_local_plan": lambda: random.randint(0, 1),
+        # `parallel_replicas_local_plan` is not randomized: it stays at its default `1`. With `0`, the local
+        # replica is queried like a remote one, so plan- and log-based assertions of ~100 tests break
+        # under the `ParallelReplicas` configuration without finding anything about the default setup.
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false"]), # true forces swap, which is harmful for some tests
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
@@ -2088,6 +2090,14 @@ class SettingsRandomizer:
             random_settings["cluster_for_parallel_replicas"] = "parallel_replicas"
             random_settings["parallel_replicas_local_plan"] = 1
             random_settings["parallel_replicas_for_non_replicated_merge_tree"] = 1
+        # With parallel replicas, `optimize_aggregation_in_order` rejects every projection, including the implicit
+        # `_minmax_count_projection` behind trivial `count()`, so tests asserting on projections, exact counts
+        # or read limits break under the `ParallelReplicas` configuration: https://github.com/ClickHouse/ClickHouse/issues/123061
+        if args.no_parallel_replicas:
+            random_settings["optimize_aggregation_in_order"] = 0
+            # `automatic_parallel_replicas_mode = 2` only collects statistics and never switches to parallel replicas,
+            # so the `ParallelReplicas` configuration would run such a test without them.
+            random_settings["automatic_parallel_replicas_mode"] = 0
 
     @staticmethod
     def get_random_settings(args, tags):
