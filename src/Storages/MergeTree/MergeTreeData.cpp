@@ -82,6 +82,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/QueryMetadataCache.h>
+#include <Interpreters/RenameColumnVisitor.h>
 #include <Functions/FunctionFactory.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
@@ -5775,14 +5776,28 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             is_initial_alter = false;
 #endif
 
-        /// An ALTER may not add an alias to a definition. One that an older server stored is kept, also through a rename.
+        /// A definition the ALTER changes may not have an alias. One that an older server stored is kept while the
+        /// definition stays as it was, up to a column rename.
         if (is_initial_alter)
         {
-            auto check = [](const ASTPtr & old_ast, const ASTPtr & new_ast, std::string_view clause)
+            std::vector<RenameColumnData> renames;
+            for (const auto & command : commands)
+                if (command.type == AlterCommand::RENAME_COLUMN && !command.ignore)
+                    renames.push_back({command.column_name, command.rename_to});
+
+            auto check = [&](const ASTPtr & old_ast, const ASTPtr & new_ast, std::string_view clause)
             {
-                NameSet old_aliases;
-                KeyDescription::collectAliases(old_ast.get(), old_aliases);
-                KeyDescription::checkNoAlias(new_ast.get(), clause, old_aliases);
+                if (!new_ast)
+                    return;
+                if (old_ast)
+                {
+                    ASTPtr renamed = old_ast->clone();
+                    for (auto & rename : renames)
+                        RenameColumnVisitor(rename).visit(renamed);
+                    if (renamed->getTreeHash(/*ignore_aliases=*/ false) == new_ast->getTreeHash(/*ignore_aliases=*/ false))
+                        return;
+                }
+                KeyDescription::checkNoAlias(new_ast.get(), clause);
             };
             check(old_metadata.sorting_key.definition_ast, new_metadata.sorting_key.definition_ast, "ORDER BY");
             check(old_metadata.sampling_key.definition_ast, new_metadata.sampling_key.definition_ast, "SAMPLE BY");
@@ -5804,11 +5819,22 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 check(old_constraint, constraint, "CONSTRAINT");
             }
 
-            NameSet old_column_ttl_aliases;
-            for (const auto & column : old_metadata.columns)
-                KeyDescription::collectAliases(column.ttl.get(), old_column_ttl_aliases);
             for (const auto & column : new_metadata.columns)
-                KeyDescription::checkNoAlias(column.ttl.get(), "TTL", old_column_ttl_aliases);
+            {
+                /// The column it was renamed from; a column the ALTER adds has none.
+                std::optional<String> old_name = column.name;
+                for (auto it = commands.rbegin(); it != commands.rend() && old_name; ++it)
+                {
+                    if (it->ignore)
+                        continue;
+                    if (it->type == AlterCommand::ADD_COLUMN && it->column_name == *old_name)
+                        old_name.reset();
+                    else if (it->type == AlterCommand::RENAME_COLUMN && it->rename_to == *old_name)
+                        old_name = it->column_name;
+                }
+                const auto * old_column = old_name ? old_metadata.columns.tryGet(*old_name) : nullptr;
+                check(old_column ? old_column->ttl : nullptr, column.ttl, "TTL");
+            }
         }
 
         bool changes_order_by = false;

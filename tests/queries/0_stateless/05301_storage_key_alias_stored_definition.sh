@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # A table that an older server stored with an alias in PRIMARY KEY, ORDER BY, SAMPLE BY, TTL, a skip index
-# or a constraint still loads and can be altered: only a new definition is refused, including a full-definition
-# ATTACH (05301_storage_key_alias_not_allowed covers CREATE and ALTER).
+# or a constraint still loads and can be altered: only a new or changed definition is refused, including a
+# full-definition ATTACH (05301_storage_key_alias_not_allowed covers CREATE and ALTER).
 #
 # Such a definition can no longer be written through SQL, so the stored metadata of tables
 # created without the aliases is edited into the form the older server wrote.
@@ -45,7 +45,22 @@ ALTER TABLE db.t2 ADD CONSTRAINT IF NOT EXISTS k CHECK c0 >= 0;
 ALTER TABLE db.t2 MODIFY SAMPLE BY (c0 AS s);
 ALTER TABLE db.t2 MODIFY COLUMN c1 Int32;
 SELECT type FROM system.columns WHERE database = 'db' AND table = 't2' AND name = 'c1';
+-- Nor one that only renames a column the definition uses, or the column it belongs to.
+ALTER TABLE db.t2 RENAME COLUMN d TO d2;
+ALTER TABLE db.t2 RENAME COLUMN c1 TO c3;
+ALTER TABLE db.t2 RENAME COLUMN IF EXISTS missing TO c3;
+SELECT groupArray(name) FROM system.columns WHERE database = 'db' AND table = 't2';
 "
+
+# An ALTER that changes such a definition, or writes another one, may not keep the alias in it.
+for query in \
+    "ALTER TABLE db.t MODIFY ORDER BY (c0, c1 AS x)" \
+    "ALTER TABLE db.t MODIFY TTL (d AS e) + INTERVAL 1 DAY RECOMPRESS CODEC(ZSTD(1)) SETTINGS materialize_ttl_after_modify = 0" \
+    "ALTER TABLE db.t2 ADD COLUMN c4 Int64 TTL (d2 AS e) + INTERVAL 2 DAY" \
+    "ALTER TABLE db.t2 RENAME COLUMN c3 TO c5, ADD COLUMN c3 Int64 TTL (d2 AS e) + INTERVAL 1 DAY"
+do
+    $CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "${query}" 2>&1 | grep -c -E "Alias '(x|e)' is not allowed in (ORDER BY|TTL)"
+done
 
 # The same definition is refused when it comes with the ATTACH query rather than from the stored metadata.
 $CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "
