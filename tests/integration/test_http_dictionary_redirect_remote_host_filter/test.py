@@ -54,10 +54,10 @@ def run_server():
     )
 
 
-def followed():
+def followed(path="/followed"):
     return cluster.exec_in_container(
         cluster.get_container_id("node"),
-        ["curl", "-s", f"http://127.0.0.1:{SERVER_PORT}/followed"],
+        ["curl", "-s", f"http://127.0.0.1:{SERVER_PORT}{path}"],
         nothrow=True,
     )
 
@@ -104,3 +104,36 @@ def test_http_dictionary_redirect_target_is_host_filtered(started_cluster):
     )
 
     node.query("DROP DICTIONARY test.redirect_http_dictionary")
+
+
+def test_http_dictionary_selective_load_redirect_target_is_host_filtered(
+    started_cluster,
+):
+    # A `cache` dictionary loads the requested keys with `loadIds`, which sends them in a `POST`
+    # body. The source answers with `307` (keeps the method and the body) pointing to the
+    # disallowed `127.0.0.2`, so the redirect hop of the selective-load path must be rejected too.
+    node.query(f"""
+        CREATE DICTIONARY test.redirect_http_cache_dictionary (
+            id UInt64,
+            value String
+        )
+        PRIMARY KEY id
+        LAYOUT(CACHE(SIZE_IN_CELLS 16))
+        SOURCE(HTTP(URL 'http://127.0.0.1:{SERVER_PORT}/redirect_post' FORMAT TabSeparated))
+        LIFETIME(MIN 0 MAX 0)
+        SETTINGS(max_http_get_redirects = 5)
+        """)
+
+    error = node.query_and_get_error(
+        "SELECT dictGetString('test.redirect_http_cache_dictionary', 'value', toUInt64(1))"
+    )
+    assert "is not allowed in configuration file" in error, (
+        "expected RemoteHostFilter to reject the redirect target, got: " + error
+    )
+
+    assert "NO" in followed("/followed_post"), (
+        "ClickHouse followed the 307 of a selective load to a disallowed host "
+        "(remote_url_allow_hosts bypass / SSRF)"
+    )
+
+    node.query("DROP DICTIONARY test.redirect_http_cache_dictionary")
