@@ -108,14 +108,14 @@ SELECT 'probes logged', count(), countIf(query LIKE '%[HIDDEN]%') FROM system.qu
 WHERE current_database = currentDatabase() AND event_date >= yesterday() AND log_comment = '${PROBE}' AND type != 'QueryStart';
 "
 
-# A table keeps its named collection from being dropped, so the tables go first.
+# A table keeps its named collection from being dropped, so the objects that use the named collections go first.
+# A table left with a dropped named collection could not be attached, so the server would not start again with
+# this database (the stress test restarts the server).
 $CLICKHOUSE_CLIENT -m -q "
 SET ast_fuzzer_any_query = 0;
 DROP NAMED COLLECTION ${NC}; -- { serverError NAMED_COLLECTION_IS_USED }
 DROP NAMED COLLECTION ${NC2}; -- { serverError NAMED_COLLECTION_IS_USED }
-DROP TABLE e06;
-DROP TABLE e07;
-DROP TABLE e08;
+DROP TABLE IF EXISTS e06, e07, e08, e10, f09;
 DROP NAMED COLLECTION ${NC};
 DROP NAMED COLLECTION ${NC2};
 "

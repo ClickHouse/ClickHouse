@@ -129,12 +129,29 @@ IProcessor::Status DelayedPortsProcessor::prepare(const UpdatedInputPorts & upda
 
     if (!are_inputs_initialized && !updated_outputs.empty())
     {
-        /// Activate inputs with no output.
+        /// An output is also updated when it just finishes, which is how a pipeline collapsing
+        /// from above reaches this processor: `FilterTransform` closes its input as soon as it
+        /// is asked for data if its condition is a constant `ignore(...)`. Waking the inputs
+        /// with no output on such an update would start pipelines nobody is going to read, and
+        /// the executor can dispatch their sources before the loop below finishes the pairs -
+        /// that is how an `IN`-subquery source plan gets to read a materialized CTE whose
+        /// writer, gated by an outer `MaterializingCTEsStep` collapsing the same way, never
+        /// runs. So start them only once an output actually asks for data, which for a stacked
+        /// gate happens only after the outer gate's own delayed pipelines are done.
+        bool any_output_needed = false;
         for (const auto & pair : port_pairs)
-            if (!pair.output_port)
-                pair.input_port->setNeeded();
+            if (pair.output_port && !pair.output_port->isFinished() && pair.output_port->isNeeded())
+                any_output_needed = true;
 
-        are_inputs_initialized = true;
+        if (any_output_needed)
+        {
+            /// Activate inputs with no output.
+            for (const auto & pair : port_pairs)
+                if (!pair.output_port)
+                    pair.input_port->setNeeded();
+
+            are_inputs_initialized = true;
+        }
     }
 
     for (const auto * output_port : updated_outputs)
