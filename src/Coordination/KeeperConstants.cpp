@@ -312,6 +312,10 @@
     M(KeeperSnapshotWrittenBytes) \
     M(KeeperSnapshotFileSyncMicroseconds) \
     M(KeeperSnapshotRemoteLoaderErrors) \
+    M(KeeperDiskMoves) \
+    M(KeeperDiskMoveMicroseconds) \
+    M(KeeperDiskMoveFailedAttempts) \
+    M(KeeperDiskMovesAbandoned) \
 \
     M(KeeperLSMTFlushes) \
     M(KeeperLSMTMerges) \
