@@ -1,6 +1,6 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/IntervalSet.h>
+#include <IO/ByteRangeSet.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
@@ -531,7 +531,7 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
     /// Fill the tiers we hold, and record what each cache ACCEPTED via `committed()` - `write` can reject
     /// bytes (no disk space, reservation failure, a whole-segment cell not fully covered), so the rest is
     /// what we must keep in memory.
-    IntervalSet cached;
+    ByteRangeSet cached;
     for (auto & c : claimed)
     {
         /// Only a held role authorizes a write; a tier led by a concurrent downloader is filled there.
@@ -791,6 +791,17 @@ void ReaderExecutor::seek(size_t new_position)
     reached_eof = false;
     /// The plan's memory hold is offset-keyed, so it stays correct; `ensureResolved` on the next read
     /// frees or resets it (a discontinuity `reset`s the plan, a forward move `dropBefore`s it).
+}
+
+void ReaderExecutor::setRequestMap(ByteRangeSet ranges)
+{
+    request_map = std::move(ranges);
+    if (request_map->empty())
+    {
+        LOG_TEST(log, "Request map of {}: nothing", log_file_path);
+        return;
+    }
+    LOG_TEST(log, "Request map of {}: {} bytes in {}", log_file_path, request_map->totalBytes(), request_map->describe());
 }
 
 }

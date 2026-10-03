@@ -1772,7 +1772,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     pipes.reserve(num_streams);
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(
+        info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag, context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -2885,7 +2886,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
     /// and must stay loadable after a revoke; every other statement introduces one to check.
     const bool from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
     if (!from_existing_metadata)
-        context->checkAccess(AccessType::TABLE_ENGINE, String(engine_name));
+        context->checkAccess(AccessType::TABLE_ENGINE, engine_name);
 
     const auto & storages = StorageFactory::instance().getAllStorages();
     auto it = storages.find(engine_name);
