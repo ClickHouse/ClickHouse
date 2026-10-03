@@ -3303,7 +3303,7 @@ The `REFRESH` clause must specify at least one of `EVERY`, `AFTER`, or `DEPENDS 
 
 Periodically runs the corresponding query and stores its result into a table.
 * If `APPEND` is specified, each refresh inserts rows into the table without deleting existing rows. The insert is not atomic, just like a regular `INSERT INTO ... SELECT` query.
-* If `APPEND INCREMENTAL` is specified, each refresh runs the query over only the rows committed to the source table since the previous refresh, and appends the result.
+* If `APPEND INCREMENTAL` is specified, each refresh runs the query over only the rows committed to the source table since the previous refresh, and appends the result. The source table cannot be renamed or exchanged (including by `CREATE OR REPLACE TABLE`) while the view exists.
 * Otherwise, each refresh atomically replaces the table's previous contents.
 
 Differences from regular non-refreshable materialized views:
