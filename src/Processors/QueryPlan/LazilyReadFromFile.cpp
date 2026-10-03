@@ -18,12 +18,24 @@ namespace ErrorCodes
 UInt64 LazyFileRegistry::registerFile(const String & path, const String & version_token)
 {
     std::lock_guard lock(mutex);
+
+    /// Several sources reading disjoint parts of the same file generation (the single-file
+    /// bucket split of the Parquet format) share one entry: their global row indexes are
+    /// physical row numbers of the same file, so mapping them to a single index makes the
+    /// deferred pass reread the file once for all of them.
+    String key = path;
+    key += '\0';
+    key += version_token;
+    if (auto it = file_index_by_path_and_token.find(key); it != file_index_by_path_and_token.end())
+        return it->second;
+
     if (files.size() >= MAX_FILES)
         throw Exception(ErrorCodes::TOO_MANY_ROWS,
             "Too many files ({}) are read by a query with lazy materialization. "
             "Disable the query_plan_optimize_lazy_materialization_for_file setting",
             files.size());
     files.push_back({path, version_token});
+    file_index_by_path_and_token.emplace(std::move(key), files.size() - 1);
     return files.size() - 1;
 }
 

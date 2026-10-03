@@ -6654,6 +6654,21 @@ Possible values:
 - 1 - Enabled
 )", 0, \
         {"26.3", false, true, "Enables cache of parquet file metadata."}) \
+    DECLARE(UInt64, input_format_parquet_min_bytes_to_split, 2ULL * 1024 * 1024 * 1024, R"(
+When reading a single local Parquet file, it is parallelized across multiple sources (each reading a
+subset of the file's row groups) only if the total compressed size of the columns the query reads is at
+least this value. Below the threshold the file is read by a single source, avoiding per-source setup
+overhead that would otherwise slow down short queries reading few or small columns. `0` disables this
+lower bound (a splittable file is always eligible regardless of how little it reads).
+)", 0, \
+        {"26.10", 0, 2ULL * 1024 * 1024 * 1024, "New setting: a single local Parquet file is only parallelized across multiple sources if the query reads at least this many compressed bytes, avoiding per-source overhead on short queries. The previous value `0` (no floor) reproduces the pre-26.10 behavior where the split was driven only by the row-group count, so `compatibility` set to an earlier version keeps parallelizing regardless of read size."}) \
+    DECLARE(UInt64, input_format_parquet_bytes_per_split_bucket, 64 * 1024 * 1024, R"(
+When a single local Parquet file is parallelized across multiple sources, the number of sources (row-group
+buckets) is chosen so that each bucket carries at least this many compressed bytes of the columns the query
+reads (still bounded by `max_threads` and a minimum number of row groups per bucket). Larger values create
+fewer, larger buckets. `0` means do not bound the number of buckets by size (use the row-group count only).
+)", 0, \
+        {"26.10", 0, 64 * 1024 * 1024, "New setting: target minimum compressed bytes per bucket when a single local Parquet file is parallelized across multiple sources. The previous value `0` (do not bound the number of buckets by size) reproduces the pre-26.10 behavior where the bucket count was driven only by the row-group count, so `compatibility` set to an earlier version keeps the old split fan-out."}) \
     DECLARE(Seconds, iceberg_compaction_delay_bias, 60 * 60 * 3, R"(
 Minimum time of delay between 2 background compaction operations.
 )", 0, \

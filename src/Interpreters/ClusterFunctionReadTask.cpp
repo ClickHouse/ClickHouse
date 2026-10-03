@@ -26,7 +26,9 @@ namespace Setting
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
 }
 
-ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context)
+ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(
+    ObjectInfoPtr object, const ContextPtr & context, bool read_is_generation_pinned_)
+    : read_is_generation_pinned(read_is_generation_pinned_)
 {
     if (!object)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`object` cannot be null");
@@ -104,19 +106,63 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
         }
     }
 
-    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO)
+    auto bucket_info_to_send = file_bucket_info;
+    if (bucket_info_to_send && protocol_version < bucket_info_to_send->getMinProtocolVersion()
+        && bucket_info_to_send->coversWholeFile())
     {
-        if (file_bucket_info)
-        {
-            /// Write format name so we can create appropriate file bucket info during deserialization.
-            writeStringBinary(file_bucket_info->getFormatName(), out);
-            file_bucket_info->serialize(out);
-        }
-        else
-        {
-            /// Write empty string as format name if file_bucket_info is not set.
-            writeStringBinary("", out);
-        }
+        /// Trivial split: the single bucket covers the whole file (e.g. `splitToBuckets` returned one
+        /// bucket for a small / single-row-group object). Dropping it on the wire is semantically safe -
+        /// an older worker reading the plain path once returns exactly the same rows, since there is no
+        /// second bucket to duplicate or omit - so a mixed-version cluster read must not fail for it.
+        /// Only the fail-close overwrite guard is lost, which a worker below the required protocol could
+        /// not run anyway.
+        bucket_info_to_send = nullptr;
+    }
+
+    if (bucket_info_to_send && protocol_version < bucket_info_to_send->getMinProtocolVersion() && read_is_generation_pinned)
+    {
+        /// The read is pinned to one immutable generation of the file (a data-lake snapshot: its
+        /// listed files are never rewritten in place, a new version is a new path), so the
+        /// concurrent-overwrite guard the newer fields carry has nothing to detect - every bucket
+        /// reader of this path necessarily sees the footer the split was computed from. Send the
+        /// assignment without those fields rather than failing the task: an older worker already
+        /// understands `row_group_ids`, so it reads exactly its own buckets, and a rolling upgrade
+        /// keeps working. Everything that is not merely a guard stays on the wire.
+        if (auto without_guards = bucket_info_to_send->cloneWithoutOverwriteGuards())
+            bucket_info_to_send = std::move(without_guards);
+    }
+
+    if (bucket_info_to_send)
+    {
+        /// Fail closed: a bucketed task carries `file_bucket_info` so the worker reads only its assigned
+        /// row-group buckets of the file. Downgrading it to a path-only `ObjectInfo` would make the worker
+        /// read the whole file for every bucket task, duplicating rows and over-counting instead of failing.
+        /// A worker whose protocol is too old to carry every field the bucket relies on for its fail-close
+        /// guards must not run such a task: below `WITH_FILE_BUCKETS_INFO` it cannot carry the bucket at all,
+        /// and (for Parquet) below `WITH_PARQUET_FILE_ROW_GROUP_COUNT` it would silently drop
+        /// `file_num_row_groups` and `footer_digest`, disabling the `checkFileMatchesBucketAssignment`
+        /// overwrite guard, so it could read a different generation of an object overwritten between the
+        /// split decision and the read instead of throwing. The exception is a read pinned to an
+        /// immutable generation, handled just above: there the guard is dropped explicitly because no
+        /// overwrite can happen under the read, and the task is sent rather than failed.
+        const auto required_protocol_version = bucket_info_to_send->getMinProtocolVersion();
+        if (protocol_version < required_protocol_version)
+            throw Exception(
+                ErrorCodes::UNKNOWN_PROTOCOL,
+                "Worker protocol version {} cannot carry `file_bucket_info` for format {}, which is required "
+                "for parallel reads of a single file split into row-group buckets (minimum protocol version: {})",
+                protocol_version,
+                bucket_info_to_send->getFormatName(),
+                required_protocol_version);
+
+        /// Write format name so we can create appropriate file bucket info during deserialization.
+        writeStringBinary(bucket_info_to_send->getFormatName(), out);
+        bucket_info_to_send->serialize(out, protocol_version);
+    }
+    else if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO)
+    {
+        /// Write empty string as format name if file_bucket_info is not set.
+        writeStringBinary("", out);
     }
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA)
@@ -192,7 +238,7 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
         if (!format.empty())
         {
             file_bucket_info = FormatFactory::instance().getFileBucketInfo(format);
-            file_bucket_info->deserialize(in);
+            file_bucket_info->deserialize(in, protocol_version);
         }
     }
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA)
