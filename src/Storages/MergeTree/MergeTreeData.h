@@ -1090,9 +1090,6 @@ public:
 
     ReadSnapshotPtr makeUniqueKeyReadSnapshot(const ContextPtr & local_context) const;
 
-    /// The parts' current delete bitmaps, in `parts` order; immutable once returned.
-    std::vector<ConstDeleteBitmapPtr> captureUniqueKeyMergeInputBitmaps(const DataPartsVector & parts) const;
-
     UniqueKeyTxnManager & uniqueKeyTxnManager() const;
 
     /// Whether `part` holds the only copy of some other part's kills, in which case no removal
@@ -2256,8 +2253,6 @@ protected:
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
 private:
-    ReadSnapshotPtr makeUniqueKeyReadSnapshot(CSN snapshot_csn) const;
-
     /// Checking that candidate part doesn't break invariants: correct partition
     void checkPartPartition(MutableDataPartPtr & part, const DataPartsAnyLock & lock) const;
     void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, const DataPartsAnyLock & lock) const;

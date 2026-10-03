@@ -15,18 +15,19 @@ namespace DB
 class IDataPartStorage;
 class IMergeTreeDataPart;
 class MergedPartOffsets;
+class ReadSnapshot;
 struct MergeTreeDataPartChecksums;
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using MergeTreeDataPartsVector = std::vector<MergeTreeDataPartPtr>;
 
 /// Where each source row of a UNIQUE KEY merge landed in the merged part, translated through the
-/// merge's row mapping. Borrows `snapshot_bitmaps` and `merged_part_offsets`.
+/// merge's row mapping. Borrows `merged_part_offsets`.
 class UniqueKeyMergeRowMap
 {
 public:
     UniqueKeyMergeRowMap(
         const MergeTreeDataPartsVector & sources,
-        const std::vector<ConstDeleteBitmapPtr> & snapshot_bitmaps,
+        const ReadSnapshot & read_snapshot,
         const MergedPartOffsets & merged_part_offsets);
 
     /// The merged row of `source_row` of source `source_index`, or nullopt if it was dead at the snapshot.
@@ -36,7 +37,8 @@ public:
     UInt64 mergedRowsCount() const { return merged_rows_count; }
 
 private:
-    const std::vector<ConstDeleteBitmapPtr> & snapshot_bitmaps;
+    /// Resolved once: `toMergedRow` runs per index entry and per late kill.
+    std::vector<ConstDeleteBitmapPtr> snapshot_bitmaps;
     const MergedPartOffsets & merged_part_offsets;
     /// Each source's first merged row, used when the merge appends the sources in order.
     std::vector<UInt64> merged_start;

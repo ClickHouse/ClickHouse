@@ -4959,11 +4959,6 @@ size_t MergeTreeData::clearPartsFromFilesystemAndRollbackIfError(const DataParts
 
 /// ----- UNIQUE KEY -----
 
-ReadSnapshotPtr MergeTreeData::makeUniqueKeyReadSnapshot(CSN snapshot_csn) const
-{
-    return std::make_shared<const ReadSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), snapshot_csn);
-}
-
 ReadSnapshotPtr MergeTreeData::makeUniqueKeyReadSnapshot(const ContextPtr & local_context) const
 {
     /// An explicit transaction, or `implicit_transaction=1`, is already the pin.
@@ -4981,17 +4976,6 @@ ReadSnapshotPtr MergeTreeData::makeUniqueKeyReadSnapshot(const ContextPtr & loca
         snapshot_csn, txn->tid);
 
     return std::make_shared<const ReadSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), snapshot_csn, txn->tid, std::move(pin));
-}
-
-std::vector<ConstDeleteBitmapPtr> MergeTreeData::captureUniqueKeyMergeInputBitmaps(const DataPartsVector & parts) const
-{
-    const auto snapshot = makeUniqueKeyReadSnapshot(TransactionManager::instance().getLatestSnapshot());
-
-    std::vector<ConstDeleteBitmapPtr> bitmaps;
-    bitmaps.reserve(parts.size());
-    for (const auto & part : parts)
-        bitmaps.push_back(snapshot->bitmapAt(part->info));
-    return bitmaps;
 }
 
 UniqueKeyTxnManager & MergeTreeData::uniqueKeyTxnManager() const

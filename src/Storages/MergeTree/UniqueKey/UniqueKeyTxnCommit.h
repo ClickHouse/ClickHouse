@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
+#include <Storages/MergeTree/UniqueKey/ReadSnapshot.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
 
 #include <base/scope_guard.h>
@@ -54,11 +55,11 @@ public:
     struct MergeRequest
     {
         MergeTreeTransactionHolder & transaction;
-        /// `snapshot_bitmaps` and `merged_part_offsets` are indexed like this.
+        /// `merged_part_offsets` is indexed like this.
         const MergeTreeData::DataPartsVector & source_parts;
         MergeTreeMutableDataPartPtr merged_part;
-        /// The bitmaps the merge's input filter dropped rows by.
-        const std::vector<ConstDeleteBitmapPtr> & snapshot_bitmaps;
+        /// The snapshot whose bitmaps the merge's input filter dropped rows by.
+        const ReadSnapshot & read_snapshot;
         /// Where each row the input filter let through landed in `merged_part`.
         const MergedPartOffsets & merged_part_offsets;
         /// The task's merge-list flag, which shutdown sets: stops the wait for a lost commit reply.

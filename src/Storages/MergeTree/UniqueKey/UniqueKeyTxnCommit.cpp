@@ -560,7 +560,7 @@ private:
 DeleteBitmapPtr UniqueKeyTxnCommit::MergeCommit::computeMergeLateKills()
 {
     const auto & sources = request.source_parts;
-    const auto & snapshot_bitmaps = request.snapshot_bitmaps;
+    const auto & read_snapshot = request.read_snapshot;
     const auto & offsets = request.merged_part_offsets;
     const IMergeTreeDataPart & merged_part = *request.merged_part;
 
@@ -571,7 +571,7 @@ DeleteBitmapPtr UniqueKeyTxnCommit::MergeCommit::computeMergeLateKills()
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "UNIQUE KEY merge into {}: the row mapping is not finalized at the commit", merged_part.name);
 
-    const UniqueKeyMergeRowMap row_map(sources, snapshot_bitmaps, offsets);
+    const UniqueKeyMergeRowMap row_map(sources, read_snapshot, offsets);
     if (!offsets.isMappingEnabled() && row_map.mergedRowsCount() != merged_part.rows_count)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "UNIQUE KEY merge into {}: {} row(s) of the sources were live at the snapshot, but the merged part has {}",
@@ -583,7 +583,7 @@ DeleteBitmapPtr UniqueKeyTxnCommit::MergeCommit::computeMergeLateKills()
     {
         DeleteBitmap newly_dead;
         newly_dead.merge(*delete_bitmap_store.readLatestBitmap(sources[i]->info));
-        newly_dead.subtract(*snapshot_bitmaps[i]);
+        newly_dead.subtract(*read_snapshot.bitmapAt(sources[i]->info));
 
         for (const UInt64 source_offset : newly_dead.toVector())
         {

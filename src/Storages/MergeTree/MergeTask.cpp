@@ -56,6 +56,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyMergedIndex.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
 #include <fmt/ranges.h>
 #include <Common/DimensionalMetrics.h>
 #include <Common/ErrorCodes.h>
@@ -652,13 +653,19 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
     global_ctx->virtual_columns = global_ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
 
-    /// Pin each input part's delete bitmap at one snapshot for the per-part filter and the
-    /// commit-time late-kill diff. A projection sub-merge's metadata has no unique key.
+    /// The input filter, the row map and the commit's late-kill diff read the sources' bitmaps at
+    /// the merge transaction's snapshot, so a kill committed after it began is a late kill. A dry
+    /// run has no transaction and pins its own. A projection sub-merge's metadata has no unique key.
     global_ctx->is_unique_key_merge = global_ctx->metadata_snapshot->hasUniqueKey();
 
     if (global_ctx->is_unique_key_merge)
-        global_ctx->unique_key_snapshot_bitmaps
-            = global_ctx->data->captureUniqueKeyMergeInputBitmaps(global_ctx->future_part->parts);
+    {
+        if (global_ctx->txn)
+            global_ctx->unique_key_read_snapshot = std::make_shared<const ReadSnapshot>(
+                global_ctx->data->uniqueKeyTxnManager().deleteBitmapStore(), global_ctx->txn->getSnapshot(), global_ctx->txn->tid);
+        else
+            global_ctx->unique_key_read_snapshot = global_ctx->data->makeUniqueKeyReadSnapshot(global_ctx->context);
+    }
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
@@ -2113,7 +2120,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         /// Skips the rows the horizontal stage skipped, so the column lines up with `rows_sources`.
         RangesInDataPart part_ranges(global_ctx->future_part->parts[part_num], nullptr, part_num, part_starting_offset);
         if (global_ctx->is_unique_key_merge)
-            part_ranges.delete_bitmap = global_ctx->unique_key_snapshot_bitmaps[part_num];
+            part_ranges.delete_bitmap = global_ctx->unique_key_read_snapshot->bitmapAt(global_ctx->future_part->parts[part_num]->info);
 
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Merge,
@@ -2531,7 +2538,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     if (global_ctx->is_unique_key_merge && global_ctx->rows_written > 0)
     {
         const UniqueKeyMergeRowMap row_map(
-            global_ctx->future_part->parts, global_ctx->unique_key_snapshot_bitmaps, *global_ctx->merged_part_offsets);
+            global_ctx->future_part->parts, *global_ctx->unique_key_read_snapshot, *global_ctx->merged_part_offsets);
         UniqueKeyMergedIndexBuilder(
             global_ctx->future_part->parts,
             row_map,
@@ -3486,7 +3493,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         RangesInDataPart part_ranges(part, nullptr, i, part_starting_offset);
         if (global_ctx->is_unique_key_merge)
         {
-            part_ranges.delete_bitmap = global_ctx->unique_key_snapshot_bitmaps[i];
+            part_ranges.delete_bitmap = global_ctx->unique_key_read_snapshot->bitmapAt(part->info);
             /// Counted here, once per merge: the vertical stage's reads skip the same rows again per column.
             const size_t dead_at_snapshot = part_ranges.delete_bitmap->cardinality();
             *global_ctx->input_rows_filtered += dead_at_snapshot;

@@ -180,7 +180,7 @@ void MergePlainMergeTreeTask::finish()
             {.transaction = uk_txn,
             .source_parts = future_part->parts,
             .merged_part = new_part,
-            .snapshot_bitmaps = merge_task->getUniqueKeySnapshotBitmaps(),
+            .read_snapshot = merge_task->getUniqueKeyReadSnapshot(),
             .merged_part_offsets = merge_task->getUniqueKeyMergedPartOffsets(),
             .cancelled = &(*merge_list_entry)->is_cancelled});
     }

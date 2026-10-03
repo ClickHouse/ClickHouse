@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
+#include <Storages/MergeTree/UniqueKey/ReadSnapshot.h>
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Common/Exception.h>
 
@@ -30,17 +31,17 @@ namespace ErrorCodes
 
 UniqueKeyMergeRowMap::UniqueKeyMergeRowMap(
     const MergeTreeDataPartsVector & sources,
-    const std::vector<ConstDeleteBitmapPtr> & snapshot_bitmaps_,
+    const ReadSnapshot & read_snapshot,
     const MergedPartOffsets & merged_part_offsets_)
-    : snapshot_bitmaps(snapshot_bitmaps_)
-    , merged_part_offsets(merged_part_offsets_)
+    : merged_part_offsets(merged_part_offsets_)
     , merged_start(sources.size())
 {
-    chassert(sources.size() == snapshot_bitmaps.size());
     chassert(merged_part_offsets.isFinalized());
 
+    snapshot_bitmaps.reserve(sources.size());
     for (size_t i = 0; i < sources.size(); ++i)
     {
+        snapshot_bitmaps.push_back(read_snapshot.bitmapAt(sources[i]->info));
         const UInt64 live_at_snapshot = sources[i]->rows_count - snapshot_bitmaps[i]->cardinality();
         if (merged_part_offsets.isMappingEnabled() && merged_part_offsets.getPartRowsCount(i) != live_at_snapshot)
             throw Exception(ErrorCodes::LOGICAL_ERROR,

@@ -23,7 +23,7 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
-#include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
+#include <Storages/MergeTree/UniqueKey/ReadSnapshot.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
@@ -184,10 +184,11 @@ public:
 
     void cancel() noexcept;
 
-    /// The source parts' delete bitmaps pinned at merge start, in `future_part->parts` order.
-    const std::vector<ConstDeleteBitmapPtr> & getUniqueKeySnapshotBitmaps() const
+    /// The snapshot the merge read its sources' delete bitmaps at; built for every unique-key merge.
+    const ReadSnapshot & getUniqueKeyReadSnapshot() const
     {
-        return global_ctx->unique_key_snapshot_bitmaps;
+        chassert(global_ctx->unique_key_read_snapshot);
+        return *global_ctx->unique_key_read_snapshot;
     }
     /// Where each source row landed in the merged part; built for every unique-key merge.
     const MergedPartOffsets & getUniqueKeyMergedPartOffsets() const
@@ -315,9 +316,9 @@ private:
         /// Current merge may or may not reduce number of rows. It's not known until the horizontal stage is finished.
         bool merge_may_reduce_rows{false};
 
-        /// Set in `prepare()`; the snapshot bitmaps are in source-part order.
+        /// Set in `prepare()`.
         bool is_unique_key_merge{false};
-        std::vector<ConstDeleteBitmapPtr> unique_key_snapshot_bitmaps;
+        ReadSnapshotPtr unique_key_read_snapshot;
 
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;
