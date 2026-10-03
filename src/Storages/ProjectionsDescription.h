@@ -111,7 +111,8 @@ struct ProjectionDescription
     static void validateSettingsForUnavailable(const ASTProjectionDeclaration & declaration, const ContextPtr & query_context);
 
     /// Validate both the codec policy for this provenance and the lossless projection invariant.
-    /// The type may be absent while admitting an unavailable definition from a backup.
+    /// The type may be absent while admitting an unavailable definition from a backup. In that
+    /// case new declarations can use only codecs that are safe without a proven output type.
     static ASTPtr validateDeclaredColumnCodec(
         const ASTPtr & codec_ast,
         const DataTypePtr & column_type,

@@ -319,19 +319,20 @@ def test_restore_unavailable_projection_rejects_lossy_codec(started_cluster, pro
 
 
 @pytest.mark.parametrize(
-    ("projection_column", "select_expression", "codec", "declared_type"),
+    ("projection_column", "select_expression", "codec", "declared_type", "source_type"),
     [
-        ("x", "x", "T64", ""),
-        ("`toFloat64(k)`", "toFloat64(k)", "T64", ""),
-        ("`toFloat64(k)`", "toFloat64(k)", "Delta", ""),
-        ("`toFloat64(k)`", "toFloat64(k)", "GCD", ""),
-        ("`toFloat64(k)`", "toFloat64(k)", "Quantized('int8', 8)", ""),
-        ("`toFloat64(k)`", "toFloat64(k)", "LZ4", ""),
-        ("`toFloat64(k)`", "toFloat64(k)", "T64", "UInt64"),
+        ("x", "x", "T64", "", "String"),
+        ("x", "x", "T64", "", "UInt64"),
+        ("`toFloat64(k)`", "toFloat64(k)", "T64", "", "String"),
+        ("`toFloat64(k)`", "toFloat64(k)", "Delta", "", "String"),
+        ("`toFloat64(k)`", "toFloat64(k)", "GCD", "", "String"),
+        ("`toFloat64(k)`", "toFloat64(k)", "Quantized('int8', 8)", "", "String"),
+        ("`toFloat64(k)`", "toFloat64(k)", "LZ4", "", "String"),
+        ("`toFloat64(k)`", "toFloat64(k)", "T64", "UInt64", "String"),
     ],
 )
-def test_restore_unavailable_projection_validates_codec_output_type(
-    started_cluster, projection_column, select_expression, codec, declared_type
+def test_restore_unavailable_projection_requires_proven_codec_output_type(
+    started_cluster, projection_column, select_expression, codec, declared_type, source_type
 ):
     node.query("DROP DATABASE IF EXISTS codec_restore_untyped SYNC")
     node.query("CREATE DATABASE codec_restore_untyped")
@@ -349,7 +350,7 @@ def test_restore_unavailable_projection_validates_codec_output_type(
     lookup = "dictGet('codec_restore_untyped.lookup', 'value', k)"
     node.query(
         "CREATE TABLE codec_restore_untyped.source "
-        f"(k UInt64, x String, PROJECTION pp ({projection_column} CODEC(LZ4)) AS "
+        f"(k UInt64, x {source_type}, PROJECTION pp ({projection_column} CODEC(LZ4)) AS "
         f"(SELECT {select_expression}, {lookup} AS d "
         f"GROUP BY {select_expression}, {lookup})) "
         "ENGINE = MergeTree ORDER BY k"
@@ -380,9 +381,9 @@ def test_restore_unavailable_projection_validates_codec_output_type(
         "RESTORE TABLE codec_restore_untyped.source AS codec_restore_untyped.restored "
         f"FROM Disk('backups', '{backup}')"
     )
-    if codec == "LZ4":
+    if codec == "LZ4" or (codec == "T64" and source_type == "UInt64"):
         node.query(restore_query)
-        assert "CODEC(LZ4)" in node.query(
+        assert f"CODEC({codec})" in node.query(
             "SHOW CREATE TABLE codec_restore_untyped.restored"
         )
     else:

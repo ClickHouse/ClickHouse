@@ -1076,8 +1076,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                                             backQuote(column->name), backQuote(declaration.name),
                                             declared_type->getName(), direct_type->getName());
                                     ProjectionDescription::validateDeclaredColumnCodec(
-                                        column->getCodec(), direct_type, CodecValidationSettings(
-                                            getContext()->getSettingsRef(), /*reject_type_sensitive_without_column_type=*/ true),
+                                        column->getCodec(), direct_type, CodecValidationSettings(getContext()->getSettingsRef()),
                                         column->name, declaration.name);
                                 }
                             }
@@ -2597,7 +2596,7 @@ try
     if (projection_source != ProjectionDefinitionSource::PreviouslyAccepted && !projections_belong_to_inner_table
         && !context->getClientInfo().is_replicated_database_internal
         && !isSecondaryProjectionMetadataReplay(context))
-        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(projection_storage.get()))
+        if (const auto * merge_tree = castStorage<MergeTreeData>(projection_storage, DeferredTable::Load).get())
         {
             if (metadata->projections.hasUnavailable())
                 merge_tree->checkCopiedUnavailableProjections(

@@ -383,8 +383,14 @@ ASTPtr ProjectionDescription::validateDeclaredColumnCodec(
     const String & column_name,
     const String & projection_name)
 {
+    /// A newly admitted projection cannot defer a typed codec's compatibility check until its
+    /// missing dependency comes back. Keep this rule at the projection boundary so callers
+    /// cannot accidentally validate an unknown output type with the ordinary column policy.
+    auto projection_validation_settings = validation_settings;
+    if (!column_type && projection_validation_settings.settings)
+        projection_validation_settings.reject_type_sensitive_without_column_type = true;
     auto codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-        codec_ast, column_type, validation_settings);
+        codec_ast, column_type, projection_validation_settings);
     if (column_type && isLossyCodecForType(codec, column_type))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
