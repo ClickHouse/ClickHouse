@@ -1405,13 +1405,17 @@ EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
 
 }
 
-void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filter_column_name)
+void ActionsDAG::foldFilterPredicateThroughMaterialize(
+    std::string & filter_column_name, bool & remove_filter_column, const Block & input_header)
 {
     if (filter_column_name.empty())
         return;
-    const Node * filter_node = tryFindInOutputs(filter_column_name);
-    if (!filter_node)
+
+    const auto it = std::ranges::find_if(outputs, [&](const Node * output) { return output->result_name == filter_column_name; });
+    if (it == outputs.end())
         return;
+
+    const Node * filter_node = *it;
 
     /// A prior optimizer pass may already have folded this filter. Replacing an
     /// existing const output with another const output makes the pass report a
@@ -1424,20 +1428,32 @@ void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filte
     if (!folded || !folded->column)
         return;
 
-    /// add a fresh const COLUMN and re-route the filter output, leave the original predicate
-    /// subtree intact so other parents that may share parts of it are unaffected -
-    /// `removeUnusedActions` prunes the now-orphan subtree later
-    const Node & new_const = addColumn(
-        std::move(folded->column), filter_node->result_type,
-        std::string(filter_column_name), folded->deterministic, folded->masked_secret);
-    for (auto & out : outputs)
+    /// Add a fresh const COLUMN and re-route the filter to it, leave the original predicate subtree intact so other
+    /// parents that may share parts of it are unaffected - `removeUnusedActions` prunes the now-orphan subtree later.
+    if (remove_filter_column)
     {
-        if (out == filter_node)
-        {
-            out = &new_const;
-            break;
-        }
+        const Node & new_const = addColumn(
+            std::move(folded->column), filter_node->result_type,
+            filter_node->result_name, folded->deterministic, folded->masked_secret);
+        *it = &new_const;
+        return;
     }
+
+    const auto is_taken = [&](const std::string & name)
+    {
+        return input_header.has(name) || std::ranges::any_of(outputs, [&](const Node * output) { return output->result_name == name; });
+    };
+
+    std::string folded_name = filter_column_name + "_folded";
+    for (size_t suffix = 1; is_taken(folded_name); ++suffix)
+        folded_name = fmt::format("{}_folded_{}", filter_column_name, suffix);
+
+    const Node & new_const = addColumn(
+        std::move(folded->column), filter_node->result_type, folded_name, folded->deterministic, folded->masked_secret);
+    outputs.push_back(&new_const);
+
+    filter_column_name = std::move(folded_name);
+    remove_filter_column = true;
 }
 
 void ActionsDAG::deduplicateSubtrees()
@@ -2217,50 +2233,49 @@ bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
 
 bool ActionsDAG::removeUnusedResult(const std::string & column_name)
 {
-    /// Find column in output nodes and remove.
-    const Node * col = nullptr;
+    auto output_it = std::ranges::find_if(outputs, [&](const Node * node) { return node->result_name == column_name; });
+    if (output_it == outputs.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found result {} in ActionsDAG\n{}", column_name, dumpDAG());
+
+    /// The nodes the result is computed by, each the only child of the one before, down to an input or a column.
+    std::vector<const Node *> chain;
+    for (const Node * node = *output_it;; node = node->children.front())
     {
-        auto it = outputs.begin();
-        for (; it != outputs.end(); ++it)
-            if ((*it)->result_name == column_name)
-                break;
+        if (node->children.size() > 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Result {} is not a chain of nodes down to an input or a column: {} has {} children\n{}",
+                column_name, node->result_name, node->children.size(), dumpDAG());
 
-        if (it == outputs.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found result {} in ActionsDAG\n{}", column_name, dumpDAG());
-
-        col = *it;
-        outputs.erase(it);
+        chain.push_back(node);
+        if (node->children.empty())
+            break;
     }
 
-    /// Check if column is in input.
-    auto it = inputs.begin();
-    for (; it != inputs.end(); ++it)
-        if (*it == col)
-            break;
+    outputs.erase(output_it);
 
-    /// Check column has no dependent.
+    std::unordered_map<const Node *, size_t> uses;
     for (const auto & node : nodes)
         for (const auto * child : node.children)
-            if (col == child)
-                return false;
+            ++uses[child];
+    for (const auto * output : outputs)
+        ++uses[output];
 
-    /// Do not remove input if it was mentioned in output nodes several times.
-    for (const auto * output_node : outputs)
-        if (col == output_node)
+    /// Remove the chain from the top while nothing else uses a node: another node, or an output of the same name or of
+    /// another one.
+    for (const auto * node : chain)
+    {
+        if (uses[node] != 0)
             return false;
 
-    /// Remove from nodes and inputs.
-    for (auto jt = nodes.begin(); jt != nodes.end(); ++jt)
-    {
-        if (&(*jt) == col)
-        {
-            nodes.erase(jt);
-            break;
-        }
+        if (!node->children.empty())
+            --uses[node->children.front()];
+
+        if (node->type == ActionType::INPUT)
+            std::erase(inputs, node);
+
+        nodes.remove_if([&](const Node & candidate) { return &candidate == node; });
     }
 
-    if (it != inputs.end())
-        inputs.erase(it);
     return true;
 }
 
