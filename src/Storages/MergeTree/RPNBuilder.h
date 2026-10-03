@@ -168,6 +168,15 @@ public:
     RPNBuilderTreeNode getArgumentAt(size_t index) const;
 };
 
+/// Whether the node is `CAST`, `_CAST`, `toNullable` or `toLowCardinality` whose conversion never changes
+/// the value and never throws: `LowCardinality` added or dropped and `Nullable` added, at any depth of `Array`.
+bool isLosslessConversionFunction(const ActionsDAG::Node & node);
+
+/// Strips lossless conversions (see above) from the node. Indexes are analyzed on the expression under them.
+/// The AST form carries no types and is returned as is.
+RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node);
+const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node);
+
 /** RPN Builder build stack of reverse polish notation elements (RPNElements) required for index analysis.
   *
   * RPNBuilder client must provide RPNElement type that has following interface:
