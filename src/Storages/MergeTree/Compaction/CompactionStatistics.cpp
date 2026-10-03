@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
+#include <Compression/CompressionFactory.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
@@ -58,6 +59,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 marks_compress_block_size;
     extern const MergeTreeSettingsBool allow_vertical_merges_from_compact_to_wide_parts;
+    extern const MergeTreeSettingsBool compress_primary_key;
+    extern const MergeTreeSettingsBool enable_adaptive_codec_selection;
     extern const MergeTreeSettingsUInt64 enable_vertical_merge_algorithm;
     extern const MergeTreeSettingsUInt64 max_merge_delayed_streams_for_parallel_write;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_bytes_to_activate;
@@ -78,6 +81,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_wide_part;
     extern const MergeTreeSettingsBool use_adaptive_write_buffer_for_dynamic_subcolumns;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_mutation;
+    extern const MergeTreeSettingsNonZeroUInt64 primary_key_compress_block_size;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_lower_max_size_of_merge;
     extern const MergeTreeSettingsBool vertical_merge_optimize_ttl_delete;
 }
@@ -205,6 +209,49 @@ size_t countColumnStreams(const NamesAndTypesList & columns)
         }, column.type);
     }
     return streams;
+}
+
+/// The number of compressors a compact part writer keeps alive. `MergeTreeDataPartWriterCompact` shares one
+/// `CompressedWriteBuffer` between all substreams with the same codec (`streams_by_codec`, keyed by the codec
+/// hash), and creates every such compressor at the default `DBMS_DEFAULT_BUFFER_SIZE`, not at
+/// `max_compress_block_size`. The substreams of a column with the default codec share the part's default
+/// codec, except when adaptive codec selection wraps it per substream (`CompressionCodecAdaptive`, whose hash
+/// follows the candidate pool of the substream type), so those are keyed by the substream type. A column with
+/// an explicit codec is counted once per substream: its data and structural substreams get different codecs,
+/// and a codec that needs the vector dimension up front is never shared, so per substream is the bound that
+/// holds for every codec - and it is exact for the common single-stream column. The dynamic substreams of a
+/// JSON / Dynamic column with adaptive codec selection can bring types the default serialization does not
+/// know; their compressors are the residual left to the reactive `background_memory_tracker`.
+size_t countCompactWriterCompressors(
+    const NamesAndTypesList & columns, const ColumnsDescription & columns_description, bool adaptive_codec)
+{
+    std::unordered_set<String> codec_keys;
+    for (const auto & column : columns)
+    {
+        const auto column_desc = columns_description.tryGetColumnDescription(
+            GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());
+        const bool explicit_codec = column_desc && column_desc->codec && !CompressionCodecFactory::isDefaultCodec(column_desc->codec);
+        size_t substream_index = 0;
+        column.type->getDefaultSerialization()->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+        {
+            if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                return;
+            if (explicit_codec)
+            {
+                codec_keys.insert(fmt::format("explicit {} {}", column.name, substream_index++));
+            }
+            else if (adaptive_codec)
+            {
+                const auto & substream_type = substream_path.back().data.type;
+                codec_keys.insert("adaptive " + (substream_type ? substream_type->getName() : String{}));
+            }
+            else
+            {
+                codec_keys.insert("default");
+            }
+        }, column.type);
+    }
+    return std::max<size_t>(codec_keys.size(), 1);
 }
 
 /// A count of writer streams together with the share of them the writer opens WITHOUT an adaptive write
@@ -1477,8 +1524,9 @@ UInt64 estimateNeededMemoryForMerge(
         }
     }
 
-    /// A compact output part writes every column through one shared writer buffer, and that writer does not
-    /// take the wide writer's per-stream adaptive decision, so its single stream is priced non-adaptive.
+    /// A compact output part writes every column into one shared file, and its writer does not take the wide
+    /// writer's per-stream adaptive decision; it is counted as a single stream here (for the marks and the
+    /// vertical-merge checks), and its buffers are priced by compact_eager_buffers / compact_worst_case below.
     const auto output_stream_counts = future_part.part_format.part_type == MergeTreeDataPartType::Wide
         ? countOutputStreams(part_view_output_columns, source_and_patch_parts, settings, default_filled_dynamic_columns)
         : WriterStreamCounts{.total = 1, .non_adaptive = 1};
@@ -1687,7 +1735,7 @@ UInt64 estimateNeededMemoryForMerge(
         return marks_block + MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE;
     };
     /// Both chains of a non-adaptive stream, the footprint every stream priced outside the adaptive split
-    /// (skip-index streams, delayed vertical streams, a compact writer's single stream) allocates eagerly.
+    /// (skip-index streams, delayed vertical streams) allocates eagerly.
     const auto eager_stream_buffers_with_marks = [&](UInt64 compress_block_size)
     {
         return eager_stream_buffers(compress_block_size) + marks_eager_buffers(/*adaptive_stream=*/ false);
@@ -1747,7 +1795,45 @@ UInt64 estimateNeededMemoryForMerge(
         return saturatingAdd(data_worst_case, marks_worst_case_write_buffer_size);
     };
     const UInt64 write_buffer_size = worst_case_write_buffer_size(base_max_compress_block_size);
-    const UInt64 output_worst_case = saturatingStreamsTimesBuffer(output_streams, write_buffer_size);
+
+    /// A compact part writer is not one stream of the wide writer's shape. Its single `data.bin` file
+    /// buffer is opened at the writer's table-level `max_compress_block_size` - column-level overrides only
+    /// affect the wide writer - while its compressors, one per distinct codec, are all created at the
+    /// default `DBMS_DEFAULT_BUFFER_SIZE` (see countCompactWriterCompressors). Its marks chain is the same as
+    /// a wide stream's.
+    const auto resolve_compact_block_size = [&](const MergeTreeSettings & writer_settings)
+    {
+        UInt64 compact_block_size = writer_settings[MergeTreeSetting::max_compress_block_size];
+        if (compact_block_size == 0)
+            compact_block_size = context->getSettingsRef()[Setting::max_compress_block_size];
+        return std::min<UInt64>(compact_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
+    };
+    const bool adaptive_codec = settings[MergeTreeSetting::enable_adaptive_codec_selection];
+    const auto compact_eager_buffers = [&](UInt64 compact_block_size, size_t compressors)
+    {
+        const UInt64 file_buffer_size = remote_write_buffer_size != 0
+            ? std::min<UInt64>(compact_block_size, DBMS_DEFAULT_BUFFER_SIZE)
+            : compact_block_size;
+        return saturatingAdd(
+            file_buffer_size + marks_eager_buffers(/*adaptive_stream=*/ false),
+            saturatingStreamsTimesBuffer(compressors, DBMS_DEFAULT_BUFFER_SIZE));
+    };
+    const auto compact_worst_case = [&](UInt64 compact_block_size, size_t compressors)
+    {
+        const UInt64 compressors_size = saturatingStreamsTimesBuffer(compressors, DBMS_DEFAULT_BUFFER_SIZE);
+        const UInt64 data_worst_case = remote_write_buffer_size != 0
+            ? saturatingAdd(remote_write_buffer_size, compressors_size)
+            : saturatingAdd(compact_block_size, compressors_size);
+        return saturatingAdd(data_worst_case, marks_worst_case_write_buffer_size);
+    };
+    const UInt64 output_compact_block_size = resolve_compact_block_size(settings);
+    const size_t output_compact_compressors = output_is_compact
+        ? countCompactWriterCompressors(output_columns, columns_description, adaptive_codec)
+        : 0;
+
+    const UInt64 output_worst_case = output_is_compact
+        ? compact_worst_case(output_compact_block_size, output_compact_compressors)
+        : saturatingStreamsTimesBuffer(output_streams, write_buffer_size);
 
     /// A stream whose data volume this estimate cannot derive from the source parts - a rebuilt projection,
     /// a variable-size DEFAULT-filled column, a delayed vertical stream - is priced at the buffers its
@@ -1793,8 +1879,11 @@ UInt64 estimateNeededMemoryForMerge(
     /// holds the column data, with the same in-flight allowance.
     const UInt64 output_marks_term = saturatingStreamsTimesBuffer(3, output_marks_bytes);
 
+    const UInt64 output_eager_write_buffers = output_is_compact
+        ? compact_eager_buffers(output_compact_block_size, output_compact_compressors)
+        : eager_write_buffers(output_stream_counts, base_max_compress_block_size);
     const UInt64 output_data_bound = saturatingAdd(
-        eager_write_buffers(output_stream_counts, base_max_compress_block_size) + 3 * sum_input_bytes_uncompressed + default_filled_term,
+        output_eager_write_buffers + 3 * sum_input_bytes_uncompressed + default_filled_term,
         output_marks_term);
 
     UInt64 output_memory = std::min(output_worst_case, output_data_bound);
@@ -2007,6 +2096,22 @@ UInt64 estimateNeededMemoryForMerge(
     output_memory = saturatingAdd(
         output_memory,
         saturatingStreamsTimesBuffer(skip_index_streams, eager_stream_buffers_with_marks(base_max_compress_block_size)));
+
+    /// The primary index is one more writer chain held for the whole merge: `MergedBlockOutputStream`
+    /// rewrites the primary key, and `MergeTreeDataPartWriterOnDisk::initPrimaryIndex` opens the `primary`
+    /// file at `DBMS_DEFAULT_BUFFER_SIZE` (a multipart writer caps its initial buffer at the same size), plus
+    /// a compressor of `primary_key_compress_block_size` when `compress_primary_key` is enabled. Its data is
+    /// one key per granule, so only the eagerly allocated buffers are reserved, as for the skip indexes.
+    const auto primary_index_eager_buffers = [&](const StorageMetadataPtr & writer_metadata, const MergeTreeSettings & writer_settings) -> UInt64
+    {
+        if (!writer_metadata->hasPrimaryKey())
+            return 0;
+        UInt64 buffers = DBMS_DEFAULT_BUFFER_SIZE;
+        if (writer_settings[MergeTreeSetting::compress_primary_key])
+            buffers += std::min<UInt64>(writer_settings[MergeTreeSetting::primary_key_compress_block_size], MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
+        return buffers;
+    };
+    output_memory = saturatingAdd(output_memory, primary_index_eager_buffers(metadata_snapshot, settings));
 
     /// Projections: the merge also reads and writes projection parts, and none of that IO flows through
     /// the base parts' readers and writers priced above. Mirror the decision made in
@@ -2350,18 +2455,31 @@ UInt64 estimateNeededMemoryForMerge(
                 /// identical to the plain one under default settings.
                 const UInt64 projection_read_buffer_size
                     = output_on_remote_disk ? cached_remote_read_buffer_size : local_read_buffer_size;
-                const UInt64 projection_worst_case = saturatingStreamsTimesBuffer(
-                    projection_writer_streams, worst_case_write_buffer_size(projection_max_compress_block_size));
+                /// A Compact projection part is written by the compact writer (see compact_eager_buffers above),
+                /// with the projection's own table-level block size and the codecs of the projection columns.
+                const UInt64 projection_compact_block_size = resolve_compact_block_size(projection_settings);
+                const size_t projection_compact_compressors = countCompactWriterCompressors(
+                    projection_column_list, projection.metadata->getColumns(), projection_settings[MergeTreeSetting::enable_adaptive_codec_selection]);
+                const auto projection_format_worst_case = [&](bool is_compact)
+                {
+                    return is_compact
+                        ? compact_worst_case(projection_compact_block_size, projection_compact_compressors)
+                        : saturatingStreamsTimesBuffer(
+                            projection_wide_stream_counts.total, worst_case_write_buffer_size(projection_max_compress_block_size));
+                };
+                const UInt64 projection_worst_case = std::max(
+                    projection_format_worst_case(temp_projection_is_compact),
+                    projection_format_worst_case(read_back_projection_is_compact));
                 /// A Wide part - a temp part or the read-back result - is written by the same wide writer
                 /// as the base output, so its eager per-stream buffers follow the same per-stream adaptive
                 /// split (the count-based rule sees the writer's own stream count - the projection's
-                /// streams); a Compact part's single shared stream is non-adaptive. The two writers never
+                /// streams); a Compact part is priced like the compact base output. The two writers never
                 /// run concurrently (see projection_writer_streams above), so take the max of their eager
                 /// footprints.
                 const auto projection_format_eager_buffers = [&](bool is_compact)
                 {
                     return is_compact
-                        ? eager_stream_buffers_with_marks(projection_max_compress_block_size)
+                        ? compact_eager_buffers(projection_compact_block_size, projection_compact_compressors)
                         : eager_write_buffers(projection_wide_stream_counts, projection_max_compress_block_size);
                 };
                 const UInt64 projection_eager_write_buffers = std::max(
@@ -2406,7 +2524,9 @@ UInt64 estimateNeededMemoryForMerge(
                         std::min(projection_worst_case, projection_data_bound),
                         saturatingAdd(
                             std::min(read_back_reader_worst_case, saturatingStreamsTimesBuffer(2, projection_uncompressed_bytes)),
-                            projection_skip_index_eager_buffers)));
+                            saturatingAdd(
+                                projection_skip_index_eager_buffers,
+                                primary_index_eager_buffers(projection.metadata, projection_settings)))));
             }
         }
     }
