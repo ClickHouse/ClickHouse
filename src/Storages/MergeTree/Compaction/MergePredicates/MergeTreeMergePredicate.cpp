@@ -219,4 +219,10 @@ PartsRange MergeTreeMergePredicate::getPatchesToApplyOnMerge(const PartsRange & 
     return DB::getPatchesToApplyOnMerge(it->second, range, next_version);
 }
 
+std::expected<void, PreformattedMessage> MergeTreeMergePredicate::checkRangeCoversPartition(const PartsRange &) const
+{
+    /// All parts of a `MergeTree` are local, and the parts collector returns every one of them.
+    return {};
+}
+
 }

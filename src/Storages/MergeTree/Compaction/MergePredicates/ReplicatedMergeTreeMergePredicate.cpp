@@ -54,6 +54,13 @@ PartsRange ReplicatedMergeTreeBaseMergePredicate::getPatchesToApplyOnMerge(const
     return MergeCore::getPatchesToApplyOnMerge(range);
 }
 
+std::expected<void, PreformattedMessage> ReplicatedMergeTreeBaseMergePredicate::checkRangeCoversPartition(const PartsRange & range) const
+{
+    /// FIXME: remove lock here
+    std::lock_guard lock(queue.state_mutex);
+    return MergeCore::checkRangeCoversPartition(range);
+}
+
 ReplicatedMergeTreeLocalMergePredicate::ReplicatedMergeTreeLocalMergePredicate(ReplicatedMergeTreeQueue & queue_)
     : ReplicatedMergeTreeBaseMergePredicate(queue_, std::nullopt)
 {

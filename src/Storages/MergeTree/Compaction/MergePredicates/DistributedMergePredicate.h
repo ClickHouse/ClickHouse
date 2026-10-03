@@ -183,6 +183,42 @@ public:
         return {};
     }
 
+    std::expected<void, PreformattedMessage> checkRangeCoversPartition(const PartsRange & range) const override
+    {
+        /// `canMergeParts` has checked that no part appears between the parts of `range`. A part may still be missing
+        /// before or after them. E.g. a part inserted on another replica that this replica has not fetched yet. It is
+        /// in the virtual parts, which also hold the results of the queued entries. Every part of `range` is a virtual
+        /// part itself (see `canUsePartInMerges`), so the partition is covered exactly when its virtual parts are the
+        /// parts of `range`.
+        chassert(!range.empty());
+        if (!virtual_parts_ptr)
+            return std::unexpected(PreformattedMessage::create("The virtual parts are unknown, so it is not known whether the range covers its partition"));
+
+        const auto & first = range.front().info;
+        const auto & last = range.back().info;
+        const String & partition_id = first.getPartitionId();
+
+        const MergeTreePartInfo whole_partition(partition_id, 0, MergeTreePartInfo::MAX_BLOCK_NUMBER, MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
+        const MergeTreePartInfo range_info(partition_id, first.min_block, last.max_block, MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
+
+        /// Nothing is returned if a virtual part covers `whole_partition` itself; then the count below does not match.
+        const auto partition_parts = virtual_parts_ptr->getPartInfosCoveredBy(whole_partition);
+        for (const auto & part : partition_parts)
+        {
+            if (!range_info.contains(part))
+                return std::unexpected(PreformattedMessage::create(
+                    "Part {} of partition {} is not among the parts from {} to {}",
+                    part.getPartNameForLogs(), partition_id, range.front().name, range.back().name));
+        }
+
+        if (partition_parts.size() != range.size())
+            return std::unexpected(PreformattedMessage::create(
+                "Partition {} has {} parts that exist or will be produced by the replication queue, but the range from {} to {} has {}",
+                partition_id, partition_parts.size(), range.front().name, range.back().name, range.size()));
+
+        return {};
+    }
+
     PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override
     {
         if (range.empty())

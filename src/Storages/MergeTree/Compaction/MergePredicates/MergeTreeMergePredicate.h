@@ -18,6 +18,7 @@ public:
     std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
     std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const;
     PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override;
+    std::expected<void, PreformattedMessage> checkRangeCoversPartition(const PartsRange & range) const override;
 
 private:
     const StorageMergeTree & storage;
