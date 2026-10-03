@@ -1,11 +1,10 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Executors/Runtime/createExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/Formats/PullingOutputFormat.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
-#include <Interpreters/ProcessList.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Sources/NullSource.h>
 
 namespace DB
 {
@@ -50,18 +49,14 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
 {
     if (!executor)
     {
-        executor = createExecutor(pipeline.processors, pipeline.process_list_element);
+        executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
         executor->setReadProgressCallback(pipeline.getReadProgressCallback());
-        executor->setStepProfiler(pipeline.getStepProfiler());
     }
 
-    if (pipeline.process_list_element && !pipeline.process_list_element->checkTimeLimitSoft())
-    {
-        executor->cancel(IProcessor::CancelReason::CancelledByTimeout);
+    if (!executor->checkTimeLimitSoft())
         return false;
-    }
 
-    if (!executor->executeUntil(&has_data_flag))
+    if (!executor->executeStep(&has_data_flag))
         return false;
 
     chunk = pulling_format->getChunk();
@@ -97,7 +92,7 @@ void PullingPipelineExecutor::cancel()
 {
     /// Cancel execution if it wasn't finished.
     if (executor)
-        executor->cancel(IProcessor::CancelReason::CancelledByUser);
+        executor->cancel();
 }
 
 Chunk PullingPipelineExecutor::getTotals()

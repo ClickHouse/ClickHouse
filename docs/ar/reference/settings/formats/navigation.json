@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "إعدادات التنسيق",
+  "group": "Format Settings",
   "pages": [
     "ar/reference/settings/formats/bool",
     "ar/reference/settings/formats/date-time",

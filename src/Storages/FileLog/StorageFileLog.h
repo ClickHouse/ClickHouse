@@ -226,7 +226,4 @@ private:
     static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };
 
-/// Resolves a relative `path` against `user_files_path`, unless it is already inside `user_files_path` from the working directory.
-String resolveFileLogPath(const String & path, const String & user_files_path);
-
 }

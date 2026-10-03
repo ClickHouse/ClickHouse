@@ -442,16 +442,6 @@ Returns the number of elements for which `func(arr1[i], ..., arrN[i])` returns t
 If `func` is not specified, it returns the number of non-zero elements in the array.
 
 `arrayCount` is a [higher-order function](/reference/functions/regular-functions/overview#higher-order-functions).
-
-<Info>
-**Use setting `array_count_legacy_uint32_result` to return `UInt32`**
-
-Version 26.10 introduced a backward-incompatible change: `arrayCount` returns `UInt64` instead of `UInt32`, so that the result is exact for arrays with more than `4294967295` matching elements.
-The constness of the result also changed: for a non-constant array and a predicate that folds to a constant false, the result was a constant column before 26.10 (`isConstant(arrayCount(...))` returned `1`), and now it is a full column (`isConstant` returns `0`), matching `length(arrayFilter(...))`.
-To retain the previous behavior (both the `UInt32` result type and the result constness), set setting `array_count_legacy_uint32_result` (default: `false`) to `true`.
-
-During a rolling upgrade of a cluster, a distributed query initiated by a not-yet-upgraded server does not forward this setting, so type-sensitive expressions evaluated locally on already-upgraded shards (for example, `byteSize(arrayCount(...))`) observe `UInt64` there. To keep such queries fully unchanged until the whole cluster is upgraded, set `array_count_legacy_uint32_result = 1` on the upgraded servers for the users under which shard-side queries execute, and remove it after the upgrade is complete. Which user that is depends on the cluster configuration: with an interserver `secret` configured, the shard runs the query as the initiator's current user; otherwise it is the user from the cluster definition or from the `remote` table function (`default` unless specified). The simplest robust approach is to enable the setting for all users of the upgraded servers.
-</Info>
     
 
 **Syntax**
@@ -467,7 +457,7 @@ arrayCount([func, ] arr1, ...)
 
 **Returned value**
 
-Returns the number of elements for which `func` returns true. Otherwise, returns the number of non-zero elements in the array. [`UInt64`](/reference/data-types/int-uint)
+Returns the number of elements for which `func` returns true. Otherwise, returns the number of non-zero elements in the array. [`UInt32`](/reference/data-types/int-uint)
 
 **Examples**
 
@@ -2334,63 +2324,6 @@ SELECT arrayMax(x, y -> x/y, [4, 8, 12, 16], [1, 2, 1, 2]);
 12
 ```
 
-## arrayMaxIndex {#arrayMaxIndex}
-
-Introduced in: v26.10.0
-
-Returns the 1-based index of the maximum element in the source array, or `0` if the array is empty.
-
-If a lambda function `func` is specified, returns the index of the element corresponding to the maximum lambda result. If multiple elements have the same maximum value, returns the index of the first one.
-    
-
-**Syntax**
-
-```sql
-arrayMaxIndex([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])
-```
-
-**Arguments**
-
-- `func(x[, y1, ..., yN])` — Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [`Lambda function`](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-- `source_arr` — The source array to process. [`Array(T)`](/reference/data-types/array)
-- `cond1_arr, ...` — Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/reference/data-types/array)
-
-**Returned value**
-
-Returns the 1-based index of the first maximum element, or `0` for an empty array. [`UInt32`](/reference/data-types/int-uint)
-
-**Examples**
-
-**Basic example**
-
-```sql title=Query
-SELECT arrayMaxIndex([5, 3, 2, 7]);
-```
-
-```response title=Response
-4
-```
-
-**First equal maximum**
-
-```sql title=Query
-SELECT arrayMaxIndex([5, 7, 7, 3]);
-```
-
-```response title=Response
-2
-```
-
-**Usage with lambda function**
-
-```sql title=Query
-SELECT arrayMaxIndex(x, y -> x/y, [4, 8, 12, 16], [1, 2, 1, 2]);
-```
-
-```response title=Response
-3
-```
-
 ## arrayMin {#arrayMin}
 
 Introduced in: v21.1.0
@@ -2436,63 +2369,6 @@ SELECT arrayMin(x, y -> x/y, [4, 8, 12, 16], [1, 2, 1, 2]);
 
 ```response title=Response
 4
-```
-
-## arrayMinIndex {#arrayMinIndex}
-
-Introduced in: v26.10.0
-
-Returns the 1-based index of the minimum element in the source array, or `0` if the array is empty.
-
-If a lambda function `func` is specified, returns the index of the element corresponding to the minimum lambda result. If multiple elements have the same minimum value, returns the index of the first one.
-    
-
-**Syntax**
-
-```sql
-arrayMinIndex([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])
-```
-
-**Arguments**
-
-- `func(x[, y1, ..., yN])` — Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [`Lambda function`](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-- `source_arr` — The source array to process. [`Array(T)`](/reference/data-types/array)
-- `cond1_arr, ...` — Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/reference/data-types/array)
-
-**Returned value**
-
-Returns the 1-based index of the first minimum element, or `0` for an empty array. [`UInt32`](/reference/data-types/int-uint)
-
-**Examples**
-
-**Basic example**
-
-```sql title=Query
-SELECT arrayMinIndex([5, 3, 2, 7]);
-```
-
-```response title=Response
-3
-```
-
-**First equal minimum**
-
-```sql title=Query
-SELECT arrayMinIndex([5, 3, 3, 7]);
-```
-
-```response title=Response
-2
-```
-
-**Usage with lambda function**
-
-```sql title=Query
-SELECT arrayMinIndex(x, y -> x/y, [4, 8, 12, 16], [1, 2, 1, 2]);
-```
-
-```response title=Response
-1
 ```
 
 ## arrayNormalizedGini {#arrayNormalizedGini}

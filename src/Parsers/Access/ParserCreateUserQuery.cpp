@@ -10,6 +10,7 @@
 #include <Parsers/Access/ParserUserNameWithHost.h>
 #include <Parsers/Access/ParserPublicSSHKey.h>
 #include <Parsers/Access/parseAccessRightsElements.h>
+#include <Parsers/Access/parseUserName.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -19,6 +20,8 @@
 #include <Parsers/ParserDatabaseOrNone.h>
 #include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <base/range.h>
 #include <base/insertAtEnd.h>
@@ -120,18 +123,18 @@ bool parseAuthenticationGrants(IParserBase::Pos & pos, Expected & expected, Acce
 
 namespace
 {
-    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTUserNameWithHost> & new_name)
+    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, std::optional<String> & new_name)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (!ParserKeyword{Keyword::RENAME_TO}.ignore(pos, expected))
                 return false;
 
-            ASTPtr new_name_ast;
-            if (!ParserUserNameWithHost(/*allow_query_parameter=*/true).parse(pos, new_name_ast, expected))
+            String maybe_new_name;
+            if (!parseUserName(pos, expected, maybe_new_name, /*allow_query_parameter=*/true))
                 return false;
 
-            new_name = boost::static_pointer_cast<ASTUserNameWithHost>(new_name_ast);
+            new_name.emplace(std::move(maybe_new_name));
             return true;
         });
     }
@@ -660,7 +663,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     auto pos_after_parsing_names = pos;
 
-    boost::intrusive_ptr<ASTUserNameWithHost> new_name;
+    std::optional<String> new_name;
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
@@ -850,12 +853,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->add_identified_with = parsed_add_identified_with;
     query->replace_authentication_methods = parsed_identified_with;
 
-    if (query->names && query->names->hasQueryParameters())
-        query->children.push_back(query->names);
-
-    if (query->new_name && query->new_name->usernameWasQueryParameter())
-        query->children.push_back(query->new_name);
-
     for (const auto & authentication_method : query->authentication_methods)
     {
         query->children.push_back(authentication_method);
@@ -866,12 +863,14 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     return true;
 }
+}
 
-std::map<String, Documentation> ParserCreateUserQuery::getDocumentation() const
+namespace DB
 {
-    std::map<String, Documentation> documentation;
 
-    documentation["CREATE USER"] =
+void registerStatementUser(StatementFactory & factory)
+{
+    factory.registerStatement("CREATE USER",
     {
         .description = R"DOCS_MD(
 Creates [user accounts](/concepts/features/security/access-rights#user-account-management).
@@ -1199,9 +1198,9 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 )",
         .parent = "CREATE",
         .related = {"ALTER USER", "CREATE ROLE", "GRANT", "DROP", "SHOW"},
-    };
+    });
 
-    documentation["ALTER USER"] =
+    factory.registerStatement("ALTER USER",
     {
         .description = R"DOCS_MD(
 Changes ClickHouse user accounts.
@@ -1374,9 +1373,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
 )",
         .parent = "ALTER",
         .related = {"CREATE USER", "ALTER", "GRANT", "SHOW"},
-    };
-
-    return documentation;
+    });
 }
 
 }

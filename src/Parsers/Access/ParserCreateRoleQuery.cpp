@@ -2,12 +2,13 @@
 #include <Parsers/Access/ParserCreateRoleQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
-#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/Access/ParserSettingsProfileElement.h>
-#include <Parsers/Access/ParserUserNameWithHost.h>
+#include <Parsers/Access/parseUserName.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <base/insertAtEnd.h>
 
 
@@ -15,19 +16,14 @@ namespace DB
 {
 namespace
 {
-    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTUserNameWithHost> & new_name)
+    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_name)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (!ParserKeyword{Keyword::RENAME_TO}.ignore(pos, expected))
                 return false;
 
-            ASTPtr new_name_ast;
-            if (!ParserUserNameWithHost(/*allow_query_parameter=*/ true, /*parse_host_pattern=*/ false).parse(pos, new_name_ast, expected))
-                return false;
-
-            new_name = boost::static_pointer_cast<ASTUserNameWithHost>(new_name_ast);
-            return true;
+            return parseRoleName(pos, expected, new_name);
         });
     }
 
@@ -102,12 +98,11 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             or_replace = true;
     }
 
-    ASTPtr names_ast;
-    if (!ParserUserNamesWithHost(/*allow_query_parameter=*/ true, /*parse_host_pattern=*/ false).parse(pos, names_ast, expected))
+    Strings names;
+    if (!parseRoleNames(pos, expected, names))
         return false;
-    auto names = boost::static_pointer_cast<ASTUserNamesWithHost>(names_ast);
 
-    boost::intrusive_ptr<ASTUserNameWithHost> new_name;
+    String new_name;
     boost::intrusive_ptr<ASTSettingsProfileElements> settings;
     boost::intrusive_ptr<ASTAlterSettingsProfileElements> alter_settings;
     String cluster;
@@ -115,7 +110,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     while (true)
     {
-        if (alter && !new_name && (names->size() == 1) && parseRenameTo(pos, expected, new_name))
+        if (alter && new_name.empty() && (names.size() == 1) && parseRenameTo(pos, expected, new_name))
             continue;
 
         if (alter)
@@ -165,20 +160,16 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->alter_settings = std::move(alter_settings);
     query->storage_name = std::move(storage_name);
 
-    if (query->names && query->names->hasQueryParameters())
-        query->children.push_back(query->names);
-
-    if (query->new_name && query->new_name->usernameWasQueryParameter())
-        query->children.push_back(query->new_name);
-
     return true;
 }
+}
 
-std::map<String, Documentation> ParserCreateRoleQuery::getDocumentation() const
+namespace DB
 {
-    std::map<String, Documentation> documentation;
 
-    documentation["CREATE ROLE"] =
+void registerStatementRole(StatementFactory & factory)
+{
+    factory.registerStatement("CREATE ROLE",
     {
         .description = R"DOCS_MD(
 Creates new [roles](/concepts/features/security/access-rights#role-management). Role is a set of [privileges](/reference/statements/grant#granting-privilege-syntax). A [user](/reference/statements/create/user) assigned a role gets all the privileges of this role.
@@ -232,9 +223,9 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 )",
         .parent = "CREATE",
         .related = {"ALTER ROLE", "CREATE USER", "GRANT", "SET ROLE", "DROP"},
-    };
+    });
 
-    documentation["ALTER ROLE"] =
+    factory.registerStatement("ALTER ROLE",
     {
         .description = R"DOCS_MD(
 Changes roles.
@@ -266,9 +257,7 @@ ALTER ROLE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
 )",
         .parent = "ALTER",
         .related = {"CREATE ROLE", "ALTER", "SET ROLE", "GRANT"},
-    };
-
-    return documentation;
+    });
 }
 
 }

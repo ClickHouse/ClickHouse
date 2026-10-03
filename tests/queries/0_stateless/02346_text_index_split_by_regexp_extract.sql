@@ -61,8 +61,8 @@ SELECT id FROM tab_regex_extract_nogroup WHERE hasAnyTokens(doc, ['a']) ORDER BY
 
 DROP TABLE tab_regex_extract_nogroup;
 
--- 3. `hasPhrase` on an extracting `splitByRegexp` index: a String phrase has nothing to extract from, so it
--- tokenizes to nothing and never matches. An Array phrase carries the tokens verbatim and does match.
+-- 3. `hasPhrase` on a `splitByRegexp` index combined with a postprocessor stays rejected regardless of
+-- `match_tokens` - the row-level rewrite still assumes whitespace-splitting, `splitByNonAlpha`-style tokens.
 
 DROP TABLE IF EXISTS tab_extract_phrase_pp;
 
@@ -76,15 +76,9 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS index_granularity = 2;
 
-INSERT INTO tab_extract_phrase_pp VALUES (1, 'tag:Red tag:Green'), (2, 'tag:Green tag:Red');
+INSERT INTO tab_extract_phrase_pp VALUES (1, 'tag:Red tag:Green');
 
-SELECT 'extract phrase: a String phrase extracts no tokens -> (none)';
-SELECT id FROM tab_extract_phrase_pp WHERE hasPhrase(doc, 'red green') ORDER BY id;
-SELECT id FROM tab_extract_phrase_pp WHERE hasPhrase(doc, 'red green') ORDER BY id SETTINGS use_skip_indexes = 0;
-
-SELECT 'extract phrase: an Array phrase is taken verbatim -> 1';
-SELECT id FROM tab_extract_phrase_pp WHERE hasPhrase(doc, ['red', 'green']) ORDER BY id;
-SELECT id FROM tab_extract_phrase_pp WHERE hasPhrase(doc, ['red', 'green']) ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM tab_extract_phrase_pp WHERE hasPhrase(doc, 'red green') SETTINGS use_skip_indexes = 1; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE tab_extract_phrase_pp;
 

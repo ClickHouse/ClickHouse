@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
-#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
@@ -81,20 +80,15 @@ IMergeTreeReader::IMergeTreeReader(
     for (const auto & column : getColumns())
     {
         const auto & column_to_read = columns_to_read.emplace_back(getColumnInPart(column));
-        if (data_part_info_for_read->isCompactPart()
+        serializations.emplace_back(getSerializationInPart(column));
+
+        if (column.isSubcolumn()
+            && data_part_info_for_read->isCompactPart()
             && !data_part_info_for_read->getIndexGranularityInfo().mark_type.with_substreams)
         {
-            auto it = serializations_of_full_columns.find(column_to_read.getNameInStorage());
-            if (it == serializations_of_full_columns.end())
-            {
-                NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
-                it = serializations_of_full_columns.emplace(
-                    column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage)).first;
-            }
-            serializations.emplace_back(column.isSubcolumn() ? getSerializationInPart(column) : it->second);
+            NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
+            serializations_of_full_columns.emplace(column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage));
         }
-        else
-            serializations.emplace_back(getSerializationInPart(column));
     }
 }
 
@@ -157,9 +151,6 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
 
         /// Virtual columns for text index are filled in another place.
         if (isTextIndexVirtualColumn(it->name))
-            continue;
-
-        if (virtual_columns.getDefault(it->name))
             continue;
 
         Field field;
@@ -272,6 +263,7 @@ ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
     /// Default/materialized expressions may contain experimental or suspicious types that can be
     /// disabled in the current context. We must not perform any checks during reads from existing tables.
     enableAllExperimentalSettings(context_copy);
+    context_copy->setSetting("enable_analyzer", settings.enable_analyzer);
     return context_copy;
 }
 
@@ -483,17 +475,6 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
         if (required_column.isSubcolumn())
             return type_in_storage->getSubcolumnSerialization(required_column.getSubcolumnName(), serialization);
         return serialization;
-    }
-
-    /// The part's cached serializations are keyed by the names of its physical columns. In Wide parts `part_columns`
-    /// collects flattened `Nested` members into a synthetic column (e.g. `n.a` becomes subcolumn `a` of `n`), which
-    /// has no entry in that cache, so only use it when the storage column exists in the part as is.
-    if (containsObjectType(*column_in_part->getTypeInStorage())
-        && data_part_info_for_read->getColumnPosition(column_in_part->getNameInStorage()))
-    {
-        auto serialization = data_part_info_for_read->getSerialization(*column_in_part);
-        if (serialization->supportsPooling())
-            return serialization;
     }
 
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())

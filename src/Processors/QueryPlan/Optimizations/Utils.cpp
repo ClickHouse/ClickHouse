@@ -4,7 +4,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/IDataType.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
@@ -125,25 +124,6 @@ bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
     return false;
 }
 
-bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
-{
-    auto is_insensitive = [](const IFunctionBase & function)
-    {
-        return function.isDeterministicInScopeOfQuery() && !function.isStateful() && !function.hasObservableSideEffects();
-    };
-
-    /// A lambda without captures is constant-folded into a `COLUMN` node holding a `ColumnFunction`, which
-    /// hides the functions of its body from a plain scan over the function nodes; `allNodeFunctions`
-    /// descends into it.
-    for (const auto & node : dag.getNodes())
-    {
-        if (!allNodeFunctions(node, is_insensitive))
-            return true;
-    }
-
-    return false;
-}
-
 FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,
     const String & filter_column_name,
@@ -192,12 +172,7 @@ FilterResult filterResultForNotMatchedRows(
             continue;
         }
 
-        /// A not-matched row holds the column's own default (`Date32`: 1970-01-01, not `getDefault`'s
-        /// 1900-01-01), and where default insertion is not trivial no probe is guaranteed faithful.
-        if (!input->result_type->isDefaultInsertTrivial())
-            continue;
-
-        auto constant_column = createColumnConstWithDefaultValue(input->result_type->createColumn());
+        auto constant_column = input->result_type->createColumnConst(1, input->result_type->getDefault());
         auto constant_column_with_type_and_name = ColumnWithTypeAndName{std::move(constant_column), input->result_type, input->result_name};
         filter_input.emplace(input, std::move(constant_column_with_type_and_name));
     }

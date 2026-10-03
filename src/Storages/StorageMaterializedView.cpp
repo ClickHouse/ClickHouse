@@ -23,6 +23,7 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
@@ -32,6 +33,7 @@
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -39,6 +41,8 @@
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/ProtocolDefines.h>
+#include <Common/config_version.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -56,6 +60,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 log_queries_cut_to_length;
 }
@@ -503,6 +508,16 @@ void StorageMaterializedView::readImpl(
     auto view_metadata = getInMemoryMetadataPtr(local_context, false);
     auto context = view_metadata->getSQLSecurityOverriddenContext(local_context);
 
+    /// When this view is being read by the old interpreter, query_info has no query tree and the
+    /// analyzer-only code paths in the target storage would dereference it. The old interpreter
+    /// keeps allow_experimental_analyzer off on local_context, but for DEFINER/NONE views the
+    /// SQL security override rebuilds the context from the global one (and clamps the caller's
+    /// settings against the definer's constraints), which can silently turn the analyzer back on.
+    /// Preserve the interpreter mode so the target storage takes the same (old) code path; reading
+    /// a materialized view over a Distributed table otherwise crashes on a null planner context.
+    if (!local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        context->setSetting("allow_experimental_analyzer", false);
+
     StoragePtr storage;
     TableLockHolder lock;
 
@@ -526,6 +541,9 @@ void StorageMaterializedView::readImpl(
 
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
+
+    if (query_info.order_optimizer)
+        query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, context);
 
     if (!view_metadata->select.select_table_id.empty())
         context->checkAccess(AccessType::SELECT, view_metadata->select.select_table_id, column_names);
@@ -730,7 +748,15 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     refresh_context->setSetting("log_comment", log_comment);
     refresh_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
     /// The client info is inherited from the table's (global) context and has no client version.
-    refresh_context->setInitiatorVersionIfUnset();
+    /// This server is the real initiator of the refresh query and of any distributed sub-query it
+    /// spawns (e.g. the refresh `SELECT` reads from a `Distributed` table), so fill the version with
+    /// this server's version. Otherwise remote shards treat the initiator as a pre-23.3 server and
+    /// apply legacy compatibility downgrades, and `RemoteQueryExecutor` rejects the zero version
+    /// outright.
+    if (client_info.client_version_major == 0
+        && client_info.client_version_minor == 0
+        && client_info.client_version_patch == 0)
+        refresh_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
     /// Generate a random query id.
     refresh_context->setCurrentQueryId("");
     /// Use the database where the materialized view is created to run the select query in the refresh task
@@ -760,6 +786,7 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
 
         /// Re-assert after applySettingsFromQuery so a view's own SETTINGS cannot disable what the STREAM source needs.
         refresh_context->setSetting("enable_streaming_queries", Field(UInt64{1}));
+        refresh_context->setSetting("enable_analyzer", Field(UInt64{1}));
         refresh_context->setSetting("enable_parallel_replicas", Field(UInt64{0}));
         refresh_context->setSetting("parallel_replicas_for_non_replicated_merge_tree", Field(UInt64{0}));
         refresh_context->setSetting("allow_insert_into_iceberg", Field(UInt64{1}));
@@ -818,7 +845,11 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
     insert_query->setDatabase(target_table.database_name);
     insert_query->table_id = target_table;
 
-    SharedHeader header = InterpreterSelectQueryAnalyzer::getSampleBlock(insert_query->select, refresh_context);
+    SharedHeader header;
+    if (refresh_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        header = InterpreterSelectQueryAnalyzer::getSampleBlock(insert_query->select, refresh_context);
+    else
+        header = InterpreterSelectWithUnionQuery(insert_query->select, refresh_context, SelectQueryOptions()).getSampleBlock();
 
     auto columns = make_intrusive<ASTExpressionList>(',');
     for (const String & name : header->getNames())
@@ -1175,13 +1206,6 @@ bool StorageMaterializedView::isRemote() const
 {
     if (auto table = tryGetTargetTable())
         return table->isRemote();
-    return false;
-}
-
-bool StorageMaterializedView::readRequiresAnalyzedQuery() const
-{
-    if (auto table = tryGetTargetTable())
-        return table->readRequiresAnalyzedQuery();
     return false;
 }
 

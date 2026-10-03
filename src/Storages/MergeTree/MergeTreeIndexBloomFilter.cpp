@@ -6,9 +6,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -17,7 +15,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
@@ -33,11 +30,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool validate_enum_literals_in_operators;
-}
 
 namespace ErrorCodes
 {
@@ -329,7 +321,6 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     , header(header_)
     , hash_functions(hash_functions_)
     , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
-    , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
 {
     if (!predicate)
     {
@@ -542,7 +533,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
 
         if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)
         {
-            if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getContext()); prepared_set)
+            if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext()); prepared_set)
             {
                 if (prepared_set->hasExplicitSetElements())
                 {
@@ -1010,12 +1001,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 if (array_type && bloomFilterHashDomainMatches(value_type, array_type->getNestedType()))
                 {
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-                    if (!validate_enum_literals_in_operators && isUnknownEnumElement(*actual_type, value_field))
-                    {
-                        out.function = RPNElement::ALWAYS_FALSE;
-                        return true;
-                    }
-
                     auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
                     if (converted_field.isNull())
                         return false;
@@ -1046,8 +1031,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     out.function = RPNElement::FUNCTION_HAS;
                     /// The function coerces the constant by the element type it sees, which may differ in `LowCardinality`.
                     DataTypePtr nested_type = array_type->getNestedType();
-                    if (const auto * wrapped_array_type = typeid_cast<const DataTypeArray *>(wrapped_key_node.getDAGNode()->result_type.get()))
-                        nested_type = wrapped_array_type->getNestedType();
+
+                    if (const auto * wrapped_dag_node = wrapped_key_node.getDAGNode())
+                    {
+                        if (const auto * wrapped_array_type = typeid_cast<const DataTypeArray *>(wrapped_dag_node->result_type.get()))
+                            nested_type = wrapped_array_type->getNestedType();
+                    }
 
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
                     Field converted_field = convertConstantForArrayIndexFunction(value_field, value_type, nested_type, actual_type);
@@ -1113,14 +1102,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
                 if (fixed_index_type && fixed_index_type->getN() < constant_bytes)
                     return false;
-            }
-
-            /// With validation off, `equals` against a name the enum lacks is constant false for every row,
-            /// so the conversion below must not throw; `KeyCondition` folds the same way.
-            if (function_name == "equals" && !validate_enum_literals_in_operators && isUnknownEnumElement(*actual_type, value_field))
-            {
-                out.function = RPNElement::ALWAYS_FALSE;
-                return true;
             }
 
             auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());

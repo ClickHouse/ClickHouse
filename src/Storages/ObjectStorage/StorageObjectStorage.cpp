@@ -70,25 +70,11 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_DENIED;
-    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 namespace FailPoints
 {
     extern const char datalake_simulate_missing_table_state[];
-}
-
-namespace
-{
-
-/// Whether listing the path failed because the reader refuses the path itself - a malformed or an
-/// unbounded glob, or a glob whose regexp RE2 cannot compile - rather than because of the endpoint.
-/// Such a path fails the same way whenever the table is read.
-bool isPathRefusedByReader(int code)
-{
-    return code == ErrorCodes::BAD_ARGUMENTS || code == ErrorCodes::CANNOT_COMPILE_REGEXP;
-}
-
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -124,25 +110,9 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     /// creating a file iterator just to get a sample path string.
     if (containsOnlyEnumGlobs(path.path))
     {
-        /// Mirror the split in `StorageObjectStorageSource::createFileIterator`: a pattern with
-        /// exactly one brace group is materialized there by `expandSelectionGlob`, so the sample
-        /// path has to obey the same limits. Otherwise analysis would infer hive partitioning -
-        /// and, for a table definition, persist it - from a path that the reader always refuses to
-        /// enumerate. Every other shape is matched by the reader as a regexp, where the product is
-        /// never built, so taking each group's first alternative is enough.
-        if (configuration->getType() != ObjectStorageType::Web && hasExactlyOneBracketsExpansion(path.path))
-        {
-            auto expanded = expandSelectionGlob(path.path);
-            if (!expanded.empty())
-                return expanded.front() + archive_suffix;
-        }
-        /// A regexp is more permissive than a selector glob: a doubled brace like `{{a,b}}` is a
-        /// literal brace around an enum for it, and a comma outside a group is literal text. It is
-        /// also stricter: an empty alternative is literal text for it, and RE2 refuses an alternation
-        /// too large to compile. Such a path is listed instead, the same way the reader lists it, so
-        /// the sample path is never one the reader would not read.
-        else if (auto first = tryExpandSelectionGlobFirstMatchedByRegexp(path.path))
-            return *first + archive_suffix;
+        auto expanded = expandSelectionGlob(path.path);
+        if (!expanded.empty())
+            return expanded.front() + archive_suffix;
     }
 
     auto query_settings = configuration->getQuerySettings(context);
@@ -310,13 +280,6 @@ StorageObjectStorage::StorageObjectStorage(
         }
         catch (...)
         {
-            /// A path the reader refuses - a malformed or an unbounded glob, or one whose regexp
-            /// cannot be compiled - fails the same way whenever the table is read, so it is reported
-            /// here as well instead of being downgraded to a listing failure that only leaves the
-            /// hive columns unresolved.
-            if (isPathRefusedByReader(getCurrentExceptionCode()))
-                throw;
-
             LOG_WARNING(
                 log,
                 "Failed to list object storage, cannot use hive partitioning. "
@@ -497,9 +460,10 @@ bool StorageObjectStorage::supportsDelete() const
 
 bool StorageObjectStorage::supportsParallelInsert() const
 {
-    /// Defense in depth. `InsertDependenciesBuilder` refreshes every dependency before calling this method,
-    /// so a data lake table reached through a materialized view is normally initialized already. Keep the
-    /// lazy initialization to protect any other caller that reaches this method without the metadata hook.
+    /// `InsertDependenciesBuilder` calls this for every non-view sink while building the
+    /// INSERT pipeline. Only the root insert table is pre-initialised by
+    /// `updateExternalDynamicMetadataIfExists`, so a data lake table reached via an MV
+    /// target can arrive here with `current_metadata == nullptr` and hit `assertInitialized`.
     if (configuration->isDataLakeConfiguration())
         configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
     return configuration->supportsParallelInsert();
@@ -567,28 +531,12 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
         if (query_context->getSettingsRef()[Setting::throw_on_hive_partitioning_resolution_failure])
             throw;
 
-        /// A path the reader refuses is not an endpoint failure: reading the table fails the same
-        /// way, so the refusal is reported here rather than retried by every next query.
-        if (isPathRefusedByReader(getCurrentExceptionCode()))
-            throw;
-
         /// An endpoint failure degrades only the triggering query and is retried by the next one.
         LOG_WARNING(
             log,
             "Failed to list object storage, cannot use hive partitioning. "
             "Error: {}",
             getCurrentExceptionMessage(true));
-        return;
-    }
-
-    /// An empty listing is not a resolution: the prefix may simply not have data yet (e.g. the
-    /// table was created before the first file landed). Caching it would permanently disable hive
-    /// partitioning for this storage instance: once files appear, schema-declared partition
-    /// columns would silently read file defaults instead of the path values, and filters on them
-    /// would drop all rows. Stay unresolved, like endpoint failures, so the next query retries.
-    if (sample_path.empty())
-    {
-        LOG_TRACE(log, "An empty listing, hive partitioning resolution stays deferred until files appear");
         return;
     }
 
@@ -823,14 +771,14 @@ void StorageObjectStorage::read(
         PrepareReadingFromFormatHiveParams{ file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
 
 
-    if (query_info.prewhere_info)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
+    if (query_info.prewhere_info || query_info.row_level_filter)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 
     const bool need_only_count = (query_info.optimize_trivial_count
                                   || (read_from_format_info.requested_columns.empty()
-                                      && !read_from_format_info.prewhere_info))
+                                      && !read_from_format_info.prewhere_info
+                                      && !read_from_format_info.row_level_filter))
         && settings[Setting::optimize_count_from_files]
-        && !query_info.row_level_filter
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto modified_format_settings{format_settings};
@@ -941,7 +889,7 @@ bool StorageObjectStorage::optimize(
     bool /*cleanup*/,
     [[maybe_unused]] ContextPtr context)
 {
-    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings, catalog);
+    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings);
 }
 
 void StorageObjectStorage::truncate(
@@ -1207,12 +1155,6 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
         ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 }
-Pipe StorageObjectStorage::alterPartition(
-    const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
-{
-    return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
-}
-
 
 void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
@@ -1237,15 +1179,6 @@ void StorageObjectStorage::shutdown(bool)
 bool StorageObjectStorage::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee)
 {
     return configuration->scheduleDataProcessingJob(assignee, *this);
-}
-
-void StorageObjectStorage::checkAlterPartitionIsPossible(
-    const PartitionCommands & commands,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
-    const Settings & /*settings*/,
-    ContextPtr context) const
-{
-    configuration->checkAlterPartitionIsPossible(object_storage, context, commands);
 }
 
 }

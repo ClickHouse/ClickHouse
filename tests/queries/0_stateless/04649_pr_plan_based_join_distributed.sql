@@ -1,4 +1,3 @@
--- Tags: no-parallel, no-fasttest
 -- Plan-based parallel replicas distributes the whole eligible JOIN: the split is lifted above the
 -- (logical) join, so each replica joins its coordinated portion of one side against a full
 -- (broadcast) read of the other side, and the per-replica results are unioned. The fragment ships the

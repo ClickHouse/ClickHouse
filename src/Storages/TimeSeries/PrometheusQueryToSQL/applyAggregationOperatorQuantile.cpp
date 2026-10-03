@@ -68,7 +68,7 @@ namespace
         {
             case StoreMethod::CONST_SCALAR:
             {
-                return timeSeriesScalarToAST(phi_arg.scalar_value);
+                return timeSeriesScalarToAST(phi_arg.scalar_value, context.scalar_data_type);
             }
             case StoreMethod::SINGLE_SCALAR:
             {

@@ -39,14 +39,6 @@ public:
 
     StoragePtr getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const;
 
-    /// A view whose query runs with privileges other than the invoker's (`SQL SECURITY DEFINER` or `NONE`)
-    /// can hide rows that the invoker must not see. Such a view is sealed: it is read through an opaque step,
-    /// so no optimization of the outer query can evaluate an outer expression on the rows the view drops,
-    /// or use an outer predicate to analyze the indexes of the tables behind it.
-    /// A plain projection of a `MergeTree` table hides no rows unless the view's context has a row policy on it,
-    /// or the invoker has a row policy on the view itself, so it stays transparent.
-    bool isSealed(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
-
     /// If this is a trivial view over a Distributed table, returns the underlying StorageDistributed.
     /// Returns nullptr otherwise.
     StoragePtr tryGetUnderlyingDistributed(const StorageSnapshotPtr & snapshot, ContextPtr context) const;

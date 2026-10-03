@@ -2,6 +2,8 @@
 
 #include <Parsers/ASTParallelWithQuery.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -43,11 +45,14 @@ bool ParserParallelWithQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     return true;
 }
 
-std::map<String, Documentation> ParserParallelWithQuery::getDocumentation() const
-{
-    std::map<String, Documentation> documentation;
+}
 
-    documentation["PARALLEL WITH"] =
+namespace DB
+{
+
+void registerStatementParallelWith(StatementFactory & factory)
+{
+    factory.registerStatement("PARALLEL WITH",
     {
         .description = R"DOCS_MD(
 Allows to execute multiple statements in parallel.
@@ -95,9 +100,7 @@ The `PARALLEL WITH` clause is a bit similar to [UNION](/reference/statements/sel
 statement1 PARALLEL WITH statement2 [PARALLEL WITH statement3 ...]
 )",
         .related = {"CREATE", "DROP", "SELECT"},
-    };
-
-    return documentation;
+    });
 }
 
 }

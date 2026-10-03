@@ -12,22 +12,21 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
     distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0;
 
 SELECT '-- sum OVER (ORDER BY)';
-SELECT v, sum(v) OVER (ORDER BY v) AS s FROM t_window_dist ORDER BY v SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT v, sum(v) OVER (ORDER BY v) AS s FROM t_window_dist ORDER BY v;
 
 SELECT '-- row_number OVER (ORDER BY)';
-SELECT v, row_number() OVER (ORDER BY v) AS rn FROM t_window_dist ORDER BY v SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT v, row_number() OVER (ORDER BY v) AS rn FROM t_window_dist ORDER BY v;
 
 SELECT '-- rolling frame (ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)';
-SELECT v, sum(v) OVER (ORDER BY v ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS roll FROM t_window_dist ORDER BY v
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT v, sum(v) OVER (ORDER BY v ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS roll FROM t_window_dist ORDER BY v;
 
 SELECT '-- sum OVER (PARTITION BY a ORDER BY v)';
-SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) FROM t_window_dist ORDER BY a, v SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) FROM t_window_dist ORDER BY a, v;
 
 -- The empty window is the only shape with no sort below the WindowStep, so it exercises the plain
 -- gather (no order to maintain) rather than the sorted one.
 SELECT '-- sum OVER () (empty window)';
-SELECT v, sum(v) OVER () AS s FROM t_window_dist ORDER BY v SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT v, sum(v) OVER () AS s FROM t_window_dist ORDER BY v;
 
 DROP TABLE t_window_dist;
 
@@ -48,7 +47,6 @@ FROM
     FROM t_window_crosstab
 )
 ORDER BY n
-LIMIT 1
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+LIMIT 1;
 
 DROP TABLE t_window_crosstab;

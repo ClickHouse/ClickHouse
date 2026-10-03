@@ -4,6 +4,8 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -107,11 +109,15 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-std::map<String, Documentation> ParserRenameQuery::getDocumentation() const
-{
-    std::map<String, Documentation> documentation;
 
-    documentation["RENAME"] =
+}
+
+namespace DB
+{
+
+void registerStatementRename(StatementFactory & factory)
+{
+    factory.registerStatement("RENAME",
     {
         .description = R"DOCS_MD(
 Renames databases, tables, or dictionaries. Several entities can be renamed in a single query.
@@ -175,9 +181,9 @@ RENAME DICTIONARY [db0.]dict_A TO [db1.]dict_B [,...] [ON CLUSTER cluster]
 RENAME [DATABASE|TABLE|DICTIONARY] name TO new_name [,...] [ON CLUSTER cluster]
 )",
         .related = {"EXCHANGE", "CREATE", "ALTER"},
-    };
+    });
 
-    documentation["EXCHANGE"] =
+    factory.registerStatement("EXCHANGE",
     {
         .description = R"DOCS_MD(
 Exchanges the names of two tables or dictionaries atomically.
@@ -281,9 +287,7 @@ EXCHANGE DICTIONARIES [db0.]dict_A AND [db1.]dict_B [ON CLUSTER cluster]
 EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B [ON CLUSTER cluster]
 )",
         .related = {"RENAME", "REPLACE TABLE", "CREATE DATABASE"},
-    };
-
-    return documentation;
+    });
 }
 
 }

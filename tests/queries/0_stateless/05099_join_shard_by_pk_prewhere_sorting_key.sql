@@ -9,6 +9,7 @@ SET join_algorithm = 'full_sorting_merge';
 SET query_plan_join_shard_by_pk_ranges = 1;
 -- Either prewhere setting at 0 stops the PREWHERE move and makes every assertion below vacuous.
 SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 -- At 0 the filtered column is never pruned from the read output, so there is nothing to restore and
 -- most cells below pass vacuously; `compatibility` draws below 25.12 revert this setting.
 SET query_plan_remove_unused_columns = 1;
@@ -19,7 +20,7 @@ SET enable_parallel_replicas = 0;
 -- The correlated EXISTS cell needs the analyzer; the old analyzer rewrites EXISTS into a subquery
 -- with no outer scope, and `compatibility` randomization can revert both settings.
 SET enable_analyzer = 1;
-SET allow_correlated_subqueries = 1;
+SET allow_experimental_correlated_subqueries = 1;
 -- A null-rejecting filter on the non-preserved side otherwise rewrites the outer join kinds, so the
 -- labelled kind would not be the executed one (LEFT becomes INNER, FULL becomes RIGHT).
 SET query_plan_convert_outer_join_to_inner_join = 0;

@@ -277,9 +277,6 @@ private:
     /// Builds a reference to a virtual column (`_part`, `_row_exists`, `_path`, ...),
     /// occasionally qualified with a known table name.
     ASTPtr makeFuzzedVirtualColumn();
-    /// Builds the string literal naming a data part that `OPTIMIZE ... DRY RUN PARTS` and the
-    /// `PART` forms of `ALTER` take.
-    ASTPtr makeFuzzedPartName();
     ASTPtr getRandomExpressionList(size_t nproj);
     DataTypePtr fuzzDataType(DataTypePtr type);
     /// Fuzz every element of a type list in place. Returns true if any element changed.
@@ -330,8 +327,7 @@ private:
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
-    void swapEngineToCollapsing(ASTStorage & storage, ASTExpressionList * columns_list);
-    void fuzzRefreshStrategy(ASTRefreshStrategy & strategy, bool allow_incremental);
+    void fuzzRefreshStrategy(ASTRefreshStrategy & strategy);
     void fuzzTableStorage(ASTStorage & storage);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
@@ -367,7 +363,6 @@ private:
     void fuzzTableFunctionName(ASTPtr & table_function);
     void fuzzClusterFunctionArguments(ASTFunction & fn);
     void fuzzMergeFunctionArguments(ASTFunction & fn);
-    String makeFuzzedLikePattern();
     String makeBraceExpansion();
     String makeRemoteHostDescriptor(bool secure);
     void wrapTableAsDistributed(ASTTableExpression & table);

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel
 # Tag no-parallel: uses the server-global failpoint mt_select_parts_to_mutate_no_free_threads
 
 # A column that was renamed, dropped and then added again in one ALTER must read as its new default,

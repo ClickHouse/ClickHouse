@@ -31,12 +31,6 @@ using Processors = std::list<ProcessorPtr>;
 
 class StepWallClock;
 
-namespace Runtime::V1
-{
-class ExecutionThreadContext;
-class ExecutingGraph;
-}
-
 
 using StepWallClockPtr = std::shared_ptr<StepWallClock>;
 
@@ -395,10 +389,6 @@ public:
     // If the in-memory data's size is not larger then bytes, it doesn't spill
     virtual bool spillOnSize(size_t /*bytes*/) { return false; }
 
-    /// True for a fan-out that cannot take its next input chunk until every one of its outputs has
-    /// accepted a share of the current one, so it cannot progress while an output is undemanded.
-    virtual bool requiresAllOutputsPushable() const { return false; }
-
 protected:
     /// May be called in parallel with work().
     virtual void onCancel() noexcept {}
@@ -411,11 +401,11 @@ private:
     /// - elapsed_ns
     /// - num_executed_jobs
     /// - query_plan_step_wall_clock_ptr
-    friend class Runtime::V1::ExecutionThreadContext;
+    friend class ExecutionThreadContext;
     /// For
     /// - input_wait_elapsed_ns
     /// - output_wait_elapsed_ns
-    friend class Runtime::V1::ExecutingGraph;
+    friend class ExecutingGraph;
 
     std::string processor_description;
 

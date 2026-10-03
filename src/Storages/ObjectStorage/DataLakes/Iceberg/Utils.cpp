@@ -458,34 +458,21 @@ bool writeMetadataFileAndVersionHint(
 }
 
 
-String normalizeIcebergTransformFunctionName(const String & function_name)
-{
-    if (function_name == "toYearNumSinceEpoch")
-        return "icebergYear";
-    if (function_name == "toMonthNumSinceEpoch")
-        return "icebergMonth";
-    if (function_name == "toRelativeDayNum")
-        return "icebergDay";
-    if (function_name == "toRelativeHourNum")
-        return "icebergHour";
-    return function_name;
-}
-
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src)
 {
     std::string transform_name = Poco::toLower(transform_name_src);
 
     if (transform_name == "year" || transform_name == "years")
-        return TransformAndArgument{"icebergYear", std::nullopt};
+        return TransformAndArgument{"toYearNumSinceEpoch", std::nullopt};
 
     if (transform_name == "month" || transform_name == "months")
-        return TransformAndArgument{"icebergMonth", std::nullopt};
+        return TransformAndArgument{"toMonthNumSinceEpoch", std::nullopt};
 
     if (transform_name == "day" || transform_name == "date" || transform_name == "days" || transform_name == "dates")
-        return TransformAndArgument{"icebergDay", std::nullopt};
+        return TransformAndArgument{"toRelativeDayNum", std::nullopt};
 
     if (transform_name == "hour" || transform_name == "hours")
-        return TransformAndArgument{"icebergHour", std::nullopt};
+        return TransformAndArgument{"toRelativeHourNum", std::nullopt};
 
     if (transform_name == "identity")
         return TransformAndArgument{"identity", std::nullopt};
@@ -845,40 +832,39 @@ static Poco::JSON::Object::Ptr getPartitionField(
     result->set(Iceberg::f_source_id, column_name_to_source_id.at(*field));
     result->set(Iceberg::f_field_id, ++partition_iter);
 
-    const String function_name = normalizeIcebergTransformFunctionName(partition_function->name);
-    if (function_name == "identity")
+    if (partition_function->name == "identity")
     {
         result->set(Iceberg::f_transform, "identity");
         return result;
     }
-    else if (function_name == "icebergYear")
+    else if (partition_function->name == "toYearNumSinceEpoch")
     {
         result->set(Iceberg::f_transform, "year");
         return result;
     }
-    else if (function_name == "icebergMonth")
+    else if (partition_function->name == "toMonthNumSinceEpoch")
     {
         result->set(Iceberg::f_transform, "month");
         return result;
     }
-    else if (function_name == "icebergDay")
+    else if (partition_function->name == "toRelativeDayNum")
     {
         result->set(Iceberg::f_transform, "day");
         return result;
     }
-    else if (function_name == "icebergHour")
+    else if (partition_function->name == "toRelativeHourNum")
     {
         result->set(Iceberg::f_transform, "hour");
         return result;
     }
-    else if (function_name == "icebergTruncate")
+    else if (partition_function->name == "icebergTruncate")
     {
         if (!param.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE function for iceberg partitioning requires one integer parameter");
         result->set(Iceberg::f_transform, fmt::format("truncate[{}]", *param));
         return result;
     }
-    else if (function_name == "icebergBucket")
+    else if (partition_function->name == "icebergBucket")
     {
         if (!param.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "BUCKET function for iceberg partitioning requires one integer parameter");
@@ -897,8 +883,7 @@ static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     result->set(Iceberg::f_spec_id, 0);
 
     Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
-    /// Partition field ids start at 1000. The first field gets 1000 after the pre-increment.
-    Int32 partition_iter = 999;
+    Int32 partition_iter = 1000;
     if (partition_by)
     {
         if (const auto * partition_function = partition_by->as<ASTFunction>(); partition_function && partition_function->name == "tuple")
@@ -919,6 +904,8 @@ static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
             fields->add(partition_field);
         }
     }
+    else
+        partition_iter = 0;
 
     result->set(Iceberg::f_fields, fields);
     return {result, partition_iter};
@@ -941,10 +928,10 @@ static std::pair<String, String> parseFunction(const ASTPtr & func_object)
             {"identity", "identity"},
             {"icebergBucket", "bucket"},
             {"icebergTruncate", "truncate"},
-            {"icebergYear", "year"},
-            {"icebergMonth", "month"},
-            {"icebergDay", "day"},
-            {"icebergHour", "hour"}
+            {"toYearNumSinceEpoch", "year"},
+            {"toMonthNumSinceEpoch", "month"},
+            {"toRelativeDayNum", "day"},
+            {"toRelativeHourNum", "hour"}
         };
 
     const auto * func = func_object ? func_object->as<ASTFunction>() : nullptr;
@@ -952,7 +939,7 @@ static std::pair<String, String> parseFunction(const ASTPtr & func_object)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid iceberg sort order expression, expected a function");
 
     const String & clickhouse_name = func->name;
-    const auto it = clickhouse_name_to_iceberg.find(normalizeIcebergTransformFunctionName(clickhouse_name));
+    const auto it = clickhouse_name_to_iceberg.find(clickhouse_name);
     if (it == clickhouse_name_to_iceberg.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported function {} for iceberg", clickhouse_name);
 
@@ -1098,9 +1085,6 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     new_metadata_file_content->set(Iceberg::f_location, path_location);
     if (format_version > 1)
         new_metadata_file_content->set(Iceberg::f_last_sequence_number, 0);
-    /// Row lineage starts at table creation. No rows yet, so the next row id is 0.
-    if (format_version >= 3)
-        new_metadata_file_content->set(Iceberg::f_next_row_id, 0);
 
     auto now = std::chrono::system_clock::now();
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
@@ -1146,8 +1130,13 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     new_metadata_file_content->set(Iceberg::f_last_partition_id, last_partition_id);
     new_metadata_file_content->set(Iceberg::f_current_snapshot_id, -1);
 
-    /// No snapshots yet, so no refs.
-    new_metadata_file_content->set(Iceberg::f_refs, Poco::JSON::Object::Ptr(new Poco::JSON::Object));
+    Poco::JSON::Object::Ptr refs = new Poco::JSON::Object;
+    Poco::JSON::Object::Ptr main_branch = new Poco::JSON::Object;
+    main_branch->set(Iceberg::f_metadata_snapshot_id, -1);
+    main_branch->set(Iceberg::f_type, "branch");
+    refs->set(Iceberg::f_main, main_branch);
+
+    new_metadata_file_content->set(Iceberg::f_refs, refs);
     new_metadata_file_content->set(Iceberg::f_snapshots, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     new_metadata_file_content->set(Iceberg::f_statistics, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     new_metadata_file_content->set(Iceberg::f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
@@ -1599,23 +1588,6 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     }
 }
 
-String getCatalogMetadataFilePath(const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier)
-{
-    DataLake::TableMetadata table_metadata;
-    table_metadata.withDataLakeSpecificProperties().withLocation();
-    const auto & [namespace_name, table_name] = DataLake::parseTableName(table_identifier);
-    catalog->getTableMetadata(namespace_name, table_name, table_metadata);
-
-    auto specific_properties = table_metadata.getDataLakeSpecificProperties();
-    if (!specific_properties.has_value() || specific_properties->iceberg_metadata_file_location.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Catalog did not return a metadata file location for table '{}.{}'",
-            namespace_name, table_name);
-
-    return table_metadata.getMetadataLocation(specific_properties->iceberg_metadata_file_location);
-}
-
 MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     const ObjectStoragePtr & object_storage,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
@@ -1642,8 +1614,21 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
             /* force_fetch_latest_metadata */ true,
             ignore_metadata_pointer_overrides);
 
+    DataLake::TableMetadata table_metadata;
+    table_metadata.withDataLakeSpecificProperties().withLocation();
+    const auto & [namespace_name, table_name] = DataLake::parseTableName(table_identifier);
+    catalog->getTableMetadata(namespace_name, table_name, table_metadata);
+
+    auto specific_properties = table_metadata.getDataLakeSpecificProperties();
+    if (!specific_properties.has_value() || specific_properties->iceberg_metadata_file_location.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Catalog did not return a metadata file location for table '{}.{}'",
+            namespace_name, table_name);
+
     DataLakeStorageSettings effective_settings = data_lake_settings;
-    effective_settings[DataLakeStorageSetting::iceberg_metadata_file_path] = getCatalogMetadataFilePath(catalog, table_identifier);
+    effective_settings[DataLakeStorageSetting::iceberg_metadata_file_path]
+        = table_metadata.getMetadataLocation(specific_properties->iceberg_metadata_file_location);
 
     /// A catalog's pointer IS the committed state, so it is resolved rather than overridden.
     return getLatestOrExplicitMetadataFileAndVersion(
@@ -1776,6 +1761,10 @@ DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTyp
 {
     if (iceberg_transform_name.starts_with("identity") || iceberg_transform_name.starts_with("truncate"))
         return source_type;
+    if (iceberg_transform_name.starts_with("year"))
+        return std::make_shared<DataTypeUInt16>();
+    if (iceberg_transform_name.starts_with("month") || iceberg_transform_name.starts_with("day") || iceberg_transform_name.starts_with("hour"))
+        return std::make_shared<DataTypeUInt32>();
     return std::make_shared<DataTypeInt32>();
 }
 

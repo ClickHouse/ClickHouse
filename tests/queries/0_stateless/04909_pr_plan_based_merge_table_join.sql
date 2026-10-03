@@ -1,4 +1,3 @@
--- Tags: no-parallel, no-fasttest
 -- A `Merge` table inside a JOIN with plan-based parallel replicas. The `Merge` read is expanded into a
 -- union of the reads from the underlying `MergeTree` tables, and the split marker is then lifted above
 -- that union and above the join, so the whole join ships as one fragment: the coordinated side is read

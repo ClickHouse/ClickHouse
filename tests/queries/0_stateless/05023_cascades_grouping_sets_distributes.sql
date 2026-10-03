@@ -1,3 +1,5 @@
+-- Tags: no-darwin
+-- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- A `GROUPING SETS` aggregation distributes with the two-phase split: every worker builds
 -- partial states for every grouping set over its share of the data, tagged with
@@ -33,8 +35,7 @@ SETTINGS distributed_aggregation_memory_efficient = 1;
 
 SELECT '-- results';
 SELECT k1, k2, grouping(k1) + grouping(k2) AS g, sum(v), count()
-FROM t_gs_cascades GROUP BY GROUPING SETS ((k1), (k2), ()) ORDER BY ALL
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM t_gs_cascades GROUP BY GROUPING SETS ((k1), (k2), ()) ORDER BY ALL;
 
 SELECT '-- same result from the non-distributed baseline';
 SELECT k1, k2, grouping(k1) + grouping(k2) AS g, sum(v), count()
@@ -49,9 +50,9 @@ SET group_by_two_level_threshold = 1;
 SET max_threads = 4;
 
 SELECT '-- memory-efficient setting on: no duplicate groups';
-SELECT throwIf(count() != uniqExact((k1, k2, g)), 'duplicate grouping set groups') FROM (SELECT k1, k2, grouping(k1) + grouping(k2) AS g, sum(v) FROM t_gs_cascades GROUP BY GROUPING SETS ((k1), (k2))) SETTINGS distributed_plan_fallback_to_local_execution = 0;
-SELECT throwIf(count() != uniqExact((k1, k2, g)), 'duplicate grouping set groups') FROM (SELECT k1, k2, grouping(k1) + grouping(k2) AS g, sum(v) FROM t_gs_cascades GROUP BY GROUPING SETS ((k1), (k2))) SETTINGS distributed_plan_fallback_to_local_execution = 0;
-SELECT throwIf(count() != uniqExact((k1, k2, g)), 'duplicate grouping set groups') FROM (SELECT k1, k2, grouping(k1) + grouping(k2) AS g, sum(v) FROM t_gs_cascades GROUP BY GROUPING SETS ((k1), (k2))) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT throwIf(count() != uniqExact((k1, k2, g)), 'duplicate grouping set groups') FROM (SELECT k1, k2, grouping(k1) + grouping(k2) AS g, sum(v) FROM t_gs_cascades GROUP BY GROUPING SETS ((k1), (k2)));
+SELECT throwIf(count() != uniqExact((k1, k2, g)), 'duplicate grouping set groups') FROM (SELECT k1, k2, grouping(k1) + grouping(k2) AS g, sum(v) FROM t_gs_cascades GROUP BY GROUPING SETS ((k1), (k2)));
+SELECT throwIf(count() != uniqExact((k1, k2, g)), 'duplicate grouping set groups') FROM (SELECT k1, k2, grouping(k1) + grouping(k2) AS g, sum(v) FROM t_gs_cascades GROUP BY GROUPING SETS ((k1), (k2)));
 
 SELECT '-- the split still happens under distributed_plan_force_shuffle_aggregation';
 -- The shuffle strategy does not exist for grouping sets, so the force-shuffle setting cannot

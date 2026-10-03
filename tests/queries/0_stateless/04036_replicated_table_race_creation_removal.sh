@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-fasttest
+# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
 # no-parallel: Uses PAUSEABLE_ONCE failpoints that fire exactly once globally; concurrent tests
 #   from another parallel run could steal the failpoint pause and cause this test to hang.
 # no-shared-merge-tree: The failpoints are injected in StorageReplicatedMergeTree::removeTableNodesFromZooKeeper;
