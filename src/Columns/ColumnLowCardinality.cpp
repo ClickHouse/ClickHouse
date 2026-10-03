@@ -345,7 +345,7 @@ void batchSerializeLowCardinalityString(
     const ColumnString & strings,
     const ColumnVector<IndexType> & indexes,
     const IColumn::SerializationSettings * settings,
-    VectorWithMemoryTracking<char *> & memories)
+    std::span<char *> memories)
 {
     const auto & offsets = strings.getOffsets();
     const auto & chars = strings.getChars();
@@ -390,7 +390,7 @@ void collectLowCardinalityStringSizes(
 }
 
 void ColumnLowCardinality::batchSerializeValueIntoMemory(
-    VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
+    std::span<char *> memories, const IColumn::SerializationSettings * settings) const
 {
     chassert(memories.size() == size());
     if (memories.empty())
