@@ -778,13 +778,12 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
             {
                 String token(block_tokens.getDataAt(matched_indices[i]));
                 /// Count after clipping: a token an earlier predicate ruled out is never read.
-                const auto reachable_blocks = analyzer->addTokenInfo(token, infos[i]);
-                if (reachable_blocks && *reachable_blocks > 0
+                const auto reachable_rows = analyzer->addTokenInfo(token, infos[i]);
+                if (reachable_rows && *reachable_rows > 0
                     && !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings))
                 {
                     ++postings_to_read;
-                    /// Posting blocks hold the same number of rows, so count only the share of the blocks that will be read.
-                    postings_rows_to_read += infos[i]->cardinality * *reachable_blocks / infos[i]->ranges.size();
+                    postings_rows_to_read += *reachable_rows;
                 }
             }
 

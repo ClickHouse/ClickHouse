@@ -70,6 +70,7 @@ INSERT INTO t_text_index_like_gap
 SELECT number,
        multiIf(number < 1000 OR (number >= 150000 AND number < 151000), 'gapfar',
                number >= 70000 AND number < 71000, 'gapnear',
+               (number >= 100000 AND number < 101000) OR number = 190000, 'tailtok',
                'filler')
 FROM numbers(200000)
 SETTINGS max_insert_threads = 1;
@@ -106,6 +107,21 @@ WHERE id >= 150000 AND id < 151000 AND message LIKE '%gap%'
     SETTINGS log_comment = 'like_direct_q8', text_index_like_min_pattern_length = 3,
              use_text_index_postings_cache = 0, use_text_index_dictionary_cache = 0,
              text_index_like_max_postings_to_read = 1000000, text_index_like_rows_max_selectivity = 0.0075;
+
+-- Q9: `tailtok` has blocks of 500, 500 and 1 rows, and the window reaches only the last one.
+-- It counts 1 row, within 0.001 (200 rows); an even split of its 1001 rows would count 333.
+SELECT count() FROM t_text_index_like_gap
+WHERE id >= 190000 AND id < 191000 AND message LIKE '%tail%'
+    SETTINGS log_comment = 'like_direct_q9', text_index_like_min_pattern_length = 3,
+             use_text_index_postings_cache = 0, use_text_index_dictionary_cache = 0,
+             text_index_like_rows_max_selectivity = 0.001;
+
+-- Q10: the same 1 row is still counted, so 0.000001 (0.2 rows) discards the scan.
+SELECT count() FROM t_text_index_like_gap
+WHERE id >= 190000 AND id < 191000 AND message LIKE '%tail%'
+    SETTINGS log_comment = 'like_direct_q10', text_index_like_min_pattern_length = 3,
+             use_text_index_postings_cache = 0, use_text_index_dictionary_cache = 0,
+             text_index_like_rows_max_selectivity = 0.000001;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -159,6 +175,18 @@ SELECT 'q8',
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment = 'like_direct_q8';
+
+SELECT 'q9',
+    ProfileEvents['TextIndexDiscardPatternScan'] = 0 AS scan_not_discarded
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment = 'like_direct_q9';
+
+SELECT 'q10',
+    ProfileEvents['TextIndexDiscardPatternScan'] = 1 AS discarded_scan_once
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment = 'like_direct_q10';
 
 DROP TABLE t_text_index_like_gap;
 DROP TABLE t_text_index_like_direct;

@@ -27,10 +27,9 @@ public:
     public:
         explicit ReadableRows(std::vector<RowsRange> ranges_);
         std::optional<RowsRange> clipRowsRange(const RowsRange & rows_range) const;
-        /// Number of distinct posting blocks of `token_info` these rows can actually reach.
-        /// `clipRowsRange` returns one interval spanning the gaps between disjoint ranges, so
-        /// counting blocks over that cover charges for blocks that are never read.
-        size_t countReachableBlocks(const TokenPostingsInfo & token_info) const;
+        /// Rows in the posting blocks of `token_info` that these rows can reach. `clipRowsRange` is too coarse
+        /// for this: its one interval also covers the gaps between the ranges.
+        size_t countReachableRows(const TokenPostingsInfo & token_info) const;
         PostingList clipPostings(const PostingList & postings);
         size_t getSizeInBytes() const;
 
@@ -85,7 +84,7 @@ public:
     bool hasReadPostings(std::string_view token) const;
 
     void addMissingToken(std::string_view token);
-    /// Returns how many of the token's posting blocks the readable rows can reach, or nothing when
+    /// Returns the rows in the token's posting blocks that the readable rows can reach, or nothing when
     /// the clip leaves it empty and no postings will ever be read for it.
     std::optional<size_t> addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
     void addPostings(std::string_view token, const PostingList & postings);
