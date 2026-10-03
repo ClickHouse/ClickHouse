@@ -16,20 +16,6 @@ namespace DB
 namespace
 {
 
-bool typeContainsExponentialTimeDecaying(const IDataType & type)
-{
-    if (type.getTypeId() == TypeIndex::ExponentialTimeDecaying)
-        return true;
-
-    bool found = false;
-    type.forEachChild([&](const IDataType & child)
-    {
-        if (!found)
-            found = typeContainsExponentialTimeDecaying(child);
-    });
-    return found;
-}
-
 const ColumnWithTypeAndName * getColumnBackedValue(const FieldRef & field)
 {
     if (field.isExplicit() || !field.columns || field.column_idx >= field.columns->size())
@@ -102,7 +88,7 @@ std::optional<int> compareFieldRefsByColumn(const FieldRef & lhs, const FieldRef
     const auto * rhs_value = getColumnBackedValue(rhs);
 
     const auto * typed_value = lhs_value ? lhs_value : rhs_value;
-    if (!typed_value || !typed_value->type || !typeContainsExponentialTimeDecaying(*typed_value->type))
+    if (!typed_value || !typed_value->type || !containsExponentialTimeDecaying(*typed_value->type))
         return std::nullopt;
 
     const auto * direct_type
