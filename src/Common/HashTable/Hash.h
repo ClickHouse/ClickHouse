@@ -8,6 +8,7 @@
 #include <base/types.h>
 #include <base/unaligned.h>
 
+#include <bit>
 #include <type_traits>
 
 
@@ -518,11 +519,11 @@ inline UInt32 intHash32(UInt64 key)
     key ^= salt;
 
     key = (~key) + (key << 18);
-    key = key ^ ((key >> 31) | (key << 33));
+    key = key ^ std::rotr(key, 31);
     key = key * 21;
-    key = key ^ ((key >> 11) | (key << 53));
+    key = key ^ std::rotr(key, 11);
     key = key + (key << 6);
-    key = key ^ ((key >> 22) | (key << 42));
+    key = key ^ std::rotr(key, 22);
 
     return static_cast<UInt32>(key);
 }

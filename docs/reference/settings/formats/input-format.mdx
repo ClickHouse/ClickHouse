@@ -99,7 +99,7 @@ Read data types in binary format instead of type names in RowBinaryWithNamesAndT
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1000"},{"label": "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."}]}]}/>
 
-Max type nodes when decoding binary types (not depth, but total count). `Map(String, UInt32)` = 3 nodes. Protects against malicious inputs. 0 = unlimited.
+Max type nodes when decoding binary types (not depth, but total count). `Map(String, UInt32)` = 3 nodes. Parameters of `AggregateFunction` types count as one node per value, including nested ones. Protects against malicious inputs. 0 = unlimited.
 
 ## input_format_binary_read_json_as_string {#input_format_binary_read_json_as_string}
 
@@ -300,6 +300,14 @@ Possible values:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "0"},{"label": "Disable type-defaults for omitted fields when needed"}]}]}/>
 
 Force initialize omitted fields with null values
+
+## input_format_freeform_max_search_steps {#input_format_freeform_max_search_steps}
+
+<SettingsInfoBlock type="UInt64" default_value="4096" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "4096"},{"label": "New setting bounding the search for the structure of a `Freeform` row. The search was unbounded before and could exhaust memory on a wide row of strings; 0 restores that behavior."}]}]}/>
+
+The maximum number of steps of the search for the structure of a row in the `Freeform` format. The search branches on every field that several escaping rules read alike (for example, a word in a tab-separated row is read the same by the `Raw` and `Escaped` rules), so a wide row of strings has exponentially many candidate structures. When the search exceeds this number of steps, an exception is thrown instead of exhausting memory and time. 0 means unlimited.
 
 ## input_format_geojson_unsupported_geometry_handling {#input_format_geojson_unsupported_geometry_handling}
 
@@ -930,6 +938,14 @@ Enable row group prefetching during parquet parsing. Currently, only single-thre
 
 When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.
 
+## input_format_parquet_footer_read_size {#input_format_parquet_footer_read_size}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting to override the adaptive Parquet footer initial read size with a fixed number of bytes; 0 keeps the adaptive behavior."}]}]}/>
+
+Size (in bytes) of the initial tail read that fetches the Parquet footer (`FileMetaData`) when opening a file with reader v3. `0` (default) sizes the read adaptively to the file - 1% of the file size, clamped to `[128 KiB, 2 MiB]` - so it usually covers the whole footer in a single read even for wide files with hundreds of columns. Set a non-zero value to force a fixed initial read size instead of the adaptive one; this is useful for very high-latency object storage where reading a larger tail up front avoids a second round trip. The value is clamped to the file size.
+
 ## input_format_parquet_local_file_min_bytes_for_seek {#input_format_parquet_local_file_min_bytes_for_seek}
 
 <SettingsInfoBlock type="UInt64" default_value="8192" />
@@ -1094,6 +1110,12 @@ Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
+
+## input_format_sqlite_table_name {#input_format_sqlite_table_name}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "New setting for the `SQLite` input format: the name of the table to read."}]}]}/>
+
+Name of the table in SQLite input from which to read data. If empty, the first table from the SQLite database is used.
 
 ## input_format_try_infer_dates {#input_format_try_infer_dates}
 

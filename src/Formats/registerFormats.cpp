@@ -85,6 +85,10 @@ void registerOutputFormatNpy(FormatFactory & factory);
 void registerInputFormatNetCDF(FormatFactory & factory);
 void registerOutputFormatNetCDF(FormatFactory & factory);
 void registerInputFormatForm(FormatFactory & factory);
+#if USE_SQLITE
+void registerInputFormatSQLite(FormatFactory & factory);
+void registerOutputFormatSQLite(FormatFactory & factory);
+#endif
 
 /// Output only (presentational) formats.
 
@@ -166,6 +170,9 @@ void registerOneSchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory);
 void registerNetCDFSchemaReader(FormatFactory & factory);
 void registerFormSchemaReader(FormatFactory & factory);
+#if USE_SQLITE
+void registerSQLiteSchemaReader(FormatFactory & factory);
+#endif
 
 void registerInputFormatGeoJSON(FormatFactory & factory);
 void registerOutputFormatGeoJSON(FormatFactory & factory);
@@ -253,6 +260,10 @@ void registerFormats()
     registerOutputFormatNpy(factory);
     registerInputFormatNetCDF(factory);
     registerOutputFormatNetCDF(factory);
+#if USE_SQLITE
+    registerInputFormatSQLite(factory);
+    registerOutputFormatSQLite(factory);
+#endif
 
     registerOutputFormatPretty(factory);
     registerOutputFormatVertical(factory);
@@ -335,6 +346,9 @@ void registerFormats()
     registerNpySchemaReader(factory);
     registerNetCDFSchemaReader(factory);
     registerFormSchemaReader(factory);
+#if USE_SQLITE
+    registerSQLiteSchemaReader(factory);
+#endif
 }
 
 }
