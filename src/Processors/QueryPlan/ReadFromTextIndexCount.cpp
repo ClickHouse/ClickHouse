@@ -218,6 +218,7 @@ UInt64 computeCountForPart(
     /// `analyzePostings` already folded the small (single-block) postings into `query_builder.postings` by search mode.
     std::vector<const TokenPostingsInfo *> tokens_to_read;
     tokens_to_read.reserve(query_builder.tokens.size());
+
     for (const auto & [token, token_info] : query_builder.tokens)
     {
         if (!analyzer.hasReadPostings(token))
@@ -237,26 +238,11 @@ UInt64 computeCountForPart(
 
     if (use_lazy_mode)
     {
-        if (search_mode == TextSearchMode::All && query_builder.postings && query_builder.postings->isEmpty())
-            return 0;
-
         /// Each cursor seeks its own stream, so the cursors do not invalidate each other's buffered reads.
         std::vector<std::unique_ptr<MergeTreeReaderStream>> cursor_streams;
         std::vector<PostingListCursorPtr> cursors;
         cursor_streams.reserve(tokens_to_read.size());
         cursors.reserve(tokens_to_read.size() + 1);
-
-        /// The row range that can contain matches: the hull of the cursors for `Any`, their overlap for `All`.
-        std::optional<RowsRange> count_range;
-        auto add_cursor_range = [&](size_t begin, size_t end)
-        {
-            if (!count_range)
-                count_range.emplace(begin, end);
-            else if (search_mode == TextSearchMode::Any)
-                count_range.emplace(std::min(count_range->begin, begin), std::max(count_range->end, end));
-            else
-                count_range.emplace(std::max(count_range->begin, begin), std::min(count_range->end, end));
-        };
 
         for (const auto * token_info : tokens_to_read)
         {
@@ -269,8 +255,6 @@ UInt64 computeCountForPart(
                 *token_info,
                 resolved.condition->postingsCache().get(),
                 granule->getIndexIdForCaches()));
-
-            add_cursor_range(token_info->ranges.front().begin, token_info->ranges.back().end);
         }
 
         /// The folded small postings join the intersection or union as one more cursor over a flat array.
@@ -278,14 +262,13 @@ UInt64 computeCountForPart(
         {
             auto flat = std::make_shared<PaddedPODArray<UInt32>>(query_builder.postings->cardinality());
             query_builder.postings->toUint32Array(flat->data());
-            add_cursor_range(flat->front(), flat->back());
             cursors.push_back(std::make_shared<PostingListCursor>(FlatPostingsPtr(std::move(flat))));
         }
 
-        if (count_range->begin > count_range->end)
-            return 0;
-
-        return countWithCursors(cursors, search_mode, settings[Setting::text_index_postings_intersection_algorithm], *count_range, check_cancelled);
+        /// `rows_range` is the hull of the tokens' rows for `Any` and their overlap for `All`; an empty overlap fails the query.
+        chassert(query_builder.rows_range);
+        auto intersection_algorithm = settings[Setting::text_index_postings_intersection_algorithm];
+        return countWithCursors(cursors, search_mode, intersection_algorithm, *query_builder.rows_range, check_cancelled);
     }
 
     auto postings_serialization = PostingsSerialization(
