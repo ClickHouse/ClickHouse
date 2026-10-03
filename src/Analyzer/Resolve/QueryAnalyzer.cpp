@@ -115,6 +115,8 @@ namespace Setting
     extern const SettingsBool validate_group_by_all_key_types;
     extern const SettingsBool allow_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool execute_exists_as_scalar_subquery;
+    extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -7138,6 +7140,20 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       *
       * Example: WITH 1 AS constant, (x -> x + 1) AS lambda, a AS (SELECT * FROM test_table);
       */
+    /// The expressions of the WITH section are resolved through their aliases, so check them for `IN` with a subquery before
+    /// they are removed (see the replacement of cluster engines by their `*Cluster` variant below). A CTE is a separate query,
+    /// which is checked when it is resolved.
+    const bool aliases_visible_from_parent_scopes = scope.context->getSettingsRef()[Setting::enable_global_with_statement];
+    TableFunctionsWithClusterAlternativesVisitor with_section_visitor(scope, aliases_visible_from_parent_scopes);
+    for (const auto & with_node : query_node_typed.getWith().getNodes())
+    {
+        const auto * with_query = with_node->as<QueryNode>();
+        const auto * with_union = with_node->as<UnionNode>();
+        if ((with_query && with_query->isCTE()) || (with_union && with_union->isCTE()))
+            continue;
+        with_section_visitor.visit(with_node);
+    }
+
     query_node_typed.getWith().getNodes().clear();
 
     for (auto & window_node : query_node_typed.getWindow().getNodes())
@@ -7170,9 +7186,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     TableExpressionsAliasVisitor table_expressions_visitor(scope);
     table_expressions_visitor.visit(query_node_typed.getJoinTreeNode());
 
-    TableFunctionsWithClusterAlternativesVisitor table_function_visitor;
+    TableFunctionsWithClusterAlternativesVisitor table_function_visitor(scope, aliases_visible_from_parent_scopes);
     table_function_visitor.visit(query_node);
-    if (!table_function_visitor.shouldReplaceWithClusterAlternatives())
+    /// `parallel_replicas_allow_in_with_subquery = 0` is also checked by the planner, but only once the storages are
+    /// chosen, when a cluster engine has already been replaced by its `*Cluster` variant, which ships the `IN` subquery
+    /// to every replica. So decide it for cluster engines here, before the table expressions are resolved.
+    const auto & query_settings = query_node_typed.getContext()->getSettingsRef();
+    const bool exists_is_rewritten_to_in = !query_settings[Setting::execute_exists_as_scalar_subquery];
+    if (!table_function_visitor.shouldReplaceWithClusterAlternatives()
+        || (!query_settings[Setting::parallel_replicas_allow_in_with_subquery]
+            && (table_function_visitor.mayHaveInWithSubquery(exists_is_rewritten_to_in)
+                || with_section_visitor.mayHaveInWithSubquery(exists_is_rewritten_to_in))))
         query_node_typed.getMutableContext()->setSetting("parallel_replicas_for_cluster_engines", false);
 
     /// Disable cache during join tree resolution - table expressions aren't fully initialized yet,
