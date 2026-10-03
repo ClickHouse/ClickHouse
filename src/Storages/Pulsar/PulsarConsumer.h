@@ -43,8 +43,9 @@ public:
 
     bool isStalled() const { return polled_messages.empty(); }
 
-    /// A consumer that hit a terminal receive error (e.g. `ResultAlreadyClosed`) must not be
-    /// returned to the pool: the storage drops it and recreates the slot instead.
+    /// A consumer that hit a terminal receive error (e.g. `ResultAlreadyClosed`) or failed to
+    /// acknowledge messages must not be returned to the pool: the storage drops it and recreates
+    /// the slot instead.
     bool isUsable() const { return usable; }
 
 private:

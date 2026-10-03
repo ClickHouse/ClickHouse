@@ -77,9 +77,12 @@ void PulsarConsumer::commit()
     auto result = consumer.acknowledge(pending_acks);
     if (result != pulsar::ResultOk)
     {
-        /// Not a fatal error: unacknowledged messages will be redelivered, and the engine provides
-        /// at-least-once semantics anyway. Report the failure and let the messages be processed again.
+        /// Not a fatal error for the query: the engine provides at-least-once semantics, so the
+        /// messages may be processed again. To make sure they are actually redelivered, the consumer
+        /// must not go back to the pool: the storage closes it (which puts all its unacknowledged
+        /// messages onto the redelivery path) and recreates the slot (see `returnConsumer`).
         LOG_WARNING(log, "Failed to acknowledge {} messages: {}", pending_acks.size(), pulsar::strResult(result));
+        usable = false;
     }
     pending_acks.clear();
 }
