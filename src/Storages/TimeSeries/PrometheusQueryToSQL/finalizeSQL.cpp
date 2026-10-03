@@ -38,6 +38,94 @@ namespace
                         toString(result.step, context.result_timestamp_scale));
     }
 
+    /// Removes the metric name from the series which were marked by dropMetricName and checks that the final result
+    /// doesn't contain duplicate series. Called for StoreMethod::VECTOR_GRID only if `context.metric_name_drop_deferred` is set.
+    ///
+    /// Series which get the same tags after the removal are merged if their samples don't overlap on the grid,
+    /// because Prometheus evaluates each step separately and merges the steps into one series.
+    /// Two values at the same grid position are duplicate series.
+    ///
+    /// Step 1:
+    /// SELECT if(isNotNull(timeSeriesExtractTag(group, '__name__.dropped')),
+    ///           timeSeriesRemoveTags(group, ['__name__', '__name__.dropped']),
+    ///           group) AS new_group,
+    ///        anyForEach(values) AS new_values
+    /// FROM <vector_grid>
+    /// GROUP BY new_group
+    /// HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(x -> x > 1, countForEach(values)), new_group) = 0
+    ///
+    /// Step 2:
+    /// SELECT new_group AS group, new_values AS values
+    /// FROM step1
+    void resolveDroppedMetricNames(SQLQueryPiece & result, ConverterContext & context)
+    {
+        chassert(result.store_method == StoreMethod::VECTOR_GRID);
+
+        ASTPtr metric_name_removing_query;
+        {
+            SelectQueryBuilder builder;
+
+            builder.select_list.push_back(makeASTFunction(
+                "if",
+                makeASTFunction(
+                    "isNotNull",
+                    makeASTFunction(
+                        "timeSeriesExtractTag",
+                        make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                        make_intrusive<ASTLiteral>(kDroppedMetricNameMarker))),
+                makeASTFunction(
+                    "timeSeriesRemoveTags",
+                    make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                    make_intrusive<ASTLiteral>(Array{kMetricName, kDroppedMetricNameMarker})),
+                make_intrusive<ASTIdentifier>(ColumnNames::Group)));
+            builder.select_list.back()->setAlias(ColumnNames::NewGroup);
+
+            builder.select_list.push_back(makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+            builder.select_list.back()->setAlias(ColumnNames::NewValues);
+
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
+            builder.from_table = context.subqueries.back().name;
+
+            builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+
+            auto has_overlapping_values = makeASTFunction(
+                "arrayExists",
+                makeASTFunction(
+                    "lambda",
+                    makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                    makeASTFunction("greater", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1u))),
+                makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+
+            builder.having = makeASTFunction(
+                "equals",
+                makeASTFunction(
+                    "timeSeriesThrowDuplicateSeriesIf",
+                    std::move(has_overlapping_values),
+                    make_intrusive<ASTIdentifier>(ColumnNames::NewGroup)),
+                make_intrusive<ASTLiteral>(0u));
+
+            metric_name_removing_query = builder.getSelectQuery();
+        }
+
+        ASTPtr column_renaming_query;
+        {
+            SelectQueryBuilder builder;
+
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+            builder.select_list.back()->setAlias(ColumnNames::Group);
+
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewValues));
+            builder.select_list.back()->setAlias(ColumnNames::Values);
+
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(metric_name_removing_query), SQLSubqueryType::TABLE});
+            builder.from_table = context.subqueries.back().name;
+
+            column_renaming_query = builder.getSelectQuery();
+        }
+
+        result.select_query = std::move(column_renaming_query);
+    }
+
     /// Finalizes a SQL query returning a scalar as two columns "time", "value".
     ASTPtr finalizeScalarAsSQL(SQLQueryPiece && result, ConverterContext & context)
     {
@@ -233,6 +321,9 @@ namespace
                 /// FROM <vector_grid>
                 /// WHERE isNotNull(values[1])
 
+                if (context.metric_name_drop_deferred)
+                    resolveDroppedMetricNames(result, context);
+
                 /// timeSeriesGroupToTags(group) AS tags
                 tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
                 tags->setAlias(ColumnNames::Tags);
@@ -400,6 +491,9 @@ namespace
                 ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>, values::Array(Nullable(Float64))) AS samples
                 /// FROM <vector_grid>
                 /// WHERE notEmpty(samples)
+
+                if (context.metric_name_drop_deferred)
+                    resolveDroppedMetricNames(result, context);
 
                 /// timeSeriesGroupToTags(group) AS tags
                 tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));

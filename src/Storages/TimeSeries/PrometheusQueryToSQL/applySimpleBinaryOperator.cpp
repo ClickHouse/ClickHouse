@@ -181,14 +181,14 @@ namespace
 
         /// Step 3:
         /// if without grouping:
-        /// SELECT timeSeriesRemoveTag(join_group, '__name__') AS group,
+        /// SELECT timeSeriesRemoveTags(join_group, ['__name__', '__name__.dropped']) AS group,
         ///        arrayMap(x, y -> f(x, y), left.values, right.values) AS values
         /// FROM left INNER ANY JOIN right
         /// ON left.join_group = right.join_group
         /// [GROUP BY group HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0]
         ///
         /// if with group_left/group_right:
-        /// SELECT timeSeriesCopyTags(timeSeriesRemoveTag(side_many.original_group, '__name__'), side_one.original_group, extra_labels) AS group,
+        /// SELECT timeSeriesCopyTags(timeSeriesRemoveTags(side_many.original_group, ['__name__', '__name__.dropped']), side_one.original_group, tags_to_copy) AS group,
         ///        arrayMap(x, y -> f(x, y), left.values, right.values) AS values
         /// FROM left LEFT/RIGHT SEMI JOIN right
         /// ON left.join_group = right.join_group
@@ -214,8 +214,8 @@ namespace
                 bool can_use_join_group_in_result = true;
 
                 /// We can't use `join_group` as the result group in case when
-                /// the metric name `__name__` should be preserved in the result but it has already been dropped from `join_group`.
-                if (!drop_metric_name && !left_argument.metric_name_dropped && metric_name_dropped_from_join_group)
+                /// the metric name `__name__` should be preserved in the result: `join_group` may have dropped `__name__` or the drop marker.
+                if (!drop_metric_name && !left_argument.metric_name_dropped)
                 {
                     /// Example 1. `foo == ignoring(size) bar`
                     /// - here the result should have only `size` removed, but `join_group` has both `size` and `__name__` removed,
@@ -223,6 +223,9 @@ namespace
                     /// Example 2. `foo == bar`
                     /// - here the result should have all the tags of `foo`, but `join_group` has `__name__` removed,
                     /// so we take the original group from the left argument.
+                    /// Example 3. `(foo + 1) == on(__name__, shape) bar`
+                    /// - here the result should keep `__name__` and the drop marker, but `join_group` has the marker removed,
+                    /// so we recompute the group from the `original_group`.
                     can_use_join_group_in_result = false;
                 }
 
@@ -247,7 +250,8 @@ namespace
                 {
                     /// For example `a + on(__name__) b`
                     /// - here `join_group` has the __name__ tag, but the result shouldn't have it.
-                    new_group = makeASTFunction("timeSeriesRemoveTag", new_group, make_intrusive<ASTLiteral>(kMetricName));
+                    new_group = makeASTFunction(
+                        "timeSeriesRemoveTags", new_group, make_intrusive<ASTLiteral>(Array{kMetricName, kDroppedMetricNameMarker}));
                     metric_name_dropped_from_result = true;
                     check_no_duplicate_groups = true;
                 }
@@ -298,7 +302,8 @@ namespace
 
                 if (drop_metric_name && !metric_name_dropped_from_result)
                 {
-                    new_group = makeASTFunction("timeSeriesRemoveTag", new_group, make_intrusive<ASTLiteral>(kMetricName));
+                    new_group = makeASTFunction(
+                        "timeSeriesRemoveTags", new_group, make_intrusive<ASTLiteral>(Array{kMetricName, kDroppedMetricNameMarker}));
                     metric_name_dropped_from_result = true;
                     check_no_duplicate_groups = true;
                 }
@@ -312,8 +317,15 @@ namespace
 
                     if (allow_grouping_modifier_copy_metric_name)
                     {
-                        if (std::binary_search(tags_to_copy.begin(), tags_to_copy.end(), kMetricName) && !metric_name_dropped_from_side_one)
-                            metric_name_dropped_from_result = false;
+                        if (std::binary_search(tags_to_copy.begin(), tags_to_copy.end(), kMetricName))
+                        {
+                            if (!metric_name_dropped_from_side_one)
+                                metric_name_dropped_from_result = false;
+
+                            auto marker = std::lower_bound(tags_to_copy.begin(), tags_to_copy.end(), kDroppedMetricNameMarker);
+                            if (marker == tags_to_copy.end() || *marker != kDroppedMetricNameMarker)
+                                tags_to_copy.insert(marker, kDroppedMetricNameMarker);
+                        }
                     }
                     else
                     {

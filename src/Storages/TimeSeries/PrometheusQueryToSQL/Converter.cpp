@@ -1,5 +1,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 
+#include <Common/Exception.h>
+#include <Common/quoteString.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperator.h>
@@ -16,11 +18,92 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultType.h>
 
 
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+}
+
+
 namespace DB::PrometheusQueryToSQL
 {
 
 namespace
 {
+    void rejectReservedLabelName(std::string_view label_name)
+    {
+        if (label_name == kDroppedMetricNameMarker)
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                "Label name {} is reserved",
+                quoteString(label_name));
+        }
+    }
+
+    void rejectReservedLabelNames(const Node * node)
+    {
+        switch (node->node_type)
+        {
+            case NodeType::InstantSelector:
+            {
+                const auto * selector = static_cast<const PrometheusQueryTree::InstantSelector *>(node);
+                for (const auto & matcher : selector->matchers)
+                    rejectReservedLabelName(matcher.label_name);
+                break;
+            }
+
+            case NodeType::AggregationOperator:
+            {
+                const auto * aggregation_operator = static_cast<const PrometheusQueryTree::AggregationOperator *>(node);
+                for (const auto & label : aggregation_operator->labels)
+                    rejectReservedLabelName(label);
+
+                if (aggregation_operator->operator_name == "count_values")
+                {
+                    const auto & arguments = aggregation_operator->getArguments();
+                    if (!arguments.empty() && arguments[0]->node_type == NodeType::StringLiteral)
+                        rejectReservedLabelName(static_cast<const PrometheusQueryTree::StringLiteral *>(arguments[0])->string);
+                }
+                break;
+            }
+
+            case NodeType::BinaryOperator:
+            {
+                const auto * binary_operator = static_cast<const PrometheusQueryTree::BinaryOperator *>(node);
+                for (const auto & label : binary_operator->labels)
+                    rejectReservedLabelName(label);
+                for (const auto & label : binary_operator->extra_labels)
+                    rejectReservedLabelName(label);
+                break;
+            }
+
+            case NodeType::Function:
+            {
+                const auto * function = static_cast<const PrometheusQueryTree::Function *>(node);
+                if (function->function_name == "label_replace" || function->function_name == "label_join")
+                {
+                    const auto & arguments = function->getArguments();
+                    if (arguments.size() > 1 && arguments[1]->node_type == NodeType::StringLiteral)
+                        rejectReservedLabelName(static_cast<const PrometheusQueryTree::StringLiteral *>(arguments[1])->string);
+
+                    size_t source_end = arguments.size();
+                    if (function->function_name == "label_replace" && source_end > 4)
+                        source_end = 4;
+                    for (size_t i = 3; i < source_end; ++i)
+                        if (arguments[i]->node_type == NodeType::StringLiteral)
+                            rejectReservedLabelName(static_cast<const PrometheusQueryTree::StringLiteral *>(arguments[i])->string);
+                }
+                break;
+            }
+
+            default:
+                break;
+        }
+
+        for (const auto * child : node->children)
+            rejectReservedLabelNames(child);
+    }
+
     SQLQueryPiece visitNode(const Node * node, ConverterContext & context)
     {
         switch (node->node_type)
@@ -132,6 +215,7 @@ ColumnsDescription Converter::getResultColumns() const
 ASTPtr Converter::getSQL() const
 {
     ConverterContext context{promql_tree, settings};
+    rejectReservedLabelNames(promql_tree->getRoot());
     auto query_piece = visitNode(promql_tree->getRoot(), context);
     query_piece.type = result_type;
     return finalizeSQL(std::move(query_piece), context);

@@ -623,6 +623,16 @@ def do_query_test_expect_error(
     )
 
 
+# ClickHouse rejects this label name. The reference Prometheus accepts it.
+def do_clickhouse_only_query_test_expect_error(query, timestamp, expected_cherror):
+    assert expected_cherror in execute_query_in_clickhouse_sql(
+        query, timestamp, expect_error=True
+    )
+    assert expected_cherror in execute_query_in_clickhouse_http_api(
+        query, timestamp, expect_error=True
+    )
+
+
 # Evaluates the same range query in Prometheus and in ClickHouse and compare the results.
 def do_range_query_test(
     query,
@@ -3499,6 +3509,67 @@ def test_multiple_series_in_same_resultset():
         "Multiple series have the same tags {'http_code': '404'}",
     )
 
+    do_query_test_expect_error(
+        "abs(rate({http_code='404'}[100]))",
+        200,
+        "vector cannot contain metrics with the same labelset",
+        "Multiple series have the same tags {'http_code': '404'}",
+    )
+
+    # The metric name is removed at the end of the evaluation, so an inner expression may hold series
+    # which differ only by metric name. The reference Prometheus runs without `promql-delayed-name-removal`
+    # and fails on these queries, so they are checked in ClickHouse only.
+    do_clickhouse_only_query_test(
+        'label_replace(rate({http_code=\'404\'}[100]), "name", "$1", "__name__", "(.*)")[1:1]',
+        200,
+        '{"resultType": "matrix", "result": [{"metric": {"http_code": "404", "name": "download_failures"}, "values": [[200, "0.015"]]}, {"metric": {"http_code": "404", "name": "http_errors"}, "values": [[200, "0.07"]]}]}',
+        [
+            ["[('http_code','404'),('name','download_failures')]", "[('1970-01-01 00:03:20.000',0.015)]"],
+            ["[('http_code','404'),('name','http_errors')]", "[('1970-01-01 00:03:20.000',0.07)]"],
+        ],
+        eps=1e-9,
+    )
+
+    do_clickhouse_only_query_test(
+        'label_replace(rate({http_code=\'404\'}[100]), "__name__", "${1}_rate", "__name__", "(.*)")[1:1]',
+        200,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "download_failures_rate", "http_code": "404"}, "values": [[200, "0.015"]]}, {"metric": {"__name__": "http_errors_rate", "http_code": "404"}, "values": [[200, "0.07"]]}]}',
+        [
+            ["[('__name__','download_failures_rate'),('http_code','404')]", "[('1970-01-01 00:03:20.000',0.015)]"],
+            ["[('__name__','http_errors_rate'),('http_code','404')]", "[('1970-01-01 00:03:20.000',0.07)]"],
+        ],
+        eps=1e-9,
+    )
+
+    do_clickhouse_only_query_test(
+        'label_join(rate({http_code=\'404\'}[100]), "__name__", "_", "__name__", "http_code")[1:1]',
+        200,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "download_failures_404", "http_code": "404"}, "values": [[200, "0.015"]]}, {"metric": {"__name__": "http_errors_404", "http_code": "404"}, "values": [[200, "0.07"]]}]}',
+        [
+            ["[('__name__','download_failures_404'),('http_code','404')]", "[('1970-01-01 00:03:20.000',0.015)]"],
+            ["[('__name__','http_errors_404'),('http_code','404')]", "[('1970-01-01 00:03:20.000',0.07)]"],
+        ],
+        eps=1e-9,
+    )
+
+    do_clickhouse_only_query_test(
+        "count(rate({http_code='404'}[100]))",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [200, "2"]}]}',
+        [["[]", "1970-01-01 00:03:20.000", 2]],
+    )
+
+    do_clickhouse_only_query_test(
+        'sum by (name) (label_replace(rate({http_code=\'404\'}[100]), "name", "$1", "__name__", "(.*)"))[1:1]',
+        200,
+        '{"resultType": "matrix", "result": [{"metric": {"name": "download_failures"}, "values": [[200, "0.015"]]}, {"metric": {"name": "http_errors"}, "values": [[200, "0.07"]]}]}',
+        [
+            ["[('name','download_failures')]", "[('1970-01-01 00:03:20.000',0.015)]"],
+            ["[('name','http_errors')]", "[('1970-01-01 00:03:20.000',0.07)]"],
+        ],
+        eps=1e-9,
+    )
+
     # FIXME: Function count_over_time() is not implemented yet.
     # do_query_test_expect_error(
     #     "count_over_time({http_code='404'}[10])[100:10]",
@@ -4438,6 +4509,27 @@ def test_comparison_operators():
         ],
     )
 
+    # group_left(__name__) copies a visible name from the one side onto a marked many side.
+    do_query_test(
+        "((bar + 1) >= on(size) group_left(__name__) foo)[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[120, "17"], [130, "51"], [140, "51"], [150, "1001"]]}, {"metric": {"__name__": "foo", "shape": "rectangle", "size": "l"}, "values": [[130, "91"], [140, "91"], [150, "91"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "4"], [120, "41"], [130, "41"], [140, "701"], [150, "701"]]}]}',
+        [
+            [
+                "[('__name__','foo'),('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:02:00.000',17),('1970-01-01 00:02:10.000',51),('1970-01-01 00:02:20.000',51),('1970-01-01 00:02:30.000',1001)]",
+            ],
+            [
+                "[('__name__','foo'),('shape','rectangle'),('size','l')]",
+                "[('1970-01-01 00:02:10.000',91),('1970-01-01 00:02:20.000',91),('1970-01-01 00:02:30.000',91)]",
+            ],
+            [
+                "[('__name__','foo'),('shape','square'),('size','s')]",
+                "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:00.000',41),('1970-01-01 00:02:10.000',41),('1970-01-01 00:02:20.000',701),('1970-01-01 00:02:30.000',701)]",
+            ],
+        ],
+    )
+
     # on(__name__, shape) uses __name__ as part of the join key.
     # In filter mode __name__ is preserved in the result, so the result group is {__name__, shape}.
     do_query_test(
@@ -4449,6 +4541,19 @@ def test_comparison_operators():
             ["[('__name__','bar'),('shape','rectangle')]", "[('1970-01-01 00:01:50.000',9),('1970-01-01 00:02:00.000',9),('1970-01-01 00:02:10.000',90),('1970-01-01 00:02:20.000',90),('1970-01-01 00:02:30.000',90)]"],
             ["[('__name__','bar'),('shape','square')]", "[('1970-01-01 00:01:50.000',3),('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:10.000',40),('1970-01-01 00:02:20.000',700),('1970-01-01 00:02:30.000',700)]"],
             ["[('__name__','bar'),('shape','triangle')]", "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:00.000',8),('1970-01-01 00:02:10.000',8),('1970-01-01 00:02:20.000',8),('1970-01-01 00:02:30.000',30)]"],
+        ],
+    )
+
+    # A filter comparison keeps a pending drop, so on(__name__, shape) hides __name__.
+    do_clickhouse_only_query_test(
+        '(({__name__=~"foo|bar"} + 1) >= on(__name__, shape) bar)[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "circle"}, "values": [[110, "11"], [120, "17"], [130, "51"], [140, "51"], [150, "1001"]]}, {"metric": {"shape": "rectangle"}, "values": [[110, "10"], [120, "10"], [130, "91"], [140, "91"], [150, "91"]]}, {"metric": {"shape": "square"}, "values": [[110, "4"], [120, "41"], [130, "41"], [140, "701"], [150, "701"]]}, {"metric": {"shape": "triangle"}, "values": [[110, "9"], [120, "9"], [130, "9"], [140, "9"], [150, "31"]]}]}',
+        [
+            ["[('shape','circle')]", "[('1970-01-01 00:01:50.000',11),('1970-01-01 00:02:00.000',17),('1970-01-01 00:02:10.000',51),('1970-01-01 00:02:20.000',51),('1970-01-01 00:02:30.000',1001)]"],
+            ["[('shape','rectangle')]", "[('1970-01-01 00:01:50.000',10),('1970-01-01 00:02:00.000',10),('1970-01-01 00:02:10.000',91),('1970-01-01 00:02:20.000',91),('1970-01-01 00:02:30.000',91)]"],
+            ["[('shape','square')]", "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:00.000',41),('1970-01-01 00:02:10.000',41),('1970-01-01 00:02:20.000',701),('1970-01-01 00:02:30.000',701)]"],
+            ["[('shape','triangle')]", "[('1970-01-01 00:01:50.000',9),('1970-01-01 00:02:00.000',9),('1970-01-01 00:02:10.000',9),('1970-01-01 00:02:20.000',9),('1970-01-01 00:02:30.000',31)]"],
         ],
     )
 
@@ -6051,4 +6156,39 @@ def test_label_manipulation_functions():
         1753176757.89,
         'expected at least 3 argument(s) in call to "label_join", got 2',
         "Function 'label_join' expects 3 or more arguments, but was called with 2 arguments",
+    )
+
+
+def test_reserved_dropped_metric_name():
+    # `__name__.dropped` is reserved for delayed metric name removal.
+    expected = "Label name '__name__.dropped' is reserved"
+    do_clickhouse_only_query_test_expect_error(
+        'label_replace(rate(foo[5m]), "__name__.dropped", "x", "", "")',
+        120,
+        expected,
+    )
+    do_clickhouse_only_query_test_expect_error(
+        'count_values("__name__.dropped", foo)',
+        120,
+        expected,
+    )
+    do_clickhouse_only_query_test_expect_error(
+        '{"__name__.dropped"="1"}',
+        120,
+        expected,
+    )
+    do_clickhouse_only_query_test_expect_error(
+        'sum without("__name__.dropped")(foo)',
+        120,
+        expected,
+    )
+    do_clickhouse_only_query_test_expect_error(
+        'label_replace(rate(foo[5m]), "copied", "$1", "__name__.dropped", "(.+)")',
+        120,
+        expected,
+    )
+    do_clickhouse_only_query_test_expect_error(
+        'label_join(rate(foo[5m]), "copied", "", "__name__.dropped")',
+        120,
+        expected,
     )

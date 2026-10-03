@@ -70,7 +70,10 @@ struct SQLQueryPiece
     ResultType type = ResultType::SCALAR;
     StoreMethod store_method = StoreMethod::EMPTY;
 
-    /// Operators and functions drop the metric name, i.e. the tag named '__name__.
+    /// Whether the tag named '__name__' is known to be absent from the `group` column (and no dropped-name marker either).
+    /// Operators and functions which drop the metric name usually don't remove '__name__' right away, they only mark
+    /// the series with `kDroppedMetricNameMarker` (see dropMetricName) and leave this flag `false`;
+    /// the tag is removed from the final result by finalizeSQL.
     bool metric_name_dropped = false;
 
     /// `start_time`, `end_time`, `step` are used only if `store_method` is one of

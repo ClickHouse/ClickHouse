@@ -270,6 +270,10 @@ SQLQueryPiece applyLabelManipulationFunction(
             /// FROM <vector_grid>
             /// GROUP BY new_group
             /// HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, new_group) = 0
+            ///
+            /// If the destination label is '__name__' then the metric name is preserved in the result,
+            /// so the marker of a dropped metric name (see dropMetricName) is removed from the new group:
+            /// SELECT timeSeriesRemoveTag(f(group, '__name__', 'arg3', ...), '__name__.dropped') AS new_group, ...
             ASTPtr label_replacing_query;
             {
                 SelectQueryBuilder builder;
@@ -285,7 +289,12 @@ SQLQueryPiece applyLabelManipulationFunction(
                 auto group_function = makeASTFunction(impl_info->ch_function_name);
                 group_function->arguments->children = std::move(group_function_args);
 
-                builder.select_list.push_back(std::move(group_function));
+                ASTPtr new_group = std::move(group_function);
+                if (dest_label == kMetricName)
+                    new_group = makeASTFunction(
+                        "timeSeriesRemoveTag", std::move(new_group), make_intrusive<ASTLiteral>(kDroppedMetricNameMarker));
+
+                builder.select_list.push_back(std::move(new_group));
                 builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
                 builder.select_list.push_back(makeASTFunction("any", make_intrusive<ASTIdentifier>(ColumnNames::Values)));

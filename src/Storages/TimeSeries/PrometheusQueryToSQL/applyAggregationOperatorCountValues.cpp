@@ -89,6 +89,7 @@ ASTPtr transformGroup(const PrometheusQueryTree::AggregationOperator * operator_
     {
         std::vector<std::string_view> tags_to_remove{operator_node->labels.begin(), operator_node->labels.end()};
         tags_to_remove.push_back(kMetricName);
+        tags_to_remove.push_back(kDroppedMetricNameMarker);
         std::sort(tags_to_remove.begin(), tags_to_remove.end());
         tags_to_remove.erase(std::unique(tags_to_remove.begin(), tags_to_remove.end()), tags_to_remove.end());
 
@@ -106,6 +107,8 @@ ASTPtr transformGroup(const PrometheusQueryTree::AggregationOperator * operator_
 
     if (!std::binary_search(tags_to_keep.begin(), tags_to_keep.end(), kMetricName))
         metric_name_dropped = true;
+    else if (label_name != kMetricName)
+        tags_to_keep.push_back(kDroppedMetricNameMarker);
 
     return makeASTFunction(
         "timeSeriesRemoveAllTagsExcept", std::move(group), make_intrusive<ASTLiteral>(Array{tags_to_keep.begin(), tags_to_keep.end()}));
