@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
+# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-fasttest
 # no-parallel: waits on a server-wide failpoint pause; a concurrent run would steal it.
 # no-shared-merge-tree, no-replicated-database: process-local failpoint, an extra replica would
 #   apply the ALTER unpaused.
