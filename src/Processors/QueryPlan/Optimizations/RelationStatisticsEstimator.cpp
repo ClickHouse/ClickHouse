@@ -1,9 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 
 #include <algorithm>
-#include <ranges>
-
-#include <fmt/ranges.h>
 
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
@@ -34,6 +31,7 @@ extern const SettingsUInt64 max_rows_to_read_leaf;
 extern const SettingsOverflowMode read_overflow_mode;
 extern const SettingsOverflowMode read_overflow_mode_leaf;
 extern const SettingsBool use_statistics;
+extern const SettingsBool use_iceberg_manifest_statistics;
 }
 
 namespace QueryPlanOptimizations
@@ -41,18 +39,6 @@ namespace QueryPlanOptimizations
 
 namespace
 {
-
-String dumpStatsForLogs(const RelationStats & stats)
-{
-    return fmt::format(
-        "{}: {} rows, columns: [{}]",
-        stats.table_name.empty() ? "<unknown>" : stats.table_name,
-        stats.estimated_rows ? toString(stats.estimated_rows.value()) : "unknown",
-        fmt::join(
-            stats.column_stats
-                | std::views::transform([](const auto & p) { return fmt::format("{}: {}", p.first, p.second.num_distinct_values); }),
-            ", "));
-}
 
 RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
 {
@@ -174,7 +160,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     .column_stats = relation_profile.column_stats,
                     .table_name = table_display_name,
                     .source = RowEstimateSource::Statistics};
-                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
+                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpRelationStatsForLogs(stats));
                 return stats;
             }
         }
@@ -226,8 +212,40 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             .source = RowEstimateSource::PrimaryIndex};
     }
 
-    if (typeid_cast<const ReadFromObjectStorageStep *>(step))
-        return RelationStats{};
+    if (const auto * reading = typeid_cast<const ReadFromObjectStorageStep *>(step))
+    {
+        if (!reading->getContext()->getSettingsRef()[Setting::use_iceberg_manifest_statistics])
+            return RelationStats{};
+
+        auto estimate = reading->estimateReadFromDataLakeMetadata();
+        if (!estimate)
+            return RelationStats{};
+
+        String table_display_name = reading->getStorageID().getTableName();
+        RelationStats unknown{
+            .estimated_rows = {},
+            .table_name = table_display_name,
+            .imprecise_estimate = true,
+            .source = RowEstimateSource::DataLakeMetadata};
+        if (!estimate->rows)
+            return unknown;
+
+        /// The step's filter also holds the `PREWHERE` and the row policy, so a read without it returns every row.
+        const bool has_filter = filter || reading->getFilterActionsDAG() || reading->getPrewhereInfo() || reading->getRowLevelFilter();
+
+        /// As for MergeTree without column statistics, a filter that pruned nothing gives no estimate.
+        if (has_filter && !estimate->pruned_data_files)
+            return unknown;
+
+        /// TODO: A filter only on identity-partition columns keeps every row of a remaining file, so it is exact too;
+        /// the walk would have to report that.
+        const bool exact = *estimate->rows == 0 || (!has_filter && !estimate->has_delete_files);
+        return RelationStats{
+            .estimated_rows = *estimate->rows,
+            .table_name = table_display_name,
+            .imprecise_estimate = !exact,
+            .source = RowEstimateSource::DataLakeMetadata};
+    }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
     {

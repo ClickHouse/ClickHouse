@@ -1,0 +1,33 @@
+--- fixture iceberg_negative_record_count_test: rows
+1
+--- T9 iceberg_negative_record_count_test: gate on
+Join: m[1000] ⋈ t[no_stats~?]
+ResultRows: unknown
+--- T9 iceberg_negative_record_count_test: gate off
+Join: m[1000] ⋈ t
+ResultRows: unknown
+--- fixture iceberg_corrupted_summary_test: rows
+1
+--- T9 iceberg_corrupted_summary_test: gate on
+Join: m[1000] ⋈ t[1]
+ResultRows: 1
+--- T9 iceberg_corrupted_summary_test: gate off
+Join: m[1000] ⋈ t
+ResultRows: unknown
+--- fixture iceberg_malformed_manifest_row_counts_test: rows
+1
+--- T9 iceberg_malformed_manifest_row_counts_test: gate on
+Join: m[1000] ⋈ t[1]
+ResultRows: 1
+--- T9 iceberg_malformed_manifest_row_counts_test: gate off
+Join: m[1000] ⋈ t
+ResultRows: unknown
+--- fixture brk: manifest files deleted
+1
+--- T9b SELECT of the join
+FILE_DOESNT_EXIST
+--- T9b gate on: EXPLAIN of the join
+FILE_DOESNT_EXIST
+--- T9b gate off: EXPLAIN of the join
+Join: m[1000] ⋈ s
+ResultRows: unknown

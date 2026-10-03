@@ -471,6 +471,12 @@ public:
         return getMetadata()->supportsLazyMaterialization(storage_metadata_snapshot, context);
     }
 
+    std::optional<DataLakeReadEstimate>
+    estimateRead(StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, ContextPtr context) const override
+    {
+        return getMetadata()->estimateRead(storage_metadata_snapshot, filter, context);
+    }
+
     /// Data lakes never overwrite an existing data file in place: a new snapshot references new
     /// files. This makes the lazy-materialization reread race-free regardless of the backend.
     bool dataFilesAreImmutable() const override
