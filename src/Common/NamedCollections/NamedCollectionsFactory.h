@@ -147,8 +147,12 @@ public:
     void removeDetachedDependencies(const StorageID & table_id);
     /// `DROP DATABASE` drops the detached tables of the database too: forget about them.
     void removeDetachedDependencies(const String & database_name);
-    /// `RENAME DATABASE` moves the metadata of its detached tables along: re-key their entries.
-    void renameDetachedDependencies(const String & from_database_name, const String & to_database_name);
+    /// Follows a `RENAME DATABASE`: moves every entry recorded under the old database name to the new
+    /// one - those of the database engine itself, of the attached tables of the database, and of its
+    /// detached tables, whose metadata moves along with the database. The tables keep their UUIDs, but
+    /// the recorded names must follow as well: they are what tells the entries of a live table apart from
+    /// the leftovers of a failed `CREATE TABLE ... UUID` that reused its UUID (`hasDependencyRegisteredFor`).
+    void renameDatabaseDependencies(const String & from_database_name, const String & to_database_name);
 
 protected:
     mutable NamedCollectionsMap loaded_named_collections;

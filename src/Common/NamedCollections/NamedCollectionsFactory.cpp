@@ -805,9 +805,27 @@ void NamedCollectionFactory::removeDetachedDependencies(const String & database_
     std::erase_if(detached_dependencies, [&](const auto & entry) { return std::get<1>(entry) == database_name; });
 }
 
-void NamedCollectionFactory::renameDetachedDependencies(const String & from_database_name, const String & to_database_name)
+void NamedCollectionFactory::renameDatabaseDependencies(const String & from_database_name, const String & to_database_name)
 {
     std::lock_guard lock(mutex);
+
+    LOG_TRACE(log, "Renaming dependencies of database {} to {}", backQuoteIfNeed(from_database_name), backQuoteIfNeed(to_database_name));
+
+    std::vector<NamedCollectionDependency> moved;
+    for (auto it = dependencies.begin(); it != dependencies.end();)
+    {
+        if (it->table_id.database_name == from_database_name)
+        {
+            moved.push_back(*it);
+            moved.back().table_id.database_name = to_database_name;
+            it = dependencies.erase(it);
+        }
+        else
+            ++it;
+    }
+
+    for (auto & dependency : moved)
+        dependencies.insert(std::move(dependency));
 
     std::vector<std::tuple<String, String, String>> renamed;
     for (auto it = detached_dependencies.begin(); it != detached_dependencies.end();)

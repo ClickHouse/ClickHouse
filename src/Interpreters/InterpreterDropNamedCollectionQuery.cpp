@@ -39,7 +39,7 @@ StoragePtr tryGetLiveTableByUUID(const StorageID & dependency)
     /// - an entry that carries another name while the live table has entries under its current name
     ///   belongs to a create that failed - it is left to the stale-entry cleanup;
     /// - when the live table has no entry under its current name (its names went stale without being
-    ///   re-keyed - an `EXCHANGE` or a `RENAME DATABASE` - or it registered no dependency at all), the
+    ///   re-keyed - an `EXCHANGE` - or it registered no dependency at all), the
     ///   entries under the UUID are treated as its own, which can only refuse the drop, never allow it.
     const auto live_table_id = table->getStorageID();
     if (live_table_id.database_name != dependency.database_name || live_table_id.table_name != dependency.table_name)
