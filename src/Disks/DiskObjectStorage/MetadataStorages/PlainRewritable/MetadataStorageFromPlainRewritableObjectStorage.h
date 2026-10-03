@@ -135,10 +135,11 @@ protected:
     /// Blob keys chosen by `generateObjectKeyForPath`, by normalized file path, for the files this transaction is going to create.
     std::unordered_map<std::string, std::string> generated_blob_keys;
     /// The copies that stand in for hard links while hard links are disabled, by the normalized path of the target.
-    /// A rewrite of the target in the same transaction supersedes its copy.
+    /// A rewrite of the target in the same transaction supersedes its copy, unless the target was moved or replaced before.
     std::unordered_map<std::string, MetadataStorageFromPlainObjectStorageCopyFileOperation *> fallback_copies;
 
     void planFileMove(const NormalizedPath & path_from, const NormalizedPath & path_to);
+    void forgetFallbackCopiesUnder(const NormalizedPath & directory);
 
 public:
     explicit MetadataStorageFromPlainRewritableObjectStorageTransaction(MetadataStorageFromPlainRewritableObjectStorage & metadata_storage_);

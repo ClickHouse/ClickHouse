@@ -784,9 +784,19 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
         metadata_storage.metrics));
 }
 
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::forgetFallbackCopiesUnder(const NormalizedPath & directory)
+{
+    const auto prefix = directory.string() + "/";
+    std::erase_if(fallback_copies, [&](const auto & entry) { return directory.empty() || entry.first.starts_with(prefix); });
+}
+
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
 {
     uncommitted_state.moveDirectory(path_from, path_to);
+
+    /// See `planFileMove`.
+    forgetFallbackCopiesUnder(normalizePath(path_from));
+    forgetFallbackCopiesUnder(normalizePath(path_to));
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(
         normalizeDirectoryPath(path_from),
@@ -885,6 +895,12 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::planFileMove(const NormalizedPath & path_from, const NormalizedPath & path_to)
 {
+    /// A copy that stands in for a hard link can be superseded only while its target stays where the copy puts it.
+    /// Once the target is moved away, the move needs the copy as its source at commit, and a new file at the old path
+    /// is unrelated to it. Once the target is replaced, the copy is not the file at that path anymore.
+    fallback_copies.erase(path_from.string());
+    fallback_copies.erase(path_to.string());
+
     uncommitted_state.useDirectory(path_from.parent_path());
     uncommitted_state.useDirectory(path_to.parent_path());
 
