@@ -5,6 +5,8 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+# clickhouse-local refuses --dump-schema with a file, pipe or socket on stdin, whatever the test runner passes.
+exec < /dev/null
 
 DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_dump.sql"
 ERR_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_err.txt"
@@ -69,8 +71,8 @@ rc=$?
 [[ $rc -ne 0 ]] && echo 'OK: non-zero exit code' || echo 'FAIL: expected non-zero exit code'
 grep -o -m1 'BAD_ARGUMENTS' "$ERR_FILE"
 
-echo '--- input on stdin or in --external is rejected, an empty pipe is not waited on ---'
-# The reader sleeps so the piped query is already in the pipe when the dump checks stdin.
+echo '--- input on stdin or in --external is rejected; clickhouse-client does not wait on an empty pipe ---'
+# The reader sleeps so the piped query is already in the pipe when clickhouse-client checks stdin.
 STDIN_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_stdin.csv"
 echo '1,2' > "$STDIN_FILE"
 for tool in local client; do
@@ -80,7 +82,9 @@ for tool in local client; do
     printf 'SELECT 1\n' | { sleep 1; "${run[@]}" > /dev/null 2>"$ERR_FILE"; }
     echo "$tool, piped query rejected: $(grep -c 'BAD_ARGUMENTS' "$ERR_FILE")"
     true | "${run[@]}" > /dev/null 2>"$ERR_FILE"
-    echo "$tool, empty pipe exit code: $?"
+    echo "$tool, empty pipe rejected: $(grep -c 'BAD_ARGUMENTS' "$ERR_FILE")"
+    "${run[@]}" > /dev/null 2>"$ERR_FILE"
+    echo "$tool, /dev/null on stdin exit code: $?"
 done
 $CLICKHOUSE_CLIENT --dump-schema="${DB}" --external --file="$STDIN_FILE" --name=ext --structure='a UInt8, b UInt8' > /dev/null 2>"$ERR_FILE"
 echo "client, external table rejected: $(grep -c 'BAD_ARGUMENTS' "$ERR_FILE")"

@@ -11,13 +11,15 @@ BAD_ARGUMENTS
 --- combined with --input-format is rejected ---
 OK: non-zero exit code
 BAD_ARGUMENTS
---- input on stdin or in --external is rejected, an empty pipe is not waited on ---
+--- input on stdin or in --external is rejected; clickhouse-client does not wait on an empty pipe ---
 local, file on stdin rejected: 1
 local, piped query rejected: 1
-local, empty pipe exit code: 0
+local, empty pipe rejected: 1
+local, /dev/null on stdin exit code: 0
 client, file on stdin rejected: 1
 client, piped query rejected: 1
-client, empty pipe exit code: 0
+client, empty pipe rejected: 0
+client, /dev/null on stdin exit code: 0
 client, external table rejected: 1
 --- merge()/loop() with constant-expression arguments name their local source ---
 OK: folded source dumped before aaa_merge_folded

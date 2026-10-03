@@ -5,6 +5,8 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+# clickhouse-local refuses --dump-schema with a file, pipe or socket on stdin, whatever the test runner passes.
+exec < /dev/null
 
 # Isolated `--path` directories for two clickhouse-local instances (source, and a fresh one to
 # replay the dump into), plus scratch files for dumped SQL / errors / confirmation output.
