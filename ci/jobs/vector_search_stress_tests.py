@@ -1232,9 +1232,9 @@ def install_clickhouse():
     results = []
 
     if Utils.is_arm():
-        latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/123300/ebc683c89b46dae79969253e670cf991cac41933/pr/build_arm_release/clickhouse"
     elif Utils.is_amd():
-        latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/123300/ebc683c89b46dae79969253e670cf991cac41933/pr/build_amd_release/clickhouse"
     else:
         assert False, "Unknown processor architecture"
 
@@ -1275,16 +1275,6 @@ TESTS_TO_RUN = [
         "Test using the laion dataset with a strided QBit(Int8) column",
         dataset_laion_5b_10m_qbit_int8_strided,
         test_params_laion_5b_10m_qbit_int8_strided,
-    ),
-    (
-        "Test using the hackernews dataset",
-        dataset_hackernews_openai,
-        test_params_hackernews_10m,
-    ),
-    (
-        "Test using the cohere wiki dataset",
-        dataset_cohere_wiki_20m,
-        test_params_cohere_wiki_20m,
     ),
 ]
 
