@@ -7,7 +7,7 @@
  *
  * URL formats supported:
  *   - GitHub PR URLs: https://github.com/ClickHouse/ClickHouse/pull/12345 (fetches ALL CI reports)
- *   - HTML URLs: https://s3.amazonaws.com/.../json.html?PR=...&sha=...&name_0=...
+ *   - HTML URLs: https://s3.amazonaws.com/.../praktika.html?PR=...&sha=...&name_0=...
  *   - Direct JSON URLs: https://s3.amazonaws.com/.../result_*.json
  *
  * Options:
@@ -24,7 +24,7 @@
  *   node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171"
  *   node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171" --failed --cidb
  *   node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171" --report 2
- *   node fetch_ci_report.js "https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=94537&..."
+ *   node fetch_ci_report.js "https://s3.amazonaws.com/clickhouse-test-reports/praktika.html?PR=94537&..."
  *   node fetch_ci_report.js "https://s3.amazonaws.com/.../result_integration_tests.json"
  *   node fetch_ci_report.js "<url>" --test peak_memory --links
  *   node fetch_ci_report.js "<url>" --failed --download-logs
@@ -215,9 +215,46 @@ async function parseReportUrl(htmlUrl, credentials = null) {
 /**
  * Construct JSON URL for a given task name
  */
-function constructJsonUrl(baseUrl, suffix, sha, taskName) {
+/// Workflow names whose report is an index over every job of the workflow rather than one job's
+/// result. `PR` / `MasterCI` / `MergeQueueCI` run off master, `BackportPR` runs on backport pull
+/// requests and `ReleaseBranchCI` on release branches; `REF`/`master` are the legacy tokens.
+const WORKFLOW_INDEX_NAMES = /^(PR|MasterCI|MergeQueueCI|BackportPR|ReleaseBranchCI|REF|master)$/i;
+
+function jsonUrlCandidates(baseUrl, suffix, sha, workflowName, taskName) {
+  // Two layouts are live at the same time, because the path is built by the praktika that ships
+  // in the branch under test (`_Environment.get_s3_prefix_static`):
+  //   master               <suffix>/<sha>/<normalized_workflow>/result_<job>.json
+  //   release branches     <suffix>/<sha>/result_<job>.json
+  // The workflow-name segment is a master-only addition, so every workflow that runs off a release
+  // branch - `BackportPR` on backport pull requests, `ReleaseBranchCI` - still uses the flat form.
+  // Both the workflow-index report (result_<workflow>.json) and every per-job report live under the
+  // same directory within a given layout. See fetchData/buildResultPath in
+  // ci/praktika/praktika.html for the ground truth.
+  const workflowSegment = normalizeTaskName(workflowName);
   const normalizedTask = normalizeTaskName(taskName);
-  return `${baseUrl}/${suffix}/${encodeURIComponent(sha)}/result_${normalizedTask}.json`;
+  const base = `${baseUrl}/${suffix}/${encodeURIComponent(sha)}`;
+  return [
+    `${base}/${workflowSegment}/result_${normalizedTask}.json`,
+    `${base}/result_${normalizedTask}.json`,
+  ];
+}
+
+/**
+ * Fetch a report JSON, resolving which of the two S3 layouts this workflow used.
+ * Returns { url, text }. Throws listing every URL tried when none of them resolves, so a genuinely
+ * missing report is never reported as a layout problem (or the other way round).
+ */
+async function fetchJsonReport(baseUrl, suffix, sha, workflowName, taskName, credentials) {
+  const candidates = jsonUrlCandidates(baseUrl, suffix, sha, workflowName, taskName);
+  const errors = [];
+  for (const url of candidates) {
+    try {
+      return { url, text: await fetchUrl(url, credentials) };
+    } catch (e) {
+      errors.push(`  ${url}\n    -> ${e.message}`);
+    }
+  }
+  throw new Error(`Report not found. Tried:\n${errors.join('\n')}`);
 }
 
 /**
@@ -441,12 +478,12 @@ function extractArtifactLinks(jsonData) {
 
   extractFromResults(jsonData.results);
 
-  // Filter to artifact/log links and the ClickHouse binary; exclude json.html navigation links.
+  // Filter to artifact/log links and the ClickHouse binary; exclude praktika.html/json.html navigation links.
   return links.filter(link => {
     const h = link.href;
     const name = h.split('/').pop();
     // Exclude CI navigation/report links
-    if (h.includes('json.html')) return false;
+    if (h.includes('json.html') || h.includes('praktika.html')) return false;
     // ClickHouse binary: starts with 'clickhouse' and has no dots (no file extension).
     // Matches 'clickhouse', 'clickhouse-stripped', etc. but not log/config files.
     if (name.startsWith('clickhouse') && !name.includes('.')) return true;
@@ -456,12 +493,63 @@ function extractArtifactLinks(jsonData) {
     if (h.includes('.log') || h.includes('.log.zst')) return true;
     if (h.includes('.tar.gz') || h.includes('.tar.zst') || h.includes('.tgz')) return true;
     if (h.includes('.zst')) return true;
-    if (h.includes('.html') && !h.includes('json.html')) return true;
+    if (h.includes('.html') && !h.includes('json.html') && !h.includes('praktika.html')) return true;
     if (h.includes('.tsv')) return true;
     if (h.includes('configs')) return true;
     if (h.includes('artifact_report')) return true;
     return false;
   });
+}
+
+/**
+ * The merge queue re-tests a PR merged with the latest base branch (workflow `MergeQueueCI`, ref
+ * `gh-readonly-queue/<base>/pr-<N>-<sha>`), so it can reject a PR whose own CI is all green - typically
+ * a semantic conflict with the base branch. Return the top-level `MergeQueueCI` report URL of the run
+ * that removed the PR from the queue, or null when the PR was not removed after its last commit (or
+ * was removed because it merged). Failures to query GitHub are reported and yield null: the PR
+ * reports are still useful on their own.
+ */
+function getMergeQueueRejection(prNumber, ghEnv) {
+  const query = `query { repository(owner: "ClickHouse", name: "ClickHouse") { pullRequest(number: ${prNumber}) {
+      mergeQueueEntry { state }
+      commits(last: 1) { nodes { commit { committedDate } } }
+      timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT]) {
+        nodes { __typename ... on RemovedFromMergeQueueEvent { createdAt reason beforeCommit { oid } } } } } } }`;
+  let pr;
+  try {
+    pr = JSON.parse(execFileSync('gh', ['api', 'graphql', '-f', `query=${query}`],
+      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], env: ghEnv })).data.repository.pullRequest;
+  } catch (e) {
+    console.log(`Note: could not check the merge queue state of PR #${prNumber} (${e.message.split('\n')[0]}).\n`);
+    return null;
+  }
+  const event = pr.timelineItems.nodes[0];
+  const committed = pr.commits.nodes[0]?.commit.committedDate || '';
+  if (pr.mergeQueueEntry || !event || event.__typename !== 'RemovedFromMergeQueueEvent'
+      || event.reason === 'merged' || !event.beforeCommit || event.createdAt <= committed) {
+    return null;
+  }
+  const sha = event.beforeCommit.oid;
+  console.log(`⚠️  PR #${prNumber} was removed from the merge queue at ${event.createdAt} (reason: ${event.reason}); `
+    + `the merge-queue run tested commit ${sha}, the PR merged with the latest base branch.\n`);
+  // The `gh-readonly-queue/...` ref name is not derivable from the commit alone (the queue position
+  // decides the base), so take the report URL from the commit statuses, where Praktika posts its links
+  // (the check runs link to GitHub Actions jobs instead).
+  let targetUrls = [];
+  try {
+    targetUrls = execFileSync('gh', ['api', `repos/ClickHouse/ClickHouse/commits/${sha}/statuses`, '--paginate',
+      '--jq', '.[].target_url // empty'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], env: ghEnv })
+      .split('\n').filter(Boolean);
+  } catch (e) {
+    console.log(`Note: could not list the statuses of merge-queue commit ${sha} (${e.message.split('\n')[0]}).\n`);
+    return null;
+  }
+  const reportUrl = targetUrls.find(u => /praktika\.html\?REF=/.test(u) && /[?&]name_0=MergeQueueCI/.test(u));
+  if (!reportUrl) {
+    console.log(`Note: no MergeQueueCI report link among the statuses of commit ${sha}.\n`);
+    return null;
+  }
+  return reportUrl.replace(/&name_1=[^&]*/, '');
 }
 
 /**
@@ -491,7 +579,13 @@ async function getCIReportsFromPR(prUrl) {
     });
 
     const comments = commentsJson.trim().split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
-    comments.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    // The workflow report links live in the `:report:` comment. The bot also posts other comments with
+    // report links (e.g. `:build-profile-diff:`, linking a single job), often later than the `:report:`
+    // one, so take the `:report:` comment first and the others (newest first) only as a fallback;
+    // otherwise a later build-profile comment hides every other report of the PR.
+    const isReportComment = c => (c.body || '').includes('CI automatic comment start :report:');
+    comments.sort((a, b) => (isReportComment(b) - isReportComment(a))
+      || (b.created_at || '').localeCompare(a.created_at || ''));
     if (!comments || comments.length === 0) {
       throw new Error('No CI bot comment found');
     }
@@ -500,12 +594,14 @@ async function getCIReportsFromPR(prUrl) {
     // quote chars so a URL quoted in markdown (e.g. inside the AI-review text) is not captured with
     // trailing junk, strip trailing punctuation, and dedupe -- otherwise the same report is fetched
     // twice and the summary is doubled.
-    const reportUrlPattern = /https:\/\/s3\.amazonaws\.com\/clickhouse-test-reports\/json\.html\?[^\s)`'"]+/g;
+    const reportUrlPattern = /https:\/\/s3\.amazonaws\.com\/clickhouse(?:-private)?-test-reports\/(?:praktika|json)\.html\?[^\s)`'"]+/g;
     for (const comment of comments) {
       if (!comment.body) continue;
       let urls = comment.body.match(reportUrlPattern);
       if (urls && urls.length > 0) {
         urls = urls.map(u => u.replace(/[.,;]+$/, ''));
+        const mergeQueueUrl = getMergeQueueRejection(prNumber, ghEnv);
+        if (mergeQueueUrl) urls.push(mergeQueueUrl);
         return [...new Set(urls)];
       }
     }
@@ -523,8 +619,8 @@ async function getCIReportsFromPR(prUrl) {
  * Fetch and parse the CI report
  */
 /**
- * Given a top-level index report URL (json.html?...&name_0=X, no name_1) and its raw JSON, return
- * the per-job report URLs (json.html?...&name_1=<job>) for the FAILED jobs. Child names come from
+ * Given a top-level index report URL (praktika.html?...&name_0=X, no name_1) and its raw JSON, return
+ * the per-job report URLs (praktika.html?...&name_1=<job>) for the FAILED jobs. Child names come from
  * the report's IMMEDIATE children (the job/check rows) -- never from flattened leaf tests, whose
  * names (e.g. "Server died") are not valid name_1 job identifiers.
  */
@@ -546,14 +642,14 @@ function allChildReportUrls(topLevelUrl, jsonData) {
 
 /**
  * Return true when a URL is a concrete job report (name_1 present, or name_0 is not a
- * workflow-level aggregator). Workflow-index URLs (name_0=PR|MasterCI|REF|master with no
+ * workflow-level aggregator). Workflow-index URLs (name_0 in WORKFLOW_INDEX_NAMES with no
  * name_1) return false so they can be filtered out before --report N selection.
  */
 function isConcreteJobUrl(u) {
   const m = u.match(/[?&]name_0=([^&]+)/);
   if (!m) return true;
   const name0 = decodeURIComponent(m[1]);
-  return !/^(PR|MasterCI|REF|master)$/i.test(name0) || /[?&]name_1=/.test(u);
+  return !WORKFLOW_INDEX_NAMES.test(name0) || /[?&]name_1=/.test(u);
 }
 
 /**
@@ -566,7 +662,7 @@ async function renderMultiReport(ciUrls, options) {
   if (options.binary) {
     process.stderr.write(
       'Error: --binary requires a concrete build report URL, e.g.:\n' +
-      '  ...json.html?PR=...&sha=...&name_0=PR&name_1=Build%20(amd_binary)\n' +
+      '  ...praktika.html?PR=...&sha=...&name_0=PR&name_1=Build%20(amd_binary)\n' +
       'PR URLs and top-level index URLs do not carry binary artifacts.\n'
     );
     process.exit(1);
@@ -707,12 +803,15 @@ async function fetchReport(inputUrl, options = {}) {
 
       // If the bot comment exposed only the top-level `PR` report (name_0=PR, no name_1), treat it
       // as an INDEX: its leaves are job/check names, not test cases, so descend into each FAILED
-      // job by synthesizing its per-job report URL (json.html?...&name_1=<job>, the same form the
+      // job by synthesizing its per-job report URL (praktika.html?...&name_1=<job>, the same form the
       // loop below already fetches). Without this, a failing PR URL would yield only failed job
       // names -- no test names, labels, or CIDB links for steps 2-3.
-      const hasNested = ciUrls.some(u => /[?&]name_1=/.test(u));
-      const topLevelUrl = ciUrls.find(u => /[?&]name_0=/.test(u) && !/[?&]name_1=/.test(u));
-      if (!hasNested && topLevelUrl) {
+      // A PR rejected by the merge queue has a second top-level report (`MergeQueueCI`), so expand each
+      // top-level report whose workflow has no job report linked explicitly.
+      const workflowOf = u => u.replace(/&name_1=[^&]*/, '');
+      const topLevelUrls = ciUrls.filter(u => /[?&]name_0=/.test(u) && !/[?&]name_1=/.test(u));
+      for (const topLevelUrl of topLevelUrls) {
+        if (ciUrls.some(u => /[?&]name_1=/.test(u) && workflowOf(u) === topLevelUrl)) continue;
         try {
           const top = await fetchReport(topLevelUrl, { ...options, isSingleReport: true });
           const childUrls = childReportUrlsForFailedJobs(topLevelUrl, top.jsonData);
@@ -720,7 +819,7 @@ async function fetchReport(inputUrl, options = {}) {
             if (!ciUrls.includes(childUrl)) ciUrls.push(childUrl);
           }
           if (childUrls.length > 0) {
-            console.log(`Top-level PR report is an index — descending into ${childUrls.length} failed job report(s).`);
+            console.log(`Top-level report ${topLevelUrl} is an index — descending into ${childUrls.length} failed job report(s).`);
           } else {
             // No failures (all-green PR): expand to ALL concrete children so the display list
             // and --report N indices are consistent with each other.
@@ -729,15 +828,15 @@ async function fetchReport(inputUrl, options = {}) {
               for (const childUrl of allChildren) {
                 if (!ciUrls.includes(childUrl)) ciUrls.push(childUrl);
               }
-              console.log(`Top-level PR report is all-green — expanded into ${allChildren.length} concrete job report(s).`);
+              console.log(`Top-level report ${topLevelUrl} is all-green — expanded into ${allChildren.length} concrete job report(s).`);
             }
           }
         } catch (e) {
-          console.log(`Note: could not expand the top-level PR report into job reports (${e.message}); showing job-level failures only.`);
+          console.log(`Note: could not expand the top-level report ${topLevelUrl} into job reports (${e.message}); showing job-level failures only.`);
         }
       }
 
-      // Remove workflow-index entries (name_0=PR|MasterCI|REF|master with no name_1) so that
+      // Remove workflow-index entries (name_0 in WORKFLOW_INDEX_NAMES with no name_1) so that
       // --report N and the displayed numbering only count concrete job reports, not the
       // top-level aggregation URL that would be mishandled as a concrete job when selected.
       const concreteUrls = ciUrls.filter(isConcreteJobUrl);
@@ -758,18 +857,22 @@ async function fetchReport(inputUrl, options = {}) {
       }
     }
 
-    // A direct top-level workflow result JSON (result_pr.json / result_masterci.json / result_ref.json
-    // located directly under the <sha> dir — NOT under a job subdir) is a workflow index, just like
-    // the json.html?...&name_0=PR form. Rewrite it to that HTML form so the index handling below
-    // applies uniformly (expand into per-job reports; refuse per-job --download-logs) instead of
-    // treating the whole PR/workflow as a single job. Concrete job reports are result_<job>.json
-    // (or live under <sha>/<job>/...), so they never match this and stay on the single-report path.
-    const topJson = inputUrl.match(/\/(?:PRs\/(\d+)|REFs\/([^/]+))\/([0-9a-f]{40})\/result_(?:pr|masterci|ref)\.json(?:$|\?)/i);
+    // A direct top-level workflow result JSON (result_pr.json / result_masterci.json / result_ref.json)
+    // is a workflow index, just like the praktika.html?...&name_0=PR form. In the S3 layout it lives
+    // under the normalized-workflow directory: <sha>/<workflow>/result_<workflow>.json, where the
+    // directory name equals the file's workflow token (pr/masterci/backportpr/...). Rewrite it to the HTML form
+    // so the index handling below applies uniformly (expand into per-job reports; refuse per-job
+    // --download-logs) instead of treating the whole PR/workflow as a single job. Concrete job reports
+    // are result_<job>.json under the same directory, so they never match this and stay on the
+    // single-report path. Setting name_0 to the captured workflow token reconstructs the same
+    // <workflow> directory segment via jsonUrlCandidates.
+    const topJson = inputUrl.match(/\/(?:PRs\/(\d+)|REFs\/([^/]+))\/([0-9a-f]{40})\/(?:[^/?]+\/)?result_(pr|masterci|mergequeueci|backportpr|releasebranchci|ref)\.json(?:$|\?)/i);
     if (topJson) {
       const prefix = inputUrl.slice(0, topJson.index);
+      const workflowToken = topJson[4].toLowerCase();
       inputUrl = topJson[1]
-        ? `${prefix}/json.html?PR=${topJson[1]}&sha=${topJson[3]}&name_0=PR`
-        : `${prefix}/json.html?REF=${encodeURIComponent(topJson[2])}&sha=${topJson[3]}&name_0=MasterCI`;
+        ? `${prefix}/praktika.html?PR=${topJson[1]}&sha=${topJson[3]}&name_0=${workflowToken}`
+        : `${prefix}/praktika.html?REF=${encodeURIComponent(topJson[2])}&sha=${topJson[3]}&name_0=${workflowToken}`;
     }
 
     // Check if this is a direct JSON URL or an HTML URL with parameters
@@ -798,8 +901,9 @@ async function fetchReport(inputUrl, options = {}) {
         console.log(`SHA: ${sha}\n`);
       }
 
-      // Construct JSON URL for the primary task (name_0)
-      const jsonUrl = constructJsonUrl(baseUrl, suffix, sha, nameParams[0]);
+      // Fetch the primary task (name_0) report, resolving which S3 layout this workflow used
+      const json0 = await fetchJsonReport(baseUrl, suffix, sha, nameParams[0], nameParams[0], options.credentials);
+      const jsonUrl = json0.url;
       if (!options.isSingleReport) {
         console.log(`Fetching JSON: ${jsonUrl}\n`);
       }
@@ -810,9 +914,9 @@ async function fetchReport(inputUrl, options = {}) {
       // jobs' per-job reports. A concrete single-job URL also has one nameParam but its name_0 is the
       // JOB (e.g. name_0=Stateless tests (...)) — those must stay on the single-report path below,
       // so gate on the workflow name, not merely nameParams.length.
-      const isWorkflowIndex = /^(PR|MasterCI|REF|master)$/i.test(nameParams[0]);
+      const isWorkflowIndex = WORKFLOW_INDEX_NAMES.test(nameParams[0]);
       if (isWorkflowIndex && nameParams.length === 1 && !options.isSingleReport) {
-        const topJson = JSON.parse(await fetchUrl(jsonUrl, options.credentials));
+        const topJson = JSON.parse(json0.text);
 
         // Build the display list once — shared by both the summary and --report N selection.
         // Use failed concrete children only (UX: show what matters). Fall back to all concrete
@@ -844,17 +948,17 @@ async function fetchReport(inputUrl, options = {}) {
         return await renderMultiReport(displayList, options);
       }
 
-      // Fetch name_0 JSON data, and name_1 separately if present (matching json.html behavior)
-      const fetchTasks = [fetchUrl(jsonUrl, options.credentials)];
+      // name_0 is already fetched; fetch name_1 separately if present (matching praktika.html behavior)
+      const fetchResults = [json0.text, null];
       if (nameParams.length > 1) {
-        const json1Url = constructJsonUrl(baseUrl, suffix, sha, nameParams[1]);
-        if (!options.isSingleReport) {
-          console.log(`Fetching JSON (name_1): ${json1Url}\n`);
+        const json1 = await fetchJsonReport(baseUrl, suffix, sha, nameParams[0], nameParams[1], options.credentials)
+          .catch(() => null);
+        if (json1 && !options.isSingleReport) {
+          console.log(`Fetching JSON (name_1): ${json1.url}\n`);
         }
-        fetchTasks.push(fetchUrl(json1Url, options.credentials).catch(() => null));
+        fetchResults[1] = json1 ? json1.text : null;
       }
 
-      const fetchResults = await Promise.all(fetchTasks);
       jsonData = JSON.parse(fetchResults[0]);
 
       // Resolve target data: use dedicated name_1 JSON if available, fall back to navigating name_0.results
@@ -1030,8 +1134,9 @@ async function main() {
 Usage: node fetch_ci_report.js <url> [options]
 
 URL formats:
-  - GitHub PR: https://github.com/ClickHouse/ClickHouse/pull/12345 (fetches ALL CI reports)
-  - CI HTML:   https://s3.amazonaws.com/.../json.html?PR=...&sha=...&name_0=...
+  - GitHub PR: https://github.com/ClickHouse/ClickHouse/pull/12345 (fetches ALL CI reports, plus the
+               merge-queue run if the merge queue removed the PR after its last commit)
+  - CI HTML:   https://s3.amazonaws.com/.../praktika.html?PR=...&sha=...&name_0=...
   - Direct JSON: https://s3.amazonaws.com/.../result_*.json
 
 Options:
@@ -1049,7 +1154,7 @@ Examples:
   node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171"
   node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171" --failed --cidb
   node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171" --report 2
-  node fetch_ci_report.js "https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=94537&sha=abc123&name_0=Integration%20tests"
+  node fetch_ci_report.js "https://s3.amazonaws.com/clickhouse-test-reports/praktika.html?PR=94537&sha=abc123&name_0=PR&name_1=Integration%20tests"
   node fetch_ci_report.js "<url>" --test peak_memory --links
   node fetch_ci_report.js "<url>" --binary
   node fetch_ci_report.js "<url>" --failed --download-logs

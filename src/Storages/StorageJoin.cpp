@@ -14,6 +14,8 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
@@ -150,7 +152,11 @@ void StorageJoin::optimizeUnlocked()
 {
     size_t current_bytes = join->getTotalByteCount();
     size_t dummy = current_bytes;
-    join->shrinkStoredBlocksToFit(dummy, true);
+    {
+        /// Table data belongs to the server, not to the query releasing it.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join->shrinkStoredBlocksToFit(dummy, true);
+    }
 
     size_t optimized_bytes = join->getTotalByteCount();
     if (current_bytes > optimized_bytes)
@@ -171,7 +177,10 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
-    join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    {
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    }
 }
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -217,7 +226,11 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     /// Now acquire exclusive lock and modify storage.
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    join = std::move(new_data);
+    {
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join = std::move(new_data);
+    }
+    setCurrentQueryMemoryDriftExpected();
     increment = 1;
 
     if (persistent)
@@ -546,11 +559,11 @@ void registerStorageJoin(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-Optional prepared data structure for usage in [JOIN](/sql-reference/statements/select/join) operations.
+Optional prepared data structure for usage in [JOIN](/reference/statements/select/join) operations.
 
-:::note
+<Note>
 In ClickHouse Cloud, if your service was created with a version earlier than 25.4, you will need to set the compatibility to at least 25.4 using  `SET compatibility=25.4`.
-:::
+</Note>
 
 ## Creating a table {#creating-a-table}
 
@@ -562,17 +575,17 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
 ```
 
-See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See the detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
 
 ## Engine parameters {#engine-parameters}
 
 ### `join_strictness` {#join_strictness}
 
-`join_strictness` – [JOIN strictness](/sql-reference/statements/select/join#supported-types-of-join).
+`join_strictness` – [JOIN strictness](/reference/statements/select/join#supported-types-of-join).
 
 ### `join_type` {#join_type}
 
-`join_type` – [JOIN type](/sql-reference/statements/select/join#supported-types-of-join).
+`join_type` – [JOIN type](/reference/statements/select/join#supported-types-of-join).
 
 ### Key columns {#key-columns}
 
@@ -595,11 +608,11 @@ You can use `INSERT` queries to add data to the `Join`-engine tables. If the tab
 Main use-cases for `Join`-engine tables are following:
 
 - Place the table to the right side in a `JOIN` clause.
-- Call the [joinGet](/sql-reference/functions/other-functions.md/#joinGet) function, which lets you extract data from the table the same way as from a dictionary.
+- Call the [joinGet](/reference/functions/regular-functions/other-functions#joinGet) function, which lets you extract data from the table the same way as from a dictionary.
 
 ### Deleting data {#deleting-data}
 
-`ALTER DELETE` queries for `Join`-engine tables are implemented as [mutations](/sql-reference/statements/alter/index.md#mutations). `DELETE` mutation reads filtered data and overwrites data of memory and disk.
+`ALTER DELETE` queries for `Join`-engine tables are implemented as [mutations](/reference/statements/alter#mutations). `DELETE` mutation reads filtered data and overwrites data of memory and disk.
 
 ### Limitations and settings {#join-limitations-and-settings}
 
@@ -628,7 +641,7 @@ When creating a table, the following settings are applied:
 
 #### Persistent {#persistent}
 
-Disables persistency for the Join and [Set](/engines/table-engines/special/set.md) table engines.
+Disables persistency for the Join and [Set](/reference/engines/table-engines/special/set) table engines.
 
 Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
 
@@ -640,6 +653,8 @@ Possible values:
 Default value: `1`.
 
 The `Join`-engine tables can't be used in `GLOBAL JOIN` operations.
+
+A [row policy](/reference/statements/create/row-policy) on a `Join`-engine table filters a plain `SELECT` from it, but a `JOIN` or `joinGet` reads the prepared hash table as is and cannot filter its rows, so while a policy applies to the table such queries fail with `ACCESS_DENIED`.
 
 The `Join`-engine allows to specify [join_use_nulls](/reference/settings/session-settings/join#join_use_nulls) setting in the `CREATE TABLE` statement. [SELECT](/reference/statements/select/index) query should have the same `join_use_nulls` value.
 
@@ -877,8 +892,16 @@ protected:
                 join->kind,
                 join->strictness,
                 join->data->maps.front(),
-                join->preferUseMapsAll(),
-                [&](auto kind, auto strictness, auto & map) { chunk = createChunk<kind, strictness>(map); }))
+                join->getMapsKind(),
+                [&](auto kind, auto strictness, auto & map)
+                {
+                    /// `StorageJoin` reads the right rows back out of the maps, so it never stores them
+                    /// in a map that keeps none.
+                    if constexpr (SetJoinMaps<decltype(map)>)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin cannot read rows from a set map");
+                    else
+                        chunk = createChunk<kind, strictness>(map);
+                }))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness");
         return chunk;
     }

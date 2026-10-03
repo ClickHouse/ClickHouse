@@ -10,6 +10,7 @@
 #include <mutex>
 #include <unistd.h>
 #include <unordered_map>
+#include <vector>
 
 namespace DB
 {
@@ -22,6 +23,7 @@ struct ThreadEventData
 
     UInt64 user_ms      = 0;
     UInt64 system_ms    = 0;
+    UInt64 waited_us    = 0;
     UInt64 memory_usage = 0;
     UInt64 temp_data_on_disk_usage = 0;
 
@@ -73,6 +75,13 @@ public:
     /// How much seconds passed since query execution start.
     double elapsedSeconds() const { return static_cast<double>(getElapsedNanoseconds()) / 1e9; }
 
+    /// How much seconds passed since query execution start, measured by the client's own clock.
+    /// Unlike `elapsedSeconds`, this never uses the server-reported time, which only advances when a
+    /// `Progress` packet arrives. The server does not send a final `Progress` packet when a query
+    /// fails, so after an error the server-reported time is the one from the last periodic packet and
+    /// can be arbitrarily older than the real duration of the query.
+    double clientElapsedSeconds() const { return watch.elapsedSeconds(); }
+
     struct MemoryUsage
     {
         UInt64 total = 0;
@@ -94,7 +103,20 @@ public:
     void updateThreadEventData(HostToTimesMap & new_hosts_data);
 
 private:
-    double getCPUUsage();
+    struct ProfileSnapshot
+    {
+        double cpu_usage = 0;
+        /// Average number of threads sleeping in throttlers or waiting for the IO scheduler.
+        double waited = 0;
+        MemoryUsage memory;
+        TempDataOnDiskUsage temp_data_on_disk;
+    };
+
+    /// All resource usage values at once, consistent with each other.
+    ProfileSnapshot getProfileSnapshot();
+
+    static MemoryUsage sumMemoryUsage(const HostToTimesMap & hosts);
+    static TempDataOnDiskUsage sumTempDataOnDiskUsage(const HostToTimesMap & hosts);
 
     UInt64 getElapsedNanoseconds() const;
 
@@ -106,6 +128,14 @@ private:
     /// to check whether progress output needs to be cleared.
     size_t written_progress_chars = 0;
 
+    /// Progress counts at which the stalled state flipped; colors the bar by history.
+    /// The counts do not depend on the width of the terminal: the history is compacted to at most
+    /// `bar_history_resolution` cells, and rendered at the current width of the bar.
+    std::vector<std::pair<UInt64, bool>> bar_segments;
+    static constexpr size_t bar_history_resolution = 4096;
+    /// Whether the counts stored in `bar_segments` are numbers of rows (or of bytes otherwise).
+    bool bar_segments_in_rows = false;
+
     /// The server periodically sends information about how much data was read since last time.
     /// This information is stored here.
     Progress progress;
@@ -116,6 +146,7 @@ private:
     bool write_progress_on_update = false;
 
     EventRateMeter cpu_usage_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average cpu utilization last 2 second, skip first 4 points
+    EventRateMeter waited_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4};
     HostToTimesMap hosts_data;
     /// In case of all of the above:
     /// - clickhouse-local
@@ -124,7 +155,7 @@ private:
     ///
     /// It is possible concurrent access to the following:
     /// - writeProgress() (class properties) (guarded with progress_mutex)
-    /// - hosts_data/cpu_usage_meter (guarded with profile_events_mutex)
+    /// - hosts_data/cpu_usage_meter/waited_meter (guarded with profile_events_mutex)
     ///
     /// It is also possible to have more races if query is cancelled, so that clearProgressOutput() is called concurrently
     mutable std::mutex profile_events_mutex;

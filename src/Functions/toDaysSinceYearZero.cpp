@@ -30,9 +30,9 @@ toDaysSinceYearZero(date[, time_zone])
 SELECT toDaysSinceYearZero(toDate('2023-09-08'))
         )",
         R"(
-┌─toDaysSinceYearZero(toDate('2023-09-08')))─┐
-│                                     713569 │
-└────────────────────────────────────────────┘
+┌─toDaysSinceYearZero(toDate('2023-09-08'))─┐
+│                                    739136 │
+└───────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 9};

@@ -79,7 +79,7 @@ keywords: ['JSON', 'JSON 타입', '스키마 설계', '타입 힌트', 'max_dyna
 
   **주의할 점**
 
-  * `JSONEachRow`로 JSON 데이터를 삽입할 때 JSON에 스키마에 없는 필드가 포함되어 있으면, ClickHouse는 기본적으로 해당 필드를 조용히 삭제합니다. 대신 오류가 발생하게 하려면 [`input_format_skip_unknown_fields`](/ko/reference/settings/formats#input_format_skip_unknown_fields)를 `0`으로 설정하십시오.
+  * `JSONEachRow`로 JSON 데이터를 삽입할 때 JSON에 스키마에 없는 필드가 포함되어 있으면, ClickHouse는 기본적으로 해당 필드를 조용히 삭제합니다. 대신 오류가 발생하게 하려면 [`input_format_skip_unknown_fields`](/ko/reference/settings/formats/input-format#input_format_skip_unknown_fields)를 `0`으로 설정하십시오.
 </Accordion>
 
 ***
