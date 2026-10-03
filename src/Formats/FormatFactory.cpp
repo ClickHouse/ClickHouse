@@ -367,6 +367,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_compression_method = settings[Setting::output_format_arrow_compression_method];
     format_settings.arrow.output_date_as_uint16 = settings[Setting::output_format_arrow_date_as_uint16];
     format_settings.arrow.output_unsupported_types = getArrowUnsupportedTypesMode(settings);
+    format_settings.arrow.row_group_size = settings[Setting::output_format_arrow_row_group_size];
     format_settings.arrow.output_record_batch_rows = settings[Setting::output_format_arrow_record_batch_size];
     format_settings.arrow.output_record_batch_bytes = settings[Setting::output_format_arrow_record_batch_size_bytes];
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];

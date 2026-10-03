@@ -1731,6 +1731,10 @@ Buffering blocks can increase memory use and delay the first record batch until 
 `0` (the default) disables the byte target. Try `1048576` (1 MiB) as a starting value.
 )", 0, \
         {"26.9", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target size in bytes of accumulated data. The default `0` preserves one record batch per block."}) \
+    DECLARE(UInt64, output_format_arrow_row_group_size, 1000000, R"(
+Maximum number of rows per record batch for Arrow and ArrowStream output formats. It may split larger incoming blocks into multiple Arrow record batches, but it does not combine smaller incoming blocks into larger record batches.
+)", 0, \
+        {"26.10", 1000000, 1000000, "New setting controlling the maximum number of rows per record batch from each ClickHouse block in Arrow and ArrowStream output formats."}) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns
