@@ -20,16 +20,20 @@ storage_configuration:
 
 function create_cache_disk()
 {
-    $CLICKHOUSE_LOCAL --config-file "${dir}/config.yaml" --query "
+    local out
+    if out=$($CLICKHOUSE_LOCAL --config-file "${dir}/config.yaml" --query "
         CREATE TABLE t (a Int32) ENGINE = MergeTree ORDER BY tuple()
         SETTINGS disk = disk(type = cache, name = 'cache', path = 'cache', disk = 'local_disk', $1);
-        SELECT 'disk_accepted'" 2>&1 | grep -o -F \
-            -e 'disk_accepted' \
+        SELECT 'disk_accepted'" 2>&1); then
+        echo "$out"
+    else
+        echo "$out" | grep -o -F \
             -e 'must be defined in cache configuration' \
             -e 'cannot be specified at the same time' \
             -e '`max_size` cannot be 0' \
             -e 'must be in range (0, 1]' \
             -e 'must not exceed `max_file_segment_size`'
+    fi
 }
 
 create_cache_disk "cache_policy = 'LRU'"
