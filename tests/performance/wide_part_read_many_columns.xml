@@ -1,0 +1,55 @@
+<test>
+    <create_query>
+        CREATE TABLE wide_part_read_many_columns
+        (
+            id UInt64,
+            c1 UInt8, c2 UInt8, c3 UInt8, c4 UInt8, c5 UInt8, c6 UInt8, c7 UInt8, c8 UInt8, c9 UInt8, c10 UInt8,
+            c11 UInt8, c12 UInt8, c13 UInt8, c14 UInt8, c15 UInt8, c16 UInt8, c17 UInt8, c18 UInt8, c19 UInt8, c20 UInt8,
+            c21 UInt8, c22 UInt8, c23 UInt8, c24 UInt8, c25 UInt8, c26 UInt8, c27 UInt8, c28 UInt8, c29 UInt8, c30 UInt8,
+            c31 UInt8, c32 UInt8, c33 UInt8, c34 UInt8, c35 UInt8, c36 UInt8, c37 UInt8, c38 UInt8, c39 UInt8, c40 UInt8,
+            c41 UInt8, c42 UInt8, c43 UInt8, c44 UInt8, c45 UInt8, c46 UInt8, c47 UInt8, c48 UInt8, c49 UInt8, c50 UInt8,
+            c51 UInt8, c52 UInt8, c53 UInt8, c54 UInt8, c55 UInt8, c56 UInt8, c57 UInt8, c58 UInt8, c59 UInt8, c60 UInt8,
+            c61 UInt8, c62 UInt8, c63 UInt8, c64 UInt8, c65 UInt8, c66 UInt8, c67 UInt8, c68 UInt8, c69 UInt8, c70 UInt8,
+            c71 UInt8, c72 UInt8, c73 UInt8, c74 UInt8, c75 UInt8, c76 UInt8, c77 UInt8, c78 UInt8, c79 UInt8, c80 UInt8,
+            c81 UInt8, c82 UInt8, c83 UInt8, c84 UInt8, c85 UInt8, c86 UInt8, c87 UInt8, c88 UInt8, c89 UInt8, c90 UInt8,
+            c91 UInt8, c92 UInt8, c93 UInt8, c94 UInt8, c95 UInt8, c96 UInt8, c97 UInt8, c98 UInt8, c99 UInt8, c100 UInt8
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+    </create_query>
+
+    <fill_query>
+        INSERT INTO wide_part_read_many_columns SELECT
+            number,
+            number % 2, number % 3, number % 4, number % 5, number % 6, number % 7, number % 8, number % 9, number % 10, number % 11,
+            number % 12, number % 13, number % 14, number % 15, number % 16, number % 17, number % 18, number % 19, number % 20, number % 21,
+            number % 22, number % 23, number % 24, number % 25, number % 26, number % 27, number % 28, number % 29, number % 30, number % 31,
+            number % 32, number % 33, number % 34, number % 35, number % 36, number % 37, number % 38, number % 39, number % 40, number % 41,
+            number % 42, number % 43, number % 44, number % 45, number % 46, number % 47, number % 48, number % 49, number % 50, number % 51,
+            number % 52, number % 53, number % 54, number % 55, number % 56, number % 57, number % 58, number % 59, number % 60, number % 61,
+            number % 62, number % 63, number % 64, number % 65, number % 66, number % 67, number % 68, number % 69, number % 70, number % 71,
+            number % 72, number % 73, number % 74, number % 75, number % 76, number % 77, number % 78, number % 79, number % 80, number % 81,
+            number % 82, number % 83, number % 84, number % 85, number % 86, number % 87, number % 88, number % 89, number % 90, number % 91,
+            number % 92, number % 93, number % 94, number % 95, number % 96, number % 97, number % 98, number % 99, number % 100, number % 101
+        FROM numbers(10000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE wide_part_read_many_columns FINAL</fill_query>
+
+    <query>
+        SELECT
+            sum(c1) + sum(c2) + sum(c3) + sum(c4) + sum(c5) + sum(c6) + sum(c7) + sum(c8) + sum(c9) + sum(c10) +
+            sum(c11) + sum(c12) + sum(c13) + sum(c14) + sum(c15) + sum(c16) + sum(c17) + sum(c18) + sum(c19) + sum(c20) +
+            sum(c21) + sum(c22) + sum(c23) + sum(c24) + sum(c25) + sum(c26) + sum(c27) + sum(c28) + sum(c29) + sum(c30) +
+            sum(c31) + sum(c32) + sum(c33) + sum(c34) + sum(c35) + sum(c36) + sum(c37) + sum(c38) + sum(c39) + sum(c40) +
+            sum(c41) + sum(c42) + sum(c43) + sum(c44) + sum(c45) + sum(c46) + sum(c47) + sum(c48) + sum(c49) + sum(c50) +
+            sum(c51) + sum(c52) + sum(c53) + sum(c54) + sum(c55) + sum(c56) + sum(c57) + sum(c58) + sum(c59) + sum(c60) +
+            sum(c61) + sum(c62) + sum(c63) + sum(c64) + sum(c65) + sum(c66) + sum(c67) + sum(c68) + sum(c69) + sum(c70) +
+            sum(c71) + sum(c72) + sum(c73) + sum(c74) + sum(c75) + sum(c76) + sum(c77) + sum(c78) + sum(c79) + sum(c80) +
+            sum(c81) + sum(c82) + sum(c83) + sum(c84) + sum(c85) + sum(c86) + sum(c87) + sum(c88) + sum(c89) + sum(c90) +
+            sum(c91) + sum(c92) + sum(c93) + sum(c94) + sum(c95) + sum(c96) + sum(c97) + sum(c98) + sum(c99) + sum(c100)
+        FROM wide_part_read_many_columns
+        SETTINGS max_threads = 1, max_block_size = 8192
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS wide_part_read_many_columns</drop_query>
+</test>
