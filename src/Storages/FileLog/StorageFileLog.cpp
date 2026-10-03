@@ -1002,7 +1002,7 @@ Optional parameters:
 
 ## Description {#description}
 
-The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read. A file with several names in the directory (hard links, or symbolic links to it) is read once, under one of its names, and keeps being read from the same position while it has a name in the directory.
+The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read. A file with several names in the directory (hard links, or symbolic links to it) is read once, under one of its names. When that name is removed, the file is read on from the same position under another of its names that the table has already seen. If there is none, a later name of the file counts as a new file and is read from the beginning.
 
 `SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
 
@@ -1097,29 +1097,43 @@ bool StorageFileLog::addOtherName(const String & file_name, UInt64 inode, bool i
 {
     file_infos.other_names.erase(file_name);
     auto meta = file_infos.meta_by_inode.find(inode);
-    if (meta == file_infos.meta_by_inode.end() || meta->second.file_name == file_name)
-        return false;
-    auto read = file_infos.context_by_name.find(meta->second.file_name);
-    if (read == file_infos.context_by_name.end() || read->second.inode != inode || read->second.status == FileStatus::REMOVED)
+    if (meta == file_infos.meta_by_inode.end())
         return false;
 
-    if (read->second.is_symlink)
+    /// A symbolic link is not the read name while the file has a hard link in the directory.
+    bool has_hard_link = false;
+    if (is_symlink)
     {
-        /// A symbolic link can stop pointing to the file with no event, so the file is read under the new name.
-        if (isGone(read->first, inode))
-        {
-            read->second.status = FileStatus::REMOVED; /// The cleanup loop drops it; the new name is handled as a new one.
+        auto other = findOtherName(inode);
+        has_hard_link = other && !other->second && !file_infos.other_names.at(other->first).is_symlink;
+    }
+
+    if (!has_hard_link)
+    {
+        if (meta->second.file_name == file_name)
             return false;
+        auto read = file_infos.context_by_name.find(meta->second.file_name);
+        if (read == file_infos.context_by_name.end() || read->second.inode != inode || read->second.status == FileStatus::REMOVED)
+            return false;
+
+        if (read->second.is_symlink)
+        {
+            /// A symbolic link can stop pointing to the file with no event, so the file is read under the new name.
+            if (isGone(read->first, inode))
+            {
+                read->second.status = FileStatus::REMOVED; /// The cleanup loop drops it; the new name is handled as a new one.
+                return false;
+            }
+            const String link = read->first;
+            file_infos.context_by_name.erase(read);
+            std::erase(file_infos.file_names, link);
+            file_infos.other_names.emplace(link, OtherName{.inode = inode, .is_symlink = true});
+            onFileAppeared(file_name, inode, is_symlink);
+            auto & read_meta = file_infos.meta_by_inode.at(inode);
+            moveMetaFile(read_meta.file_name, file_name);
+            read_meta.file_name = file_name;
+            return true;
         }
-        const String link = read->first;
-        file_infos.context_by_name.erase(read);
-        std::erase(file_infos.file_names, link);
-        file_infos.other_names.emplace(link, OtherName{.inode = inode, .is_symlink = true});
-        onFileAppeared(file_name, inode, is_symlink);
-        auto & read_meta = file_infos.meta_by_inode.at(inode);
-        moveMetaFile(read_meta.file_name, file_name);
-        read_meta.file_name = file_name;
-        return true;
     }
 
     if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())

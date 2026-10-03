@@ -42,3 +42,6 @@ w.log	5
 w.log	6
 w.log	7
 w.log	8
+-- a symbolic link renamed over the read name: a hard link of the file reads on, also after the link target is removed
+h.log	9
+k.log	10

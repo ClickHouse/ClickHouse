@@ -162,6 +162,17 @@ ln "${logs_dir}/out2.log" "${d3}/w.log"
 printf '8\n' >> "${d3}/w.log"
 read_until file_log_symlink 5 6 7 8
 
+echo '-- a symbolic link renamed over the read name: a hard link of the file reads on, also after the link target is removed'
+ln "${d3}/w.log" "${d3}/h.log"
+ln "${d3}/w.log" "${d3}/k.log"
+ln -s h.log "${d3}/tmp.sym"
+mv "${d3}/tmp.sym" "${d3}/w.log"
+printf '9\n' >> "${d3}/h.log"
+read_until file_log_symlink 9
+rm "${d3}/h.log"
+printf '10\n' >> "${d3}/k.log"
+read_until file_log_symlink 10
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_create"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_symlink"
