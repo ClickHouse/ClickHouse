@@ -208,13 +208,19 @@ struct ProjectionsDescription : public IHints<>
     /// Convert description to string
     String toString() const;
     ASTs getDefinitionsInDeclarationOrder() const;
+    enum class UnavailablePolicy
+    {
+        PreservePreviouslyLoaded,
+        TrustReplicatedMetadata,
+    };
     /// Parse description from string
     static ProjectionsDescription parse(
         const String & str,
         const ColumnsDescription & columns,
         const KeyDescription * parent_partition_key,
         const ContextPtr & query_context,
-        const ProjectionsDescription * known_unavailable = nullptr);
+        const ProjectionsDescription * known_unavailable = nullptr,
+        UnavailablePolicy unavailable_policy = UnavailablePolicy::PreservePreviouslyLoaded);
 
     /// Return common expression for all stored projections
     ExpressionActionsPtr getSingleExpressionForProjections(const ColumnsDescription & columns, ContextPtr query_context) const;

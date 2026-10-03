@@ -228,6 +228,58 @@ def test_replay_adds_projection_unavailable_on_follower(started_cluster):
     ).strip() == "2"
 
 
+def test_replicated_merge_tree_replays_new_unavailable_projection(started_cluster):
+    table = "default.rmt_unavailable_projection"
+    projection_count = (
+        "SELECT count() FROM system.projections "
+        "WHERE database = 'default' AND table = 'rmt_unavailable_projection'"
+    )
+    persisted_projection = (
+        "SELECT position(create_table_query, 'PROJECTION pp') > 0 "
+        "FROM system.tables WHERE database = 'default' "
+        "AND name = 'rmt_unavailable_projection'"
+    )
+
+    for replica in (node1, node2):
+        replica.copy_file_to_container(POSITIONAL_XML_SOURCE, POSITIONAL_XML)
+        replica.restart_clickhouse()
+        replica.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        replica.query(
+            f"CREATE TABLE {table} (a UInt64, b String) "
+            "ENGINE = ReplicatedMergeTree("
+            "'/test/projection_unavailable_plain_rmt', '{replica}') ORDER BY a"
+        )
+
+    node2.exec_in_container(["rm", POSITIONAL_XML])
+    try:
+        node2.restart_clickhouse()
+        node1.query(
+            f"ALTER TABLE {table} ADD PROJECTION pp "
+            "(SELECT a, b GROUP BY 1, 2)"
+        )
+
+        # The leader admitted this body before publishing it to Keeper. The follower must
+        # retain that accepted declaration even though its current setting cannot analyze it.
+        assert_eq_with_retry(node2, persisted_projection, "1", retry_count=20, sleep_time=0.5)
+        assert node2.query(projection_count).strip() == "0"
+        assert node1.query(projection_count).strip() == "1"
+
+        error = node1.query_and_get_error(
+            f"ALTER TABLE {table} ADD PROJECTION bad "
+            "(SELECT missing_column ORDER BY missing_column)"
+        )
+        assert error
+        assert "PROJECTION bad" not in node1.query(f"SHOW CREATE TABLE {table}")
+        assert "PROJECTION bad" not in node2.query(f"SHOW CREATE TABLE {table}")
+    finally:
+        node2.copy_file_to_container(POSITIONAL_XML_SOURCE, POSITIONAL_XML)
+        node2.restart_clickhouse()
+
+    assert_eq_with_retry(node2, projection_count, "1")
+    for replica in (node1, node2):
+        replica.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
 def test_replay_preserves_canonical_codec_body_of_unavailable_projection(started_cluster):
     for replica in (node1, node2):
         replica.copy_file_to_container(POSITIONAL_XML_SOURCE, POSITIONAL_XML)

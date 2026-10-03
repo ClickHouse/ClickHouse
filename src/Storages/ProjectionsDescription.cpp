@@ -1164,7 +1164,8 @@ ProjectionsDescription ProjectionsDescription::parse(
     const ColumnsDescription & columns,
     const KeyDescription * parent_partition_key,
     const ContextPtr & query_context,
-    const ProjectionsDescription * known_unavailable)
+    const ProjectionsDescription * known_unavailable,
+    UnavailablePolicy unavailable_policy)
 {
     ProjectionsDescription result;
     if (str.empty())
@@ -1182,9 +1183,9 @@ ProjectionsDescription ProjectionsDescription::parse(
         }
         catch (const Exception &)
         {
-            /// A replica may still be unable to analyze a declaration that it already loaded
-            /// from stored metadata. A settings-only change may alter `WITH SETTINGS`, but the
-            /// projection body must be unchanged; a new invalid body must still fail replication.
+            /// A previously loaded unavailable body can be retained across a settings change.
+            /// A trusted replica can also receive a new body that its leader already analyzed.
+            /// Other callers must reject a new body they cannot analyze themselves.
             const auto & declaration = projection_ast->as<const ASTProjectionDeclaration &>();
             const bool was_unavailable = known_unavailable && std::ranges::any_of(
                 known_unavailable->unavailable,
@@ -1193,7 +1194,7 @@ ProjectionsDescription ProjectionsDescription::parse(
                     const auto & old = old_definition->as<const ASTProjectionDeclaration &>();
                     return hasSameUnavailableProjectionBody(old, declaration);
                 });
-            if (!was_unavailable)
+            if (!was_unavailable && unavailable_policy != UnavailablePolicy::TrustReplicatedMetadata)
                 throw;
             result.addUnavailable(projection_ast->clone());
         }

@@ -292,41 +292,30 @@ bool parseProjectionDeclarationBody(IParser::Pos & pos, Expected & expected, con
 
     if (s_lparen.ignore(pos, expected))
     {
-        /// One token of lookahead rather than trying both shapes, so each reports its own errors.
-        /// Not exact: `ParserIdentifier` accepts `select` and `with` as column names, so a list whose
-        /// first column is one of those must quote it. Every other keyword is unambiguous here.
-        const auto pos_after_lparen = pos;
-        const bool starts_a_query
-            = ParserKeyword(Keyword::SELECT).ignore(pos, expected) || ParserKeyword(Keyword::WITH).ignore(pos, expected);
-        pos = pos_after_lparen;
-
-        if (starts_a_query)
+        /// A column can be named `select` or `with`, and `(select CODEC(NONE))` can also
+        /// parse as a SELECT query. Try the complete column-list form, including `AS (query)`,
+        /// before accepting the query-only form.
+        IParser::Pos columns_pos = pos;
+        Expected columns_expected = expected;
+        ASTPtr candidate_columns;
+        ASTPtr candidate_query;
+        if (columns_p.parse(columns_pos, candidate_columns, columns_expected)
+            && s_rparen.ignore(columns_pos, columns_expected)
+            && s_as.ignore(columns_pos, columns_expected)
+            && s_lparen.ignore(columns_pos, columns_expected)
+            && query_p.parse(columns_pos, candidate_query, columns_expected)
+            && s_rparen.ignore(columns_pos, columns_expected))
         {
-            if (!query_p.parse(pos, query, expected))
-                return false;
-
-            if (!s_rparen.ignore(pos, expected))
-                return false;
+            pos = columns_pos;
+            columns = std::move(candidate_columns);
+            query = std::move(candidate_query);
         }
-        else
+        else if (!query_p.parse(pos, query, expected) || !s_rparen.ignore(pos, expected))
         {
-            if (!columns_p.parse(pos, columns, expected))
-                return false;
-
-            if (!s_rparen.ignore(pos, expected))
-                return false;
-
-            if (!s_as.ignore(pos, expected))
-                return false;
-
-            if (!s_lparen.ignore(pos, expected))
-                return false;
-
-            if (!query_p.parse(pos, query, expected))
-                return false;
-
-            if (!s_rparen.ignore(pos, expected))
-                return false;
+            if (columns_expected.max_parsed_pos
+                && (!expected.max_parsed_pos || columns_expected.max_parsed_pos > expected.max_parsed_pos))
+                expected = std::move(columns_expected);
+            return false;
         }
     }
     else if (s_index.ignore(pos, expected))

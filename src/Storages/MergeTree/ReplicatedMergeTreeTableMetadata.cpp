@@ -441,7 +441,8 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
     String parsed_zk_projections = from_zk.projections;
     if (projections != from_zk.projections)
         parsed_zk_projections = ProjectionsDescription::parse(
-            from_zk.projections, columns, nullptr, context, &local_projections).toString();
+            from_zk.projections, columns, nullptr, context, &local_projections,
+            ProjectionsDescription::UnavailablePolicy::TrustReplicatedMetadata).toString();
     /// Keep the spelling of an untyped codec: `Delta` and `Delta(4)` may resolve identically
     /// now, but after `MODIFY COLUMN` widens the output, only the omitted argument adapts.
     if (projections != parsed_zk_projections)
@@ -581,7 +582,8 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
 
         if (projections_changed)
             new_metadata.projections = ProjectionsDescription::parse(
-                new_projections, new_columns, &new_metadata.partition_key, context, &old_metadata.projections);
+                new_projections, new_columns, &new_metadata.partition_key, context, &old_metadata.projections,
+                ProjectionsDescription::UnavailablePolicy::TrustReplicatedMetadata);
 
         if (ttl_table_changed)
         {
