@@ -1,0 +1,5 @@
+stuck	1	1	1	8
+consuming	1	2	16
+1
+-- a round that fails before it reads the file
+stuck	1	8

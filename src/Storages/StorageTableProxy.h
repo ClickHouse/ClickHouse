@@ -86,6 +86,13 @@ public:
         return nested;
     }
 
+    /// The real storage if it is already loaded; does not load it.
+    StoragePtr tryGetNested() const
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested;
+    }
+
     bool storesDataOnDisk() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
     bool isView() const override { return false; }

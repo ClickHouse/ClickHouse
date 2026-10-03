@@ -1,0 +1,38 @@
+-- before reading
+a.jsonl	0	24	0	consuming	1
+b.jsonl	0	16	0	consuming	1
+-- after reading
+5
+a.jsonl	24	24	3	consuming	1
+b.jsonl	16	16	2	consuming	1
+1	1	1
+-- unread bytes
+8
+-- a file added and a file removed
+a.jsonl	32	32	4	consuming	1
+c.jsonl	8	8	1	consuming	1
+-- a file recreated with the same inode starts over
+a.jsonl	32	32	4	consuming	1
+c.jsonl	16	16	2	consuming	1
+-- a renamed file whose name is reused, before the table processes it
+a.jsonl	1
+c.jsonl	0
+-- once processed, the renamed file keeps its row and the new file starts from zero
+a.jsonl	9	9	1	consuming	1
+a.jsonl.1	32	32	4	consuming	1
+c.jsonl	16	16	2	consuming	1
+-- a reload keeps the offsets and starts the counters over
+a.jsonl	9	9	0	consuming	1
+a.jsonl.1	32	32	0	consuming	1
+c.jsonl	16	16	0	consuming	1
+-- access
+0
+3
+-- a temporary table is not shown
+1
+0
+-- a table of a lazy_load_tables database is shown once it is loaded
+TableProxy
+0
+1
+a.jsonl	8	1

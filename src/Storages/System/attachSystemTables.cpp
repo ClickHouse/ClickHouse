@@ -159,6 +159,10 @@
 #include <Storages/System/StorageSystemKafkaConsumers.h>
 #endif
 
+#if USE_FILELOG
+#include <Storages/System/StorageSystemFileLogFiles.h>
+#endif
+
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 #include <Storages/System/StorageSystemStackTrace.h>
 #endif
@@ -2346,6 +2350,41 @@ rdkafka_stat:                  {...}
 dependencies:                  [['test.mv2','test.target2'],['test.mv1','test.target1']]
 missing_dependencies:          []
 ```
+)DOCS_MD");
+#endif
+#if USE_FILELOG
+    attach<StorageSystemFileLogFiles>(context, system_database, "filelog_files", R"DOCS_MD(
+.description
+Contains one row per file of each [FileLog](/reference/engines/table-engines/special/filelog) table: how far the table has read the file, how much of it is not read yet, and whether the table is consuming it or is stuck on it.
+
+`file_size - current_offset` is the number of bytes not read yet. `current_offset` comes from the metadata of the table, while `num_records_read`, `last_poll_time`, `last_exception` and `state` are kept in memory and start over when the table is loaded.
+
+`state` is `stuck` when a background read round (to materialized views) failed while it included the file or the file had unread bytes, and no later round that included the file succeeded; `last_exception` holds the error. The rows of a table are shown only to users with the `SHOW TABLES` privilege on it. A table of a database with `lazy_load_tables` is shown once it is loaded. Temporary tables are not shown.
+
+.examples
+```sql
+SELECT * FROM system.filelog_files FORMAT Vertical
+```
+
+```text
+Row 1:
+──────
+database:            default
+table:               src
+file_name:           access.log
+path:                /var/lib/clickhouse/user_files/filelog_test/access.log
+inode:               11336358185 -- 11.34 billion
+current_offset:      26
+file_size:           78
+num_records_read:    1
+last_poll_time:      2026-10-02 02:18:33
+last_exception:      Code: 33. DB::Exception: Stream is in bad state: While executing FileLog. (CANNOT_READ_ALL_DATA) (version 26.10.1.1)
+last_exception_time: 2026-10-02 02:18:33
+state:               stuck
+```
+
+.see_also
+- [FileLog table engine](/reference/engines/table-engines/special/filelog)
 )DOCS_MD");
 #endif
 #if defined(OS_LINUX) || defined(OS_DARWIN)
