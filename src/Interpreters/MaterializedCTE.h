@@ -76,6 +76,8 @@ struct MaterializedCTE
     std::optional<TemporaryTableHolder> table_holder = {};
     /// Name of the CTE.
     const std::string cte_name;
+    /// If true, the CTE query has ORDER BY, so the stored blocks are in that order.
+    bool has_order_by = false;
     /// Temporary table name
     const std::string temporary_table_name;
     /// The CTE is referenced from a recursive member of a recursive CTE, so it is never inlined.

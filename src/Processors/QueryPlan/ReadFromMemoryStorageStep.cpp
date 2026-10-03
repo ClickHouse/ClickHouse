@@ -523,20 +523,27 @@ Pipe ReadFromMemoryStorageStep::makePipe()
         /// It may seem to be not optimal, but actually data from such table is used to fill
         /// set for IN or hash table for JOIN, which can't be done concurrently.
         /// Since no other manipulation with data is done, multiple sources shouldn't give any profit.
-
-        return Pipe(std::make_shared<MemorySource>(
-            physical_columns,
-            virtual_columns,
-            nullptr /* data */,
-            nullptr /* parallel execution index */,
-            [my_storage = storage](std::shared_ptr<const Blocks> & data_to_initialize)
-            {
-                auto current = assert_cast<const StorageMemory &>(*my_storage).data.get();
-                data_to_initialize = std::shared_ptr<const Blocks>(current, &current->blocks);
-            },
-            typeid_cast<StorageMemory *>(storage.get())->getMaterializedCTE(),
-            source_filter,
-            output_header));
+        ///
+        /// A materialized CTE feeds the rest of the query, so it is read with `num_streams` sources
+        /// that share one block index. A CTE with ORDER BY keeps one source to return its rows in order.
+        auto materialized_cte = typeid_cast<StorageMemory *>(storage.get())->getMaterializedCTE();
+        auto parallel_execution_index = std::make_shared<std::atomic<size_t>>(0);
+        Pipes pipes(materialized_cte && !materialized_cte->has_order_by ? num_streams : 1);
+        for (auto & pipe : pipes)
+            pipe = Pipe(std::make_shared<MemorySource>(
+                physical_columns,
+                virtual_columns,
+                nullptr /* data */,
+                parallel_execution_index,
+                [my_storage = storage](std::shared_ptr<const Blocks> & data_to_initialize)
+                {
+                    auto current = assert_cast<const StorageMemory &>(*my_storage).data.get();
+                    data_to_initialize = std::shared_ptr<const Blocks>(current, &current->blocks);
+                },
+                materialized_cte,
+                source_filter,
+                output_header));
+        return Pipe::unitePipes(std::move(pipes));
     }
 
     size_t size = current_data->size();
