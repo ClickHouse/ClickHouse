@@ -38,6 +38,8 @@ INSERT INTO t_uncompressed_cache_ddl_src SELECT number, repeat('x', 128) FROM nu
 AUTO_RUN_1="05241_auto_run_1_$(random_str 10)"
 AUTO_RUN_2="05241_auto_run_2_$(random_str 10)"
 OPT_OUT_RUN="05241_opt_out_run_$(random_str 10)"
+PACKET_AUTO_RUN="05241_packet_auto_run_$(random_str 10)"
+PACKET_OPT_OUT_RUN="05241_packet_opt_out_run_$(random_str 10)"
 
 # Control: the automatic mode is enabled from the query text only, and the second run finds the cache warm.
 $CLICKHOUSE_CLIENT --query_id "$AUTO_RUN_1" --query "
@@ -58,10 +60,28 @@ CREATE TABLE t_uncompressed_cache_ddl_dst_3 ON CLUSTER test_shard_localhost ENGI
 AS SELECT * FROM ${CLICKHOUSE_DATABASE}.t_uncompressed_cache_ddl_src
 SETTINGS enable_automatic_use_uncompressed_cache = 1, max_threads = 1" > /dev/null
 
+# The automatic mode reaches the worker only through the settings of the queued entry, as it would from the
+# profile of the worker: the query text has no `SETTINGS` clause. The control run finds the cache warm.
+$CLICKHOUSE_CLIENT --query_id "$PACKET_AUTO_RUN" --query "
+SET enable_automatic_use_uncompressed_cache = 1;
+SET max_threads = 1;
+CREATE TABLE t_uncompressed_cache_ddl_dst_4 ON CLUSTER test_shard_localhost ENGINE = MergeTree ORDER BY id
+AS SELECT * FROM ${CLICKHOUSE_DATABASE}.t_uncompressed_cache_ddl_src" > /dev/null
+
+# The session-level opt-out must win on the worker over the automatic mode carried by the settings of the entry.
+$CLICKHOUSE_CLIENT --query_id "$PACKET_OPT_OUT_RUN" --query "
+SET enable_automatic_use_uncompressed_cache = 1;
+SET max_threads = 1;
+SET use_uncompressed_cache = 0;
+CREATE TABLE t_uncompressed_cache_ddl_dst_5 ON CLUSTER test_shard_localhost ENGINE = MergeTree ORDER BY id
+AS SELECT * FROM ${CLICKHOUSE_DATABASE}.t_uncompressed_cache_ddl_src" > /dev/null
+
 $CLICKHOUSE_CLIENT --query "
 SELECT count() FROM t_uncompressed_cache_ddl_dst_1;
 SELECT count() FROM t_uncompressed_cache_ddl_dst_2;
 SELECT count() FROM t_uncompressed_cache_ddl_dst_3;
+SELECT count() FROM t_uncompressed_cache_ddl_dst_4;
+SELECT count() FROM t_uncompressed_cache_ddl_dst_5;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -83,8 +103,28 @@ WHERE event_date >= yesterday()
   AND query_id != '${OPT_OUT_RUN}'
   AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${OPT_OUT_RUN}');
 
+-- The warm control run with the automatic mode from the settings of the entry hits the cache on the worker.
+SELECT count() > 0, sum(ProfileEvents['UncompressedCacheHits']) > 0
+FROM system.query_log
+WHERE event_date >= yesterday()
+  AND event_time >= now() - INTERVAL 10 MINUTE
+  AND type = 'QueryFinish'
+  AND query_id != '${PACKET_AUTO_RUN}'
+  AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${PACKET_AUTO_RUN}');
+
+-- The opt-out run with the automatic mode from the settings of the entry does not touch the cache on the worker.
+SELECT count() > 0, sum(ProfileEvents['UncompressedCacheHits'] + ProfileEvents['UncompressedCacheMisses'])
+FROM system.query_log
+WHERE event_date >= yesterday()
+  AND event_time >= now() - INTERVAL 10 MINUTE
+  AND type = 'QueryFinish'
+  AND query_id != '${PACKET_OPT_OUT_RUN}'
+  AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${PACKET_OPT_OUT_RUN}');
+
 DROP TABLE t_uncompressed_cache_ddl_dst_1;
 DROP TABLE t_uncompressed_cache_ddl_dst_2;
 DROP TABLE t_uncompressed_cache_ddl_dst_3;
+DROP TABLE t_uncompressed_cache_ddl_dst_4;
+DROP TABLE t_uncompressed_cache_ddl_dst_5;
 DROP TABLE t_uncompressed_cache_ddl_src;
 "
