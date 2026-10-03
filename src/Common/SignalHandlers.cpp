@@ -10,6 +10,7 @@
 #include <Common/StackTraceServiceSignal.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
+#include <Common/CoverageCollection.h>
 #include <base/sleep.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -838,6 +839,11 @@ try
     /// When everything is done, we will try to send these error messages to the client.
     if (thread_ptr)
         thread_ptr->onFatalError();
+
+#if defined(__ELF__) && !defined(OS_FREEBSD) && WITH_COVERAGE_DEPTH
+    /// The process dies right after this, which loses the coverage since the last flush.
+    flushCoverageToFilesOnExit();
+#endif
 
     HandledSignals::instance().fatal_error_printed.test_and_set();
 }

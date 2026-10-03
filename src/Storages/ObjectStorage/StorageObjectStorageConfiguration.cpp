@@ -11,6 +11,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/Common.h>
 #include <Storages/StorageURL.h>
+#include <IO/CompressionMethod.h>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -336,6 +337,13 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
             partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
     }
 
+    /// The `hive` strategy builds its read glob from the compression method (see
+    /// `HiveStylePartitionStrategy::getPathForRead`), and table reads set `throw_on_zero_files_match = false`,
+    /// so reject a misspelled codec on `CREATE` rather than let the table look empty. Only on `CREATE`:
+    /// loading existing metadata must not throw, since that would abort server startup.
+    if (is_create_query && partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
+        chooseCompressionMethod(/* path */ "", compression_method);
+
     partition_strategy = PartitionStrategyFactory::get(
         partition_strategy_type,
         partition_by,
@@ -344,7 +352,8 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
         format,
         getRawPath().hasGlobsIgnorePlaceholders(),
         getRawPath().hasPartitionWildcard(),
-        partition_columns_in_data_file);
+        partition_columns_in_data_file,
+        compression_method);
 
     if (partition_strategy)
     {
