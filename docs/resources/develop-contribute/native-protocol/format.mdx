@@ -1088,9 +1088,9 @@ For row `i`, the value at a target time `t` is:
 
 A zero curve is canonically stored as `(0, 0)`. Non-zero values and anchor times must be finite.
 
-The server derives one 8-byte `UInt64` ordering key with `shiftOneBitAndSign(unit_timestamp)`, where `unit_timestamp = anchor_time + decay_length * ln(abs(value_at_anchor))`. The sign divides the key space around zero and one low-order bit of the sortable `Float64` timestamp is discarded. Neighboring curves can therefore map to the same ordering key; when they do, the type treats them as equal for ordering and hashing. The key is reconstructed from the two direct streams and is **not present in the Native payload or MergeTree column data**.
+The server derives one 8-byte `UInt64` ordering prefix with `shiftOneBitAndSign(unit_timestamp)`, where `unit_timestamp = anchor_time + decay_length * ln(abs(value_at_anchor))`. The sign divides the key space around zero and one low-order bit of the sortable `Float64` timestamp is discarded. Neighboring curves can therefore map to the same prefix; comparison and equality fall back to the full logical key on such collisions, and hashing uses the full logical key. The prefix is reconstructed from the two direct streams and is **not present in the Native payload or MergeTree column data**.
 
-For a direct `ExponentialTimeDecaying` primary-key column, the sparse MergeTree `primary.idx` stores this same `UInt64` ordering key for each mark. Explicit `minmax` indexes use the same key for their extrema. The authoritative table column remains the two-`Float64` direct payload above.
+For a direct `ExponentialTimeDecaying` primary-key column, the sparse MergeTree `primary.idx` stores this same `UInt64` ordering prefix for each mark. Explicit `minmax` indexes use the same prefix for their extrema. The authoritative table column remains the two-`Float64` direct payload above.
 
 The type has no state/version prefix of its own. Its two Float64 streams participate in the normal composite prefix/data traversal, so when the type is nested in `Array`, `Tuple`, `Nullable`, or another container there are still only the container's ordinary structural streams plus these two Float64 streams.
 

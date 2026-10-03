@@ -397,8 +397,9 @@ REGISTER_FUNCTION(ExponentialTimeDecaying)
     factory.registerFunction<FunctionExponentialTimeDecaying>(FunctionDocumentation{
         .description = R"(
 Constructs one `ExponentialTimeDecaying(decay_length)` value for each `(value, time)` input row.
-The result keeps its direct value and anchor for arithmetic and derives one UInt64 ordering key.
-Comparison, equality, hashing, primary-key marks, and minmax indexes use that same key.
+The result keeps its direct value and anchor for arithmetic and derives one `UInt64` ordering prefix.
+Comparison and equality use that prefix first and fall back to the full logical key on collisions.
+Hashing uses the full logical key; primary-key marks and minmax indexes use the compact prefix.
 It can be combined by `exponentialTimeDecayedSum`, including as a
 `SimpleAggregateFunction` column in an `AggregatingMergeTree`.
 )",
