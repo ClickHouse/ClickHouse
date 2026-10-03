@@ -6794,6 +6794,35 @@ Possible values:
 - Any string
 )", 0, \
         {"24.8", "", "", "New setting for labeling query cache settings."}) \
+    DECLARE(Bool, allow_experimental_part_aggregation_cache, false, R"(
+If turned on, intermediate per-part aggregation states for `GROUP BY` queries over `MergeTree` tables are cached.
+On subsequent executions of the same query, cached states are reused for parts that still exist, and only new or changed parts need to be aggregated from scratch.
+This is useful for time-series workloads where older data is immutable and only recent data changes.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0, \
+        {"26.10", false, false, "New setting to enable experimental per-part aggregation cache for GROUP BY."}) \
+    DECLARE(Bool, enable_reads_from_part_aggregation_cache, true, R"(
+If turned on, results of `GROUP BY` queries are retrieved from the part aggregation cache.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0, \
+        {"26.10", true, true, "New setting."}) \
+    DECLARE(Bool, enable_writes_to_part_aggregation_cache, true, R"(
+If turned on, intermediate per-part aggregation states are stored in the part aggregation cache.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0, \
+        {"26.10", true, true, "New setting."}) \
     DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \

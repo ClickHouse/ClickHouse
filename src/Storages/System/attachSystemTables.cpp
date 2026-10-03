@@ -106,6 +106,7 @@
 #include <Storages/System/StorageSystemFilesystemCacheSettings.h>
 #include <Storages/System/StorageSystemQueryConditionCache.h>
 #include <Storages/System/StorageSystemQueryResultCache.h>
+#include <Storages/System/StorageSystemPartAggregationCache.h>
 #include <Storages/System/StorageSystemUserQueryLog.h>
 #include <Storages/System/StorageSystemNamedCollections.h>
 #include <Storages/System/StorageSystemHandlers.h>
@@ -3345,6 +3346,10 @@ key_hash:    12188185624808016954
 
 1 row in set. Elapsed: 0.004 sec.
 ```
+)DOCS_MD");
+    attachNoDescription<StorageSystemPartAggregationCache>(context, system_database, "part_aggregation_cache", R"DOCS_MD(
+.description
+Contains information about all entries inside the part aggregation cache in server's memory.
 )DOCS_MD");
     attachNoDescription<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths", R"DOCS_MD(
 .description

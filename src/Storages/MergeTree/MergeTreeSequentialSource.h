@@ -19,6 +19,13 @@ enum MergeTreeSequentialSourceType
 
 /// Create stream for reading single part from MergeTree.
 /// If the part has lightweight delete mask then the deleted rows are filtered out.
+///
+/// By default the source reads with background merge/mutation I/O controls (read settings from
+/// the server context, forced `pread`, merges/mutations throttlers). When the read is performed
+/// in the foreground on behalf of a query (part aggregation cache warmup), pass the query
+/// context as `read_context`: the source then reads with that context's own `ReadSettings`
+/// (read priority, per-query bandwidth throttlers, filesystem-cache policy, read method) and
+/// the merge/mutation overrides are not applied.
 Pipe createMergeTreeSequentialSource(
     MergeTreeSequentialSourceType type,
     const MergeTreeData & storage,
@@ -31,7 +38,8 @@ Pipe createMergeTreeSequentialSource(
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
     bool read_with_direct_io,
-    bool prefetch);
+    bool prefetch,
+    ContextPtr read_context = nullptr);
 
 class QueryPlan;
 
