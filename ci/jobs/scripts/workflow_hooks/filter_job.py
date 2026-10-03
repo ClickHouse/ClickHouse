@@ -1,7 +1,7 @@
 import re
 from pathlib import PurePosixPath
 
-from ci.defs.defs import JobNames
+from ci.defs.defs import BuildTypes, JobNames
 from ci.defs.job_configs import JobConfigs, build_digest_config
 from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_functional_tests,
@@ -363,6 +363,29 @@ def _has_arch_sensitive_changes(changed_files):
     )
 
 
+# `Build (amd_fuzzers)` builds the libFuzzer targets. No job of the PR workflow uses its output
+# (the targets run in `NightlyFuzzers`), so in a PR it only checks that they still compile. A PR
+# below `SMALL_PR_CHANGED_LINES` skips it with the stress tests, unless it touches the fuzz
+# targets or their build: over 2026-08-20 to 2026-10-02 the build failed alone (all other builds
+# green) in 13 PRs, and the two of them below the threshold failed on infrastructure (`Bus error`
+# in the linker). Master builds it on every commit. `Build (wasm64)` has no consumer either, but
+# keeps running: it compiles with the Emscripten clang, and in the same period it alone found
+# compile errors in 4 PRs below the threshold.
+SMALL_PR_SKIPPED_BUILDS = (f"{JobNames.BUILD} ({BuildTypes.AMD_FUZZERS})",)
+
+assert set(SMALL_PR_SKIPPED_BUILDS) <= {
+    j.name for j in JobConfigs.special_build_jobs
+}, "SMALL_PR_SKIPPED_BUILDS names a job that does not exist"
+
+def _has_fuzzer_target_changes(changed_files):
+    """The fuzz targets live in `fuzzers/` directories next to the code they fuzz, and
+    `tests/fuzz/` holds the scripts that stage their dictionaries and corpora."""
+    return any(
+        "/fuzzers/" in f or f.removeprefix("./").startswith("tests/fuzz/")
+        for f in changed_files
+    )
+
+
 def _is_small_pr(info):
     """True if the PR changes fewer than `SMALL_PR_CHANGED_LINES` lines of product
     code. False when the count is unknown (the pre-hook failed to fetch it), so an
@@ -578,7 +601,14 @@ def should_skip_job(job_name):
     # master once more. Bypass: the `ci-force-all` label.
     # The builds that only the skipped stress tests use go with them.
     if (
-        (_is_stress_or_fuzzer_job(job_name) or job_name in PR_SINGLE_ARCH_SKIPPED_BUILDS)
+        (
+            _is_stress_or_fuzzer_job(job_name)
+            or job_name in PR_SINGLE_ARCH_SKIPPED_BUILDS
+            or (
+                job_name in SMALL_PR_SKIPPED_BUILDS
+                and not _has_fuzzer_target_changes(changed_files)
+            )
+        )
         and _is_small_pr(_info_cache)
         and not _has_uncounted_build_changes(changed_files)
         and not _has_stress_or_fuzzer_changes(changed_files)
