@@ -200,6 +200,13 @@ private:
         const Field & value_field,
         RPNElement & out) const;
 
+    /// `m['key'] IN (...)`: one pair token per set element, searched as one `Any` query.
+    bool traverseMapElementKeyValueSetNode(
+        const RPNBuilderTreeNode & lhs,
+        const RPNBuilderTreeNode & rhs,
+        const String & function_name,
+        RPNElement & out) const;
+
     /// `mapContainsKeyValue(m, 'key', 'value')`: both pair tokens, searched as one `Any` query.
     bool traverseMapContainsKeyValueNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
