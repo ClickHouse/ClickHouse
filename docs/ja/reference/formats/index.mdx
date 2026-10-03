@@ -11,9 +11,7 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 ClickHouse は、一般的なテキストおよびバイナリのデータフォーマットのほとんどをサポートしています。これにより、ほぼあらゆる既存の
 データパイプラインに容易に統合し、ClickHouse の利点を活用できます。
 
-<div id="input-formats">
-  ## 入力フォーマット
-</div>
+## 入力フォーマット {#input-formats}
 
 入力フォーマットは、次の用途で使用されます。
 
@@ -36,18 +34,14 @@ ClickHouse で効率的にデータをインジェストするには、適切な
 完全版の [ベンチマーク分析](https://www.clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient) を参照してください。
 完全なテスト結果については、[FastFormats](https://fastformats.clickhouse.com/) のオンラインダッシュボードをご覧ください。
 
-<div id="output-formats">
-  ## 出力フォーマット
-</div>
+## 出力フォーマット {#output-formats}
 
 出力に対応しているフォーマットは、次の用途で使用されます。
 
 * `SELECT`クエリの結果の整形
 * ファイルベースのテーブルに対する `INSERT` 操作の実行
 
-<div id="formats-overview">
-  ## フォーマットの概要
-</div>
+## フォーマットの概要 {#formats-overview}
 
 対応フォーマットは以下のとおりです。
 
@@ -150,14 +144,15 @@ ClickHouse で効率的にデータをインジェストするには、適切な
 | [DWARF](/ja/reference/formats/DWARF)                                                                                               | ✔  | ✗  |
 | [Markdown](/ja/reference/formats/Markdown)                                                                                         | ✗  | ✔  |
 | [Form](/ja/reference/formats/Form)                                                                                                 | ✔  | ✗  |
+| [PNG](/ja/reference/formats/PNG)                                                                                                   | ✗  | ✔  |
+| [Puffin](/ja/reference/formats/Puffin/Puffin)                                                                                      | ✔  | ✗  |
+| [PuffinMetadata](/ja/reference/formats/Puffin/PuffinMetadata)                                                                      | ✔  | ✗  |
 
 一部のフォーマットの処理パラメータは、ClickHouseの設定で制御できます。詳しくは、[Settings](/ja/reference/settings/formats) セクションを参照してください。
 
 JSON固有の追加設定については、[JSON format settings](/ja/reference/formats/JSON/format-settings) ページを参照してください。
 
-<div id="formatschema">
-  ## フォーマットスキーマ
-</div>
+## フォーマットスキーマ {#formatschema}
 
 フォーマットスキーマを含むファイル名は、設定 `format_schema` で指定します。
 この設定は、`Cap'n Proto` または `Protobuf` フォーマットを使用する場合に必要です。
@@ -174,9 +169,7 @@ JSON固有の追加設定については、[JSON format settings](/ja/reference/
 サーバー設定の [format&#95;schema&#95;path](/ja/reference/settings/server-settings/settings/format#format_schema_path)
 で指定されたディレクトリに配置する必要があります。
 
-<div id="skippingerrors">
-  ## エラーのスキップ
-</div>
+## エラーのスキップ {#skippingerrors}
 
 `CSV`、`TabSeparated`、`TSKV`、`JSONEachRow`、`Template`、`CustomSeparated`、`Protobuf` などの一部のフォーマットでは、パースエラーが発生しても不正な行をスキップし、次の行の先頭からパースを続行できます。[input&#95;format&#95;allow&#95;errors&#95;num](/ja/reference/settings/formats/input-format#input_format_allow_errors_num) と
 [input&#95;format&#95;allow&#95;errors&#95;ratio](/ja/reference/settings/formats/input-format#input_format_allow_errors_ratio) の設定を参照してください。
