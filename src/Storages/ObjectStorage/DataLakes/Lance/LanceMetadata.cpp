@@ -1006,8 +1006,7 @@ ObjectIterator LanceMetadata::iterate(
 
     const auto & settings = local_context->getSettingsRef();
     const bool enable_parallelism = settings[Setting::lance_enable_fragment_parallelism];
-    const bool session_force_single = session && session->getForceSingleFragmentPack();
-    bool force_single_pack = !enable_parallelism || session_force_single || fragments.size() <= 1;
+    const bool force_single_pack = !enable_parallelism || fragments.size() <= 1;
 
     std::vector<FragmentPack> packs;
     if (fragments.empty())

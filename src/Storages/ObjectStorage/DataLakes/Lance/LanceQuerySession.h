@@ -41,12 +41,6 @@ public:
     void setReuseEnabled(bool enabled) { reuse_enabled = enabled; }
     bool getReuseEnabled() const { return reuse_enabled; }
 
-    /// When true, LanceMetadata::iterate produces a single full-dataset pack
-    /// (LIMIT pushdown and ordered reads). Set from
-    /// ReadFromObjectStorageStep before createFileIterator.
-    void setForceSingleFragmentPack(bool enabled) { force_single_fragment_pack = enabled; }
-    bool getForceSingleFragmentPack() const { return force_single_fragment_pack; }
-
 private:
     void bindToQueryCancellation(const ContextPtr & context);
 
@@ -55,7 +49,6 @@ private:
     std::unordered_map<String, TableStateSnapshot> pinned_snapshots;
     size_t open_count = 0;
     bool reuse_enabled = true;
-    bool force_single_fragment_pack = false;
     CancelHandlePtr cancel_handle;
     std::unique_ptr<StopCallback> query_cancel_callback;
 };

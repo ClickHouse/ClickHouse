@@ -125,7 +125,7 @@ Lance reads emit dedicated `ProfileEvents` on `system.query_log` / `system.query
 
 Lance reads can combine two layers of concurrency:
 
-1. **ClickHouse streams (L1)** — fragments are grouped into packs; each pack becomes one pipeline object so `max_threads` can open multiple streams.
+1. **ClickHouse streams (L1)** — a single-node read converts the batches of one Lance scan in up to `lance_max_batch_sources` streams. A [`lanceS3Cluster`](/reference/functions/table-functions/lance#cluster-reads) read groups fragments into packs, and each pack becomes one task.
 2. **Lance scanner I/O (L2)** — within each stream, the Lance scanner can readahead fragments/batches.
 
 ### Stream packing settings {#stream-packing-settings}
@@ -138,11 +138,7 @@ Lance reads can combine two layers of concurrency:
 | `lance_min_rows_per_pack` | `0` | Soft minimum rows per pack when row counts are known (`0` = ignore). |
 | `lance_min_bytes_per_pack` | `0` | Soft minimum estimated bytes per pack (`0` = ignore). |
 
-Semantic guards force a **single pack** even when packing is enabled:
-
-- `LIMIT` that is eligible for scanner pushdown (and, in the current implementation, any non-zero limit on the read step)
-- `count()` / trivial count fast path
-- Ordered storage reads when applicable
+Fragment packs are only used to split `lanceS3Cluster` reads into tasks; single-node reads ignore the packing settings. A cluster read uses a single pack when `lance_enable_fragment_parallelism = 0` or the dataset has at most one fragment. Queries with `LIMIT` or `count()` are split into packs as well: each worker applies `LIMIT` to its tasks and the initiator applies it to the final result, but `LIMIT` is pushed down to the Lance scanner only when the read uses a single pack.
 
 Partial residual filters still allow multi-pack; ClickHouse re-applies residual filters. Stream order across packs is not global; use aggregates or `ORDER BY` when order matters.
 
