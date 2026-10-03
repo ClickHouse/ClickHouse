@@ -352,6 +352,8 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     {
         const auto & address = cluster.getShardsAddresses().front().front();
         new_client_info.initial_user = address.user;
+        /// The received roles belong to the replaced initial user.
+        new_client_info.current_roles.reset();
     }
 
     /// If "secret" (in remote_servers) is not in use,

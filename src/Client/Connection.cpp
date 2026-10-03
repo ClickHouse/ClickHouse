@@ -1006,6 +1006,19 @@ void Connection::sendQuery(
         client_info = &new_client_info;
     }
 
+    /// Under the interserver secret, vouch only for roles this node computed itself.
+    if (client_info && !cluster_secret.empty() && client_info->current_roles
+        && client_info->query_kind != ClientInfo::QueryKind::INITIAL_QUERY
+        && client_info->initial_user != client_info->current_user)
+    {
+        if (client_info != &new_client_info)
+        {
+            new_client_info = *client_info;
+            client_info = &new_client_info;
+        }
+        new_client_info.current_roles.reset();
+    }
+
 #if USE_JWT_CPP && USE_SSL
     if (jwt_provider && !jwt.empty())
     {

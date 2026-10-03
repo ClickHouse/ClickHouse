@@ -935,19 +935,23 @@ def test_initial_user_current_roles_on_secret_less_shard():
                 CREATE ROW POLICY OR REPLACE p_narrow ON t_roles USING svc = 'narrow' TO r_narrow;
                 CREATE ROW POLICY OR REPLACE p_all ON t_roles USING 1 TO r_all;
                 CREATE USER OR REPLACE u_roles;
+                CREATE TABLE t_roles_secret AS t_roles ENGINE = Distributed(test_secret_cluster_node2, default, t_roles);
                 """
             )
         node.query(
             """
             CREATE TABLE t_roles_dist AS t_roles ENGINE = Distributed(test_local_cluster, default, t_roles);
+            CREATE TABLE t_roles_chain AS t_roles ENGINE = Distributed(test_cluster_two_shards_same_node, default, t_roles_secret);
             CREATE ROLE OR REPLACE r_local;
             CREATE ROW POLICY OR REPLACE p_local ON t_roles USING 1 TO r_local;
             GRANT SELECT ON t_roles TO r_narrow, r_all, r_local;
             GRANT SELECT ON t_roles_dist TO r_narrow, r_all, r_local;
+            GRANT SELECT ON t_roles_secret TO r_narrow, r_all, r_local;
+            GRANT SELECT ON t_roles_chain TO r_narrow, r_all, r_local;
             GRANT r_narrow, r_all, r_local TO u_roles;
             """
         )
-        node2.query("GRANT r_all TO u_roles")
+        node2.query("GRANT r_all TO u_roles; GRANT SELECT ON t_roles TO r_all")
 
         def read_as(role):
             return f"SET ROLE {role}; SELECT svc FROM t_roles_dist ORDER BY svc"
@@ -962,11 +966,20 @@ def test_initial_user_current_roles_on_secret_less_shard():
         error = node.query_and_get_error(read_as("r_local"), user="u_roles")
         assert "ACCESS_DENIED" in error
         assert "Not all of the initiator's current roles are known on this node" in error
+
+        # The second hop goes to node2 under the secret, which gets no role list from a node that received
+        # it secret-less: node2 applies the own roles of u_roles there instead of refusing unknown r_local.
+        assert node.query(
+            "SET ROLE r_local; SELECT svc FROM t_roles_chain ORDER BY svc SETTINGS prefer_localhost_replica = 0",
+            user="u_roles",
+        ) == TSV([["narrow"], ["narrow"], ["secret"], ["secret"]])
     finally:
         node.query("DROP TABLE IF EXISTS t_roles_dist")
+        node.query("DROP TABLE IF EXISTS t_roles_chain")
         for current_node in nodes:
             current_node.query(
                 """
+                DROP TABLE IF EXISTS t_roles_secret;
                 DROP ROW POLICY IF EXISTS p_narrow, p_all, p_local ON t_roles;
                 DROP TABLE IF EXISTS t_roles;
                 DROP USER IF EXISTS u_roles;
