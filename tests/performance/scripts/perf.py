@@ -888,7 +888,8 @@ def teardown_long():
                 c.execute(q)
                 print(f"drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}")
             except Exception as e:
-                if setup_error_on_connection[conn_index] and getattr(e, "code", None) in (UNKNOWN_TABLE, UNKNOWN_DATABASE):
+                # The object is not there, so the server is clean.
+                if getattr(e, "code", None) in (UNKNOWN_TABLE, UNKNOWN_DATABASE):
                     continue
                 print(f"drop query failed on server {conn_index}: {q}\n{e}", file=sys.stderr)
                 clean = False
