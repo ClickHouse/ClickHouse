@@ -47,6 +47,8 @@ public:
         std::shared_ptr<const Blocks> blocks;
         /// The exact number of rows in `blocks`.
         size_t rows = 0;
+        /// The version of `data` the blocks were taken from, see `BlocksWithCounts::version`.
+        UInt64 data_version = 0;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -115,6 +117,8 @@ public:
     std::optional<UInt64> totalRows(ContextPtr) const override;
     std::optional<UInt64> totalBytes(ContextPtr) const override;
 
+    std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const override;
+
     /** Delays initialization of StorageMemory::read() until the first read is actually happen.
       * Usually, fore code like this:
       *
@@ -175,19 +179,28 @@ private:
         Blocks blocks;
         size_t rows = 0;
         size_t bytes = 0;
+        /// Monotonically increasing version, assigned by `setData` on every modification. It lets
+        /// `getModificationHash` distinguish different data sets that happen to have the same size
+        /// or reuse the same address.
+        UInt64 version = 0;
     };
 
-    /// Table data belongs to the server: what this drops is not credited to the query, what it keeps is left to the server.
-    void setData(std::unique_ptr<BlocksWithCounts> new_data);
-
     /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
-
+    /// The blocks are published together with their counts and version as a single unit, so that
+    /// `getStorageSnapshot` observes a consistent state from one atomic `data.get()` without holding
+    /// `mutex` (locking it there deadlocks the mutation read path, which itself calls `getStorageSnapshot`).
     MultiVersion<BlocksWithCounts> data;
 
     mutable std::mutex mutex;
 
     bool delay_read_for_global_subqueries = false;
     MaterializedCTEWeakPtr materialized_cte;
+
+    /// Atomically publishes `new_data` as the next version of `data`, assigning its `version`. Callers must
+    /// hold whatever lock serializes writers (`mutex` for inserts and settings ALTER, the table-exclusive lock
+    /// for drop/truncate/mutate/restore), so that the version is assigned monotonically without races.
+    /// Table data belongs to the server: what this drops is not credited to the query, what it keeps is left to the server.
+    void setData(std::unique_ptr<BlocksWithCounts> new_data);
 
     std::unique_ptr<MemorySettings> memory_settings;
 

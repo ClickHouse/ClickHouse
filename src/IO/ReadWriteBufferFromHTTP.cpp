@@ -1035,6 +1035,9 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
     if (response.has("Last-Modified"))
         res.last_modified = tryParseHTTPDate(response.get("Last-Modified"));
 
+    if (response.has("ETag"))
+        res.etag = response.get("ETag");
+
     return res;
 }
 

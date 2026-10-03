@@ -1,0 +1,7 @@
+view not null	1
+materialized view not null	1
+view hash changed	1
+materialized view hash changed	1
+merge over view not null	1
+local distributed over view not null	1
+view over unsupported null	1

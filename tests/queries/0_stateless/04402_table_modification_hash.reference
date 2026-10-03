@@ -1,0 +1,17 @@
+mt not null	1
+mt stable	1
+mt changed on insert	1
+mt changed on merge	1
+mem changed on insert	1
+log changed on insert	1
+sample key change	1
+order key change	1
+order final result changed	1
+url glob null	1
+url failover null	1
+ordinary memory null	1
+ordinary mergetree null	1
+ordinary url null	1
+ordinary distributed null	1
+distributed self-ref null	1
+system table null	1
