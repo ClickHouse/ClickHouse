@@ -726,6 +726,13 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
 {
     maskNestedSecretMaps();
 
+    /// The cluster function reads its first argument as the cluster name, but `azurePositionalArguments` would not count a function call there as a slot.
+    if (is_cluster_function && function->arguments->size() > 0 && function->arguments->at(0)->getFunction())
+    {
+        maskEveryArgument();
+        return;
+    }
+
     /// azureBlobStorageCluster('cluster_name', 'conn_string/storage_account_url', ...) has 'conn_string/storage_account_url' as its second argument.
     size_t url_arg_idx = is_cluster_function ? 1 : 0;
 

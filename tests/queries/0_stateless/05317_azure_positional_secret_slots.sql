@@ -32,11 +32,17 @@ SELECT count() > 0 FROM (EXPLAIN AST SELECT * FROM azureBlobStorage('AccountName
 EXPLAIN AST CREATE TABLE t_cs4 (x UInt8) ENGINE = AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=visible_cs4;AccountKey=SEKRIT_CS4K;SharedAccessSignature=sp=r&sig=SEKRIT_CS4S;BlobEndpoint=http://localhost:11111/visible_cs4;', 'visible_cs4_cont', 'visible_cs4_blob', 'CSV');
 SELECT count() > 0 FROM (EXPLAIN AST SELECT * FROM azureBlobStorage(nc_05317_missing, connection_string = 'AccountName=visible_cs5;AccountKey=SEKRIT_CS5K;SharedAccessSignature=sp=r&sig=SEKRIT_CS5S', container = 'visible_cs5_cont', blob_path = 'visible_cs5_blob'));
 EXPLAIN AST CREATE TABLE t_cs6 (x UInt8) ENGINE = AzureQueue('http://localhost:11111/visible_cs6', 'visible_cs6_cont', '*', 'CSV') SETTINGS mode = 'unordered', after_processing = 'move', after_processing_move_connection_string = 'BlobEndpoint=http://localhost:11111/visible_cs6/?sp=r&sig=SEKRIT_CS6;AccountKey=SEKRIT_CS6A;AccountKey=SEKRIT_CS6B';
+-- A url in that setting is read with its shared access signature after '?', so it is hidden whole.
+EXPLAIN AST CREATE TABLE t_q1 (x UInt8) ENGINE = AzureQueue('http://localhost:11111/visible_q1', 'visible_q1_cont', '*', 'CSV') SETTINGS mode = 'unordered', after_processing = 'move', after_processing_move_connection_string = 'https://url_q1.blob.core.windows.net/?sp=rw&sig=SEKRIT_Q1', after_processing_move_container = 'visible_q1_mc';
 
 -- The named-collection form hides everything when an override can carry a credential the rules here cannot mask.
 SELECT count() > 0 FROM (EXPLAIN AST SELECT * FROM azureBlobStorage(nc_05317_missing, storage_account_url = 'https://visible_n1.blob.core.windows.net/?sp=r&sig=SEKRIT_N1', container = 'visible_n1_cont', blob_path = 'visible_n1_blob'));
 SELECT count() > 0 FROM (EXPLAIN AST SELECT * FROM azureBlobStorage(nc_05317_missing, connection_string = 'AccountName=visible_n2;AccountKey=SEKRIT_N2K', account_key = 'SEKRIT_N2', container = 'visible_n2_cont', blob_path = 'visible_n2_blob'));
 SELECT count() > 0 FROM (EXPLAIN AST SELECT * FROM azureBlobStorageCluster('test_shard_localhost', nc_05317_missing, storage_account_url = 'https://visible_n3.blob.core.windows.net/?sp=r&sig=SEKRIT_N3', container = 'visible_n3_cont', blob_path = 'visible_n3_blob'));
+
+-- In the cluster forms the first argument is the cluster name, so a call there hides everything.
+SELECT count() > 0 FROM (EXPLAIN AST SELECT * FROM azureBlobStorageCluster(extra_credentials(client_id = 'visible_k1_cid'), 'http://localhost:11111/url_k1/cont/data.csv', 'sp=r&sig=SEKRIT_K1'));
+SELECT count() > 0 FROM (EXPLAIN AST SELECT * FROM azureBlobStorageCluster(partition_strategy = 'none', 'http://localhost:11111/url_k2/cont/data.csv', 'sp=r&sig=SEKRIT_K2'));
 
 -- Neither does a `key = value` argument, and the value of a key the explicit form does not read is hidden.
 SELECT count() > 0 FROM (EXPLAIN AST SELECT * FROM azureBlobStorage('http://localhost:11111/visible_f1/cont/data.csv', 'sp=r&sig=SEKRIT_F1', partition_strategy = 'none'));
@@ -45,12 +51,13 @@ SELECT count() > 0 FROM (EXPLAIN AST SELECT * FROM azureBlobStorage('http://loca
 
 -- Controls, masked the same way before: the engine's two-argument form, an account key at slot 4,
 -- a partition strategy override that stays visible, a connection string that hides only its AccountKey,
--- and the account key override of a named collection.
+-- the account key override of a named collection, and a plain move url.
 EXPLAIN AST CREATE TABLE t_c1 (x UInt8) ENGINE = AzureBlobStorage('http://localhost:11111/visible_c1/cont/data.csv', 'sp=r&sig=SEKRIT_C1');
 SELECT count() > 0 FROM (EXPLAIN AST SELECT * FROM azureBlobStorage('http://localhost:11111/visible_c2', 'visible_c2_cont', 'visible_c2_blob', 'visible_c2_acct', 'SEKRIT_C2'));
 SELECT count() > 0 FROM (EXPLAIN AST SELECT * FROM azureBlobStorage('http://localhost:11111/visible_c3', 'visible_c3_cont', 'visible_c3_blob', 'CSV', 'none', partition_strategy = 'hive'));
 SELECT count() > 0 FROM (EXPLAIN AST SELECT * FROM azureBlobStorage('DefaultEndpointsProtocol=http;AccountName=visible_c4;AccountKey=SEKRIT_C4;', 'visible_c4_cont', 'visible_c4_blob', 'CSV'));
 SELECT count() > 0 FROM (EXPLAIN AST SELECT * FROM azureBlobStorage(nc_05317_missing, storage_account_url = 'http://localhost:11111/visible_c5', container = 'visible_c5_cont', blob_path = 'visible_c5_blob', account_name = 'visible_c5_acct', account_key = 'SEKRIT_C5'));
+EXPLAIN AST CREATE TABLE t_c6 (x UInt8) ENGINE = AzureQueue('http://localhost:11111/visible_c6', 'visible_c6_cont', '*', 'CSV') SETTINGS mode = 'unordered', after_processing = 'move', after_processing_move_connection_string = 'http://localhost:11111/visible_c6_move', after_processing_move_container = 'visible_c6_mc';
 
 SYSTEM FLUSH LOGS query_log;
 
