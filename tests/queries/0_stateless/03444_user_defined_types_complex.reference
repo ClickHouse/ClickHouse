@@ -1,0 +1,8 @@
+UserId	UInt64	\N	CREATE TYPE UserId AS UInt64
+ComplexArray	Array(Tuple(String, UInt64))	\N	CREATE TYPE ComplexArray AS Array(Tuple(String, UInt64))
+ParameterizedType	Tuple(T, Array(U))	T, U	CREATE TYPE ParameterizedType(T, U) AS Tuple(T, Array(U))
+UserIdArray	Array(UserId)	\N	CREATE TYPE UserIdArray AS Array(UserId)
+ComplexArray
+ParameterizedType
+UserId
+UserIdArray

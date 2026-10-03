@@ -1,0 +1,4 @@
+Type-With-Dashes	String	\N	CREATE TYPE `Type-With-Dashes` AS String
+тип_utf8	String	\N	CREATE TYPE `тип_utf8` AS String
+NestedComplex	Array(Tuple(Map(String, Array(Tuple(String, UInt64))), Nullable(String)))	\N	CREATE TYPE NestedComplex AS Array(Tuple(Map(String, Array(Tuple(String, UInt64))), Nullable(String)))
+CaseSensitive	String	\N	CREATE TYPE CaseSensitive AS String
