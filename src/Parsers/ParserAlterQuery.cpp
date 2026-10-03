@@ -14,8 +14,6 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Common/typeid_cast.h>
 
 
@@ -1321,14 +1319,11 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserAlterQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementAlter(StatementFactory & factory)
-{
-    factory.registerStatement("ALTER",
+    documentation["ALTER"] =
     {
         .description = R"DOCS_MD(
 Most `ALTER TABLE` queries modify table settings or data:
@@ -1471,9 +1466,9 @@ ALTER USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
         .related = {
             "ALTER TABLE ... COLUMN", "ALTER TABLE ... PARTITION", "ALTER TABLE ... DELETE", "ALTER TABLE ... UPDATE",
             "CREATE", "SYSTEM"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... COLUMN",
+    documentation["ALTER TABLE ... COLUMN"] =
     {
         .description = R"DOCS_MD(
 A set of queries that allow changing the table structure.
@@ -1878,9 +1873,9 @@ MATERIALIZE COLUMN name [IN PARTITION partition_id]
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "CODEC", "ALTER TABLE ... MODIFY TTL"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... PARTITION",
+    documentation["ALTER TABLE ... PARTITION"] =
     {
         .description = R"DOCS_MD(
 The following operations with [partitions](/reference/engines/table-engines/mergetree-family/custom-partitioning-key) are available:
@@ -2282,9 +2277,9 @@ ALTER TABLE table_name [ON CLUSTER cluster] MODIFY PARTITION|PART partition_expr
 )",
         .parent = "ALTER",
         .related = {"ALTER", "SYSTEM", "OPTIMIZE", "TRUNCATE"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... DELETE",
+    documentation["ALTER TABLE ... DELETE"] =
     {
         .description = R"DOCS_MD(
 ```sql
@@ -2322,9 +2317,9 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr1
 )",
         .parent = "ALTER",
         .related = {"ALTER", "DELETE", "TRUNCATE", "ALTER TABLE ... UPDATE"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... UPDATE",
+    documentation["ALTER TABLE ... UPDATE"] =
     {
         .description = R"DOCS_MD(
 ```sql
@@ -2401,9 +2396,9 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 )",
         .parent = "ALTER",
         .related = {"ALTER", "UPDATE", "ALTER TABLE ... DELETE", "ALTER TABLE ... APPLY PATCHES"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY ORDER BY",
+    documentation["ALTER TABLE ... MODIFY ORDER BY"] =
     {
         .description = R"DOCS_MD(
 ```sql
@@ -2425,9 +2420,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... MODIFY SAMPLE BY"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY SAMPLE BY",
+    documentation["ALTER TABLE ... MODIFY SAMPLE BY"] =
     {
         .description = R"DOCS_MD(
 The following operations are available:
@@ -2460,9 +2455,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
 )",
         .parent = "ALTER",
         .related = {"ALTER", "SAMPLE", "ALTER TABLE ... MODIFY ORDER BY"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY TTL",
+    documentation["ALTER TABLE ... MODIFY TTL"] =
     {
         .description = R"DOCS_MD(
 <Note>
@@ -2554,9 +2549,9 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] REMOVE TTL
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... COLUMN", "OPTIMIZE"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY SETTING",
+    documentation["ALTER TABLE ... MODIFY SETTING"] =
     {
         .description = R"DOCS_MD(
 There is a set of queries to change table settings. You can modify settings or reset them to default values. A single query can change several settings at once.
@@ -2619,9 +2614,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] RESET SETTING setting_name [, ...]
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "SET"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... CONSTRAINT",
+    documentation["ALTER TABLE ... CONSTRAINT"] =
     {
         .description = R"DOCS_MD(
 Constraints could be added, modified or deleted using following syntax:
@@ -2653,9 +2648,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constrain
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... INDEX",
+    documentation["ALTER TABLE ... INDEX"] =
     {
         .description = R"DOCS_MD(
 The following operations are available:
@@ -2700,9 +2695,9 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [I
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "HYPOTHETICAL INDEX", "ALTER TABLE ... PROJECTION"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... PROJECTION",
+    documentation["ALTER TABLE ... PROJECTION"] =
     {
         .description = R"DOCS_MD(
 This page discusses what projections are, how you can use them and various options for manipulating projections.
@@ -3030,7 +3025,8 @@ The statement restates the full projection definition, but only the `WITH SETTIN
 The projection query itself (or, for a projection index, the index expression and type) must stay the same, because existing projection parts store data built from it; to change it, use [`DROP PROJECTION`](#drop-projection) followed by [`ADD PROJECTION`](#add-projection).
 
 The command only changes the table metadata and does not rewrite any data: existing projection parts keep the settings they were written with, while projection parts written by future inserts and merges use the new settings.
-To rebuild existing parts with the new settings, run [`MATERIALIZE PROJECTION`](#materialize-projection).
+[`MATERIALIZE PROJECTION`](#materialize-projection) does not apply the new settings to existing parts either: it builds the projection only in the parts where it is missing or broken and leaves the projection parts that already exist unchanged.
+To rebuild existing parts with the new settings, run [`CLEAR PROJECTION`](#clear-projection) followed by [`MATERIALIZE PROJECTION`](#materialize-projection), or merge the parts, for example with [`OPTIMIZE TABLE ... FINAL`](/reference/statements/optimize).
 
 Example:
 
@@ -3054,7 +3050,8 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
 
 ### MATERIALIZE PROJECTION {#materialize-projection}
 
-Use the statement below to rebuild the projection `name` in partition `partition_name`.
+Use the statement below to build the projection `name` in the parts where it is missing or broken, optionally only in partition `partition_name`.
+Parts that already have the projection are left unchanged, even if the projection settings were changed with [`MODIFY PROJECTION`](#modify-projection) after they were written; to rebuild them, run [`CLEAR PROJECTION`](#clear-projection) first.
 This is implemented as a [mutation](/reference/statements/alter/index#mutations).
 
 ```sql
@@ -3159,9 +3156,9 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... INDEX"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... STATISTICS",
+    documentation["ALTER TABLE ... STATISTICS"] =
     {
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -3205,9 +3202,9 @@ ALTER TABLE [db].table MATERIALIZE STATISTICS [IF EXISTS] (column list)
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "EXPLAIN"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY COMMENT",
+    documentation["ALTER TABLE ... MODIFY COMMENT"] =
     {
         .description = R"DOCS_MD(
 Adds, modifies, or removes a table comment, regardless of whether it was set
@@ -3293,9 +3290,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 )",
         .parent = "ALTER",
         .related = {"ALTER", "ALTER DATABASE ... MODIFY COMMENT", "CREATE TABLE", "SHOW"},
-    });
+    };
 
-    factory.registerStatement("ALTER DATABASE ... MODIFY COMMENT",
+    documentation["ALTER DATABASE ... MODIFY COMMENT"] =
     {
         .description = R"DOCS_MD(
 Adds, modifies, or removes a database comment, regardless of whether it was set
@@ -3368,9 +3365,9 @@ ALTER DATABASE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 )",
         .parent = "ALTER",
         .related = {"ALTER", "ALTER TABLE ... MODIFY COMMENT", "CREATE DATABASE", "SHOW"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY QUERY",
+    documentation["ALTER TABLE ... MODIFY QUERY"] =
     {
         .description = R"DOCS_MD(
 You can modify `SELECT` query that was specified when a [materialized view](/reference/statements/create/view#materialized-view) was created with the `ALTER TABLE ... MODIFY QUERY` statement without interrupting ingestion process.
@@ -3557,6 +3554,23 @@ SELECT * FROM mv;
 └───┘
 ```
 
+## Required privileges {#required-privileges}
+
+`ALTER TABLE ... MODIFY QUERY` requires the `ALTER VIEW MODIFY QUERY` privilege on the view. The new query runs with the [SQL security](/reference/statements/create/view#sql_security) of the view, so the statement also requires the grants that are necessary to create a view with that SQL security:
+
+- `SQL SECURITY DEFINER` with a definer that is not the current user: `SET DEFINER` on that definer.
+- `SQL SECURITY NONE`: `ALLOW SQL SECURITY NONE`.
+
+When the same statement changes the SQL security with `MODIFY SQL SECURITY`, these grants are required for the new SQL security instead of the old one.
+
+With `ON CLUSTER`, the statement is authorized on the host where it runs, so that host must have the view. Otherwise the statement fails with `UNKNOWN_TABLE`.
+
+```sql
+GRANT ALTER VIEW MODIFY QUERY ON db.mv TO alice;
+-- Only if `db.mv` runs as another user, for example `bob`:
+GRANT SET DEFINER ON bob TO alice;
+```
+
 ## ALTER TABLE ... MODIFY REFRESH Statement {#alter-table--modify-refresh-statement}
 
 `ALTER TABLE ... MODIFY REFRESH` changes refresh parameters of a [Refreshable Materialized View](/reference/statements/create/view#refreshable-materialized-view), including the schedule, dependencies, randomization, and [refresh settings](/reference/statements/create/view#refresh-settings).
@@ -3601,9 +3615,9 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY QUERY SELECT ...
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE VIEW"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... APPLY DELETED MASK",
+    documentation["ALTER TABLE ... APPLY DELETED MASK"] =
     {
         .description = R"DOCS_MD(
 ```sql
@@ -3626,9 +3640,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION part
 )",
         .parent = "ALTER",
         .related = {"ALTER", "DELETE", "ALTER TABLE ... DELETE"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... APPLY PATCHES",
+    documentation["ALTER TABLE ... APPLY PATCHES"] =
     {
         .description = R"DOCS_MD(
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
@@ -3695,7 +3709,9 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partitio
 )",
         .parent = "ALTER",
         .related = {"ALTER", "UPDATE", "ALTER TABLE ... UPDATE"},
-    });
+    };
+
+    return documentation;
 }
 
 }

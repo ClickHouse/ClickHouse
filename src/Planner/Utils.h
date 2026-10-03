@@ -95,6 +95,10 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
 
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context);
 
+/// Names of `table_expression` columns referenced from `node`, with ALIAS columns under their own name:
+/// their expressions are not entered, because a grant on the alias name is sufficient to use it.
+NameSet collectReferencedColumnNames(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression);
+
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
 /// If `column_names` is empty, check access to any columns and return names of accessible columns
