@@ -71,7 +71,7 @@ DEEP="UInt64"
 for _ in $(seq 65); do DEEP="Tuple($DEEP)"; done
 
 # An all-NULL column encodes to zero payload bytes, so nullrows.avro legitimately declares 1000 rows
-# in a few hundred bytes and deflate.avro 200000 in under a kilobyte.
+# in a few hundred bytes and deflate.avro 200000 in under a kilobyte. ok-snappy.avro has three blocks.
 $CLICKHOUSE_LOCAL -q "
     SELECT number AS n, toString(number) AS s FROM numbers($ROWS)
     INTO OUTFILE '$DIR/ok.avro' TRUNCATE FORMAT Avro
@@ -84,7 +84,7 @@ $CLICKHOUSE_LOCAL -q "
     SETTINGS output_format_avro_codec = 'deflate';
     SELECT number AS n, toString(number) AS s FROM numbers($ROWS)
     INTO OUTFILE '$DIR/ok-snappy.avro' TRUNCATE FORMAT Avro
-    SETTINGS output_format_avro_codec = 'snappy';
+    SETTINGS output_format_avro_codec = 'snappy', output_format_avro_sync_interval = 1024;
     SELECT number AS n, toString(number) AS s FROM numbers($ROWS)
     INTO OUTFILE '$DIR/ok-zstd.avro' TRUNCATE FORMAT Avro
     SETTINGS output_format_avro_codec = 'zstd';
@@ -144,11 +144,12 @@ for setting in 1 0; do
         SELECT count() FROM file('$DIR/nullrows-snappy.avro', Avro) $BOUND, optimize_count_from_files = $setting"
 done
 
-echo '--- reading valid input is unchanged, at several block sizes'
+echo '--- valid input reads and counts the same at several block sizes'
 $CLICKHOUSE_LOCAL -q "
     SELECT count(), sum(cityHash64(n, s)) FROM file('$DIR/ok.avro', Avro) $BOUND, max_block_size = 1;
     SELECT count(), sum(cityHash64(n, s)) FROM file('$DIR/ok.avro', Avro) $BOUND, max_block_size = 13;
-    SELECT count(), sum(cityHash64(n, s)) FROM file('$DIR/ok.avro', Avro) $BOUND, max_block_size = 65505"
+    SELECT count(), sum(cityHash64(n, s)) FROM file('$DIR/ok.avro', Avro) $BOUND, max_block_size = 65505;
+    SELECT count() FROM file('$DIR/ok-snappy.avro', Avro) $BOUND, optimize_count_from_files = 1, max_block_size = 7"
 
 echo '--- a declared count the payload cannot hold is rejected at the header, not counted'
 for setting in 1 0; do
