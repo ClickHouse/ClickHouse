@@ -861,8 +861,14 @@ void NetCDFSchemaReader::initialize()
     /// The number of records of a file written in the streaming mode is not in the header and is
     /// derived from the size of the file, exactly as the input format does it, so that the number
     /// of rows of such a file is also answered from the metadata.
+    ///
+    /// Only the size of the source is needed here, not random access, so it does not depend on
+    /// `input_format_allow_seeks`: otherwise the header of a truncated file would be accepted and
+    /// cached here while the input format rejects the same file. The source still has to be one
+    /// that could be seeked, because only then the reported size is the size of the data: a pipe
+    /// reports zero, and a decompressing buffer the size of the compressed data.
     auto * seekable = dynamic_cast<SeekableReadBuffer *>(&in);
-    if (seekable && format_settings.seekable_read && isBufferWithFileSize(in) && seekable->checkIfActuallySeekable())
+    if (seekable && isBufferWithFileSize(in) && seekable->checkIfActuallySeekable())
         file_size = getFileSizeFromReadBuffer(in);
 
     netcdf_header = readNetCDFHeader(in);
