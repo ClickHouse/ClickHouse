@@ -154,3 +154,37 @@ def test_play_auth_headers_preserve_credentials_with_database_path(started_clust
             ].lower()
     finally:
         node.query("DROP USER IF EXISTS '{}'".format(user))
+
+
+def test_play_raw_auth_headers_survive_proxy_authorization_rewrite(started_cluster):
+    user = "play_raw_proxy_user"
+    password = "secret"
+
+    node.query("DROP USER IF EXISTS '{}'".format(user))
+    try:
+        node.query(
+            "CREATE USER '{}' IDENTIFIED WITH sha256_password BY '{}'".format(
+                user, password
+            )
+        )
+
+        response = node.http_request(
+            "default",
+            method="POST",
+            params={
+                "add_http_cors_header": "1",
+                "http_allow_database_as_path": "1",
+                "http_allow_table_as_file": "0",
+            },
+            data="SELECT currentUser()",
+            headers={
+                "Authorization": "Basic Zm9vOmJhcg==",
+                "X-Requested-With": "ClickHouse-Play",
+                "X-ClickHouse-User": user,
+                "X-ClickHouse-Key": password,
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert response.content.decode("utf-8") == user + "\n"
+    finally:
+        node.query("DROP USER IF EXISTS '{}'".format(user))

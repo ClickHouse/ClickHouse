@@ -146,7 +146,10 @@ bool authenticateUserByHTTP(
     static constexpr std::string_view encoded_web_ui_auth_prefix = "ClickHouse-Play-Percent:";
     const bool has_encoded_web_ui_auth
         = user.starts_with(encoded_web_ui_auth_prefix) && password.starts_with(encoded_web_ui_auth_prefix);
-    const bool has_scripted_web_ui_auth = authorization_header == "never" || has_encoded_web_ui_auth;
+    const bool has_scripted_web_ui_auth
+        = authorization_header == "never"
+        || request.get("X-Requested-With", "") == "ClickHouse-Play"
+        || has_encoded_web_ui_auth;
     if (has_encoded_web_ui_auth)
     {
         response.set("X-ClickHouse-Auth-Encoding", "percent");
@@ -176,9 +179,10 @@ bool authenticateUserByHTTP(
     bool has_credentials_in_query_params = params.has("user") || params.has("password");
 
     /// Whether the request carries an `Authorization` header that should be treated as
-    /// credentials. The `never` sentinel used by scripted Web UI requests only suppresses
-    /// browser-provided Basic credentials. Encoded Web UI credentials carry their marker in
-    /// X-ClickHouse-User and X-ClickHouse-Key, independently of `Authorization`.
+    /// credentials. Scripted Web UI requests are marked with the long-standing CORS-allowed
+    /// X-Requested-With header, so a proxy may rewrite Authorization without turning their
+    /// X-ClickHouse credentials into mixed auth. Encoded credentials also carry their marker
+    /// in X-ClickHouse-User and X-ClickHouse-Key as a second proxy-stable signal.
     const bool suppress_browser_basic_auth = has_scripted_web_ui_auth;
     bool has_authorization_header = !suppress_browser_basic_auth && request.hasCredentials();
 
@@ -193,8 +197,8 @@ bool authenticateUserByHTTP(
     /// (`play.html`) download form puts the user name and password into the URL query
     /// parameters, so without this precedence a download request would carry both the remembered
     /// header and the parameters and be rejected. Scripted requests use `Authorization: never`
-    /// to suppress browser-provided Basic credentials; encoded X-ClickHouse headers carry their
-    /// own marker, while a plain navigation cannot set either header.
+    /// plus `X-Requested-With: ClickHouse-Play`; the latter remains self-describing if a proxy
+    /// rewrites Authorization. Encoded X-ClickHouse headers additionally carry their own marker.
     ///
     /// This precedence applies only to the default authentication path. When the handler has
     /// its own configured credentials, an `Authorization` header is still rejected as a mix of

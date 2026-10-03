@@ -505,33 +505,39 @@ async function checkAuthHeaderTransport(js) {
     const cases = [
         ['named-user', 'alice', 'p&?#%', {
             Authorization: 'never',
+            'X-Requested-With': 'ClickHouse-Play',
             'X-ClickHouse-User': 'alice',
             'X-ClickHouse-Key': 'p&?#%',
         }],
         ['utf8-and-spaces', 'play:юзер', '  päss 密码  ', {
             Authorization: 'never',
+            'X-Requested-With': 'ClickHouse-Play',
             'X-ClickHouse-User': encodedAuthPrefix + 'play%3A%D1%8E%D0%B7%D0%B5%D1%80',
             'X-ClickHouse-Key': encodedAuthPrefix + '%20%20p%C3%A4ss%20%E5%AF%86%E7%A0%81%20%20',
         }],
         ['encoded-default-user', '', ' päss ', {
             Authorization: 'never',
+            'X-Requested-With': 'ClickHouse-Play',
             'X-ClickHouse-User': encodedAuthPrefix,
             'X-ClickHouse-Key': encodedAuthPrefix + '%20p%C3%A4ss%20',
         }],
         ['ascii-edge-spaces', 'alice', ' secret ', {
             Authorization: 'never',
+            'X-Requested-With': 'ClickHouse-Play',
             'X-ClickHouse-User': encodedAuthPrefix + 'alice',
             'X-ClickHouse-Key': encodedAuthPrefix + '%20secret%20',
         }],
         ['empty-password', 'alice', '', {
             Authorization: 'never',
+            'X-Requested-With': 'ClickHouse-Play',
             'X-ClickHouse-User': 'alice',
         }],
         ['default-user-modern', '', 'secret', {
             Authorization: 'never',
+            'X-Requested-With': 'ClickHouse-Play',
             'X-ClickHouse-Key': 'secret',
         }],
-        ['default-credentials', '', '', { Authorization: 'never' }],
+        ['default-credentials', '', '', { Authorization: 'never', 'X-Requested-With': 'ClickHouse-Play' }],
     ];
     for (const [name, user, password, expected] of cases) {
         const actual = helpers.getAuthHeaders(user, password);
@@ -548,6 +554,14 @@ async function checkAuthHeaderTransport(js) {
         proxiedEncodedHeaders['X-ClickHouse-User'] === encodedAuthPrefix + 'play%3A%D1%8E%D0%B7%D0%B5%D1%80'
             && proxiedEncodedHeaders['X-ClickHouse-Key'] === encodedAuthPrefix + '%20%20p%C3%A4ss%20%E5%AF%86%E7%A0%81%20%20',
         proxiedEncodedHeaders);
+
+    const proxiedRawHeaders = helpers.getAuthHeaders('alice', 'secret');
+    proxiedRawHeaders.Authorization = 'Basic cHJveHk6YXV0aA==';
+    check('auth-header-cases', 'raw credentials keep a proxy-stable scripted Web UI marker',
+        proxiedRawHeaders['X-Requested-With'] === 'ClickHouse-Play'
+            && proxiedRawHeaders['X-ClickHouse-User'] === 'alice'
+            && proxiedRawHeaders['X-ClickHouse-Key'] === 'secret',
+        proxiedRawHeaders);
 
     check('auth-header-cases', '26.6 predates default_session_user',
         helpers.serverPredatesDefaultSessionUser('26.6.9.1') === true);
@@ -606,6 +620,27 @@ async function checkAuthHeaderTransport(js) {
             && !new URL(modernRawCalls[0].url).searchParams.has('password'),
         { modernRawCalls });
 
+    /// A modern server may intentionally reject omitted users. The matching empty-user text is
+    /// not enough to unlock URL credentials: the same response must prove a pre-26.7 version.
+    const modernEmptyUserCalls = [];
+    const modernEmptyUserHelpers = makeAuthHelpers(async (url, options) => {
+        modernEmptyUserCalls.push({ url, body: options.body, headers: options.headers });
+        return authResponse(403, {
+            code: '516',
+            body: 'Code: 516. DB::Exception: Got an empty user name from X-ClickHouse HTTP headers. (AUTHENTICATION_FAILED) (version 26.10.1.1 (official build))',
+        });
+    });
+    const modernEmptyUserResponse = await modernEmptyUserHelpers.fetchWithRequestAuth(
+        'https://remote.example/query?query_kind=main',
+        { method: 'POST', body: 'SELECT currentUser()' },
+        'https://remote.example/query', '', 'secret');
+    check('auth-header-cases', 'modern empty-user rejection never probes or retries with password in URL',
+        !modernEmptyUserResponse.ok
+            && modernEmptyUserCalls.length === 1
+            && modernEmptyUserCalls[0].headers['X-Requested-With'] === 'ClickHouse-Play'
+            && !new URL(modernEmptyUserCalls[0].url).searchParams.has('password'),
+        { modernEmptyUserCalls });
+
     /// A pre-26.7 server rejects X-ClickHouse-Key without a user before authentication. That
     /// exact rejection can use the historical password-only URL path to prove the old version,
     /// then retry the real request. No hidden request authenticates as literal "default".
@@ -616,7 +651,7 @@ async function checkAuthHeaderTransport(js) {
         if (!parsed.searchParams.has('password')) {
             return authResponse(403, {
                 code: '516',
-                body: 'Code: 516. DB::Exception: Got an empty user name from X-ClickHouse HTTP headers',
+                body: 'Code: 516. DB::Exception: Got an empty user name from X-ClickHouse HTTP headers. (AUTHENTICATION_FAILED) (version 26.6.9.1 (official build))',
             });
         }
         if (options.body === 'SELECT version() AS v, uptime() AS t')
@@ -629,7 +664,7 @@ async function checkAuthHeaderTransport(js) {
         'https://remote.example/query', '', 'secret');
     check('auth-header-cases', 'legacy password-only retry uses only the historical URL transport',
         legacyRawResponse.ok
-            && legacyRawCalls.length === 3
+            && legacyRawCalls.length === 2
             && !new URL(legacyRawCalls[0].url).searchParams.has('password')
             && legacyRawCalls.slice(1).every(call =>
                 call.headers.Authorization === 'never'
@@ -689,7 +724,7 @@ async function checkAuthHeaderTransport(js) {
         if (!parsed.searchParams.has('password')) {
             return authResponse(403, {
                 code: '516',
-                body: 'Code: 516. DB::Exception: Got an empty user name from X-ClickHouse HTTP headers',
+                body: 'Code: 516. DB::Exception: Got an empty user name from X-ClickHouse HTTP headers. (AUTHENTICATION_FAILED) (version 26.6.9.1 (official build))',
             });
         }
         if (options.body === 'SELECT version() AS v, uptime() AS t')

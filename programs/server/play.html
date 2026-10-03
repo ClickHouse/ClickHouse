@@ -8301,7 +8301,7 @@ const encodedWebUIAuthPrefix = 'ClickHouse-Play-Percent:';
 
 function getAuthHeaders(user, password) {
     const send_raw = canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
-    const headers = { 'Authorization': 'never' };
+    const headers = { 'Authorization': 'never', 'X-Requested-With': 'ClickHouse-Play' };
 
     if (send_raw) {
         if (user)
@@ -8327,13 +8327,17 @@ function getLegacyAuthQueryParams(user, password) {
     return params;
 }
 
-async function responseRejectsLegacyPasswordOnlyAuth(response) {
+async function responseProvesLegacyPasswordOnlyAuth(response) {
     if (response.headers.get('X-ClickHouse-Exception-Code') !== '516')
         return false;
 
     try {
         const body = await response.clone().text();
-        return body.includes("Got an empty user name from X-ClickHouse HTTP headers");
+        if (!body.includes('DB::Exception')
+            || !body.includes("Got an empty user name from X-ClickHouse HTTP headers"))
+            return false;
+        const version_match = body.match(/\bversion\s+(\d+\.\d+(?:\.\d+){0,2})\b/i);
+        return version_match !== null && serverPredatesDefaultSessionUser(version_match[1]);
     } catch (e) {
         return false;
     }
@@ -8370,39 +8374,16 @@ async function responseProvesLegacyEncodedWebUIAuth(response) {
     }
 }
 
-async function probeLegacyPasswordOnlyAuth(server_address, password) {
-    let url = server_address +
-        (server_address.indexOf('?') >= 0 ? '&' : '?') +
-        'add_http_cors_header=1&framing_output_format=None&default_format=JSONEachRow' +
-        getLegacyAuthQueryParams('', password);
-    try {
-        const response = await fetch(url, {
-            method: "POST",
-            body: "SELECT version() AS v, uptime() AS t",
-            headers: { 'Authorization': 'never' },
-        });
-        if (!response.ok)
-            return false;
-
-        const status = await response.json();
-        return serverPredatesDefaultSessionUser(status.v);
-    } catch (e) {
-        return false;
-    }
-}
-
-async function fetchWithRequestAuth(url, options, server_address, user, password) {
+async function fetchWithRequestAuth(url, options, _server_address, user, password) {
     const send_raw = canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
     let response = await fetch(url, { ...options, headers: getAuthHeaders(user, password) });
 
     if (send_raw) {
         /// Before 26.7 a password-only request implicitly meant user "default". Preserve that
-        /// compatibility only when the server returns the old empty-user rejection. Confirm the
-        /// old version through the historical URL transport instead of silently authenticating a
-        /// second request as literal "default", which could consume another user's auth quota.
+        /// compatibility only when the original ClickHouse error itself proves a pre-26.7 server;
+        /// never send a credential-bearing probe just to discover the server version.
         if (!user && password
-            && await responseRejectsLegacyPasswordOnlyAuth(response)
-            && await probeLegacyPasswordOnlyAuth(server_address, password)) {
+            && await responseProvesLegacyPasswordOnlyAuth(response)) {
             response = await fetch(
                 url + getLegacyAuthQueryParams(user, password),
                 { ...options, headers: { 'Authorization': 'never' } });
@@ -8450,7 +8431,7 @@ async function probeServerStatus(server_address, user, password) {
 
         /// Before 26.7 X-ClickHouse-Key without a user was rejected before authentication.
         /// Only that exact old-server rejection may use the historical password-only URL path.
-        if (user || !password || !await responseRejectsLegacyPasswordOnlyAuth(response))
+        if (user || !password || !await responseProvesLegacyPasswordOnlyAuth(response))
             return false;
 
         response = await request(
