@@ -40,6 +40,14 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+/// Point-in-polygon tests overflow Float64 for larger coordinates and return wrong results.
+inline constexpr Float64 max_abs_polygon_coordinate = 1e100;
+
+[[noreturn]] inline void throwPolygonCoordinateIsTooLarge()
+{
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: a coordinate exceeds {} in absolute value", max_abs_polygon_coordinate);
+}
+
 namespace bgi = boost::geometry::index;
 
 template <typename Polygon>
@@ -381,6 +389,14 @@ template <typename CoordinateType>
 void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
         PointInPolygonWithGrid<CoordinateType>::Box & box)
 {
+    auto is_too_large = [](const Point & point)
+    {
+        return std::abs(point.x()) > max_abs_polygon_coordinate || std::abs(point.y()) > max_abs_polygon_coordinate;
+    };
+    if (std::ranges::any_of(polygon.outer(), is_too_large)
+        || std::ranges::any_of(polygon.inners(), [&](const auto & ring) { return std::ranges::any_of(ring, is_too_large); }))
+        throwPolygonCoordinateIsTooLarge();
+
     boost::geometry::envelope(polygon, box);
 
     const Point & min_corner = box.min_corner();
@@ -400,17 +416,6 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
     /// 1 / +-inf is +-0.0, which is finite: the scales below would pass their own check.
     if (!isFinite(cell_width) || !isFinite(cell_height))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: bounding box is unbounded");
-
-    /// boost::geometry multiplies pairs of coordinates while clipping the polygon to the cells; near
-    /// sqrt(max Float64) ~ 1.3e154 those products overflow and whole cells get misclassified.
-    static constexpr Float64 max_abs_coordinate = 1e150;
-    auto is_too_large = [](const Point & point)
-    {
-        return std::abs(point.x()) > max_abs_coordinate || std::abs(point.y()) > max_abs_coordinate;
-    };
-    if (std::ranges::any_of(polygon.outer(), is_too_large)
-        || std::ranges::any_of(polygon.inners(), [&](const auto & ring) { return std::ranges::any_of(ring, is_too_large); }))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: a coordinate exceeds {} in absolute value", max_abs_coordinate);
 
     x_scale = 1 / cell_width;
     y_scale = 1 / cell_height;

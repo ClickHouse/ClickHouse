@@ -575,6 +575,12 @@ private:
         if (size < 2)
             return false;
 
+        Float64 max_abs_coordinate = 0;
+        for (size_t i = ring_begin; i < ring_end; ++i)
+            max_abs_coordinate = std::max({max_abs_coordinate, std::abs(ring_x_data[i]), std::abs(ring_y_data[i])});
+        if (max_abs_coordinate > max_abs_polygon_coordinate)
+            throwPolygonCoordinateIsTooLarge();
+
         /** This is the algorithm by W. Randolph Franklin
           * https://wrf.ecse.rpi.edu//Research/Short_Notes/pnpoly.html
           *
