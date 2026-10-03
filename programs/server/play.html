@@ -8297,17 +8297,12 @@ function canSendRawAuthHeader(value) {
     }
 }
 
-function getAuthHeaders(user, password, force_legacy_default_user = false) {
+function getAuthHeaders(user, password) {
     const send_raw = canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
     const headers = { 'Authorization': send_raw ? 'never' : 'ClickHouse-Play' };
 
-    /// Before 26.7, a password with an omitted user worked only through the query-parameter
-    /// transport; X-ClickHouse-Key by itself was rejected. A compatibility probe can request the
-    /// historical implicit user explicitly without putting either credential back into the URL.
-    const use_legacy_default_user = force_legacy_default_user && !user && password && send_raw;
-    const header_user = use_legacy_default_user ? 'default' : user;
-    if (header_user)
-        headers['X-ClickHouse-User'] = send_raw ? header_user : encodeURIComponent(header_user);
+    if (user)
+        headers['X-ClickHouse-User'] = send_raw ? user : encodeURIComponent(user);
     if (password)
         headers['X-ClickHouse-Key'] = send_raw ? password : encodeURIComponent(password);
     return headers;
@@ -8328,9 +8323,16 @@ function responseLooksLikeClickHouse(response) {
         || (exception_code !== null && /^\d+$/.test(exception_code));
 }
 
-function responseIsClickHouseAuthFailure(response) {
-    const code = response.headers.get('X-ClickHouse-Exception-Code');
-    return code === '192' || code === '193' || code === '194' || code === '516';
+async function responseRejectsLegacyPasswordOnlyAuth(response) {
+    if (response.headers.get('X-ClickHouse-Exception-Code') !== '516')
+        return false;
+
+    try {
+        const body = await response.clone().text();
+        return body.includes("Got an empty user name from X-ClickHouse HTTP headers");
+    } catch (e) {
+        return false;
+    }
 }
 
 async function responseRejectsEncodedWebUIAuth(response, url) {
@@ -8370,15 +8372,16 @@ function serverPredatesDefaultSessionUser(version) {
         && (major < 26 || (major === 26 && minor < 7));
 }
 
-async function probeLegacyDefaultUser(server_address, password) {
+async function probeLegacyPasswordOnlyAuth(server_address, password) {
     let url = server_address +
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
-        'add_http_cors_header=1&framing_output_format=None&default_format=JSONEachRow';
+        'add_http_cors_header=1&framing_output_format=None&default_format=JSONEachRow' +
+        getLegacyAuthQueryParams('', password);
     try {
         const response = await fetch(url, {
             method: "POST",
             body: "SELECT version() AS v, uptime() AS t",
-            headers: getAuthHeaders('', password, true),
+            headers: { 'Authorization': 'never' },
         });
         if (!response.ok)
             return false;
@@ -8395,17 +8398,16 @@ async function fetchWithRequestAuth(url, options, server_address, user, password
     let response = await fetch(url, { ...options, headers: getAuthHeaders(user, password) });
 
     if (send_raw) {
-        /// Before 26.7 a password-only request implicitly meant user "default". Keep that
-        /// compatibility off the normal path: only a ClickHouse authentication failure may
-        /// trigger a harmless explicit-default version probe, and only a confirmed pre-26.7
-        /// endpoint may retry the user's request as "default". Nothing is cached, so a rolling
-        /// upgrade uses default_session_user semantics on the very next successful request.
+        /// Before 26.7 a password-only request implicitly meant user "default". Preserve that
+        /// compatibility only when the server returns the old empty-user rejection. Confirm the
+        /// old version through the historical URL transport instead of silently authenticating a
+        /// second request as literal "default", which could consume another user's auth quota.
         if (!user && password
-            && responseIsClickHouseAuthFailure(response)
-            && await probeLegacyDefaultUser(server_address, password)) {
+            && await responseRejectsLegacyPasswordOnlyAuth(response)
+            && await probeLegacyPasswordOnlyAuth(server_address, password)) {
             response = await fetch(
-                url,
-                { ...options, headers: getAuthHeaders(user, password, true) });
+                url + getLegacyAuthQueryParams(user, password),
+                { ...options, headers: { 'Authorization': 'never' } });
         }
         return response;
     }
@@ -8452,12 +8454,14 @@ async function probeServerStatus(server_address, user, password) {
             return { status: await response.json(), use_legacy_default_user: false };
         }
 
-        /// The status badge still supports pre-26.7 password-only connections, but this result is
-        /// not reused by real queries. Real queries do their own retry only after an auth failure.
-        if (user || !password)
+        /// Before 26.7 X-ClickHouse-Key without a user was rejected before authentication.
+        /// Only that exact old-server rejection may use the historical password-only URL path.
+        if (user || !password || !await responseRejectsLegacyPasswordOnlyAuth(response))
             return false;
 
-        response = await request(url, getAuthHeaders(user, password, true));
+        response = await request(
+            url + getLegacyAuthQueryParams(user, password),
+            { 'Authorization': 'never' });
         if (!response.ok)
             return false;
 
@@ -8472,7 +8476,7 @@ async function probeServerStatus(server_address, user, password) {
 }
 
 /// Share only in-flight status probes. Settled compatibility results are deliberately not cached:
-/// real requests must never stay pinned to an explicit "default" user after a backend upgrade.
+/// real requests must never stay pinned to the legacy URL transport after a backend upgrade.
 const authProbeRequests = new Map();
 
 function getAuthProbeKey(server_address, user, password) {
