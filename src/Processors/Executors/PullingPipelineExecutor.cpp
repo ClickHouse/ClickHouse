@@ -1,5 +1,5 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/createExecutor.h>
 #include <Processors/Formats/PullingOutputFormat.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
@@ -50,7 +50,7 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
 {
     if (!executor)
     {
-        executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+        executor = createExecutor(pipeline.processors, pipeline.process_list_element);
         executor->setReadProgressCallback(pipeline.getReadProgressCallback());
         executor->setStepProfiler(pipeline.getStepProfiler());
     }
@@ -61,7 +61,7 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
         return false;
     }
 
-    if (!executor->executeStep(&has_data_flag))
+    if (!executor->executeUntil(&has_data_flag))
         return false;
 
     chunk = pulling_format->getChunk();
