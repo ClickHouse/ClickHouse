@@ -14,11 +14,7 @@ set(SRCS
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asinf.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/atan.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/atan2.cpp"
-    # cbrt deliberately omitted: with clang 23 llvm-libc's cbrt returns its result in the
-    # register that the next call's `bzhi` count is materialised into with a byte-sized
-    # `mov`, so every call waits for the previous one through a partial-register merge and
-    # the function measures 2.9x slower than with clang 22 (13 ns vs 4.7 ns per call on
-    # Sapphire Rapids). The libc cbrt (musl, or glibc in dynamic builds) takes 6 ns.
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/cbrt.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/ceill.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/copysignl.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/cos.cpp"
@@ -87,6 +83,14 @@ if (ARCH_AMD64)
     # Without -fno-builtin, clang's loop-idiom pass rewrites the mem* inner loops
     # into calls to the very functions being defined (infinite recursion).
     target_compile_options(libllvmlibc PRIVATE -ffreestanding -fno-builtin)
+
+    # With clang 23 cbrt's fast path is 91 straight-line instructions whose two `bzhi` counts are
+    # materialised with byte-sized moves (`mov dl, 0x3f`) into the register that holds the
+    # previous call's result, so in a loop every call waits for the previous one through a
+    # partial-register merge: 13 ns per call against 4.7 ns with clang 22 on Sapphire Rapids, and
+    # 13.1 ns against 5.9 ns for glibc's generic C cbrt on Zen 5. Without BMI2 the masks become
+    # shifts and the hazard is gone: 3.2 ns per call on Zen 5, identical results.
+    set_source_files_properties("${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/cbrt.cpp" PROPERTIES COMPILE_OPTIONS "-mno-bmi2")
 
     if (X86_ARCH_LEVEL VERSION_LESS 3)
         # Compat build: SSE2 baseline

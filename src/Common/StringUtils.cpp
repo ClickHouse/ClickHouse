@@ -1,37 +1,83 @@
 #include <Common/StringUtils.h>
 
 #include <Common/TargetSpecific.h>
+#include <base/defines.h>
+
+#include <cstring>
 
 namespace
 {
 /// Below this size the head scan costs more than the cache line splits it avoids.
 constexpr size_t ALIGN_THRESHOLD = 64 * 1024;
 
-/// Deliberately plain: at x86-64-v3/v4 the compiler vectorizes this reduction,
-/// while the same implementation also produces a good loop on other platforms.
+/// OR of all bytes in `[data, data + size)` with explicit vector accumulators. The plain byte loop is not an option
+/// since clang 23: it promotes the accumulator to 32-bit lanes (llvm/llvm-project#222142), so x86-64-v4 gets four
+/// `vpmovzxbd` plus `vpord` per 64 bytes instead of one `vporq`, and aarch64 a `tbl` shuffle per load. The compiler
+/// splits the 64-byte vectors to the register width of the target: two `ymm` at x86-64-v3, four `q` registers on NEON.
+using Bytes = UInt8 __attribute__((vector_size(64)));
+
+ALWAYS_INLINE UInt8 orBytes(const UInt8 * data, size_t size)
+{
+    Bytes acc0{};
+    Bytes acc1{};
+    Bytes acc2{};
+    Bytes acc3{};
+    size_t i = 0;
+    for (; i + 4 * sizeof(Bytes) <= size; i += 4 * sizeof(Bytes))
+    {
+        Bytes v0;
+        Bytes v1;
+        Bytes v2;
+        Bytes v3;
+        memcpy(&v0, data + i, sizeof(Bytes));
+        memcpy(&v1, data + i + sizeof(Bytes), sizeof(Bytes));
+        memcpy(&v2, data + i + 2 * sizeof(Bytes), sizeof(Bytes));
+        memcpy(&v3, data + i + 3 * sizeof(Bytes), sizeof(Bytes));
+        acc0 |= v0;
+        acc1 |= v1;
+        acc2 |= v2;
+        acc3 |= v3;
+    }
+    acc0 |= acc1;
+    acc2 |= acc3;
+    acc0 |= acc2;
+    for (; i + sizeof(Bytes) <= size; i += sizeof(Bytes))
+    {
+        Bytes v;
+        memcpy(&v, data + i, sizeof(Bytes));
+        acc0 |= v;
+    }
+
+    UInt64 words[sizeof(Bytes) / sizeof(UInt64)];
+    memcpy(words, &acc0, sizeof(Bytes));
+    UInt64 word = 0;
+    for (UInt64 w : words)
+        word |= w;
+    word |= word >> 32;
+    word |= word >> 16;
+    word |= word >> 8;
+
+    UInt8 mask = static_cast<UInt8>(word);
+    for (; i < size; ++i)
+        mask |= data[i];
+    return mask;
+}
+
 MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(static bool NO_INLINE),
     isAllASCIIImpl,
     MULTITARGET_FUNCTION_BODY((const UInt8 * data, size_t size) /// NOLINT
     {
-        UInt8 mask = 0;
-
         if (size < ALIGN_THRESHOLD)
-        {
-            for (size_t i = 0; i < size; ++i)
-                mask |= data[i];
-            return !(mask & 0x80);
-        }
+            return !(orBytes(data, size) & 0x80);
 
         /// One overlapping scan of the first 64 bytes, so that the bulk loop starts on a 64-byte
         /// boundary and no wide load splits a cache line. Misaligned 512-bit loads run at half rate.
-        for (size_t i = 0; i < 64; ++i)
-            mask |= data[i];
+        UInt8 mask = orBytes(data, 64);
 
         const size_t start = 64 - (reinterpret_cast<uintptr_t>(data) & 63);
         const UInt8 * aligned = static_cast<const UInt8 *>(__builtin_assume_aligned(data + start, 64));
-        for (size_t i = 0, rest = size - start; i < rest; ++i)
-            mask |= aligned[i];
+        mask |= orBytes(aligned, size - start);
 
         return !(mask & 0x80);
     }))
