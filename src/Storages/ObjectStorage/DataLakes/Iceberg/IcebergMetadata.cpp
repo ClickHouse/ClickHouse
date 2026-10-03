@@ -538,12 +538,18 @@ bool IcebergMetadata::optimize(
 
     if (settings[Setting::allow_experimental_iceberg_compaction])
     {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "OPTIMIZE TABLE is not yet supported for Iceberg data compaction: the rewritten generation is not published "
-            "atomically (no version increment, no version hint and no catalog commit), so which generation a reader "
-            "resolves is undefined, while the previous generation's files are deleted even though retained snapshots "
-            "still reference them");
+        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+        auto snapshots_info = getHistory(context);
+        compactIcebergTable(
+            snapshots_info,
+            persistent_components,
+            object_storage,
+            getMetadataLookupSettings(),
+            format_settings,
+            sample_block,
+            context,
+            write_format);
+        return true;
     }
     else
     {
@@ -1222,7 +1228,7 @@ IcebergFileRecord buildIcebergFileRecord(
     record.file_format = parsed.file_format;
     record.record_count = parsed.record_count;
     record.file_size_in_bytes = parsed.file_size_in_bytes;
-    record.partition = formatPartitionKeyValue(parsed.partition_key_value);
+    record.partition = formatPartitionKeyValue(processed->normalized_partition_key_value);
     record.schema_id = processed->resolved_schema_id;
     record.sequence_number = processed->sequence_number;
     record.sort_order_id = parsed.sort_order_id;
