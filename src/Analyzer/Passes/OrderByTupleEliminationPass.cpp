@@ -21,10 +21,10 @@ public:
         if (!query_node || !query_node->hasOrderBy())
             return;
 
-        /// CUBE and ROLLUP may intentionally keep tuple(...) as one logical grouping key. In that
-        /// case only the tuple column is available after aggregation, so rewriting ORDER BY
+        /// CUBE, ROLLUP, and GROUPING SETS may intentionally keep tuple(...) as one logical grouping key.
+        /// In that case only the tuple column is available after aggregation, so rewriting ORDER BY
         /// tuple(a, b) into ORDER BY a, b would reference columns missing from the aggregated block.
-        if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup())
+        if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
             return;
 
         QueryTreeNodes result_nodes;

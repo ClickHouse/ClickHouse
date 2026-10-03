@@ -53,6 +53,19 @@ FROM
     GROUP BY tuple(a, b) WITH ROLLUP
 );
 
+
+SELECT 'tuple function with GROUPING SETS', count()
+FROM
+(
+    SELECT GROUPING(tuple(a, b)), count()
+    FROM
+    (
+        SELECT number AS a, toString(number) AS b
+        FROM numbers(3)
+    )
+    GROUP BY GROUPING SETS ((tuple(a, b)), ())
+);
+
 SELECT 'tuple key with scalar and CUBE', count()
 FROM
 (
@@ -142,4 +155,15 @@ FROM
 )
 GROUP BY ALL WITH ROLLUP
 ORDER BY ALL
+FORMAT Null;
+
+-- Explicit GROUPING SETS preserves tuple keys too. ORDER BY must not unwrap the tuple after aggregation.
+SELECT tuple(a, b), count()
+FROM
+(
+    SELECT number AS a, toString(number) AS b
+    FROM numbers(3)
+)
+GROUP BY GROUPING SETS ((tuple(a, b)), ())
+ORDER BY tuple(a, b)
 FORMAT Null;
