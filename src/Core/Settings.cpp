@@ -6076,6 +6076,10 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 )", 0, \
         {"26.7", "decimal,datetime64,date2Date32", "decimal,datetime64,date2Date32,geometry", "Map MySQL's concrete spatial types (LINESTRING, POLYGON, MULTILINESTRING, MULTIPOLYGON, MULTIPOINT) and the generic GEOMETRY type to the corresponding ClickHouse geometric types by default. The generic GEOMETRY column maps to the umbrella Geometry type; reading a value whose subtype has no ClickHouse counterpart (GEOMETRYCOLLECTION) throws at read time."}, \
         {"26.3", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."}) \
+    DECLARE(Bool, ytsaurus_check_table_schema, true, R"(
+Enable schema compatibility checks for ytsaurus table function.
+)", 0, \
+        {"26.10", false, true, "New setting."}) \
     DECLARE(Bool, optimize_trivial_insert_select, false, R"(
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
 
