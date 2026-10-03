@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Get started",
+      "group": "Primeros pasos",
       "pages": [
         "es/products/agentic-data-stack/overview",
         "es/products/agentic-data-stack/docker-setup"
       ]
     },
     {
-      "group": "Components",
+      "group": "Componentes",
       "pages": [
         "es/products/agentic-data-stack/components/librechat",
         "es/products/agentic-data-stack/components/mcp-server",

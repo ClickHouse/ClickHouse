@@ -8,8 +8,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Poco/String.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -326,6 +324,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP SCHEMA CACHE", Type::CLEAR_SCHEMA_CACHE},
             {"DROP FORMAT SCHEMA CACHE", Type::CLEAR_FORMAT_SCHEMA_CACHE},
             {"DROP AVRO SCHEMA CACHE", Type::CLEAR_AVRO_SCHEMA_CACHE},
+            {"DROP TIME SERIES CACHES", Type::CLEAR_TIME_SERIES_CACHES},
             {"DROP S3 CLIENT CACHE", Type::CLEAR_S3_CLIENT_CACHE},
         };
 
@@ -459,6 +458,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::WAIT_QUERY_RUNNER:
         case Type::PREWARM_MARK_CACHE:
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
+        case Type::CLEAR_TIME_SERIES_CACHES:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
@@ -1128,14 +1128,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserSystemQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementSystem(StatementFactory & factory)
-{
-    factory.registerStatement("SYSTEM",
+    documentation["SYSTEM"] =
     {
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -1308,6 +1305,14 @@ Clears the metadata cache of the specified disk.
 
 ```sql
 SYSTEM DROP DISK METADATA CACHE <disk_name>
+```
+
+## SYSTEM CLEAR|DROP TIME SERIES CACHES {#drop-time-series-caches}
+
+Clears the caches of a `TimeSeries` table which let inserts skip the rows already present in its target tables. There are two such caches: the deduplication cache of the metric families table and the deduplication cache of the tags table (used only when `store_min_time_and_max_time` is disabled), see the `metric_families_deduplication_cache_expiration_seconds` and `tags_deduplication_cache_expiration_seconds` settings of the table. The caches are local to the server and they don't notice changes made to the target tables directly. Such a difference disappears by itself when the entries expire; use the statement to make the next insert write all its rows without waiting (for example, after truncating the metric families table). `TRUNCATE TABLE` of a `TimeSeries` table clears the caches of the executing server only, so if the target tables are replicated, run the statement `ON CLUSTER` afterwards to clear the caches of the other replicas.
+
+```sql
+SYSTEM DROP TIME SERIES CACHES [ON CLUSTER cluster_name] [db.]table
 ```
 
 ## SYSTEM SYNC FILESYSTEM CACHE {#sync-filesystem-cache}
@@ -1967,6 +1972,8 @@ SYSTEM PAUSE VIEWS
 
 Trigger an immediate out-of-schedule refresh of a given view.
 
+If the view is in a Replicated or Shared database, the request is shared with all replicas: the refresh may run on another replica, e.g. if refreshing is stopped on the current one.
+
 ```sql
 SYSTEM REFRESH VIEW [db.]name
 ```
@@ -1977,7 +1984,7 @@ Waits for the running refresh to complete. If no refresh is running, returns imm
 
 Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
 
-If the view is in a Replicated or Shared database, and refresh is running on another replica, waits for that refresh to complete.
+If the view is in a Replicated or Shared database, also waits for a refresh that is running or requested on another replica.
 
 ```sql
 SYSTEM WAIT VIEW [db.]name
@@ -2048,7 +2055,7 @@ SYSTEM CANCEL ALL BACKGROUND
 
 ### SYSTEM REFRESH {#refresh-background}
 
-Run one extra cycle out of schedule. On a streaming table it runs immediately and once, even while the table is stopped or paused. On a refreshable materialized view it behaves like `SYSTEM REFRESH VIEW`: if the view is stopped, the refresh is remembered and runs once `SYSTEM START` releases it.
+Run one extra cycle out of schedule. On a streaming table it runs immediately and once, even while the table is stopped or paused. On a refreshable materialized view it behaves like `SYSTEM REFRESH VIEW`: if the view is stopped, the refresh is remembered and runs once `SYSTEM START` releases it or another replica takes it over.
 
 ```sql
 SYSTEM REFRESH [db.]table
@@ -2110,7 +2117,9 @@ SYSTEM DISABLE ALL FAILPOINTS
 SYSTEM WAIT FAILPOINT name [PAUSE|RESUME] | NOTIFY FAILPOINT name
 )",
         .related = {"KILL", "OPTIMIZE", "ALTER", "SHOW", "ON CLUSTER"},
-    });
+    };
+
+    return documentation;
 }
 
 }
