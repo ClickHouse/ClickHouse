@@ -1090,6 +1090,12 @@ Chunk StorageObjectStorageSource::generate()
 
 void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
 {
+    /// The cache key does not include the compression method. Under an explicit `compression_method` the
+    /// same object can decode differently (or fail) through another definition with a different codec,
+    /// so only row counts read with the codec derived from the path are cached.
+    if (!isCompressionMethodHintAuto(configuration->compression_method))
+        return;
+
     const auto cache_key = getKeyForSchemaCache(
         getUniqueStoragePathIdentifier(*configuration, object_info),
         object_info.getFileFormat().value_or(configuration->format),
@@ -1221,6 +1227,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     auto try_get_num_rows_from_cache = [&]() -> std::optional<size_t>
     {
         if (!schema_cache)
+            return std::nullopt;
+
+        /// The cached row count is keyed without the compression method, and answering from it never opens
+        /// the object. It is only valid when the codec follows from the path (see `addNumRowsToCache`), so an
+        /// explicit `compression_method` (including a misspelled one on a table loaded by `ATTACH`, where it is
+        /// not rejected) always reads the object as the actual read would.
+        if (!isCompressionMethodHintAuto(configuration->compression_method))
             return std::nullopt;
 
         const auto cache_key = getKeyForSchemaCache(
