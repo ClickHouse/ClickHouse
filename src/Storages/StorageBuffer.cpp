@@ -57,7 +57,6 @@
 #include <Common/typeid_cast.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
-#include <base/arithmeticOverflow.h>
 
 
 namespace ProfileEvents
@@ -968,9 +967,12 @@ private:
         appendBlock(storage.log, sorted_block, buffer.data);
 
         storage.total_writes.rows += (buffer.data.rows() - old_rows);
-        /// The allocation can shrink after sorting, so the delta wraps; the atomic add then
-        /// carries it into the running total, which is correct modulo 2^64.
-        storage.total_writes.bytes += common::subIgnoreOverflow(buffer.data.allocatedBytes(), old_bytes);
+        /// The allocation can shrink after sorting.
+        size_t new_bytes = buffer.data.allocatedBytes();
+        if (new_bytes >= old_bytes)
+            storage.total_writes.bytes += new_bytes - old_bytes;
+        else
+            storage.total_writes.bytes -= old_bytes - new_bytes;
     }
 };
 
