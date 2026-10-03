@@ -28,14 +28,14 @@ node1 = cluster.add_instance(
     user_configs=["configs/users.d/positional.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    macros={"replica": "node1"},
+    macros={"shard": "shard1", "replica": "node1"},
 )
 node2 = cluster.add_instance(
     "node2",
     user_configs=["configs/users.d/positional.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    macros={"replica": "node2"},
+    macros={"shard": "shard1", "replica": "node2"},
 )
 
 
@@ -331,3 +331,89 @@ def test_replay_preserves_canonical_codec_body_of_unavailable_projection(started
 
     assert node2.query(projection_count).strip() == "1"
     assert "index_granularity = 128" in node2.query("SHOW CREATE TABLE r_codec_settings.t")
+
+
+def test_attach_as_replicated_rechecks_projection_column_gate(started_cluster):
+    database = "attach_projection_gate"
+    table = f"{database}.t"
+    node1.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+    node1.query(f"CREATE DATABASE {database} ENGINE = Atomic")
+    node1.query(
+        f"CREATE TABLE {table} (x UInt64, "
+        "PROJECTION p (x CODEC(ZSTD)) AS (SELECT x ORDER BY x)) "
+        "ENGINE = MergeTree ORDER BY x"
+    )
+    node1.query(f"DETACH TABLE {table}")
+
+    # Loading locally accepted metadata must still work with the compatibility gate off.
+    node1.query(
+        f"ATTACH TABLE {table}",
+        settings={"allow_projection_column_list_in_replicated_metadata": 0},
+    )
+    node1.query(f"DETACH TABLE {table}")
+
+    # Converting that local definition publishes it into replicated table metadata.
+    error = node1.query_and_get_error(
+        f"ATTACH TABLE {table} AS REPLICATED",
+        settings={"allow_projection_column_list_in_replicated_metadata": 0},
+    )
+    assert "allow_projection_column_list_in_replicated_metadata" in error
+    assert node1.query(
+        "SELECT count() FROM system.tables "
+        f"WHERE database = '{database}' AND name = 't'"
+    ).strip() == "0"
+
+    node1.query(
+        f"ATTACH TABLE {table} AS REPLICATED",
+        settings={"allow_projection_column_list_in_replicated_metadata": 1},
+    )
+    assert node1.query(
+        "SELECT engine FROM system.tables "
+        f"WHERE database = '{database}' AND name = 't'"
+    ).strip() == "ReplicatedMergeTree"
+    assert node1.query(
+        "SELECT count() FROM system.projections "
+        f"WHERE database = '{database}' AND table = 't'"
+    ).strip() == "1"
+    node1.query(f"DROP DATABASE {database} SYNC")
+
+
+def test_replicated_database_short_attach_rechecks_projection_column_gate(started_cluster):
+    database = "r_attach_projection_gate"
+    table = f"{database}.t"
+    for replica in (node1, node2):
+        replica.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+        replica.query(
+            f"CREATE DATABASE {database} ENGINE = Replicated("
+            "'/test/projection_short_attach_gate', 'shard1', '{replica}')"
+        )
+
+    node1.query(
+        f"CREATE TABLE {table} (x UInt64, "
+        "PROJECTION p (x CODEC(ZSTD)) AS (SELECT x ORDER BY x)) "
+        "ENGINE = MergeTree ORDER BY x",
+        settings={"allow_projection_column_list_in_replicated_metadata": 1},
+    )
+    table_count = (
+        "SELECT count() FROM system.tables "
+        f"WHERE database = '{database}' AND name = 't'"
+    )
+    assert_eq_with_retry(node2, table_count, "1")
+    node1.query(f"DETACH TABLE {table} PERMANENTLY")
+    assert_eq_with_retry(node1, table_count, "0")
+    assert_eq_with_retry(node2, table_count, "0")
+
+    error = node1.query_and_get_error(
+        f"ATTACH TABLE {table}",
+        settings={"allow_projection_column_list_in_replicated_metadata": 0},
+    )
+    assert "allow_projection_column_list_in_replicated_metadata" in error
+    assert node1.query(table_count).strip() == "0"
+
+    node1.query(
+        f"ATTACH TABLE {table}",
+        settings={"allow_projection_column_list_in_replicated_metadata": 1},
+    )
+    assert_eq_with_retry(node2, table_count, "1")
+    for replica in (node1, node2):
+        replica.query(f"DROP DATABASE {database} SYNC")

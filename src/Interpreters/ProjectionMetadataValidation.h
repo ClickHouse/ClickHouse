@@ -24,6 +24,16 @@ enum class ProjectionDefinitionSource : uint8_t
     PreviouslyAccepted,
 };
 
+/// A stored definition can be loaded locally without re-admission, but publishing it to a
+/// replicated catalog needs the compatibility gate again. Conversion changes the destination
+/// engine after the safe preflight point, so that destination is explicit here.
+enum class ProjectionMetadataPublication : uint8_t
+{
+    No,
+    StoredDefinition,
+    ReplicatedStorage,
+};
+
 ProjectionDefinitionSource getProjectionDefinitionSource(
     LoadingStrictnessLevel mode, bool attach_short_syntax, bool is_restore_from_backup);
 bool isInitialProjectionMetadataQuery(const ContextPtr & context);
@@ -45,7 +55,8 @@ void validateProjectionMetadataAdmission(
     const std::shared_ptr<IDatabase> & database,
     ProjectionDefinitionSource source,
     bool copies_source_projections,
-    const ProjectionsDescription * copied_projections = nullptr);
+    const ProjectionsDescription * copied_projections = nullptr,
+    ProjectionMetadataPublication publication = ProjectionMetadataPublication::No);
 
 void validateProjectionMetadataAdmission(
     const ASTAlterQuery & alter,

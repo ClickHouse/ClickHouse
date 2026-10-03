@@ -2024,6 +2024,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (database && database->shouldReplicateQuery(getContext(), query_ptr))
         {
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable(), database.get());
+            /// The short ATTACH text contains no projection definition, but a Replicated database
+            /// publishes its stored definition while executing the queued entry. Check that
+            /// definition on the initiator before the entry can reach another replica.
+            auto stored_query = database->getCreateTableQuery(create.getTable(), getContext());
+            validateProjectionMetadataAdmission(
+                stored_query->as<ASTCreateQuery &>(), getContext(), database,
+                ProjectionDefinitionSource::PreviouslyAccepted,
+                /*copies_source_projections=*/false, nullptr,
+                ProjectionMetadataPublication::StoredDefinition);
             create.setDatabase(database_name);
             guard->releaseTableLock();
             return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), QueryFlags{ .internal = internal, .distributed_backup_restore = is_restore_from_backup }, std::move(guard));
@@ -4182,6 +4191,15 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
             "`merge_tree` / `replicated_merge_tree` defaults), which is not supported for "
             "ReplicatedMergeTree. Turn it off with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` first.",
             backQuoteIfNeed(create.getTable()));
+
+    /// The conversion rewrites detached metadata and removes transaction files below, so check
+    /// the compatibility of the published destination before any irreversible local change.
+    if (to_replicated)
+        validateProjectionMetadataAdmission(
+            create, getContext(), database,
+            ProjectionDefinitionSource::PreviouslyAccepted,
+            /*copies_source_projections=*/false, nullptr,
+            ProjectionMetadataPublication::ReplicatedStorage);
 
     const bool ordinary_database = database->getEngineName() == "Ordinary";
     const bool temporary_uuid = to_replicated && ordinary_database;

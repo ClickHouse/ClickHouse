@@ -131,20 +131,22 @@ void validateProjectionMetadataAdmission(
     const std::shared_ptr<IDatabase> & database,
     ProjectionDefinitionSource source,
     bool copies_source_projections,
-    const ProjectionsDescription * copied_projections)
+    const ProjectionsDescription * copied_projections,
+    ProjectionMetadataPublication publication)
 {
     /// Old `ON CLUSTER` entries expand `AS source_table` on each worker. Check the copied
     /// projections there too, since the source may not exist on the initiator.
     const bool validate_distributed_source_copy = source == ProjectionDefinitionSource::NewQuery
         && copies_source_projections && copied_projections && context->isDDLOrOnClusterInternal()
         && !context->getClientInfo().is_replicated_database_internal && !isSecondaryProjectionMetadataReplay(context);
-    if (source == ProjectionDefinitionSource::PreviouslyAccepted
+    if ((source == ProjectionDefinitionSource::PreviouslyAccepted && publication == ProjectionMetadataPublication::No)
         || (!isInitialProjectionMetadataQuery(context) && !validate_distributed_source_copy))
         return;
 
     const bool is_distributed = !create.cluster.empty() || validate_distributed_source_copy;
     const bool reject_column_list = !context->getSettingsRef()[Setting::allow_projection_column_list_in_replicated_metadata]
-        && (isProjectionStorageReplicated(create) || is_distributed
+        && (publication == ProjectionMetadataPublication::ReplicatedStorage
+            || isProjectionStorageReplicated(create) || is_distributed
             || (database && (database->getEngineName() == "Replicated" || database->getEngineName() == "Shared")));
     const bool reject_old_format_codec = is_distributed
         && context->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value == DDLLogEntry::OLDEST_VERSION
