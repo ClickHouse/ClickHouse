@@ -6095,7 +6095,14 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread, const ZooK
             {
                 restarting_thread.shutdown(/* part_of_full_shutdown */false);
 
-                auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
+                /// If the table is being shut down, leave the interserver parts exchange endpoint to the full
+                /// `shutdown`: it still needs the endpoint to serve fetches from other replicas in
+                /// `waitForUniquePartsToBeFetchedByOtherReplicas`, and removes it afterwards. The attach thread
+                /// does not retry once shutdown is in progress, so the endpoint is not going to be re-created.
+                const bool shutdown_in_progress = shutdown_prepared_called.load() || shutdown_called.load();
+                auto data_parts_exchange_ptr = shutdown_in_progress
+                    ? InterserverIOEndpointPtr{}
+                    : std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
                 if (data_parts_exchange_ptr)
                 {
                     getContext()->getInterserverIOHandler().removeEndpointIfExists(data_parts_exchange_ptr->getId(getEndpointName()));

@@ -135,7 +135,10 @@ void ReplicatedMergeTreeAttachThread::run()
     if (!first_try_done.exchange(true))
         first_try_done.notify_one();
 
-    if (shutdown_called)
+    /// Also stop retrying once the storage itself is being shut down: a failed attempt then keeps the
+    /// interserver parts exchange endpoint for the full `shutdown` (see `startupImpl`), so a retry must not
+    /// try to register it again.
+    if (shutdown_called || storage.shutdown_prepared_called || storage.shutdown_called)
     {
         if (std::exchange(storage.is_readonly_metric_set, false))
         {
