@@ -84,6 +84,19 @@ struct HashJoinEntry
     size_t source_rows; // the number of rows in the source table
 };
 
+struct RadixHashJoinEntry
+{
+    bool shouldBeUpdated(const RadixHashJoinEntry & new_entry) const
+    {
+        return new_entry.distinct_keys < distinct_keys / 2 || distinct_keys < new_entry.distinct_keys;
+    }
+
+    std::string dump() const { return fmt::format("distinct_keys={}", distinct_keys); }
+
+    size_t distinct_keys; // estimated number of distinct build keys; sizes the per-leaf hash tables, lets a
+                          // warm run skip the per-leaf HyperLogLog estimation entirely
+};
+
 struct HashJoinMatchEntry
 {
     bool shouldBeUpdated(const HashJoinMatchEntry & new_entry) const { return new_entry.matches * 2 < matches || new_entry.matches > matches * 2; }

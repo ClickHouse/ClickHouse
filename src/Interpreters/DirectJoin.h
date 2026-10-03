@@ -37,6 +37,9 @@ public:
     std::string getAlgorithm() const override { return toString(JoinAlgorithm::DIRECT); }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
+    using IJoin::addBlockToJoin;
+    using IJoin::joinBlock;
+
     /// Each left row's key is looked up once and the row is emitted in input order.
     bool preservesLeftBlockOrder() const override { return true; }
 

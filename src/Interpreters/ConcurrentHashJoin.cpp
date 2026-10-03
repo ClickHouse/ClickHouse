@@ -18,6 +18,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/CurrentThread.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
@@ -63,6 +64,7 @@ using namespace DB;
 namespace ProfileEvents
 {
 extern const Event HashJoinPreallocatedElementsInHashTables;
+extern const Event ConcurrentHashJoinProbeDispatchMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -481,6 +483,9 @@ JoinResultPtr ConcurrentHashJoin::joinBlock(Block block)
         dispatched_blocks.emplace_back(std::move(block));
     else
     {
+        /// Skipped once two-level maps are merged after the build phase (the common case at
+        /// scale): the whole probe block is then matched against the shared map directly.
+        ProfileEventTimeIncrement<Microseconds> dispatch_watch(ProfileEvents::ConcurrentHashJoinProbeDispatchMicroseconds);
         dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block), use_zero_copy_left);
     }
 

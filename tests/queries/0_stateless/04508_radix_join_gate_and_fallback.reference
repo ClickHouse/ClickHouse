@@ -1,0 +1,17 @@
+single_u64	1
+single_u32	1
+composite_u64_u32	1
+single_date32	1
+single_uuid	1
+single_fixedstring16	1
+composite_64byte_u64x8	1
+fallback_u8	1
+fallback_string	1
+fallback_lowcard	1
+fallback_nullable	1
+fallback_composite_nm4	1
+fallback_fixedstring68	1
+fallback_fixedstring3	1
+fallback_left_join	1
+fallback_inner_any	1
+fallback_or_disjunct	1

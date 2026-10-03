@@ -560,6 +560,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         auto concurrent_right_filling_transform = [&](const OutputPortRawPtrs & outports)
         {
             Processors processors;
+            /// One filling transform per resized outport (== one build lane); a unique lane index lets the
+            /// join bind stable lock-free per-lane build state.
+            size_t build_lane = 0;
             if (min_block_size_rows > 0 || min_block_size_bytes > 0)
             {
                 for (const auto & outport : outports)
@@ -567,7 +570,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
                     auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
                     connect(*outport, squashing->getInputs().front());
                     processors.emplace_back(squashing);
-                    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
+                    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter, build_lane++);
                     connect(squashing->getOutputPort(), adding_joined->getInputs().front());
                     processors.emplace_back(std::move(adding_joined));
                 }
@@ -576,7 +579,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             {
                 for (const auto & outport : outports)
                 {
-                    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
+                    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter, build_lane++);
                     connect(*outport, adding_joined->getInputs().front());
                     processors.emplace_back(std::move(adding_joined));
                 }
@@ -652,7 +655,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         }
 
         auto joining = std::make_shared<JoiningTransform>(
-            left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter, joining_right_rows_match_counter, emit_non_joined);
+            left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter, joining_right_rows_match_counter, emit_non_joined, i);
 
         connect(*left_port, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
@@ -838,7 +841,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     {
         auto finish_counter = std::make_shared<FinishCounter>(1);
         auto match_counter = std::make_shared<RightRowsMatchCounter>();
-        auto joining = std::make_shared<JoiningTransform>(left_header, output_header, joins[i], max_block_size, false, false, finish_counter, match_counter);
+        auto joining = std::make_shared<JoiningTransform>(left_header, output_header, joins[i], max_block_size, false, false, finish_counter, match_counter, /* emit_non_joined_ = */ true, i);
 
         connect(**lit, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
