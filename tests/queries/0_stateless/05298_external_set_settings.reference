@@ -1,0 +1,44 @@
+metrics	10
+disabled	10
+threads	1000000	3914219105369203805
+threads	1000000	3914219105369203805
+ratio	10
+ratio	10
+rows limit	100
+rows limit	100
+bytes limit	10
+rows break	100	2
+rows break	100	100
+bytes break	65409
+bytes break	65409
+preliminary distinct	1
+preliminary distinct	200000	17371400341328084350
+preliminary distinct	200000	17371400341328084350
+metrics	finished	['set']	1	1	1	1
+disabled	finished	[]	0	0	0	0
+threads in memory	finished	[]	0	0	0	0
+threads on disk	finished	['set']	1	1	1	1
+tiny ratio	finished	['set']	1	1	1	1
+tiny ratio and threshold	finished	['set']	1	1	1	1
+rows limit reached in memory	finished	[]	0	0	0	0
+rows limit reached on disk	finished	['set']	1	1	1	1
+rows limit exceeded in memory	SET_SIZE_LIMIT_EXCEEDED	[]	0	0	0	0
+rows limit exceeded on disk	SET_SIZE_LIMIT_EXCEEDED	['set']	1	1	1	0
+bytes limit in memory	SET_SIZE_LIMIT_EXCEEDED	[]	0	0	0	0
+bytes limit on disk	finished	['set']	1	1	1	1
+rows break in memory	finished	[]	0	0	0	0
+rows break on disk	finished	['set']	1	1	1	1
+bytes break in memory	finished	[]	0	0	0	0
+bytes break on disk	finished	['set']	1	1	1	1
+preliminary distinct in memory	finished	[]	0	0	0	0
+preliminary distinct on disk	finished	['set']	1	1	1	1
+metrics	1	1	1	1	1	1
+rows break in memory	1	0
+rows break on disk	1	1
+bytes break in memory	1	0
+bytes break on disk	1	1
+preliminary distinct in memory	0
+preliminary distinct on disk	8
+Limit for IN-set exceeded, max rows
+Limit for IN-set exceeded, max rows
+Limit for IN-set exceeded, max bytes

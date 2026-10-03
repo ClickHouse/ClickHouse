@@ -1,0 +1,40 @@
+table	10000	10000	20000
+global	10000	20000
+projection	8886485559717040009
+prewhere	5000
+having	100
+lambda	10000
+join	3334
+join on	3334
+merge	5000
+view	10000
+insert	6000
+materialized view	10000
+refreshable materialized view	10000
+dictionary	9	0
+old analyzer	10000	10000
+join to in	334	166833
+report	table	2	2	1
+report	global	1	1	1
+report	projection	1	1	1
+report	prewhere	1	1	1
+report	having	1	1	1
+report	lambda	1	1	1
+report	join	1	1	1
+report	join on	1	1	1
+report	merge	1	1	1
+report	view	1	1	1
+report	insert	1	1	1
+report	materialized view	1	1	1
+report	refreshable materialized view	1	1	1
+report	dictionary	1	1	1
+report	old analyzer	2	2	1
+report	join to in	1	1	1
+without a threshold 18 0
+mutations	20000	4000
+mutations	1	1
+mutations	1	0
+lazy final	499	124750
+lazy final	0
+lazy final applied with threshold 0: 1
+lazy final applied with threshold 1: 1

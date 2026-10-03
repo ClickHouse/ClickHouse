@@ -1,0 +1,137 @@
+key8	4040	5960	773811361189829169
+key16	3000	7000	1384208262667381765
+key16 Date	2000	8000	9302203843965658320
+key32 Int32	3000	7000	1384208262667381765
+key32 Float32	3000	7000	1384208262667381765
+key32 IPv4	3000	7000	1384208262667381765
+key64 UInt64	3000	7000	1384208262667381765
+key64 Int64	3000	7000	1384208262667381765
+key64 Float64	3000	7000	18151022318328754736
+key64 DateTime64	3048	6952	408831443249365939
+keys128 UInt128	3000	7000	1384208262667381765
+keys128 Int128	3000	7000	1384208262667381765
+keys128 Decimal128	3000	7000	1384208262667381765
+keys128 UUID	3000	7000	1384208262667381765
+keys128 IPv6	3000	7000	1384208262667381765
+keys256 UInt256	3000	7000	1384208262667381765
+keys256 Int256	3000	7000	1384208262667381765
+key_string	3000	7000	1384208262667381765
+key_string LowCardinality	2000	8000	12968764971535786294
+key_fixed_string	3000	7000	1384208262667381765
+keys32	3334	6666	12233814145485942405
+keys64	429	9571	10845559121952275021
+keys128 tuple	429	9571	10845559121952275021
+keys256 tuple	39	9961	14837349069401309575
+hashed tuple	429	9571	10845559121952275021
+hashed array	2667	7333	3340829073785128196
+hashed Variant	3000	7000	1384208262667381765
+hashed Map	3000	7000	1384208262667381765
+hashed AggregateFunction	3000	7000	1384208262667381765
+key_string bytes	1000	2000	13514838456876094856
+constant key column	1	9999	13365811232860260488
+constant key element	3000	7000	1384208262667381765
+Nullable key64	2057	6514	16046289843166234220
+Nullable nullable_keys128	3486	6514	1162561327945967384
+Nullable key_string	2057	6514	16046289843166234220
+Nullable hashed	3486	6514	1162561327945967384
+nullable_keys128 tuple	2115	7885	10488498658920004638
+nullable_keys256 tuple	286	9714	4599296848915852371
+null sets	0	\N	0
+null sets transform_null_in	1
+LowCardinality Nullable	[1,1,0,1,0,1,0,0,0]
+LowCardinality Nullable transform_null_in	[1,1,1,0,1,1,0,1,1,0,0,0]
+tuple column	[1,1,1,1,1,0,0,0]
+tuple with LowCardinality and Nullable	[1,0,0,1,1,0,0,0]
+tuple with LowCardinality and Nullable transform_null_in	[1,0,0,1,1,0,0,0]
+cast Int64 to UInt64	3000	7000	602421085067201851
+cast Float64 to Int32	1667	8333	14704324406458888532
+cast String to FixedString	1000	9000	3758621883572277986
+cast LowCardinality to String	3000	7000	1384208262667381765
+floats	[1,0,1,1,1,0,1,0]	[0,1,0,0,0,1,0,1]
+constant	1	0	0
+empty	0	10
+shared	0	0
+disjunction	[0,5,10,19]
+index	1000	4995000
+report	key8	1	1	1	1
+report	key16	1	1	1	1
+report	key16 Date	1	1	1	1
+report	key32 Int32	1	1	1	1
+report	key32 Float32	1	1	1	1
+report	key32 IPv4	1	1	1	1
+report	key64 UInt64	1	1	1	1
+report	key64 Int64	1	1	1	1
+report	key64 Float64	1	1	1	1
+report	key64 DateTime64	1	1	1	1
+report	keys128 UInt128	1	1	1	1
+report	keys128 Int128	1	1	1	1
+report	keys128 Decimal128	1	1	1	1
+report	keys128 UUID	1	1	1	1
+report	keys128 IPv6	1	1	1	1
+report	keys256 UInt256	1	1	1	1
+report	keys256 Int256	1	1	1	1
+report	key_string	1	1	1	1
+report	key_string LowCardinality	1	1	1	1
+report	key_fixed_string	1	1	1	1
+report	keys32	1	1	1	1
+report	keys64	1	1	1	1
+report	keys128 tuple	1	1	1	1
+report	keys256 tuple	1	1	1	1
+report	hashed tuple	1	1	1	1
+report	hashed array	1	1	1	1
+report	hashed Variant	1	1	1	1
+report	hashed Map	1	1	1	1
+report	hashed AggregateFunction	1	1	1	1
+report	key_string bytes	1	1	1	1
+report	constant key column	1	1	1	1
+report	constant key element	1	1	1	1
+report	Nullable key64	1	1	1	1
+report	Nullable nullable_keys128	1	1	1	1
+report	Nullable key_string	1	1	1	1
+report	Nullable hashed	1	1	1	1
+report	nullable_keys128 tuple	1	1	1	1
+report	nullable_keys256 tuple	1	1	1	1
+report	null sets	2	1	0	0
+report	null sets transform_null_in	1	1	1	1
+report	LowCardinality Nullable	1	1	1	1
+report	LowCardinality Nullable transform_null_in	1	1	1	1
+report	tuple column	1	1	1	1
+report	tuple with LowCardinality and Nullable	1	1	1	1
+report	tuple with LowCardinality and Nullable transform_null_in	1	1	1	1
+report	cast Int64 to UInt64	1	1	1	1
+report	cast Float64 to Int32	1	1	1	1
+report	cast String to FixedString	1	1	1	1
+report	cast LowCardinality to String	1	1	1	1
+report	floats	1	1	1	1
+report	constant	1	1	1	1
+report	empty	1	0	0	0
+report	shared	1	1	1	1
+report	disjunction	1	1	1	1
+report	index	1	1	1	1
+in memory 56 0
+30000
+30000
+LZ4	1
+30000
+30000
+NONE	0
+100
+1
+500
+1
+150	22500
+3
+1
+1
+1010
+0
+1010
+1
+2048
+1
+0
+SET_SIZE_LIMIT_EXCEEDED
+BAD_ARGUMENTS
+TOO_MANY_ROWS_OR_BYTES
+NOT_ENOUGH_SPACE
+QUERY_WAS_CANCELLED

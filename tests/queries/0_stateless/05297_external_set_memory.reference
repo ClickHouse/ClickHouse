@@ -1,0 +1,14 @@
+query_limit_memory (MEMORY_LIMIT_EXCEEDED)
+query_limit_disk 10 1 the projected growth of the set exceeds the memory left under the spill threshold
+user_ratio_0 (MEMORY_LIMIT_EXCEEDED)
+user_ratio_0.5 10 1 the projected growth of the set exceeds the memory left under the spill threshold
+growth_query 10 1 the projected growth of the set exceeds the memory left under the spill threshold
+growth_user 10 1 the projected growth of the set exceeds the memory left under the spill threshold
+arena_String_0 (MEMORY_LIMIT_EXCEEDED)
+arena_String_100M 64 1 the projected growth of the set exceeds the memory left under the spill threshold
+arena_FixedString_0 (MEMORY_LIMIT_EXCEEDED)
+arena_FixedString_100M 64 1 the projected growth of the set exceeds the memory left under the spill threshold
+fixed_UInt8 70000 0
+fixed_UInt16 70000 0
+hashed_ratio_0 16384 0
+hashed_ratio_0.5 16384 0
