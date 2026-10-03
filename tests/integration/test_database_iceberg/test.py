@@ -2238,6 +2238,35 @@ def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
     assert node.query(f"SELECT {select_cols} FROM {table_ref} ORDER BY ALL", settings=write_settings) == expected
 
 
+def test_writes_schema_evolution_catalog_error(started_cluster):
+    """Only `409 Conflict` from the schema update is retried with the current schema.
+
+    Any other catalog error must reach the user as is, instead of being retried until
+    `ALTER` gives up with "Too many unsuccessed retries".
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_schema_evolution_catalog_error_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+
+    node.query("SYSTEM ENABLE FAILPOINT rest_catalog_update_schema_http_error")
+    try:
+        error = node.query_and_get_error(
+            f"ALTER TABLE {table_ref} ADD COLUMN y Nullable(String);", settings=write_settings
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT rest_catalog_update_schema_http_error")
+
+    assert "Injecting fault when updating schema" in error, error
+    assert "Too many unsuccessed retries" not in error, error
+
+
 def test_gcs(started_cluster):
     node = started_cluster.instances["node1"]
 

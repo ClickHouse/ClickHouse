@@ -75,6 +75,7 @@ namespace DB::FailPoints
     extern const char check_database_datalake_negative[];
     extern const char rest_catalog_create_namespace_http_error[];
     extern const char rest_catalog_skip_namespace_existence_check[];
+    extern const char rest_catalog_update_schema_http_error[];
 }
 
 namespace ProfileEvents
@@ -1754,13 +1755,7 @@ bool RestCatalog::getTableMetadataImpl(
     return true;
 }
 
-void RestCatalog::sendRequest(
-    const CatalogState & catalog_state,
-    const String & endpoint,
-    Poco::JSON::Object::Ptr request_body,
-    const String & method,
-    bool ignore_result,
-    std::unordered_set<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors) const
+void RestCatalog::sendRequest(const CatalogState & catalog_state, const String & endpoint, Poco::JSON::Object::Ptr request_body, const String & method, bool ignore_result) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
@@ -1799,7 +1794,6 @@ void RestCatalog::sendRequest(
         /// chunked transfer encoding on catalog commits with HTTP 500 and an empty body.
         .withOutCallbackFixedContentLength(body_str.size())
         .withSkipNotFound(false)
-        .withCustomNonRetryableError(std::move(custom_non_retryable_errors))
         .create(credentials);
 
     String response_str;
@@ -1831,7 +1825,7 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
                 "");
         });
 
-        sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true, {});
+        sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true);
         return;
     }
     catch (const DB::HTTPException & e)
@@ -1866,13 +1860,7 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
                 "");
         });
 
-        sendRequest(
-            *state_snapshot,
-            endpoint,
-            request_body,
-            Poco::Net::HTTPRequest::HTTP_POST,
-            /*ignore_result=*/ false,
-            {Poco::Net::HTTPResponse::HTTP_CONFLICT});
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
     catch (const DB::HTTPException & e)
     {
@@ -1921,7 +1909,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, {});
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -1988,16 +1976,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 
     try
     {
-        /// `HTTP_CONFLICT` is the expected outcome of losing an optimistic-concurrency race
-        /// (the `assert-ref-snapshot-id` requirement failed), so don't let the HTTP layer retry it:
-        /// the caller re-reads the latest metadata tip and retries the whole commit itself.
-        sendRequest(
-            *state_snapshot,
-            endpoint,
-            request_body,
-            Poco::Net::HTTPRequest::HTTP_POST,
-            /* ignore_result */ false,
-            {Poco::Net::HTTPResponse::HTTP_CONFLICT});
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -2071,20 +2050,31 @@ bool RestCatalog::updateSchema(
 
     try
     {
-        /// Same as in `updateMetadata`: a failed `assert-current-schema-id` requirement is reported
-        /// as `HTTP_CONFLICT`, and the caller handles it by retrying with the current schema.
-        sendRequest(
-            *state_snapshot,
-            endpoint,
-            request_body,
-            Poco::Net::HTTPRequest::HTTP_POST,
-            /* ignore_result */ false,
-            {Poco::Net::HTTPResponse::HTTP_CONFLICT});
+        fiu_do_on(DB::FailPoints::rest_catalog_update_schema_http_error,
+        {
+            throw DB::HTTPException(
+                DB::ErrorCodes::FAULT_INJECTED,
+                endpoint,
+                Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR,
+                "Injecting fault when updating schema",
+                "");
+        });
+
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
     catch (const DB::HTTPException & ex)
     {
-        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
-        return false;
+        /// 409 Conflict: the `assert-current-schema-id` requirement failed because of a concurrent
+        /// schema change, and the caller retries with the current schema.
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+        {
+            LOG_DEBUG(log, "updateSchema conflict for {}/{}: {}", namespace_name, table_name, ex.displayText());
+            return false;
+        }
+        /// Anything else is not something a retry with the current schema can fix, so report it as is
+        /// instead of letting the caller retry until it gives up with an unrelated error.
+        LOG_ERROR(log, "updateSchema failed for {}/{}: {}", namespace_name, table_name, ex.displayText());
+        throw;
     }
     return true;
 }
@@ -2097,7 +2087,7 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true, {});
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
     }
     catch (const DB::HTTPException & ex)
     {
