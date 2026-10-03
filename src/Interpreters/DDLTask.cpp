@@ -412,8 +412,21 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     /// `NOT_FOUND_COLUMN_IN_BLOCK`.
     query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
 
-    if (auto initiator_user_and_roles = resolveInitiatorUserAndRoles(from_context, /* throw_if_not_found= */ true))
+    if (submitting_user_context)
+    {
+        /// Give the query the access rights of the submitting session, as `AsynchronousInsertQueue` does. The current roles
+        /// include the external roles, which are not granted locally, so set the current roles without the grant check.
+        query_context->setUser(
+            *submitting_user_context->getUserID(),
+            submitting_user_context->getExternalRoles(),
+            submitting_user_context->getAuthenticationGrants(),
+            submitting_user_context->getAuthenticationValidUntil());
+        query_context->setCurrentRoles(submitting_user_context->getCurrentRoles(), /* check_grants = */ false);
+    }
+    else if (auto initiator_user_and_roles = resolveInitiatorUserAndRoles(from_context, /* throw_if_not_found= */ true))
+    {
         query_context->setUser(initiator_user_and_roles->first, initiator_user_and_roles->second);
+    }
 
     if (entry.settings)
     {
@@ -893,6 +906,9 @@ ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
         name = name.substr(strlen(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX));
         all_groups = true;
     }
+
+    if (name.empty())
+        return {};
 
     if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(name).get()))
     {

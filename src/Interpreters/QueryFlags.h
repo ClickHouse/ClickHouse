@@ -24,6 +24,10 @@ struct QueryFlags
     /// so `max_query_size` keeps its other meanings (e.g. the size limit of the resulting table metadata).
     bool parse_server_formatted_query_text = false;
     bool background = false; /// If true, this query is the background run scheduled by executeQueryInBackground.
+    /// If true, the initiator of a query to a `Replicated` database runs its own copy of the entry as the submitting user.
+    /// Otherwise the copy runs with the full access of the DDL worker. The other replicas run only the entries that
+    /// succeeded on the initiator. So the query is checked as it would be on a local database.
+    bool run_as_submitting_user = false;
 };
 
 }

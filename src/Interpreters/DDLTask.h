@@ -123,6 +123,9 @@ struct DDLTaskBase
     bool is_circular_replicated = false;
     bool execute_on_single_replica = false;
 
+    /// Set when the initial query runs as the submitting user, see `QueryFlags::run_as_submitting_user`.
+    ContextPtr submitting_user_context;
+
     Coordination::Requests ops;
     ExecutionStatus execution_status;
     bool was_executed = false;

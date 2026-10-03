@@ -13,8 +13,6 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Common/typeid_cast.h>
 
 
@@ -1287,14 +1285,11 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserAlterQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementAlter(StatementFactory & factory)
-{
-    factory.registerStatement("ALTER",
+    documentation["ALTER"] =
     {
         .description = R"DOCS_MD(
 Most `ALTER TABLE` queries modify table settings or data:
@@ -1344,6 +1339,29 @@ These `ALTER` statements modify entities related to role-based access control:
 | [ALTER NAMED COLLECTION](/reference/statements/alter/named-collection) | Modifies [Named Collections](/concepts/features/configuration/server-config/named-collections).                   |
 | [ALTER HANDLER](/reference/statements/create/handler#alter-handler) | Modifies a SQL-defined HTTP handler created by [CREATE HANDLER](/reference/statements/create/handler). |
 
+## Combining actions in one `ALTER` {#combining-actions}
+
+One `ALTER TABLE` accepts several comma-separated actions, so work that would otherwise be submitted as a sequence of statements can go in a single one:
+
+```sql
+ALTER TABLE visits DROP COLUMN browser, DROP COLUMN referrer;
+```
+
+The actions do not have to be of the same type, and they are applied from left to right, so a later action can use what an earlier one added:
+
+```sql
+-- a new column and an index over it
+ALTER TABLE visits ADD COLUMN duration UInt32, ADD INDEX idx_duration duration TYPE minmax GRANULARITY 4;
+
+-- a type change together with a new column
+ALTER TABLE visits MODIFY COLUMN browser LowCardinality(String), ADD COLUMN page_id UInt64;
+
+-- three actions in one statement
+ALTER TABLE visits DROP COLUMN page_id, MODIFY COLUMN duration UInt64, ADD COLUMN region_id UInt32;
+```
+
+When a client waits for an `ALTER` to finish, which setting governs that wait depends on the action rather than on the statement: an action on the mutation execution path, such as `MATERIALIZE INDEX`, is covered by [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) while the metadata actions are covered by [`alter_sync`](/reference/settings/session-settings/alter#alter_sync), so combining the two does not bring them under one setting. See [Synchronicity of ALTER Queries](#synchronicity-of-alter-queries) for which actions each setting covers, and [Combining `MATERIALIZE INDEX` clauses](#combining-materialize-index-clauses) for the restriction that such a mixed statement meets on a `Replicated` database.
+
 ## Mutations {#mutations}
 
 `ALTER` queries that are intended to manipulate table data are implemented with a mechanism called "mutations", most notably [ALTER TABLE ... DELETE](/reference/statements/alter/delete) and [ALTER TABLE ... UPDATE](/reference/statements/alter/update). They are asynchronous background processes similar to merges in [MergeTree](/reference/engines/table-engines/mergetree-family/index) tables that to produce new "mutated" versions of parts.
@@ -1390,7 +1408,7 @@ On replicated tables, submitting several separate `ALTER` statements against the
 
 Approaches that avoid the race:
 
-- Combine independent metadata operations into a **single** multi-clause `ALTER` when the grammar allows it (for example multiple `ADD INDEX` clauses).
+- Combine independent metadata operations into a **single** multi-clause `ALTER` when the grammar allows it (for example multiple `ADD INDEX` clauses), as described in [Combining actions in one `ALTER`](#combining-actions).
 - Serialize `ALTER` statements and retry on code 517 until previous `ALTER`s have been applied on the replica.
 - For mutation-producing `ALTER`s, wait for the previous mutation to finish using a documented observable such as [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) or `is_done` in [`system.mutations`](/reference/system-tables/mutations) before submitting the next one.
 
@@ -1415,9 +1433,9 @@ ALTER USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
         .related = {
             "ALTER TABLE ... COLUMN", "ALTER TABLE ... PARTITION", "ALTER TABLE ... DELETE", "ALTER TABLE ... UPDATE",
             "CREATE", "SYSTEM"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... COLUMN",
+    documentation["ALTER TABLE ... COLUMN"] =
     {
         .description = R"DOCS_MD(
 A set of queries that allow changing the table structure.
@@ -1430,6 +1448,14 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 
 In the query, specify a list of one or more comma-separated actions.
 Each action is an operation on a column.
+
+For example, one statement can drop one column and add another:
+
+```sql
+ALTER TABLE visits DROP COLUMN browser, ADD COLUMN referrer String;
+```
+
+Whether such a query returns before its work on existing data has finished follows [`alter_sync`](/reference/settings/session-settings/alter#alter_sync), which also covers the mutation that `DROP COLUMN` or a `MODIFY COLUMN` type change creates; [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) applies to [MATERIALIZE COLUMN](#materialize-column), which runs on the mutation path. Both are described in [Synchronicity of ALTER Queries](/reference/statements/alter/index#synchronicity-of-alter-queries).
 
 The following actions are supported:
 
@@ -1814,9 +1840,9 @@ MATERIALIZE COLUMN name [IN PARTITION partition_id]
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "CODEC", "ALTER TABLE ... MODIFY TTL"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... PARTITION",
+    documentation["ALTER TABLE ... PARTITION"] =
     {
         .description = R"DOCS_MD(
 The following operations with [partitions](/reference/engines/table-engines/mergetree-family/custom-partitioning-key) are available:
@@ -2218,9 +2244,9 @@ ALTER TABLE table_name [ON CLUSTER cluster] MODIFY PARTITION|PART partition_expr
 )",
         .parent = "ALTER",
         .related = {"ALTER", "SYSTEM", "OPTIMIZE", "TRUNCATE"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... DELETE",
+    documentation["ALTER TABLE ... DELETE"] =
     {
         .description = R"DOCS_MD(
 ```sql
@@ -2258,9 +2284,9 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr1
 )",
         .parent = "ALTER",
         .related = {"ALTER", "DELETE", "TRUNCATE", "ALTER TABLE ... UPDATE"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... UPDATE",
+    documentation["ALTER TABLE ... UPDATE"] =
     {
         .description = R"DOCS_MD(
 ```sql
@@ -2337,9 +2363,9 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 )",
         .parent = "ALTER",
         .related = {"ALTER", "UPDATE", "ALTER TABLE ... DELETE", "ALTER TABLE ... APPLY PATCHES"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY ORDER BY",
+    documentation["ALTER TABLE ... MODIFY ORDER BY"] =
     {
         .description = R"DOCS_MD(
 ```sql
@@ -2361,9 +2387,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... MODIFY SAMPLE BY"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY SAMPLE BY",
+    documentation["ALTER TABLE ... MODIFY SAMPLE BY"] =
     {
         .description = R"DOCS_MD(
 The following operations are available:
@@ -2396,9 +2422,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
 )",
         .parent = "ALTER",
         .related = {"ALTER", "SAMPLE", "ALTER TABLE ... MODIFY ORDER BY"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY TTL",
+    documentation["ALTER TABLE ... MODIFY TTL"] =
     {
         .description = R"DOCS_MD(
 <Note>
@@ -2490,9 +2516,9 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] REMOVE TTL
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... COLUMN", "OPTIMIZE"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY SETTING",
+    documentation["ALTER TABLE ... MODIFY SETTING"] =
     {
         .description = R"DOCS_MD(
 There is a set of queries to change table settings. You can modify settings or reset them to default values. A single query can change several settings at once.
@@ -2555,9 +2581,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] RESET SETTING setting_name [, ...]
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "SET"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... CONSTRAINT",
+    documentation["ALTER TABLE ... CONSTRAINT"] =
     {
         .description = R"DOCS_MD(
 Constraints could be added, modified or deleted using following syntax:
@@ -2589,9 +2615,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constrain
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... INDEX",
+    documentation["ALTER TABLE ... INDEX"] =
     {
         .description = R"DOCS_MD(
 The following operations are available:
@@ -2636,9 +2662,9 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [I
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "HYPOTHETICAL INDEX", "ALTER TABLE ... PROJECTION"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... PROJECTION",
+    documentation["ALTER TABLE ... PROJECTION"] =
     {
         .description = R"DOCS_MD(
 This page discusses what projections are, how you can use them and various options for manipulating projections.
@@ -2966,7 +2992,8 @@ The statement restates the full projection definition, but only the `WITH SETTIN
 The projection query itself (or, for a projection index, the index expression and type) must stay the same, because existing projection parts store data built from it; to change it, use [`DROP PROJECTION`](#drop-projection) followed by [`ADD PROJECTION`](#add-projection).
 
 The command only changes the table metadata and does not rewrite any data: existing projection parts keep the settings they were written with, while projection parts written by future inserts and merges use the new settings.
-To rebuild existing parts with the new settings, run [`MATERIALIZE PROJECTION`](#materialize-projection).
+[`MATERIALIZE PROJECTION`](#materialize-projection) does not apply the new settings to existing parts either: it builds the projection only in the parts where it is missing or broken and leaves the projection parts that already exist unchanged.
+To rebuild existing parts with the new settings, run [`CLEAR PROJECTION`](#clear-projection) followed by [`MATERIALIZE PROJECTION`](#materialize-projection), or merge the parts, for example with [`OPTIMIZE TABLE ... FINAL`](/reference/statements/optimize).
 
 Example:
 
@@ -2990,7 +3017,8 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
 
 ### MATERIALIZE PROJECTION {#materialize-projection}
 
-Use the statement below to rebuild the projection `name` in partition `partition_name`.
+Use the statement below to build the projection `name` in the parts where it is missing or broken, optionally only in partition `partition_name`.
+Parts that already have the projection are left unchanged, even if the projection settings were changed with [`MODIFY PROJECTION`](#modify-projection) after they were written; to rebuild them, run [`CLEAR PROJECTION`](#clear-projection) first.
 This is implemented as a [mutation](/reference/statements/alter/index#mutations).
 
 ```sql
@@ -3095,9 +3123,9 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... INDEX"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... STATISTICS",
+    documentation["ALTER TABLE ... STATISTICS"] =
     {
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -3141,9 +3169,9 @@ ALTER TABLE [db].table MATERIALIZE STATISTICS [IF EXISTS] (column list)
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "EXPLAIN"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY COMMENT",
+    documentation["ALTER TABLE ... MODIFY COMMENT"] =
     {
         .description = R"DOCS_MD(
 Adds, modifies, or removes a table comment, regardless of whether it was set
@@ -3229,9 +3257,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 )",
         .parent = "ALTER",
         .related = {"ALTER", "ALTER DATABASE ... MODIFY COMMENT", "CREATE TABLE", "SHOW"},
-    });
+    };
 
-    factory.registerStatement("ALTER DATABASE ... MODIFY COMMENT",
+    documentation["ALTER DATABASE ... MODIFY COMMENT"] =
     {
         .description = R"DOCS_MD(
 Adds, modifies, or removes a database comment, regardless of whether it was set
@@ -3304,9 +3332,9 @@ ALTER DATABASE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 )",
         .parent = "ALTER",
         .related = {"ALTER", "ALTER TABLE ... MODIFY COMMENT", "CREATE DATABASE", "SHOW"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... MODIFY QUERY",
+    documentation["ALTER TABLE ... MODIFY QUERY"] =
     {
         .description = R"DOCS_MD(
 You can modify `SELECT` query that was specified when a [materialized view](/reference/statements/create/view#materialized-view) was created with the `ALTER TABLE ... MODIFY QUERY` statement without interrupting ingestion process.
@@ -3493,6 +3521,23 @@ SELECT * FROM mv;
 └───┘
 ```
 
+## Required privileges {#required-privileges}
+
+`ALTER TABLE ... MODIFY QUERY` requires the `ALTER VIEW MODIFY QUERY` privilege on the view. The new query runs with the [SQL security](/reference/statements/create/view#sql_security) of the view, so the statement also requires the grants that are necessary to create a view with that SQL security:
+
+- `SQL SECURITY DEFINER` with a definer that is not the current user: `SET DEFINER` on that definer.
+- `SQL SECURITY NONE`: `ALLOW SQL SECURITY NONE`.
+
+When the same statement changes the SQL security with `MODIFY SQL SECURITY`, these grants are required for the new SQL security instead of the old one.
+
+With `ON CLUSTER`, the statement is authorized on the host where it runs, so that host must have the view. Otherwise the statement fails with `UNKNOWN_TABLE`.
+
+```sql
+GRANT ALTER VIEW MODIFY QUERY ON db.mv TO alice;
+-- Only if `db.mv` runs as another user, for example `bob`:
+GRANT SET DEFINER ON bob TO alice;
+```
+
 ## ALTER TABLE ... MODIFY REFRESH Statement {#alter-table--modify-refresh-statement}
 
 `ALTER TABLE ... MODIFY REFRESH` changes refresh parameters of a [Refreshable Materialized View](/reference/statements/create/view#refreshable-materialized-view), including the schedule, dependencies, randomization, and [refresh settings](/reference/statements/create/view#refresh-settings).
@@ -3537,9 +3582,9 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY QUERY SELECT ...
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE VIEW"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... APPLY DELETED MASK",
+    documentation["ALTER TABLE ... APPLY DELETED MASK"] =
     {
         .description = R"DOCS_MD(
 ```sql
@@ -3562,9 +3607,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION part
 )",
         .parent = "ALTER",
         .related = {"ALTER", "DELETE", "ALTER TABLE ... DELETE"},
-    });
+    };
 
-    factory.registerStatement("ALTER TABLE ... APPLY PATCHES",
+    documentation["ALTER TABLE ... APPLY PATCHES"] =
     {
         .description = R"DOCS_MD(
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
@@ -3631,7 +3676,9 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partitio
 )",
         .parent = "ALTER",
         .related = {"ALTER", "UPDATE", "ALTER TABLE ... UPDATE"},
-    });
+    };
+
+    return documentation;
 }
 
 }
