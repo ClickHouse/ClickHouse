@@ -1006,7 +1006,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         patch_affected_materialized = affected_materialized_closure(patch_updated_columns);
 
     /// CLEAR uses only the readable dependency closure.
-    /// A key column (sorting, partition, sign or version) keeps its stored value; checkAlterEligibility refuses a CLEAR reaching one.
+    /// Key columns keep their stored values; checkAlterEligibility refuses a CLEAR that reaches one.
     NameSet clear_affected_materialized;
     if (!clear_column_names.empty())
     {

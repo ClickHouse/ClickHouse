@@ -5777,7 +5777,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     commands.apply(new_metadata, local_context, share_nested_offsets, settings_defaults.get());
 
     /// A mutation must not change a key column of an existing part, so CLEAR must not recalculate a MATERIALIZED one.
-    /// Judged on the metadata after the ALTER, which the mutation runs under. Not on a replay, as in the checks below.
     {
         const auto txn = local_context->getZooKeeperMetadataTransaction();
         const bool is_ddl_replay = txn && !txn->isInitialQuery();
