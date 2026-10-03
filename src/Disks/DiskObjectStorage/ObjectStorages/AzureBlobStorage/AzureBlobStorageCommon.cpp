@@ -91,6 +91,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
@@ -231,10 +232,38 @@ String ConnectionParams::getConnectionURL() const
     return endpoint.storage_account_url;
 }
 
+static bool isServerManagedCredential(const AuthMethod & auth_method)
+{
+    return std::holds_alternative<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(auth_method)
+        || std::holds_alternative<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(auth_method);
+}
+
+bool ConnectionParams::mustDropServerManagedCredentials() const
+{
+    if (!forbid_implicit_credentials || !isServerManagedCredential(auth_method))
+        return false;
+
+    if (anonymous_fallback_for_server_credentials)
+        return true;
+
+    throw Exception(
+        ErrorCodes::ACCESS_DENIED,
+        "Azure access from user queries is not allowed to use the server's own identity (AKS workload identity "
+        "or the machine's managed identity). Provide explicit credentials: an `account_name` and `account_key`, "
+        "a connection string, or a SAS token"
+#if !CLICKHOUSE_CLOUD
+        ", or enable the setting `azure_allow_server_credentials_in_user_queries`"
+#endif
+        ".");
+}
+
 std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
 {
     try
     {
+        if (mustDropServerManagedCredentials())
+            return std::make_unique<ServiceClient>(endpoint.getServiceEndpoint(), client_options);
+
         return std::visit([this]<typename T>(const T & auth)
         {
             if constexpr (std::is_same_v<T, ConnectionString>)
@@ -253,7 +282,14 @@ std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
 {
     try
     {
+        /// A SAS token authorizes the request by itself, so `auth_method` is unused on this path.
         if (!endpoint.sas_auth.empty())
+        {
+            RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
+            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+        }
+
+        if (mustDropServerManagedCredentials())
         {
             RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
             return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
