@@ -731,6 +731,36 @@ async function checkAuthHeaderTransport(js) {
             && new URL(encodedLegacyCalls[1].url).searchParams.get('password') === encodedPassword,
         { encodedLegacyCalls });
 
+    /// Older root-path servers reject ClickHouse-Play through the generic unknown-scheme branch.
+    /// This is a distinct 516 message from the Basic-credentials mismatch above, but it proves the
+    /// same thing: the marker is unsupported, so the legacy URL transport is required.
+    const encodedUnknownSchemeCalls = [];
+    const encodedUnknownSchemeHelpers = makeAuthHelpers(async (url, options) => {
+        encodedUnknownSchemeCalls.push({ url, headers: options.headers });
+        if (options.headers.Authorization === 'ClickHouse-Play') {
+            return authResponse(403, {
+                code: '516',
+                body: "Code: 516. DB::Exception: Invalid authentication: 'ClickHouse-Play' HTTP Authorization scheme is not supported",
+            });
+        }
+        return authResponse(200, { version: '26.6.9.1' });
+    });
+    const encodedUnknownSchemeResponse = await encodedUnknownSchemeHelpers.fetchWithRequestAuth(
+        encodedRequestUrl,
+        { method: 'POST', body: 'SELECT 1' },
+        'https://remote.example/legacy-encoded',
+        encodedUser,
+        encodedPassword);
+    check('auth-header-cases', 'legacy unknown auth scheme retries encoded credentials through URL',
+        encodedUnknownSchemeResponse.ok
+            && encodedUnknownSchemeCalls.length === 2
+            && encodedUnknownSchemeCalls[0].headers.Authorization === 'ClickHouse-Play'
+            && !new URL(encodedUnknownSchemeCalls[0].url).searchParams.has('user')
+            && encodedUnknownSchemeCalls[1].headers.Authorization === 'never'
+            && new URL(encodedUnknownSchemeCalls[1].url).searchParams.get('user') === encodedUser
+            && new URL(encodedUnknownSchemeCalls[1].url).searchParams.get('password') === encodedPassword,
+        { encodedUnknownSchemeCalls });
+
     const modernBadCalls = [];
     const modernBadHelpers = makeAuthHelpers(async (url, options) => {
         modernBadCalls.push({ url, headers: options.headers });

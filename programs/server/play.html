@@ -8356,8 +8356,9 @@ async function responseRejectsEncodedWebUIAuth(response, url) {
         return false;
 
     try {
-        return (await response.clone().text()).includes(
-            "expected 'Basic' HTTP Authorization scheme");
+        const body = await response.clone().text();
+        return body.includes("expected 'Basic' HTTP Authorization scheme")
+            || body.includes("Invalid authentication: 'ClickHouse-Play' HTTP Authorization scheme is not supported");
     } catch (e) {
         return false;
     }
