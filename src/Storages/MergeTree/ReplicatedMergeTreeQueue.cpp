@@ -1252,6 +1252,8 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
         {
             std::lock_guard state_lock(state_mutex);
 
+            auto queue_representation = getQueueRepresentation(queue, format_version);
+
             for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
             {
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version)).first->second;
@@ -1268,9 +1270,8 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 LOG_TRACE(log, "Adding mutation {} for {} partitions (data versions: {})",
                           entry->znode_name, entry->block_numbers.size(), entry->getBlockNumbersForLogs());
 
-                /// Initialize `mutation.parts_to_do`. We cannot use only current_parts + virtual_parts here so we
-                /// traverse all the queue and build correct state of parts_to_do.
-                auto queue_representation = getQueueRepresentation(queue, format_version);
+                /// Initialize `mutation.parts_to_do`. We cannot use only current_parts + virtual_parts here,
+                /// so we use queue_representation to get the correct state of parts_to_do.
                 mutation.parts_to_do = getPartNamesToMutate(*entry, current_parts, queue_representation, format_version);
 
                 if (mutation.parts_to_do.size() == 0)
