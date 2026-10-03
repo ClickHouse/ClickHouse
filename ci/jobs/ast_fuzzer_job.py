@@ -79,23 +79,27 @@ AST_FUZZER_ORACLE_THROW_EXIT_CODE = AST_FUZZER_ORACLE_THROW_ERROR_CODE & 0xFF
 def _last_exception(fuzzer_log: Path, error_code: int, error_name: str) -> str:
     """The exception that ended the run. Several codes share an exit code, so it is the proof.
     Multi-line messages (e.g. health check `Details:`) run until the `(ERROR_NAME)` suffix.
-    Searches the whole log: the terminal step's buffered stdout can flush after the exception."""
-    marker = f"Code: {error_code}."
-    line_number = Shell.get_output(
-        f"rg --text -n -F '{marker}' {fuzzer_log} | tail -n1 | cut -d: -f1",
+    Searches the whole log: the terminal step's buffered stdout can flush after the exception.
+    That stdout can quote `Code: N.` too, so a match counts only once its suffix is found."""
+    marker = f"Code: {error_code}. DB::Exception:"
+    suffix = f"({error_name})"
+    line_numbers = Shell.get_output(
+        f"rg --text -n -F '{marker}' {fuzzer_log} | tail -n20 | cut -d: -f1",
         verbose=False,
-    ).strip()
-    if not line_number:
-        return ""
-    with open(fuzzer_log, "r", encoding="utf-8", errors="replace") as fh:
-        lines = list(itertools.islice(fh, int(line_number) - 1, int(line_number) + 99))
-    block = [lines[0][lines[0].index(marker) :].rstrip("\n")]
-    if f"({error_name})" not in block[0]:
-        for line in lines[1:]:
-            block.append(line.rstrip("\n"))
-            if f"({error_name})" in line:
-                break
-    return "\n".join(block).strip()
+    ).split()
+    for line_number in reversed(line_numbers):
+        with open(fuzzer_log, "r", encoding="utf-8", errors="replace") as fh:
+            lines = itertools.islice(fh, int(line_number) - 1, int(line_number) + 99)
+            first = next(lines)
+            block = [first[first.index(marker) :].rstrip("\n")]
+            if suffix not in block[0]:
+                for line in lines:
+                    block.append(line.rstrip("\n"))
+                    if suffix in line:
+                        break
+        if suffix in block[-1]:
+            return "\n".join(block).strip()
+    return ""
 
 # A client-origin 241 line: "Code: 241" with NO "Received from" on the same line.
 # clickhouse-client raises 241 for its own --max_memory_usage_in_client cap (see
