@@ -169,6 +169,34 @@ def test_port_offset_client_explicit_port_not_offset(start_cluster):
     assert result.strip() == "2"
 
 
+def test_port_offset_client_detects_shifted_secure_port(start_cluster):
+    """Without `--port` / `--secure` the client probes both the plain and the secure port.
+
+    Both candidates are derived from the server-side settings in the client configuration,
+    so both must be shifted by `port_offset`: the plain candidate `8000` + `100` = `8100` is
+    closed, and the client has to find the TLS listener at `9340` + `100` = `9440`.
+    """
+    node_offset.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo '<config><tcp_port>8000</tcp_port><tcp_port_secure>9340</tcp_port_secure>"
+            "<port_offset>100</port_offset><openSSL><client><verificationMode>none</verificationMode>"
+            "<invalidCertificateHandler><name>AcceptCertificateHandler</name></invalidCertificateHandler>"
+            "</client></openSSL></config>' > /tmp/client_secure_offset.xml",
+        ]
+    )
+    result = node_offset.exec_in_container(
+        [
+            "clickhouse",
+            "client",
+            "--config-file=/tmp/client_secure_offset.xml",
+            "--query=SELECT getServerPort('tcp_port_secure')",
+        ]
+    )
+    assert result.strip() == "9440"
+
+
 def test_port_offset_clickhouse_local(start_cluster):
     """`clickhouse-local` shifts its listeners by `port_offset` too.
 
@@ -206,6 +234,10 @@ def test_port_offset_all_protocols(start_cluster):
         ("mysql_port", "9004", "9104"),
         ("postgresql_port", "9005", "9105"),
     ]
+
+    # gRPC binds later than the other listeners (in `startServers`), and it is registered
+    # separately; the registered port must carry the offset as well.
+    assert node_offset.query("SELECT getServerPort('grpc_port')").strip() == "9200"
 
     for port_name, default_port, offset_port in expected:
         actual_default = node_default.query(
