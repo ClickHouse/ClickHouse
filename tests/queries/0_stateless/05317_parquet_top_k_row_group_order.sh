@@ -37,7 +37,7 @@ run_json() {
     "${LOCAL[@]}" "${ST[@]}" "${ON[@]}" --query "$1" --format JSON | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
-print([list(r.values()) for r in d['data']], 'at most 3 row groups read:', d['statistics']['rows_read'] <= 3000)"
+print([list(r.values()) for r in d['data']], 'rows read <= 1000:', d['statistics']['rows_read'] <= 1000)"
 }
 
 # $1: arguments for the number of threads, $2: query
