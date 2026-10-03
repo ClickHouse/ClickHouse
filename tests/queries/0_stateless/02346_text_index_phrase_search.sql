@@ -148,3 +148,87 @@ LIMIT 1;
 
 DROP TABLE tab_m_ref;
 DROP TABLE tab_m_idx;
+
+CREATE TABLE tab_sel_ref (
+    id UInt32,
+    message String
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+-- The cursors need the block index, which only the posting list codec writes.
+CREATE TABLE tab_sel_idx (
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1, posting_list_block_size = 256)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'bitpacking';
+
+-- The rare tokens spread over several blocks and two segments, and half of their rows have no
+-- 'clickhouse', so the cursors have to skip ahead. 'unicorn' is rare enough to be embedded.
+INSERT INTO tab_sel_ref
+SELECT number, concat(
+    if(number % 3 = 0, 'hello world', 'hello clickhouse world'),
+    multiIf(number % 1024 = 37, ' needle clickhouse rare', number % 1024 = 549, ' needle rare', ''),
+    if(number IN (1000, 2000, 3000), ' unicorn clickhouse', ''))
+FROM numbers(262144);
+
+INSERT INTO tab_sel_idx SELECT id, message FROM tab_sel_ref;
+OPTIMIZE TABLE tab_sel_idx FINAL;
+
+-- A copy, so the phrase results of the two paths are cached under different index ids.
+CREATE TABLE tab_sel_idx_copy AS tab_sel_idx;
+INSERT INTO tab_sel_idx_copy SELECT id, message FROM tab_sel_ref;
+OPTIMIZE TABLE tab_sel_idx_copy FINAL;
+
+SELECT 'Candidates from cursors';
+SET text_index_postings_intersection_algorithm = 'leapfrog';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'needle clickhouse');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx WHERE hasPhrase(message, 'needle clickhouse');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse rare');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx WHERE hasPhrase(message, 'clickhouse rare');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'needle clickhouse rare');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx WHERE hasPhrase(message, 'needle clickhouse rare');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'world needle');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx WHERE hasPhrase(message, 'world needle');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse needle');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx WHERE hasPhrase(message, 'clickhouse needle');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'unicorn clickhouse');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx WHERE hasPhrase(message, 'unicorn clickhouse');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'hello clickhouse');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx WHERE hasPhrase(message, 'hello clickhouse');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse world');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx WHERE hasPhrase(message, 'clickhouse world');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'world hello');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx WHERE hasPhrase(message, 'world hello');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'hello clickhouse world');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx WHERE hasPhrase(message, 'hello clickhouse world');
+
+SELECT 'Candidates from bitmaps';
+SET text_index_postings_intersection_algorithm = 'bruteforce';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'needle clickhouse');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'needle clickhouse');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse rare');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'clickhouse rare');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'needle clickhouse rare');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'needle clickhouse rare');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'world needle');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'world needle');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse needle');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'clickhouse needle');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'unicorn clickhouse');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'unicorn clickhouse');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'hello clickhouse');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'hello clickhouse');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse world');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'clickhouse world');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'world hello');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'world hello');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_ref WHERE hasPhrase(message, 'hello clickhouse world');
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'hello clickhouse world');
+
+DROP TABLE tab_sel_ref;
+DROP TABLE tab_sel_idx;
+DROP TABLE tab_sel_idx_copy;

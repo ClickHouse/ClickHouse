@@ -105,6 +105,21 @@ public:
     /// Used to sort cursors by selectivity for leapfrog intersection.
     UInt32 cardinality() const;
 
+    /// Where the current doc_id sits: its segment, its index within it, and the segment's document count.
+    /// Blocks are full except the last of a segment, so the index is `block * BLOCK_SIZE + index in block`.
+    struct Position
+    {
+        size_t segment = 0;
+        size_t index_in_segment = 0;
+        size_t segment_doc_count = 0;
+    };
+    Position position() const
+    {
+        if (is_embedded)
+            return {0, index, decoded_count};
+        return {current_segment_idx, current_block * IPostingListBlockCodec::BLOCK_SIZE + index, current_segment->doc_count};
+    }
+
 private:
     /// Point `current_segment` at the `segment_idx`-th segment (from the cache or `buildPostingSegment`)
     /// without decoding block data yet. No-op for shared-array cursors, which already hold the array.

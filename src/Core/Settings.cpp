@@ -10194,6 +10194,8 @@ Selects the algorithm that intersects posting lists in lazy posting list apply m
 - `leapfrog`: always use the leapfrog intersection.
 
 Intersections of 256 or more tokens always use leapfrog.
+
+Phrase search (`hasPhrase`) applies the same choice to find its candidate rows: `leapfrog` walks the phrase terms' posting lists with cursors, `bruteforce` intersects them as bitmaps.
 )", 0, \
         {"26.10", "auto", "auto", "New setting superseding `text_index_lazy_intersection_density_threshold`: selects the posting list intersection algorithm in lazy posting list apply mode. `auto` keeps the previous default behavior, so `compatibility` must not change it."}) \
     DECLARE(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
