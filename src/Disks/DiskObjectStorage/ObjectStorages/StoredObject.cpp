@@ -1,5 +1,4 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
-#include <base/arithmeticOverflow.h>
 
 namespace DB
 {
@@ -8,9 +7,12 @@ size_t getTotalSize(const StoredObjects & objects)
 {
     size_t size = 0;
     for (const auto & object : objects)
-        /// An object of `UnknownSize` contributes `UINT64_MAX` and wraps the total; callers such as
-        /// `ReadPipeline` already treat the unknown-size case separately, so keep that behaviour.
-        size = common::addIgnoreOverflow(size, object.bytes_size);
+    {
+        /// The total of objects one of which has an unknown size is unknown too, as in `OffsetMap`.
+        if (object.bytes_size == StoredObject::UnknownSize)
+            return StoredObject::UnknownSize;
+        size += object.bytes_size;
+    }
     return size;
 }
 
