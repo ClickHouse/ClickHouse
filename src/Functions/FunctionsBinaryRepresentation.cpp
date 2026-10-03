@@ -713,17 +713,13 @@ public:
                 }
                 else
                 {
-                    char * begin = reinterpret_cast<char *>(out_vec.data());
-                    char * pos = begin;
+                    /// Odd width: every row has an incomplete leading group, so decode row by row,
+                    /// but still with a single arch dispatch for the whole column.
+                    PaddedPODArray<UInt64> in_offsets(input_rows_count);
                     for (size_t i = 0; i < input_rows_count; ++i)
-                    {
-                        Impl::decode(
-                            reinterpret_cast<const char *>(&in_vec[i * n]),
-                            reinterpret_cast<const char *>(&in_vec[(i + 1) * n]),
-                            pos);
-                        out_offsets[i] = pos - begin;
-                    }
-                    out_vec.resize(pos - begin);
+                        in_offsets[i] = (i + 1) * n;
+                    DB::decodeHexStrings(reinterpret_cast<uint8_t *>(out_vec.data()), reinterpret_cast<const uint8_t *>(in_vec.data()), in_offsets.data(), out_offsets.data(), input_rows_count);
+                    out_vec.resize(input_rows_count > 0 ? out_offsets.back() : 0);
                 }
             }
             else
