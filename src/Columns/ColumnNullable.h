@@ -109,6 +109,31 @@ public:
         }
     }
 
+    void insertManyDefaults(size_t length) override
+    {
+        if (length == 0)
+            return;
+
+        const size_t old_size = size();
+        try
+        {
+            getNestedColumn().insertManyDefaults(length);
+            getNullMapData().resize_fill(old_size + length, true);
+        }
+        catch (...)
+        {
+            auto & nested = getNestedColumn();
+            if (nested.size() > old_size)
+                nested.popBack(nested.size() - old_size);
+
+            auto & null_map_data = getNullMapData();
+            if (null_map_data.size() > old_size)
+                null_map_data.resize(old_size);
+
+            throw;
+        }
+    }
+
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     void filter(const Filter & filt) override;

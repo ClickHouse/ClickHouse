@@ -80,6 +80,7 @@ public:
 #endif
 
     void insertDefault() override;
+    void insertManyDefaults(size_t length) override;
     void popBack(size_t n) override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;

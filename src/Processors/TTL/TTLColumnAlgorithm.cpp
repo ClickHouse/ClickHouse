@@ -53,7 +53,12 @@ void TTLColumnAlgorithm::execute(Block & block)
     if (isMaxTTLExpired() && !is_compact_part)
     {
         auto result_column = column_with_type.column->cloneEmpty();
-        result_column->reserve(block.rows());
+
+        /// insertManyDefaults owns capacity planning for type defaults. Reserving here can recursively
+        /// reserve nested storage that an empty default never fills (for example Array or Map).
+        /// A DDL DEFAULT may materialize data through insertRangeFrom, so keep the reserve for that path.
+        if (default_expression)
+            result_column->reserve(block.rows());
 
         auto default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
         if (default_column)
