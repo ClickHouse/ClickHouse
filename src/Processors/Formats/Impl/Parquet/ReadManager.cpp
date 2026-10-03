@@ -108,8 +108,7 @@ static thread_local const ReadManager * top_k_admitting_manager = nullptr;
 
 void ReadManager::admitTopKRowGroups(MemoryUsageDiff & diff)
 {
-    /// Starts row groups in order, each checked against the latest threshold right before it starts,
-    /// with at most max(min_outstanding, admitted / 2) of them started but not fully read.
+    /// Starts row groups in order, each checked against the latest threshold right before it starts.
     if (top_k_admitting_manager == this)
         return; /// The loop below, higher up in this thread's stack, picks up the released admission.
     const ReadManager * outer_admitting_manager = top_k_admitting_manager;
