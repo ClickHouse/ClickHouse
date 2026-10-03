@@ -888,6 +888,11 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     cache_settings.enable_prefetch = params.enable_prefetch;
     cache_settings.min_bytes_for_prefetch = min_bytes_for_prefetch;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
+    if (params.top_k && typeid_cast<const ColumnsHashing::HashMethodSerializedContext *>(aggregation_state_cache.get()))
+    {
+        cache_settings.allow_batch_serialize = false;
+        aggregation_state_cache_without_batch_keys = AggregatedDataVariants::createCache(method_chosen, cache_settings);
+    }
 
 #if USE_EMBEDDED_COMPILER
     compileAggregateFunctionsIfNeeded();
@@ -1141,16 +1146,19 @@ void NO_INLINE Aggregator::executeImpl(
     UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
     bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
+    const auto & state_cache = aggregation_state_cache_without_batch_keys && method.top_k_heap.skipsMostRows()
+        ? aggregation_state_cache_without_batch_keys
+        : aggregation_state_cache;
 
     if (use_cache)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::State state(key_columns, key_sizes, state_cache);
         executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::StateNoCache state(key_columns, key_sizes, state_cache);
         executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
     }
 }
@@ -1354,16 +1362,19 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
         UInt64 total_records = cache_stats.hits + cache_stats.misses;
         double cache_hit_rate = total_records ? static_cast<double>(cache_stats.hits) / static_cast<double>(total_records) : 1.0;
         bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
+        const auto & state_cache = aggregation_state_cache_without_batch_keys && method.top_k_heap.skipsMostRows()
+            ? aggregation_state_cache_without_batch_keys
+            : aggregation_state_cache;
 
         /// The hashing state is constructed once and shared by all slices: for the serialized
         /// and fixed-key methods its constructor does whole-block work (batch key serialization
         /// or packing), which must not be repeated per slice.
         if (use_cache)
         {
-            typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+            typename Method::State state(key_columns, key_sizes, state_cache);
             return run_slices(state, [&](size_t rows) { cache_stats.update(rows, state.getCacheMissesSinceLastReset()); });
         }
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::StateNoCache state(key_columns, key_sizes, state_cache);
         return run_slices(state, [](size_t) {});
     };
 

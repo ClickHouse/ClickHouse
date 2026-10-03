@@ -56,11 +56,14 @@ struct TopKAggregationHeapBase
     {
         observed_rows += observed;
         skipped_rows += skipped;
+        last_rows_mostly_skipped = skipped * 4 > observed * 3;
     }
 
     bool everRejected() const { return skipped_rows > 0 || evicted_keys > 0; }
 
     bool needsTrim() const { return heap_indices.size() > next_trim_size; }
+
+    bool skipsMostRows() const { return !frozen && last_rows_mostly_skipped; }
 
     bool shouldFreeze() const;
 
@@ -119,6 +122,7 @@ protected:
     /// Profitability accounting.
     UInt64 observed_rows = 0;               /// fed by `recordRows`; the skip ratio drives the freeze decision
     UInt64 skipped_rows = 0;
+    bool last_rows_mostly_skipped = false;
     UInt64 evicted_keys = 0;                /// with `skipped_rows` defines `everRejected`, which suppresses hash-table size statistics
     UInt64 profitability_window = 0;        /// rows to observe before the freeze check; 0 disables it
 
