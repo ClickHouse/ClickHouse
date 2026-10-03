@@ -1,0 +1,60 @@
+a NaN in the constant
+0
+0
+0
+0
+0
+0
+0
+an ordinary constant still counts and prunes
+3
+4
+a NaN in the key data
+2
+2
+2
+2
+a NULL in the constant, through a key transform
+0
+0
+1
+IN and NOT IN agree with the rows they return
+0	0
+3	3
+1	1
+2	2
+1	1
+2	2
+1	1
+2	2
+1	1
+0	0
+3	3
+1	1
+2	2
+0	0
+3	3
+1	1
+2	2
+a NULL or a NaN nested inside a granule whose bounds are ordinary
+2
+2
+2
+2
+2
+2
+a range bounded above by an ordinary value excludes a nested NULL or NaN on both sides
+1	1
+4	4
+4	4
+1	1
+4	4
+5	5
+a NULL in the key data, hidden by a key transform
+1
+1	1
+1
+1	1
+1
+1
+1	1
