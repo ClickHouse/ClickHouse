@@ -1074,6 +1074,13 @@ public:
     /// same bytes twice there and let a handful of pooled workers exhaust
     /// `max_server_memory_usage` on paper.
     ///
+    /// The global tracker's charge lasts only until the next tick of `MemoryWorker` when
+    /// `memory_worker_correct_memory_tracker` is on (the default): the tracker is then replaced
+    /// with a measurement, which includes the region's pages when it is the cgroup usage and does
+    /// not when it is jemalloc's resident size or a sanitizer's allocator statistic. The charge is
+    /// still made, for the tracker kept without that correction and for
+    /// `ExecutableUDFSharedMemoryPooledBytes`, which reports it in every case.
+    ///
     /// Called by the borrower right after it takes the holder from the pool, before it creates,
     /// grows or charges anything.
     void releaseChargeToBorrower()

@@ -1,0 +1,52 @@
+--- the region of a pooled worker is charged to the query that uses it
+error: MEMORY_LIMIT_EXCEEDED UDF_EXECUTION_FAILED
+--- both regions of the pipelined mode are charged to the query
+Key 1
+error: MEMORY_LIMIT_EXCEEDED UDF_EXECUTION_FAILED
+--- a pooled region is counted once, not on every borrow
+Key 1
+Key 2
+Key 3
+Key 4
+Key 5
+1
+--- a borrow refused by the memory limit leaves the pool as it was
+error: MEMORY_LIMIT_EXCEEDED UDF_EXECUTION_FAILED
+0
+1
+error: MEMORY_LIMIT_EXCEEDED UDF_EXECUTION_FAILED
+1
+1
+1
+--- a pipelined borrow refused halfway does not leave the region it created behind
+error: MEMORY_LIMIT_EXCEEDED UDF_EXECUTION_FAILED
+1
+0
+--- the region of an idle pooled worker is charged to the server, exactly once
+Key 1
+1
+67108864
+Key 1
+67108864
+0
+0
+--- both regions of an idle pipelined worker are charged to the server
+Key 1
+2
+67108864
+0
+0
+--- a pipelined pooled worker keeps the region it grew, and the other one as it is
+8000
+1
+2	1	1
+1
+8000
+1
+1
+1
+0
+--- a worker discarded for its stdout still reports its CPU and memory
+1
+1
+1
