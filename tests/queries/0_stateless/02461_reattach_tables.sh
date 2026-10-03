@@ -172,4 +172,12 @@ check_if_detached "WITH (1, 2) AS t_reattach_cte SELECT (SELECT 1 IN t_reattach_
 # ... except for the `WITH` aliases of a query running with `enable_scopes_for_with_statement = 0`, which
 # the analyzer copies into every nested scope, so the alias still hides the table there.
 check_if_not_detached "WITH (1, 2) AS t_reattach_cte SELECT (SELECT 1 IN t_reattach_cte) SETTINGS enable_global_with_statement = 0, enable_scopes_for_with_statement = 0" "t_reattach_cte"
+
+# A trailing `SETTINGS` of a `UNION` chain: after parenthesized arms of a top-level query it is kept on the
+# union node and applies to the whole query; inside a subquery it can only follow the last arm (a nested
+# union node never carries `SETTINGS`) and applies to that arm alone, whose nested select then reads the
+# real table while the other arms still see the CTE.
+check_if_detached "(WITH t_reattach_cte AS (SELECT 1) SELECT (SELECT count() FROM t_reattach_cte)) UNION ALL (SELECT 1) SETTINGS enable_global_with_statement = 0" "t_reattach_cte"
+check_if_detached "WITH t_reattach_cte AS (SELECT 1) SELECT 1 IN (SELECT count() FROM t_reattach_cte UNION ALL SELECT count() FROM t_reattach_cte SETTINGS enable_global_with_statement = 0)" "t_reattach_cte"
+check_if_not_detached "WITH t_reattach_cte AS (SELECT 1) SELECT 1 IN (SELECT count() FROM t_reattach_cte SETTINGS enable_global_with_statement = 1 UNION ALL SELECT count() FROM t_reattach_cte)" "t_reattach_cte"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_cte"
