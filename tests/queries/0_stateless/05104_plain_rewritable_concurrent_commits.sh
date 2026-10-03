@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-object-storage, no-replicated-database, no-shared-merge-tree, no-flaky-check
+# Tags: no-parallel, no-object-storage, no-replicated-database, no-shared-merge-tree, no-flaky-check, no-fasttest
 # Tag no-parallel: the pause failpoint is global to the server, so a concurrent test copying a file on any
 #                  plain_rewritable disk would be parked by it, and `SYSTEM WAIT FAILPOINT` would synchronize
 #                  with the wrong query
 # Tag no-object-storage: the test uses a disk of its own
 # Tag no-replicated-database: plain rewritable should not be shared between replicas
 # Tag no-flaky-check: the failpoint is global to the server, a concurrent instance of this test would resume the paused query
+# Tag no-fasttest: the test enables a failpoint, so it runs alone, and tests that run alone are kept out of the fast test
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -106,7 +106,7 @@ void MetadataOperationsHolder::commit()
             rollback(i, error);
 
             tryLogCurrentException(__PRETTY_FUNCTION__);
-            throw error;
+            error.rethrow();
         }
     }
 
