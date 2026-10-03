@@ -15,8 +15,10 @@
 1
 1
 0
--- a full-column use does not add a duplicate subcolumn read
+-- a full-column use keeps non-filter tupleElement on the function path
 0
+-- a full-column use still optimizes tupleElement in filters
+1
 -- physical dotted columns and case collisions are not rewritten
 0
 0

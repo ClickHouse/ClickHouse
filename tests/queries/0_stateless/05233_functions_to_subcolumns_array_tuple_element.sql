@@ -60,8 +60,14 @@ WHERE explain ILIKE '%column_name: a.code%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT tupleElement(a, 'code') FROM t_array_tuple_element)
 WHERE explain ILIKE '%function_name: tupleElement%';
 
-SELECT '-- a full-column use does not add a duplicate subcolumn read';
+SELECT '-- a full-column use keeps non-filter tupleElement on the function path';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT a, tupleElement(a, 'code') FROM t_array_tuple_element)
+WHERE explain ILIKE '%column_name: a.code%';
+
+SELECT '-- a full-column use still optimizes tupleElement in filters';
+SELECT count() FROM (
+    EXPLAIN QUERY TREE SELECT a FROM t_array_tuple_element
+    WHERE has(tupleElement(a, 'code'), 11))
 WHERE explain ILIKE '%column_name: a.code%';
 
 DROP TABLE t_array_tuple_element;
