@@ -99,21 +99,6 @@ bool isNullableOrLcNullable(DataTypePtr type)
     return false;
 }
 
-/// Returns `true` if there are nullable column in src but corresponding column in dst is not
-bool changedNullabilityOneWay(const Block & src_block, const Block & dst_block)
-{
-    std::unordered_map<String, bool> src_nullable;
-    for (const auto & col : src_block)
-        src_nullable[col.name] = isNullableOrLcNullable(col.type);
-
-    for (const auto & col : dst_block)
-    {
-        if (!isNullableOrLcNullable(col.type) && src_nullable[col.name])
-            return true;
-    }
-    return false;
-}
-
 bool hasJoin(const ASTSelectQuery & select)
 {
     const auto & tables = select.tables();
@@ -474,6 +459,39 @@ bool canSeeViewPlan(const StorageID & view_id, const StorageInMemoryMetadata & m
 
 }
 
+/// Returns `true` if there are nullable column in src but corresponding column in dst is not
+bool changedNullabilityOneWay(const Block & src_block, const Block & dst_block)
+{
+    std::unordered_map<String, bool> src_nullable;
+    for (const auto & col : src_block)
+        src_nullable[col.name] = isNullableOrLcNullable(col.type);
+
+    for (const auto & col : dst_block)
+    {
+        if (!isNullableOrLcNullable(col.type) && src_nullable[col.name])
+            return true;
+    }
+    return false;
+}
+
+/// `LEFT ARRAY JOIN` changes the nullability of the joined columns under `array_join_use_nulls`,
+/// exactly like `JOIN` does under `join_use_nulls`. An inner `ARRAY JOIN` never does (an empty array
+/// simply produces no rows), so only the `LEFT` kind is relevant for the schema-mismatch guard.
+/// The whole query is searched, not only the top-level `SELECT`, because a `LEFT ARRAY JOIN` inside
+/// a table subquery, a CTE or a nested `UNION` propagates its `Nullable` columns to the view output too.
+bool hasLeftArrayJoin(const IAST & ast)
+{
+    if (const auto * array_join = ast.as<ASTArrayJoin>(); array_join && array_join->kind == ASTArrayJoin::Kind::Left)
+        return true;
+
+    for (const auto & child : ast.children)
+    {
+        if (child && hasLeftArrayJoin(*child))
+            return true;
+    }
+    return false;
+}
+
 VirtualColumnsDescription StorageView::createVirtuals()
 {
     VirtualColumnsDescription desc;
@@ -741,13 +759,21 @@ void StorageView::readImpl(
     const auto & header = query_plan.getCurrentHeader();
 
     const auto * select_with_union = current_inner_query->as<ASTSelectWithUnionQuery>();
-    if (select_with_union && hasJoin(*select_with_union) && changedNullabilityOneWay(*header, expected_header))
+    if (select_with_union && changedNullabilityOneWay(*header, expected_header))
     {
-        throw DB::Exception(ErrorCodes::INCORRECT_QUERY,
-                            "Query from view {} returned Nullable column having not Nullable type in structure. "
-                            "If query from view has JOIN, it may be cause by different values of 'join_use_nulls' setting. "
-                            "You may explicitly specify 'join_use_nulls' in 'CREATE VIEW' query to avoid this error",
-                            getStorageID().getFullTableName());
+        if (hasJoin(*select_with_union))
+            throw DB::Exception(ErrorCodes::INCORRECT_QUERY,
+                                "Query from view {} returned Nullable column having not Nullable type in structure. "
+                                "If query from view has JOIN, it may be cause by different values of 'join_use_nulls' setting. "
+                                "You may explicitly specify 'join_use_nulls' in 'CREATE VIEW' query to avoid this error",
+                                getStorageID().getFullTableName());
+
+        if (hasLeftArrayJoin(*select_with_union))
+            throw DB::Exception(ErrorCodes::INCORRECT_QUERY,
+                                "Query from view {} returned Nullable column having not Nullable type in structure. "
+                                "If query from view has LEFT ARRAY JOIN, it may be caused by different values of 'array_join_use_nulls' setting. "
+                                "You may explicitly specify 'array_join_use_nulls' in 'CREATE VIEW' query to avoid this error",
+                                getStorageID().getFullTableName());
     }
 
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(

@@ -17,6 +17,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
+#include <Storages/StorageView.h>
 
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/ProcessList.h>
@@ -129,6 +130,7 @@ namespace Setting
     extern const SettingsBool materialized_views_ignore_errors;
     extern const SettingsBool materialized_views_squash_parallel_inserts;
     extern const SettingsBool parallel_view_processing;
+    extern const SettingsBool array_join_use_nulls;
 }
 
 namespace MergeTreeSetting
@@ -145,6 +147,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_DEEP_RECURSION;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -649,6 +652,21 @@ private:
         }
         pipeline.resize(1);
         pipeline.dropTotalsAndExtremes();
+
+        /// The target table of the view has the column types fixed at creation time, but the `SELECT` runs
+        /// with the settings of the `INSERT`. `LEFT ARRAY JOIN` under `array_join_use_nulls` makes the joined
+        /// columns `Nullable`, which cannot be stored into the non-`Nullable` columns of the target table.
+        /// Report it explicitly, like `StorageView` does for ordinary views.
+        if (local_context->getSettingsRef()[Setting::array_join_use_nulls]
+            && hasLeftArrayJoin(*select_query)
+            && changedNullabilityOneWay(pipeline.getHeader(), inner_metadata->getSampleBlock()))
+        {
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                            "Query from materialized view {} returned Nullable column having not Nullable type in the target table {}. "
+                            "If query from materialized view has LEFT ARRAY JOIN, it may be caused by different values of 'array_join_use_nulls' setting. "
+                            "You may explicitly specify 'array_join_use_nulls' in the SETTINGS clause of the materialized view query to avoid this error",
+                            view_id.getFullTableName(), inner_id.getFullTableName());
+        }
 
         bool insert_null_as_default = false;
 

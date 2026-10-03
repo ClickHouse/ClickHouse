@@ -1,0 +1,11 @@
+Goodbye	\N	Nullable(UInt8)
+Hello	1	Nullable(UInt8)
+Hello	2	Nullable(UInt8)
+World	3	Nullable(UInt8)
+World	4	Nullable(UInt8)
+World	5	Nullable(UInt8)
+Hello	1	UInt8
+Hello	2	UInt8
+World	3	UInt8
+World	4	UInt8
+World	5	UInt8
