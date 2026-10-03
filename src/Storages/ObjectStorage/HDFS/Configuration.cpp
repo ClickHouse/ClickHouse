@@ -27,6 +27,7 @@ namespace Setting
     extern const SettingsBool hdfs_ignore_file_doesnt_exist;
     extern const SettingsUInt64 hdfs_replication;
     extern const SettingsBool hdfs_skip_empty_files;
+    extern const SettingsBool hdfs_skip_hidden_files;
     extern const SettingsBool hdfs_throw_on_zero_files_match;
     extern const SettingsBool hdfs_truncate_on_insert;
     extern const SettingsUInt64 remote_read_min_bytes_for_seek;
@@ -71,6 +72,7 @@ StorageObjectStorageQuerySettings StorageHDFSConfiguration::getQuerySettings(con
         .list_object_keys_size = 0, /// HDFS does not support listing in batches.
         .throw_on_zero_files_match = settings[Setting::hdfs_throw_on_zero_files_match],
         .ignore_non_existent_file = settings[Setting::hdfs_ignore_file_doesnt_exist],
+        .skip_hidden_files = settings[Setting::hdfs_skip_hidden_files],
     };
 }
 

@@ -1,0 +1,11 @@
+hive count:	1
+hive filtered count:	1
+hive rows:	1	2026-01-01
+plain glob default:	3
+plain glob skip hidden:	1
+hidden prefix exempt:	1
+inference without skip:
+a	String
+inference with skip:
+id	Int64
+dt	Date
