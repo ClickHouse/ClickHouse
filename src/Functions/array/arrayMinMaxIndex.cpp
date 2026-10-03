@@ -69,6 +69,8 @@ struct ArrayMinMaxIndexImpl
 
         if (!handled)
         {
+            /// findExtreme*Index deliberately excludes 128/256-bit integers and decimals because its two-pass scan only pays off when vectorized.
+            /// Scan these concrete columns once to avoid the virtual compareAt fallback.
             handled = castTypeToEither<
                 ColumnInt128, ColumnInt256,
                 ColumnUInt128, ColumnUInt256,
