@@ -519,12 +519,15 @@ private:
             return;
 
         /// The alias of a table expression names a table, but the aliases in the arguments of a table function belong
-        /// to the select query, as in the analyzer.
+        /// to the select query, as in the analyzer, except inside a lambda or a subquery.
         if (const auto * table_expression = ast->as<ASTTableExpression>())
         {
             if (const auto * table_function = table_expression->table_function ? table_expression->table_function->as<ASTFunction>() : nullptr;
                 table_function && table_function->arguments)
-                collectAliases(table_function->arguments);
+            {
+                ApplyWithSubqueryVisitor::forEachExpressionAlias(
+                    table_function->arguments, [&](const String & alias, const ASTPtr &) { expression_aliases.insert(alias); });
+            }
             return;
         }
 
