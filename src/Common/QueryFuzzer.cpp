@@ -4410,10 +4410,10 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
         }
         else if (!alias.empty())
         {
-            ASTIdentifier * id = nullptr;
+            ASTIdentifier * id = typeid_cast<ASTIdentifier *>(exp.get());
             const int next_action = fuzz_rand() % 30;
 
-            if (next_action == 0 && (id = typeid_cast<ASTIdentifier *>(exp.get())) && !id->name_parts.empty() && !id->isParam())
+            if (next_action == 0 && id && !id->name_parts.empty() && !id->isParam())
             {
                 /// Move alias to the end of the identifier (most of the time) or somewhere else.
                 /// Skip parameterized identifiers: their empty placeholder parts would trip
@@ -5730,8 +5730,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "detectCharset",
          "detectLanguage",
          "detectLanguageUnknown",
-         "detectLanguageMixed",
-         "detectTonality"},
+         "detectLanguageMixed"},
         /// Word-level NLP (language/extension + word)
         {"stem", "lemmatize", "synonyms"},
         /// AI functions over (text, const String arg, [params]): instruction / condition / language / model
@@ -6797,14 +6796,13 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         if (select->tables().get())
         {
-            ASTPtr arr_join;
-            ASTPtr new_join;
             const int next_action = fuzz_rand() % 30;
 
             /// Add a join or remove a table only when tables in FROM are already present
-            if (next_action == 0 && !select->refTables()->children.empty() && (new_join = addJoinClause()))
+            if (next_action == 0 && !select->refTables()->children.empty())
             {
-                select->refTables()->children.emplace_back(new_join);
+                if (ASTPtr new_join = addJoinClause())
+                    select->refTables()->children.emplace_back(new_join);
             }
             else if (next_action == 1 && select->refTables()->children.size() > 1)
             {
@@ -6846,9 +6844,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 }
             }
             /// Add array join
-            if (fuzz_rand() % 30 == 0 && !select->refTables()->children.empty() && (arr_join = addArrayJoinClause()))
+            if (fuzz_rand() % 30 == 0 && !select->refTables()->children.empty())
             {
-                select->refTables()->children.emplace_back(arr_join);
+                if (ASTPtr arr_join = addArrayJoinClause())
+                    select->refTables()->children.emplace_back(arr_join);
             }
         }
         if (select->groupBy().get())

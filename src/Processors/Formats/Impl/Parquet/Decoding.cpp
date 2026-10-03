@@ -3,6 +3,7 @@
 #include <base/arithmeticOverflow.h>
 #include <base/sanitizer_defs.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/FloatUtils.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/DateTimeTransforms.h>
@@ -76,10 +77,16 @@ struct BitPackedRLEDecoder : public PageDecoder
     }
     void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) override
     {
-        (void)filter;
-        (void)filter_offset;
         auto & out = assert_cast<ColumnVector<T> &>(col).getData();
-        decodeArray(num_values, out);
+        if (!filter)
+        {
+            decodeArray(num_values, out);
+            return;
+        }
+        filter += filter_offset;
+        size_t start = out.size();
+        out.resize(start + countBytesInFilter(filter, 0, num_values));
+        skipOrDecode<false, /*count_zeros=*/ false, /*filtered=*/ true>(num_values, out.data() + start, nullptr, filter);
     }
     void decodeArray(size_t num_values, PaddedPODArray<T> & out)
     {
@@ -191,18 +198,27 @@ struct BitPackedRLEDecoder : public PageDecoder
         }
     }
 
-    template <bool skip, bool count_zeros = false>
-    void skipOrDecode(size_t num_values, T * out, size_t * num_zeros = nullptr)
+    /// With filtered, only the values whose filter byte is nonzero are written to out, packed.
+    template <bool skip, bool count_zeros = false, bool filtered = false>
+    void skipOrDecode(size_t num_values, T * out, size_t * num_zeros = nullptr, const UInt8 * filter = nullptr)
     {
         /// The skip path below advances `bit_idx` past a bit-packed run without looking at the
         /// values, so it can't count zeros. Counting requires decoding.
         static_assert(!(skip && count_zeros));
+        static_assert(!(filtered && (skip || count_zeros)));
 
         if (bit_width == 0)
         {
             /// bit_width == 0 means all values are 0.
+            size_t count = num_values;
+            if constexpr (filtered)
+            {
+                count = countBytesInFilter(filter, 0, num_values);
+                if (count && limit == 0)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (rle)");
+            }
             if constexpr (!skip)
-                memset(out, 0, num_values * sizeof(T));
+                memset(out, 0, count * sizeof(T));
             if constexpr (count_zeros)
                 *num_zeros += num_values;
             return;
@@ -231,9 +247,12 @@ struct BitPackedRLEDecoder : public PageDecoder
             {
                 if constexpr (!skip)
                 {
+                    size_t count = n;
+                    if constexpr (filtered)
+                        count = countBytesInFilter(filter, 0, n);
                     const T v = val; // without this std::fill reloads it from memory on each iteration
-                    std::fill(out, out + n, v);
-                    out += n;
+                    std::fill(out, out + count, v);
+                    out += count;
                 }
                 if constexpr (count_zeros)
                 {
@@ -243,7 +262,32 @@ struct BitPackedRLEDecoder : public PageDecoder
             }
             else
             {
-                if constexpr (!skip)
+                if constexpr (filtered)
+                {
+                    for (size_t i = 0; i < n; i += 64)
+                    {
+                        const size_t len = std::min<size_t>(64, n - i);
+                        UInt64 mask = 0;
+                        if (len == 64)
+                            mask = bytes64MaskToBits64Mask(filter + i);
+                        else
+                            for (size_t k = 0; k < len; ++k)
+                                mask |= UInt64(filter[i + k] != 0) << k;
+                        for (; mask; mask &= mask - 1)
+                        {
+                            size_t pos = bit_idx + (i + std::countr_zero(mask)) * bit_width;
+                            size_t x = 0;
+                            memcpy(&x, data + (pos >> 3), 8);
+                            x = (x >> (pos & 7)) & value_mask;
+                            if (x >= limit)
+                                throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (bp)");
+                            *out = static_cast<T>(x);
+                            ++out;
+                        }
+                    }
+                    bit_idx += bit_width * n;
+                }
+                else if constexpr (!skip)
                 {
                     for (size_t i = 0; i < n; ++i)
                     {
@@ -268,6 +312,9 @@ struct BitPackedRLEDecoder : public PageDecoder
                 if (!run_length)
                     data += run_bytes;
             }
+
+            if constexpr (filtered)
+                filter += n;
         }
         if constexpr (count_zeros)
             *num_zeros += zeros_acc;
