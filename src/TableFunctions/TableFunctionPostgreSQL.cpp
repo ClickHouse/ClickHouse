@@ -164,9 +164,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 
 Arguments also can be passed using [named collections](/concepts/features/configuration/server-config/named-collections). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
-TLS/SSL parameters are forwarded to `libpq` and can be supplied as named collection keys or trailing key-value arguments: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`; when unset, the `libpq` default of `prefer` applies), and the certificates and the key in one of two forms. `sslrootcert` (CA certificate, or the special value `system`), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files and can only be specified in a named collection defined in the server configuration file. `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead — for example, `postgresql('host:port', 'database', 'table', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')` — and are masked in logs and `SHOW` queries like a password.
-
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table object with the same columns as the original PostgreSQL table.
 
@@ -201,20 +199,12 @@ SELECT * FROM postgresql('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 
 SELECT * FROM postgresql('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
 ```
 
-Passing a query is supported starting from version 26.7. ClickHouse wraps the query into `SELECT ... FROM (<query>)` before sending it to PostgreSQL, so it must not end with a semicolon. The `schema` argument does not apply to a passed query: qualify the table names in the query instead.
-
-With a [named collection](/concepts/features/configuration/server-config/named-collections) such as `mypg` from the [examples](#examples), pass the query in the `query` key instead of `table`, either in the collection itself or as a key-value argument. `query` and `table` cannot be specified together:
-
-```sql
-SELECT * FROM postgresql(mypg, query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
-```
-
 This is useful to push down joins, aggregations or any other processing to PostgreSQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`PostgreSQL`](/reference/engines/table-engines/integrations/postgresql) table engine.
 
 <Note>
 The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the PostgreSQL dialect (PostgreSQL identifier quoting and string-literal escaping) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass PostgreSQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to PostgreSQL verbatim.
 
-Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from PostgreSQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings/external-table#external_table_strict_query) an outer filter on the columns of the table function is rejected with an exception instead of being applied locally, because it cannot be pushed into the passed query. The check covers the top-level `WHERE` predicate and each conjunct of a top-level `AND`. A `PREWHERE` on the columns of this table is not a case for this setting: this table engine do not support `PREWHERE`, and such a query is rejected with `ILLEGAL_PREWHERE` regardless of the setting. The check runs only where a filter could be pushed down at all: when this table is the only table of the query, on either side of an `INNER JOIN`, or on the preserving side of an outer join (the left side of a `LEFT JOIN`, the right side of a `RIGHT JOIN`). On the non-preserving side of a `LEFT`/`RIGHT JOIN` and on either side of a `FULL JOIN` nothing is pushed down and nothing is checked, so a filter on the columns of this table is applied locally after the join even in strict mode. Where the check runs, a predicate that references other tables joined in the surrounding query is not pushed down and is excluded from the check, whether it references only the joined side or mixes it with this table inside one non-`AND` expression (for example an `OR`); such a predicate keeps its usual ClickHouse evaluation point (`WHERE` after the join, `PREWHERE` before it) and is not rejected.
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from PostgreSQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
 </Note>
 
 `INSERT` queries on PostgreSQL side run as `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` inside PostgreSQL transaction with auto-commit after each `INSERT` statement.

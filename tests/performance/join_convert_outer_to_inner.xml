@@ -6,10 +6,8 @@
     <create_query>CREATE TABLE test_table_1(id UInt64, value String) ENGINE=MergeTree ORDER BY id</create_query>
     <create_query>CREATE TABLE test_table_2(id UInt64, value String) ENGINE=MergeTree ORDER BY id</create_query>
 
-    <!-- Deterministic data written as one part per table, so both compared servers read the same granules. Seeds 7 and 11 put key 5, which queries #1 and #3 look up, once in each table. -->
-    <fill_query>INSERT INTO test_table_1 SELECT (cityHash64(number, 7) % 5000000) AS key, toString(key) FROM numbers(5000000) SETTINGS min_insert_block_size_rows = 10000000, min_insert_block_size_bytes = 0</fill_query>
-    <fill_query>INSERT INTO test_table_2 SELECT (cityHash64(number, 11) % 5000000) AS key, toString(key) FROM numbers(5000000) SETTINGS min_insert_block_size_rows = 10000000, min_insert_block_size_bytes = 0</fill_query>
-    <fill_query>SELECT throwIf(count() != 2, 'join_convert_outer_to_inner: expected 1 active part per table') FROM system.parts WHERE database = currentDatabase() AND table IN ('test_table_1', 'test_table_2') AND active</fill_query>
+    <fill_query>INSERT INTO test_table_1 SELECT (rand64() % 5000000) AS key, toString(key) FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO test_table_2 SELECT (rand64() % 5000000) AS key, toString(key) FROM numbers(5000000)</fill_query>
 
     <query>SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE rhs.value != '' FORMAT Null</query>
     <query>SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE rhs.value != '' AND rhs.id = 5 FORMAT Null</query>

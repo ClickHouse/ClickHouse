@@ -1,0 +1,190 @@
+---
+noindex: true
+title: "ClickHouse Private 中的 PKI 和 mTLS"
+sidebarTitle: "PKI 和 mTLS"
+description: "本文介绍公钥基础设施（PKI）和双向 TLS（mTLS）在 ClickHouse Private 中的工作机制：有哪些证书、它们为何存在，以及配置强制执行了哪些标准"
+---
+
+本文介绍公钥基础设施 (PKI) 和双向 TLS (mTLS) 在 ClickHouse Private 中的工作机制：有哪些证书、它们为何存在、配置强制执行了哪些标准、证书如何验证，以及如何进行轮换。本文是[配置 cert-manager](/zh/products/clickhouse-private/guides/configure-cert-manager-for-clickhouse-certificates)和[生成符合 FIPS 标准的证书](/zh/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse)这两篇操作指南的概念配套文档。
+
+<div id="why-pki-matters-here">
+  ## 为什么这里需要 PKI
+</div>
+
+ClickHouse Private 集群是一个分布式系统：ClickHouse Server 的副本彼此通信，也会与 ClickHouse Keeper 通信；Keeper 节点之间会形成 Raft 法定人数；而服务器还会发起出站连接 (例如连接到 Keeper 或通过 HTTPS 访问的资源) 。在受监管或隔离网络环境中，这些通信链路中的每一跳通常都需要加密，并且理想情况下还应进行双向身份验证，以确保只有受信任的组件才能加入集群。
+
+TLS 提供两种不同的保障，值得将它们区分开来：
+
+* **传输中加密** — 流量无法被传输路径上的第三方读取。这只要求 *服务器* 端出示证书。
+* **身份验证** — 通信双方各自通过由受信任 CA 签名的证书来证明自己的身份。当 *双方* 都出示并验证证书时，就实现了 **双向 TLS (mTLS)&#x20;**。
+
+ClickHouse Private 同时支持这两种方式：你可以仅使用加密型 TLS，也可以根据 `verificationMode` 以及是否配置了客户端证书来启用完整的 mTLS。下面的章节将说明这些选择如何表示。
+
+<div id="the-certificates-and-their-purpose">
+  ## 证书及其用途
+</div>
+
+ClickHouse Private 使用一个通用的证书颁发机构 (CA) ，并为每个组件配备一张叶子证书：
+
+| Certificate | Used by             | Purpose                                                                                                        |
+| ----------- | ------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **CA**      | 所有组件                | 信任链根。每个组件都信任由该 CA 签发的证书。以 `ca.crt` 形式分发。                                                                       |
+| **Server**  | `clickhouse-server` | 在其安全端口上向入站客户端 (其他服务器、应用程序、管理 API) 标识服务器副本。服务器在其 *出站* 连接 (例如连接到 Keeper) 时也会出示同一张证书，因此它同时也充当服务器在 mTLS 中的客户端身份凭证。 |
+| **Keeper**  | `clickhouse-keeper` | 向连接其安全客户端端口的客户端标识 Keeper 节点，并保护 Keeper 节点之间的 Raft 通道。                                                          |
+
+服务器的出站 (客户端) 角色值得特别说明，因为 TLS 将“服务器”和“客户端”视为彼此独立的上下文。Helm 图表会将 OpenSSL 的 `<client>` 上下文配置为：当 `clickhouse-server` *向外* 连接到其他组件时，出示与入站 `<server>` 上下文 **相同** 的证书和密钥 (`server.openSSL.secret.certKey` / `keyKey`，默认分别为 `server.crt` / `server.key`) 。换句话说，在标准 Kubernetes 部署中，并没有单独的“客户端”证书；服务器证书同时承担这两种角色。
+
+> FIPS 证书生成工作流还会额外生成专用的 `client.crt` / `client.key`，并将它们打包到服务器 Secret 中。这是该工作流 (以及裸金属部署路径) 特有的；Helm 图表的 OpenSSL 配置默认会将客户端上下文指向服务器证书。请参阅 [配置 FIPS 兼容证书](/zh/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse)。
+
+几个重要特性：
+
+* **一个 CA，两张叶子证书。** 单个 CA 为服务器证书和 Keeper 证书签名。因此，任何组件都只需信任该 CA，就能验证其他任意组件的证书。
+* **每个集群一组唯一的叶子证书。** CA 可以在多个集群之间共享，但服务器证书和 Keeper 证书必须针对每个 ClickHouse 集群分别生成，因为它们的主题备用名称 (SAN) 中编码了该集群的 Kubernetes 服务名称。
+
+<div id="subject-alternative-names-sans">
+  ### 主题备用名称 (SAN)
+</div>
+
+叶子证书必须包含其所代理服务在集群内的 DNS name，否则集群内流量的 TLS hostname 验证会失败。SAN 模式如下：
+
+* **Server：** `*.c-<cluster-name>-server-headless.ns-<cluster-name>.svc.cluster.local` 和 `c-<cluster-name>-server-any.ns-<cluster-name>.svc.cluster.local`
+* **Keeper：** `*.c-<cluster-name>-keeper-headless.ns-<cluster-name>.svc.cluster.local`
+
+如果你的 Kubernetes cluster 使用的域名不是 `.cluster.local`，请在 SAN 中替换为相应的域名。
+
+<div id="how-certificates-are-delivered-to-clickhouse">
+  ## 证书如何交付给 ClickHouse
+</div>
+
+证书通过 Kubernetes Secret 进行交付，ClickHouse Operator 会将其以投射卷的形式挂载到 pod (容器组) 中：
+
+* ClickHouse Server 对应 `/etc/clickhouse-server/certs/`
+* ClickHouse Keeper 对应 `/etc/clickhouse-keeper/certs/`
+
+每个文件都会以其 secret 键名相同的名称挂载 (因此，secret 键 `server.crt` 会成为文件 `/etc/clickhouse-server/certs/server.crt`) 。`onprem-clickhouse-cluster` Helm 图表默认要求提供以下这些 secrets：
+
+| Secret (默认名称)                       | 键                                    |
+| ----------------------------------- | ------------------------------------ |
+| `<cluster-name>-server-cert-secret` | `ca.crt`, `server.crt`, `server.key` |
+| `<cluster-name>-keeper-cert-secret` | `ca.crt`, `keeper.crt`, `keeper.key` |
+
+secret 名称和各个键名都可以通过 Helm 配置值 (`server.openSSL.secret.*` 和 `keeper.openSSL.secret.*`) 进行配置，这也是该图表能够兼容使用不同键名的证书管理工具的原因——尤其是 cert-manager，它生成的是 `tls.crt` / `tls.key`，而不是 `server.crt` / `server.key`。
+
+<div id="what-the-configuration-enforces">
+  ## 配置会强制执行什么
+</div>
+
+启用 TLS 后，Helm 图表会为每个组件渲染一个 `openSSL` 块，并采用刻意加固的基线配置。相关设置及其各自强制执行的内容如下：
+
+| Setting                     | Value                                | 强制执行的内容                                     |
+| --------------------------- | ------------------------------------ | ------------------------------------------- |
+| `disableProtocols`          | `sslv2,sslv3,tlsv1,tlsv1.1`          | 禁用所有旧版协议，仅允许 **TLS 1.2 及以上版本**。             |
+| `preferServerCiphers`       | `true`                               | 以服务器的密码套件顺序为准，因此客户端无法协商降级到服务器原本也会接受的更弱密码套件。 |
+| `cacheSessions`             | `true`                               | 启用 TLS 会话缓存，以减少完整握手的开销。                     |
+| `caConfig`                  | `ca.crt` 的路径                         | 用于验证对端证书链的信任锚。                              |
+| `loadDefaultCAFile`         | `true` (服务器上下文)                      | 除了 `caConfig` 之外，还信任系统默认的 CA bundle。        |
+| `invalidCertificateHandler` | `RejectCertificateHandler` (客户端上下文)  | 当服务器充当客户端时，无效的对端证书会被拒绝，而不是被接受。              |
+
+这些设置会同时应用于 OpenSSL 配置中的 `<server>` 和 `<client>` 两部分，因为 `clickhouse-server` 同时既是 TLS 服务器 (面向其客户端) ，也是 TLS 客户端 (连接 Keeper 和其他服务器时) 。对于 FIPS 环境，证书本身还必须在启用了 FIPS 的模块中，使用经过 FIPS 验证的算法生成 (例如 RSA ≥ 3072 位) ——参见 [FIPS 140-2 合规性](/zh/products/clickhouse-private/explanation/fips-140-2-compliance-for-clickhouse-private)。
+
+<div id="enabled-vs-required">
+  ### `enabled` 与 `required`
+</div>
+
+每个组件都提供了两个看起来相似、但含义不同的 flag：
+
+* **`openSSL.enabled`** 会*启用* TLS 配置并绑定安全端口，但会保留不安全端口。这是在迁移期间的正确设置：客户端可以按自己的节奏切换到 TLS。
+* **`openSSL.required`** 则更进一步。除了启用 TLS 之外，它还会**移除不安全端口** (`http_port` 和 `tcp_port` 会被设为 `0`) ，因此*只能*使用加密连接。这是生产环境部署加固后的最终状态。
+
+启用任一 flag 还会使 operator 绑定安全的 readiness 端口，因此 cluster 的健康检查也会通过 TLS 进行。将 `required` 设为启用后，还会移除不安全的 readiness 监听器，只保留 TLS 监听器。
+
+<div id="how-certificates-are-verified-verificationmode">
+  ## 证书如何验证：`verificationMode`
+</div>
+
+`verificationMode` 是 TLS 中*身份验证*这一侧最重要的单一控制项。它决定是否验证对端证书，以及验证的严格程度。它同时适用于服务器端和客户端的 OpenSSL 上下文，默认值为 `none`。
+
+| 模式        | 行为                                               | 最终安全状态          |
+| --------- | ------------------------------------------------ | --------------- |
+| `none`    | 不验证证书。流量会被加密，但不会对对端进行身份验证。                       | 仅加密 (默认) 。      |
+| `relaxed` | 客户端*可以*提供证书；如果提供了，就会根据 CA 对其进行验证。未提供证书的连接仍然会被接受。 | 机会式 mTLS——适合迁移。 |
+| `once`    | 仅在初始握手期间验证客户端证书，在重新协商时不会再次请求。                    | 大体严格的 mTLS。     |
+| `strict`  | 未提供有效 CA 签名证书的客户端会被拒绝。                           | 强制 mTLS。        |
+
+有几个值得牢记的后果：
+
+* **`none` 表示加密，而不是身份验证。** 使用 `none` 时，能访问该端口的攻击者虽然无法读取流量，但 ClickHouse 不会检查连接方*是谁*。如果你希望实现“只有受信任的组件才能连接”，就需要使用 `relaxed` (机会式) 或 `strict` (强制) 。
+* **mTLS 也要求发起连接的一方提供证书。** 只有在发起连接的一方确实提供了证书时，验证机制才会生效。服务器会在出站连接中提供自己的证书 (即其 OpenSSL `<client>` 上下文) ，因此服务器到 Keeper 以及服务器到服务器的流量，才能满足对端的证书验证要求。
+* **当前推荐的强制模式是 `relaxed`。** 目前不建议使用 `strict` 模式，因为它可能与 Operator 配合不佳；生产部署应使用 `relaxed`，因为它仍会验证每一张已提供的证书。
+
+这些值会原样传递给 ClickHouse 的 TLS 配置，因此其行为与 ClickHouse `openSSL` 设置文档中的说明完全一致。
+
+<div id="certificate-rotation">
+  ## 证书轮换
+</div>
+
+证书会过期，因此证书轮换是运维中的常态，而不是罕见的边缘情况。ClickHouse Private 会以透明方式处理其中的大部分情况，但有一个重要的例外。
+
+在这两种情况下，ClickHouse Operator 都会监听证书 Secret 的变化并作出响应——你无需手动轮换证书。区别在于每个组件*如何*采用新证书：server 无需重启即可完成，而 Keeper 则需要重启。
+
+<div id="clickhouse-server-rotation-without-a-restart">
+  ### ClickHouse Server：无需重启即可轮换证书
+</div>
+
+ClickHouse Server 会从磁盘读取其证书和私钥，并在文件发生变化时**热重载**它们——无需重启 pod (容器组) 。端到端流程如下：
+
+1. 证书颁发机构 (你的 PKI 或 cert-manager) 签发新证书，并更新 Kubernetes secret。
+2. Kubernetes 会将新的 secret 内容同步到 pod (容器组) 内挂载的卷中。
+3. operator 会检测到 secret 中的新证书，并将其记录到集群的 status 中；ClickHouse Server 则会自行从磁盘加载新证书。
+
+因此，当你使用带自动续订功能的 cert-manager 时，服务器证书轮换无需人工干预，也不会导致停机。
+
+<div id="clickhouse-keeper-operator-triggered-rolling-restart">
+  ### ClickHouse Keeper：由 operator 触发的滚动重启
+</div>
+
+Keeper 不会像 server 那样热重载证书——它的 TLS 配置 (包括 Keeper 节点用于维持法定人数的安全 Raft〈服务器间〉通道) 是在进程启动时建立的。要使用新证书，Keeper pod (容器组) 必须重启。
+
+不过，这种重启仍然是自动完成的：当 Keeper secret 中的证书发生变化时，operator 会将新的到期时间写入 Keeper StatefulSet 的 pod 模板 (即 `clickhouse.com/certificate-expire-date` 注解) ，从而触发 **Keeper pod (容器组) 的滚动重启**。因此，和 server 证书轮换一样，Keeper 证书轮换也无需手动操作——但不同于 server 的是，它会轮换 Keeper pod (容器组) ，这会带来短暂中断，因此在轮换期间应预期会出现这种情况。
+
+实际影响：
+
+* 每次 Keeper 证书续订时，都要预期 Keeper StatefulSet 会发生滚动重启。这是自动的，但不像 server 轮换那样几乎没有代价——安排续订时间时要将这一点考虑在内。
+* 尽量延长 CA 的有效期，并减少轮换频率。因为*每个*组件都信任 CA，轮换 CA 本身是干扰性最强的操作，应在到期前提前充分规划。示例工具也正因如此，默认将 CA 的有效期设为 10 年 (3650 天) ，而叶子证书则为 365 天。
+* 监控叶子证书和 CA 的到期时间，并提前足够长时间发出告警，以确保续订 (以及由此触发的 Keeper 重启) 发生在证书实际过期之前。
+
+<div id="integrating-with-cert-manager">
+  ## 与 cert-manager 集成
+</div>
+
+[cert-manager](https://cert-manager.io/)是在生产环境中运行这套 PKI 的推荐方式，因为它可以自动完成签发和续订，并能很好地融入上述证书轮换模型。概念上：
+
+* cert-manager 的 `Issuer` 或 `ClusterIssuer` 扮演 CA 的角色。它可以是自签名签发方 (用于测试) 、由企业根 CA 支持的中间签发方，或通过 ACME 或 Vault 接入的外部 CA。
+* 每个组件对应一个 `Certificate` 资源，用于声明 SAN 和目标 secret 名称。cert-manager 会生成密钥对，并将 `ca.crt`、`tls.crt` 和 `tls.key` 写入该 secret。
+* Helm 图表会指向这些键名 (`caKey: ca.crt`、`certKey: tls.crt`、`keyKey: tls.key`) ，operator 会按上述说明挂载并重新加载它们。
+* cert-manager 会在证书到期前自动续订。这样，服务器证书就可以实现零停机轮换；**续订 Keeper 证书会触发 Keeper Pod (容器组) 的自动滚动重启**，如上文轮换部分所述。
+
+有一点需要注意：只有在签发方能够提供时，`ca.crt` 才会被填充到该 secret 中。例如，ACME 签发方不会包含 `ca.crt`。在这种情况下，请自行将公开根证书添加到 `ca.crt` 键中，或使用 [trust-manager](https://cert-manager.io/docs/trust/trust-manager/) 构建 CA bundle，并以该 secret 作为目标。
+
+如需分步说明，请参阅[为 ClickHouse 证书配置 cert-manager](/zh/products/clickhouse-private/guides/configure-cert-manager-for-clickhouse-certificates)。
+
+<div id="choosing-a-posture">
+  ## 选择一种策略
+</div>
+
+综合起来，典型的推进路径如下：
+
+1. **先启用加密。** 设置 `openSSL.enabled: true`，并将 `verificationMode` 设为 `none`。流量会被加密；同时保留不安全端口，以便平滑迁移。
+2. **机会式 mTLS。** 当所有组件都提供客户端证书后，切换到 `verificationMode: relaxed`。此时，凡是提供了证书的连接都会进行身份验证，同时不会影响任何尚未迁移的部分。
+3. **强制 TLS。** 设置 `openSSL.required: true`，彻底移除不安全端口，这样只接受加密连接。继续保持 `verificationMode: relaxed`，这仍然是推荐模式 (参见上文关于 `strict` 的说明) 。
+
+在每一步中，证书、SAN、secret 布局以及轮换行为都相同——变化的只有强制开关。
+
+<div id="further-reading">
+  ## 延伸阅读
+</div>
+
+* [为 ClickHouse 证书配置 cert-manager](/zh/products/clickhouse-private/guides/configure-cert-manager-for-clickhouse-certificates) — 操作指南
+* [生成符合 FIPS 标准的证书](/zh/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse) — 操作指南
+* [FIPS 140-2 合规性](/zh/products/clickhouse-private/explanation/fips-140-2-compliance-for-clickhouse-private) — 说明
+* [架构](/zh/products/clickhouse-private/explanation/clickhouse-operator-architecture) — Operator 如何管理服务器和 Keeper

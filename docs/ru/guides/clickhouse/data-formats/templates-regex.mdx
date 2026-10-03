@@ -248,7 +248,7 @@ SELECT * FROM error_log LIMIT 5
 └─────────────────────┴─────────┴─────────────┴──────────────────────────────┴──────────┘
 ```
 
-По умолчанию ClickHouse выдаёт ошибку при наличии несовпавших строк. Если вы хотите вместо этого пропускать такие строки, включите параметр [format&#95;regexp&#95;skip&#95;unmatched](/ru/reference/settings/formats/format-regexp#format_regexp_skip_unmatched):
+По умолчанию ClickHouse выдаёт ошибку при наличии несовпавших строк. Если вы хотите вместо этого пропускать такие строки, включите параметр [format&#95;regexp&#95;skip&#95;unmatched](/ru/reference/settings/formats#format_regexp_skip_unmatched):
 
 ```sql
 SET format_regexp_skip_unmatched = 1;

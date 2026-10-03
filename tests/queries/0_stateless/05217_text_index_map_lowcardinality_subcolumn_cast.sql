@@ -3,7 +3,7 @@
 
 -- `arrayElement` on a `Map(K, LowCardinality(V))` returns `V`, while the subcolumn `m.key_<key>` is `LowCardinality(V)`.
 -- Hence `optimize_functions_to_subcolumns` rewrites `m['key'] = 'value'` into `_CAST(m.key_<key>, 'V') = 'value'`,
--- and the text index has to look through the cast: for the `keyValuePairs` index on `m` and for an index on `mapValues(m)`.
+-- and the text index has to look through the cast: for an index on `mapValues(m)`.
 -- The same applies to every conversion that cannot change a value or throw: adding or dropping `LowCardinality`,
 -- adding `Nullable` (also as `toNullable`, which `join_use_nulls` emits in pushed-down filters), at any depth of `Array`.
 
@@ -12,40 +12,6 @@ SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET use_skip_indexes = 1;
 SET query_plan_direct_read_from_text_index = 1;
-
-DROP TABLE IF EXISTS tab_kv;
-
-CREATE TABLE tab_kv
-(
-    id UInt32,
-    m Map(LowCardinality(String), LowCardinality(String)),
-    INDEX idx m TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 1
-)
-ENGINE = MergeTree
-ORDER BY id
-SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
-
--- One part with two granules: rows (1, 2) and rows (3, 4).
-INSERT INTO tab_kv VALUES (1, {'level':'error','service':'api'}), (2, {'level':'warn','service':'api'}), (3, {'level':'error','service':'web'}), (4, {});
-
-SELECT '-- the analyzer wraps the subcolumn into a cast to String';
-SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT id FROM tab_kv WHERE m['level'] = 'warn') WHERE explain LIKE '%function_name: _CAST%';
-
-SELECT '-- keyValuePairs: the index prunes granules through the cast';
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM tab_kv WHERE m['level'] = 'warn') WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
-
-SELECT '-- keyValuePairs: exact direct read replaces the predicate';
-SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT id FROM tab_kv WHERE m['level'] = 'error') WHERE explain LIKE '%__text_index_idx_equals%';
-
-SELECT '-- keyValuePairs: results match the scan';
-SELECT 'idx', id FROM tab_kv WHERE m['level'] = 'error' ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'scan', id FROM tab_kv WHERE m['level'] = 'error' ORDER BY id SETTINGS use_skip_indexes = 0;
-SELECT 'idx', id FROM tab_kv WHERE 'web' = m['service'] ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'scan', id FROM tab_kv WHERE 'web' = m['service'] ORDER BY id SETTINGS use_skip_indexes = 0;
-SELECT 'idx', count() FROM tab_kv WHERE m['level'] = 'api' SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'idx', count() FROM tab_kv WHERE m['nope'] = 'error' SETTINGS force_data_skipping_indices = 'idx';
-
-DROP TABLE tab_kv;
 
 DROP TABLE IF EXISTS tab_values;
 
@@ -60,6 +26,9 @@ ORDER BY id
 SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
 
 INSERT INTO tab_values VALUES (1, {'level':'error','msg':'disk is full'}), (2, {'level':'warn','msg':'disk is slow'}), (3, {'level':'error','msg':'network is down'}), (4, {});
+
+SELECT '-- the analyzer wraps the subcolumn into a cast to String';
+SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT id FROM tab_values WHERE m['level'] = 'warn') WHERE explain LIKE '%function_name: _CAST%';
 
 SELECT '-- mapValues: the index prunes granules through the cast';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM tab_values WHERE m['level'] = 'warn') WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';

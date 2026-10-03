@@ -210,7 +210,9 @@ WHERE query_id='<query_id>'
    └───────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────┘
 ```
 
-### Usando projeções para acelerar consultas do UK Price Paid {#using-projections-to-speed-up-UK-price-paid}
+<div id="using-projections-to-speed-up-UK-price-paid">
+  ### Usando projeções para acelerar consultas do UK Price Paid
+</div>
 
 Para demonstrar como as projeções podem ser usadas para acelerar o desempenho das consultas, vamos
 analisar um exemplo com um conjunto de dados real. Neste exemplo, vamos
@@ -292,7 +294,7 @@ ALTER TABLE uk.uk_price_paid_with_projections
 SETTINGS mutations_sync = 1
 ```
 
-A configuração [`mutations_sync`](/pt-BR/reference/settings/session-settings/mutations#mutations_sync) é
+A configuração [`mutations_sync`](/pt-BR/reference/settings/session-settings#mutations_sync) é
 usada para forçar a execução síncrona.
 
 Criamos e populamos a projeção `prj_gby_county` — uma tabela adicional (oculta)
@@ -433,30 +435,25 @@ CREATE TABLE uk.uk_price_paid_with_projections_v2 AS uk.uk_price_paid;
 INSERT INTO uk.uk_price_paid_with_projections_v2 SELECT * FROM uk.uk_price_paid;
 ```
 
-#### Criar uma projeção {#build-projection}
+<div id="build-projection">
+  #### Criar uma projeção
+</div>
 
-Vamos criar uma projeção agregada com base nas dimensões `year`, `district` e `town`.
-A projeção agrupa as vendas pelo ano de cada venda, portanto materializamos essa
-expressão como uma coluna para que ela possa ser referenciada por filtros:
-
-```sql
-ALTER TABLE uk.uk_price_paid_with_projections_v2
-    ADD COLUMN year UInt16 MATERIALIZED toYear(date)
-```
+Vamos criar uma projeção agregada com base nas dimensões `toYear(date)`, `district` e `town`:
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections_v2
     ADD PROJECTION projection_by_year_district_town
     (
         SELECT
-            year,
+            toYear(date),
             district,
             town,
             avg(price),
             sum(price),
             count()
         GROUP BY
-            year,
+            toYear(date),
             district,
             town
     )
@@ -470,7 +467,7 @@ ALTER TABLE uk.uk_price_paid_with_projections_v2
 SETTINGS mutations_sync = 1
 ```
 
-As consultas a seguir comparam o desempenho com e sem projeções. Para desativar o uso de projeções, usamos a configuração [`optimize_use_projections`](/pt-BR/reference/settings/session-settings/optimize-use#optimize_use_projections), que é ativada por padrão.
+As consultas a seguir comparam o desempenho com e sem projeções. Para desativar o uso de projeções, usamos a configuração [`optimize_use_projections`](/pt-BR/reference/settings/session-settings#optimize_use_projections), que é ativada por padrão.
 
 <div id="average-price-projections">
   #### Consulta 1. Preço médio por ano
@@ -479,7 +476,7 @@ As consultas a seguir comparam o desempenho com e sem projeções. Para desativa
 <RunnableCode>
   ```sql
   SELECT
-      year,
+      toYear(date) AS year,
       round(avg(price)) AS price,
       bar(price, 0, 1000000, 80)
   FROM uk.uk_price_paid_with_projections_v2
@@ -492,7 +489,7 @@ As consultas a seguir comparam o desempenho com e sem projeções. Para desativa
 <RunnableCode>
   ```sql
   SELECT
-      year,
+      toYear(date) AS year,
       round(avg(price)) AS price,
       bar(price, 0, 1000000, 80)
   FROM uk.uk_price_paid_with_projections_v2
@@ -511,7 +508,7 @@ Os resultados devem ser os mesmos, mas o desempenho deve ser melhor no último e
 <RunnableCode>
   ```sql
   SELECT
-      year,
+      toYear(date) AS year,
       round(avg(price)) AS price,
       bar(price, 0, 2000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
@@ -525,7 +522,7 @@ Os resultados devem ser os mesmos, mas o desempenho deve ser melhor no último e
 <RunnableCode>
   ```sql
   SELECT
-      year,
+      toYear(date) AS year,
       round(avg(price)) AS price,
       bar(price, 0, 2000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
@@ -539,7 +536,7 @@ Os resultados devem ser os mesmos, mas o desempenho deve ser melhor no último e
   #### Consulta 3. Os bairros mais caros
 </div>
 
-O filtro para linhas de 2020 em diante referencia diretamente a dimensão `year` armazenada na projeção:
+A condição (date &gt;= &#39;2020-01-01&#39;) precisa ser modificada para corresponder à dimensão da projeção (`toYear(date) >= 2020)`:
 
 <RunnableCode>
   ```sql
@@ -550,7 +547,7 @@ O filtro para linhas de 2020 em diante referencia diretamente a dimensão `year`
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
-  WHERE year >= 2020
+  WHERE toYear(date) >= 2020
   GROUP BY
       town,
       district
@@ -570,7 +567,7 @@ O filtro para linhas de 2020 em diante referencia diretamente a dimensão `year`
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
-  WHERE year >= 2020
+  WHERE toYear(date) >= 2020
   GROUP BY
       town,
       district
@@ -581,13 +578,6 @@ O filtro para linhas de 2020 em diante referencia diretamente a dimensão `year`
 </RunnableCode>
 
 Novamente, o resultado é o mesmo, mas observe a melhora no desempenho da consulta na 2ª consulta.
-
-<Note>
-  O filtro deve referenciar diretamente a dimensão `year` armazenada. Escrever
-  `WHERE toYear(date) >= 2020` não utiliza a projeção: o otimizador reescreve
-  a condição como um range sobre `date`, e a projeção não armazena uma coluna `date`,
-  de modo que o ClickHouse recorre à leitura completa da tabela base.
-</Note>
 
 <div id="combining-projections">
   ### Combinando projeções em uma consulta
@@ -712,7 +702,9 @@ No fim, apenas **1 de 5 partes** é lida da tabela base.
 Ao combinar a análise de índices de várias projeções, o ClickHouse reduz significativamente a quantidade de dados examinados,
 melhorando o desempenho e mantendo baixa a sobrecarga de armazenamento.
 
-## Conteúdo relacionado {#related-content}
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
 
 * [Uma introdução prática aos índices primários no ClickHouse](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
 * [Visões materializadas](/pt-BR/concepts/features/materialized-views/index)

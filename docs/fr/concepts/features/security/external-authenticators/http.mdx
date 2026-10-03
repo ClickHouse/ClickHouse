@@ -64,16 +64,18 @@ En-têtes transférés :
 
 Cette partie définit quels en-têtes seront transférés des en-têtes de requête du client vers le service d&#39;authentification HTTP externe. Notez que les en-têtes seront comparés à ceux de la config sans tenir compte de la casse, mais transférés tels quels, c&#39;est-à-dire sans être modifiés.
 
-### Activation de l’authentification HTTP dans `users.xml` {#enabling-http-auth-in-users-xml}
+<div id="enabling-http-auth-in-users-xml">
+  ### Activation de l’authentification HTTP dans `users.xml`
+</div>
 
 Pour activer l’authentification HTTP pour l’utilisateur, indiquez la section `http_authentication` au lieu de `password` ou d’autres sections similaires dans la définition de l’utilisateur.
 
-Paramètres :
+Paramètres :
 
 * `server` - Nom du serveur d’authentification HTTP configuré dans le fichier principal `config.xml`, comme décrit précédemment.
-* `scheme` - Schéma d’authentification HTTP. Seul `Basic` est actuellement pris en charge. Par défaut : Basic
+* `scheme` - Schéma d’authentification HTTP. Seul `Basic` est actuellement pris en charge. Par défaut : Basic
 
-Exemple (à placer dans `users.xml`) :
+Exemple (à placer dans `users.xml`) :
 
 ```xml
 <clickhouse>
@@ -84,7 +86,7 @@ Exemple (à placer dans `users.xml`) :
             <server>basic_server</server>
             <scheme>basic</scheme>
         </http_authentication>
-    </my_user>
+    </test_user_2>
 </clickhouse>
 ```
 
