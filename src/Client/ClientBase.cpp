@@ -120,6 +120,10 @@
 #include <boost/algorithm/string.hpp>
 
 #include <Common/config_version.h>
+#include <sys/ioctl.h>
+#ifdef __sun
+#include <sys/filio.h>
+#endif
 #include <Common/XDGBaseDirectories.h>
 #include <base/find_symbols.h>
 
@@ -1282,6 +1286,16 @@ bool ClientBase::isFileDescriptorSuitableForInput(int fd)
     struct stat file_stat{};
     return fstat(fd, &file_stat) == 0
         && (S_ISREG(file_stat.st_mode) || S_ISLNK(file_stat.st_mode));
+}
+
+bool ClientBase::stdinHoldsInput() const
+{
+    if (isFileDescriptorSuitableForInput(stdin_fd))
+        return true;
+    struct stat file_stat{};
+    int available = 0;
+    return fstat(stdin_fd, &file_stat) == 0 && (S_ISFIFO(file_stat.st_mode) || S_ISSOCK(file_stat.st_mode))
+        && ioctl(stdin_fd, FIONREAD, &available) == 0 && available > 0;
 }
 
 void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()

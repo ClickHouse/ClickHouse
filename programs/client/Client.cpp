@@ -1442,9 +1442,9 @@ void Client::processConfig()
     bool dump_schema = getClientConfiguration().has("dump-schema");
     if (dump_schema && (!queries.empty() || !queries_files.empty()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option '--dump-schema' cannot be combined with '--query' or '--queries-file'");
-    /// A file on stdin is queries the dump would ignore; a pipe is not checked, because peeking it blocks until EOF.
-    if (dump_schema && isFileDescriptorSuitableForInput(stdin_fd))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option '--dump-schema' cannot be combined with a file on stdin");
+    /// Input on stdin or in `--external` is ignored by the dump; an empty pipe is not waited on, so `ssh host ... --dump-schema` runs.
+    if (dump_schema && (stdinHoldsInput() || !external_tables.empty() || !external_scalars.empty()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option '--dump-schema' cannot be combined with '--external' or input on stdin");
     if (!dump_schema && (getClientConfiguration().has("dump-schema-exclude") || getClientConfiguration().has("dump-schema-dir")))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--dump-schema-exclude'/'--dump-schema-dir' require '--dump-schema'");
     if (dump_schema && !getClientConfiguration().getString("dump-schema", "").empty()

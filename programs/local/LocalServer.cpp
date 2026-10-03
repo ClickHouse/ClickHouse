@@ -1391,12 +1391,12 @@ void LocalServer::processConfig()
     bool dump_schema = getClientConfiguration().has("dump-schema");
     if (dump_schema && (!queries.empty() || !queries_files.empty()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option '--dump-schema' cannot be combined with '--query' or '--queries-file'");
-    /// A file on stdin is input the dump would ignore; a pipe is not checked, because peeking it blocks until EOF.
+    /// Input on stdin is ignored by the dump; an empty pipe is not waited on, so `ssh host ... --dump-schema` still runs.
     if (dump_schema
         && (getClientConfiguration().has("table-file") || getClientConfiguration().has("table-structure")
-            || getClientConfiguration().has("table-data-format") || isFileDescriptorSuitableForInput(stdin_fd)))
+            || getClientConfiguration().has("table-data-format") || stdinHoldsInput()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Option '--dump-schema' cannot be combined with '--file', '--structure', '--input-format' or a file on stdin");
+            "Option '--dump-schema' cannot be combined with '--file', '--structure', '--input-format' or input on stdin");
     if (!dump_schema && (getClientConfiguration().has("dump-schema-exclude") || getClientConfiguration().has("dump-schema-dir")))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--dump-schema-exclude'/'--dump-schema-dir' require '--dump-schema'");
     if (dump_schema && !getClientConfiguration().getString("dump-schema", "").empty()

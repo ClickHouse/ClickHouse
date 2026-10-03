@@ -69,24 +69,22 @@ rc=$?
 [[ $rc -ne 0 ]] && echo 'OK: non-zero exit code' || echo 'FAIL: expected non-zero exit code'
 grep -o -m1 'BAD_ARGUMENTS' "$ERR_FILE"
 
-echo '--- a file on stdin is rejected, a pipe is not read ---'
+echo '--- input on stdin or in --external is rejected, an empty pipe is not waited on ---'
+# The reader sleeps so the piped query is already in the pipe when the dump checks stdin.
 STDIN_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_stdin.csv"
 echo '1,2' > "$STDIN_FILE"
-$CLICKHOUSE_LOCAL --dump-schema < "$STDIN_FILE" > /dev/null 2>"$ERR_FILE"
-rc=$?
-[[ $rc -ne 0 ]] && echo 'OK: non-zero exit code' || echo 'FAIL: expected non-zero exit code'
-grep -o -m1 'BAD_ARGUMENTS' "$ERR_FILE"
+for tool in local client; do
+    if [[ $tool == local ]]; then run=($CLICKHOUSE_LOCAL --dump-schema); else run=($CLICKHOUSE_CLIENT --dump-schema="${DB}"); fi
+    "${run[@]}" < "$STDIN_FILE" > /dev/null 2>"$ERR_FILE"
+    echo "$tool, file on stdin rejected: $(grep -c 'BAD_ARGUMENTS' "$ERR_FILE")"
+    printf 'SELECT 1\n' | { sleep 1; "${run[@]}" > /dev/null 2>"$ERR_FILE"; }
+    echo "$tool, piped query rejected: $(grep -c 'BAD_ARGUMENTS' "$ERR_FILE")"
+    true | "${run[@]}" > /dev/null 2>"$ERR_FILE"
+    echo "$tool, empty pipe exit code: $?"
+done
+$CLICKHOUSE_CLIENT --dump-schema="${DB}" --external --file="$STDIN_FILE" --name=ext --structure='a UInt8, b UInt8' > /dev/null 2>"$ERR_FILE"
+echo "client, external table rejected: $(grep -c 'BAD_ARGUMENTS' "$ERR_FILE")"
 rm -f "$STDIN_FILE"
-printf '1\n' | $CLICKHOUSE_LOCAL --dump-schema > /dev/null 2>"$ERR_FILE"
-echo "piped stdin, exit code: $?"
-echo '1,2' > "$STDIN_FILE"
-$CLICKHOUSE_CLIENT --dump-schema="${DB}" < "$STDIN_FILE" > /dev/null 2>"$ERR_FILE"
-rc=$?
-[[ $rc -ne 0 ]] && echo 'OK: clickhouse-client non-zero exit code' || echo 'FAIL: clickhouse-client expected non-zero exit code'
-grep -o -m1 'BAD_ARGUMENTS' "$ERR_FILE"
-rm -f "$STDIN_FILE"
-printf '1\n' | $CLICKHOUSE_CLIENT --dump-schema="${DB}" > /dev/null 2>"$ERR_FILE"
-echo "clickhouse-client piped stdin, exit code: $?"
 
 echo '--- merge()/loop() with constant-expression arguments name their local source ---'
 # Each view reads its source only through folded merge()/loop() arguments.
