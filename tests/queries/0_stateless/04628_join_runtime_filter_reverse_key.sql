@@ -46,19 +46,22 @@ INSERT INTO rk_fact_desc_second SELECT number % 20, intDiv(number, 20) % 100, nu
 INSERT INTO rk_fact_desc_first  SELECT intDiv(number, 20) % 100, number % 20, number FROM numbers(4000);
 INSERT INTO rk_fact_desc_single SELECT number % 100, number FROM numbers(4000);
 
--- The hot subset selects two r values that are far apart (10 and 90) and covers every g, so the
--- g runtime filter is non-selective and only the reverse r column can prune granules. Two
--- non-adjacent hot values make the two predicate shapes prune differently, which the range-branch
--- assertion below relies on: the exact IN-set {10, 90} drops every granule that holds neither
--- value, while the [10, 90] range keeps the whole span between them. A pruner that treats the DESC
--- r column as ascending cannot legitimately drop the matching granules, so on == off must hold and
--- pruning must still drop granules (a wrong direction fail-opens in release and drops nothing).
+-- The hot subset selects every 10th r value and covers every g, so the g runtime filter is
+-- non-selective and only the reverse r column can prune granules. The hot values are spaced wider
+-- apart than a granule holds, so granules between them are prunable, and there are more hot
+-- clusters (10) than the intervals the range path may keep. That makes the two predicate shapes
+-- prune differently, which the range-branch assertion below relies on: the exact IN-set drops every
+-- granule holding no hot value, while the range path has to merge some clusters and keeps the
+-- granules in between. A
+-- pruner that treats the DESC r column as ascending cannot legitimately drop the matching granules,
+-- so on == off must hold and pruning must still drop granules (a wrong direction fail-opens in
+-- release and drops nothing).
 CREATE TABLE rk_dim_second (g UInt32, r Int32, tag String) ENGINE = MergeTree ORDER BY (g, r);
 CREATE TABLE rk_dim_r (r Int32, tag String) ENGINE = MergeTree ORDER BY r;
-INSERT INTO rk_dim_second SELECT number % 20, intDiv(number, 20) % 100, if(intDiv(number, 20) % 100 IN (10, 90), 'hot', 'cold') FROM numbers(4000);
-INSERT INTO rk_dim_r SELECT number, if(number IN (10, 90), 'hot', 'cold') FROM numbers(100);
+INSERT INTO rk_dim_second SELECT number % 20, intDiv(number, 20) % 100, if((intDiv(number, 20) % 100) % 10 = 0, 'hot', 'cold') FROM numbers(4000);
+INSERT INTO rk_dim_r SELECT number, if(number % 10 = 0, 'hot', 'cold') FROM numbers(100);
 
--- IN-set path. Each build side has only two distinct r values, well under the default
+-- IN-set path. Each build side has only 10 distinct r values, well under the default
 -- join_runtime_filter_exact_values_limit, so the read-time KeyCondition is the exact IN-set.
 -- Correctness: pruning must never change results, so feature on must equal feature off.
 SELECT 'desc_second: on == off',
@@ -73,9 +76,9 @@ SELECT 'desc_single: on == off',
     (SELECT sum(f.v) FROM rk_fact_desc_single AS f INNER JOIN rk_dim_r AS d ON f.r = d.r WHERE d.tag = 'hot' SETTINGS enable_join_runtime_filters_index_analysis = 0)
   = (SELECT sum(f.v) FROM rk_fact_desc_single AS f INNER JOIN rk_dim_r AS d ON f.r = d.r WHERE d.tag = 'hot' SETTINGS enable_join_runtime_filters_index_analysis = 1);
 
--- Range path. Lowering the limit below the two distinct hot values makes the exact-values set
--- overflow and be released, so the read-time KeyCondition is built from the recorded [10, 90]
--- range envelope instead. Correctness must still hold on the reverse key.
+-- Range path. Lowering the limit below the number of distinct hot values makes the exact-values set
+-- overflow and be released, so the read-time KeyCondition is built from the recorded key ranges
+-- instead. Correctness must still hold on the reverse key.
 SELECT 'desc_second range: on == off',
     (SELECT sum(f.v) FROM rk_fact_desc_second AS f INNER JOIN rk_dim_second AS d ON f.g = d.g AND f.r = d.r WHERE d.tag = 'hot' SETTINGS enable_join_runtime_filters_index_analysis = 0)
   = (SELECT sum(f.v) FROM rk_fact_desc_second AS f INNER JOIN rk_dim_second AS d ON f.g = d.g AND f.r = d.r WHERE d.tag = 'hot' SETTINGS enable_join_runtime_filters_index_analysis = 1, join_runtime_filter_exact_values_limit = 1);
@@ -99,8 +102,8 @@ SELECT sum(f.v) FROM rk_fact_desc_single AS f INNER JOIN rk_dim_r AS d ON f.r = 
 SYSTEM FLUSH LOGS query_log;
 
 -- Per shape, prove both predicate shapes engaged and that the range branch really ran rather than
--- silently falling back to the IN-set. Because the two hot values are far apart, the exact IN-set
--- prunes every granule outside {10, 90} while the [10, 90] range keeps the whole span, so the range
+-- silently falling back to the IN-set. There are more hot clusters than the range path may keep as
+-- separate intervals, so it has to merge some and keeps granules the exact IN-set drops: the range
 -- path must drop strictly fewer granules than the IN-set path and still drop at least one. A silent
 -- IN-set fallback would make the two counts equal; a wrongly-inverted reverse-key range would drop
 -- nothing.
