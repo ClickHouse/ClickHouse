@@ -83,6 +83,14 @@ public:
         /// as `buf` is in use.
         PageCacheCellPtr page_cache_cell = {};
 
+        /// The data was copied from the OS page cache and no block device I/O was performed
+        /// (not to be confused with `page_cache_cell`, which is about the userspace page cache).
+        /// It is set only by implementations that are able to know it (see `ThreadPoolReader`);
+        /// `false` means "unknown or read from the device", so it cannot be used to conclude
+        /// that the read did touch the disk.
+        /// Used to avoid accounting such reads in the local read bandwidth throttler.
+        bool from_os_page_cache = false;
+
         std::unique_ptr<Stopwatch> execution_watch = {};
     };
 
