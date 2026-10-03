@@ -562,15 +562,12 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                     data_file_path,
                     lower.has_value() ? lower->serialize() : "[no lower bound]",
                     upper.has_value() ? upper->serialize() : "[no upper bound]");
-                const auto resolved_delete_path = persistent_components.path_resolver.resolve(position_delete->parsed_entry->file_path_key);
-                if (position_delete->parsed_entry->isDeletionVector())
-                    object_info->addDeletionVector(position_delete, resolved_delete_path);
-                else
-                    object_info->addPositionDeleteFile(position_delete, resolved_delete_path);
+                object_info->addPositionDeleteObject(
+                    position_delete, persistent_components.path_resolver.resolve(position_delete->parsed_entry->file_path_key));
             }
         }
 
-        if (object_info->info.hasPositionDeletes())
+        if (!object_info->info.position_deletes_objects.empty())
         {
             LOG_DEBUG(
                 logger,

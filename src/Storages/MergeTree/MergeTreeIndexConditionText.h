@@ -170,7 +170,7 @@ private:
 
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
-        const RPNBuilderTreeNode & index_column_node,
+        const RPNBuilderTreeNode & argument_node,
         DataTypePtr value_type,
         Field value_field,
         RPNElement & out) const;

@@ -779,6 +779,21 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     return true;
 }
 
+/** Check the SELECT privilege for the columns that the planner resolved "away": `indexHint` arguments and ALIAS
+  * columns inlined into PREWHERE. Checked separately from the selected columns on purpose: a trivial query such as
+  * `SELECT count() FROM t` passes with a grant on any one column, while these names are always required.
+  */
+void checkAccessRightsForColumnsResolvedAway(
+    const TableNode & table_node, const TableExpressionData & table_expression_data, const ContextPtr & query_context)
+{
+    const auto & column_names = table_expression_data.getAccessCheckedColumnsNames();
+    if (column_names.empty())
+        return;
+
+    checkAccessRights(
+        table_node.getStorage(), table_node.getStorageID(), table_node.getStorageSnapshot(), column_names, query_context);
+}
+
 void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expression, const SelectQueryOptions & select_query_options, PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
@@ -801,6 +816,8 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
         columns_names_allowed_to_select = checkAccessRights(
             table_node->getStorage(), table_node->getStorageID(), table_node->getStorageSnapshot(), column_names_with_aliases, query_context);
+
+        checkAccessRightsForColumnsResolvedAway(*table_node, table_expression_data, query_context);
     }
     else if (table_function_node)
     {
@@ -809,7 +826,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         /// would let the query read the view without any `SELECT` grant. Enforce the same column-aware `SELECT`
         /// check the underlying view would receive as a `TableNode`.
         const auto & storage = table_function_node->getStorage();
-        if (const auto * storage_view = storage ? storage->as<StorageView>() : nullptr; storage_view && storage_view->isParameterizedView())
+        if (table_function_node->isParameterizedView())
         {
             const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
             columns_names_allowed_to_select = checkAccessRights(

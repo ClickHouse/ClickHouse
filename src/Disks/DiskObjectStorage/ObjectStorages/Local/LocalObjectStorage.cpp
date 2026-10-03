@@ -932,7 +932,7 @@ bool LocalObjectStorage::existsOrHasAnyChild(const std::string & path) const
     return exists(StoredObject(resolved_path));
 }
 
-void LocalObjectStorage::copyObject( // NOLINT
+String LocalObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
@@ -944,6 +944,8 @@ void LocalObjectStorage::copyObject( // NOLINT
     auto out = writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     copyData(*in, *out);
     out->finalize();
+    /// The local file system names no generations.
+    return {};
 }
 
 void LocalObjectStorage::shutdown()

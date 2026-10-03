@@ -3053,40 +3053,31 @@ std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoi
     if (!array_join)
         return {};
 
-    /// ARRAY_JOIN and its argument go to `before`, the rest to `after`; the crossing columns get unique names.
-    auto split_res = split({array_join}, /*create_split_nodes_mapping=*/true, /*avoid_duplicate_inputs=*/true);
-    ActionsDAG before = std::move(split_res.first);
+    const std::string name = array_join->result_name;
+
+    /// One split gives both halves: the ARRAY_JOIN goes to `first`, so `second` (= after) is array-join-free
+    /// and consumes the join result as an input, matched to `first`'s output by the split itself (no names).
+    auto split_res = split({array_join}, /*create_split_nodes_mapping=*/true);
     ActionsDAG after = std::move(split_res.second);
+
+    /// The ArrayJoinStep still explodes the column by name, so bail if another column crossing the step shares
+    /// the join's name (or the result is unused) - otherwise the passenger would be element-typed too.
+    size_t element_inputs = 0;
+    for (const auto * input : after.inputs)
+        element_inputs += (input->result_name == name);
+    if (element_inputs != 1)
+        return {};
+    ActionsDAG before = std::move(split_res.first);
     const Node * aj_before = split_res.split_nodes_mapping.at(array_join);
     const Node * arg_before = aj_before->children.at(0);
-    std::string name = aj_before->result_name;
 
-    /// Nobody reads the result, but the rows are still multiplied: pass the element under a name no passenger has.
-    bool used = std::ranges::contains(outputs, array_join);
-    for (const auto & node : nodes)
-        used = used || std::ranges::contains(node.children, array_join);
-    if (!used)
-    {
-        auto taken = [&](const std::string & candidate)
-        { return std::ranges::any_of(after.inputs, [&](const Node * input) { return input->result_name == candidate; }); };
-        for (size_t i = 0; taken(name); ++i)
-            name = fmt::format("{}_{}", aj_before->result_name, i);
-        after.addInput(name, array_join->result_type);
-    }
-
-    /// The step gets the array under the join's name. Erase the node by hand, removeUnusedActions keeps array joins.
+    /// `before` computed the join result; output the array argument under the same name instead and drop the
+    /// ARRAY_JOIN node so the ArrayJoinStep does the expansion. Erase it directly - its only consumer was that
+    /// output, and removeUnusedActions never prunes an ARRAY_JOIN (it changes the number of rows).
     const Node * arg_out = arg_before->result_name == name ? arg_before : &before.addAlias(*arg_before, name);
-    bool replaced = false;
     for (auto & output : before.outputs)
-    {
         if (output == aj_before)
-        {
             output = arg_out;
-            replaced = true;
-        }
-    }
-    if (!replaced)
-        before.outputs.push_back(arg_out);
     before.nodes.remove_if([&](const Node & node) { return &node == aj_before; });
     before.removeUnusedActions(/*allow_remove_inputs=*/false);
 

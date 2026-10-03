@@ -265,10 +265,7 @@ class JobConfigs:
         runs_on=RunnerLabels.ARM_TINY,
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
-        enable_gh_auth=True,
-        post_hooks=[
-            "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
-        ],
+        enable_commit_status=True,
     )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
@@ -276,6 +273,9 @@ class JobConfigs:
         command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
         enable_gh_auth=True,
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
+        ],
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,

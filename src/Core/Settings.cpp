@@ -1040,7 +1040,7 @@ Possible values:
 - `0` — Do not wait.
 - `1` — Wait for own execution.
 - `2` — Wait for everyone.
-- `3` - Only wait for active replicas. Inactive replicas apply the change when they become active.
+- `3` - Only wait for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `alter_sync = 2`.
 
 Cloud default value: `0`.
 
@@ -1767,13 +1767,6 @@ When enabled, during SELECT FINAL queries, parts from different partitions will 
     DECLARE(Bool, enable_automatic_decision_for_merging_across_partitions_for_final, true, R"(
 If set, ClickHouse will automatically enable this optimization when the partition key expression is deterministic and all columns used in the partition key expression are included in the primary key.
 This automatic derivation ensures that rows with the same primary key values will always belong to the same partition, making it safe to avoid cross-partition merges.
-
-Floating-point key columns are excluded from this derivation. The `FINAL` comparator is coarser than value
-identity for `Float32`, `Float64` and `BFloat16`: `-0.0` compares equal to `0.0`, and every `NaN` bit pattern
-compares equal to every other. A partition expression can tell exactly those values apart, so rows the comparator treats as
-one key can land in different partitions, and skipping the cross-partition merge would return all of them.
-The exclusion also applies when a float is nested inside a key column, for example `Tuple(Float64, UInt8)`
-or `Array(Float64)`.
 )", 0) \
     DECLARE(Bool, split_parts_ranges_into_intersecting_and_non_intersecting_final, true, R"(
 Split parts ranges into intersecting and non intersecting during FINAL optimization
@@ -2243,7 +2236,9 @@ The number of streams that read simultaneously is capped by this multiplier as w
 )", 0) \
     \
     DECLARE(String, network_compression_method, "ZSTD", R"(
-The codec for compressing the client/server and server/server communication over the native protocol, the response of an HTTP request made with `compress=1`, which uses the same frame format, and the streaming exchange between the tasks of a distributed query plan (`make_distributed_plan`). Exchanges through temporary files use the default codec of the server.
+The codec for compressing the client/server and server/server communication over the native protocol, and the response of an HTTP request made with `compress=1`, which uses the same frame format.
+
+The setting does not apply to the streaming-exchange channel of distributed queries, which always uses the server default codec: every compressed frame is self-describing, so the receiver detects the codec automatically.
 
 Possible values:
 
@@ -4688,6 +4683,11 @@ Possible values:
     DECLARE(Bool, allow_execute_multiif_columnar, true, R"(
 Allow execute multiIf function columnar
 )", 0) \
+    DECLARE(Bool, allow_executable_tables, true, R"(
+Allow reading through the `executable` table function and from `Executable` and `ExecutablePool` tables.
+
+Disabling this refuses reads only: creating, attaching, dropping and describing such tables still works. `ExecutablePool` processes that have already started are left running rather than terminated, but each read is still refused until the setting is enabled again.
+)", 0) \
     DECLARE(Bool, formatdatetime_f_prints_single_zero, false, R"(
 Formatter '%f' in function 'formatDateTime' prints a single zero instead of six zeros if the formatted value has no fractional seconds.
 )", 0) \
@@ -5154,7 +5154,7 @@ Possible values:
 | `0`   | Mutations execute asynchronously.                                                                                                                     |
 | `1`   | The query waits for all mutations to complete on the current server.                                                                                  |
 | `2`   | The query waits for all mutations to complete on all replicas (if they exist).                                                                        |
-| `3`   | The query waits only for the active replicas. Inactive replicas apply the mutations when they become active.                                          |
+| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_delete, true, R"(
 Enable lightweight DELETE mutations for mergetree tables.
@@ -5177,7 +5177,7 @@ Possible values:
 | `0`   | Mutations execute asynchronously.                                                                                                                     |
 | `1`   | The query waits for the lightweight deletes to complete on the current server.                                                                        |
 | `2`   | The query waits for the lightweight deletes to complete on all replicas (if they exist).                                                              |
-| `3`   | The query waits only for the active replicas. Inactive replicas apply the lightweight deletes when they become active.                                |
+| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
 
 **See Also**
 
@@ -5978,22 +5978,10 @@ Enables using projections to filter part ranges even when projections are not se
     DECLARE(Bool, force_optimize_projection, false, R"(
 Enables or disables the obligatory use of [projections](/reference/engines/table-engines/mergetree-family/mergetree#projections) in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
 
-When enabled, a projection that can serve the query is used even if it requires reading more marks than the table itself, and the query fails with the `PROJECTION_NOT_USED` error when no projection can be used.
-
 Possible values:
 
 - 0 — Projection optimization is not obligatory.
 - 1 — Projection optimization is obligatory.
-)", 0) \
-    DECLARE(Bool, prefer_optimize_projection, false, R"(
-Makes the projection optimization prefer [projections](/reference/engines/table-engines/mergetree-family/mergetree#projections) over the table in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
-
-When enabled, a projection that can serve the query is used even if it requires reading more marks than the table itself, the same as with [force_optimize_projection](#force_optimize_projection), but the query does not fail when no projection can be used.
-
-Possible values:
-
-- 0 — Projections are chosen by their estimated cost.
-- 1 — A usable projection is chosen regardless of its estimated cost.
 )", 0) \
     DECLARE(String, force_optimize_projection_name, "", R"(
 If it is set to a non-empty string, check that this projection is used in the query at least once.
@@ -7237,6 +7225,17 @@ If enabled, any URL parameter not recognized as a known parameter, setting, or `
 - A plain `name=value` becomes the equality `` `name` = 'value' `` (the identifier is back-quoted, the value is quoted as a string literal).
 - A comparison operator (`!=`, `>`, `<`, `>=`, `<=`, `<>`) makes it a comparison: either split across the parameter (`?a!=2`, `?a>=2`) or written inline when the URL has no `=` to split on (`?a<>2`, `?f(x)>3`), in which case the reassembled `name[=value]` is parsed as a full SQL expression.
 )", 0) \
+    DECLARE(Bool, http_x_clickhouse_format_overrides_output_format, true, R"(
+Controls which setting the `X-ClickHouse-Format` HTTP header maps to.
+
+If enabled (the default), the header is an alias for the `output_format` setting: it is an explicit override of the response format that wins over the `FORMAT` clause in the query and over the file extension in the URL path.
+
+If disabled, the header is an alias for the `default_format` setting, as it was before version 26.8: it only selects the format used when the query has no `FORMAT` clause and no other format override is applied.
+
+In both cases the header overrides the URL parameter of the same name (`output_format` or `default_format`, respectively) and never changes how the request body of an `INSERT` is parsed.
+
+This is a compatibility setting for the HTTP interface: the header is consumed before the query is parsed, so it must be supplied via a URL parameter or a user profile, not via an in-query `SETTINGS` clause. Like `output_format` and `default_format` themselves, it can always be changed in read-only mode (`readonly = 1`), so a read-only user can pass it as a URL parameter.
+)", 0) \
     \
     DECLARE(UInt64, function_range_max_elements_in_block, 500000000, R"(
 Sets the safety threshold for data volume generated by function [range](/reference/functions/regular-functions/array-functions#range). Defines the maximum number of values generated by function per block of data (sum of array sizes for every row in a block).
@@ -8298,7 +8297,7 @@ Use Iceberg partition pruning for Iceberg tables
 Skip whole Iceberg manifest files whose partition summaries in the manifest list cannot match the query filter, without reading them. Requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled and only helps when a manifest file holds few distinct partition values, which is what `rewriteManifests` clustered by the partition columns produces.
 )", 0) \
     DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
-If enabled and the `schema` key of an Iceberg manifest file header carries a schema that differs from the schema already registered for the same schema-id from metadata.json, the metadata.json schema is used and the manifest header copy is ignored with a warning. If disabled, such a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
+If enabled and the schema-id of an Iceberg manifest file is already registered from metadata.json, the metadata.json schema is used and the copy in the `schema` key of the manifest file header is ignored without being compared. If disabled, the manifest header copy is compared with the metadata.json schema, and a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
 
 The manifest header schema is only a copy of the table schema at the time the manifest was written, and some writers (e.g. AWS S3 Tables maintenance jobs) have been observed storing degraded copies there. Other query engines resolve schemas from metadata.json and ignore divergent header copies, so the default follows them. A conflict between two metadata.json schema definitions still always fails the query.
 )", 0) \
@@ -8526,6 +8525,14 @@ This makes outer queries that reference such columns by their qualified names wo
 SELECT ll.Date FROM (SELECT * FROM t AS ll LEFT JOIN t1 ON ll.k = t1.k LEFT JOIN t2 ON ll.k = t2.k);
 ```
 )", 0) \
+    DECLARE(Bool, analyzer_compatibility_allow_cte_redefinition, false, R"(
+Allow a Common Table Expression name to be defined more than once in a single `WITH` clause. A reference to such a name binds to the latest definition that is not being resolved at that moment: a redefinition can read the previous definition of the same name, and the query body reads the last one. This matches the query analysis that ClickHouse used before v24.3, where a later definition silently shadowed the earlier ones. One shape differs from that analysis: a CTE declared between two definitions of a name also binds to the last definition, where the old analysis bound it to the definition visible at its declaration point. By default a redefinition is rejected with `MULTIPLE_EXPRESSIONS_FOR_ALIAS`. A CTE declared as `MATERIALIZED` and a CTE in a `WITH RECURSIVE` clause cannot be redefined even when the setting is enabled.
+
+Possible values:
+
+- 0 - A CTE name can be defined only once in a `WITH` clause.
+- 1 - A later definition of a CTE name shadows the earlier ones.
+)", 0) \
     DECLARE(Bool, enable_identifier_resolve_cache, true, R"(
 Enable the identifier resolution cache in the query analyzer. The cache shares resolved alias nodes to prevent AST explosion when the same alias is referenced multiple times. Set to false to disable caching if incorrect results are suspected.
 )", 0) \
@@ -8653,7 +8660,7 @@ Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HA
 Populate constant comparison in AND chains to enhance filtering ability. Support operators `<`, `<=`, `>`, `>=`, `=` and mix of them. For example, `(a < b) AND (b < c) AND (c < 5)` would be `(a < b) AND (b < c) AND (c < 5) AND indexHint(b < 5) AND indexHint(a < 5)`. The derived comparisons are wrapped in `indexHint`: they participate in index analysis (primary key, partition key, skipping indexes) and prune the read set, but cost nothing per row and do not affect PREWHERE. A comparison derived through expressions of different tables stays executable (`(t1.a < t2.b) AND (t2.b < 5)` derives plain `t1.a < 5`): it is the only condition that can be pushed below the join, where it filters a join input the original chain cannot reach. Derived comparisons that contradict an existing condition are also added as plain conditions, so the `AND` folds to `false`.
 )", 0) \
     DECLARE(Bool, optimize_redundant_comparisons, true, R"(
-Detect conflicting and redundant comparison conditions on the same expression within AND chains. For example, `a < 1 AND a > 5` would be rewritten to `false`.
+Detect conflicting and redundant comparison conditions on the same expression within AND chains. For example, `a < 1 AND a > 5` would be rewritten to `false`. A contradiction between two `equals` on the same expression (for example, `a = 1 AND a = 2`) is detected independently of this setting.
 )", 0) \
     DECLARE(UInt64, optimize_and_compare_chain_max_hash_work, 5'000'000, R"(
 Work budget for the `optimize_and_compare_chain` optimization during query analysis, measured in the number of query-tree nodes hashed by `getTreeHash` (the dominant cost of this optimization). Once a query has hashed more than this many nodes while applying the optimization, it stops applying it for the rest of the query. This bounds analysis time for queries with very many or very large `AND`-chains of comparisons, where the optimization can otherwise dominate analysis while folding nothing. Stopping early is always safe: it only forgoes an optimization and never changes results. Set to `0` to disable the budget (unlimited).
@@ -8977,21 +8984,21 @@ Initial delay in milliseconds before the first retry of a failed AI function API
     DECLARE(Bool, ai_function_throw_on_error, true, R"(
 If true (default), an AI function call that fails permanently after exhausting all retries aborts the query with an exception. If false, the failed row receives the default value for the column type (empty string for String) and processing continues.
 )", BETA) \
-    DECLARE(UInt64, ai_function_max_input_tokens_per_query, 1000000, R"(
-Maximum total input (prompt) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
+    DECLARE(UInt64, ai_function_max_input_tokens_per_query, 0, R"(
+Maximum total input (prompt) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). Providers that omit token usage (notably HuggingFace TEI) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
 )", BETA) \
-    DECLARE(UInt64, ai_function_max_output_tokens_per_query, 500000, R"(
-Maximum total output (completion) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of output tokens per in-flight request, since a call's output tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
+    DECLARE(UInt64, ai_function_max_output_tokens_per_query, 0, R"(
+Maximum total output (completion) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of output tokens per in-flight request, since a call's output tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to the embedding functions (`aiEmbed`, `aiSimilarity`), which never produce output tokens.
 )", BETA) \
-    DECLARE(UInt64, ai_function_max_api_calls_per_query, 1000, R"(
-Maximum number of HTTP requests that AI functions may dispatch per query. Enforced independently by each server and query fragment: within one execution context it is an exact cap shared by every AI function, block, and thread there, but a distributed query (across shards or parallel-replica fragments) may dispatch up to this many requests per shard/fragment. It must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
+    DECLARE(UInt64, ai_function_max_api_calls_per_query, 0, R"(
+Maximum number of HTTP requests that AI functions may dispatch per query. 0 (default) disables the limit. Enforced independently by each server and query fragment: within one execution context it is an exact cap shared by every AI function, block, and thread there, but a distributed query (across shards or parallel-replica fragments) may dispatch up to this many requests per shard/fragment. It must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 )", BETA) \
     DECLARE(Bool, ai_function_throw_on_quota_exceeded, true, R"(
-If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String). Like the quota limits, this must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
+If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. All three limits are disabled by default, so this has no effect until one of them is set. If false, remaining rows receive the default value for the column type (empty string for String). Like the quota limits, this must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 )", BETA) \
     DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
 Maximum number of texts to include in a single HTTP request made by the embedding functions (`aiEmbed`, `aiSimilarity`). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
@@ -9428,13 +9435,12 @@ Specifies which JOIN order algorithms to attempt during query plan optimization.
  - 'dphyp' - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
 Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, query_plan_optimize_join_order_use_conflict_detector_a, false, R"(
-Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join
-reorderings are valid using the CD-A conflict detector).
-)", EXPERIMENTAL) \
-    DECLARE(Bool, query_plan_optimize_join_order_use_conflict_detector_c, false, R"(
-Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join reorderings
-are valid using the CD-C conflict detector. Takes precedence over `query_plan_optimize_join_order_use_conflict_detector_a` when both are enabled.
+    DECLARE(JoinOrderConflictDetector, query_plan_optimize_join_order_conflict_detector, JoinOrderConflictDetector::NONE, R"(
+Only affects the `dpsub` join order algorithm. Selects the conflict detector that DPsub uses to
+decide which join reorderings are valid. The following values are available:
+ - `''` (default) - no conflict detector, DPsub uses the per-relation `ON` clause restriction
+ - `'a'` - the CD-A conflict detector, which is correct but incomplete
+ - `'c'` - the CD-C conflict detector, which is correct and complete
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'

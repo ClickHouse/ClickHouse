@@ -12,6 +12,7 @@
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeArray.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
@@ -248,14 +249,14 @@ const Settings & RPNBuilderTreeContext::getSettings() const
     return query_context->getSettingsRef();
 }
 
-RPNBuilderTreeNode::RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, RPNBuilderTreeContext & tree_context_)
+RPNBuilderTreeNode::RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, const RPNBuilderTreeContext & tree_context_)
     : dag_node(dag_node_)
     , tree_context(tree_context_)
 {
     chassert(dag_node);
 }
 
-RPNBuilderTreeNode::RPNBuilderTreeNode(const IAST * ast_node_, RPNBuilderTreeContext & tree_context_)
+RPNBuilderTreeNode::RPNBuilderTreeNode(const IAST * ast_node_, const RPNBuilderTreeContext & tree_context_)
     : ast_node(ast_node_)
     , tree_context(tree_context_)
 {
@@ -371,6 +372,16 @@ ColumnWithTypeAndName RPNBuilderTreeNode::getConstantColumn() const
     return result;
 }
 
+/// A `Field` is the plain value of a constant: `LowCardinality` is only an encoding of the column,
+/// and a value that is not NULL has no `Nullable` type.
+static DataTypePtr getTypeOfConstantValue(const Field & value, const DataTypePtr & type)
+{
+    auto value_type = removeLowCardinality(type);
+    if (!value.isNull())
+        value_type = removeNullable(value_type);
+    return value_type;
+}
+
 bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & output_type) const
 {
     if (ast_node)
@@ -389,12 +400,7 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
 
             /// Simple literal
             output_value = literal->value;
-            output_type = block_with_constants.getByName(column_name).type;
-
-            /// If constant is not Null, we can assume it's type is not Nullable as well.
-            if (!output_value.isNull())
-                output_type = removeNullable(output_type);
-
+            output_type = getTypeOfConstantValue(output_value, block_with_constants.getByName(column_name).type);
             return true;
         }
         if (block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column))
@@ -402,11 +408,7 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
             /// An expression which is dependent on constants only
             const auto & constant_column = block_with_constants.getByName(column_name);
             output_value = (*constant_column.column)[0];
-            output_type = constant_column.type;
-
-            if (!output_value.isNull())
-                output_type = removeNullable(output_type);
-
+            output_type = getTypeOfConstantValue(output_value, constant_column.type);
             return true;
         }
     }
@@ -417,11 +419,7 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
         if (node_without_alias->column)
         {
             output_value = node_without_alias->column->getField();
-            output_type = node_without_alias->result_type;
-
-            if (!output_value.isNull())
-                output_type = removeNullable(output_type);
-
+            output_type = getTypeOfConstantValue(output_value, node_without_alias->result_type);
             return true;
         }
     }
@@ -582,6 +580,77 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
     }
 
     return RPNBuilderTreeNode(dag_node->children[index], tree_context);
+}
+
+namespace
+{
+
+/// Whether converting a value of type `from` to type `to` never changes it and never throws.
+/// `Nullable` cannot be dropped, because it may throw on NULL.
+bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to)
+{
+    auto from_type = removeLowCardinality(from);
+    auto to_type = removeLowCardinality(to);
+
+    if (to_type->isNullable())
+    {
+        from_type = removeNullable(from_type);
+        to_type = removeNullable(to_type);
+    }
+    else if (from_type->isNullable())
+    {
+        return false;
+    }
+
+    if (from_type->equals(*to_type))
+        return true;
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from_type.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to_type.get());
+    return from_array && to_array && isLosslessConversion(from_array->getNestedType(), to_array->getNestedType());
+}
+
+}
+
+bool isLosslessConversionFunction(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return false;
+
+    const auto function_name = node.function_base->getName();
+    const size_t arguments_size = node.children.size();
+
+    const bool is_cast = (function_name == "CAST" || function_name == "_CAST") && arguments_size == 2;
+    const bool is_wrapper = (function_name == "toNullable" || function_name == "toLowCardinality") && arguments_size == 1;
+
+    if (!is_cast && !is_wrapper)
+        return false;
+
+    return isLosslessConversion(node.children.front()->result_type, node.result_type);
+}
+
+RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node)
+{
+    if (!node.isFunction())
+        return node;
+
+    const auto function = node.toFunctionNode();
+    const auto * function_dag_node = function.getDAGNode();
+
+    if (!function_dag_node || !isLosslessConversionFunction(*function_dag_node))
+        return node;
+
+    return unwrapLosslessConversion(function.getArgumentAt(0));
+}
+
+const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node)
+{
+    const auto * node_without_alias = getNodeWithoutAlias(node);
+
+    if (!isLosslessConversionFunction(*node_without_alias))
+        return node;
+
+    return unwrapLosslessConversion(node_without_alias->children.front());
 }
 
 template <typename RPNElement>

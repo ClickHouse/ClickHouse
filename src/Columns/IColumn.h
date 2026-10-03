@@ -149,14 +149,20 @@ public:
     /// If column is ColumnReplicated, transforms it to full column.
     [[nodiscard]] virtual Ptr convertToFullColumnIfReplicated() const { return getPtr(); }
 
-    /// Recursively strip internal representation wrappers (Const, Replicated, Sparse)
+    /// If column isn't ColumnBLOB, return itself.
+    /// If column is ColumnBLOB, deserializes the BLOB back into the column it holds.
+    [[nodiscard]] virtual Ptr convertToFullColumnIfDetached() const { return getPtr(); }
+
+    /// Recursively strip internal representation wrappers (Const, Detached, Replicated, Sparse)
     /// from this column and all its subcolumns. Does NOT strip LowCardinality — that is
     /// a semantic type, not a representation wrapper. Callers that also need LowCardinality
     /// removed should chain ->convertToFullColumnIfLowCardinality() for top-level removal,
     /// or use recursiveRemoveLowCardinality for recursive removal.
     [[nodiscard]] virtual Ptr convertToFullIfWrapped() const
     {
-        Ptr converted = convertToFullColumnIfConst()
+        /// Detached goes first: the BLOB holds the serialized form of everything below it.
+        Ptr converted = convertToFullColumnIfDetached()
+            ->convertToFullColumnIfConst()
             ->convertToFullColumnIfReplicated()
             ->convertToFullColumnIfSparse();
 
@@ -247,11 +253,8 @@ public:
 
     /// Removes all elements outside of specified range.
     /// Is used in LIMIT operation, for example.
-    /// The result may share the original column. Use `IColumn::mutate` before modifying it.
     [[nodiscard]] virtual Ptr cut(size_t start, size_t length) const
     {
-        if (start == 0 && length == size())
-            return getPtr();
         MutablePtr res = cloneEmpty();
         res->insertRangeFrom(*this, start, length);
         return res;

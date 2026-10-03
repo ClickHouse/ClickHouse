@@ -856,45 +856,6 @@ def test_postgresql_database_engine_schema_sql_injection(started_cluster):
     cursor.execute("DROP TABLE IF EXISTS injected_marker")
 
 
-def test_postgresql_database_engine_quoted_remote_table_name(started_cluster):
-    # `DatabasePostgreSQL::checkPostgresTable` casts the formatted table name to `regclass` to
-    # decide whether the remote relation exists, and every table access of this database engine
-    # goes through it. A `"` is the only character that ends a PostgreSQL quoted identifier and is
-    # escaped by doubling it, so emitting it as `\"` closes the name early: PostgreSQL then answers
-    # SQLSTATE 42602 (invalid name syntax), which is not the 42P01 that this function translates
-    # into a clean "table does not exist", so the error escapes and the table is unusable.
-    conn = get_postgres_conn(
-        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
-    )
-    cursor = conn.cursor()
-
-    # `""` is how the relation actually named `quoted"table` is spelled in PostgreSQL DDL.
-    cursor.execute('CREATE TABLE "quoted""table" (id integer NOT NULL, value integer)')
-    node1.query("DROP DATABASE IF EXISTS postgres_database")
-    try:
-        node1.query(
-            f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
-        )
-        assert (
-            node1.query('EXISTS TABLE postgres_database.`quoted"table`').rstrip() == "1"
-        )
-        # Reaching the column list proves the relation resolved far enough to be usable, not merely
-        # to be counted: building the storage runs the existence check and then fetches the
-        # structure. Only the names are asserted, to stay independent of null-inference settings.
-        assert (
-            node1.query(
-                "SELECT name FROM system.columns WHERE database = 'postgres_database' "
-                "AND table = 'quoted\"table' ORDER BY name"
-            )
-            == "id\nvalue\n"
-        )
-    finally:
-        # `test_postgresql_fetch_tables` asserts the exact public-schema table list, so this
-        # relation must not outlive the test even if an assertion above fires.
-        node1.query("DROP DATABASE IF EXISTS postgres_database")
-        cursor.execute('DROP TABLE "quoted""table"')
-
-
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

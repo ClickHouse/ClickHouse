@@ -94,6 +94,30 @@ public:
     ///  - etc
     using KindStack = std::vector<Kind>;
 
+    /// The kind of a column in the Native format is chosen by the peer that sends the data, so a
+    /// reader declares with such a set which kinds the peer is allowed to select.
+    class KindSet
+    {
+    public:
+        constexpr KindSet(std::initializer_list<Kind> kinds) /// NOLINT(google-explicit-constructor)
+        {
+            for (auto kind : kinds)
+                bits |= maskOf(kind);
+        }
+
+        static constexpr KindSet all() { return KindSet(~UInt32(0)); }
+
+        constexpr bool contains(Kind kind) const { return (bits & maskOf(kind)) != 0; }
+        constexpr KindSet without(Kind kind) const { return KindSet(bits & ~maskOf(kind)); }
+
+    private:
+        explicit constexpr KindSet(UInt32 bits_) : bits(bits_) { }
+
+        static constexpr UInt32 maskOf(Kind kind) { return UInt32(1) << static_cast<UInt8>(kind); }
+
+        UInt32 bits = 0;
+    };
+
     virtual KindStack getKindStack() const { return {Kind::DEFAULT}; }
     SerializationPtr getPtr() const { return shared_from_this(); }
 
@@ -104,6 +128,7 @@ public:
     virtual MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const { return column; }
 
     static KindStack getKindStack(const IColumn & column);
+    static String kindToString(Kind kind);
     static String kindStackToString(const KindStack & kind);
     static KindStack stringToKindStack(const String & str);
     /// Check if provided kind stack contains specific kind.
@@ -498,9 +523,10 @@ public:
         /// Callback to start prefetches for specific substreams during prefixes deserialization.
         StreamCallback prefixes_prefetch_callback;
         /// ThreadPool that can be used to read prefixes of subcolumns in parallel.
-        /// Setting it requires all the callbacks in these settings to be thread safe: prefixes are then
-        /// deserialized from several pool threads at once, each one owning a disjoint set of subcolumns.
         ThreadPool * prefixes_deserialization_thread_pool = nullptr;
+        /// True when an ancestor parallel prefix-deserialization level already made the callbacks above
+        /// thread safe; a nested level then reuses them instead of wrapping again (avoids a second mutex).
+        bool prefix_deserialization_callbacks_are_thread_safe = false;
 
         /// If set to true, all prefixes and suffixes should be read from separate specialized substreams.
         /// For example prefix for discriminators in Variant column should be read from a separate

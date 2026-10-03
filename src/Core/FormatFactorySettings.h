@@ -860,7 +860,7 @@ The maximum allowed size for String in RowBinary format. It prevents allocating 
 The maximum allowed size for Array in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
 )", 0) \
     DECLARE(UInt64, input_format_binary_max_type_complexity, 1000, R"(
-Max type nodes when decoding binary types (not depth, but total count). `Map(String, UInt32)` = 3 nodes. Protects against malicious inputs. 0 = unlimited.
+Max type nodes when decoding binary types (not depth, but total count). `Map(String, UInt32)` = 3 nodes. Parameters of `AggregateFunction` types count as one node per value, including nested ones. Protects against malicious inputs. 0 = unlimited.
 )", 0) \
     DECLARE(UInt64, format_binary_max_object_size, 100000, R"(
 The maximum allowed number of paths in a single Object for JSON type RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
@@ -1507,31 +1507,8 @@ Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, n
     DECLARE(Bool, output_format_arrow_date_as_uint16, false, R"(
 Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32).
 )", 0) \
-    DECLARE(ArrowUnsupportedTypes, output_format_arrow_unsupported_types, "binary", R"(
-What to write for a column whose type has no first-class Arrow mapping (for example `JSON`, `Dynamic`, `QBit` or `AggregateFunction`):
-
-- `throw` — reject the query;
-- `text` — one text-form value per row (what `CAST(col AS String)` would produce), as an Arrow `Utf8` column;
-- `binary` — the binary representation of each value, as an Arrow `Binary` column (the same per-value encoding as `RowBinary`).
-
-An `AggregateFunction` column is `Binary` in `text` mode as well, because its text form is the raw aggregate state rather than text, and an Arrow `Utf8` column must hold valid UTF-8. Use `finalizeAggregation` to get a readable value.
-
-A value written into a `Utf8` column is made to hold valid UTF-8, with each invalid sequence replaced by U+FFFD. This only affects text that a reader could not have interpreted as text anyway - a `Dynamic` holding a `String` of arbitrary bytes, for example. Use `binary` mode when the bytes have to be preserved exactly.
-
-`output_format_arrow_string_as_string` does not apply to these columns, only to real `String` and `FixedString` ones. That keeps the Arrow type of an opaque column a statement about which encoding it holds: `Utf8` is the text form and `Binary` is the binary one, whatever that setting says.
-
-The same applies to an aggregate state held in a `Dynamic`: the column is typed from `Dynamic`, which says nothing about what its rows hold, and the Arrow schema is fixed before any value is seen, so the state cannot be given a `Binary` column of its own the way an `AggregateFunction` column is. In `text` mode it is therefore lossy. `binary` mode keeps it. A `Variant` is not affected - it lists its alternatives, so an `AggregateFunction` among them gets its own `Binary` child.
-
-In both `text` and `binary` the field is tagged in the Arrow schema with the `clickhouse.opaque` extension name and the original ClickHouse type name, so that a reader can tell it apart from a genuine string or binary column.
-
-ClickHouse reads such a column back into the type the tag names only where the reading side already knows that type, because a table declares it or a structure argument such as the one `file` and `s3` take names it; it then does so inside `Array`, `Tuple`, `Map` and `Nullable` as well. Schema inference does not consult the tag, so a column read without a type named for it still arrives as `String` holding the raw payload. An alternative of a `Variant` never reads back, even with the type named, because the Arrow union its alternatives form is decoded without consulting the tags. The data written is well formed for other Arrow readers in every case.
-
-Takes precedence over the older `output_format_arrow_unsupported_types_as_binary`, which is only consulted when this setting is left at its default.
-)", 0) \
     DECLARE(Bool, output_format_arrow_unsupported_types_as_binary, true, R"(
-Output types having no conversion as raw binary data. If false - such types would raise an exception.
-
-Superseded by `output_format_arrow_unsupported_types`: `0` means `throw` and `1` means `binary`. Only consulted when `output_format_arrow_unsupported_types` is not set explicitly.
+Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
 )", 0) \
     DECLARE(UInt64, output_format_arrow_record_batch_size, 0, R"(
 Target number of rows per record batch for the `Arrow` and `ArrowStream` output formats. Combining small blocks reduces metadata and buffer-padding overhead, particularly for queries with selective filters.
@@ -1644,7 +1621,7 @@ Possible values:
 Use the precise float parsing algorithm, which always returns the closest representable value to the input. When disabled, a faster but less accurate algorithm is used that may differ from the precise result by the least significant bits.
 )", 0) \
     DECLARE(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", R"(
-Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
+Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type. It also applies when a `Date` or `DateTime` is parsed from text, including by an input format.
 
 Possible values:
 

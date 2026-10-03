@@ -1932,6 +1932,57 @@ def test_kafka_producer_consumer_separate_settings(
 
 
 @pytest.mark.parametrize(
+    "create_query_generator",
+    [
+        k.generate_old_create_table_query,
+        k.generate_new_create_table_query,
+    ],
+)
+def test_kafka_password_not_logged(kafka_cluster, create_query_generator):
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+    username = f"kafka_user_{suffix}"
+    password = f"secret_kafka_password_{suffix}"
+
+    instance.rotate_logs()
+    instance.query(
+        create_query_generator(
+            kafka_table,
+            "key UInt64",
+            topic_list="password_not_logged",
+            consumer_group="test",
+            settings={
+                "kafka_sasl_username": username,
+                "kafka_sasl_password": password,
+            },
+        )
+    )
+
+    # Create an mv to initialize the librdkafka consumers
+    instance.query(f"CREATE MATERIALIZED VIEW test.{kafka_table}_view ENGINE=MergeTree ORDER BY tuple() AS SELECT * FROM test.{kafka_table}")
+    instance.wait_for_log_line(f"{kafka_table}.*Created #0 consumer")
+    instance.query(f"DROP TABLE test.{kafka_table}_view")
+    instance.query(f"INSERT INTO test.{kafka_table} VALUES (1)")
+
+    assert instance.contains_in_log(f"{kafka_table}.*Kafka producer created")
+
+    # The property-logging loops ran for both the consumer and the producer,
+    # but they hid the values of the sensitive properties. `sasl.username` is
+    # hidden because librdkafka marks it with the _RK_SENSITIVE flag, not
+    # because of the name, so it validates the generated blacklist.
+    for client_type in ["Consumer", "Producer"]:
+        for property_name in ["sasl.username", "sasl.password"]:
+            assert instance.contains_in_log(
+                f"{kafka_table}.*{client_type} set property {property_name}:\\[HIDDEN\\]"
+            )
+    # The username still appears in the logged CREATE TABLE text (only
+    # kafka_sasl_password is masked there), so check only the password value.
+    assert not instance.contains_in_log(password)
+
+    instance.query(f"DROP TABLE test.{kafka_table}")
+
+
+@pytest.mark.parametrize(
     "create_query_generator, log_line",
     [
         (k.generate_new_create_table_query, "Saved offset 5"),
@@ -4380,53 +4431,6 @@ def test_kafka2_dead_letter_queue_commit_on_select(kafka_cluster):
     assert dlq_count_after == 1
 
     instance.query(f"DROP TABLE test.{kafka_table} SYNC")
-
-
-def test_kafka_consumers_with_assignment_after_rebalance(kafka_cluster):
-    suffix = k.random_string(6)
-    topic_name = f"consumers_with_assignment_{suffix}"
-    k.kafka_create_topic(k.get_admin_client(kafka_cluster), topic_name, num_partitions=2)
-
-    metric_query = (
-        "SELECT value FROM system.metrics WHERE metric = 'KafkaConsumersWithAssignment'"
-    )
-    before = int(instance.query(metric_query))
-
-    def create(table):
-        instance.query(
-            f"""
-            CREATE TABLE test.{table} (key UInt64, value UInt64)
-                ENGINE = Kafka
-                SETTINGS kafka_broker_list = 'kafka1:19092',
-                         kafka_topic_list = '{topic_name}',
-                         kafka_group_name = '{topic_name}',
-                         kafka_format = 'JSONEachRow';
-            CREATE MATERIALIZED VIEW test.{table}_mv ENGINE = Memory AS SELECT * FROM test.{table};
-            """
-        )
-
-    # The first consumer takes both partitions.
-    create(f"kafka_a_{suffix}")
-    assert_eq_with_retry(instance, metric_query, str(before + 1))
-
-    # The second member joining the group revokes and reassigns the live assignment.
-    create(f"kafka_b_{suffix}")
-    assert_eq_with_retry(
-        instance,
-        f"""
-        SELECT num_rebalance_assignments
-        FROM system.kafka_consumers
-        WHERE database = 'test' AND table = 'kafka_b_{suffix}'
-        """,
-        "1",
-    )
-
-    for table in (f"kafka_a_{suffix}", f"kafka_b_{suffix}"):
-        instance.query(f"DROP TABLE test.{table}_mv SYNC")
-        instance.query(f"DROP TABLE test.{table} SYNC")
-
-    # Without the fix the revocation is counted twice, so the gauge ends one below where it started.
-    assert_eq_with_retry(instance, metric_query, str(before))
 
 
 if __name__ == "__main__":

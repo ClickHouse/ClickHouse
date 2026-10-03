@@ -81,7 +81,10 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     std::optional<ObjectAttributes> object_to_attributes)
 {
     if (&object_storage_to == this)
+    {
         copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
+        return;
+    }
 
     auto in = readObject(object_from, read_settings);
     auto out = object_storage_to.writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);

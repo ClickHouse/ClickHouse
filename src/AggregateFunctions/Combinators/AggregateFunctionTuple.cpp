@@ -516,6 +516,13 @@ void AggregateFunctionTuple::insertMergeResultInto(AggregateDataPtr __restrict p
     insertResultIntoImpl<true>(place, to, arena);
 }
 
+void AggregateFunctionTuple::rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept
+{
+    auto & tuple_to = assert_cast<ColumnTuple &>(to);
+    for (size_t i = nested_functions.size(); i-- > 0;)
+        nested_functions[i]->rollbackInsertResult(place + state_offsets[i], tuple_to.getColumn(i));
+}
+
 bool AggregateFunctionTuple::allocatesMemoryInArena() const
 {
     for (const auto & func : nested_functions)
