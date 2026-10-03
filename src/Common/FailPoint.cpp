@@ -79,6 +79,7 @@ static struct InitFiu
     ONCE(smt_lightweight_snapshot_fail) \
     ONCE(smt_lightweight_snapshot_table_path_session_expired) \
     ONCE(smt_lightweight_update_sleep_after_block_allocation) \
+    PAUSEABLE_ONCE(mt_lightweight_update_pause_after_block_allocation) \
     ONCE(smt_merge_task_sleep_in_prepare) \
     REGULAR(merge_tree_leader_election_stale_epoch_before_commit) \
     REGULAR(merge_tree_leader_election_stale_lease_cleanup) \
@@ -283,6 +284,7 @@ static struct InitFiu
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     REGULAR(slowdown_system_parts_enumeration) \
     REGULAR(parallel_replicas_delay_announcement) \
+    REGULAR(pulling_async_pipeline_executor_delay_first_pull) \
     REGULAR(slowdown_skip_index_read_result_build) \
     ONCE(iceberg_writes_cleanup) \
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
@@ -392,6 +394,7 @@ static struct InitFiu
     PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     ONCE(mt_skip_scheduling_merge_once) \
+    ONCE(mt_drop_selected_ttl_merge_once) \
     ONCE(mt_fail_selected_merge_before_start_once) \
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \

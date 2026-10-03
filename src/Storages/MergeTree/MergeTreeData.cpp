@@ -1411,12 +1411,7 @@ void MergeTreeData::checkProperties(
 
     if (!new_metadata.projections.empty())
     {
-        /// Projections on a UNIQUE KEY table would read through the projection
-        /// part, bypassing the delete-bitmap filter and exposing logically-
-        /// deleted rows. ALTER ADD PROJECTION is already rejected (see
-        /// `checkAlterIsPossible`); reject CREATE-with-projection too so the
-        /// combination cannot exist. CREATE only — ATTACH must still load.
-        /// TODO(unique-key): support projections on UNIQUE KEY tables.
+        /// TODO(unique-key): support projections; ATTACH must still load.
         if (new_metadata.hasUniqueKey() && !attach)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Projections are not supported on tables with UNIQUE KEY");
@@ -1857,6 +1852,19 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
             }
         }
     }
+}
+
+void MergeTreeData::checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata)
+{
+    if (new_metadata.column_ttls_by_name.empty())
+        return;
+
+    NameSet key_columns = old_metadata.getStorageColumnsRequiredForKeys();
+    key_columns.merge(new_metadata.getStorageColumnsRequiredForKeys());
+
+    for (const auto & [name, _] : new_metadata.column_ttls_by_name)
+        if (key_columns.contains(name))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Trying to set TTL for key column {}", name);
 }
 
 namespace
@@ -5468,8 +5476,7 @@ size_t MergeTreeData::clearEmptyParts()
                 continue;
 
             /// Do not try to drop uncommitted parts. If the newest tx doesn't see it then it probably hasn't been committed yet
-            if (!part->version->getInfo().creation_tid.isNonTransactional()
-                && !part->version->isVisible(TransactionManager::instance().getLatestSnapshot()))
+            if (!part->version->isVisibleByLatestSnapshot())
                 continue;
 
             if (isPinnedByDeleteBitmap(*part))
@@ -5991,6 +5998,35 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     checkAlterEligibility(commands, local_context);
 }
 
+/// TODO(unique-key): allow the mutations that keep every row.
+static void checkUniqueKeyMutationCommands(const MutationCommands & commands)
+{
+    for (const auto & command : commands)
+    {
+        switch (command.type)
+        {
+            /// Metadata only, no part is written.
+            case MutationCommand::ALTER_WITHOUT_MUTATION:
+            case MutationCommand::EMPTY:
+                continue;
+
+            case MutationCommand::DELETE:
+            case MutationCommand::UPDATE:
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER DELETE / ALTER UPDATE is not supported on tables with UNIQUE KEY. "
+                    "Use DELETE FROM, which the unique key implements through its delete bitmaps.");
+
+            default:
+                break;
+        }
+
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Mutation {} is not supported on tables with UNIQUE KEY yet: only mutation kinds verified "
+            "to keep every row of the part they rewrite are allowed.",
+            command.type == MutationCommand::DROP_COLUMN && command.clear ? std::string_view{"CLEAR COLUMN"} : magic_enum::enum_name(command.type));
+    }
+}
+
 void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, ContextPtr local_context) const
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
@@ -6069,25 +6105,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Column TTL is not supported on tables with UNIQUE KEY");
 
-            /// CLEAR COLUMN (parsed as DROP_COLUMN with `clear`) rewrites the whole
-            /// part and drops the per-part `unique_key_index.sst`, regardless of
-            /// which column is targeted. Reject it on UNIQUE KEY tables, but only
-            /// when it would actually rewrite a part: the target must be an existing
-            /// physical (stored) column. `CLEAR COLUMN missing IF EXISTS` and CLEAR
-            /// of a non-stored column are no-ops (`hasPhysical` is false for both),
-            /// so they fall through to normal handling. CLEAR of a UK column falls
-            /// through to the ALTER_OF_COLUMN_IS_FORBIDDEN guard below. Note the
-            /// mutation-path guard in `checkMutationIsPossible` never sees CLEAR
-            /// COLUMN — it is dispatched as an AlterCommand, not a mutation — so this
-            /// is the effective chokepoint.
-            if (command.type == AlterCommand::DROP_COLUMN && command.clear
-                && !uk_set.contains(command.column_name)
-                && old_metadata.columns.hasPhysical(command.column_name))
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER TABLE ... CLEAR COLUMN {} is not supported on tables with UNIQUE KEY: "
-                    "the whole part is rewritten regardless of which column is targeted, so the "
-                    "per-part UNIQUE KEY dense index would be lost.",
-                    backQuoteIfNeed(command.column_name));
 
             const bool affects_column =
                 command.type == AlterCommand::DROP_COLUMN
@@ -6105,13 +6122,17 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 : "MODIFY";
 
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                "ALTER {} COLUMN {} is forbidden: the column is part of the table's "
-                "UNIQUE KEY ({}). Drop the UNIQUE KEY first (not supported in the "
-                "current phase) or pick a different column.",
+                "ALTER {} COLUMN {} is forbidden: the column is part of the table's UNIQUE KEY ({}).",
                 action_str,
                 backQuoteIfNeed(command.column_name),
                 uk_list_str());
         }
+
+        /// `StorageMergeTree::alter` queues these without `checkMutationIsPossible`.
+        checkUniqueKeyMutationCommands(
+            commands.getMutationCommands(
+                old_metadata, settings[Setting::materialize_ttl_after_modify], local_context,
+                /*with_alters*/ false, (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]));
     }
 
     /// Must be collected before the commands are applied below: dropping a column used in a key has to
@@ -7021,9 +7042,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     MergeTreeSettingsPtr alter_effective_settings = getSettings();
     if (new_metadata.settings_changes)
     {
-        const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        auto new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        /// The settings constraints below compare the resolved `disk`, so it is resolved here. A changed
+        /// `disk` is a fresh definition and is checked as one, before anything registers the disk unchecked.
+        MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
         auto copy = getDefaultSettings();
-        copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+        copy->applyChanges(new_changes, local_context, /*is_loading_from_existing_metadata=*/true);
         alter_effective_settings = std::move(copy);
     }
 
@@ -7094,6 +7118,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
+    if (!is_secondary_replay)
+        checkColumnTTLsForKeyColumns(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())
     {
@@ -7166,7 +7192,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             {
                 /// Use default settings + new and check if doesn't affect part format settings
                 auto copy = getDefaultSettings();
-                copy->applyChanges(new_changes, local_context, /*is_loading_from_existing_metadata=*/true);
+                copy->applyChangesLeavingDiskUnresolved(new_changes);
                 String reason;
                 if (!canUsePolymorphicParts(*copy, reason) && !reason.empty())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't change settings. Reason: {}", reason);
@@ -7279,69 +7305,8 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
         if (!disk->supportsHardLinks())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mutations are not supported for immutable disk '{}'", disk->getName());
 
-    /// Reject mutations that bypass UK dedup: DELETE/UPDATE rewrite rows;
-    /// MATERIALIZE COLUMN / CLEAR COLUMN (the latter serialized as
-    /// `DROP_COLUMN` with `clear=true`) rewrite stored bytes.
     if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata->hasUniqueKey())
-    {
-        const auto & uk_column_names = uk_metadata->getUniqueKeyColumns();
-
-        for (const auto & command : commands)
-        {
-            if (command.type == MutationCommand::DELETE || command.type == MutationCommand::UPDATE)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER DELETE / ALTER UPDATE is not supported on tables with UNIQUE KEY");
-
-            /// MATERIALIZE TTL rewrites parts to apply expiration, bypassing the UNIQUE KEY
-            /// dedup path (like MATERIALIZE COLUMN below) — and TTL is unsupported anyway
-            /// while merges are disabled. Reject so an ATTACH-loaded UK+TTL table cannot
-            /// materialize it.
-            if (command.type == MutationCommand::MATERIALIZE_TTL)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER TABLE ... MATERIALIZE TTL is not supported on tables with UNIQUE KEY");
-
-            /// MATERIALIZE / CLEAR COLUMN rewrite the whole part via MutateTask
-            /// regardless of which column is targeted, so the dense index is
-            /// invalidated even for a non-UK column: a full rewrite produces no
-            /// `unique_key_index.sst`, and the hardlink path would carry over an
-            /// SST whose `row_number` values no longer match the new part's row
-            /// offsets. Reject both for the whole table until mutation-side SST
-            /// rebuild lands (mirrors the REWRITE-family stance below).
-            if (command.type == MutationCommand::MATERIALIZE_COLUMN)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER TABLE ... MATERIALIZE COLUMN `{}` is not supported on tables with UNIQUE KEY: "
-                    "the whole part is rewritten regardless of which column is targeted, so the "
-                    "per-part UNIQUE KEY dense index would be lost. UNIQUE KEY columns: ({}).",
-                    command.column_name, fmt::join(uk_column_names, ", "));
-
-            if (command.type == MutationCommand::DROP_COLUMN && command.clear)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER TABLE ... CLEAR COLUMN `{}` is not supported on tables with UNIQUE KEY: "
-                    "the whole part is rewritten regardless of which column is targeted, so the "
-                    "per-part UNIQUE KEY dense index would be lost. UNIQUE KEY columns: ({}).",
-                    command.column_name, fmt::join(uk_column_names, ", "));
-
-            /// These commands rebuild whole parts (the full read+rewrite mutation path) and
-            /// drop the delete_bitmap_*.rbm sidecars, silently resurrecting deleted rows once
-            /// DELETE lands. MATERIALIZE INDEX/STATISTICS/PROJECTION reach the same path via
-            /// MutateAllPartColumnsTask for compact or non-full parts (which only hardlinks
-            /// checksummed entries, not the sidecars). Reject the whole destructive-rewrite family.
-            if (command.type == MutationCommand::REWRITE_PARTS
-                || command.type == MutationCommand::APPLY_DELETED_MASK
-                || command.type == MutationCommand::APPLY_PATCHES
-                || command.type == MutationCommand::MATERIALIZE_INDEX
-                || command.type == MutationCommand::MATERIALIZE_STATISTICS
-                || command.type == MutationCommand::MATERIALIZE_PROJECTION)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER TABLE ... {} is not supported on tables with UNIQUE KEY",
-                    command.type == MutationCommand::REWRITE_PARTS ? "REWRITE PARTS"
-                        : command.type == MutationCommand::APPLY_DELETED_MASK ? "APPLY DELETED MASK"
-                        : command.type == MutationCommand::APPLY_PATCHES ? "APPLY PATCHES"
-                        : command.type == MutationCommand::MATERIALIZE_INDEX ? "MATERIALIZE INDEX"
-                        : command.type == MutationCommand::MATERIALIZE_STATISTICS ? "MATERIALIZE STATISTICS"
-                        : "MATERIALIZE PROJECTION");
-        }
-    }
+        checkUniqueKeyMutationCommands(commands);
 
     const auto index_mode = (*getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
     auto secondary_indices_metadata = getInMemoryMetadataPtr(getContext(), false);
@@ -7442,8 +7407,10 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part], (*settings)[MergeTreeSetting::min_level_for_wide_part]))
         part_type = PartType::Compact;
 
+    /// TODO(unique-key): support Packed storage; SSTIndexWriter needs Full parts.
     auto storage_type = PartStorageType::Full;
-    if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_full_part_storage], (*settings)[MergeTreeSetting::min_rows_for_full_part_storage], (*settings)[MergeTreeSetting::min_level_for_full_part_storage]))
+    if (!hasUniqueKey()
+        && satisfies((*settings)[MergeTreeSetting::min_bytes_for_full_part_storage], (*settings)[MergeTreeSetting::min_rows_for_full_part_storage], (*settings)[MergeTreeSetting::min_level_for_full_part_storage]))
         storage_type = PartStorageType::Packed;
 
     /// The trained `pq` method of the `Quantize(...)` codec stores a per-part codebook (one artifact for the whole
@@ -8336,9 +8303,6 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         }
     }
 
-    /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
-    removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
-
     /// We can only create a covering part for a blocks range that starts with 0 (otherwise we may get "intersecting parts"
     /// if we remove a range from the middle when dropping a part).
     /// Maybe we could do it by incrementing mutation version to get a name for the empty covering part,
@@ -8351,6 +8315,8 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
     /// Under a running MVCC transaction the removed parts keep their version metadata (creation/removal CSN
     /// persisted on disk), which already prevents them from being resurrected on restart, so no covering part
     /// is needed (mirrors plain MergeTree DROP PARTITION, which only covers parts in its non-transaction path).
+    MutableDataPartPtr empty_covering_part;
+    scope_guard empty_covering_part_tmp_dir_holder;
     if (create_empty_part && !txn && !parts_to_remove.empty() && is_new_syntax && !range_in_the_middle)
     {
         /// We are going to remove a lot of parts from zookeeper just after returning from this function.
@@ -8358,6 +8324,11 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         /// But if the server restarts in-between, then it will notice a lot of unexpected parts,
         /// so it may refuse to start. Let's create an empty part that covers them.
         /// We don't need to commit it to zk, and don't even need to activate it.
+        ///
+        /// The part is written before the covered parts leave the working set, because writing it can throw
+        /// (e.g. `MEMORY_LIMIT_EXCEEDED`). If it threw after the removal, the covered parts would already be
+        /// outdated without a covering part, a following `REPLACE_RANGE` would find no active parts to cover,
+        /// and the parts would be removed from ZooKeeper only, becoming unexpected parts after a restart.
 
         MergeTreePartInfo empty_info = drop_range;
         empty_info.level = empty_info.mutation = 0;
@@ -8377,25 +8348,50 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         String empty_part_name = empty_info.getPartNameAndCheckFormat(format_version);
 
         /// Use the source part's metadata so patch parts pick up patch-part metadata.
-        auto [new_data_part, tmp_dir_holder] = createEmptyPart(
+        std::tie(empty_covering_part, empty_covering_part_tmp_dir_holder) = createEmptyPart(
             empty_info,
             partition,
             empty_part_name,
             source_part->getMetadataSnapshot(),
             NO_TRANSACTION_PTR,
             source_part->info.isPatch() ? std::optional(source_part->getPatchPartIndex().cloneEmpty()) : std::nullopt);
+    }
 
+    /// If anything below throws before the part storage transaction is committed, undo it (best-effort).
+    /// Otherwise, on object storage, the already uploaded blobs would be stranded: the part directory does not exist
+    /// until the commit, so the destructor of the temporary part finds nothing to remove.
+    scope_guard undo_empty_covering_part_guard = [&]
+    {
+        if (!empty_covering_part)
+            return;
+
+        try
+        {
+            empty_covering_part->getDataPartStorage().undoTransaction();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("while undoing the transaction of the empty covering part {}", empty_covering_part->name));
+        }
+    };
+
+    /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
+    removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
+
+    if (empty_covering_part)
+    {
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         scope_guard rollback_tx_guard = [&]() { transaction.rollback(&lock); };
 
-        renameTempPartAndAdd(new_data_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
-        new_data_part->getDataPartStorage().commitTransaction();
+        renameTempPartAndAdd(empty_covering_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
+        empty_covering_part->getDataPartStorage().commitTransaction();
         rollback_tx_guard.reset();
+        undo_empty_covering_part_guard.release();
 
-        new_data_part->remove_time.store(0, std::memory_order_relaxed);
+        empty_covering_part->remove_time.store(0, std::memory_order_relaxed);
         /// Such parts are always local, they don't participate in replication, they don't have shared blobs.
         /// So we don't have locks for shared data in zk for them, and can just remove blobs (this avoids leaving garbage in S3)
-        new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS_OF_NOT_TEMPORARY;
+        empty_covering_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS_OF_NOT_TEMPORARY;
     }
 
     /// Since we can return parts in Deleting state, we have to use a wrapper that restricts access to such parts.
@@ -8606,6 +8602,10 @@ MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_conte
     if (!supportsTransactions() && query_context->getCurrentTransaction())
         return ColumnDefaultnessStatsUnavailableReason::ActiveTransaction;
 
+    /// TODO(unique-key): support defaultness stats.
+    if (hasUniqueKey())
+        return ColumnDefaultnessStatsUnavailableReason::UniqueKey;
+
     /// Patch parts apply updates/deletes at read time and don't update the base part's
     /// `serialization.json`, so the recorded `num_defaults` would be stale.
     if (!getPatchPartsVectorForInternalUsage().empty())
@@ -8657,6 +8657,7 @@ const char * MergeTreeData::columnDefaultnessStatsUnavailableReasonToString(Colu
         case ColumnDefaultnessStatsUnavailableReason::DataMutations: return "pending data mutations";
         case ColumnDefaultnessStatsUnavailableReason::AlterMutations: return "pending alter mutations";
         case ColumnDefaultnessStatsUnavailableReason::MaskingPolicy: return "table has a masking policy";
+        case ColumnDefaultnessStatsUnavailableReason::UniqueKey: return "table has a unique key";
     }
     UNREACHABLE();
 }
@@ -10048,10 +10049,8 @@ Pipe MergeTreeData::alterPartition(
     const PartitionCommands & commands,
     ContextPtr query_context)
 {
-    /// Reject all ALTER ... PARTITION ... operations on UNIQUE KEY tables.
-    /// Each command interacts with the dense-index sidecar and bitmap state
-    /// in ways that require UK-aware semantics not yet implemented.
-    if (metadata_snapshot && metadata_snapshot->hasUniqueKey() && !commands.empty())
+    /// TODO(unique-key): support ALTER ... PARTITION.
+    if (hasUniqueKey() && !commands.empty())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "ALTER ... PARTITION operations are not supported on tables with UNIQUE KEY");
 
@@ -10356,10 +10355,7 @@ void MergeTreeData::restoreDataFromBackupAtEpoch(RestorerFromBackup & restorer, 
     if (!backup->hasFiles(data_path_in_backup))
         return;
 
-    /// TODO(unique-key): sidecar-aware backup/restore. Delete-bitmap sidecars
-    /// are not preserved across backup/restore, so restoring data parts would
-    /// resurrect deleted rows. BACKUP is already rejected; gate the symmetric
-    /// restore path too for backups produced by older builds.
+    /// TODO(unique-key): support RESTORE.
     if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata && uk_metadata->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "RESTORE of data is not supported for UNIQUE KEY tables yet: delete-bitmap "
@@ -13619,7 +13615,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetada
     if (metadata.settings_changes)
     {
         const auto & changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
-        settings->applyChanges(changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+        settings->applyChangesLeavingDiskUnresolved(changes);
     }
 
     checkColumnFilenamesForCollision(metadata.getColumns(), *settings, throw_on_error);
@@ -14967,11 +14963,7 @@ MergeTreeData::MergingParams MergeTreeData::getMergingParamsForPatchParts()
 
 std::expected<void, PreformattedMessage> MergeTreeData::supportsLightweightUpdate() const
 {
-    /// Lightweight updates rewrite stored row bytes via patch parts, bypassing
-    /// MergeTreeSinkUniqueKeyCommit::run. Allowing them on UNIQUE KEY tables
-    /// would produce duplicate live keys. Reject here so the rewrite path in
-    /// InterpreterAlterQuery::tryRewriteToLightweightUpdate falls back through
-    /// the heavy path, which is rejected by checkMutationIsPossible.
+    /// TODO(unique-key): support lightweight updates.
     if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata->hasUniqueKey())
         return std::unexpected(PreformattedMessage::create(
             "Lightweight updates are not supported on tables with UNIQUE KEY"));
