@@ -5,6 +5,7 @@
 #include <Backups/BackupIO_Default.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Common/BlobStorageLogWriter.h>
 
 
 namespace DB
@@ -94,6 +95,7 @@ private:
     String blob_path;
     std::unique_ptr<AzureObjectStorage> object_storage;
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings;
+    BlobStorageLogWriterPtr blob_storage_log;
 };
 
 }
