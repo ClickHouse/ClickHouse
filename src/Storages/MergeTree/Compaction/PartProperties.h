@@ -38,6 +38,10 @@ struct PartProperties
     /// Number of rows in part.
     const size_t rows = 0;
 
+    /// Whether the part carries a lightweight delete mask. A merge that removes expired values cannot run
+    /// vertically over such parts, see `MergeTask::canVerticalTTLDelete`.
+    const bool has_lightweight_delete = false;
+
     /// Information about different TTLs for part. Used by Part/Row Delete Merge Selectors.
     struct GeneralTTLInfo
     {
