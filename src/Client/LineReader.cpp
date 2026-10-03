@@ -3,6 +3,8 @@
 #include <iostream>
 #include <string_view>
 #include <algorithm>
+#include <tuple>
+#include <unordered_map>
 
 #include <cstring>
 #include <unistd.h>
@@ -94,11 +96,26 @@ LineReader::Suggest::Words LineReader::Suggest::getMatchingWords(
         recent.assign(recently_used.begin(), recently_used.end());
     }
 
+    /// Words supplied by the callback (the predictive autocomplete model) come ranked by relevance,
+    /// most relevant first. That order is remembered for the prioritization below, while a sorted
+    /// copy is merged into the search dictionary — with the same ordering that the `equal_range`
+    /// lookup below uses, otherwise the merged part of a case-insensitively sorted dictionary would
+    /// be sorted case-sensitively and matches could be lost.
+    Words predicted;
     if (custom_completions_callback)
     {
-        auto new_words = custom_completions_callback(prefix, prefix_length);
-        chassert(std::is_sorted(new_words.begin(), new_words.end()));
-        addNewWords(to_search, new_words, std::less<std::string>{});
+        predicted = custom_completions_callback(prefix, prefix_length);
+        Words sorted_predicted = predicted;
+        if (no_case)
+        {
+            std::sort(sorted_predicted.begin(), sorted_predicted.end(), NoCaseCompare{});
+            addNewWords(to_search, sorted_predicted, NoCaseCompare{});
+        }
+        else
+        {
+            std::sort(sorted_predicted.begin(), sorted_predicted.end());
+            addNewWords(to_search, sorted_predicted, std::less<std::string>{});
+        }
     }
 
     if (no_case)
@@ -176,30 +193,48 @@ LineReader::Suggest::Words LineReader::Suggest::getMatchingWords(
         add_candidates(recent);
     }
 
-    /// Prioritize words that the user has used or already typed.
-    if (!result.empty() && (!recent_set.empty() || !priority_set.empty()))
+    /// Prioritize the model's predictions and words that the user has used or already typed.
+    if (!result.empty() && (!predicted.empty() || !recent_set.empty() || !priority_set.empty()))
     {
-        /// Tier 0: used earlier this session; tier 1: present in the current input; tier 2: rest.
-        /// Compute the tier once per word, then a stable sort preserves the alphabetical order
-        /// within each tier.
-        std::vector<std::pair<int, std::string>> ranked;
+        /// Tier 0: predicted by the model for this exact context (ordered by the model's ranking,
+        /// most likely first — this is what makes the predictions "higher-priority" than the static
+        /// dictionary); tier 1: used earlier this session; tier 2: present in the current input;
+        /// tier 3: rest. Compute the tier once per word, then a stable sort preserves the order
+        /// within each tier (alphabetical for tiers 1-3).
+        std::unordered_map<std::string, size_t> predicted_rank;
+        for (size_t i = 0; i < predicted.size(); ++i)
+            predicted_rank.emplace(fold(predicted[i]), i);
+
+        struct Ranked
+        {
+            int tier;
+            size_t rank;
+            std::string word;
+        };
+        std::vector<Ranked> ranked;
         ranked.reserve(result.size());
         for (auto & w : result)
         {
             std::string folded = fold(w);
-            int tier = 2;
-            if (recent_set.contains(folded))
+            int tier = 3;
+            size_t rank = 0;
+            if (auto it = predicted_rank.find(folded); it != predicted_rank.end())
+            {
                 tier = 0;
-            else if (priority_set.contains(folded))
+                rank = it->second;
+            }
+            else if (recent_set.contains(folded))
                 tier = 1;
-            ranked.emplace_back(tier, std::move(w));
+            else if (priority_set.contains(folded))
+                tier = 2;
+            ranked.emplace_back(Ranked{tier, rank, std::move(w)});
         }
         std::stable_sort(ranked.begin(), ranked.end(),
-            [](const auto & a, const auto & b) { return a.first < b.first; });
+            [](const auto & a, const auto & b) { return std::tie(a.tier, a.rank) < std::tie(b.tier, b.rank); });
 
         result.clear();
         for (auto & p : ranked)
-            result.push_back(std::move(p.second));
+            result.push_back(std::move(p.word));
     }
 
     return result;
