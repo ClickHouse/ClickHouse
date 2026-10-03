@@ -1,5 +1,6 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCopyQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTRenameQuery.h>
@@ -54,6 +55,58 @@ TEST(Lexer, NullInputWithMaxQuerySize)
     Lexer lexer(nullptr, nullptr, 262144);
     Token token = lexer.nextToken();
     EXPECT_EQ(TokenType::EndOfStream, token.type);
+}
+
+TEST(ParserCopyQuery, FormattingPreservesTableCopy)
+{
+    struct TestCase
+    {
+        String query;
+        String formatted;
+    };
+
+    const std::vector<TestCase> test_cases = {
+        {"COPY t TO STDOUT", "COPY t TO STDOUT"},
+        {"COPY t FROM STDIN", "COPY t FROM STDIN"},
+        {"COPY db.t (a, b) TO STDOUT", "COPY db.t (a, b) TO STDOUT"},
+        {"COPY db.t (a, b) FROM STDIN", "COPY db.t (a, b) FROM STDIN"},
+        {
+            R"(COPY "db name"."table name" ("first col", second) TO STDOUT)",
+            "COPY `db name`.`table name` (`first col`, second) TO STDOUT",
+        },
+        {"COPY t TO STDOUT WITH (FORMAT csv)", "COPY t TO STDOUT WITH (FORMAT CSV)"},
+        {"COPY t TO STDOUT WITH (FORMAT csv, HEADER)", "COPY t TO STDOUT WITH (FORMAT CSV, HEADER)"},
+        {"COPY t FROM STDIN WITH (HEADER)", "COPY t FROM STDIN WITH (HEADER)"},
+        {"COPY t TO STDOUT WITH (FORMAT binary)", "COPY t TO STDOUT WITH (FORMAT Binary)"},
+        {"COPY t TO STDOUT WITH (FORMAT text)", "COPY t TO STDOUT"},
+        {"COPY t TO STDOUT WITH CSV HEADER", "COPY t TO STDOUT WITH (FORMAT CSV, HEADER)"},
+    };
+
+    for (const auto & test_case : test_cases)
+    {
+        ParserQuery parser(test_case.query.data() + test_case.query.size());
+        ASTPtr ast = parseQuery(parser, test_case.query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << test_case.query;
+
+        const auto * before = ast->as<ASTCopyQuery>();
+        ASSERT_NE(nullptr, before) << "query: " << test_case.query;
+
+        const String formatted = ast->formatWithSecretsOneLine();
+        EXPECT_EQ(test_case.formatted, formatted) << "query: " << test_case.query;
+
+        ParserQuery reparser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
+        ASSERT_NE(nullptr, reparsed) << "formatted query: " << formatted;
+
+        const auto * after = reparsed->as<ASTCopyQuery>();
+        ASSERT_NE(nullptr, after) << "formatted query: " << formatted;
+
+        EXPECT_EQ(before->type, after->type) << "query: " << test_case.query;
+        EXPECT_EQ(before->table_name, after->table_name) << "query: " << test_case.query;
+        EXPECT_EQ(before->column_names, after->column_names) << "query: " << test_case.query;
+        EXPECT_EQ(before->format, after->format) << "query: " << test_case.query;
+        EXPECT_EQ(before->header, after->header) << "query: " << test_case.query;
+    }
 }
 
 /// The output-option children (INTO OUTFILE, COMPRESSION, FORMAT, SETTINGS) must end up
@@ -187,6 +240,22 @@ TEST(ParserQueryWithOutput, CloneOwnsItsChildren)
         /// The clone must also reproduce the child order a fresh parse produces, so that a query
         /// and its clone hash the same.
         EXPECT_EQ(ast->getTreeHash(false), cloned->getTreeHash(false)) << "clone of: " << query;
+    }
+}
+
+TEST(ParserShowFunctionsQuery, PreserveEmptyLike)
+{
+    const std::vector<String> queries = {
+        "SHOW FUNCTIONS LIKE ''",
+        "SHOW FUNCTIONS ILIKE ''",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+        EXPECT_EQ(query, ast->formatWithSecretsOneLine()) << "query: " << query;
     }
 }
 
@@ -518,8 +587,8 @@ TEST(ParserCreateQuery, MaskKafkaTableEngineCredentials)
 
     EXPECT_EQ(first_arg_masked.find("plain_first_password"), String::npos);
     EXPECT_NE(first_arg_masked.find("kafka_sasl_password = '[HIDDEN]'"), String::npos);
-    /// The positional argument beside it is not a secret and stays visible.
-    EXPECT_NE(first_arg_masked.find("'clickhouse'"), String::npos);
+    /// A positional argument after a named one has an unknowable slot, so it is hidden.
+    EXPECT_EQ(first_arg_masked.find("'clickhouse'"), String::npos);
 
     /// The `SETTINGS` clause form is masked by `Kafka::SETTINGS_TO_HIDE` and must agree.
     const String settings_query =
@@ -1821,4 +1890,51 @@ TEST(RemoveSettingsFromQuery, TopLevelVariantSparesNestedSubqueries)
         EXPECT_EQ(2u, countSettingOccurrences(ast, "max_block_size")) << "dropped an unrelated setting: " << query;
         EXPECT_FALSE(hasEmptySettingsNode(ast)) << "query: " << query;
     }
+}
+
+/// `rewriteSettingsWithoutOnCluster` runs only for ON CLUSTER, which stateless tests cannot reach, hence a
+/// unit test.
+TEST(BackupSettingsDefault, OnClusterRebuildCarriesDefaultedNames)
+{
+    /// The rewrite injects `internal`, `async` and `host_id`, so it strips them from both carriers; `foo`
+    /// and `structure_only` are the controls.
+    const String query = "BACKUP TABLE t ON CLUSTER 'c' TO Disk('d', 'b') "
+                         "SETTINGS foo = DEFAULT, async = DEFAULT, internal = DEFAULT, host_id = DEFAULT, "
+                         "structure_only = 1";
+    ParserQuery parser(query.data() + query.size());
+    ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+    ASSERT_NE(nullptr, ast) << "query: " << query;
+
+    auto * backup_query = ast->as<ASTBackupQuery>();
+    ASSERT_NE(nullptr, backup_query) << "expected a BACKUP query";
+    /// All four names are in `default_settings` before the rewrite, so the checks below are not vacuous.
+    ASSERT_NE(nullptr, backup_query->settings);
+    const auto & parsed = backup_query->settings->as<const ASTSetQuery &>();
+    ASSERT_EQ(4u, parsed.default_settings.size()) << "query: " << query;
+
+    ASTPtr rewritten = backup_query->getRewrittenASTWithoutOnCluster({.default_database = "d", .host_id = "h"});
+    ASSERT_NE(nullptr, rewritten);
+    auto * rewritten_backup = rewritten->as<ASTBackupQuery>();
+    ASSERT_NE(nullptr, rewritten_backup);
+    ASSERT_NE(nullptr, rewritten_backup->settings);
+    const auto & rebuilt = rewritten_backup->settings->as<const ASTSetQuery &>();
+
+    EXPECT_EQ((std::vector<String>{"foo"}), rebuilt.default_settings)
+        << "the rewrite must strip exactly `async`, `internal` and `host_id` from `default_settings` "
+           "and keep every unrelated name";
+
+    /// `tryGet` returns the first match, and the strip erases all matches before the injection, so each
+    /// name below resolves to the injected copy.
+    const auto * async_change = rebuilt.changes.tryGet("async");
+    ASSERT_NE(nullptr, async_change) << "the rewrite did not inject `async`";
+    EXPECT_TRUE(async_change->safeGet<bool>());
+    const auto * internal_change = rebuilt.changes.tryGet("internal");
+    ASSERT_NE(nullptr, internal_change) << "the rewrite did not inject `internal`";
+    EXPECT_TRUE(internal_change->safeGet<bool>());
+    const auto * host_id_change = rebuilt.changes.tryGet("host_id");
+    ASSERT_NE(nullptr, host_id_change) << "the rewrite did not inject `host_id`";
+    EXPECT_EQ("h", host_id_change->safeGet<String>());
+    const auto * structure_only_change = rebuilt.changes.tryGet("structure_only");
+    ASSERT_NE(nullptr, structure_only_change) << "dropped an unrelated ordinary change";
+    EXPECT_TRUE(structure_only_change->safeGet<bool>());
 }
