@@ -649,20 +649,18 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// `GROUP BY (a, b) WITH ROLLUP/CUBE` historically treats the parentheses as
     /// a key-list wrapper, while `GROUP BY ROLLUP/CUBE((a, b))` uses a tuple key.
-    /// Canonicalize the ambiguous singleton form while the parser still knows
-    /// which spelling was used.
+    /// Keep the wrapper intact until the analyzer has handled positional arguments.
+    /// Mark only the function-syntax form as a real tuple key here.
     if (group_expression_list && (select_query->group_by_with_rollup || select_query->group_by_with_cube))
     {
         auto & group_by_elements = group_expression_list->as<ASTExpressionList &>().children;
         if (group_by_elements.size() == 1)
         {
             if (auto * tuple = group_by_elements.front()->as<ASTFunction>();
-                tuple && tuple->name == "tuple" && tuple->isOperator() && !tuple->isParenthesized())
+                tuple && tuple->name == "tuple" && tuple->isOperator())
             {
                 if (group_by_rollup_or_cube_in_function_syntax)
                     tuple->setIsOperator(false);
-                else
-                    group_expression_list = tuple->arguments;
             }
         }
     }
