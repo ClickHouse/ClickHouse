@@ -346,9 +346,9 @@ void MySQLIntegration::closeMySQLConnection(MYSQL * mysql)
 std::unique_ptr<MySQLIntegration>
 MySQLIntegration::testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log, const String & server)
 {
-    MYSQL * mcon = nullptr;
+    MYSQL * mcon = mysql_init(nullptr);
 
-    if (!(mcon = mysql_init(nullptr)))
+    if (!mcon)
     {
         LOG_ERROR(fcc.log, "Could not initialize MySQL handle");
     }
@@ -839,7 +839,6 @@ String SQLiteIntegration::truncateStatement()
 
 int SQLiteIntegration::performQuery(const String & query)
 {
-    int res = 0;
     char * err_msg = nullptr;
 
     if (!sqlite_connection)
@@ -848,7 +847,8 @@ int SQLiteIntegration::performQuery(const String & query)
         return 1;
     }
     out_file << query << std::endl;
-    if ((res = sqlite3_exec(sqlite_connection.get(), query.c_str(), nullptr, nullptr, &err_msg)) != SQLITE_OK)
+    const int res = sqlite3_exec(sqlite_connection.get(), query.c_str(), nullptr, nullptr, &err_msg);
+    if (res != SQLITE_OK)
     {
         LOG_ERROR(fc.log, "SQLite query: {} Error: {}", query, err_msg);
         sqlite3_free(err_msg);
@@ -984,16 +984,7 @@ constexpr bool is_document = std::is_same_v<T, bsoncxx::v_noabi::builder::stream
 template <typename T>
 void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const String & cname, T & output, SQLType * tp)
 {
-    IntType * itp = nullptr;
-    DateType * dtp = nullptr;
-    TimeType * ttp = nullptr;
-    DateTimeType * dttp = nullptr;
-    DecimalType * detp = nullptr;
-    StringType * stp = nullptr;
-    EnumType * etp = nullptr;
-    GeoType * gtp = nullptr;
-
-    if ((itp = dynamic_cast<IntType *>(tp)))
+    if (auto * itp = dynamic_cast<IntType *>(tp))
     {
         switch (itp->size)
         {
@@ -1073,7 +1064,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
             output << buf;
         }
     }
-    else if ((dtp = dynamic_cast<DateType *>(tp)))
+    else if (dynamic_cast<DateType *>(tp))
     {
         const bsoncxx::types::b_date val(
             {std::chrono::milliseconds(rg.nextBool() ? static_cast<uint64_t>(rg.nextRandomUInt32()) : rg.nextRandomUInt64())});
@@ -1087,7 +1078,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
             output << val;
         }
     }
-    else if ((ttp = dynamic_cast<TimeType *>(tp)))
+    else if (auto * ttp = dynamic_cast<TimeType *>(tp))
     {
         String buf = ttp->extended ? rg.nextTime64("", false, rg.nextBool()) : rg.nextTime("", false);
 
@@ -1100,7 +1091,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
             output << buf;
         }
     }
-    else if ((dttp = dynamic_cast<DateTimeType *>(tp)))
+    else if (auto * dttp = dynamic_cast<DateTimeType *>(tp))
     {
         String buf = dttp->extended ? rg.nextDateTime64("", false, dttp->precision.value_or(0)) : rg.nextDateTime("", false, rg.nextBool());
 
@@ -1113,7 +1104,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
             output << buf;
         }
     }
-    else if ((detp = dynamic_cast<DecimalType *>(tp)))
+    else if (auto * detp = dynamic_cast<DecimalType *>(tp))
     {
         const uint32_t right = detp->scale.value_or(0);
         const uint32_t left = detp->precision.value_or(10) - right;
@@ -1141,7 +1132,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
             output << buf;
         }
     }
-    else if ((stp = dynamic_cast<StringType *>(tp)))
+    else if (auto * stp = dynamic_cast<StringType *>(tp))
     {
         const uint32_t limit = stp->precision.value_or(rg.nextStrlen());
 
@@ -1188,7 +1179,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
             output << val;
         }
     }
-    else if ((etp = dynamic_cast<EnumType *>(tp)))
+    else if (auto * etp = dynamic_cast<EnumType *>(tp))
     {
         const EnumValue & nvalue = rg.pickRandomly(etp->values);
 
@@ -1248,7 +1239,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
             output << strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator), this->fc.fuzz_floating_points);
         }
     }
-    else if ((gtp = dynamic_cast<GeoType *>(tp)))
+    else if (auto * gtp = dynamic_cast<GeoType *>(tp))
     {
         if constexpr (is_document<T>)
         {
@@ -1273,9 +1264,6 @@ void MongoDBIntegration::documentAppendArray(
     /// Array
     auto array = document << cname << bsoncxx::builder::stream::open_array;
     SQLType * tp = at->subtype.get();
-    Nullable * nl = nullptr;
-    VariantType * vtp = nullptr;
-    LowCardinality * lc = nullptr;
 
     for (uint64_t i = 0; i < limit; i++)
     {
@@ -1309,9 +1297,9 @@ void MongoDBIntegration::documentAppendArray(
         {
             documentAppendBottomType<decltype(array)>(rg, "", array, at->subtype.get());
         }
-        else if ((lc = dynamic_cast<LowCardinality *>(tp)))
+        else if (auto * lc = dynamic_cast<LowCardinality *>(tp))
         {
-            if ((nl = dynamic_cast<Nullable *>(lc->subtype.get())))
+            if (auto * nl = dynamic_cast<Nullable *>(lc->subtype.get()))
             {
                 documentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype.get());
             }
@@ -1320,7 +1308,7 @@ void MongoDBIntegration::documentAppendArray(
                 documentAppendBottomType<decltype(array)>(rg, "", array, lc->subtype.get());
             }
         }
-        else if ((nl = dynamic_cast<Nullable *>(tp)))
+        else if (auto * nl = dynamic_cast<Nullable *>(tp))
         {
             documentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype.get());
         }
@@ -1328,7 +1316,7 @@ void MongoDBIntegration::documentAppendArray(
         {
             array << bsoncxx::builder::stream::open_array << 1 << bsoncxx::builder::stream::close_array;
         }
-        else if ((vtp = dynamic_cast<VariantType *>(tp)))
+        else if (auto * vtp = dynamic_cast<VariantType *>(tp))
         {
             if (vtp->subtypes.empty())
             {
@@ -1347,10 +1335,6 @@ void MongoDBIntegration::documentAppendArray(
 void MongoDBIntegration::documentAppendAnyValue(
     RandomGenerator & rg, const String & cname, bsoncxx::builder::stream::document & document, SQLType * tp)
 {
-    Nullable * nl = nullptr;
-    ArrayType * at = nullptr;
-    VariantType * vtp = nullptr;
-    LowCardinality * lc = nullptr;
     const uint32_t nopt = rg.nextLargeNumber();
 
     if (nopt < 31)
@@ -1381,19 +1365,19 @@ void MongoDBIntegration::documentAppendAnyValue(
     {
         documentAppendBottomType<bsoncxx::v_noabi::builder::stream::document>(rg, cname, document, tp);
     }
-    else if ((lc = dynamic_cast<LowCardinality *>(tp)))
+    else if (auto * lc = dynamic_cast<LowCardinality *>(tp))
     {
         documentAppendAnyValue(rg, cname, document, lc->subtype.get());
     }
-    else if ((nl = dynamic_cast<Nullable *>(tp)))
+    else if (auto * nl = dynamic_cast<Nullable *>(tp))
     {
         documentAppendAnyValue(rg, cname, document, nl->subtype.get());
     }
-    else if ((at = dynamic_cast<ArrayType *>(tp)))
+    else if (auto * at = dynamic_cast<ArrayType *>(tp))
     {
         documentAppendArray(rg, cname, document, at);
     }
-    else if ((vtp = dynamic_cast<VariantType *>(tp)))
+    else if (auto * vtp = dynamic_cast<VariantType *>(tp))
     {
         if (vtp->subtypes.empty())
         {
