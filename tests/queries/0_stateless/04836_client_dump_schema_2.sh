@@ -428,6 +428,33 @@ fi
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${DB}.b"
 rm -rf "$CLUSTER_PATH" "$CLUSTER_CONF" "$CLUSTER_DUMP_FILE"
 
+echo '--- a remote() call in the named-collection form is not read as a same-named cluster ---'
+# Only a named collection takes `key = value` arguments, and one this session cannot read may point anywhere.
+NC_FORM_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_form"
+NC_FORM_CONF="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_form.xml"
+rm -rf "$NC_FORM_PATH"
+cat > "$NC_FORM_CONF" <<EOF
+<clickhouse>
+    <tcp_port>9999</tcp_port>
+    <remote_servers>
+        <dump_schema_nc_form>
+            <shard><replica><host>127.0.0.1</host><port>9999</port></replica></shard>
+        </dump_schema_nc_form>
+    </remote_servers>
+</clickhouse>
+EOF
+$CLICKHOUSE_LOCAL --config-file "$NC_FORM_CONF" --path "$NC_FORM_PATH" --multiquery "
+    CREATE DATABASE ${DB};
+    CREATE TABLE ${DB}.zzz_src (id UInt64) ENGINE = MergeTree ORDER BY id;
+    CREATE VIEW ${DB}.aaa_reader (id UInt64) AS SELECT * FROM remote(dump_schema_nc_form, table = 'zzz_src');
+"
+if $CLICKHOUSE_LOCAL --config-file "$NC_FORM_CONF" --path "$NC_FORM_PATH" --dump-schema="${DB}" > /dev/null 2>"$ERR_FILE"; then
+    echo 'FAIL: dump read the named-collection form as the same-named cluster'
+else
+    echo "named-collection form over a same-named cluster refused: $(grep -c 'name a named collection, and this session cannot read one' "$ERR_FILE")"
+fi
+rm -rf "$NC_FORM_PATH" "$NC_FORM_CONF"
+
 echo '--- a cluster with local replicas names a real local dependency ---'
 # Local cluster arguments are dependencies, including bare identifiers and constant expressions.
 $CLICKHOUSE_CLIENT -mq "

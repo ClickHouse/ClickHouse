@@ -65,6 +65,8 @@ OK: remote-only cluster() table function did not invent a local cycle
 both views dumped: 2
 --- a cluster the dumping instance does not define fails clearly instead of guessing ---
 unresolvable cluster refused: 1
+--- a remote() call in the named-collection form is not read as a same-named cluster ---
+named-collection form over a same-named cluster refused: 1
 --- a cluster with local replicas names a real local dependency ---
 OK: local cluster() source dumped before its reader
 OK: identifier-spelled local cluster() source dumped before its reader
