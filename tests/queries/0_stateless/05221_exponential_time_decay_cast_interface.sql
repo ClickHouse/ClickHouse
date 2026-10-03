@@ -100,12 +100,12 @@ SELECT (raw_value, timestamp, decay_length)::ExponentialTimeDecaying; -- { serve
 WITH CAST(
     (1., 123., 3.),
     'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)') AS forbidden_tuple
-SELECT forbidden_tuple::ExponentialTimeDecaying(3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, BAD_ARGUMENTS }
+SELECT forbidden_tuple::ExponentialTimeDecaying(3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 WITH CAST(
     (1., 123., 3.),
     'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)') AS forbidden_tuple
-SELECT forbidden_tuple::ExponentialTimeDecaying; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, BAD_ARGUMENTS }
+SELECT forbidden_tuple::ExponentialTimeDecaying; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- The same rejection applies when the invalid derived-field tuple is nested;
 -- container conversion must not reinterpret it as a decaying value.
@@ -113,7 +113,12 @@ SELECT CAST(
     [CAST(
         (1., 123., 3.),
         'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)')],
-    'Array(ExponentialTimeDecaying(3))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, BAD_ARGUMENTS }
+    'Array(ExponentialTimeDecaying(3))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Decay length is part of the static type, so direct casts between different
+-- parameterizations are type errors rather than malformed values.
+WITH CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)') AS value
+SELECT CAST(value, 'ExponentialTimeDecaying(20)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- The parameterless spelling is inference-only. A standalone type declaration
 -- still needs a concrete decay length because column types are static.
