@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 
 #include <Columns/ColumnArray.h>
-#include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
@@ -161,8 +160,10 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     const Block & index_sample_block,
     const BloomFilterParameters & params_,
     TokenizerPtr token_extactor_,
-    NameSet columns_shadowing_map_subcolumns_)
+    NameSet columns_shadowing_map_subcolumns_,
+    JSONIndexArgumentTypes json_argument_types_)
     : index_columns(index_sample_block.getNames())
+    , json_argument_types(std::move(json_argument_types_))
     , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
@@ -337,6 +338,8 @@ static bool convertConstantToIndexDomain(
 
     if (WhichDataType(actual_type).isStringOrFixedString())
     {
+        if (constant.getType() != Field::Types::String)
+            return false;
         out_bytes = constant.safeGet<String>();
         return true;
     }
@@ -424,7 +427,7 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
         if (function_name == "isNotNull" && arguments_size == 1)
         {
             auto arg = function_node.getArgumentAt(0);
-            if (auto json_info = tryMatchNodeToJSONIndex(arg, index_columns, "JSONAllPaths"))
+            if (auto json_info = tryMatchNodeToJSONIndex(arg, index_columns, "JSONAllPaths", json_argument_types))
             {
                 auto arg_type = arg.getDAGNode()->result_type;
                 /// It doesn't make sense to use bloom filter for isNotNull on non-Nullable type, as isNotNull will be always true.
@@ -577,17 +580,19 @@ bool functionIgnoresFixedStringPadding(const String & function_name)
 
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const String & function_name,
-    const RPNBuilderTreeNode & key_node,
+    const RPNBuilderTreeNode & wrapped_key_node,
     const DataTypePtr & value_type,
     const Field & value_field,
     RPNElement & out)
 {
+    const auto key_node = unwrapLosslessConversion(wrapped_key_node);
+
     /// Try JSON subcolumn detection early, before the string-type check.
     /// JSON path comparison values may not be strings (e.g., json.a.b = 1 where value is UInt8),
     /// but we tokenize the *path* string against the JSONAllPaths index, not the value.
     if (function_name == "equals")
     {
-        if (auto json_info = tryMatchNodeToJSONIndex(key_node, index_columns, "JSONAllPaths"))
+        if (auto json_info = tryMatchNodeToJSONIndex(key_node, index_columns, "JSONAllPaths", json_argument_types))
         {
             auto key_type = key_node.getDAGNode()->result_type;
             if (!isJSONPathFilterSafe(key_type, value_field, value_type))
@@ -601,14 +606,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         }
     }
 
-    auto stripped_value_type = removeLowCardinality(value_type);
-    if (!value_field.isNull())
-        stripped_value_type = removeNullable(stripped_value_type);
-    /// Only a String needle is unwrapped. A FixedString one is tokenized together with its NUL
-    /// padding, which string equality ignores, so the index would discard matching granules.
-    auto unwrapped_value_type = WhichDataType(stripped_value_type).isString() ? stripped_value_type : value_type;
-
-    auto value_data_type = WhichDataType(unwrapped_value_type);
+    auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
@@ -646,8 +644,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
               * We cannot skip keys that does not exist in map if comparison is with default type value because
               * that way we skip necessary granules where map key does not exist.
               */
-            /// Unwrapped default: LC(Nullable(String)) default is NULL, but arrayElement returns '' for a missing key.
-            if (value_field == unwrapped_value_type->getDefault())
+            if (const_value == value_type->getDefault())
                 return false;
 
             auto first_argument = key_function_node.getArgumentAt(0);
@@ -661,11 +658,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                 {
                     key_index = map_keys_index;
 
-                    auto unwrapped_const_type = removeLowCardinality(const_type);
-                    if (!const_value.isNull())
-                        unwrapped_const_type = removeNullable(unwrapped_const_type);
-
-                    auto const_data_type = WhichDataType(unwrapped_const_type);
+                    auto const_data_type = WhichDataType(const_type);
                     if (const_value.isNull() || (!const_data_type.isStringOrFixedString() && !const_data_type.isArray()))
                         return false;
 
@@ -697,8 +690,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
             /// Same as arrayElement: skip when comparing with default value because
             /// the subcolumn returns default for keys that don't exist in the map.
-            /// Unwrapped default: LC(Nullable(String)) default is NULL, but the subcolumn returns '' for a missing key.
-            if (value_field == unwrapped_value_type->getDefault())
+            if (const_value == value_type->getDefault())
                 return false;
 
             if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
@@ -731,14 +723,6 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     if (const auto is_case_insensitive_scenario = is_has_token_case_insensitive && lowercase_key_index;
         function_name.starts_with("hasToken") && ((!is_has_token_case_insensitive && key_index) || is_case_insensitive_scenario))
     {
-        /// A separator-bearing needle is invalid for the throwing `hasToken` variants, which raise during
-        /// the scan, so the unwrapping above must not let such a needle prune the granule that owes the
-        /// exception. `value_field` is the needle; `const_value` may hold a map key here.
-        if (WhichDataType(value_type).isLowCardinality() && !function_name.ends_with("OrNull")
-            && value_field.getType() == Field::Types::String
-            && std::ranges::any_of(value_field.safeGet<String>(), isTokenSeparator))
-            return false;
-
         out.key_column = is_case_insensitive_scenario ? *lowercase_key_index : *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -961,7 +945,6 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
     RPNElement & out)
 {
     std::vector<KeyTuplePositionMapping> key_tuple_mapping;
-    DataTypes data_types;
 
     auto left_argument_function_node_optional = left_argument.toFunctionNodeOrNull();
 
@@ -972,27 +955,21 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
 
         for (size_t i = 0; i < left_argument_function_node_arguments_size; ++i)
         {
-            if (const auto key = getKeyIndex(left_argument_function_node.getArgumentAt(i).getColumnName()))
-            {
+            if (const auto key = getKeyIndex(unwrapLosslessConversion(left_argument_function_node.getArgumentAt(i)).getColumnName()))
                 key_tuple_mapping.emplace_back(i, *key);
-                data_types.push_back(index_data_types[*key]);
-            }
         }
     }
-    else if (const auto key = getKeyIndex(left_argument.getColumnName()))
-    {
+    else if (const auto key = getKeyIndex(unwrapLosslessConversion(left_argument).getColumnName()))
         key_tuple_mapping.emplace_back(0, *key);
-        data_types.push_back(index_data_types[*key]);
-    }
 
     if (key_tuple_mapping.empty())
         return false;
 
-    auto future_set = right_argument.tryGetPreparedSet(data_types);
+    auto future_set = right_argument.tryGetPreparedSet();
     if (!future_set)
         return false;
 
-    auto prepared_set = future_set->buildOrderedSetInplace(right_argument.getTreeContext().getQueryContext());
+    auto prepared_set = future_set->buildOrderedSetInplace(right_argument.getContext());
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
@@ -1071,7 +1048,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeConditionBloomFilterText>(
-        predicate, context, index.sample_block, params, tokenizer.get(), getColumnsShadowingMapSubcolumns());
+        predicate, context, index.sample_block, params, tokenizer.get(), getColumnsShadowingMapSubcolumns(), collectJSONIndexArgumentTypes(*index.expression));
 }
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)

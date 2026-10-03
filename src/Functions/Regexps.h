@@ -72,6 +72,14 @@ class LocalCacheTable
 public:
     using RegexpPtr = std::shared_ptr<OptimizedRegularExpression>;
 
+    ~LocalCacheTable()
+    {
+        if (hits)
+            ProfileEvents::increment(ProfileEvents::RegexpLocalCacheHit, hits);
+        if (misses)
+            ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss, misses);
+    }
+
     template <bool like, bool similar_to, bool no_capture, bool case_insensitive>
     RegexpPtr getOrSet(const String & pattern)
     {
@@ -80,7 +88,7 @@ public:
         if (bucket.regexp == nullptr) [[unlikely]]
         {
             /// insert new entry
-            ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss);
+            ++misses;
             bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, similar_to, no_capture, case_insensitive>(pattern))};
         }
         else
@@ -88,11 +96,11 @@ public:
             if (pattern != bucket.pattern)
             {
                 /// replace existing entry
-                ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss);
+                ++misses;
                 bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, similar_to, no_capture, case_insensitive>(pattern))};
             }
             else
-                ProfileEvents::increment(ProfileEvents::RegexpLocalCacheHit);
+                ++hits;
         }
 
         return bucket.regexp;
@@ -109,6 +117,10 @@ private:
     };
     using CacheTable = std::array<Bucket, CACHE_SIZE>;
     CacheTable known_regexps;
+
+    /// Flushed once, in the destructor: per-lookup increments would contend on counters shared by all threads of the query.
+    size_t hits = 0;
+    size_t misses = 0;
 };
 
 }
@@ -294,7 +306,7 @@ struct GlobalCacheTable
     std::array<Bucket, CACHE_SIZE> known_regexps TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 
-    static size_t getBucketIndexFor(const VectorWithMemoryTracking<String> patterns, std::optional<UInt32> edit_distance)
+    static size_t getBucketIndexFor(const VectorWithMemoryTracking<String> & patterns, std::optional<UInt32> edit_distance)
     {
         size_t hash = 0;
         for (const auto & pattern : patterns)
@@ -304,10 +316,26 @@ struct GlobalCacheTable
     }
 };
 
+/// Hits and misses of `getOrSet`, added to ProfileEvents once, in the destructor.
+struct GlobalCacheCounters
+{
+    ~GlobalCacheCounters()
+    {
+        if (hits)
+            ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesGlobalCacheHit, hits);
+        if (misses)
+            ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesGlobalCacheMiss, misses);
+    }
+
+    size_t hits = 0;
+    size_t misses = 0;
+};
+
 /// If with_edit_distance is False, edit_distance must be nullopt. Also, we use templates here because each instantiation of function template
 /// has its own copy of local static variables which must not be the same for different hyperscan compilations.
 template <bool save_indices, bool with_edit_distance>
-inline DeferredConstructedRegexpsPtr getOrSet(const VectorWithMemoryTracking<std::string_view> & patterns, std::optional<UInt32> edit_distance)
+inline DeferredConstructedRegexpsPtr getOrSet(
+    const VectorWithMemoryTracking<std::string_view> & patterns, std::optional<UInt32> edit_distance, GlobalCacheCounters & counters)
 {
     static GlobalCacheTable pool; /// Different variables for different pattern parameters, thread-safe in C++11
 
@@ -338,7 +366,7 @@ inline DeferredConstructedRegexpsPtr getOrSet(const VectorWithMemoryTracking<std
                 {
                     return constructRegexps<save_indices, with_edit_distance>(str_patterns, edit_distance);
                 });
-        ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesGlobalCacheMiss);
+        ++counters.misses;
         bucket = {std::move(str_patterns), edit_distance, deferred_constructed_regexps};
     }
     else
@@ -351,14 +379,21 @@ inline DeferredConstructedRegexpsPtr getOrSet(const VectorWithMemoryTracking<std
                     {
                         return constructRegexps<save_indices, with_edit_distance>(str_patterns, edit_distance);
                     });
-            ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesGlobalCacheMiss);
+            ++counters.misses;
             bucket = {std::move(str_patterns), edit_distance, deferred_constructed_regexps};
         }
         else
-            ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesGlobalCacheHit);
+            ++counters.hits;
     }
 
     return bucket.regexps;
+}
+
+template <bool save_indices, bool with_edit_distance>
+inline DeferredConstructedRegexpsPtr getOrSet(const VectorWithMemoryTracking<std::string_view> & patterns, std::optional<UInt32> edit_distance)
+{
+    GlobalCacheCounters counters;
+    return getOrSet<save_indices, with_edit_distance>(patterns, edit_distance, counters);
 }
 
 }
