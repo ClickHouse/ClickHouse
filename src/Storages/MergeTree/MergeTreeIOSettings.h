@@ -80,7 +80,8 @@ struct MergeTreeReaderSettings
     /// runs with another one - see `ColumnsCacheKey::schema_identity`. Zero for readers that
     /// do not use the columns cache.
     UInt64 columns_cache_schema_identity = 0;
-    /// Per-query cap on bytes written to the columns cache. 0 means no cap.
+    /// Per-query cap on bytes written to the columns cache. 0 means half of the current size
+    /// limit of the columns cache, resolved by the reader on every check.
     size_t columns_cache_max_bytes_to_write_to_cache = 0;
     /// Per-query running total of bytes written to the columns cache.
     /// Shared across all readers of a single pool so the cap applies to the whole read.

@@ -102,6 +102,8 @@ static ColumnsCachePtr getColumnsCacheIfEnabled(const ContextPtr & context, bool
 ///     further writes for the query are skipped.
 /// Either value of 0 means "use half of the current size limit of the cache" - the effective
 /// limit, which `autoResize` lowers under memory pressure, not the configured `columns_cache_size`.
+/// It is resolved against the live limit where the budget is checked, not here, so a long query
+/// does not keep the allowance of a cache that has shrunk since the pool was created.
 static MergeTreeReaderSettings adjustReaderSettingsForColumnsCacheWrites(
     MergeTreeReaderSettings settings,
     const ContextPtr & context,
@@ -132,11 +134,7 @@ static MergeTreeReaderSettings adjustReaderSettingsForColumnsCacheWrites(
         return settings;
     }
 
-    size_t runtime_budget = query_settings[Setting::columns_cache_max_bytes_to_write_to_cache];
-    if (runtime_budget == 0)
-        runtime_budget = cache_size / 2;
-
-    settings.columns_cache_max_bytes_to_write_to_cache = runtime_budget;
+    settings.columns_cache_max_bytes_to_write_to_cache = query_settings[Setting::columns_cache_max_bytes_to_write_to_cache];
     /// Point the reader at the query-scoped counter and writes-disabled flag
     /// (aliasing shared_ptrs) so the budgets are shared across all of the query's
     /// pools rather than reset to zero per pool.
@@ -651,10 +649,6 @@ void MergeTreeReadPoolBase::stageColumnsCacheWriteEstimate(
     if (bytes_per_mark <= 0)
         return;
 
-    size_t estimate_budget = settings[Setting::columns_cache_max_estimated_bytes_to_write_to_cache];
-    if (estimate_budget == 0)
-        estimate_budget = owned_columns_cache->maxSizeInBytes() / 2;
-
     /// The whole selected range of the part is accounted for before anything is read. Charging
     /// the marks task by task, as the tasks were handed out, let a query that is far over the
     /// budget write the first tasks' worth of data anyway; with data many times the size of
@@ -668,7 +662,7 @@ void MergeTreeReadPoolBase::stageColumnsCacheWriteEstimate(
     /// `commitColumnsCacheWriteEstimate`, which runs once the caller has had its chance to
     /// install a read ranges refiner.
     staged_columns_cache_estimate_bytes += part_estimated_bytes;
-    columns_cache_estimate_budget = estimate_budget;
+    columns_cache_estimate_budget = settings[Setting::columns_cache_max_estimated_bytes_to_write_to_cache];
 }
 
 void MergeTreeReadPoolBase::commitColumnsCacheWriteEstimate() const
@@ -703,7 +697,12 @@ void MergeTreeReadPoolBase::chargeStagedColumnsCacheWriteEstimate() const
     const size_t query_total
         = budget->estimated_bytes.fetch_add(staged_columns_cache_estimate_bytes, std::memory_order_relaxed)
         + staged_columns_cache_estimate_bytes;
-    if (query_total > columns_cache_estimate_budget)
+    /// 0 is resolved against the size limit the cache has now, which `autoResize` may have
+    /// lowered since the pool staged its estimate.
+    const size_t estimate_budget = columns_cache_estimate_budget != 0
+        ? columns_cache_estimate_budget
+        : owned_columns_cache->maxSizeInBytes() / 2;
+    if (query_total > estimate_budget)
         budget->writes_disabled.store(true, std::memory_order_relaxed);
 }
 

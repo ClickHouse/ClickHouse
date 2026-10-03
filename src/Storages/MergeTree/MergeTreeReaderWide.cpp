@@ -825,11 +825,17 @@ bool MergeTreeReaderWide::canWriteToColumnsCache() const
         return false;
 
     /// The per-query runtime budget only grows during the query, so once it is exhausted the
-    /// rest of the read is not worth copying either.
+    /// rest of the read is not worth copying either. 0 means half of the size limit the cache has
+    /// now, which `autoResize` lowers under memory pressure, so it is resolved on every check.
     const auto & bytes_written = settings.columns_cache_bytes_written_so_far;
-    const size_t max_bytes = settings.columns_cache_max_bytes_to_write_to_cache;
-    if (max_bytes > 0 && bytes_written && bytes_written->load(std::memory_order_relaxed) >= max_bytes)
-        return false;
+    if (bytes_written)
+    {
+        const size_t max_bytes = settings.columns_cache_max_bytes_to_write_to_cache != 0
+            ? settings.columns_cache_max_bytes_to_write_to_cache
+            : columns_cache->maxSizeInBytes() / 2;
+        if (bytes_written->load(std::memory_order_relaxed) >= max_bytes)
+            return false;
+    }
 
     return true;
 }

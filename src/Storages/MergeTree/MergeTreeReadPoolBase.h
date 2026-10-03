@@ -161,6 +161,7 @@ protected:
     /// Uncompressed bytes the selected mark ranges of this pool are estimated to read into the
     /// columns cache, and the budget they are compared against. Filled by
     /// `stageColumnsCacheWriteEstimate`, consumed once by `commitColumnsCacheWriteEstimate`.
+    /// A budget of 0 means half of the size limit the cache has when the estimate is charged.
     size_t staged_columns_cache_estimate_bytes = 0;
     size_t columns_cache_estimate_budget = 0;
     /// `call_once` rather than a flag: a second thread that reaches `createTask` first must
