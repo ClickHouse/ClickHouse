@@ -126,6 +126,46 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
     return column->type->equals(*stats->getDataType());
 }
 
+static const ColumnDescription * tryResolveMetadataColumn(const StorageInMemoryMetadata & metadata, String & column_name)
+{
+    if (const auto * column = metadata.getColumns().tryGet(column_name))
+        return column;
+
+    /// Query-plan predicates can refer to subquery/table-qualified aliases such as `__table2.id`
+    /// while part statistics are stored under the physical column name `id`. Prefer the longest
+    /// suffix first so `table.nested.key` can still resolve to a physical `nested.key` column.
+    size_t first_dot_pos = column_name.find('.');
+    if (first_dot_pos != String::npos)
+    {
+        String unqualified_name = column_name.substr(first_dot_pos + 1);
+        if (const auto * column = metadata.getColumns().tryGet(unqualified_name))
+        {
+            column_name = std::move(unqualified_name);
+            return column;
+        }
+    }
+
+    size_t last_dot_pos = column_name.find_last_of('.');
+    if (last_dot_pos != String::npos && last_dot_pos != first_dot_pos)
+    {
+        String last_component_name = column_name.substr(last_dot_pos + 1);
+        if (const auto * column = metadata.getColumns().tryGet(last_component_name))
+        {
+            column_name = std::move(last_component_name);
+            return column;
+        }
+    }
+
+    return nullptr;
+}
+
+static const ColumnDescription * tryResolveMetadataColumn(const StorageMetadataPtr & metadata, String & column_name)
+{
+    if (!metadata)
+        return nullptr;
+    return tryResolveMetadataColumn(*metadata, column_name);
+}
+
 /// NDV is clamped by the caller to the estimated row count; the value range and NULL fraction
 /// describe the whole relation regardless of the filter.
 static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStatisticsPtr & stats)
@@ -295,7 +335,7 @@ static std::optional<String> tryGetNullMapParentColumn(const String & column_nam
         return {};
 
     String parent_name = column_name.substr(0, dot_pos);
-    const ColumnDescription * parent_col = metadata.getColumns().tryGet(parent_name);
+    const ColumnDescription * parent_col = tryResolveMetadataColumn(metadata, parent_name);
     if (!parent_col || !isNullableOrLowCardinalityNullable(parent_col->type))
         return {};
 
@@ -354,7 +394,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         {
             /// `isNull(col)` / `isNotNull(col)` — populate the corresponding null-check set.
             column_name = func.getArgumentAt(0).getColumnName();
-            if (metadata && !metadata->getColumns().tryGet(column_name))
+            if (metadata && !tryResolveMetadataColumn(metadata, column_name))
                 return false;
             atom_it->second(out, column_name, Field{});
             return true;
@@ -486,7 +526,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
 
             if (metadata)
             {
-                const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
+                const ColumnDescription * column_desc = tryResolveMetadataColumn(metadata, column_name);
                 if (column_desc)
                     column_type = removeLowCardinalityAndNullable(column_desc->type);
                 else

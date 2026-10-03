@@ -108,8 +108,11 @@ namespace Setting
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsDecorrelationJoinKind correlated_subqueries_default_join_kind;
+    extern const SettingsDouble join_runtime_bloom_filter_max_estimated_ratio_of_set_bits;
     extern const SettingsDouble join_runtime_bloom_filter_max_ratio_of_set_bits;
     extern const SettingsDouble join_runtime_filter_pass_ratio_threshold_for_disabling;
+    extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
+    extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
     extern const SettingsJoinOrderAlgorithm query_plan_optimize_join_order_algorithm;
     extern const SettingsJoinOrderConflictDetector query_plan_optimize_join_order_conflict_detector;
     extern const SettingsBool join_use_nulls;
@@ -131,8 +134,6 @@ namespace Setting
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsBool distributed_plan_read_in_order;
     extern const SettingsBool distributed_plan_prefer_replicas_over_workers;
-    extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
-    extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
     extern const SettingsUInt64 join_runtime_filter_blocks_to_skip_before_reenabling;
     extern const SettingsUInt64 join_runtime_filter_exact_values_limit;
     extern const SettingsUInt64 join_runtime_filter_min_probe_rows;
@@ -379,6 +380,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_bloom_filter_hash_functions = from[Setting::join_runtime_bloom_filter_hash_functions];
     join_runtime_filter_pass_ratio_threshold_for_disabling = from[Setting::join_runtime_filter_pass_ratio_threshold_for_disabling];
     join_runtime_filter_blocks_to_skip_before_reenabling = from[Setting::join_runtime_filter_blocks_to_skip_before_reenabling];
+    join_runtime_bloom_filter_max_estimated_ratio_of_set_bits = from[Setting::join_runtime_bloom_filter_max_estimated_ratio_of_set_bits];
     join_runtime_bloom_filter_max_ratio_of_set_bits = from[Setting::join_runtime_bloom_filter_max_ratio_of_set_bits];
     join_runtime_filter_min_probe_rows = from[Setting::join_runtime_filter_min_probe_rows];
     join_runtime_filter_size_from_hash_table_stats = from[Setting::join_runtime_filter_size_from_hash_table_stats];

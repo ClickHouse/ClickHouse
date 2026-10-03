@@ -36,6 +36,7 @@
 #include <bit>
 #include <bitset>
 #include <cstring>
+#include <limits>
 
 namespace
 {
@@ -10503,10 +10504,14 @@ Number of blocks that are skipped before trying to dynamically re-enable a runti
         {"26.9", 30, 30, "The JOIN runtime filters became a Production tier feature."}, \
         {"26.1", 30, 30, "New setting"}) \
     DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, R"(
-If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.
+If the ratio of set bits in a runtime bloom filter exceeds this threshold, the filter is disabled at runtime to reduce overhead.
 )", 0, \
         {"26.9", 0.7, 0.7, "The JOIN runtime filters became a Production tier feature."}, \
         {"26.1", 0.7, 0.7, "New setting"}) \
+    DECLARE(Double, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits, 1.0, R"(
+If the estimated ratio of set bits in a runtime bloom filter exceeds this threshold at planning time, the planner skips building this filter. Set this setting to 1.0 (or higher) to disable planning-time saturation based disabling.
+)", 0, \
+        {"26.10", 1.0, 1.0, "New setting to control planning-time saturation based disabling of runtime bloom filters."}) \
     DECLARE(UInt64, join_runtime_filter_min_probe_rows, 1000, R"(
 If, at query planning time, the probe side of a JOIN is estimated to produce no more than this number of rows, the JOIN runtime filter is not created. Building and applying a runtime filter for a tiny probe side costs more than it saves. Set to 0 to always create the runtime filter regardless of the estimated probe size.
 )", 0, \
