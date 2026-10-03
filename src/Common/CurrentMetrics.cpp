@@ -422,6 +422,8 @@
     M(QueryCacheEntries, "Total number of entries in the query cache") \
     M(QueryConditionCacheBytes, "Total size of the query condition cache in bytes") \
     M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
+    M(PartialAggregateCacheBytes, "Total size of the partial aggregate cache in bytes") \
+    M(PartialAggregateCacheEntries, "Total number of entries in the partial aggregate cache") \
     M(EncryptionHeaderCacheBytes, "Total size of the encryption header cache in bytes") \
     M(EncryptionHeaderCacheEntries, "Total number of entries in the encryption header cache") \
     M(TimeSeriesMetricFamiliesDeduplicationCacheEntries, "Number of entries in the deduplication caches of the metric families tables of TimeSeries tables") \

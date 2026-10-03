@@ -1,0 +1,12 @@
+--- FINAL warms nothing
+300
+0	0
+--- An overlapping part changes which rows survive: 201, not 301
+201
+201
+201
+0	0
+--- Without FINAL the same table still uses the cache
+301
+301
+1

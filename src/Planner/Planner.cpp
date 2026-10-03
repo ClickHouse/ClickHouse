@@ -52,13 +52,14 @@
 
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/StorageID.h>
-#include <Interpreters/Cache/QueryResultCache.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
@@ -117,6 +118,7 @@ namespace Setting
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
@@ -727,14 +729,65 @@ ALWAYS_INLINE void addFilterStep(
     query_plan.addStep(std::move(where_step));
 }
 
+/// A table expression that is not a `MergeTree` table (a `View`, a `Merge` or `Distributed` table, a table
+/// function, a subquery) may read data whose identity is not represented by the per-part partial aggregate cache key.
+bool hasNonMergeTreeTableInputs(const SelectQueryInfo & select_query_info)
+{
+    const auto * query_node = select_query_info.query_tree ? select_query_info.query_tree->as<QueryNode>() : nullptr;
+    if (!query_node)
+        return true;
+
+    for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped(), /*add_array_join=*/ false, /*recursive=*/ true))
+    {
+        const auto * table_node = table_expression->as<TableNode>();
+        if (!table_node || !table_node->getStorage()->isMergeTree())
+            return true;
+    }
+
+    return false;
+}
+
+/// Row policies are applied per table expression in `PlannerJoinTree`, so the query-level
+/// `SelectQueryInfo::row_level_filter` is not set here. The partial aggregate cache is shared by all users,
+/// and the policies are not represented in its key, so check the effective row policy of every table.
+bool hasRowPolicyOnTableInputs(const SelectQueryInfo & select_query_info, const ContextPtr & context)
+{
+    if (select_query_info.row_level_filter)
+        return true;
+
+    const auto * query_node = select_query_info.query_tree ? select_query_info.query_tree->as<QueryNode>() : nullptr;
+    if (!query_node)
+        return true;
+
+    for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped(), /*add_array_join=*/ false, /*recursive=*/ true))
+    {
+        if (const auto * table_node = table_expression->as<TableNode>(); table_node && getEffectiveRowPolicyFilter(*table_node->getStorage(), context))
+            return true;
+    }
+
+    return false;
+}
+
 Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
+    const SelectQueryInfo & select_query_info,
     const Settings & settings,
     bool aggregate_descriptions_remove_arguments = false,
     std::optional<UInt64> trivial_group_by_limit = {})
 {
     const auto & query_context = planner_context->getQueryContext();
+
+    const bool has_row_level_filter = hasRowPolicyOnTableInputs(select_query_info, query_context);
+    const bool has_additional_table_filters = !settings[Setting::additional_table_filters].value.empty();
+    const bool apply_deleted_mask_value = settings[Setting::apply_deleted_mask];
+    const UInt64 partial_aggregate_semantic_key = partialAggregateCacheSemanticKey(
+        select_query_info.query,
+        query_context->getCurrentDatabase(),
+        apply_deleted_mask_value,
+        has_row_level_filter,
+        has_additional_table_filters,
+        hasNonMergeTreeTableInputs(select_query_info));
 
     /// The cache key is computed later from the query plan in setAggregationHashTableCacheKeys
     /// (key == 0 keeps preallocation disabled until the optimization pass stamps the real key).
@@ -755,6 +808,11 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     auto tmp_data_scope = query_context->getTempDataOnDisk();
     if (tmp_data_scope)
         tmp_data_scope = tmp_data_scope->childScope(/* metrics */{}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
+    /// Prefer query context: stateful functions (e.g. `timeSeriesIdToGroup`) need it in `FunctionFactory::tryGet`.
+    const bool has_nondeterministic_functions
+        = astContainsNonDeterministicFunctions(select_query_info.query, query_context);
+    const UInt64 partial_cache_semantic_key = has_nondeterministic_functions ? 0 : partial_aggregate_semantic_key;
+
     /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET` keys
     /// and enable the shared kept-keys cutoff, which keeps the aggregate values of the kept keys
     /// exact under parallel aggregation (see `Aggregator::Params::shared_kept_keys_for_overflow_any`).
@@ -792,7 +850,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::enable_packed_string_keys_in_aggregation],
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold],
-        settings[Setting::adaptive_aggregator_freeze_threshold_bytes]);
+        settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
+        partial_cache_semantic_key);
     aggregator_params.shared_kept_keys_for_overflow_any = trivial_group_by_limit.has_value();
 
     return aggregator_params;
@@ -969,6 +1028,7 @@ void addAggregationStep(QueryPlan & query_plan,
     PlannerExpressionsAnalysisResult & expression_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info,
     const Settings & settings,
     std::optional<UInt64> trivial_group_by_limit)
 {
@@ -977,6 +1037,7 @@ void addAggregationStep(QueryPlan & query_plan,
         planner_context,
         aggregation_analysis_result,
         query_analysis_result,
+        select_query_info,
         settings,
         /*aggregate_descriptions_remove_arguments=*/false,
         trivial_group_by_limit);
@@ -1310,6 +1371,7 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info,
     const QueryNode & query_node)
 {
     if (!query_node.isGroupByWithCube() && !query_node.isGroupByWithRollup())
@@ -1321,6 +1383,7 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     auto aggregator_params = getAggregatorParams(planner_context,
         aggregation_analysis_result,
         query_analysis_result,
+        select_query_info,
         settings,
         true /*aggregate_descriptions_remove_arguments*/);
 
@@ -2976,7 +3039,15 @@ void Planner::buildPlanForQueryNode()
                     trivial_group_by_limit.reset();
             }
 
-            addAggregationStep(query_plan, query_node, expression_analysis_result, query_analysis_result, planner_context, query_settings, trivial_group_by_limit);
+            addAggregationStep(
+                query_plan,
+                query_node,
+                expression_analysis_result,
+                query_analysis_result,
+                planner_context,
+                select_query_info,
+                query_settings,
+                trivial_group_by_limit);
         }
 
         /** If we have aggregation, we can't execute any later-stage
@@ -3078,7 +3149,7 @@ void Planner::buildPlanForQueryNode()
                 having_executed = true;
             }
 
-            addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, query_node);
+            addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
 
             if (!having_executed && expression_analysis_result.hasHaving())
                 addFilterStep(planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);

@@ -22,6 +22,7 @@
 #include <Parsers/TokenIterator.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Columns/IColumn.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
@@ -64,6 +65,9 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int DEPRECATED_FUNCTION;
+    extern const int SUPPORT_IS_DISABLED;
+    extern const int THERE_IS_NO_QUERY;
     extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
 }
@@ -97,7 +101,27 @@ struct HasNonDeterministicFunctionsMatcher
                 data.has_non_deterministic_functions = true;
                 return;
             }
-            if (const auto func = FunctionFactory::instance().tryGet(function->name, data.context))
+            FunctionOverloadResolverPtr func;
+            try
+            {
+                func = FunctionFactory::instance().tryGet(function->name, data.context);
+            }
+            catch (const Exception & e)
+            {
+                /// tryGet instantiates the implementation; deprecations, experimental gates, and stateful
+                /// functions that require a live query context (e.g. timeSeriesIdToGroup) may throw
+                /// instead of returning nullptr. Conservative for cache eligibility: treat as
+                /// non-deterministic (disable caching) and never fail the query.
+                if (e.code() == ErrorCodes::DEPRECATED_FUNCTION
+                    || e.code() == ErrorCodes::SUPPORT_IS_DISABLED
+                    || e.code() == ErrorCodes::THERE_IS_NO_QUERY)
+                {
+                    data.has_non_deterministic_functions = true;
+                    return;
+                }
+                throw;
+            }
+            if (func)
             {
                 if (!func->isDeterministic())
                     data.has_non_deterministic_functions = true;
@@ -212,7 +236,7 @@ using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 }
 
 /// Does AST contain non-deterministic functions like rand() and now()?
-static bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
+bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 {
     HasNonDeterministicFunctionsMatcher::Data finder_data{context};
     HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);

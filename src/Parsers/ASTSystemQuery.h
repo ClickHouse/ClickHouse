@@ -45,6 +45,7 @@ public:
         CLEAR_QUERY_CONDITION_CACHE,
         CLEAR_ENCRYPTION_HEADERS_CACHE,
         CLEAR_QUERY_CACHE,
+        CLEAR_AGGREGATE_CACHE,
         CLEAR_COMPILED_EXPRESSION_CACHE,
         CLEAR_ICEBERG_METADATA_CACHE,
         CLEAR_PAIMON_METADATA_CACHE,
@@ -155,6 +156,8 @@ public:
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
+        /// Same execution as `CLEAR_AGGREGATE_CACHE`; separate enum so parsing does not go through `system_aliases` (deprecated DROP/CLEAR spellings).
+        CLEAR_PARTIAL_AGGREGATE_CACHE,
         STOP_ALL_BACKGROUND,
         START_ALL_BACKGROUND,
         PAUSE_ALL_BACKGROUND,

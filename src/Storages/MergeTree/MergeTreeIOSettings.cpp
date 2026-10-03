@@ -27,6 +27,7 @@ namespace Setting
     extern const SettingsFloat max_streams_to_max_threads_ratio;
     extern const SettingsUInt64 max_streams_for_merge_tree_reading;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool use_partial_aggregate_cache;
     extern const SettingsBool load_marks_asynchronously;
     extern const SettingsBool use_streaming_marks_compression;
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
@@ -135,6 +136,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     /// getting a key space of their own. Mirrored on the read side in MergeTreeDataSelectExecutor.
     result.use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::apply_deleted_mask];
     result.query_condition_cache_settings_salt = queryConditionCacheSettingsSalt(settings);
+    result.use_partial_aggregate_cache = settings[Setting::use_partial_aggregate_cache];
     result.use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache];
     result.use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
     result.prefetch_json_shared_data_substreams = settings[Setting::merge_tree_prefetch_json_shared_data_substreams];

@@ -70,6 +70,10 @@ struct MergeTreeReaderSettings
     bool use_query_condition_cache = false;
     /// Folded into every query condition cache key, see `queryConditionCacheSettingsSalt`.
     UInt64 query_condition_cache_settings_salt = 0;
+    /// If we should use the partial aggregate cache for caching per-part aggregation results.
+    bool use_partial_aggregate_cache = false;
+    /// Plan-time probe already called `PartialAggregateCache::get` for these reads and missed; skip redundant execution-time `get`.
+    bool skip_partial_aggregate_execution_cache_lookup = false;
     /// Set for a TopK (`ORDER BY ... LIMIT n`) read whose granule drops may depend on the running
     /// `__topKFilter` threshold: the TopK plan salt (`TopKFilterInfo::condition_hash`) and the
     /// post-PREWHERE filter hash to fold into the query condition cache key when recording

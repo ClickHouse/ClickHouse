@@ -26,6 +26,8 @@ struct Settings;
 /// but the outer query context may not have the flag set.
 bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check = false);
 
+bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
+
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
 
