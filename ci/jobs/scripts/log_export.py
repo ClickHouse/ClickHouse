@@ -233,3 +233,24 @@ def stop_distributed_sends(port=None):
 def start_distributed_sends(port=None):
     """Undo `stop_distributed_sends`."""
     return _switch_distributed_sends(True, port)
+
+
+def flush_held_rows(port=None):
+    """Send the rows held back by `stop_distributed_sends` and hold the sends
+    back again, so that the backlog stays bounded.
+
+    The flush is bounded by the same 5 minutes as the one in `stop`; what it
+    does not manage to send stays in the local files. Returns whether the sends
+    are held back again - when not, the caller has to tear the export down.
+    """
+    port_arg = _set_server_port(port)
+    for query in ("SYSTEM FLUSH LOGS", "SYSTEM FLUSH ASYNC INSERT QUEUE"):
+        Shell.check(f'clickhouse-client {port_arg} --query "{query}"', verbose=True)
+    start_distributed_sends(port)
+    Shell.check(
+        f'clickhouse-client {port_arg} --query "{SENDER_TABLES_QUERY}" | '
+        "timeout --verbose --preserve-status --signal TERM --kill-after 1m 5m "
+        f'xargs -n1 -P10 -r -i clickhouse-client {port_arg} --query "SYSTEM FLUSH DISTRIBUTED {{}}"',
+        verbose=True,
+    )
+    return stop_distributed_sends(port)
