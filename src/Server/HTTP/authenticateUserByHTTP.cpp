@@ -134,7 +134,18 @@ bool authenticateUserByHTTP(
         : String(global_context->getServerSettings()[ServerSetting::default_session_user]);
 
     const std::string authorization_header = request.get("Authorization", "");
-    const bool has_encoded_web_ui_auth = request.get("X-ClickHouse-Auth-Encoding", "") == "percent";
+
+    /// The user and password can be passed by headers (similar to X-Auth-*),
+    /// which is used by load balancers to pass authentication information.
+    std::string user = request.get("X-ClickHouse-User", "");
+    std::string password = request.get("X-ClickHouse-Key", "");
+
+    /// Unsafe browser header values are percent-encoded by play.html. Keep the marker in the
+    /// X-ClickHouse credential values themselves so decoding does not depend on Authorization
+    /// surviving an intermediary and does not require a new CORS request header.
+    static constexpr std::string_view encoded_web_ui_auth_prefix = "ClickHouse-Play-Percent:";
+    const bool has_encoded_web_ui_auth
+        = user.starts_with(encoded_web_ui_auth_prefix) && password.starts_with(encoded_web_ui_auth_prefix);
     const bool has_scripted_web_ui_auth = authorization_header == "never" || has_encoded_web_ui_auth;
     if (has_encoded_web_ui_auth)
     {
@@ -142,14 +153,12 @@ bool authenticateUserByHTTP(
         response.add("Access-Control-Expose-Headers", "X-ClickHouse-Auth-Encoding");
     }
 
-    /// The user and password can be passed by headers (similar to X-Auth-*),
-    /// which is used by load balancers to pass authentication information.
-    std::string user = request.get("X-ClickHouse-User", "");
-    std::string password = request.get("X-ClickHouse-Key", "");
     /// Fixed-user handlers ignore credentials supplied by the Web UI, matching the old
     /// query-parameter transport. Do not decode headers that will be ignored.
     if (has_encoded_web_ui_auth && !config_credentials)
     {
+        user.erase(0, encoded_web_ui_auth_prefix.size());
+        password.erase(0, encoded_web_ui_auth_prefix.size());
         decodeWebUIAuthHeader(user);
         decodeWebUIAuthHeader(password);
     }
@@ -168,9 +177,8 @@ bool authenticateUserByHTTP(
 
     /// Whether the request carries an `Authorization` header that should be treated as
     /// credentials. The `never` sentinel used by scripted Web UI requests only suppresses
-    /// browser-provided Basic credentials. Percent-encoded X-ClickHouse user/key headers are
-    /// marked independently, so decoding still works when an intermediary strips or rewrites
-    /// `Authorization`.
+    /// browser-provided Basic credentials. Encoded Web UI credentials carry their marker in
+    /// X-ClickHouse-User and X-ClickHouse-Key, independently of `Authorization`.
     const bool suppress_browser_basic_auth = has_scripted_web_ui_auth;
     bool has_authorization_header = !suppress_browser_basic_auth && request.hasCredentials();
 

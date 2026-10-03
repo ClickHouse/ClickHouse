@@ -109,6 +109,7 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
 def test_play_auth_headers_preserve_credentials_with_database_path(started_cluster):
     user = "play:юзер"
     password = "  päss 密码  "
+    encoded_prefix = "ClickHouse-Play-Percent:"
 
     def quote(value):
         return urllib.parse.quote(value, safe="-_.!~*'()")
@@ -122,14 +123,13 @@ def test_play_auth_headers_preserve_credentials_with_database_path(started_clust
         )
 
         encoded_headers = {
-            "X-ClickHouse-Auth-Encoding": "percent",
-            "X-ClickHouse-User": quote(user),
-            "X-ClickHouse-Key": quote(password),
+            "X-ClickHouse-User": encoded_prefix + quote(user),
+            "X-ClickHouse-Key": encoded_prefix + quote(password),
         }
 
-        # A scripted /play server_address may include a database path. The encoding marker,
-        # rather than Authorization, controls decoding, so an intermediary may strip or rewrite
-        # Authorization without corrupting UTF-8 or surrounding-space credentials.
+        # A scripted /play server_address may include a database path. The X-ClickHouse
+        # credential values carry their own encoding marker, so an intermediary may strip or
+        # rewrite Authorization without corrupting UTF-8 or surrounding-space credentials.
         for authorization in ("never", None, "Basic Zm9vOmJhcg=="):
             headers = dict(encoded_headers)
             if authorization is not None:

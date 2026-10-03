@@ -8297,16 +8297,24 @@ function canSendRawAuthHeader(value) {
     }
 }
 
+const encodedWebUIAuthPrefix = 'ClickHouse-Play-Percent:';
+
 function getAuthHeaders(user, password) {
     const send_raw = canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
     const headers = { 'Authorization': 'never' };
-    if (!send_raw)
-        headers['X-ClickHouse-Auth-Encoding'] = 'percent';
 
-    if (user)
-        headers['X-ClickHouse-User'] = send_raw ? user : encodeURIComponent(user);
-    if (password)
-        headers['X-ClickHouse-Key'] = send_raw ? password : encodeURIComponent(password);
+    if (send_raw) {
+        if (user)
+            headers['X-ClickHouse-User'] = user;
+        if (password)
+            headers['X-ClickHouse-Key'] = password;
+    } else {
+        /// Keep the encoding marker inside headers that old servers already allow through CORS
+        /// and that auth proxies already forward. Prefix both values so the marker survives even
+        /// when Authorization is stripped or rewritten.
+        headers['X-ClickHouse-User'] = encodedWebUIAuthPrefix + encodeURIComponent(user);
+        headers['X-ClickHouse-Key'] = encodedWebUIAuthPrefix + encodeURIComponent(password);
+    }
     return headers;
 }
 
@@ -8319,12 +8327,6 @@ function getLegacyAuthQueryParams(user, password) {
     return params;
 }
 
-function responseLooksLikeClickHouse(response) {
-    const exception_code = response.headers.get('X-ClickHouse-Exception-Code');
-    return response.headers.get('X-ClickHouse-Server-Display-Name') !== null
-        || (exception_code !== null && /^\d+$/.test(exception_code));
-}
-
 async function responseRejectsLegacyPasswordOnlyAuth(response) {
     if (response.headers.get('X-ClickHouse-Exception-Code') !== '516')
         return false;
@@ -8332,19 +8334,6 @@ async function responseRejectsLegacyPasswordOnlyAuth(response) {
     try {
         const body = await response.clone().text();
         return body.includes("Got an empty user name from X-ClickHouse HTTP headers");
-    } catch (e) {
-        return false;
-    }
-}
-
-async function endpointLooksLikeClickHouse(url) {
-    try {
-        const response = await fetch(url, {
-            method: "POST",
-            body: "SELECT 1",
-            headers: { 'Authorization': 'never' },
-        });
-        return responseLooksLikeClickHouse(response);
     } catch (e) {
         return false;
     }
@@ -8385,20 +8374,7 @@ async function probeLegacyPasswordOnlyAuth(server_address, password) {
 
 async function fetchWithRequestAuth(url, options, server_address, user, password) {
     const send_raw = canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
-    let response;
-    try {
-        response = await fetch(url, { ...options, headers: getAuthHeaders(user, password) });
-    } catch (e) {
-        /// Older servers and custom CORS policies may reject the new encoding marker at preflight.
-        /// Before putting credentials back in the URL, prove that the target is a ClickHouse query
-        /// endpoint using a credential-free request that only uses the long-supported never sentinel.
-        if (send_raw || !await endpointLooksLikeClickHouse(url))
-            throw e;
-
-        return await fetch(
-            url + getLegacyAuthQueryParams(user, password),
-            { ...options, headers: { 'Authorization': 'never' } });
-    }
+    let response = await fetch(url, { ...options, headers: getAuthHeaders(user, password) });
 
     if (send_raw) {
         /// Before 26.7 a password-only request implicitly meant user "default". Preserve that
@@ -8418,9 +8394,9 @@ async function fetchWithRequestAuth(url, options, server_address, user, password
     if (response.ok || !responseRejectsEncodedWebUIAuth(response))
         return response;
 
-    /// The encoding marker was not acknowledged, so this is an older ClickHouse endpoint.
-    /// Retry the same request with the historical query-parameter transport. Do not cache this
-    /// mode: after a rolling upgrade the next request immediately retries the header path.
+    /// An older ClickHouse server treats the prefixed header values as ordinary credentials and
+    /// rejects them without acknowledging the encoding. Retry through the historical URL
+    /// transport, but do not cache this mode so a rolling upgrade returns to headers immediately.
     return await fetch(
         url + getLegacyAuthQueryParams(user, password),
         { ...options, headers: { 'Authorization': 'never' } });
