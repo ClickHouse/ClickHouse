@@ -226,7 +226,7 @@ private:
     void releaseInode(const String & file_name, UInt64 inode);
     /// Stops reading `file_name`, releasing its inode first.
     void untrackReadName(const String & file_name);
-    /// Marks the name `inode` is read under as updated, unless it is removed.
+    /// Marks the name `inode` is read under as updated, unless it is removed or no longer has the file.
     void markReadNameUpdated(UInt64 inode);
     void moveMetaFile(const String & from, const String & to) const;
 

@@ -1257,9 +1257,17 @@ void StorageFileLog::markReadNameUpdated(UInt64 inode)
     auto meta = file_infos.meta_by_inode.find(inode);
     if (meta == file_infos.meta_by_inode.end())
         return;
-    if (auto read = file_infos.context_by_name.find(meta->second.file_name);
-        read != file_infos.context_by_name.end() && read->second.status != FileStatus::REMOVED)
-        read->second.status = FileStatus::UPDATED;
+    auto read = file_infos.context_by_name.find(meta->second.file_name);
+    if (read == file_infos.context_by_name.end() || read->second.status == FileStatus::REMOVED)
+        return;
+    /// A hard link that no longer has the file has a pending event that hands the file over; a symbolic link has none.
+    if (isGone(read->first, inode))
+    {
+        if (read->second.is_symlink)
+            read->second.status = FileStatus::REMOVED;
+        return;
+    }
+    read->second.status = FileStatus::UPDATED;
 }
 
 bool StorageFileLog::updateFileInfos()
