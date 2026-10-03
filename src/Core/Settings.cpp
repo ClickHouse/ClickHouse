@@ -10511,7 +10511,8 @@ If the number of set bits in a runtime bloom filter exceeds this ratio the filte
 If, at query planning time, the probe side of a JOIN is estimated to produce no more than this number of rows, the JOIN runtime filter is not created. Building and applying a runtime filter for a tiny probe side costs more than it saves. Set to 0 to always create the runtime filter regardless of the estimated probe size.
 )", 0, \
         {"26.9", 1000, 1000, "The JOIN runtime filters became a Production tier feature."}, \
-        {"26.8", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."}) \
+        {"26.8", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."}, \
+        {"26.7", 0, 1000, "New setting to control the minimum probe-side size for installing JOIN runtime filters. Previously there was no such threshold, so the previous value is 0, meaning runtime filters were always installed."}) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(
 When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
 )", 0, \
