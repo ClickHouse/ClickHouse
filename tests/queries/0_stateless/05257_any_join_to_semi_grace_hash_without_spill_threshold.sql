@@ -37,5 +37,16 @@ SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, description = 1
     SELECT count() FROM t_grace_l ANY LEFT JOIN t_grace_r USING (k) WHERE t_grace_r.v > 0
     SETTINGS join_algorithm = 'full_sorting_merge,grace_hash', max_bytes_before_external_join = 1000000000) WHERE explain LIKE '%Strictness%';
 
+-- A threshold given only as a ratio does not count: a server without memory limits resolves it to 0.
+SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, description = 1
+    SELECT count() FROM t_grace_l ANY LEFT JOIN t_grace_r USING (k) WHERE t_grace_r.v > 0
+    SETTINGS join_algorithm = 'full_sorting_merge,grace_hash', max_bytes_ratio_before_external_join = 0.5) WHERE explain LIKE '%Strictness%';
+
+SELECT 'a swapped join with a runtime filter';
+-- The swapped `ANY RIGHT` join takes a runtime filter, which keeps only the algorithms that support one.
+-- `grace_hash` without a spill threshold must not be the one kept: alone in the list it is refused.
+SELECT count() FROM t_grace_l ANY LEFT JOIN t_grace_r USING (k) WHERE t_grace_r.v > 0
+    SETTINGS join_algorithm = 'full_sorting_merge,grace_hash', query_plan_join_swap_table = 1, enable_join_runtime_filters = 1;
+
 DROP TABLE t_grace_l;
 DROP TABLE t_grace_r;

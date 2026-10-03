@@ -142,9 +142,7 @@ bool canBeExecutedByEnabledAlgorithm(const JoinSettings & join_settings, JoinKin
             case JoinAlgorithm::GRACE_HASH:
                 /// So does `grace_hash`, but without a spill threshold `tryCreateJoin` passes it over for
                 /// the next algorithm of the list, so there it cannot execute anything.
-                if (join_settings.legacy_join_size_limits_trigger_spilling
-                    || join_settings.getEffectiveMaxBytesBeforeExternalJoin() > 0
-                    || join_algorithms.size() == 1)
+                if (join_settings.canRunGraceHash())
                     return true;
                 break;
             case JoinAlgorithm::PREFER_PARTIAL_MERGE:
