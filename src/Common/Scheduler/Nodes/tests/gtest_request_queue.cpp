@@ -36,6 +36,7 @@ struct TestRequest : public ResourceRequest
 struct Fixture
 {
     EventQueue event_queue;
+    EventQueue::SchedulerThread scheduler_thread{&event_queue}; // the test thread acts as the scheduler thread
     std::deque<TestRequest> pool;
     std::vector<ResourceSchedulingContextPtr> contexts;
     std::optional<RequestQueue> queue;
