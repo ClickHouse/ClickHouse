@@ -54,3 +54,22 @@ SELECT t, c FROM t_default_missing_vertical ORDER BY k;
 OPTIMIZE TABLE t_default_missing_vertical FINAL;
 SELECT k, e, s, t, c FROM t_default_missing_vertical ORDER BY k;
 DROP TABLE t_default_missing_vertical;
+
+-- A column with a compound name (a Nested member) that the part lacks.
+DROP TABLE IF EXISTS t_default_missing_nested;
+CREATE TABLE t_default_missing_nested (k UInt64, n Nested(a UInt64)) ENGINE = MergeTree ORDER BY k
+    SETTINGS vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1,
+             min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_default_missing_nested VALUES (1, [10, 20]);
+INSERT INTO t_default_missing_nested VALUES (2, [30]);
+ALTER TABLE t_default_missing_nested ADD COLUMN n.b Array(UInt64), ADD COLUMN `p.q` UInt64;
+ALTER TABLE t_default_missing_nested
+    ADD COLUMN c UInt64 DEFAULT length(n.b), ADD COLUMN d UInt64 DEFAULT n.b.size0, ADD COLUMN r UInt64 DEFAULT p.q + 1;
+SELECT n.b FROM t_default_missing_nested ORDER BY k;
+SELECT c FROM t_default_missing_nested ORDER BY k;
+SELECT d FROM t_default_missing_nested ORDER BY k;
+SELECT r FROM t_default_missing_nested ORDER BY k;
+SELECT n.a, c, d FROM t_default_missing_nested ORDER BY k;
+OPTIMIZE TABLE t_default_missing_nested FINAL;
+SELECT k, n.a, n.b, c, d, r FROM t_default_missing_nested ORDER BY k;
+DROP TABLE t_default_missing_nested;

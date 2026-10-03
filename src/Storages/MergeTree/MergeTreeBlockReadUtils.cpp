@@ -150,7 +150,14 @@ bool injectRequiredColumnsRecursively(
 
     ASTPtr default_expression = column_default.has_value() ? column_default->expression : nullptr;
     if (!default_expression)
+    {
+        /// A default cannot take a column with a compound name from an alias of its expression list, and a missing
+        /// Nested member reads as arrays sized by the part's offsets, so such a dependency is read like the column itself.
+        if (column_in_storage && !required_columns.contains(column_name)
+            && !Nested::splitName(column_in_storage->getNameInStorage()).second.empty())
+            add_column(column_in_storage->getNameInStorage());
         return false;
+    }
 
     /// collect identifiers required for evaluation
     IdentifierNameSet identifiers;
