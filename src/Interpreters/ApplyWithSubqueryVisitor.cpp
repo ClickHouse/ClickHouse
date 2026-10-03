@@ -46,6 +46,34 @@ ContextPtr getSubqueryContext(const ASTSelectQuery & select, const ContextPtr & 
     return subquery_context;
 }
 
+bool hasOwnAliasScope(const IAST & ast)
+{
+    if (ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>())
+        return true;
+    const auto * function = ast.as<ASTFunction>();
+    return function && function->name == "lambda";
+}
+
+void forEachDescendantAlias(const ASTPtr & ast, const std::function<void(const String &, const ASTPtr &)> & callback)
+{
+    for (const auto & child : ast->children)
+    {
+        if (auto alias = child->tryGetAlias(); !alias.empty())
+            callback(alias, child);
+        if (!hasOwnAliasScope(*child))
+            forEachDescendantAlias(child, callback);
+    }
+}
+
+}
+
+void ApplyWithSubqueryVisitor::forEachWithExpressionAlias(
+    const ASTPtr & expression, const std::function<void(const String &, const ASTPtr &)> & callback)
+{
+    if (!hasOwnAliasScope(*expression))
+        forEachDescendantAlias(expression, callback);
+    if (auto alias = expression->tryGetAlias(); !alias.empty())
+        callback(alias, expression);
 }
 
 void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
@@ -97,20 +125,24 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
         for (auto & child : with->children)
         {
             visit(child, new_data ? *new_data : scope);
-            auto * ast_with_elem = child->as<ASTWithElement>();
-            auto child_alias = child->tryGetAlias();
-            if (ast_with_elem || !child_alias.empty())
+            if (auto * ast_with_elem = child->as<ASTWithElement>())
             {
                 if (!new_data)
                     new_data = scope;
-                if (ast_with_elem)
-                    new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
-                else
+                new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
+            }
+            else
+            {
+                const bool export_aliases
+                    = scope.context && !scope.context->getSettingsRef()[Setting::enable_scopes_for_with_statement];
+                forEachWithExpressionAlias(child, [&](const String & alias, const ASTPtr & node)
                 {
-                    new_data->literals[child_alias] = child;
-                    if (new_data->context && !new_data->context->getSettingsRef()[Setting::enable_scopes_for_with_statement])
-                        new_data->exported_literals[child_alias] = child;
-                }
+                    if (!new_data)
+                        new_data = scope;
+                    new_data->literals[alias] = node;
+                    if (export_aliases)
+                        new_data->exported_literals[alias] = node;
+                });
             }
         }
     }
