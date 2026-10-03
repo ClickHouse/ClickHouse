@@ -1,7 +1,8 @@
-invalid values:
+boundary values:
 zzzzzzzzzzzz
 000000000000
 1
+invalid geohash characters:
 constant values:
 ezs42d000000
 -5.60303	42.60498
