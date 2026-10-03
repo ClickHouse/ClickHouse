@@ -4362,8 +4362,10 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
 
             resolveExpressionNodeList(grouping_sets_keys_list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-            // A grouping set is already represented as a ListNode of individual keys. Keep tuple(...)
-            // expressions intact because they are one logical key inside the set.
+            // Remove redundant calls to `tuple` function. It simplifies checking if expression is an aggregation key.
+            // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
+            auto & group_by_list = grouping_sets_keys_list_node->as<ListNode &>().getNodes();
+            expandTuplesInList(group_by_list);
         }
 
         for (const auto & grouping_set : query_node_typed.getGroupBy().getNodes())
