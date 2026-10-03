@@ -36,6 +36,7 @@
 #include <Columns/ColumnTuple.h>
 
 #include <Storages/StorageSet.h>
+#include <Storages/StorageProxy.h>
 #if CLICKHOUSE_CLOUD
 #include <Storages/StorageSharedSetJoin.h>
 #endif
@@ -77,7 +78,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsBool transform_null_in;
@@ -1804,7 +1804,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             return {};
 
         PreparedSets::Hash set_key;
-        if (data.getContext()->getSettingsRef()[Setting::allow_experimental_analyzer] && !identifier)
+        if (!identifier)
         {
             /// Here we can be only from mutation interpreter. Normal selects with analyzed use other interpreter.
             /// This is a hacky way to allow reusing cache for prepared sets.
@@ -1842,13 +1842,18 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             {
                 if (auto set = data.prepared_sets->findStorage(set_key))
                     return set;
-#if CLICKHOUSE_CLOUD
-                if (StorageSharedSet * storage_shared_set = dynamic_cast<StorageSharedSet *>(table.get()))
-                    return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_shared_set->getSet(data.getContext()), table_id);
-#endif
 
-                if (StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get()))
+                if (auto * storage_set = castStorage<StorageSet>(table, DeferredTable::Load).get())
+                {
+                    storage_set->checkNoRowPolicy(data.getContext());
+#if CLICKHOUSE_CLOUD
+                    /// NOLINT(storage-cast): `storage_set` is resolved above.
+                    if (auto * storage_shared_set = dynamic_cast<StorageSharedSet *>(storage_set))
+                        return data.prepared_sets->addFromStorage(
+                            set_key, right_in_operand, storage_shared_set->getSet(data.getContext()), table_id);
+#endif
                     return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_set->getSet(), table_id);
+                }
             }
 
             if (!data.getContext()->isGlobalContext())

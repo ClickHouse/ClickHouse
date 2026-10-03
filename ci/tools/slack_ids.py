@@ -8,6 +8,7 @@ Slack API. What is sensitive are webhook URLs and bot tokens, which live in SSM.
 
 # User IDs
 FELIXOID = "U02M9UZCEHF"
+LESHIKUS = "U09J7RJKXC3"
 
 # User group IDs
 CI_TEAM = "S06M1A6H482"
