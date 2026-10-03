@@ -4548,21 +4548,25 @@ If a host during a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation doesn't rec
 This value should be bigger than any reasonable time for a host to reconnect to ZooKeeper after a failure.
 Zero means unlimited.
 )", 0, \
+        {"26.10", 3600, 3600, "Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}, \
         {"24.11", 0, 3600, "New setting."}, \
         {"24.10", 0, 3600, "New setting."}) \
     DECLARE(UInt64, backup_restore_keeper_max_retries_while_initializing, 20, R"(
 Max retries for [Zoo]Keeper operations during the initialization of a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
 )", 0, \
+        {"26.10", 20, 20, "Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}, \
         {"24.11", 0, 20, "New setting."}, \
         {"24.10", 0, 20, "New setting."}) \
     DECLARE(UInt64, backup_restore_keeper_max_retries_while_handling_error, 20, R"(
 Max retries for [Zoo]Keeper operations while handling an error of a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
 )", 0, \
+        {"26.10", 20, 20, "Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}, \
         {"24.11", 0, 20, "New setting."}, \
         {"24.10", 0, 20, "New setting."}) \
     DECLARE(UInt64, backup_restore_finish_timeout_after_error_sec, 180, R"(
 How long the initiator should wait for other host to react to the 'error' node and stop their work on the current BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
 )", 0, \
+        {"26.10", 180, 180, "Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}, \
         {"24.11", 0, 180, "New setting."}, \
         {"24.10", 0, 180, "New setting."}) \
     DECLARE(UInt64, backup_restore_keeper_value_max_size, 1048576, R"(
