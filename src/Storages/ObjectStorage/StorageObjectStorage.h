@@ -102,6 +102,16 @@ public:
 
     void drop() override;
 
+    /// Captures the DROP query settings for drop(), which runs without a query context.
+    void checkTableCanBeDropped(ContextPtr query_context) const override;
+
+    static void dropImpl(
+        const StorageObjectStorageConfigurationPtr & configuration,
+        const ObjectStoragePtr & object_storage,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const StorageID & storage_id,
+        const std::shared_ptr<const Settings> & query_settings);
+
     bool supportsPartitionBy() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
@@ -266,6 +276,8 @@ protected:
     bool supports_prewhere = false;
     bool supports_tuple_elements = false;
     bool is_table_function = false;
+
+    mutable std::shared_ptr<const Settings> drop_query_settings;
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;

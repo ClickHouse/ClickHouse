@@ -31,6 +31,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 
 #include <Interpreters/PreparedSets.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -122,6 +123,13 @@ extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
 extern const int FILE_ALREADY_EXISTS;
+extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+extern const char iceberg_drop_metadata_anchor_fail[];
+extern const char iceberg_drop_first_data_delete_fail[];
 }
 
 namespace Setting
@@ -962,7 +970,13 @@ void IcebergMetadata::createInitial(
     }
     else
     {
-        std::vector<String> metadata_files = listFiles(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
+        /// A `version-hint.text` left behind by a failed DROP also occupies the path, its write below would fail.
+        std::vector<String> metadata_files = listFiles(
+            *object_storage,
+            configuration_ptr->getPathForRead().path,
+            "metadata",
+            [](const RelativePathWithMetadata & file)
+            { return file.relative_path.ends_with(".metadata.json") || file.relative_path.ends_with("metadata/version-hint.text"); });
         if (!metadata_files.empty())
         {
             if (if_not_exists)
@@ -1640,27 +1654,103 @@ SinkToStoragePtr IcebergMetadata::write(
     }
 }
 
-void IcebergMetadata::drop(ContextPtr context)
+void IcebergMetadata::drop(
+    ContextPtr context, const std::shared_ptr<DataLake::ICatalog> & catalog, const StorageID & storage_id, DropCleanupPolicy policy)
 {
-    if (context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
+    if (!context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
     {
-        /// Skipped rather than refused: this runs after the table is already marked as dropped, so
-        /// throwing here only makes `DatabaseCatalog` retry the drop forever.
-        if (persistent_components.table_root_was_derived)
+        dropFromCatalog(context, catalog, storage_id);
+        return;
+    }
+
+    /// Skipped rather than refused: throwing would only make `DatabaseCatalog` retry the drop forever.
+    if (persistent_components.table_root_was_derived)
+    {
+        LOG_WARNING(
+            log,
+            "Keeping the data of the Iceberg table at '{}': it is below the queried path '{}', which also covers "
+            "other tables. Drop it while querying the table directory itself to delete the data.",
+            persistent_components.path_resolver.getTableRoot(),
+            persistent_components.table_path);
+        dropFromCatalog(context, catalog, storage_id);
+        return;
+    }
+
+    bool any_object_deleted = false;
+
+    auto should_swallow = [&](bool after_catalog_drop) -> bool
+    {
+        switch (policy)
+        {
+            case DropCleanupPolicy::Reattaching:
+                return any_object_deleted;
+            case DropCleanupPolicy::AsyncRetry:
+                return false;
+            case DropCleanupPolicy::CatalogRetry:
+                return after_catalog_drop;
+        }
+        return false;
+    };
+
+    auto remove_object = [&](const String & file, const char * kind, bool swallow, const char * inject_failpoint)
+    {
+        try
+        {
+            if (inject_failpoint)
+                fiu_do_on(inject_failpoint, {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during Iceberg drop {} deletion", kind);
+                });
+            LOG_DEBUG(log, "Deleting Iceberg {} file on drop: {}", kind, file);
+            object_storage->removeObjectIfExists(StoredObject(file));
+            any_object_deleted = true;
+        }
+        catch (...)
+        {
+            if (!swallow)
+                throw;
+            LOG_WARNING(
+                log,
+                "Best-effort Iceberg drop: ignoring failure to delete {} file {}: {}",
+                kind,
+                file,
+                getCurrentExceptionMessage(/* with_stacktrace */ false));
+        }
+    };
+
+    /// `listFiles` lists `path / prefix`, so an empty prefix lists the whole table.
+    auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
+
+    /// Metadata files go last, after the catalog drop: a retried DROP reads the table from them.
+    std::vector<String> metadata_files;
+    for (const auto & file : files)
+    {
+        if (file.ends_with(".metadata.json") || file.ends_with("metadata/version-hint.text"))
+        {
+            metadata_files.push_back(file);
+            continue;
+        }
+        remove_object(file, "data", should_swallow(/* after_catalog_drop */ false), FailPoints::iceberg_drop_first_data_delete_fail);
+    }
+
+    if (should_swallow(/* after_catalog_drop */ false))
+    {
+        try
+        {
+            dropFromCatalog(context, catalog, storage_id);
+        }
+        catch (...)
         {
             LOG_WARNING(
                 log,
-                "Keeping the data of the Iceberg table at '{}': it is below the queried path '{}', which also covers "
-                "other tables. Drop it while querying the table directory itself to delete the data.",
-                persistent_components.path_resolver.getTableRoot(),
-                persistent_components.table_path);
-            return;
+                "Best-effort Iceberg drop: ignoring failure to remove the table from the catalog: {}",
+                getCurrentExceptionMessage(/* with_stacktrace */ false));
         }
-
-        auto files = listFiles(*object_storage, persistent_components.table_path, persistent_components.table_path, "");
-        for (const auto & file : files)
-            object_storage->removeObjectIfExists(StoredObject(file));
     }
+    else
+        dropFromCatalog(context, catalog, storage_id);
+
+    for (const auto & file : metadata_files)
+        remove_object(file, "metadata", should_swallow(/* after_catalog_drop */ true), FailPoints::iceberg_drop_metadata_anchor_fail);
 }
 
 ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_info) const

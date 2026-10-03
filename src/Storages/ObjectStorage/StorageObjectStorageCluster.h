@@ -59,6 +59,8 @@ public:
 
     void drop() override;
 
+    void checkTableCanBeDropped(ContextPtr query_context) const override;
+
     RemoteQueryExecutor::Extension getTaskIteratorExtension(
         const ActionsDAG::Node * predicate,
         const ActionsDAG * filter,
@@ -86,6 +88,7 @@ private:
     const std::optional<FormatSettings> format_settings;
     const std::shared_ptr<DataLake::ICatalog> catalog;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    mutable std::shared_ptr<const Settings> drop_query_settings;
 };
 
 }
