@@ -2297,6 +2297,8 @@ Logs index statistics per part
         {"25.8", false, false, "New setting."}) \
     DECLARE(Bool, materialize_statistics_on_insert, true, R"(
 If statistics are build and materialized for newly inserted parts. Even if disabled, statistics are still be build and stored during merges or by explicit MATERIALIZE STATISTICS. Only tables whose current size plus the size of the block being written, does not exceed `materialize_statistics_on_insert_max_table_size` are affected.
+
+See also [exclude_materialize_statistics_on_insert](#exclude_materialize_statistics_on_insert).
 )", 0, \
         {"26.8", false, true, "Materialize column statistics on INSERT by default for tables below `materialize_statistics_on_insert_max_table_size`, so cost-based join reordering has good estimates on freshly-loaded dimension tables."}, \
         {"26.4", true, false, "Disable building statistics on INSERT by default, rely on merges instead"}, \
@@ -2305,6 +2307,41 @@ If statistics are build and materialized for newly inserted parts. Even if disab
 Only build and store column statistics for newly inserted parts (see `materialize_statistics_on_insert`) for tables whose current size plus the block being written, does not exceed this value. `0` means no size limit.
 )", 0, \
         {"26.8", 0, 26843545600, "New setting."}) \
+    DECLARE(String, exclude_materialize_statistics_on_insert, "", R"(
+Excludes specified columns from having statistics built and stored during INSERTs. The excluded columns' statistics will still be built and stored [during merges](/reference/settings/merge-tree-settings/materialize#materialize_statistics_on_merge) or by an explicit
+[MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md) query.
+
+Has no effect if [materialize_statistics_on_insert](#materialize_statistics_on_insert) is false.
+
+Example:
+
+```sql
+CREATE TABLE tab
+(
+    a UInt64,
+    b UInt64,
+    c String
+)
+ENGINE = MergeTree ORDER BY a
+SETTINGS auto_statistics_types = 'basic';
+
+SET materialize_statistics_on_insert = 1;
+SET exclude_materialize_statistics_on_insert = 'b'; -- statistics for `b` will not be updated upon insert
+--SET exclude_materialize_statistics_on_insert = 'b, c'; -- neither column would get statistics on insert
+
+INSERT INTO tab SELECT number, number, toString(number) FROM numbers(100); -- only `a` (and possibly `c`) get statistics
+
+-- since it is a session setting it can be set on a per-query level
+INSERT INTO tab SELECT number, number, toString(number) FROM numbers(100, 100)
+SETTINGS exclude_materialize_statistics_on_insert = 'c';
+
+ALTER TABLE tab MATERIALIZE STATISTICS b; -- this query can be used to explicitly materialize statistics
+
+SET exclude_materialize_statistics_on_insert = DEFAULT; -- reset setting to default
+```
+)", 0, \
+        {"26.10", "", "", "New setting. Excludes provided columns from statistics materialization during INSERTs"}, \
+        {"26.8", "", "", "New setting. Excludes provided columns from statistics materialization during INSERTs"}) \
     DECLARE_WITH_ALIAS(String, ignore_data_skipping_indexes, "", R"(
 Ignores the skipping indexes specified if used by the query.
 
