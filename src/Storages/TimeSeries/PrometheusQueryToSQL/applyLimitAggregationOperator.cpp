@@ -15,6 +15,7 @@
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+    extern const int PROMQL_QUERY_EXECUTION_ERROR;
 }
 
 
@@ -65,9 +66,9 @@ namespace
     UInt64 convertScalarToK(ScalarType scalar)
     {
         if (std::isnan(scalar))
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Argument k of aggregation operator must not be NaN");
+            throw Exception(ErrorCodes::PROMQL_QUERY_EXECUTION_ERROR, "Argument k of aggregation operator must not be NaN");
         if (scalar > static_cast<ScalarType>(std::numeric_limits<UInt64>::max()))
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Argument k of aggregation operator is too large: {}", scalar);
+            throw Exception(ErrorCodes::PROMQL_QUERY_EXECUTION_ERROR, "Argument k of aggregation operator is too large: {}", scalar);
         return (scalar < 0) ? 0 : static_cast<UInt64>(scalar);
     }
 
