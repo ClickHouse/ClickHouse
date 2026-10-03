@@ -795,7 +795,22 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         else if (!s_next.ignore(pos, expected))
             return false;
 
-        if (!exp_elem.parse(pos, limit_length, expected))
+        /// SQL standard allows omitting the fetch row count; it defaults to 1.
+        /// Only recognize the omitted form when ROW[S] is followed by ONLY/WITH TIES,
+        /// so an identifier named row/rows can still be used as an explicit count.
+        bool fetch_row_count_omitted = false;
+        {
+            auto test_pos = pos;
+            Expected test_expected;
+            if ((s_row.ignore(test_pos, test_expected) || s_rows.ignore(test_pos, test_expected))
+                && (s_only.checkWithoutMoving(test_pos, test_expected)
+                    || s_with_ties.checkWithoutMoving(test_pos, test_expected)))
+                fetch_row_count_omitted = true;
+        }
+
+        if (fetch_row_count_omitted)
+            limit_length = make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(1)});
+        else if (!exp_elem.parse(pos, limit_length, expected))
             return false;
 
         if (s_row.ignore(pos, expected))
