@@ -377,8 +377,8 @@ public:
 
         /// Names of the columns the part does not store whose value is, so far, the one their
         /// `DEFAULT` expression gave. A column leaves the set when a patch part overwrites it or a
-        /// chain step's action recomputes it. The rest are evaluated again after every pass that
-        /// applies patches, so that a `DEFAULT` that reads a patched column sees the patched value.
+        /// chain step's action recomputes it. After every pass that applies patches, the ones whose
+        /// `DEFAULT` reads a patched column are evaluated again, so that they see the patched value.
         /// See `MergeTreeReadersChain::reevaluateDefaultsAfterPatches`.
         NameSet columns_filled_by_defaults;
 

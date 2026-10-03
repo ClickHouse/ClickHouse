@@ -538,7 +538,9 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
       * `UPDATE a = 5` left `z` at `1000`, where `ALTER TABLE ... UPDATE a = 5` gives `1005`.
       *
       * Evaluate the defaults once more, now that the patches are applied. The columns a patch produced
-      * keep their patched values; the rest are dropped so that the pass recomputes them.
+      * keep their patched values, and so do the ones whose expression does not read a patched column
+      * (a non-deterministic `DEFAULT` such as `rand()` must not change because an unrelated column was
+      * updated); the rest are dropped so that the pass recomputes them.
       *
       * `columns_patched_after_defaults` holds the columns the pass above did patch: a patch whose data
       * version is above this step's `patch_max_version` (a lightweight `UPDATE` later than a pending
@@ -548,16 +550,20 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
       */
     if (!positions_filled_by_defaults.empty() && !patch_readers.empty())
     {
-        bool has_columns_to_reevaluate = false;
         for (size_t pos : positions_filled_by_defaults)
         {
             const auto & name = result_header.getByPosition(pos).name;
-            if (columns_patched_after_defaults.contains(name))
-                continue;
+            if (!columns_patched_after_defaults.contains(name))
+                result.columns_filled_by_defaults.insert(name);
+        }
 
-            result.columns_filled_by_defaults.insert(name);
+        auto columns_to_reevaluate = range_reader.getReader()->getDefaultsDependingOn(
+            result.columns_filled_by_defaults, columns_patched_after_defaults);
 
-            if (!columns_patched_after_defaults.empty())
+        bool has_columns_to_reevaluate = false;
+        for (size_t pos : positions_filled_by_defaults)
+        {
+            if (columns_to_reevaluate.contains(result_header.getByPosition(pos).name))
             {
                 read_columns[pos] = nullptr;
                 has_columns_to_reevaluate = true;
@@ -609,6 +615,13 @@ void MergeTreeReadersChain::reevaluateDefaultsAfterPatches(ReadResult & result, 
             block.insert(column);
     }
 
+    /// Only the `DEFAULT` columns that read a patched column change.
+    auto names_to_evaluate = range_readers[reader_index].getReader()->getDefaultsDependingOn(
+        result.columns_filled_by_defaults, patched_columns);
+
+    if (names_to_evaluate.empty())
+        return;
+
     /// The requested-column entries carry what `evaluateDefaults` needs for a subcolumn.
     NamesAndTypesList columns_to_evaluate;
     NameSet added;
@@ -616,7 +629,7 @@ void MergeTreeReadersChain::reevaluateDefaultsAfterPatches(ReadResult & result, 
     {
         for (const auto & column : range_readers[i].getReader()->getColumns())
         {
-            if (result.columns_filled_by_defaults.contains(column.name) && block.has(column.name) && added.emplace(column.name).second)
+            if (names_to_evaluate.contains(column.name) && block.has(column.name) && added.emplace(column.name).second)
                 columns_to_evaluate.push_back(column);
         }
     }

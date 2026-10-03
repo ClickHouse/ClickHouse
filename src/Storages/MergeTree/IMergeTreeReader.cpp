@@ -20,6 +20,7 @@
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Parsers/IAST.h>
 #include <Databases/enableAllExperimentalSettings.h>
 
 
@@ -285,6 +286,61 @@ ColumnsDescription IMergeTreeReader::buildCombinedColumnsForDefaultExpressions()
                 combined_columns.add(virtual_column);
     }
     return combined_columns;
+}
+
+NameSet IMergeTreeReader::getDefaultsDependingOn(const NameSet & candidates, const NameSet & changed_columns) const
+{
+    NameSet result;
+    if (candidates.empty() || changed_columns.empty())
+        return result;
+
+    auto combined_columns = buildCombinedColumnsForDefaultExpressions();
+    const auto & columns_in_part = data_part_info_for_read->getColumnsDescription();
+
+    auto get_name_in_storage = [&](const String & name)
+    {
+        if (auto column = combined_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+            return column->getNameInStorage();
+        return name;
+    };
+
+    /// The columns whose value differs from the one the `DEFAULT` expressions were evaluated with:
+    /// the changed ones, and the ones the part does not store whose `DEFAULT` reads one of them.
+    NameSet affected;
+    for (const auto & name : changed_columns)
+        affected.insert(get_name_in_storage(name));
+
+    auto defaults = combined_columns.getDefaults();
+    bool added = true;
+    while (added)
+    {
+        added = false;
+        for (const auto & [name, default_desc] : defaults)
+        {
+            if (!default_desc.expression || affected.contains(name) || columns_in_part.has(name))
+                continue;
+
+            IdentifierNameSet identifiers;
+            default_desc.expression->collectIdentifierNames(identifiers);
+            for (const auto & identifier : identifiers)
+            {
+                if (affected.contains(identifier) || affected.contains(get_name_in_storage(identifier)))
+                {
+                    affected.insert(name);
+                    added = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    for (const auto & name : candidates)
+    {
+        if (!changed_columns.contains(name) && affected.contains(get_name_in_storage(name)))
+            result.insert(name);
+    }
+
+    return result;
 }
 
 void IMergeTreeReader::evaluateDefaults(Block & block, const NamesAndTypesList & columns_to_evaluate) const
