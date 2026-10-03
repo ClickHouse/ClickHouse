@@ -3,9 +3,9 @@
 -- Regression test for the "Virtual row does not cover sort column" logical error.
 -- ORDER BY matches only the key prefix (a): the collated constant stops the match. The virtual row
 -- conversion it builds reads one key column but outputs two, since the leading constant is emitted as
--- a fixed column. The preliminary DISTINCT then widens the read prefix to (a, b). The stale one-column
--- virtual row must be dropped on that widening; counting the conversion's outputs instead of its key
--- inputs kept it, so the preliminary merge over (a, b) received a virtual row covering only a.
+-- a fixed column. The preliminary DISTINCT then widens the read prefix to (a, b), so the preliminary
+-- merge over (a, b) receives a virtual row covering only a. The in-order merges compare the virtual row
+-- on the sort-key prefix it covers, so the conversion stays and the read must remain correct.
 
 DROP TABLE IF EXISTS t_virtual_row_widen_const;
 
@@ -27,7 +27,7 @@ SET optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, optimize_dist
 -- DISTINCT per partition would read each partition through its own port without a preliminary merge.
 SET allow_distinct_partitions_independently = 0, force_distinct_partitions_independently = 0;
 
--- The widened read must not keep the virtual row that covers only a.
+-- The widened read keeps the virtual row that covers only a.
 SELECT count()
 FROM (EXPLAIN PLAN actions = 1 SELECT DISTINCT a, b FROM t_virtual_row_widen_const ORDER BY 'x', a, 'd' COLLATE 'cs', b)
 WHERE explain LIKE '%Virtual row conversions%';

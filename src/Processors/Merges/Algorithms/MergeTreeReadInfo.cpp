@@ -50,13 +50,8 @@ Block setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_
 
     Block & pk_block = read_info->pk_block;
 
-    // std::cerr << apply_virtual_row_conversions << std::endl;
-    // std::cerr << read_info->virtual_row_conversions->dumpActions() << std::endl;
-
     if (apply_virtual_row_conversions)
         read_info->virtual_row_conversions->execute(pk_block);
-
-    // std::cerr << "++++" << pk_block.dumpStructure() << std::endl;
 
     Columns ordered_columns;
     ordered_columns.reserve(pk_block.columns());
@@ -82,7 +77,7 @@ Block setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_
 
     chunk.setColumns(ordered_columns, 1);
 
-    return pk_block;
+    return std::move(pk_block);
 }
 
 }
