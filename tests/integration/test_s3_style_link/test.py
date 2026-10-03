@@ -186,11 +186,11 @@ def test_url_s3_scheme_with_parallel_replicas(started_cluster):
     # source is examined and the regression could not show up. With a `ReplicatedMergeTree` the distributed path is
     # entered and declines the query only because the delegated `url` resolved to a plain storage rather than to an
     # `IStorageCluster` - which is exactly the property under test. If the delegate ever fans out again, the
-    # forwarded query names `urlCluster('s3://...')` and every replica reads the whole file.
+    # forwarded query names `urlCluster('s3://...')`, which the check of `system.query_log` below catches.
     #
     # A row count alone cannot tell "declined because of the source" from "declined earlier for another reason",
     # so the same `INSERT` from `s3('s3://...')` serves as a positive control: with the identical destination and
-    # settings it must be forwarded to every replica. The two queries differ only in the source, so the `url` one
+    # settings it must be forwarded to the cluster. The two queries differ only in the source, so the `url` one
     # reached the source check and was declined there.
     # Separate tables, so that the deduplication of `ReplicatedMergeTree` cannot swallow the second insert.
     run_id = uuid.uuid4().hex
@@ -232,8 +232,10 @@ def test_url_s3_scheme_with_parallel_replicas(started_cluster):
             """
         )
 
-    # Control: every replica ran the forwarded `INSERT` naming `s3Cluster`, and together they read the file once.
-    assert forwarded_inserts(query_ids["s3"]) == "3\t3\t10\n"
+    # Control: the forwarded `INSERT` naming `s3Cluster` ran and read the file once. All three replicas of the
+    # `parallel_replicas` cluster are the same `node:9000`, and `Cluster::getClusterWithReplicasAsShards` skips
+    # duplicate hosts, so the cluster storage sees a single shard and the query is forwarded exactly once.
+    assert forwarded_inserts(query_ids["s3"]) == "1\t1\t10\n"
     # The delegated `url` was not forwarded at all: it was inserted locally by the initiator.
     assert forwarded_inserts(query_ids["url"]) == "0\t0\t0\n"
 
