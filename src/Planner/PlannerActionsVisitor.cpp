@@ -2,7 +2,7 @@
 #include <ranges>
 #include <Planner/PlannerActionsVisitor.h>
 
-#include <AggregateFunctions/WindowFunction.h>
+#include <WindowFunctions/IWindowFunction.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -200,6 +200,20 @@ public:
                             result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
                         else
                             result = calculateActionNodeName(constant_node.getSourceExpression());
+                    }
+                    else if (!constant_node.hasSourceExpression())
+                    {
+                        /** The constant did not come from the query text: a query tree pass built it the
+                          * same way on this server as on the initiator (for example the index mask that
+                          * `GroupingFunctionsResolvePass` adds as a trailing argument of
+                          * `__groupingOrdinary`). There is no initiator naming to simulate, so name it
+                          * exactly as the initiator does, or a header the initiator expects from this shard
+                          * would not match. A constant that does come from the query text is unaffected:
+                          * the initiator writes the ones that need a cast as `_CAST(...)`, which arrive here
+                          * with a source expression, and the rest need no cast, so their name is the same
+                          * either way.
+                          */
+                        result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
                     }
                     else
                         result = calculateConstantActionNodeName(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
@@ -979,6 +993,21 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
                 return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
             return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
         }
+
+        if (!constant_node.hasSourceExpression())
+        {
+            /** The constant did not come from the query text: a query tree pass built it the same way
+              * on this server as on the initiator (for example the index mask that
+              * `GroupingFunctionsResolvePass` adds as a trailing argument of `__groupingOrdinary`).
+              * There is no initiator naming to simulate, so name it exactly as the initiator does,
+              * or a header the initiator expects from this shard would not match. A constant that
+              * does come from the query text is unaffected: the initiator writes the ones that need
+              * a cast as `_CAST(...)`, which arrive here with a source expression, and the rest
+              * need no cast, so their name is the same either way.
+              */
+            return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+        }
+
         return calculateConstantActionNodeName(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
     }();
 
@@ -1242,9 +1271,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     if (actions_stack.size() == 1 && actions_stack.front().containsNode(function_node_name))
         return {function_node_name, Levels(0)};
 
+    const bool is_in_function = isNameOfInFunction(function_node.getFunctionName());
+
+    /// The `IgnoreSet` variants resolve types without a set: no set is registered for them, and they
+    /// take the left operand alone, which `FunctionIn`'s variadic arity accepts.
+    const bool ignore_set = is_in_function && function_node.getFunctionName().ends_with("IgnoreSet");
+
     std::optional<NodeNameAndNodeMinLevel> in_function_second_argument_node_name_with_level;
 
-    if (isNameOfInFunction(function_node.getFunctionName()))
+    if (is_in_function && !ignore_set)
         in_function_second_argument_node_name_with_level = makeSetForInFunction(node);
 
     /* Aggregate functions, window functions, and GROUP BY expressions were already analyzed in the previous steps.
@@ -1277,7 +1312,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
 
     const auto & function_arguments = function_node.getArguments().getNodes();
-    size_t function_arguments_size = function_arguments.size();
+    /// An in-function is resolved with exactly two arguments, so the left operand alone remains.
+    size_t function_arguments_size = ignore_set ? 1 : function_arguments.size();
 
     Names function_arguments_node_names;
     function_arguments_node_names.reserve(function_arguments_size);
@@ -1334,8 +1370,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         /// non-Nullable arguments (because the function was resolved with pre-aggregation types).
         /// In this case, rebuild the function via FunctionFactory with the actual argument types
         /// so that the result type is correct.
-        bool argument_types_match = true;
-        if (auto function_base = function_node.getFunction())
+        /// An `IgnoreSet` node has one child against two expected types, so the loop below cannot see the mismatch.
+        bool argument_types_match = !ignore_set;
+        if (auto function_base = function_node.getFunction(); function_base && argument_types_match)
         {
             const auto & expected_types = function_base->getArgumentTypes();
             for (size_t i = 0; argument_types_match && i < children.size() && i < expected_types.size(); ++i)
