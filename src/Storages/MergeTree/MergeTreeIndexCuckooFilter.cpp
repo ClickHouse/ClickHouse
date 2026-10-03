@@ -268,12 +268,10 @@ bool MergeTreeIndexConditionCuckooFilter::alwaysUnknownOrTrue() const
     return rpnEvaluatesAlwaysUnknownOrTrue(
         rpn,
         {RPNElement::FUNCTION_EQUALS,
-         RPNElement::FUNCTION_NOT_EQUALS,
          RPNElement::FUNCTION_HAS,
          RPNElement::FUNCTION_HAS_ANY,
          RPNElement::FUNCTION_HAS_ALL,
-         RPNElement::FUNCTION_IN,
-         RPNElement::FUNCTION_NOT_IN});
+         RPNElement::FUNCTION_IN});
 }
 
 bool MergeTreeIndexConditionCuckooFilter::mayBeTrueOnGranule(const MergeTreeIndexGranuleCuckooFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjunction_fn) const
@@ -290,9 +288,7 @@ bool MergeTreeIndexConditionCuckooFilter::mayBeTrueOnGranule(const MergeTreeInde
                 rpn_stack.emplace_back(true, true);
                 break;
             case RPNElement::FUNCTION_IN:
-            case RPNElement::FUNCTION_NOT_IN:
             case RPNElement::FUNCTION_EQUALS:
-            case RPNElement::FUNCTION_NOT_EQUALS:
             case RPNElement::FUNCTION_HAS:
             case RPNElement::FUNCTION_HAS_ANY:
             case RPNElement::FUNCTION_HAS_ALL:
@@ -310,8 +306,6 @@ bool MergeTreeIndexConditionCuckooFilter::mayBeTrueOnGranule(const MergeTreeInde
                 }
 
                 rpn_stack.emplace_back(match_rows, true);
-                if (element.function == RPNElement::FUNCTION_NOT_EQUALS || element.function == RPNElement::FUNCTION_NOT_IN)
-                    rpn_stack.back() = !rpn_stack.back();
                 break;
             }
             case RPNElement::FUNCTION_NOT:
@@ -458,6 +452,11 @@ bool MergeTreeIndexConditionCuckooFilter::traverseFunction(const RPNBuilderTreeN
 
     if (functionIsInOrGlobalInOperator(function_name))
     {
+        /// A cuckoo filter only answers "may be present", so a negated set atom holds for any granule
+        /// that has one other value and can never skip one.
+        if (function_name == "notIn" || function_name == "globalNotIn")
+            return false;
+
         if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)
         {
             if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext()); prepared_set)
@@ -474,7 +473,6 @@ bool MergeTreeIndexConditionCuckooFilter::traverseFunction(const RPNBuilderTreeN
     }
 
     if (function_name == "equals" ||
-        function_name == "notEquals" ||
         function_name == "has" ||
         function_name == "mapContains" ||
         function_name == "mapContainsKey" ||
@@ -492,7 +490,7 @@ bool MergeTreeIndexConditionCuckooFilter::traverseFunction(const RPNBuilderTreeN
                 return true;
         }
         else if (lhs_argument.tryGetConstant(const_value, const_type) &&
-            (function_name == "equals" || function_name == "has" || function_name == "hasAny" || function_name == "notEquals"))
+            (function_name == "equals" || function_name == "has" || function_name == "hasAny"))
         {
             if (traverseTreeEquals(function_name, rhs_argument, const_type, const_value, out, parent))
                 return true;
@@ -551,8 +549,13 @@ bool MergeTreeIndexConditionCuckooFilter::traverseTreeIn(
         if (function_name == "in"  || function_name == "globalIn")
             out.function = RPNElement::FUNCTION_IN;
 
-        if (function_name == "notIn"  || function_name == "globalNotIn")
-            out.function = RPNElement::FUNCTION_NOT_IN;
+        /// `nullIn` (transform_null_in=1) selects the same rows as `in` only for a NULL-free,
+        /// single-column, non-Array set whose type matches the index; otherwise no pruning.
+        if ((function_name == "nullIn" || function_name == "globalNullIn") && prepared_set
+            && prepared_set->getDataTypes().size() == 1 && !prepared_set->hasNull()
+            && prepared_set->areTypesEqual(0, index_type)
+            && !typeid_cast<const DataTypeArray *>(index_type.get()))
+            out.function = RPNElement::FUNCTION_IN;
 
         return true;
     }
@@ -560,6 +563,7 @@ bool MergeTreeIndexConditionCuckooFilter::traverseTreeIn(
     /// Try to match the column name to a JSONAllPaths index for JSON subcolumn IN filtering.
     /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions.
     /// NOT IN is not supported because after BoolMask inversion it never skips any granules.
+    /// nullIn/globalNullIn are deliberately not wired here: JSON paths need per-path NULL checks.
     if (auto json_info = tryMatchNodeToJSONIndex(key_node, header, "JSONAllPaths"))
     {
         if (function_name != "in" && function_name != "globalIn")
@@ -668,11 +672,9 @@ bool MergeTreeIndexConditionCuckooFilter::traverseTreeIn(
             return false;
         }
 
+        /// nullIn/globalNullIn are deliberately not wired here, as in the JSON branch above.
         if (function_name == "in" || function_name == "globalIn")
             out.function = RPNElement::FUNCTION_IN;
-
-        if (function_name == "notIn" || function_name == "globalNotIn")
-            out.function = RPNElement::FUNCTION_NOT_IN;
 
         return true;
     }
@@ -939,7 +941,7 @@ bool MergeTreeIndexConditionCuckooFilter::traverseTreeEquals(
             if (array_type)
                 return false;
 
-            out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
+            out.function = RPNElement::FUNCTION_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
 
             /// Where equality compares zero-padded, the constant can equal a stored value of a different byte
@@ -1070,7 +1072,7 @@ bool MergeTreeIndexConditionCuckooFilter::traverseTreeEquals(
     }
 
     /// Handle both `arrayElement(map, 'key') = value` and `map.key_<serialized_key> = value`.
-    if (function_name == "equals" || function_name == "notEquals")
+    if (function_name == "equals")
     {
         if (auto map_info = tryResolveMapInfoFromNode(key_node, header, columns_shadowing_map_subcolumns))
         {
@@ -1101,7 +1103,7 @@ bool MergeTreeIndexConditionCuckooFilter::traverseTreeEquals(
                 return false;
             }
 
-            out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
+            out.function = RPNElement::FUNCTION_EQUALS;
 
             const auto & index_type = header.getByPosition(position).type;
             const auto actual_type = BloomFilter::getPrimitiveType(index_type);
@@ -1226,6 +1228,21 @@ MergeTreeIndexPtr cuckooFilterIndexCreator(
 void cuckooFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
 {
     assertIndexColumnsType(index.sample_block);
+
+    /// The index hashing rejects an array of nullable elements (see `unwrapArraySlice` in
+    /// `BloomFilterHash.h`), which `assertIndexColumnsType` does not notice because it looks at the
+    /// primitive type only. Such an index would be accepted at DDL and then fail every insert, merge
+    /// and mutation of the table. Reject it here, like a nested array already is. Not on `ATTACH`:
+    /// a table created before this check must still load, so that its index can be dropped.
+    if (!attach)
+    {
+        for (const auto & type : index.sample_block.getDataTypes())
+        {
+            const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+            if (array_type && array_type->getNestedType()->isNullable())
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type {} of cuckoo filter index.", type->getName());
+        }
+    }
 
     if (index.arguments && index.arguments->children.size() > 1)
     {
