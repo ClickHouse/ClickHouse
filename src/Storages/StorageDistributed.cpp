@@ -4,6 +4,7 @@
 #include <Access/Common/AccessFlags.h>
 
 #include <Databases/IDatabase.h>
+#include <Databases/LoadingStrictnessLevel.h>
 
 #include <Disks/IDisk.h>
 
@@ -78,6 +79,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -96,6 +98,7 @@
 #include <Storages/Distributed/parseRemoteFunctionArguments.h>
 
 #include <Storages/buildQueryTreeForShard.h>
+#include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/IStorageCluster.h>
 
 #include <Processors/Executors/PushingPipelineExecutor.h>
@@ -111,8 +114,10 @@
 
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
+#include <Core/UUID.h>
 
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
@@ -121,10 +126,6 @@
 
 #include <memory>
 #include <filesystem>
-
-#include <boost/algorithm/string/find_iterator.hpp>
-#include <boost/algorithm/string/finder.hpp>
-
 
 namespace fs = std::filesystem;
 
@@ -195,6 +196,7 @@ namespace DistributedSetting
     extern const DistributedSettingsUInt64 bytes_to_delay_insert;
     extern const DistributedSettingsUInt64 bytes_to_throw_insert;
     extern const DistributedSettingsBool flush_on_detach;
+    extern const DistributedSettingsBool fsync_directories;
     extern const DistributedSettingsUInt64 max_delay_to_insert;
 }
 
@@ -216,6 +218,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ACCESS_DENIED;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace ActionLocks
@@ -311,6 +314,23 @@ bool isExpressionActionsDeterministic(const ExpressionActionsPtr & actions)
     return true;
 }
 
+/// Weaker than `isExpressionActionsDeterministic`: it also accepts a function whose result can change
+/// between queries as long as it is fixed within one, `dictGet` being the motivating case. Such a sharding
+/// key still describes where a row belongs — `allow_nondeterministic_optimize_skip_unused_shards` exists
+/// precisely so that reads can prune by it — whereas `rand()`, which is not deterministic even within a
+/// query, describes nothing.
+bool isExpressionActionsDeterministicInScopeOfQuery(const ExpressionActionsPtr & actions)
+{
+    for (const auto & action : actions->getActions())
+    {
+        if (action.node->type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+        if (!action.node->function_base->isDeterministicInScopeOfQuery())
+            return false;
+    }
+    return true;
+}
+
 /// Find the sharding key output node in `sharding_key_dag`.
 /// `sharding_key_column_name` is the name of the unanalyzed sharding key AST and can differ from the
 /// analyzed DAG output name: the analyzer may const-fold or otherwise rewrite the expression, so a name
@@ -395,6 +415,7 @@ StorageDistributed::StorageDistributed(
     const String & relative_data_path_,
     const DistributedSettings & distributed_settings_,
     LoadingStrictnessLevel mode,
+    bool is_fresh_definition,
     ClusterPtr owned_cluster_,
     ASTPtr remote_table_function_ptr_,
     bool is_remote_function_,
@@ -432,6 +453,28 @@ StorageDistributed::StorageDistributed(
 
     if (sharding_key_)
     {
+        /// `arrayJoin` is the one function that changes the number of rows, while the shard selector
+        /// built from the sharding key is applied positionally to the block being inserted: the insert
+        /// either fails with "Size of selector ... doesn't match size of column" or, when the sizes
+        /// happen to agree, routes rows by an unrelated row's array element.
+        ///
+        /// Only a definition the user supplies now is rejected. A definition that is replayed - a short
+        /// `ATTACH TABLE t`, the tables of an `ATTACH DATABASE`, a `Replicated` database's
+        /// `SECONDARY_CREATE`, a `RESTORE`, server startup - is read back from metadata that already
+        /// exists, and rejecting it there would make the table (or the whole database) unloadable
+        /// instead of failing the one insert that is actually broken. The size mismatch in
+        /// `DistributedSink` remains the backstop for such a table, and `ALTER TABLE ... MODIFY QUERY`
+        /// is not available for an engine argument, so the way out is `DETACH` plus a fresh `ATTACH`
+        /// with a corrected key.
+        ///
+        /// The raw AST is what gets checked, so the two indirections the analyzer would have resolved
+        /// later are looked through as well: the `unnest` alias (matched by canonical name, so the
+        /// verdict does not depend on `normalize_function_names`, which is off for secondary queries)
+        /// and a SQL UDF body that is inlined when the expression is built.
+        if (is_fresh_definition && expressionContainsArrayJoin(sharding_key_))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Sharding expression cannot contain arrayJoin, because it changes the number of rows");
+
         /// Check that sharding_key exists in the table and has numeric type.
         checkShardingKeyExistsAndIsNumeric(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical());
         sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
@@ -443,6 +486,7 @@ StorageDistributed::StorageDistributed(
         if (const ActionsDAG::Node * node = tryFindShardingKeyOutput(sharding_key_expr->getActionsDAG(), sharding_key_column_name))
             sharding_key_column_name = node->result_name;
         sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr);
+        sharding_key_is_deterministic_in_scope_of_query = isExpressionActionsDeterministicInScopeOfQuery(sharding_key_expr);
     }
 
     if (!relative_data_path.empty())
@@ -1306,7 +1350,7 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
 
 
 std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(
-    const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
+    IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
 
@@ -1315,8 +1359,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     if (filter)
         predicate = filter->getOutputs().at(0);
 
-    auto dst_cluster = getCluster();
-
     auto new_query = boost::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
     if (settings[Setting::parallel_distributed_insert_select] == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL)
     {
@@ -1324,6 +1366,46 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         /// Reset table function for INSERT INTO remote()/cluster()
         new_query->reset(new_query->table_function);
     }
+
+    /// A `*Cluster` source hands files to shards by hashing their paths, so the rows a shard reads cannot
+    /// satisfy the destination's sharding key - and with `parallel_distributed_insert_select = 2` the
+    /// forwarded INSERT writes straight into the shard's local table, bypassing the key entirely.
+    if (settings[Setting::parallel_distributed_insert_select] == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL
+        && hasShardingKeyForReads() && sharding_key_is_deterministic_in_scope_of_query)
+    {
+        LOG_INFO(
+            log,
+            "Parallel distributed INSERT SELECT into {} is not possible: the rows read from {} cannot satisfy "
+            "its deterministic sharding key ({}); falling back to the ordinary INSERT SELECT",
+            getStorageID().getNameForLogs(),
+            src_storage_cluster.getName(),
+            sharding_key_column_name);
+        return {};
+    }
+
+    /// `distributedWrite` only gets here for a single `SELECT` over a single table expression.
+    auto & select_to_send = new_query->select->as<ASTSelectWithUnionQuery &>();
+    chassert(select_to_send.list_of_selects->children.size() == 1);
+    auto & source_to_send = select_to_send.list_of_selects->children.at(0);
+
+    /// Replace `url()` / `s3()` / ... in the forwarded query text with its `*Cluster()` variant, named with
+    /// this `Distributed` table's cluster: its shards are the ones that run the forwarded query, and they
+    /// take their share of the files from the initiator's task iterator rather than reading all of them.
+    /// A destination written as a table function gives no name to put there -
+    /// `INSERT INTO FUNCTION remote('127.0.0.{1,2}', db, tbl)` builds its cluster from the address
+    /// expression, which has no name anywhere - so skip the distributed execution instead of forwarding a
+    /// query that every shard would answer with the whole source.
+    /// A source the user already wrote as `*Cluster` keeps its own name in that case - see
+    /// `IStorageCluster::updateQueryToSendIfNeeded`.
+    const auto * source_table_function = extractTableFunctionFromSelectQuery(source_to_send);
+    const bool needs_cluster_function = source_table_function && !endsWith(source_table_function->name, "Cluster");
+    if (needs_cluster_function && cluster_name.empty())
+        return {};
+
+    src_storage_cluster.updateExternalDynamicMetadataIfExists(local_context);
+    const auto storage_metadata = src_storage_cluster.getInMemoryMetadataPtr(local_context, false);
+    const auto src_snapshot = src_storage_cluster.getStorageSnapshot(storage_metadata, local_context);
+    src_storage_cluster.updateQueryToSendIfNeeded(source_to_send, src_snapshot, local_context, cluster_name);
 
     /// Drop the initiator-only settings from the query text forwarded to the shards (the settings
     /// packet is stripped separately, on `query_context` below).
@@ -1358,7 +1440,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     const auto cluster = getCluster();
 
     /// Select query is needed for pruining on virtual columns
-    const auto storage_metadata = src_storage_cluster.getInMemoryMetadataPtr(local_context, false);
     auto extension = src_storage_cluster.getTaskIteratorExtension(
         predicate, filter.get(), local_context, cluster, storage_metadata);
 
@@ -1481,6 +1562,9 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     commands.apply(new_metadata, local_context);
+    /// The sharding key itself is an engine argument and cannot be altered, so it is only revalidated
+    /// against the new columns here; the `arrayJoin` rejection stays where the definition is introduced
+    /// (the constructor), so an unrelated `ALTER` on a table created before that check does not throw.
     checkShardingKeyExistsAndIsNumeric(sharding_key, local_context, new_metadata.columns.getAllPhysical());
 }
 
@@ -1595,16 +1679,21 @@ Strings StorageDistributed::getDataPaths() const
     return paths;
 }
 
+/// Prefix of a subdirectory renamed by renameUnrecognizedDirectoryQueue()
+static constexpr std::string_view unrecognized_directory_queue_prefix = "unrecognized_";
+/// File in such a subdirectory that holds its name before the rename
+static constexpr std::string_view unrecognized_directory_queue_original_name_file = "original_name";
+
 void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     /// For a `Distributed` storage, `TRUNCATE` only clears the on-disk async-insert spool. A table of
-    /// a `Remote` database has none, so the statement would be a silent no-op reported as success,
+    /// a read-through database proxy has none, so the statement would be a silent no-op reported as success,
     /// while the user expects the remote table to be truncated; reject it like the rest of the DDL
     /// against such a database.
     if (is_remote_database_proxy)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Table {} is a read-through proxy of a `Remote` database and does not support TRUNCATE TABLE",
+            "Table {} is a read-through database proxy and does not support TRUNCATE TABLE",
             getStorageID().getNameForLogs());
 
     std::lock_guard lock(cluster_nodes_mutex);
@@ -1616,6 +1705,46 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, Co
         it->second.directory_queue->shutdownAndDropAllData();
         it = cluster_nodes_data.erase(it);
     }
+
+    /// A directory quarantined by initializeDirectoryQueuesForDisk() has no directory queue, so it
+    /// is not in `cluster_nodes_data`, but its files are still part of the on-disk spool this
+    /// statement drops. Removing them here is the only way to get rid of them from SQL.
+    if (!relative_data_path.empty())
+        for (const DiskPtr & disk : data_volume->getDisks())
+            removeUnrecognizedDirectoryQueues(disk);
+}
+
+void StorageDistributed::removeUnrecognizedDirectoryQueues(const DiskPtr & disk) const
+{
+    const std::filesystem::path path(disk->getPath() + relative_data_path);
+    if (!std::filesystem::exists(path))
+        return;
+
+    /// Taken before the loop below removes an entry of `path`, which would let the iterator skip
+    /// or repeat the entries around it.
+    std::vector<std::filesystem::path> dir_paths;
+    for (std::filesystem::directory_iterator it(path), end; it != end; ++it)
+        if (it->is_directory() && it->path().filename().string().starts_with(unrecognized_directory_queue_prefix))
+            dir_paths.push_back(it->path());
+
+    if (dir_paths.empty())
+        return;
+
+    /// Like the removal of a directory queue, so that with `fsync_directories` the directories
+    /// do not come back after a crash that follows `TRUNCATE TABLE`.
+    auto dir_sync_guard = getDirectorySyncGuard(disk, relative_data_path);
+    for (const auto & dir_path : dir_paths)
+    {
+        LOG_DEBUG(log, "Removing {}, which holds files of an async INSERT that cannot be sent", dir_path.string());
+        std::filesystem::remove_all(dir_path);
+    }
+}
+
+SyncGuardPtr StorageDistributed::getDirectorySyncGuard(const DiskPtr & disk, const std::string & relative_path) const
+{
+    if ((*distributed_settings)[DistributedSetting::fsync_directories])
+        return disk->getDirectorySyncGuard(relative_path);
+    return nullptr;
 }
 
 StoragePolicyPtr StorageDistributed::getStoragePolicy() const
@@ -1623,37 +1752,96 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
     return storage_policy;
 }
 
+/// A queue directory is named after its single destination: `shardN_replicaM` or `shardN_all_replicas`,
+/// exactly what `DistributedSink` writes. Anything looser (for example, several names joined with a
+/// comma, which no writer produces) is treated as unrecognized, so a stray directory cannot make the
+/// queue send its files to a destination the sink never chose.
+static bool isDirectoryQueueName(const std::string & name)
+{
+    return Cluster::Address::tryParseFullString(name).has_value();
+}
+
+void StorageDistributed::renameUnrecognizedDirectoryQueue(const DiskPtr & disk, const std::filesystem::path & dir_path) const
+{
+    /// The name is not one `DistributedSink` writes, so it names no destination and the files in
+    /// it can never be sent. Renaming keeps it from being taken for a directory queue on every
+    /// start; the files are left for the administrator to inspect or remove.
+    const auto parent_path = dir_path.parent_path();
+    const auto old_name = dir_path.filename().string();
+
+    /// The new name is a random UUID, because the old one may hold a password (a server older than
+    /// 26.9 named the directory after `user:password@host:port`) and the new one is logged and shown.
+    /// Not a hash of the old name: an unkeyed hash would let anyone who sees the new name check
+    /// guesses of the password against it offline.
+    /// The old name is the only record of where the files were meant to be sent, so it is kept in
+    /// a file next to them: a downgrade or a manual recovery needs it to replay them. Written
+    /// before the rename, so an interrupted start leaves the directory with its old name, and the
+    /// next start writes the file again.
+    {
+        auto dir_sync_guard = getDirectorySyncGuard(disk, relative_data_path + old_name);
+        WriteBufferFromFile out((dir_path / unrecognized_directory_queue_original_name_file).string());
+        writeString(old_name, out);
+        out.finalize();
+        out.sync();
+    }
+
+    const auto new_name = fmt::format("{}{}", unrecognized_directory_queue_prefix, toString(UUIDHelpers::generateV4()));
+    {
+        auto dir_sync_guard = getDirectorySyncGuard(disk, relative_data_path);
+        std::filesystem::rename(dir_path, parent_path / new_name);
+    }
+    /// Logged as a warning and not as an error: a server upgraded from a version that still wrote
+    /// the old directory names meets this on the first start of every table with a non-empty
+    /// queue, and it is the expected handling of it, not a failure of the server.
+    LOG_WARNING(log, "Renamed an unrecognized subdirectory of {} to {}, the files in it will not be sent. "
+                     "A subdirectory used for async INSERT is named 'shardN_replicaM' or 'shardN_all_replicas'. "
+                     "Its old name is kept in the file '{}' in it",
+                     parent_path.string(), new_name, unrecognized_directory_queue_original_name_file);
+}
+
 void StorageDistributed::initializeDirectoryQueuesForDisk(const DiskPtr & disk)
 {
     const std::string path(disk->getPath() + relative_data_path);
     fs::create_directories(path);
 
-    std::filesystem::directory_iterator begin(path);
-    std::filesystem::directory_iterator end;
-    for (auto it = begin; it != end; ++it)
+    /// Taken before anything below removes or renames an entry of `path`, which would let the
+    /// iterator skip or repeat the entries around it.
+    std::vector<std::filesystem::path> dir_paths;
+    for (std::filesystem::directory_iterator it(path), end; it != end; ++it)
+        if (std::filesystem::is_directory(it->path()))
+            dir_paths.push_back(it->path());
+
+    for (const auto & dir_path : dir_paths)
     {
-        const auto & dir_path = it->path();
-        if (std::filesystem::is_directory(dir_path))
+        /// Created by DistributedSink
+        const auto tmp_path = dir_path / "tmp";
+        if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
+            std::filesystem::remove(tmp_path);
+
+        const auto broken_path = dir_path / "broken";
+        if (std::filesystem::is_directory(broken_path) && std::filesystem::is_empty(broken_path))
+            std::filesystem::remove(broken_path);
+
+        const auto dir_name = dir_path.filename().string();
+
+        if (std::filesystem::is_empty(dir_path))
         {
-            /// Created by DistributedSink
-            const auto & tmp_path = dir_path / "tmp";
-            if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
-                std::filesystem::remove(tmp_path);
-
-            const auto & broken_path = dir_path / "broken";
-            if (std::filesystem::is_directory(broken_path) && std::filesystem::is_empty(broken_path))
-                std::filesystem::remove(broken_path);
-
-            if (std::filesystem::is_empty(dir_path))
-            {
-                LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
-                /// Will be created by DistributedSink on demand.
-                std::filesystem::remove(dir_path);
-            }
-            else
-            {
-                getDirectoryQueue(disk, dir_path.filename().string());
-            }
+            LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
+            /// Will be created by DistributedSink on demand.
+            std::filesystem::remove(dir_path);
+        }
+        else if (dir_name.starts_with(unrecognized_directory_queue_prefix))
+        {
+            /// Renamed by an earlier start, left for the administrator.
+            LOG_WARNING(log, "{} holds files of an async INSERT that cannot be sent", dir_path.string());
+        }
+        else if (!isDirectoryQueueName(dir_name))
+        {
+            renameUnrecognizedDirectoryQueue(disk, dir_path);
+        }
+        else
+        {
+            getDirectoryQueue(disk, dir_name);
         }
     }
 }
@@ -1700,44 +1888,43 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
     const auto & shards_info = cluster->getShardsInfo();
     const auto & shards_addresses = cluster->getShardsAddresses();
 
-    for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
+    auto address = Cluster::Address::tryParseFullString(name);
+
+    /// Unreachable: initializeDirectoryQueuesForDisk() renames a name it does not recognize
+    /// instead of starting a queue for it, and DistributedSink generates the name it passes.
+    /// Returned empty rather than thrown on so a stray name cannot keep the table from attaching.
+    if (!address)
     {
-        const std::string & dirname = boost::copy_range<std::string>(*it);
-        Cluster::Address address = Cluster::Address::fromFullString(dirname);
-
-        /// Check new format shard{shard_index}_replica{replica_index}
-        /// (shard_index and replica_index starts from 1).
-        if (address.shard_index)
-        {
-            if (address.shard_index > shards_info.size())
-            {
-                LOG_ERROR(log, "No shard with shard_index={} ({})", address.shard_index, name);
-                continue;
-            }
-
-            const auto & replicas_addresses = shards_addresses[address.shard_index - 1];
-            size_t replicas = replicas_addresses.size();
-
-            if (dirname.ends_with("_all_replicas"))
-            {
-                for (const auto & replica_address : replicas_addresses)
-                    addresses.push_back(replica_address);
-                continue;
-            }
-
-            if (address.replica_index == 0 || address.replica_index > replicas)
-            {
-                LOG_ERROR(log, "Invalid replica_index={} for directory '{}' (cluster has {} replicas for shard {}). "
-                               "Expected directory format: 'shardN_replicaM' or 'shardN_all_replicas'",
-                                address.replica_index, dirname, replicas, address.shard_index);
-                continue;
-            }
-
-            addresses.push_back(replicas_addresses[address.replica_index - 1]);
-        }
-        else
-            addresses.push_back(address);
+        LOG_ERROR(log, "Unrecognized name of a directory queue of {}", getStorageID().getNameForLogs());
+        return addresses;
     }
+
+    if (address->shard_index > shards_info.size())
+    {
+        LOG_ERROR(log, "No shard with shard_index={} ({})", address->shard_index, name);
+        return addresses;
+    }
+
+    const auto & replicas_addresses = shards_addresses[address->shard_index - 1];
+    size_t replicas = replicas_addresses.size();
+
+    /// shardN_all_replicas
+    if (address->replica_index == 0)
+    {
+        for (const auto & replica_address : replicas_addresses)
+            addresses.push_back(replica_address);
+        return addresses;
+    }
+
+    if (address->replica_index > replicas)
+    {
+        LOG_ERROR(log, "Invalid replica_index={} for directory '{}' (cluster has {} replicas for shard {}). "
+                       "Expected directory format: 'shardN_replicaM' or 'shardN_all_replicas'",
+                        address->replica_index, name, replicas, address->shard_index);
+        return addresses;
+    }
+
+    addresses.push_back(replicas_addresses[address->replica_index - 1]);
     return addresses;
 }
 
@@ -2152,7 +2339,8 @@ void registerStorageDistributed(StorageFactory & factory)
             storage_policy,
             args.relative_data_path,
             distributed_settings,
-            args.mode);
+            args.mode,
+            isFreshTableDefinition(args.mode, args.query.attach_short_syntax));
     },
     {
         .supports_settings = true,
@@ -2598,6 +2786,7 @@ void registerStorageRemote(StorageFactory & factory)
             args.relative_data_path,
             distributed_settings,
             args.mode,
+            isFreshTableDefinition(args.mode, args.query.attach_short_syntax),
             std::move(parsed.cluster),
             std::move(parsed.remote_table_function_ptr),
             /* is_remote_function_ = */ true);

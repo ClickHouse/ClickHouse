@@ -25,6 +25,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <base/EnumReflection.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
@@ -662,7 +663,7 @@ void RefreshTask::run()
         /// stays owed across a Keeper session loss or restart. One per replica, so repeats coalesce; any replica may run it.
         auto component_guard = Coordination::setCurrentComponent("RefreshTask::run");
         String path = coordination.path + "/" + requestZnodeName();
-        auto code = context->getZooKeeper()->tryCreate(path, coordination.replica_name, zkutil::CreateMode::Persistent);
+        auto code = context->getZooKeeper()->tryCreate(path, "1", zkutil::CreateMode::Persistent);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
             throw Coordination::Exception::fromPath(code, path);
     }
@@ -1452,7 +1453,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             /// truth on resume; otherwise resume from the cursor in the Keeper coordination znode.
             stream_cursor = execution.znode.cursor;
             StoragePtr target_table = view->getTargetTable();
-            if (auto * object_storage = dynamic_cast<StorageObjectStorage *>(target_table.get());
+            if (auto * object_storage = castStorage<StorageObjectStorage>(target_table, DeferredTable::Load).get();
                 object_storage && object_storage->isTransactionalRefreshTarget())
             {
                 cursor_persisted_by_target = true;
