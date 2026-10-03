@@ -264,6 +264,13 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     /// Both occurrences of the scalar subquery are textually identical, and scalar subqueries are cached by the
     /// hash of the subquery (`evaluateScalarSubqueryIfNeeded` in the analyzer), so the right-hand side is evaluated
     /// exactly once - even if it is non-deterministic, both `tupleElement` calls observe the same evaluation.
+    ///
+    /// For `= ALL` this replaces the former `IN (SELECT singleValueOrNull(*) FROM subquery)` carrier with a
+    /// scalar subquery, the same carrier that `<`, `<=`, `>`, `>= ALL` have always used. The emptiness check
+    /// and the compared value must come from one evaluation, and an `IN` set cannot carry the emptiness
+    /// flag. As a consequence the right-hand side is evaluated once on the initiator, so the result of a
+    /// distributed query no longer depends on `distributed_product_mode = 'local'` or the `IN`-specific
+    /// distributed settings: every shard compares against the global value, which is what `ALL` means.
     auto is_empty = makeASTFunction("equals",
         makeASTFunction("tupleElement", new_subquery->clone(), make_intrusive<ASTLiteral>(UInt64{1})),
         make_intrusive<ASTLiteral>(UInt64{0}));
