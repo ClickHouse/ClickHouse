@@ -88,6 +88,15 @@ ParserPrometheusQuery::ParserPrometheusQuery(const String & database_name_, cons
 }
 
 
+bool ParserPrometheusQuery::isIncompleteAtEOF(std::string_view query)
+{
+    PrometheusQueryTree tree;
+    String error_message;
+    size_t error_pos = 0;
+    return !tree.tryParse(query, 3, &error_message, &error_pos) && error_pos == query.size();
+}
+
+
 bool ParserPrometheusQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// The `SET <setting>` shorthand would swallow PromQL queries over a metric named `set`

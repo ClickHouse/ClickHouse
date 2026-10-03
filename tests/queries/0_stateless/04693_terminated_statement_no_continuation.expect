@@ -1,0 +1,58 @@
+#!/usr/bin/expect -f
+
+# Regression test: the single-line continuation probe
+# `ClientBase::queryNeedsContinuation` continues only on a statement the user is
+# still typing. An unclosed `(` is one of the signals for that, but it must not
+# override an explicit `;`: in `SELECT (; SELECT 1` the broken statement is
+# already terminated, so the buffer is a syntax error to report, not an
+# unfinished query. Without the check the unclosed `(` kept winning and <ENTER>
+# just inserted newline after newline, with no way to see the error.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --format PrettyCompact --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+# The `(` is never closed, but the statement holding it ends at the `;`, so the
+# buffer must be submitted and the syntax error reported.
+send -- "SELECT (; SELECT 1\r"
+expect {
+    -re {│ +1 │} { exit 1 }
+    "Syntax error" {}
+}
+expect ":) "
+
+# The same statement without the terminator is still being typed and must fold.
+send -- "SELECT (1 +\r"
+# Give the client time to react to the <ENTER> on its own: two lines sent back to
+# back arrive in a single read and are inserted as one pasted block, which would
+# fold the buffer regardless of what the continuation probe decides.
+sleep 1
+send -- "2)\r"
+expect {
+    "Syntax error" { exit 1 }
+    -re {│ +3 │} {}
+}
+expect ":) "
+
+send -- "\4"
+expect eof
