@@ -416,7 +416,7 @@ private:
     /// The same rule as `ApplyWithSubqueryVisitor` uses.
     void collectWithExpressionAliases(const ASTPtr & ast) const
     {
-        ApplyWithSubqueryVisitor::forEachWithExpressionAlias(
+        ApplyWithSubqueryVisitor::forEachExpressionAlias(
             ast, [&](const String & alias, const ASTPtr &) { with_expression_aliases.insert(alias); });
     }
 

@@ -36,6 +36,13 @@ SELECT 'mutation array', v FROM t WHERE id = 2;
 -- A definition written out by hand goes through the main pass, which has to agree.
 CREATE VIEW v_direct AS WITH tuple([7] AS nested) AS wrapper SELECT (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10) AS r;
 SELECT 'view direct', r FROM v_direct;
+CREATE TABLE src (x UInt8) ENGINE = MergeTree ORDER BY x;
+CREATE MATERIALIZED VIEW mv_create ENGINE = MergeTree ORDER BY tuple() AS WITH tuple([7] AS nested) AS wrapper SELECT x, (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10) AS r FROM src;
+CREATE MATERIALIZED VIEW mv_modify ENGINE = MergeTree ORDER BY tuple() AS SELECT x, (SELECT toUInt8(7 IN [1]) * 100 + toUInt8(5 IN [1]) * 10) AS r FROM src;
+ALTER TABLE mv_modify MODIFY QUERY WITH tuple([7] AS nested) AS wrapper SELECT x, (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10) AS r FROM src;
+INSERT INTO src VALUES (1);
+SELECT 'materialized view', r FROM mv_create;
+SELECT 'modify query', r FROM mv_modify;
 
 -- The narrow pass that repairs a definition after \`SQL UDF\` expansion follows the same rule.
 CREATE FUNCTION ${F_ALIAS} AS () -> (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10);
@@ -48,6 +55,19 @@ FROM system.tables WHERE database = currentDatabase() AND name = 'v_udf';
 SELECT 'live off', (WITH tuple([7] AS nested) AS wrapper SELECT (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 SETTINGS enable_global_with_statement = 0));
 ALTER TABLE t UPDATE v = (WITH tuple([7] AS nested) AS wrapper SELECT (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 SETTINGS enable_global_with_statement = 0)) WHERE id = 3 SETTINGS mutations_sync = 2;
 SELECT 'mutation off', v FROM t WHERE id = 3;
+
+-- The rest of the same \`WITH\` expression sees an alias declared earlier in it.
+SELECT 'live same expression', (WITH tuple([7] AS nested, (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10)) AS wrapper SELECT tupleElement(wrapper, 2));
+CREATE VIEW v_same AS WITH tuple([7] AS nested, (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10)) AS wrapper SELECT tupleElement(wrapper, 2) AS r;
+SELECT 'view same expression', r FROM v_same;
+
+-- An alias the nested \`SELECT\` declares itself wins: 1 = its own alias won.
+SELECT 'live shadowed', (WITH tuple([7] AS nested) AS wrapper SELECT (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 + toUInt8(6 IN nested) WHERE notEmpty([6] AS nested)));
+CREATE VIEW v_shadowed AS WITH tuple([7] AS nested) AS wrapper SELECT (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 + toUInt8(6 IN nested) WHERE notEmpty([6] AS nested)) AS r;
+SELECT 'view shadowed', r FROM v_shadowed;
+SELECT 'live shadowed top-level', (WITH [7] AS nested SELECT (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 + toUInt8(6 IN nested) WHERE notEmpty([6] AS nested)));
+CREATE VIEW v_shadowed_top AS WITH [7] AS nested SELECT (SELECT toUInt8(7 IN nested) * 100 + toUInt8(5 IN nested) * 10 + toUInt8(6 IN nested) WHERE notEmpty([6] AS nested)) AS r;
+SELECT 'view shadowed top-level', r FROM v_shadowed_top;
 
 -- An alias the analyzer does not collect - declared inside a lambda, and inside a nested query -
 -- is a table name in the nested \`SELECT\`, in the live query and in the stored command alike.

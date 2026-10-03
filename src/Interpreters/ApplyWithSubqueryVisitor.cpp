@@ -16,6 +16,8 @@
 #include <Common/checkStackSize.h>
 #include <Core/Settings.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -65,9 +67,19 @@ void forEachDescendantAlias(const ASTPtr & ast, const std::function<void(const S
     }
 }
 
+void registerExpressionAlias(const ASTPtr & node, ApplyWithSubqueryVisitor::Data & data, bool export_aliases)
+{
+    auto alias = node->tryGetAlias();
+    if (alias.empty())
+        return;
+    data.literals[alias] = node;
+    if (export_aliases)
+        data.exported_literals[alias] = node;
 }
 
-void ApplyWithSubqueryVisitor::forEachWithExpressionAlias(
+}
+
+void ApplyWithSubqueryVisitor::forEachExpressionAlias(
     const ASTPtr & expression, const std::function<void(const String &, const ASTPtr &)> & callback)
 {
     if (!hasOwnAliasScope(*expression))
@@ -93,14 +105,56 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
     }
 }
 
+/// Like `visit`, and registers each alias the expression declares as soon as the aliased node is visited, so that
+/// the rest of the expression sees it.
+void ApplyWithSubqueryVisitor::visitWithExpression(ASTPtr & ast, Data & data, bool export_aliases)
+{
+    checkStackSize();
+
+    if (hasOwnAliasScope(*ast))
+        visit(ast, data);
+    else
+    {
+        for (auto & child : ast->children)
+            visitWithExpression(child, data, export_aliases);
+        if (auto * node_func = ast->as<ASTFunction>())
+        {
+            visit(*node_func, data);
+            /// `visit` can replace an argument with a copy of a registered node.
+            if (node_func->arguments)
+            {
+                for (const auto & argument : node_func->arguments->children)
+                    registerExpressionAlias(argument, data, export_aliases);
+            }
+        }
+        else if (auto * node_table = ast->as<ASTTableExpression>())
+            visit(*node_table, data);
+    }
+
+    registerExpressionAlias(ast, data, export_aliases);
+}
+
 void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
 {
     /// The elements this select declares itself are registered below either way: only the inherited
     /// ones are out of scope here.
+    /// An alias this select declares itself hides an inherited one of the same name.
+    std::vector<String> own_aliases;
+    for (const auto & child : ast.children)
+    {
+        if (child != ast.tables())
+            forEachExpressionAlias(child, [&](const String & alias, const ASTPtr &) { own_aliases.push_back(alias); });
+    }
+
     std::optional<Data> scope_data;
-    if (data.context)
+    if (data.context || std::ranges::any_of(own_aliases, [&](const String & alias) { return data.literals.contains(alias); }))
     {
         scope_data = data;
+        for (const auto & alias : own_aliases)
+            scope_data->literals.erase(alias);
+    }
+    if (data.context)
+    {
         scope_data->context = getSubqueryContext(ast, data.context);
         const auto & scope_settings = scope_data->context->getSettingsRef();
         /// A common table expression is reached by looking into an enclosing scope, so a select that does
@@ -122,27 +176,22 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
     std::optional<Data> new_data;
     if (auto with = ast.with())
     {
+        const bool export_aliases
+            = scope.context && !scope.context->getSettingsRef()[Setting::enable_scopes_for_with_statement];
         for (auto & child : with->children)
         {
-            visit(child, new_data ? *new_data : scope);
             if (auto * ast_with_elem = child->as<ASTWithElement>())
             {
+                visit(child, new_data ? *new_data : scope);
                 if (!new_data)
                     new_data = scope;
                 new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
             }
             else
             {
-                const bool export_aliases
-                    = scope.context && !scope.context->getSettingsRef()[Setting::enable_scopes_for_with_statement];
-                forEachWithExpressionAlias(child, [&](const String & alias, const ASTPtr & node)
-                {
-                    if (!new_data)
-                        new_data = scope;
-                    new_data->literals[alias] = node;
-                    if (export_aliases)
-                        new_data->exported_literals[alias] = node;
-                });
+                if (!new_data)
+                    new_data = scope;
+                visitWithExpression(child, *new_data, export_aliases);
             }
         }
     }

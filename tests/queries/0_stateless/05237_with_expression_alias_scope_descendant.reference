@@ -3,10 +3,18 @@ mutation	100
 live array	100
 mutation array	100
 view direct	100
+materialized view	100
+modify query	100
 view	100
 stored alias is bare	1
 live off	10
 mutation off	10
+live same expression	100
+view same expression	100
+live shadowed	1
+view shadowed	1
+live shadowed top-level	1
+view shadowed top-level	1
 live lambda	10
 mutation lambda	10
 live subquery	10

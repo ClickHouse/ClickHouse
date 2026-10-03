@@ -41,9 +41,9 @@ public:
     static void visit(ASTSelectQuery & select) { visit(select, {}); }
     static void visit(ASTSelectWithUnionQuery & select) { visit(select, {}); }
 
-    /// Calls `callback` for each alias a `WITH` expression declares that its nested select queries see, the way the
-    /// analyzer collects them: at any depth, but not inside a lambda or a subquery. The expression's own alias is last.
-    static void forEachWithExpressionAlias(const ASTPtr & expression, const std::function<void(const String &, const ASTPtr &)> & callback);
+    /// Calls `callback` for each alias `expression` declares in the scope it belongs to, the way the analyzer collects
+    /// them: at any depth, but not inside a lambda or a subquery. The expression's own alias is last.
+    static void forEachExpressionAlias(const ASTPtr & expression, const std::function<void(const String &, const ASTPtr &)> & callback);
 
 private:
     static void visit(ASTPtr & ast, const Data & data);
@@ -51,6 +51,7 @@ private:
     static void visit(ASTSelectWithUnionQuery & ast, const Data & data);
     static void visit(ASTTableExpression & table, const Data & data);
     static void visit(ASTFunction & func, const Data & data);
+    static void visitWithExpression(ASTPtr & ast, Data & data, bool export_aliases);
 };
 
 }
