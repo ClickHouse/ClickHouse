@@ -951,9 +951,14 @@ def create_log_export_configs():
     return True
 
 
-def start_log_export(servers):
+# The servers whose export is up with the sends held back; `flush_log_export`
+# serves these only.
+HELD_LOG_EXPORT = []
+
+
+def start_log_export(servers, nightly=False):
     """Create the export views on both servers and hold the sends back until
-    the tests are over.
+    the tests are over (a nightly run releases them between the tests).
 
     The reference server is skipped when the commit of its build cannot be
     read: `commit_sha` is what attributes its rows to a build, and the rows
@@ -973,12 +978,13 @@ def start_log_export(servers):
     for node_name, server in servers:
         # The patched server runs the build of the commit this check reports
         # for, like every other check; the reference server runs an older
-        # build and names its own commit.
-        if server.is_left:
+        # build and names its own commit. A nightly run tests a binary that
+        # is not the trigger commit, so both name their own.
+        if server.is_left or nightly:
             commit_sha = get_server_commit_sha(server)
             if not commit_sha:
                 print(
-                    "WARNING: Cannot read the build commit of the reference server, "
+                    f"WARNING: Cannot read the build commit of the [{node_name}] server, "
                     "its system logs will not be exported"
                 )
                 continue
@@ -1010,6 +1016,8 @@ def start_log_export(servers):
                     "this server will not export its system logs"
                 )
                 log_export.stop(server.port)
+            else:
+                HELD_LOG_EXPORT.append((node_name, server))
         except Exception:
             traceback.print_exc()
             # The same, for a failure raised rather than reported: whatever the
@@ -1019,6 +1027,30 @@ def start_log_export(servers):
             except Exception:
                 traceback.print_exc()
     return True
+
+
+def flush_log_export(servers):
+    """Between two tests of a nightly run: send the rows held back so far and
+    hold the sends back again, so that no flush carries hours of logs.
+
+    Fails closed like `start_log_export`: a server that cannot hold the sends
+    back again loses its export, never a measurement.
+    """
+    for node_name, server in list(HELD_LOG_EXPORT):
+        try:
+            if log_export.flush_held_rows(server.port):
+                continue
+            print(
+                f"WARNING: Cannot hold back the log export of the [{node_name}] server "
+                "again - tearing the export down"
+            )
+        except Exception:
+            traceback.print_exc()
+        HELD_LOG_EXPORT.remove((node_name, server))
+        try:
+            log_export.stop(server.port)
+        except Exception:
+            traceback.print_exc()
 
 
 def export_system_logs(servers):
@@ -2675,7 +2707,7 @@ def main():
             Result.from_commands_run(
                 name="Start system log export",
                 command=start_log_export,
-                command_args=[log_export_servers],
+                command_args=[log_export_servers, nightly],
                 with_info=True,
             )
         )
@@ -2740,6 +2772,8 @@ def main():
                     long=nightly,
                 )
                 cleanup_user_files()
+                if nightly:
+                    flush_log_export(log_export_servers)
                 if not clean:
                     break
             return True
