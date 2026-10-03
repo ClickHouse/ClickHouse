@@ -1,0 +1,24 @@
+=== granted: id
+--- SELECT count() FROM t_index_hint_access WHERE id = 3 AND indexHint(secret > 5000)
+ACCESS_DENIED
+--- SELECT count() FROM t_index_hint_access WHERE id = 3 AND indexHint(secret < 5000)
+ACCESS_DENIED
+--- SELECT count() FROM t_index_hint_access WHERE indexHint(secret < 5000)
+ACCESS_DENIED
+--- SELECT count() FROM t_index_hint_access PREWHERE indexHint(secret < 5000)
+ACCESS_DENIED
+--- SELECT count() FROM (SELECT id FROM t_index_hint_access WHERE indexHint(secret < 5000))
+ACCESS_DENIED
+--- SELECT count() FROM t_index_hint_access WHERE id = 3 AND indexHint(secret_alias > 5000)
+ACCESS_DENIED
+--- SELECT count() FROM t_index_hint_access AS l JOIN t_index_hint_access AS r ON l.id = r.id WHERE indexHint(r.secret < 5000)
+ACCESS_DENIED
+--- SELECT count() FROM t_index_hint_access WHERE indexHint(id < 5)
+10
+=== granted: id, secret, secret_alias
+--- SELECT count() FROM t_index_hint_access WHERE id = 3 AND indexHint(secret > 5000)
+0
+--- SELECT count() FROM t_index_hint_access WHERE id = 3 AND indexHint(secret < 5000)
+1
+--- SELECT count() FROM t_index_hint_access WHERE id = 3 AND indexHint(secret_alias > 5000)
+1
