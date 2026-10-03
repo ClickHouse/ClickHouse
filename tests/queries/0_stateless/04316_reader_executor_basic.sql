@@ -1,9 +1,10 @@
--- Tags: no-distributed-cache, no-encrypted-storage
+-- Tags: no-distributed-cache, no-encrypted-storage, no-parallel-replicas
 -- The executor does not implement the distributed cache or decryption, so it
 -- falls back on those storage configs and the activation check below would not
 -- hold. Those stages can't be turned off from the test (unlike async prefetch
 -- and the filesystem cache), so skip them; the test still runs on local disk and
 -- plain object storage where the executor engages.
+-- no-parallel-replicas: the test does not target parallel replicas yet.
 --
 -- Smoke test for the experimental ReaderExecutor read path. Reads a MergeTree
 -- table with `use_reader_executor = 1`, checks the data comes back correct (full
@@ -53,10 +54,9 @@ SELECT sum(length(s)) FROM t_reader_executor;
 
 -- Activation check: `ReadPipeline::build` logs `using ReaderExecutor ...` at
 -- DEBUG when the executor path is chosen. Confirm at least one such line was
--- emitted for the marked query or for a query it sent to a parallel replica
--- (those have their own query id and carry the marked one as `initial_query_id`),
--- scoped to this test's own database so parallel tests can't interfere. Prints 1
--- when the executor was active.
+-- emitted for the marked query (correlated by query id, scoped to this test's
+-- own database so parallel tests can't interfere). Prints 1 when the executor
+-- was active.
 SYSTEM FLUSH LOGS query_log, text_log;
 
 SELECT count() > 0
@@ -66,13 +66,9 @@ WHERE logger_name = 'ReadPipeline'
   AND query_id IN (
       SELECT query_id
       FROM system.query_log
-      WHERE initial_query_id IN (
-          SELECT query_id
-          FROM system.query_log
-          WHERE log_comment = '04316_reader_executor_probe'
-            AND type = 'QueryFinish'
-            AND current_database = currentDatabase()
-      )
+      WHERE log_comment = '04316_reader_executor_probe'
+        AND type = 'QueryFinish'
+        AND current_database = currentDatabase()
   );
 
 DROP TABLE t_reader_executor;
