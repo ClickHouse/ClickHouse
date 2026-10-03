@@ -149,3 +149,6 @@ replicated engine arguments gate at 3 when only a materialized view keeps them: 
 replicated engine arguments gate at 3 when the dump keeps the arguments: 1
 explicit uuid gate at 3 when dumped with uuids: 1
 Replicated database dump, obsolete database gate emitted: 0
+MergeTree table in a Replicated database, only-replicated-engine gate at 0: 1
+OK: replayed under database_replicated_allow_only_replicated_engine = 1
+replayed MergeTree table present: 1

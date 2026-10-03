@@ -2361,6 +2361,7 @@ struct ReplayGateNeeds
 {
     bool explicit_uuid = false;
     bool replicated_engine_arguments = false;
+    bool non_replicated_table = false; /// a table that stores data on disk without replication, in a maybe-Replicated database
     bool materialized_view = false;
     bool parse_failed = false; /// a statement did not parse, so the gates it might need are unknown
     bool analyzer_group_by = false; /// a GROUP BY or window PARTITION BY in analyzed text
@@ -2403,6 +2404,19 @@ struct ReplayGateNeeds
     std::set<String> codec_gates; /// `enable_<family>_codec` of the codecs the statements name
     std::set<String> data_lake_catalog_gates; /// gates of the known `catalog_type`s; `data_lake_catalog_database` keeps all
 };
+
+/// The engines `database_replicated_allow_only_replicated_engine` rejects in a `Replicated` database, measured: they
+/// store data on disk without replication. `File(format)` keeps its data in the table directory; with a path it does not.
+bool storesDataOnDiskWithoutReplication(const ASTFunction & engine)
+{
+    if (startsWithCaseInsensitive(engine.name, "Replicated"))
+        return false;
+    static const std::set<std::string_view> names
+        = {"Log", "TinyLog", "StripeLog", "Set", "Join", "EmbeddedRocksDB", "Distributed", "Remote", "RemoteSecure"};
+    return endsWithCaseInsensitive(engine.name, "MergeTree")
+        || std::ranges::any_of(names, [&](std::string_view name) { return equalsCaseInsensitive(engine.name, name); })
+        || (equalsCaseInsensitive(engine.name, "File") && (!engine.arguments || engine.arguments->children.size() <= 1));
+}
 
 /// Kafka reads its Keeper-offsets gate only when `kafka_keeper_path` or `kafka_replica_name` is set,
 /// in SETTINGS or by a named collection, so any non-literal engine argument keeps the gate.
@@ -2762,7 +2776,7 @@ ReplayGateNeeds collectReplayGateNeeds(
         catch (const Exception &)
         {
             /// Cannot rule any gate out for a statement that does not parse, so keep them all.
-            return {.explicit_uuid = true, .replicated_engine_arguments = true, .materialized_view = true,
+            return {.explicit_uuid = true, .replicated_engine_arguments = true, .non_replicated_table = true, .materialized_view = true,
                     .parse_failed = true, .analyzer_group_by = true, .analyzer_order_by = true,
                     .analyzer_subquery = true, .ordinary_database = true,
                     .materialized_postgresql_database = true,
@@ -2931,6 +2945,8 @@ ReplayGateNeeds collectReplayGateNeeds(
                 if (in_replicated_database && startsWithCaseInsensitive(engine->name, "Replicated") && engine->arguments
                     && !engine->arguments->children.empty())
                     needs.replicated_engine_arguments = true;
+                if (in_replicated_database && storesDataOnDiskWithoutReplication(*engine))
+                    needs.non_replicated_table = true;
                 if (equalsCaseInsensitive(engine->name, "MaterializedPostgreSQL"))
                     needs.materialized_postgresql_table = true;
                 if (equalsCaseInsensitive(engine->name, "TimeSeries"))
@@ -3131,6 +3147,8 @@ String replaySettingsPrelude(
         {"database_replicated_allow_replicated_engine_arguments", "3"},
         /// Value 3 preserves explicit UUIDs; value 2 would replace them.
         {"database_replicated_allow_explicit_uuid", "3"},
+        /// Value 0 keeps a table that stores data on disk without replication in a `Replicated` database.
+        {"database_replicated_allow_only_replicated_engine", "0"},
     };
     /// Emit only dump-specific gates known by the source server and required by these statements.
     const ReplayGateNeeds needs = collectReplayGateNeeds(create_queries, context, analyzes_on_source);
@@ -3140,6 +3158,8 @@ String replaySettingsPrelude(
             return needs.explicit_uuid;
         if (name == "database_replicated_allow_replicated_engine_arguments")
             return needs.replicated_engine_arguments;
+        if (name == "database_replicated_allow_only_replicated_engine")
+            return needs.non_replicated_table;
         if (name == "allow_materialized_view_with_bad_select")
             return needs.materialized_view && (needs.parse_failed || materialized_view_may_need_bad_select);
         if (name == "allow_deprecated_database_ordinary")

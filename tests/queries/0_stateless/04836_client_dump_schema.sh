@@ -688,6 +688,35 @@ echo "replicated engine arguments gate at 3 when the dump keeps the arguments: $
 echo "explicit uuid gate at 3 when dumped with uuids: $(grep -c '^SET database_replicated_allow_explicit_uuid = 3;$' "$REPL_DUMP_FILE")"
 echo "Replicated database dump, obsolete database gate emitted: $(grep -c '^SET allow_experimental_database_replicated' "$REPL_DUMP_FILE")"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${REPLICATED_ARGS_DB} SYNC" > /dev/null
-rm -f "$REPL_DUMP_FILE"
+
+# A table that stores data on disk without replication replays into a Replicated database only with this gate at 0.
+ONLY_REPL_DB="${DB}_only_replicated"
+ONLY_REPL_USER="${DB}_only_replicated_user"
+ONLY_REPL_PROFILE="${DB}_only_replicated_profile"
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE ${ONLY_REPL_DB} ENGINE = Replicated('/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dump_schema/only_replicated', 's1', 'r1')" > /dev/null
+$CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "CREATE TABLE ${ONLY_REPL_DB}.t (x UInt64) ENGINE = MergeTree ORDER BY x"
+$CLICKHOUSE_CLIENT --dump-schema="${ONLY_REPL_DB}" > "$REPL_DUMP_FILE" 2>"$ERR_FILE"
+echo "MergeTree table in a Replicated database, only-replicated-engine gate at 0: $(grep -c '^SET database_replicated_allow_only_replicated_engine = 0;$' "$REPL_DUMP_FILE")"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE ${ONLY_REPL_DB} SYNC" > /dev/null
+sed "s|/dump_schema/only_replicated'|/dump_schema/only_replicated_replay'|" "$REPL_DUMP_FILE" > "${REPL_DUMP_FILE}.replay"
+$CLICKHOUSE_CLIENT -mq "
+    DROP USER IF EXISTS ${ONLY_REPL_USER};
+    DROP SETTINGS PROFILE IF EXISTS ${ONLY_REPL_PROFILE};
+    CREATE SETTINGS PROFILE ${ONLY_REPL_PROFILE} SETTINGS database_replicated_allow_only_replicated_engine = 1;
+    CREATE USER ${ONLY_REPL_USER} SETTINGS PROFILE '${ONLY_REPL_PROFILE}';
+    GRANT ALL ON *.* TO ${ONLY_REPL_USER};
+"
+if $CLICKHOUSE_CLIENT --user "$ONLY_REPL_USER" --distributed_ddl_output_mode=none -mn --queries-file "${REPL_DUMP_FILE}.replay" > /dev/null 2>"$ERR_FILE"; then
+    echo 'OK: replayed under database_replicated_allow_only_replicated_engine = 1'
+else
+    echo "FAIL: replay rejected: $(cat "$ERR_FILE")"
+fi
+echo "replayed MergeTree table present: $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = '${ONLY_REPL_DB}' AND name = 't'")"
+$CLICKHOUSE_CLIENT -mq "
+    DROP DATABASE IF EXISTS ${ONLY_REPL_DB} SYNC;
+    DROP USER ${ONLY_REPL_USER};
+    DROP SETTINGS PROFILE ${ONLY_REPL_PROFILE};
+" > /dev/null
+rm -f "$REPL_DUMP_FILE" "${REPL_DUMP_FILE}.replay"
 
 rm -rf "$SRC_PATH" "$DST_PATH" "$DUMP_FILE" "${DUMP_FILE}.all" "${DUMP_FILE}.list" "${DUMP_FILE}.exclude" "$DUMP_DIR" "$ERR_FILE"
