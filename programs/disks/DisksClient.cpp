@@ -138,11 +138,9 @@ String DiskWithPath::validatePathAndGetAsRelative(const String & path)
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Path {} is not normalized", path);
 
     /// If path is absolute we should keep it as relative inside disk, so disk will look like
-    /// an ordinary filesystem with root.
-    if (pathFromString(lexically_normal_path).is_absolute())
-        return lexically_normal_path.substr(1);
-
-    return lexically_normal_path;
+    /// an ordinary filesystem with root. `relative_path` strips the whole root: the `/` on POSIX,
+    /// and on Windows also a drive (`C:/`) or a UNC prefix (`//server/`), which `substr(1)` would not.
+    return pathToGenericString(pathFromString(lexically_normal_path).relative_path());
 }
 
 String DiskWithPath::normalizePathAndGetAsRelative(const String & messyPath)
