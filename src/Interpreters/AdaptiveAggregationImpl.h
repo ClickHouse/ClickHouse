@@ -34,8 +34,6 @@ constexpr size_t adaptive_dedup_unproductive_passes_to_bypass = 4;
 constexpr size_t adaptive_dedup_resample_interval = 64;
 /// The drain reserves a bucket's table after sampling this fraction of its records.
 constexpr size_t adaptive_reserve_sample_inverse = 8;
-/// Headroom over the sampled insert rate when reserving.
-constexpr double adaptive_reserve_headroom = 1.25;
 /// Fixed lookahead of the drain's hash prefetch.
 constexpr size_t adaptive_drain_prefetch_look_ahead = 16;
 /// A thread gives up on freezing once it has consumed this many times the freeze threshold

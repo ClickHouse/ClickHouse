@@ -1254,8 +1254,7 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
         {
             reserved = true;
             const double insert_rate = static_cast<double>(impl.size() - size_before) / static_cast<double>(processed);
-            const auto expected
-                = static_cast<size_t>(static_cast<double>(total_records - processed) * insert_rate * adaptive_reserve_headroom);
+            const auto expected = static_cast<size_t>(static_cast<double>(total_records - processed) * insert_rate);
 
             /// A string table cannot pre-size as a whole: its short keys spread over the
             /// length-classed submaps, whose shares the sampling does not see. Only the
