@@ -15,9 +15,7 @@
 #include <IO/VarInt.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
-#include <parquet/file_reader.h>
 
 namespace DB
 {
@@ -114,11 +112,11 @@ parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet
         String etag = object_with_metadata->metadata->etag;
         ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
         return metadata_cache->getOrSetMetadata(
-            cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher); });
+            cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size); });
     }
     else
     {
-        return Parquet::Reader::readFileMetaData(prefetcher);
+        return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
     }
 }
 
@@ -229,7 +227,7 @@ void NativeParquetSchemaReader::initializeIfNeeded()
         return;
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&in, read_options, /*parser_shared_resources_=*/ nullptr);
-    file_metadata = Parquet::Reader::readFileMetaData(prefetcher);
+    file_metadata = Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
     initialized = true;
 }
 
@@ -304,12 +302,13 @@ void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr>
 
 std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
 {
-    std::atomic<int> is_stopped = false;
-    auto arrow_file = asArrowFile(buf, format_settings_, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, nullptr);
-    auto metadata = parquet::ReadMetaData(arrow_file);
+    Parquet::ReadOptions read_options = convertReadOptions(format_settings_);
+    Parquet::Prefetcher prefetcher;
+    prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
+    auto metadata = Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
     std::vector<size_t> bucket_sizes;
-    for (int i = 0; i < metadata->num_row_groups(); ++i)
-        bucket_sizes.push_back(metadata->RowGroup(i)->total_byte_size());
+    for (const auto & row_group : metadata.row_groups)
+        bucket_sizes.push_back(size_t(row_group.total_byte_size));
 
     std::vector<std::vector<size_t>> buckets;
     size_t current_weight = 0;

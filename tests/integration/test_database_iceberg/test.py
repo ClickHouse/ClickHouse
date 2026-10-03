@@ -969,6 +969,45 @@ def test_insert(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` ORDER BY ALL") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n\\N\tPavel Ivanov (pudge1000-7) pereezhai v amsterdam\t193.24\t193.31\t('bot')\n"
 
 
+def test_plain_optimize_rejected_with_catalog(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_plain_optimize_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER)
+    create_clickhouse_iceberg_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"allow_experimental_iceberg_compaction": 0}
+    )
+
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    node.query(
+        f"INSERT INTO {table_ref} VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'))",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+
+    def catalog_state():
+        table = catalog.load_table(f"{root_namespace}.{table_name}")
+        return table.metadata_location, table.metadata.current_snapshot_id
+
+    state_before = catalog_state()
+    rows_before = node.query(f"SELECT symbol, bid, ask FROM {table_ref} ORDER BY ALL")
+
+    with pytest.raises(QueryRuntimeException) as exc_info:
+        node.query(f"OPTIMIZE TABLE {table_ref}", settings={"allow_experimental_iceberg_compaction": 1})
+
+    error = str(exc_info.value)
+    assert (
+        "OPTIMIZE is not supported for catalog-backed Iceberg tables in this build" in error
+        or "Enable `allow_experimental_iceberg_compaction` setting to call OPTIMIZE for Iceberg tables." in error
+    ), error
+    assert catalog_state() == state_before
+    assert node.query(f"SELECT symbol, bid, ask FROM {table_ref} ORDER BY ALL") == rows_before
+
+
 def test_optimize_manifest_with_catalog(started_cluster):
     # OPTIMIZE TABLE ... MANIFEST on a catalog-managed table must consolidate the per-insert manifests
     # and commit the new snapshot back through the catalog, without changing the data.

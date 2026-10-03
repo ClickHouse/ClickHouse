@@ -1,0 +1,28 @@
+A text index direct read, PREWHERE and WHERE on the converted column
+32
+A control, skip indexes off
+32
+B single PREWHERE on the converted column
+32
+B control, skip indexes off
+32
+R reversed types, PREWHERE and WHERE on the converted column
+32
+R control, skip indexes off
+32
+S matching types, PREWHERE and WHERE on the same column
+32
+S plan, the direct read from the text index is in the plan
+1
+S control, skip indexes off
+32
+L lazy FINAL, PREWHERE and WHERE on the converted column
+32
+L plan, lazy FINAL is in the plan
+1
+L control, lazy FINAL off
+32
+M lazy FINAL, single predicate
+32
+M control, lazy FINAL off
+32
