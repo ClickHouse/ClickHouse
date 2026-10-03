@@ -2325,6 +2325,8 @@ Any of the above may be wrapped in `LowCardinality(...)`: the wrapper is a stora
 
 `WITH CLUSTER` cannot be combined with `WITH ROLLUP`, `WITH CUBE`, `GROUPING SETS` or `WITH TOTALS` — these finalize aggregate states before the cluster step can merge them.
 
+Clustering needs all groups at once, so the cluster step buffers the complete aggregated result (the exact groups, before clustering) in memory on the node that finalizes the aggregation — the initiator for distributed queries. The memory-saving modes of the regular `GROUP BY` — external aggregation (`max_bytes_before_external_group_by`), `distributed_aggregation_memory_efficient` and `enable_memory_bound_merging_of_aggregation_results` — still bound the aggregation itself, but not this step: its memory is proportional to the number of exact groups and is limited only by `max_memory_usage`. Reduce the number of exact groups (for example, by pre-rounding the cluster key) when it is large.
+
 **Example**
 
 Consider user activity events where you want to group events into sessions. Two events belong to the same session if they are within 1800 seconds (30 minutes) of each other:
