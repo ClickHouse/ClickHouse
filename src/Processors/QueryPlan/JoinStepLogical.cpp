@@ -646,7 +646,7 @@ void JoinStepLogicalLookup::initializePipeline(QueryPipelineBuilder & pipeline_b
     pipeline_builder = std::move(*child_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /* do_optimize */ false));
 }
 
-QueryPlanRawPtrs JoinStepLogicalLookup::getChildPlans()
+QueryPlanRawPtrs JoinStepLogicalLookup::getChildPlans(bool /*for_explain*/)
 {
     return {&child_plan};
 }
