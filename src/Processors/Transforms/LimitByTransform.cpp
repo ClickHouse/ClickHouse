@@ -2,8 +2,8 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/Block.h>
-#include <Core/SortCursor.h>
 #include <DataTypes/IDataType.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
@@ -377,6 +377,7 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     /// Segment the sorted chunk into maximal runs of rows that share one grouping key. Each run is
     /// one group.
     UInt64 current_run_start_row = 0;
+    SortedKeyRuns key_runs(normalized_grouping_key_columns.size());
 
     FailPointInjection::pauseFailPoint(FailPoints::limit_by_sorted_stream_transform_pause);
 
@@ -393,7 +394,10 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
         if (run_count == 5)
             FailPointInjection::pauseFailPoint(FailPoints::limit_by_sorted_stream_transform_mid_loop_pause);
 
-        const UInt64 run_end = getEqualRangeEndAssumeSorted(normalized_grouping_key_columns, current_run_start_row, row_count, 1);
+        const UInt64 run_end = key_runs.findRunEnd(
+            current_run_start_row,
+            row_count,
+            [&](size_t i, size_t from, size_t bound) { return normalized_grouping_key_columns[i]->getEqualRangeEndAssumeSorted(from, bound, 1); });
         processRun(current_run_start_row, run_end - current_run_start_row);
 
         /// A group boundary inside the chunk resets the per-group counter before the next run.

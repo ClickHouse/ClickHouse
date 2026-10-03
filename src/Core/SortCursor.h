@@ -8,6 +8,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/SortDescription.h>
 #include <Common/assert_cast.h>
@@ -988,14 +989,8 @@ namespace detail
 template <typename GetColumn, typename GetHint>
 size_t equalRangeEndAcrossColumns(size_t count, size_t begin, size_t end, GetColumn && column, GetHint && hint)
 {
-    size_t run_end = end;
-    for (size_t i = 0; i < count; ++i)
-    {
-        run_end = column(i)->getEqualRangeEndAssumeSorted(begin, run_end, hint(i));
-        if (run_end <= begin + 1)
-            break; /// single-row run: cannot shrink further
-    }
-    return run_end;
+    return findKeyRangeEndAssumeSorted(
+        count, begin, end, [&](size_t i, size_t from, size_t bound) { return column(i)->getEqualRangeEndAssumeSorted(from, bound, hint(i)); });
 }
 }
 

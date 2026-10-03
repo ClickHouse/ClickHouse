@@ -16,6 +16,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/Field.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
@@ -441,7 +442,9 @@ void checkKeyAgainstOracle(const Columns & key_columns, int hint, const std::str
     }
 }
 
-void runKeyTests(const std::vector<KeyType> & types, int hint, const std::vector<size_t> & last_sub_runs, std::set<size_t> & run_lengths)
+/// Calls `check(key_columns, label)` for sorted keys of `types` with the leading and trailing run lengths below.
+template <typename Check>
+void forEachKeyFixture(const std::vector<KeyType> & types, const std::vector<size_t> & last_sub_runs, Check && check)
 {
     const std::vector<size_t> leading_runs{1, 7, 8, 9, 600};
     const std::vector<size_t> sub_runs{1, 2, 7, 8, 9, 300, 0};
@@ -464,12 +467,19 @@ void runKeyTests(const std::vector<KeyType> & types, int hint, const std::vector
 
                 const std::string label = "types=" + std::to_string(static_cast<int>(types[0])) + "," + std::to_string(static_cast<int>(types[1]))
                     + " leading_run=" + std::to_string(leading_run) + " sub_runs=" + std::to_string(sub_run) + "," + std::to_string(last_sub_run);
-                checkKeyAgainstOracle(key_columns, hint, label, run_lengths);
+                check(key_columns, label);
                 if (::testing::Test::HasFatalFailure())
                     return;
             }
         }
     }
+}
+
+void runKeyTests(const std::vector<KeyType> & types, int hint, const std::vector<size_t> & last_sub_runs, std::set<size_t> & run_lengths)
+{
+    forEachKeyFixture(
+        types, last_sub_runs, [&](const Columns & key_columns, const std::string & label)
+        { checkKeyAgainstOracle(key_columns, hint, label, run_lengths); });
 }
 
 }
@@ -654,7 +664,7 @@ TEST(SortedEqualRuns, ColumnNullableDefaultPath)
 namespace
 {
 
-/// Runs shorter than, equal to and longer than the linear probe of the whole-key search must all occur.
+/// Runs shorter than, equal to and longer than the linear probe of the String search must all occur.
 void runKeyTestsWithCoverage(const std::vector<KeyType> & types, int hint, const std::vector<size_t> & last_sub_runs)
 {
     std::set<size_t> run_lengths;
@@ -716,4 +726,179 @@ TEST(SortedEqualRuns, MultiColumnHelperSingleAndNoColumns)
     /// Without key columns all rows have the same key.
     const ColumnRawPtrs no_key;
     EXPECT_EQ(getEqualRangeEndAssumeSorted(no_key, 3, 10, 1), 10u);
+}
+
+namespace
+{
+
+struct KeyTypes
+{
+    std::vector<KeyType> types;
+    int hint;
+    std::vector<size_t> last_sub_runs;
+};
+
+const std::vector<KeyTypes> & allKeyTypes()
+{
+    static const std::vector<KeyTypes> key_types{
+        {{KeyType::UInt64, KeyType::String}, 1, {1}},
+        {{KeyType::String, KeyType::String}, 1, {1}},
+        {{KeyType::NullableString, KeyType::Float64WithNaNAndZeros}, -1, {1}},
+        {{KeyType::LowCardinalityString, KeyType::UInt32}, 1, {1}},
+        {{KeyType::UInt64, KeyType::String, KeyType::UInt32}, 1, {1, 3, 8, 300}},
+    };
+    return key_types;
+}
+
+ColumnRawPtrs rawPtrs(const Columns & columns)
+{
+    ColumnRawPtrs res;
+    for (const auto & col : columns)
+        res.push_back(col.get());
+    return res;
+}
+
+/// Finds the runs of `[0, end)` one after another, each search starting where the previous run ended.
+template <typename Search>
+void checkSortedKeyRunsWalk(SortedKeyRuns & runs, const ColumnRawPtrs & key, size_t end, int hint, Search && search, const std::string & label)
+{
+    for (size_t begin = 0; begin < end;)
+    {
+        const size_t run_end = runs.findRunEnd(begin, end, search);
+        ASSERT_GT(run_end, begin) << label << ": begin=" << begin << " end=" << end;
+        ASSERT_EQ(run_end, oracleKeyRangeEnd(key, begin, end, hint)) << label << ": begin=" << begin << " end=" << end;
+        begin = run_end;
+    }
+}
+
+}
+
+TEST(SortedEqualRuns, SortedKeyRunsWalk)
+{
+    for (const auto & key_types : allKeyTypes())
+    {
+        forEachKeyFixture(
+            key_types.types,
+            key_types.last_sub_runs,
+            [&](const Columns & key_columns, const std::string & label)
+            {
+                const ColumnRawPtrs key = rawPtrs(key_columns);
+                SortDescription descr;
+                for (size_t i = 0; i < key.size(); ++i)
+                    descr.emplace_back("k" + std::to_string(i), 1, key_types.hint);
+
+                const size_t n = key.front()->size();
+                for (size_t end : {n / 2, n})
+                {
+                    SortedKeyRuns runs(key.size());
+                    checkSortedKeyRunsWalk(
+                        runs, key, end, key_types.hint,
+                        [&](size_t i, size_t from, size_t bound) { return key[i]->getEqualRangeEndAssumeSorted(from, bound, key_types.hint); },
+                        label + " columns");
+                    if (::testing::Test::HasFatalFailure())
+                        return;
+
+                    SortedKeyRuns descr_runs(key.size());
+                    checkSortedKeyRunsWalk(
+                        descr_runs, key, end, key_types.hint,
+                        [&](size_t i, size_t from, size_t bound)
+                        { return key[i]->getEqualRangeEndAssumeSorted(from, bound, descr[i].nulls_direction); },
+                        label + " descr");
+                    if (::testing::Test::HasFatalFailure())
+                        return;
+                }
+            });
+        if (::testing::Test::HasFatalFailure())
+            return;
+    }
+}
+
+/// Searches from every row, also from rows inside a run and before the previous search.
+TEST(SortedEqualRuns, SortedKeyRunsAnyOrder)
+{
+    for (const auto & key_types : allKeyTypes())
+    {
+        forEachKeyFixture(
+            key_types.types,
+            key_types.last_sub_runs,
+            [&](const Columns & key_columns, const std::string & label)
+            {
+                const ColumnRawPtrs key = rawPtrs(key_columns);
+                auto search = [&](size_t i, size_t from, size_t bound) { return key[i]->getEqualRangeEndAssumeSorted(from, bound, key_types.hint); };
+
+                const size_t n = key.front()->size();
+                for (size_t end : {n / 2, n})
+                {
+                    SortedKeyRuns runs(key.size());
+                    for (size_t begin = end + 1; begin > 0; --begin)
+                        ASSERT_EQ(runs.findRunEnd(begin - 1, end, search), oracleKeyRangeEnd(key, begin - 1, end, key_types.hint))
+                            << label << ": descending begin=" << begin - 1 << " end=" << end;
+                    for (size_t begin = 0; begin <= end; ++begin)
+                        ASSERT_EQ(runs.findRunEnd(begin, end, search), oracleKeyRangeEnd(key, begin, end, key_types.hint))
+                            << label << ": ascending begin=" << begin << " end=" << end;
+                }
+            });
+        if (::testing::Test::HasFatalFailure())
+            return;
+    }
+}
+
+TEST(SortedEqualRuns, SortedKeyRunsReset)
+{
+    const size_t rows = 1800;
+    Columns first;
+    Columns second;
+    for (const auto & values : makeSortedKeyValues(rows, 600, {300}))
+        first.push_back(makeKeyColumn(KeyType::UInt64, values));
+    for (const auto & values : makeSortedKeyValues(rows, 7, {2}))
+        second.push_back(makeKeyColumn(KeyType::UInt64, values));
+    const ColumnRawPtrs first_key = rawPtrs(first);
+    const ColumnRawPtrs second_key = rawPtrs(second);
+
+    SortedKeyRuns runs(2);
+
+    /// Leaves the runs of the first key at row 0 remembered.
+    auto first_search = [&](size_t i, size_t from, size_t bound) { return first_key[i]->getEqualRangeEndAssumeSorted(from, bound, 1); };
+    for (size_t begin = rows; begin > 0; --begin)
+        ASSERT_EQ(runs.findRunEnd(begin - 1, rows, first_search), oracleKeyRangeEnd(first_key, begin - 1, rows, 1)) << "begin=" << begin - 1;
+
+    runs.reset(2);
+    checkSortedKeyRunsWalk(
+        runs, second_key, rows, 1,
+        [&](size_t i, size_t from, size_t bound) { return second_key[i]->getEqualRangeEndAssumeSorted(from, bound, 1); },
+        "after reset");
+}
+
+TEST(SortedEqualRuns, SortedKeyRunsSingleAndNoColumns)
+{
+    for (const auto & p : makePatterns())
+    {
+        auto col = makeSortedString(p);
+        auto search = [&](size_t i, size_t from, size_t bound)
+        {
+            EXPECT_EQ(i, 0u);
+            return col->getEqualRangeEndAssumeSorted(from, bound, 1);
+        };
+
+        const size_t n = col->size();
+        for (size_t end : {n / 2, n})
+        {
+            SortedKeyRuns runs(1);
+            for (size_t begin = end + 1; begin > 0; --begin)
+                ASSERT_EQ(runs.findRunEnd(begin - 1, end, search), col->getEqualRangeEndAssumeSorted(begin - 1, end, 1))
+                    << "begin=" << begin - 1 << " end=" << end;
+        }
+    }
+
+    /// Without key columns all rows have the same key.
+    auto no_search = [](size_t, size_t, size_t) -> size_t
+    {
+        ADD_FAILURE() << "no column to search";
+        return 0;
+    };
+    SortedKeyRuns no_key;
+    EXPECT_EQ(no_key.findRunEnd(3, 10, no_search), 10u);
+    SortedKeyRuns no_key_after_reset(2);
+    no_key_after_reset.reset(0);
+    EXPECT_EQ(no_key_after_reset.findRunEnd(3, 10, no_search), 10u);
 }
