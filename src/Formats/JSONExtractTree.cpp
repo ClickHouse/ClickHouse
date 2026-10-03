@@ -59,11 +59,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 
-#include <Common/memcpySmall.h>
-
-#include <base/memcmpSmall.h>
-
-#include <bit>
 #include <limits>
 
 namespace DB
@@ -568,9 +563,6 @@ public:
     }
 
 private:
-    /// Values up to this length are padded on the stack instead of through a `String`.
-    static constexpr size_t max_padding_on_stack = 64;
-
     template <typename T>
     bool checkValueSizeAndInsert(IColumn & column, const T & value, String & error) const
     {
@@ -583,25 +575,15 @@ private:
         // For the non low cardinality case of FixedString, the padding is done in the FixedString Column implementation.
         // In order to avoid having to pass the data to a FixedString Column and read it back (which would slow down the execution)
         // the data is padded here and written directly to the Low Cardinality Column
-        auto & lc_column = assert_cast<ColumnLowCardinality &>(column);
         if (value.size() == fixed_length)
         {
-            lc_column.insertData(value.data(), value.size());
-        }
-        else if (fixed_length <= max_padding_on_stack)
-        {
-            /// Building a `String` here costs a copy plus an out of line `resize` on every value.
-            /// The buffer is zeroed with a constant size so that the compiler inlines it.
-            char padded_value[max_padding_on_stack];
-            memset(padded_value, 0, max_padding_on_stack);
-            memcpySmall(padded_value, value.data(), value.size());
-            lc_column.insertData(padded_value, fixed_length);
+            assert_cast<ColumnLowCardinality &>(column).insertData(value.data(), value.size());
         }
         else
         {
             String padded_value(value);
             padded_value.resize(fixed_length, '\0');
-            lc_column.insertData(padded_value.data(), padded_value.size());
+            assert_cast<ColumnLowCardinality &>(column).insertData(padded_value.data(), padded_value.size());
         }
         return true;
     }
@@ -1494,12 +1476,6 @@ public:
         auto & tuple = assert_cast<ColumnTuple &>(column);
         size_t old_size = column.size();
         bool were_valid_elements = false;
-        /// When every element got exactly one value, all the nested columns already have the right
-        /// size and the `set_size` walk below (a virtual `size` per element) can be skipped. A JSON
-        /// object can repeat a key, so the elements that took a value are tracked as a bit set and
-        /// not just counted: two values for one element is not the same as one value for two.
-        size_t inserted_elements = 0;
-        UInt64 filled_elements = 0;
 
         auto set_size = [&](size_t size)
         {
@@ -1517,24 +1493,6 @@ public:
             }
         };
 
-        /// Mark that `index` took a value. Elements past the width of the bit set keep the fixup.
-        auto note_inserted_element = [&](size_t index)
-        {
-            ++inserted_elements;
-            if (index < sizeof(filled_elements) * 8)
-                filled_elements |= 1ULL << index;
-        };
-
-        auto set_size_after_success = [&](size_t size)
-        {
-            /// One value per element, and each in a distinct element, so every nested column is
-            /// already at `size`.
-            const bool all_elements_distinct = static_cast<size_t>(std::popcount(filled_elements)) == inserted_elements;
-            if (were_valid_elements && inserted_elements == tuple.tupleSize() && all_elements_distinct)
-                return;
-            set_size(size);
-        };
-
         if (element.isArray())
         {
             auto array = element.getArray();
@@ -1545,12 +1503,10 @@ public:
                 if (nested[index]->insertResultToColumn(tuple.getColumn(index), *it++, insert_settings, format_settings, error))
                 {
                     were_valid_elements = true;
-                    note_inserted_element(index);
                 }
                 else if (insert_settings.insert_default_on_invalid_elements_in_complex_types)
                 {
                     tuple.getColumn(index).insertDefault();
-                    note_inserted_element(index);
                 }
                 else
                 {
@@ -1560,7 +1516,7 @@ public:
                 }
             }
 
-            set_size_after_success(old_size + static_cast<size_t>(were_valid_elements));
+            set_size(old_size + static_cast<size_t>(were_valid_elements));
             return were_valid_elements;
         }
 
@@ -1575,12 +1531,10 @@ public:
                     if (nested[index]->insertResultToColumn(tuple.getColumn(index), (*it++).second, insert_settings, format_settings, error))
                     {
                         were_valid_elements = true;
-                        note_inserted_element(index);
                     }
                     else if (insert_settings.insert_default_on_invalid_elements_in_complex_types)
                     {
                         tuple.getColumn(index).insertDefault();
-                        note_inserted_element(index);
                     }
                     else
                     {
@@ -1592,48 +1546,26 @@ public:
             }
             else
             {
-                /// Objects usually list their keys in the order the tuple declares them, so try the
-                /// next expected name before hashing the key for `name_to_index_map`.
-                size_t expected_index = 0;
-                auto matches_expected_name = [&](std::string_view key)
-                {
-                    if (expected_index >= explicit_names.size())
-                        return false;
-                    const String & name = explicit_names[expected_index];
-                    return memequalSmall(key.data(), key.size(), name.data(), name.size());
-                };
-
                 for (const auto & [key, value] : object)
                 {
-                    size_t index = 0;
-                    if (matches_expected_name(key))
+                    auto index = name_to_index_map.find(key);
+                    if (index != name_to_index_map.end())
                     {
-                        index = expected_index;
-                    }
-                    else
-                    {
-                        auto it = name_to_index_map.find(key);
-                        if (it == name_to_index_map.end())
-                            continue;
-                        index = it->second;
-                    }
-                    expected_index = index + 1;
-
-                    if (nested[index]->insertResultToColumn(tuple.getColumn(index), value, insert_settings, format_settings, error))
-                    {
-                        were_valid_elements = true;
-                        note_inserted_element(index);
-                    }
-                    else if (!insert_settings.insert_default_on_invalid_elements_in_complex_types)
-                    {
-                        set_size(old_size);
-                        error += fmt::format(" (during reading tuple element \"{}\")", key);
-                        return false;
+                        if (nested[index->second]->insertResultToColumn(tuple.getColumn(index->second), value, insert_settings, format_settings, error))
+                        {
+                            were_valid_elements = true;
+                        }
+                        else if (!insert_settings.insert_default_on_invalid_elements_in_complex_types)
+                        {
+                            set_size(old_size);
+                            error += fmt::format(" (during reading tuple element \"{}\")", key);
+                            return false;
+                        }
                     }
                 }
             }
 
-            set_size_after_success(old_size + static_cast<size_t>(were_valid_elements));
+            set_size(old_size + static_cast<size_t>(were_valid_elements));
             return were_valid_elements;
         }
 
@@ -1995,7 +1927,8 @@ public:
         std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
-        const DataTypePtr & type_of_nested_objects)
+        const DataTypePtr & type_of_nested_objects,
+        const DataTypePtr & default_path_type_ = nullptr)
         : typed_paths_types(typed_paths_types_)
         , typed_path_nodes(std::move(typed_path_nodes_))
         , paths_to_skip(paths_to_skip_)
@@ -2010,6 +1943,12 @@ public:
         all_typed_paths_have_trivial_defaults = std::all_of(
             typed_paths_types_.begin(), typed_paths_types_.end(),
             [](const auto & pair) { return pair.second->isDefaultInsertTrivial(); });
+
+        if (default_path_type_)
+        {
+            default_path_type = default_path_type_;
+            default_path_node = buildJSONExtractTree<JSONParser>(default_path_type_, "JSON type with DEFAULT PATH TYPE");
+        }
     }
 
     bool insertResultToColumn(IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
@@ -2066,9 +2005,6 @@ public:
         auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
         reserveCharsWithGrowthCap(shared_data_paths->getChars(), shared_data_paths->getChars().size() + new_paths_total_size, format_settings.json_max_string_column_growth_step);
         shared_data_paths->getOffsets().reserve(shared_data_paths->getOffsets().size() + paths_and_values_for_shared_data.size());
-        auto & shared_data_values_chars = shared_data_values->getChars();
-        auto & shared_data_values_offsets = shared_data_values->getOffsets();
-        shared_data_values_offsets.reserve(shared_data_values_offsets.size() + paths_and_values_for_shared_data.size());
         MutableColumnPtr tmp_dynamic_column;
         for (size_t i = 0; i != paths_and_values_for_shared_data.size(); ++i)
         {
@@ -2085,16 +2021,28 @@ public:
             }
             else
             {
-                /// Serialize value directly into shared data chars.
-                WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag(), format_settings.json_max_string_column_growth_step);
-                if (!insertIntoSharedData(value_buf, value, insert_settings, format_settings, error, tmp_dynamic_column))
+                if (default_path_node)
                 {
-                    error += fmt::format(" (while reading path {})", path);
-                    SerializationObject::restoreColumnObject(column_object, prev_size);
-                    return false;
+                    if (!default_path_node->insertResultToColumn(*shared_data_values, value, insert_settings, format_settings, error))
+                    {
+                        error += fmt::format(" (while reading path {})", path);
+                        SerializationObject::restoreColumnObject(column_object, prev_size);
+                        return false;
+                    }
                 }
-                value_buf.finalize();
-                shared_data_values_offsets.push_back(shared_data_values_chars.size());
+                else
+                {
+                    auto & shared_data_values_string = assert_cast<ColumnString &>(*shared_data_values);
+                    WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_string.getChars(), AppendModeTag(), format_settings.json_max_string_column_growth_step);
+                    if (!insertIntoSharedData(value_buf, value, insert_settings, format_settings, error, tmp_dynamic_column))
+                    {
+                        error += fmt::format(" (while reading path {})", path);
+                        SerializationObject::restoreColumnObject(column_object, prev_size);
+                        return false;
+                    }
+                    value_buf.finalize();
+                    shared_data_values_string.getOffsets().push_back(shared_data_values_string.getChars().size());
+                }
                 shared_data_paths->insertData(path.data(), path.size());
             }
         }
@@ -2273,42 +2221,56 @@ private:
         else if (element.isNull())
         {
         }
-        /// Don't check for dynamic paths if max_dynamic_paths=0 and add this path and value to shared data.
-        else if (column_object.getMaxDynamicPaths() == 0)
+        else
         {
-            paths_and_values_for_shared_data.emplace_back(current_path, element);
-        }
-        /// Check if we have this path in dynamic paths.
-        else if (auto dynamic_it = dynamic_paths_ptrs.find(current_path); dynamic_it != dynamic_paths_ptrs.end())
-        {
-            /// Check if we already had this path.
-            if (dynamic_it->second->size() > current_size)
+            /// If the type has DEFAULT PATH TYPE, all values in dynamic paths and shared data must conform to it.
+            /// Validate the value by inserting it into a temporary column of the default path type.
+            if (default_path_node)
             {
-                if (!format_settings.json.type_json_skip_duplicated_paths)
+                bool skip_value = false;
+                if (!validateValueAgainstDefaultPathType(current_path, element, insert_settings, format_settings, error, skip_value))
+                    return false;
+                if (skip_value)
+                    return true;
+            }
+
+            /// Don't check for dynamic paths if max_dynamic_paths=0 and add this path and value to shared data.
+            if (column_object.getMaxDynamicPaths() == 0)
+            {
+                paths_and_values_for_shared_data.emplace_back(current_path, element);
+            }
+            /// Check if we have this path in dynamic paths.
+            else if (auto dynamic_it = dynamic_paths_ptrs.find(current_path); dynamic_it != dynamic_paths_ptrs.end())
+            {
+                /// Check if we already had this path.
+                if (dynamic_it->second->size() > current_size)
                 {
-                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", current_path);
+                    if (!format_settings.json.type_json_skip_duplicated_paths)
+                    {
+                        error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", current_path);
+                        return false;
+                    }
+                }
+                else if (!insertIntoDynamicPath(*dynamic_it->second, element, insert_settings, format_settings, error))
+                {
+                    error += fmt::format(" (while reading path {})", current_path);
                     return false;
                 }
             }
-            else if (!insertIntoDynamicPath(*dynamic_it->second, element, insert_settings, format_settings, error))
+            /// Try to add a new dynamic path.
+            else if (auto * dynamic_column = column_object.tryToAddNewDynamicPath(current_path))
             {
-                error += fmt::format(" (while reading path {})", current_path);
-                return false;
+                if (!insertIntoDynamicPath(*dynamic_column, element, insert_settings, format_settings, error))
+                {
+                    error += fmt::format(" (while reading path {})", current_path);
+                    return false;
+                }
             }
-        }
-        /// Try to add a new dynamic path.
-        else if (auto * dynamic_column = column_object.tryToAddNewDynamicPath(current_path))
-        {
-            if (!insertIntoDynamicPath(*dynamic_column, element, insert_settings, format_settings, error))
+            /// Otherwise this path should go to the shared data.
+            else
             {
-                error += fmt::format(" (while reading path {})", current_path);
-                return false;
+                paths_and_values_for_shared_data.emplace_back(current_path, element);
             }
-        }
-        /// Otherwise this path should go to the shared data.
-        else
-        {
-            paths_and_values_for_shared_data.emplace_back(current_path, element);
         }
 
         return true;
@@ -2356,8 +2318,28 @@ private:
         return false;
     }
 
-    bool insertIntoDynamicPath(ColumnDynamic & column_dynamic, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const
+    bool insertIntoDynamicPath(IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const
     {
+        /// DPT runtime paths are stored as Variant(T): the NULL discriminator marks a missing path.
+        /// When T cannot be inside Variant (Nullable/Dynamic/Variant/Object) the caller keeps
+        /// the path in shared data and this method is never called.
+        if (default_path_node)
+        {
+            /// Insert the value into a fresh T column and then into the nested variant column.
+            /// (validateValueAgainstDefaultPathType uses its own local column; sharing a mutable
+            /// member across parallel parsing threads is not safe.)
+            auto value_column = default_path_type->createColumn();
+            if (!default_path_node->insertResultToColumn(*value_column, element, insert_settings, format_settings, error))
+                return false;
+            auto & variant_column = assert_cast<ColumnVariant &>(column);
+            auto & nested = variant_column.getVariantByGlobalDiscriminator(0);
+            nested.insertFrom(*value_column, 0);
+            variant_column.getOffsets().push_back(nested.size() - 1);
+            variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(0));
+            return true;
+        }
+
+        auto & column_dynamic = assert_cast<ColumnDynamic &>(column);
         /// Check if element is NULL.
         if (element.isNull())
         {
@@ -2611,6 +2593,27 @@ private:
         return false;
     }
 
+    bool validateValueAgainstDefaultPathType(const String & path, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error, bool & skip_value) const
+    {
+        /// Create a fresh temporary column per value: this method is called from parallel
+        /// parsing threads and a shared mutable column is not safe.
+        auto tmp_column = default_path_type->createColumn();
+
+        if (default_path_node->insertResultToColumn(*tmp_column, element, insert_settings, format_settings, error))
+            return true;
+
+        if (insert_settings.skip_invalid_typed_paths)
+        {
+            /// Skip the whole value if it doesn't conform to the default path type.
+            error.clear();
+            skip_value = true;
+            return true;
+        }
+
+        error += fmt::format(" (value of path {} doesn't conform to the DEFAULT PATH TYPE {})", path, default_path_type->getName());
+        return false;
+    }
+
     std::unordered_map<String, DataTypePtr> typed_paths_types;
     std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
     bool all_typed_paths_have_trivial_defaults = true;
@@ -2619,6 +2622,9 @@ private:
     std::list<re2::RE2> path_regexps_to_skip;
     std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
     SerializationPtr dynamic_serialization;
+    /// Default type of all non-typed paths (JSON(DEFAULT PATH TYPE T)) and the node to parse/validate values of this type.
+    DataTypePtr default_path_type;
+    std::unique_ptr<JSONExtractTreeNode<JSONParser>> default_path_node;
     const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
     const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
 
@@ -2821,7 +2827,8 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
                         std::move(typed_path_nodes),
                         object_type.getPathsToSkip(),
                         object_type.getPathRegexpsToSkip(),
-                        object_type.getTypeOfNestedObjects());
+                        object_type.getTypeOfNestedObjects(),
+                        object_type.getDefaultPathType());
             }
         }
         default:

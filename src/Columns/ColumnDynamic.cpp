@@ -1,6 +1,7 @@
 #include <Columns/ColumnDynamic.h>
 
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -403,6 +404,13 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
         ReadBufferFromMemory buf(value);
         auto type = decodeDataType(buf);
         auto type_name = type->getName();
+        /// Nullable/LowCardinality(Nullable)/Variant/Dynamic/Object types cannot be regular variants
+        /// of a Dynamic column. Keep such values in the shared variant (copy as-is).
+        if (isNullableOrLowCardinalityNullable(type) || isDynamic(type) || isObject(type) || isVariant(type))
+        {
+            variant_col.insertIntoVariantFrom(getSharedVariantDiscriminator(), src_shared_variant, src_offset);
+            return;
+        }
         /// Check if we have this variant and deserialize value into variant from shared variant data.
         if (auto it = variant_info.variant_name_to_discriminator.find(type_name); it != variant_info.variant_name_to_discriminator.end())
             variant_col.deserializeBinaryIntoVariant(it->second, getVariantSerialization(type, type_name), buf, getFormatSettings());
@@ -509,6 +517,14 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
                 ReadBufferFromMemory buf(value);
                 auto type = decodeDataType(buf);
                 auto type_name = type->getName();
+                /// Nullable/LowCardinality(Nullable)/Variant/Dynamic/Object types cannot be regular
+                /// variants of a Dynamic column. Keep such values in the shared variant (copy as-is).
+                if (isNullableOrLowCardinalityNullable(type) || isDynamic(type) || isObject(type) || isVariant(type))
+                {
+                    shared_variant.insertData(value.data(), value.size());
+                    offsets[prev_size + i] = shared_variant.size() - 1;
+                    continue;
+                }
                 /// Check if we have variant with this type. In this case we should extract
                 /// the value from src shared variant and insert it into this variant.
                 if (auto it = variant_info.variant_name_to_discriminator.find(type_name); it != variant_info.variant_name_to_discriminator.end())
@@ -714,6 +730,13 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
         ReadBufferFromMemory buf(value);
         auto type = decodeDataType(buf);
         auto type_name = type->getName();
+        /// Nullable/LowCardinality(Nullable)/Variant/Dynamic/Object types cannot be regular variants
+        /// of a Dynamic column. Keep such values in the shared variant (copy as-is).
+        if (isNullableOrLowCardinalityNullable(type) || isDynamic(type) || isObject(type) || isVariant(type))
+        {
+            variant_col.insertManyIntoVariantFrom(getSharedVariantDiscriminator(), src_shared_variant, src_offset, length);
+            return;
+        }
         /// Check if we have this variant and deserialize value into variant from shared variant data.
         if (auto it = variant_info.variant_name_to_discriminator.find(type_name); it != variant_info.variant_name_to_discriminator.end())
         {
@@ -1595,7 +1618,12 @@ void ColumnDynamic::chooseDynamicStructureForMerge(const VectorWithMemoryTrackin
             /// Add this variant to the list of all variants if we didn't see it yet.
             if (it == total_sizes.end())
             {
-                all_variants.push_back(DataTypeFactory::instance().get(variant_name));
+                auto variant_type = DataTypeFactory::instance().get(variant_name);
+                /// Nullable/LowCardinality(Nullable)/Variant/Dynamic/Object types cannot be regular
+                /// variants of a Dynamic column. Keep such values in the shared variant.
+                if (isNullableOrLowCardinalityNullable(variant_type) || isDynamic(variant_type) || isObject(variant_type) || isVariant(variant_type))
+                    continue;
+                all_variants.push_back(variant_type);
                 it = total_sizes.emplace(variant_name, 0).first;
             }
             it->second += size;
