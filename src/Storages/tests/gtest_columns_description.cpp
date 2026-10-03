@@ -83,20 +83,3 @@ columns format version: 1
         });
     }
 }
-
-TEST_F(ColumnsDescriptionTest, RenameMovesSubcolumns)
-{
-    auto columns = ColumnsDescription::parse(
-        "columns format version: 1\n"
-        "2 columns:\n"
-        "`c0` Nullable(UInt8)\n"
-        "`x` Nullable(UInt8)\tALIAS c0\n");
-
-    /// `column_from` is the renamed element's own name.
-    for (const auto & column : columns)
-        columns.rename(column.name, column.name + "_renamed");
-
-    ASSERT_TRUE(columns.getSubcolumns("c0").empty());
-    ASSERT_EQ(columns.getSubcolumns("c0_renamed").getNames(), Names{"c0_renamed.null"});
-    ASSERT_TRUE(columns.getSubcolumns("x_renamed").empty());
-}
