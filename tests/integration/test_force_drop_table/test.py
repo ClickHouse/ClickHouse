@@ -173,3 +173,39 @@ def test_drop_database_refused_by_refresh_leftover(started_cluster):
     node.query("SYSTEM WAIT VIEW d5.rmv")
     assert node.query("SELECT count() FROM d5.rmv") == "10\n"
     node.query("DROP DATABASE d5 SYNC SETTINGS max_table_size_to_drop = 0")
+
+
+def test_drop_database_refused_by_leftover_of_pending_refresh(started_cluster):
+    # A refresh that has not created its temporary table yet does not exempt a leftover one.
+    node.query("CREATE DATABASE d6 ENGINE=Atomic")
+    node.query(
+        "CREATE MATERIALIZED VIEW d6.rmv REFRESH EVERY 1 YEAR (x UInt64) ENGINE=MergeTree ORDER BY x EMPTY "
+        "AS SELECT number AS x FROM numbers(10)"
+    )
+    uuid = node.query(
+        "SELECT uuid FROM system.tables WHERE database = 'd6' AND name = 'rmv'"
+    ).strip()
+    node.query(
+        f"CREATE TABLE d6.`.tmp.inner_id.{uuid}` (x UInt64) ENGINE=MergeTree ORDER BY x"
+    )
+    node.query(
+        f"INSERT INTO d6.`.tmp.inner_id.{uuid}` SELECT number FROM numbers(1000)"
+    )
+    node.query("SYSTEM ENABLE FAILPOINT refresh_mv_skip_execution")
+    try:
+        node.query("SYSTEM REFRESH VIEW d6.rmv")
+        assert_eq_with_retry(
+            node,
+            "SELECT status FROM system.view_refreshes WHERE database = 'd6' AND view = 'rmv'",
+            "Running",
+        )
+        assert "is greater than max" in node.query_and_get_error("DROP DATABASE d6")
+        assert (
+            node.query(
+                "SELECT count() FROM system.view_refreshes WHERE database = 'd6' AND view = 'rmv'"
+            )
+            == "1\n"
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT refresh_mv_skip_execution")
+    node.query("DROP DATABASE d6 SYNC SETTINGS max_table_size_to_drop = 0")

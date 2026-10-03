@@ -638,13 +638,13 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 }
             }
 
-            /// Stopping a refreshable view drops the temporary table of its running refresh without a size check.
+            /// Stopping a refreshable view drops, without a size check, the temporary table its refresh has created.
             std::unordered_set<String> running_refresh_tables;
             for (const StoragePtr & view : tables_to_prepare_early)
             {
                 StorageID view_id = view->getStorageID();
                 for (const auto & task : getContext()->getRefreshSet().findTasks(view_id))
-                    if (task->getInfo().state == RefreshState::Running)
+                    if (task->hasRefreshTemporaryTable())
                         running_refresh_tables.insert(".tmp" + StorageMaterializedView::generateInnerTableName(view_id));
             }
             check_tables(running_refresh_tables);

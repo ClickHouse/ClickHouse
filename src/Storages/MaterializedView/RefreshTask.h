@@ -174,6 +174,8 @@ public:
     String getCoordinationPath() const { return coordination.path; }
 
     bool canCreateOrDropOtherTables() const;
+    /// Whether the refresh in progress has created its temporary table, which it drops itself, also when interrupted.
+    bool hasRefreshTemporaryTable() const { return execution.temp_table_created.load(); }
 
     /// Methods to pause/unpause refreshing on this replica or all replicas.
     /// The per-replica pause and global pause are two separate flags; if either of them is set,
@@ -326,6 +328,8 @@ private:
         /// Should be writtent to zookeeper only if the refresh succeeds.
         AllDependenciesInfo dependencies;
         bool out_of_schedule = false;
+        /// Set while the `.tmp` table of the view is this attempt's, which the attempt drops itself, also when interrupted.
+        std::atomic_bool temp_table_created {false};
     };
 
     struct SchedulingState
