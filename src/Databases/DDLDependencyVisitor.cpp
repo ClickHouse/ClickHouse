@@ -63,6 +63,17 @@ namespace
             return mv_from_dependency;
         }
 
+        TableNamesSet getPlainViewDependencies()
+        {
+            if (!is_plain_view)
+                return {};
+
+            /// Every table the definition of the view refers to, not only its table expressions: a table named
+            /// in `x IN table`, `joinGet` or `dictGet` blocks `DROP` through the referential graph just the same,
+            /// so it lists the view among its dependents as well.
+            return getDependencies();
+        }
+
         bool needChildVisit(const ASTPtr & child) const { return !skip_asts.contains(child.get()); }
 
         void visit(const ASTPtr & ast)
@@ -98,6 +109,7 @@ namespace
         TableNamesSet dependencies;
         bool can_throw;
         bool validate_current_database;
+        bool is_plain_view = false;
         std::optional<StorageID> mv_to_dependency;
         std::optional<StorageID> mv_from_dependency;
 
@@ -194,6 +206,8 @@ namespace
                             mv_from_dependency->uuid = UUIDHelpers::Nil;
                         }
                     }
+                    else if (create.is_ordinary_view)
+                        is_plain_view = true;
                 }
                 else
                     skip_asts.insert(create.select);
@@ -603,7 +617,7 @@ CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global
     DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw, validate_current_database};
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);
-    return {data.getDependencies(), data.getMvToDependency(), data.getMvFromDependency()};
+    return {data.getDependencies(), data.getMvToDependency(), data.getMvFromDependency(), data.getPlainViewDependencies()};
 }
 
 TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database, bool can_throw)

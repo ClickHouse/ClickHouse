@@ -159,7 +159,22 @@ public:
 
     void attachDatabase(const String & database_name, const DatabasePtr & database);
     DatabasePtr detachDatabase(ContextPtr local_context, const String & database_name, bool drop = false, bool check_empty = true);
-    void updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database);
+    /// Dependencies of a table recomputed from its stored definition against the new name of its database.
+    /// `updateDatabaseName` applies them in place of re-keying the edges recorded under the old name.
+    struct RecomputedDependencies
+    {
+        TableNamesSet referential_dependencies;
+        TableNamesSet loading_dependencies;
+        TableNamesSet plain_view_dependencies;
+    };
+    /// Keyed by the table name.
+    using RecomputedDependenciesByTable = std::unordered_map<String, RecomputedDependencies>;
+
+    void updateDatabaseName(
+        const String & old_name,
+        const String & new_name,
+        const Strings & tables_in_database,
+        const RecomputedDependenciesByTable & recomputed_dependencies);
 
     /// database_name must be not empty
     DatabasePtr getDatabase(std::string_view database_name) const;
@@ -203,9 +218,16 @@ public:
     void removeViewDependency(const StorageID & source_table_id, const StorageID & view_id);
     std::vector<StorageID> getDependentViews(const StorageID & source_table_id) const;
 
-    /// Detach all source-side view-dependency edges of a source table (the table is the source of one
-    /// or more materialized views) and return the list of dependent views. Used by `RENAME TABLE`
-    /// to re-key these edges under the new storage id via `addSourceViewDependencies`.
+    void addPlainViewDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_plain_view_dependencies);
+    void removePlainViewDependencies(const StorageID & view_id);
+    std::vector<StorageID> getAllDependentViews(const StorageID & source_table_id) const;
+
+    /// Detach all source-side plain-view edges of a source table and return the dependent views.
+    /// Used by `RENAME TABLE` / `EXCHANGE TABLES` to re-add these edges under the proper storage id.
+    /// `DROP TABLE` must not do this: the edges are name-bound, so they stay valid
+    /// if a table with the same name is created again (same as for materialized views).
+    std::vector<StorageID> takePlainViewDependents(const StorageID & source_table_id);
+
     std::vector<StorageID> takeSourceViewDependencies(const StorageID & source_table_id);
     void addSourceViewDependencies(const StorageID & source_table_id, const std::vector<StorageID> & view_ids);
 
@@ -252,15 +274,15 @@ public:
     /// if "B" is referenced in the definition of "A".
     /// Loading dependencies were used to check whether a table can be removed before we had those referential dependencies.
     /// Now we support this mode (see `check_table_referential_dependencies` in Setting.h) for compatibility.
-    void addDependencies(const StorageID & table_id, const std::vector<StorageID> & new_referential_dependencies, const std::vector<StorageID> & new_loading_dependencies, const std::vector<StorageID> & new_view_dependencies);
+    void addDependencies(const StorageID & table_id, const std::vector<StorageID> & new_referential_dependencies, const std::vector<StorageID> & new_loading_dependencies, const std::vector<StorageID> & new_view_dependencies, const std::vector<StorageID> & new_plain_view_dependencies = {}, const std::vector<StorageID> & new_plain_view_dependents = {});
     void addDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies, const TableNamesSet & new_view_dependencies);
     void addDependencies(const TablesDependencyGraph & new_referential_dependencies, const TablesDependencyGraph & new_loading_dependencies, const TablesDependencyGraph & new_view_dependencies);
-    std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> removeDependencies(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false, bool is_mv = false);
+    std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> removeDependencies(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false, bool is_view = false);
     std::vector<StorageID> getReferentialDependencies(const StorageID & table_id) const;
     std::vector<StorageID> getReferentialDependents(const StorageID & table_id) const;
     std::vector<StorageID> getLoadingDependencies(const StorageID & table_id) const;
     std::vector<StorageID> getLoadingDependents(const StorageID & table_id) const;
-    void updateDependencies(const StorageID & table_id, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies, const TableNamesSet & new_view_dependencies);
+    void updateDependencies(const StorageID & table_id, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies, const TableNamesSet & new_view_dependencies, const TableNamesSet & new_plain_view_dependencies);
 
     void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false) const;
 
@@ -360,6 +382,8 @@ private:
 
     /// View dependencies between a source table and its view.
     TablesDependencyGraph view_dependencies TSA_GUARDED_BY(databases_mutex);
+
+    TablesDependencyGraph plain_view_dependencies TSA_GUARDED_BY(databases_mutex);
 
     LoggerPtr log;
 
