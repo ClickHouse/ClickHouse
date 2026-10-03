@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Session Settings",
+  "group": "Paramètres de session",
   "pages": [
     "fr/reference/settings/session-settings/additional",
     "fr/reference/settings/session-settings/aggregate",

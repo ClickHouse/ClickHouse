@@ -353,6 +353,57 @@ def test_executable_function_parameter_python(started_cluster):
         )
 
 
+def test_executable_function_determinism_in_distributed_predicate_push_down(
+    started_cluster,
+):
+    skip_test_msan(node)
+
+    # `ReadFromRemote` pushes a predicate over a column of a distributed subquery into the `HAVING`
+    # of the query sent to the shard, unless `hasNonRewritableFunction` finds a non-deterministic
+    # function in the shard's `SELECT` list. `ExpressionInfoVisitor` reads the `deterministic` flag
+    # of an executable UDF from its configuration: a parametric UDF must not be instantiated there
+    # (an empty parameter list raises `BAD_ARGUMENTS`), and a UDF declared deterministic must still
+    # be pushed down.
+    node.query("DROP TABLE IF EXISTS test_table_distributed_predicate")
+    node.query(
+        "CREATE TABLE test_table_distributed_predicate (k UInt64) ENGINE = MergeTree ORDER BY k"
+    )
+    node.query(
+        "INSERT INTO test_table_distributed_predicate SELECT number FROM numbers(4)"
+    )
+
+    settings = {
+        "serialize_query_plan": 0,
+        "allow_push_predicate_ast_for_distributed_subqueries": 1,
+    }
+    cases = {
+        "test_function_parameter_python(2)(k)": False,
+        "test_function_bash_nondeterministic(k)": False,
+        "test_function_bash_deterministic(k)": True,
+    }
+    for expression, pushed_down in cases.items():
+        log_comment = "distributed_predicate_" + expression.split("(")[0]
+        assert (
+            node.query(
+                f"SELECT count() FROM (SELECT {expression} AS v"
+                " FROM remote('127.0.0.2', default, test_table_distributed_predicate))"
+                " WHERE v != ''",
+                settings={**settings, "log_comment": log_comment},
+            )
+            == "4\n"
+        )
+        node.query("SYSTEM FLUSH LOGS query_log")
+        shard_query = node.query(
+            "SELECT query FROM system.query_log WHERE type = 'QueryFinish'"
+            f" AND is_initial_query = 0 AND log_comment = '{log_comment}'"
+            " AND query LIKE '%test_table_distributed_predicate%'"
+        )
+        assert expression.split("(")[0] in shard_query
+        assert ("HAVING" in shard_query) == pushed_down, shard_query
+
+    node.query("DROP TABLE test_table_distributed_predicate")
+
+
 def test_executable_function_always_error_python(started_cluster):
     skip_test_msan(node)
     try:
