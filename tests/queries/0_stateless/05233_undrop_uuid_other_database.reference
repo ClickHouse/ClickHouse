@@ -1,0 +1,6 @@
+undrop by UUID across databases restores into the dropped table database
+1
+2
+3
+undrop by UUID with a non-on-disk source database fails with UNKNOWN_TABLE
+OK
