@@ -165,6 +165,13 @@ private:
     StorageSnapshotPtr storage_snapshot;
 };
 
+String resolveFileLogPath(const String & path, const String & user_files_path)
+{
+    if (user_files_path.empty() || std::filesystem::path(path).is_absolute() || fileOrSymlinkPathStartsWith(path, user_files_path))
+        return path;
+    return std::filesystem::path(user_files_path) / path;
+}
+
 StorageFileLog::StorageFileLog(
     const StorageID & table_id_,
     ContextPtr context_,
@@ -179,7 +186,7 @@ StorageFileLog::StorageFileLog(
     , WithContext(context_->getGlobalContext())
     , filelog_context(configureContext(getContext()))
     , filelog_settings(std::move(settings))
-    , path(path_)
+    , path(resolveFileLogPath(path_, getContext()->getUserFilesPath()))
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
     , log(getLogger("StorageFileLog (" + table_id_.getFullTableName() + ")"))
@@ -553,12 +560,16 @@ void StorageFileLog::openFilesAndSetPos()
             auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
             if (meta.last_writen_position > static_cast<UInt64>(file_end))
             {
-                throw Exception(
-                    ErrorCodes::CANNOT_READ_ALL_DATA,
-                    "Last saved offsset for File {} is bigger than the file size ({} > {})",
+                /// Truncated in place, e.g. by `logrotate` with `copytruncate`.
+                LOG_INFO(
+                    log,
+                    "File {} is smaller than its saved offset ({} < {}), reading it again from the beginning",
                     file,
-                    meta.last_writen_position,
-                    std::streamoff{file_end});
+                    std::streamoff{file_end},
+                    meta.last_writen_position);
+                /// Before resetting: `serialize` refuses to store an offset smaller than the one on disk.
+                disk->removeFileIfExists(getFullMetaPath(meta.file_name));
+                meta.last_writen_position = 0;
             }
             /// update file end at the moment, used in ReadBuffer and serialize
             meta.last_open_end = file_end;
@@ -976,7 +987,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Engine arguments:
 
-- `path_to_logs` – Path to log files to subscribe. It can be path to a directory with log files or to a single log file. Note that ClickHouse allows only paths inside `user_files` directory.
+- `path_to_logs` – Path to log files to subscribe. It can be path to a directory with log files or to a single log file. A relative path is resolved against the `user_files_path` directory, like in the [file](/reference/functions/table-functions/file) table function; a relative path that is already inside `user_files_path` from the working directory of the server (for example, `user_files/my_app/app.log` when the server runs in its data directory, as in the official Docker image) keeps that meaning. Note that ClickHouse allows only paths inside `user_files` directory.
 - `format_name` - Record format. Note that FileLog process each line in a file as a separate record and not all data formats are suitable for it.
 
 Optional parameters:
@@ -992,7 +1003,7 @@ Optional parameters:
 
 ## Description {#description}
 
-The delivered records are tracked automatically, so each record in a log file is only counted once.
+The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read.
 
 `SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
 
@@ -1010,7 +1021,7 @@ CREATE TABLE logs (
     timestamp UInt64,
     level String,
     message String
-  ) ENGINE = FileLog('user_files/my_app/app.log', 'JSONEachRow');
+  ) ENGINE = FileLog('my_app/app.log', 'JSONEachRow');
 
 CREATE TABLE daily (
     day Date,
