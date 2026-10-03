@@ -11,6 +11,7 @@ CREATE TABLE test_05258
 ENGINE = AggregatingMergeTree
 ORDER BY (project_id, field_hash, run_id)
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0,
     number_of_free_entries_in_pool_to_execute_mutation = 0,
     number_of_free_entries_in_pool_to_execute_optimize_entire_partition = 0;
 

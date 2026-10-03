@@ -117,6 +117,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
     extern const MergeTreeSettingsBool share_nested_offsets;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
+    extern const MergeTreeSettingsBool enable_row_mask_update_coalescing;
+    extern const MergeTreeSettingsUInt64 max_row_mask_update_coalescing_keys;
+    extern const MergeTreeSettingsUInt64 max_row_mask_update_coalescing_key_bytes;
+    extern const MergeTreeSettingsUInt64 max_row_mask_update_coalescing_commands;
+    extern const MergeTreeSettingsUInt64 max_row_mask_update_coalescing_ast_bytes;
 }
 
 namespace FailPoints
@@ -157,9 +162,22 @@ struct SingletonRowMaskUpdate
     String key_column;
     String key_value;
     bool key_from_uint128_array_join = false;
+    size_t predicate_ast_size = 0;
 };
 
-static constexpr size_t max_combined_key_bytes = 64 * 1024;
+static bool containsAliasedExpression(const ASTPtr & ast)
+{
+    if (!ast->tryGetAlias().empty())
+        return true;
+
+    for (const auto & child : ast->children)
+    {
+        if (containsAliasedExpression(child))
+            return true;
+    }
+
+    return false;
+}
 
 /// The targeted singleton `IN` source is `SELECT toUInt128(arrayJoin(['id']))`.
 /// Accept only that exact one-column, one-expression `SELECT` shape. In
@@ -179,7 +197,12 @@ static const ASTLiteral * getSingletonUInt128ArrayJoin(const ASTPtr & rhs)
         return nullptr;
 
     const auto * select = selects->children[0]->as<ASTSelectQuery>();
-    if (!select || select->children.size() != 1 || !select->select())
+    if (!select || select->children.size() != 1 || !select->select()
+        || select->recursive_with || select->distinct || select->group_by_all
+        || select->group_by_with_totals || select->group_by_with_rollup
+        || select->group_by_with_cube || select->group_by_with_constant_keys
+        || select->group_by_with_grouping_sets || select->order_by_all
+        || select->limit_with_ties || select->limit_by_all || select->limit_after_all)
         return nullptr;
 
     const auto * projections = select->select()->as<ASTExpressionList>();
@@ -211,7 +234,8 @@ static const ASTLiteral * getSingletonUInt128ArrayJoin(const ASTPtr & rhs)
     return values;
 }
 
-static std::optional<SingletonRowMaskUpdate> getSingletonRowMaskUpdate(const MutationCommand & command)
+static std::optional<SingletonRowMaskUpdate> getSingletonRowMaskUpdate(
+    const MutationCommand & command, UInt64 max_combined_key_bytes)
 {
     if (command.type != MutationCommand::UPDATE)
         return std::nullopt;
@@ -224,7 +248,8 @@ static std::optional<SingletonRowMaskUpdate> getSingletonRowMaskUpdate(const Mut
     const auto * assignment = alter->update_assignments->children[0]->as<ASTAssignment>();
     const auto * assigned_value = assignment ? assignment->expression()->as<ASTLiteral>() : nullptr;
     if (!assignment || assignment->column_name != RowExistsColumn::name
-        || !assigned_value || assigned_value->value != Field(UInt64(0)))
+        || !assigned_value || assigned_value->value != Field(UInt64(0))
+        || !assigned_value->tryGetAlias().empty())
         return std::nullopt;
 
     const auto * predicate = alter->predicate->as<ASTFunction>();
@@ -251,12 +276,15 @@ static std::optional<SingletonRowMaskUpdate> getSingletonRowMaskUpdate(const Mut
         || prefix_column->name() == RowExistsColumn::name || key_column->name() == RowExistsColumn::name)
         return std::nullopt;
 
+    if (containsAliasedExpression(alter->predicate))
+        return std::nullopt;
+
     const auto & key = key_value ? key_value->value.safeGet<String>() : subquery_value->value.safeGet<Array>()[0].safeGet<String>();
     if (key.size() > max_combined_key_bytes)
         return std::nullopt;
 
     return SingletonRowMaskUpdate{
-        prefix_column->name(), prefix_value->value, key_column->name(), key, subquery_value != nullptr};
+        prefix_column->name(), prefix_value->value, key_column->name(), key, subquery_value != nullptr, alter->predicate->size()};
 }
 
 static bool hasStableRowMaskKeyTypes(
@@ -282,30 +310,36 @@ static bool hasStableRowMaskKeyTypes(
 
 static MutationCommands coalesceSingletonRowMaskUpdates(
     const MutationCommands & commands, const ContextPtr & context, const StorageMetadataPtr & metadata_snapshot,
-    const ColumnsDescription & source_columns)
+    const ColumnsDescription & source_columns, UInt64 max_keys_per_command, UInt64 max_combined_key_bytes)
 {
-    if (commands.size() < 2)
+    if (commands.size() < 2 || max_keys_per_command < 2 || !max_combined_key_bytes)
         return commands;
 
     /// A larger `IN` set must not start throwing or silently truncate where each
     /// original singleton set would fit the effective background settings.
     const auto & settings = context->getSettingsRef();
-    if (settings[Setting::max_bytes_in_set]
-        || (settings[Setting::max_ast_elements] && settings[Setting::max_ast_elements] < 4096)
-        || (settings[Setting::max_expanded_ast_elements] && settings[Setting::max_expanded_ast_elements] < 4096))
+    if (settings[Setting::max_bytes_in_set])
         return commands;
 
-    size_t max_keys_per_command = 256;
-    /// Bound added key-literal bytes and Set entries even when max_bytes_in_set is unlimited.
     auto max_rows_in_set = settings[Setting::max_rows_in_set];
     if (max_rows_in_set && max_rows_in_set < max_keys_per_command)
         max_keys_per_command = max_rows_in_set;
+    if (max_keys_per_command < 2)
+        return commands;
+
+    /// The analyzer counts expanded QueryTree nodes, including source
+    /// expressions retained by folded constants. The raw mutation AST size is
+    /// not an upper bound for that limit, so keep the original commands when
+    /// the user has configured a finite expanded-tree limit.
+    if (settings[Setting::max_expanded_ast_elements] && settings.isChanged("max_expanded_ast_elements"))
+        return commands;
+
     MutationCommands result;
     result.reserve(commands.size());
 
     for (size_t i = 0; i < commands.size();)
     {
-        const auto first = getSingletonRowMaskUpdate(commands[i]);
+        const auto first = getSingletonRowMaskUpdate(commands[i], max_combined_key_bytes);
         if (!first || !hasStableRowMaskKeyTypes(*first, metadata_snapshot, source_columns)
             || (commands[i].max_parser_depth && commands[i].max_parser_depth < DBMS_DEFAULT_MAX_PARSER_DEPTH)
             || (commands[i].max_parser_backtracks && commands[i].max_parser_backtracks < DBMS_DEFAULT_MAX_PARSER_BACKTRACKS))
@@ -315,14 +349,15 @@ static MutationCommands coalesceSingletonRowMaskUpdates(
         }
 
         Tuple keys{first->key_value};
-        size_t combined_key_bytes = first->key_value.size();
+        UInt64 combined_key_bytes = first->key_value.size();
+        size_t original_predicate_ast_size = first->predicate_ast_size;
         std::vector<Field> prefixes{first->prefix_value};
         const bool can_mix_prefixes = first->key_from_uint128_array_join;
         bool mixed_prefixes = false;
         size_t end = i + 1;
         while (end < commands.size() && keys.size() < max_keys_per_command)
         {
-            const auto next = getSingletonRowMaskUpdate(commands[end]);
+            const auto next = getSingletonRowMaskUpdate(commands[end], max_combined_key_bytes);
             if (!next || next->key_value.size() > max_combined_key_bytes - combined_key_bytes
                 || commands[end].mutation_version != commands[i].mutation_version
                 || commands[end].max_parser_depth != commands[i].max_parser_depth
@@ -336,6 +371,7 @@ static MutationCommands coalesceSingletonRowMaskUpdates(
 
             keys.emplace_back(next->key_value);
             combined_key_bytes += next->key_value.size();
+            original_predicate_ast_size += next->predicate_ast_size;
             prefixes.emplace_back(next->prefix_value);
             mixed_prefixes |= next->prefix_value != first->prefix_value;
             ++end;
@@ -390,8 +426,22 @@ static MutationCommands coalesceSingletonRowMaskUpdates(
                 membership->arguments->children[1] = make_intrusive<ASTLiteral>(std::move(keys));
             }
             alter.commit();
-            combined.ast();
-            result.push_back(std::move(combined));
+            const auto combined_ast = combined.ast();
+            const auto combined_ast_size = combined_ast->size();
+            if (combined_ast->predicate->size() > original_predicate_ast_size
+                || (settings[Setting::max_ast_elements] && combined_ast_size > settings[Setting::max_ast_elements])
+                || (settings[Setting::max_expanded_ast_elements]
+                    && combined_ast_size > settings[Setting::max_expanded_ast_elements]))
+            {
+                /// Keep the original commands if their combined predicate grows
+                /// the affected-row query or exceeds effective background limits.
+                for (size_t j = i; j < end; ++j)
+                    result.push_back(commands[j]);
+            }
+            else
+            {
+                result.push_back(std::move(combined));
+            }
         }
         i = end;
     }
@@ -4321,8 +4371,15 @@ bool MutateTask::prepare()
     /// Coalesce before splitting so a `DROP` or `RENAME` that the split omits
     /// remains a grouping barrier. Keep file-rename planning based on the
     /// original commands, including one `UPDATE` entry per original command.
-    bool can_coalesce_row_mask_updates = ctx->commands_for_part.size() > 1
-        && ctx->commands_for_part.size() <= 4096
+    const auto merge_tree_settings = ctx->data->getSettings();
+    const UInt64 max_coalescing_commands = (*merge_tree_settings)[MergeTreeSetting::max_row_mask_update_coalescing_commands];
+    const UInt64 max_coalescing_ast_bytes = (*merge_tree_settings)[MergeTreeSetting::max_row_mask_update_coalescing_ast_bytes];
+    const UInt64 max_coalescing_keys = (*merge_tree_settings)[MergeTreeSetting::max_row_mask_update_coalescing_keys];
+    const UInt64 max_coalescing_key_bytes = (*merge_tree_settings)[MergeTreeSetting::max_row_mask_update_coalescing_key_bytes];
+    bool can_coalesce_row_mask_updates = (*merge_tree_settings)[MergeTreeSetting::enable_row_mask_update_coalescing]
+        && max_coalescing_commands && max_coalescing_ast_bytes && max_coalescing_keys > 1 && max_coalescing_key_bytes
+        && ctx->commands_for_part.size() > 1
+        && ctx->commands_for_part.size() <= max_coalescing_commands
         && isWidePart(ctx->source_part)
         && isFullPartStorage(ctx->source_part->getDataPartStorage())
         && !MutationHelpers::hasDynamicColumnsWithoutRecordedSubstreams(ctx->source_part)
@@ -4331,10 +4388,10 @@ bool MutateTask::prepare()
     if (can_coalesce_row_mask_updates)
     {
         /// Copying the command list for part-local execution must stay bounded.
-        size_t input_bytes = 0;
+        UInt64 input_bytes = 0;
         for (const auto & command : ctx->commands_for_part)
         {
-            if (command.ast_text.size() > (1 << 20) - input_bytes)
+            if (command.ast_text.size() > max_coalescing_ast_bytes - input_bytes)
             {
                 can_coalesce_row_mask_updates = false;
                 break;
@@ -4348,7 +4405,7 @@ bool MutateTask::prepare()
     {
         coalesced_commands = MutationHelpers::coalesceSingletonRowMaskUpdates(
             ctx->commands_for_part, context_for_reading, ctx->metadata_snapshot,
-            ColumnsDescription(ctx->source_part->getColumns()));
+            ColumnsDescription(ctx->source_part->getColumns()), max_coalescing_keys, max_coalescing_key_bytes);
         if (coalesced_commands.size() != ctx->commands_for_part.size())
         {
             commands_for_execution = &coalesced_commands;

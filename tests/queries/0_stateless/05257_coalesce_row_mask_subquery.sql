@@ -10,7 +10,8 @@ CREATE TABLE test_05257
 )
 ENGINE = AggregatingMergeTree
 ORDER BY (project_id, field_hash, run_id)
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0;
 
 INSERT INTO test_05257 VALUES
     (1, 1, 1, 1, 0), (2, 1, 2, 2, 0), (3, 1, 3, 3, 0),
