@@ -835,10 +835,13 @@ if (FUZZER)
         OUTPUT_VARIABLE FUZZER_SOURCE_DICT_OUTPUT
         ERROR_VARIABLE FUZZER_SOURCE_DICT_OUTPUT)
     string (STRIP "${FUZZER_SOURCE_DICT_OUTPUT}" FUZZER_SOURCE_DICT_OUTPUT)
-    # Fail loudly: a missing dictionary makes a consumer's `cp tests/fuzz/*.dict`
-    # abort on an unmatched glob far from here.
+    # Fail here: consumers copy tests/fuzz/*.dict, a glob the committed
+    # per-target dictionaries satisfy even when all.dict is missing.
     if (NOT FUZZER_SOURCE_DICT_RESULT EQUAL 0)
         message (FATAL_ERROR "Failed to generate tests/fuzz/all.dict: ${FUZZER_SOURCE_DICT_OUTPUT}")
+    endif()
+    if (NOT EXISTS "${CMAKE_SOURCE_DIR}/tests/fuzz/all.dict")
+        message (FATAL_ERROR "tests/fuzz/all.dict is missing after generation")
     endif()
     message (STATUS "${FUZZER_SOURCE_DICT_OUTPUT}")
 

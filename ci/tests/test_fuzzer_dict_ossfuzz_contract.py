@@ -13,9 +13,10 @@ design these tests protect:
     so its POST_BUILD step cannot be what produces the dictionary.
 
 all.dict is therefore generated at *configure* time, into the source tree,
-where a per-target build and the OSS-Fuzz glob both find it. Under `-eu` an
-unmatched glob aborts the whole build, so losing that wiring breaks the
-official OSS-Fuzz build rather than merely degrading a dictionary.
+where a per-target build and the OSS-Fuzz glob both find it. The committed
+per-target dictionaries satisfy that glob on their own, so configure also fails
+when all.dict is missing: losing that wiring breaks the official OSS-Fuzz build
+rather than merely degrading a dictionary.
 
 Each test carries a mutation arm: the assertion has to fail when the wiring it
 describes is removed, otherwise it would pass against a tree that has lost it.
@@ -107,7 +108,7 @@ class TestConfigureTimeGeneration:
         generation = _generation_commands(block)
         assert generation, (
             "the root CMakeLists.txt `if (FUZZER)` block must generate the fuzzer "
-            "dictionary; without it OSS-Fuzz's `cp tests/fuzz/*.dict` aborts"
+            "dictionary; without it OSS-Fuzz's `cp tests/fuzz/*.dict` ships no all.dict"
         )
         assert re.search(
             r"execute_process\s*\(\s*COMMAND[^)]*generate_source_dict\.sh", block, re.S
@@ -160,8 +161,8 @@ class TestConfigureTimeGeneration:
         assert not any("CMAKE_BINARY_DIR}/tests/fuzz" in c for c in generation)
 
     def test_failure_to_generate_is_fatal(self):
-        # An empty or missing dictionary surfaces far away, as an unmatched glob
-        # inside OSS-Fuzz's build script, so fail where the cause is.
+        # Nothing downstream notices a missing dictionary: OSS-Fuzz's glob also
+        # matches the committed per-target ones. So fail where the cause is.
         block = _fuzzer_block(_read(_ROOT_CMAKE))
         assert re.search(
             r"if\s*\(NOT\s+\w+\s+EQUAL\s+0\)", block
