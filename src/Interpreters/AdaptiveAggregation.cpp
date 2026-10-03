@@ -27,6 +27,27 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+/// Whether a frozen producer's staged stream so far wastes more than `wasted_bytes_per_key` per distinct key, given
+/// the evidence floor and the staged share of the thaw guard (see the tuning constants in `AdaptiveAggregationImpl.h`).
+/// The waste per key, (repeat - 1) * bytes per record, is compared against the bound rearranged onto a common
+/// denominator so the arithmetic stays integral: (sampled - distinct) * staged_bytes > bound * distinct *
+/// staged_records. The products are widened to 128 bits: a giant near-unique stream (billions of staged records times
+/// their bytes) overflows 64, and a wrapped product could condemn a healthy stream.
+bool adaptiveStagingWastes(const AdaptiveAggregationProducer::FrozenState & frozen, size_t wasted_bytes_per_key)
+{
+    const size_t distinct = frozen.distinct_sampled_hashes.size();
+    return frozen.staged_records >= adaptive_thaw_min_staged_records
+        && frozen.staged_records * adaptive_thaw_staged_share_inverse >= frozen.rows
+        && frozen.thaw_sampled_records > distinct
+        && static_cast<UInt128>(frozen.thaw_sampled_records - distinct) * frozen.staged_bytes
+            > static_cast<UInt128>(wasted_bytes_per_key) * distinct * frozen.staged_records;
+}
+
+}
+
 void Aggregator::initAdaptiveSession(AdaptiveAggregationSession & shared) const
 {
     shared.layout = AdaptivePartitionLayout::forProducers(params.max_threads, params.max_bytes_before_external_group_by);
@@ -78,6 +99,12 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
             bins->bucket_maxima[bucket] = *std::max_element(bucket_bins, bucket_bins + adaptive_count_bins_per_bucket);
         }
     }
+
+    /// A producer that finishes frozen counts toward the verdict of the run when its whole staged stream repeated past
+    /// the bound of the verdict; one that thawed was counted at its thaw.
+    if (adaptive.isFrozen() && adaptiveMayThaw(shared)
+        && adaptiveStagingWastes(std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase), adaptive_verdict_wasted_bytes_per_key))
+        shared.repeat_dominated_producers.fetch_add(1, std::memory_order_relaxed);
 
     /// A producer that never froze staged nothing.
     if (adaptive.partitions)
@@ -297,29 +324,16 @@ bool Aggregator::adaptiveMayThaw(const AdaptiveAggregationSession & shared) cons
 
 bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const
 {
-    if (!adaptiveMayThaw(*adaptive.session))
-        return false;
-
-    /// The verdict compares the wasted staged bytes per distinct key, (repeat - 1) * bytes per record, against the
-    /// bound, rearranged onto a common denominator so the arithmetic stays integral:
-    /// (sampled - distinct) * staged_bytes > bound * distinct * staged_records. The products are widened to 128 bits:
-    /// a giant near-unique stream (billions of staged records times their bytes) overflows 64, and a wrapped product
-    /// could thaw a healthy stream.
-    const auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
-    const size_t distinct = frozen.distinct_sampled_hashes.size();
-    return frozen.staged_records >= adaptive_thaw_min_staged_records
-        && frozen.staged_records * adaptive_thaw_staged_share_inverse >= frozen.rows
-        && frozen.thaw_sampled_records > distinct
-        && static_cast<UInt128>(frozen.thaw_sampled_records - distinct) * frozen.staged_bytes
-            > static_cast<UInt128>(adaptive_thaw_wasted_bytes_per_key) * distinct * frozen.staged_records;
+    return adaptiveMayThaw(*adaptive.session)
+        && adaptiveStagingWastes(std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase), adaptive_thaw_wasted_bytes_per_key);
 }
 
 std::optional<bool> Aggregator::adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const
 {
     /// A run measures the verdict only when some producer froze and the producers could thaw: a run that may not thaw
     /// gathers no evidence, and keeping its tables frozen whatever the repeats is what it asked for. The verdict needs
-    /// half of the frozen producers thawed, so a few threads that thaw on an otherwise healthy stream do not keep the
-    /// next runs off the adaptive path.
+    /// half of the frozen producers repeat-dominated, so a few threads that repeat on an otherwise healthy stream do
+    /// not keep the next runs off the adaptive path.
     const size_t frozen = shared.frozen_producers.load(std::memory_order_relaxed);
     if (!frozen || !adaptiveMayThaw(shared))
         return std::nullopt;

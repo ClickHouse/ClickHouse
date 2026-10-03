@@ -101,6 +101,18 @@ constexpr size_t adaptive_thaw_min_staged_records = 16'384;
 constexpr size_t adaptive_thaw_wasted_bytes_per_key = 150;
 constexpr size_t adaptive_thaw_staged_share_inverse = 4;
 
+/// The verdict of a run, which the hash-table statistics keep for the later runs of the query (see
+/// `Aggregator::adaptiveStagingVerdict`), weighs the whole staged stream of a thread that is still frozen at its
+/// finish as the thaw guard does, but against a lower bound. A thaw switches a thread in the middle of its stream:
+/// the records staged so far stay, and the table starts filling only then, so it pays only for heavy repeats. A
+/// verdict decides the next runs from their start, which have nothing to switch, so the stream needs to repeat only
+/// enough for the ordinary path to win. The bound of 75 splits the shapes measured per thread: the numeric-key
+/// streams that lose to the ordinary path when kept engaged waste ~ 84 bytes per key and more (a count, a sum or a
+/// key-only stream at repeat ~ 6-10 in a thread), and those that win waste at most ~ 34 (the same streams at
+/// repeat ~ 1.5-3). Narrow count and key-only streams at repeat ~ 2.5-3 still lose up to ~ 15% below the bound:
+/// the ordinary path of an aggregation without states wins at less waste than the bytes tell.
+constexpr size_t adaptive_verdict_wasted_bytes_per_key = 75;
+
 /// The record layout of the aggregate arguments that general payloads stage, fixed for the query by the header.
 /// The fixed-size arguments come first, at fixed offsets and in the form `RowDataStore` uses (a Nullable field is a
 /// null byte followed by the value), so the drain rebuilds each of them with one `IColumn::fillFromRowStorePtrs`
@@ -208,8 +220,9 @@ struct AdaptiveAggregationSession
     /// `uniqExactIf` (see `AdaptiveTopKPruning`).
     std::unique_ptr<AdaptiveTopKPruning> top_k_pruning;
 
-    /// The producers whose tables froze at least once, and those of them whose staged streams were repeat-dominated,
-    /// which they showed by thawing. Together they make the verdict of the run (see `Aggregator::adaptiveStagingVerdict`).
+    /// The producers whose tables froze at least once, and those of them whose staged streams were repeat-dominated:
+    /// they thawed, or they finished frozen past the bound of the verdict. Together they make the verdict of the run
+    /// (see `Aggregator::adaptiveStagingVerdict`).
     std::atomic<size_t> frozen_producers{0};
     std::atomic<size_t> repeat_dominated_producers{0};
 };
