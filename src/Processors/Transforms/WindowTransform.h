@@ -4,19 +4,16 @@
 
 #include <Interpreters/WindowDescription.h>
 
+#include <Processors/Transforms/Window/Partition.h>
+#include <Processors/Transforms/Window/SlidingBlocks.h>
+#include <Processors/Transforms/Window/SlidingIndexes.h>
 #include <Processors/Transforms/Window/WindowTransformParams.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 
 #include <Core/Block.h>
 
-#include <deque>
 #include <optional>
-
-/// See https://stackoverflow.com/questions/72533435/error-zero-as-null-pointer-constant-while-comparing-template-class-using-spaces
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-
 
 namespace DB
 {
@@ -25,31 +22,6 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class Arena;
-
-
-struct WindowTransformBlock
-{
-    Columns original_input_columns;
-    Columns input_columns;
-    MutableColumns output_columns;
-
-    size_t rows = 0;
-};
-
-struct RowNumber
-{
-    UInt64 block = 0;
-    UInt64 row = 0;
-
-    auto operator <=>(const RowNumber &) const = default;
-};
-
-struct MovedRow
-{
-    RowNumber row;
-    Int64 offset_left = 0;
-};
-
 
 /* Computes several window functions that share the same window. The input must
  * be sorted by PARTITION BY (in any order), then by ORDER BY.
@@ -98,8 +70,6 @@ public:
 
     /* Implementation details.
      */
-    void advancePartitionEnd();
-
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
 
     void advanceFrameStartRowsOffset();
@@ -125,111 +95,10 @@ public:
 
     // Advances `pointer` forward, peer group by peer group, until it reaches the first row of the
     // `target_group`-th peer group (1-based) or the partition end.
-    bool advanceGroupBoundary(RowNumber & pointer, UInt64 & group_counter, RowNumber & scan_frontier, Int64 target_group) const;
+    bool advanceGroupBoundary(RowNumber & pointer, Int64 & group_counter, RowNumber & scan_frontier, Int64 target_group) const;
 
     void updateAggregationState();
     void writeOutCurrentRow();
-
-    Columns & inputAt(const RowNumber & x);
-    const Columns & inputAt(const RowNumber & x) const
-    {
-        return const_cast<WindowTransform *>(this)->inputAt(x);
-    }
-
-    WindowTransformBlock & blockAt(UInt64 block_number);
-    const WindowTransformBlock & blockAt(UInt64 block_number) const
-    {
-        return const_cast<WindowTransform *>(this)->blockAt(block_number);
-    }
-    WindowTransformBlock & blockAt(const RowNumber & x)
-    {
-        return blockAt(x.block);
-    }
-    const WindowTransformBlock & blockAt(const RowNumber & x) const
-    {
-        return const_cast<WindowTransform *>(this)->blockAt(x);
-    }
-
-    size_t blockRowsNumber(const RowNumber & x) const
-    {
-        return blockAt(x).rows;
-    }
-    MutableColumns & outputAt(const RowNumber & x);
-
-    void advanceRowNumber(RowNumber & x) const
-    {
-        chassert(x.block >= first_block_number);
-        chassert(x.block - first_block_number < blocks.size());
-
-        const auto block_rows = blockAt(x).rows;
-        chassert(x.row < block_rows);
-
-        ++x.row;
-        if (x.row < block_rows)
-        {
-            return;
-        }
-
-        x.row = 0;
-        ++x.block;
-    }
-    RowNumber nextRowNumber(const RowNumber & x) const
-    {
-        RowNumber result = x;
-        advanceRowNumber(result);
-        return result;
-    }
-
-    void retreatRowNumber(RowNumber & x) const
-    {
-#ifndef NDEBUG
-        auto original_x = x;
-#endif
-
-        if (x.row > 0)
-        {
-            --x.row;
-            return;
-        }
-
-        --x.block;
-        chassert(x.block >= first_block_number);
-        chassert(x.block < first_block_number + blocks.size());
-        chassert(blockAt(x).rows > 0);
-        x.row = blockAt(x).rows - 1;
-
-#ifndef NDEBUG
-        auto advanced_retreated_x = x;
-        advanceRowNumber(advanced_retreated_x);
-        chassert(advanced_retreated_x == original_x);
-#endif
-    }
-    RowNumber prevRowNumber(const RowNumber & x) const
-    {
-        RowNumber result = x;
-        retreatRowNumber(result);
-        return result;
-    }
-
-    MovedRow moveRowNumber(const RowNumber & original_row_number, Int64 offset) const;
-    MovedRow moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const;
-
-    void assertValid(const RowNumber & x) const
-    {
-        chassert(x.block >= first_block_number);
-        if (x.block == first_block_number + blocks.size())
-            chassert(x.row == 0);
-        else
-            chassert(x.row < blockRowsNumber(x));
-    }
-    RowNumber blocksEnd() const
-    {
-        return RowNumber{first_block_number + blocks.size(), 0};
-    }
-    RowNumber blocksBegin() const
-    {
-        return RowNumber{first_block_number, 0};
-    }
 
     /// Data for window transform itself.
     const WindowTransformParams params;
@@ -250,25 +119,15 @@ public:
     // states are destroyed, so it does not grow across partitions.
     std::unique_ptr<Arena> arena;
 
-    // A sliding window of blocks we currently need. We add the input blocks as
-    // they arrive, and discard the blocks we don't need anymore. The blocks
-    // have an always-incrementing index. The index of the first block is in
-    // `first_block_number`.
-    std::deque<WindowTransformBlock> blocks;
-    UInt64 first_block_number = 0;
+    SlidingBlocks blocks;
+    SlidingIndexes indexes;
     // The next block we are going to pass to the consumer.
-    UInt64 next_output_block_number = 0;
+    Int64 next_output_block_number = 0;
 
-    // Boundaries of the current partition.
-    // partition_start doesn't point to a valid block, because we want to drop
-    // the blocks early to save memory. We still have to track it so that we can
-    // cut off a PRECEDING frame at the partition start.
-    // The `partition_end` is past-the-end, as usual. When
-    // partition_ended = false, it still haven't ended, and partition_end is the
-    // next row to check.
-    RowNumber partition_start;
-    RowNumber partition_end;
-    bool partition_ended = false;
+    // The current partition. Its start doesn't point to a valid block, because
+    // we want to drop the blocks early to save memory. We still have to track it
+    // so that we can cut off a PRECEDING frame at the partition start.
+    Partition partition;
 
     // The row for which we are now computing the window functions.
     RowNumber current_row;
@@ -278,15 +137,15 @@ public:
     RowNumber peer_group_start;
 
     // Row and group numbers in partition for calculating rank() and friends.
-    UInt64 current_row_number = 1;
-    UInt64 peer_group_start_row_number = 1;
-    UInt64 peer_group_number = 1;
+    Int64 current_row_number = 1;
+    Int64 peer_group_start_row_number = 1;
+    Int64 peer_group_number = 1;
 
     // Peer group index (1-based) of the row that frame_start / frame_end currently point to. Used
     // by GROUPS offset frames to count peer groups while advancing the boundaries. Reset together
     // with the frame boundaries when a new partition starts.
-    UInt64 frame_start_group_number = 1;
-    UInt64 frame_end_group_number = 1;
+    Int64 frame_start_group_number = 1;
+    Int64 frame_end_group_number = 1;
 
     // Resume positions for the peer-group scans of the corresponding boundaries (see
     // `findPeerGroupEnd`). Unlike the RANGE offset frames, which resume by advancing the boundary
@@ -317,5 +176,3 @@ public:
 };
 
 }
-
-#pragma clang diagnostic pop
