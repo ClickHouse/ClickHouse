@@ -196,12 +196,12 @@ parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet
         String etag = object_with_metadata->metadata->etag;
         ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
         metadata_cell = metadata_cache->getOrSetMetadataCell(
-            cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher); });
+            cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size); });
         return metadata_cell->metadata;
     }
     else
     {
-        return Parquet::Reader::readFileMetaData(prefetcher);
+        return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
     }
 }
 
@@ -356,7 +356,7 @@ void NativeParquetSchemaReader::initializeIfNeeded()
         return;
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&in, read_options, /*parser_shared_resources_=*/ nullptr);
-    file_metadata = Parquet::Reader::readFileMetaData(prefetcher);
+    file_metadata = Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
     initialized = true;
 }
 
@@ -799,7 +799,7 @@ parquet::format::FileMetaData parseFileMetadataNative(ReadBuffer & buf, const Fo
     Parquet::Prefetcher prefetcher;
     auto read_options = convertReadOptions(format_settings);
     prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
-    return Parquet::Reader::readFileMetaData(prefetcher);
+    return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
 }
 
 /// Stamps every bucket of a freshly computed split with the digest of the footer the split was

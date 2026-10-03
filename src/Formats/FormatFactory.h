@@ -13,6 +13,7 @@
 
 #include <functional>
 #include <memory>
+#include <set>
 #include <unordered_map>
 
 
@@ -331,7 +332,7 @@ public:
     void registerAppendSupportChecker(const String & name, AppendSupportChecker append_support_checker);
 
     /// If format always doesn't support append, you can use this method instead of
-    /// registerAppendSupportChecker with append_support_checker that always returns true.
+    /// registerAppendSupportChecker with append_support_checker that always returns false.
     void markFormatHasNoAppendSupport(const String & name);
 
     bool checkIfFormatSupportAppend(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
@@ -345,8 +346,22 @@ public:
     /// Attach embedded documentation to a format by its name.
     void setDocumentation(const String & name, Documentation documentation);
 
-    /// Register file extension for format
-    void registerFileExtension(const String & extension, const String & format_name);
+    /// Register a file extension for the format. An extension can infer only one format, so
+    /// pass used_for_format_inference = false to register an extension that carries data
+    /// readable as the format but infers as a different one: e.g. NDJSON lakes commonly name
+    /// their files `.json`, which infers as `JSON`.
+    void registerFileExtension(const String & extension, const String & format_name, bool used_for_format_inference = true);
+    /// Register an interchangeable spelling of a format registered under another name, such as
+    /// `JSONLines` for `JSONEachRow`. Only getFileExtensionsForFormat consults it: the alias is
+    /// a format of its own everywhere else, and the file extensions are registered mostly for
+    /// the canonical spelling.
+    void registerFormatAlias(const String & alias, const String & format_name);
+    /// All file extensions registered for the format, for every interchangeable spelling of it
+    /// (both the format it is an alias of and the other aliases of that format), and for its
+    /// `WithNames`/`WithNamesAndTypes` base format, in a deterministic order. The lowercased
+    /// format name is always a part of the result, because format names are registered as
+    /// extensions of the format itself.
+    std::vector<String> getFileExtensionsForFormat(const String & format_name) const;
     String getFormatFromFileName(String file_name);
     std::optional<String> tryGetFormatFromFileName(String file_name);
     String getFormatFromFileDescriptor(int fd);
@@ -378,6 +393,11 @@ public:
     bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
     bool checkIfOutputFormatIsTTYFriendly(const String & name) const;
     bool checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings, const Block & header) const;
+    /// Whether reading `name` will seek instead of consuming the input from the start. A
+    /// random-access format reads its footer at the tail first, but only while it is allowed to
+    /// seek: with `input_format_allow_seeks = 0` it reads sequentially from the start instead.
+    bool checkIfFormatIsRandomAccessInput(
+        const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
     bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;
 
@@ -409,6 +429,15 @@ public:
 private:
     FormatsDictionary dict;
     FileExtensionFormats file_extension_formats;
+    /// Lowercased format name -> all extensions registered for it (including the ones with
+    /// used_for_format_inference = false, which are absent from file_extension_formats).
+    std::unordered_map<String, std::set<String>> format_file_extensions;
+    /// Lowercased alias -> lowercased canonical format name, see registerFormatAlias.
+    std::unordered_map<String, String> format_aliases;
+    /// The reverse of format_aliases: lowercased canonical format name -> all of its aliases.
+    /// Every spelling of a format is a format of its own and carries its own name as a file
+    /// extension, so the lookup has to walk the aliases in both directions.
+    std::unordered_map<String, std::set<String>> format_alias_groups;
 
     const Creators & getCreators(const String & name) const;
     Creators & getOrCreateCreators(const String & name);

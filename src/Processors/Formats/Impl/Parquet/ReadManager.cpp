@@ -56,7 +56,7 @@ void ReadManager::init(
     parser_shared_resources = parser_shared_resources_;
 
     if (reader.file_metadata.schema.empty())
-        reader.file_metadata = Reader::readFileMetaData(reader.prefetcher);
+        reader.file_metadata = Reader::readFileMetaData(reader.prefetcher, reader.options.format.parquet.footer_read_size);
 
     if (buckets_to_read_)
     {

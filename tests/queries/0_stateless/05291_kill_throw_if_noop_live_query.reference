@@ -1,0 +1,15 @@
+-- 1. user = currentUser() matches only the caller's own rows, and the KILL statement itself is excluded; with the dedicated user idle otherwise, the match is empty and the default throws
+throws NOTHING_TO_KILL
+-- 2. the same empty match with the setting off
+no rows, no error
+-- 3. TEST is a dry run: an empty match is an empty preview, not an exception
+empty preview
+-- 4. killing a live query must not throw with the default setting and must stop it
+rows: 1
+victim: gone
+-- 5. KILL MUTATION with an empty match throws by default
+throws NOTHING_TO_KILL
+-- 6. the same empty match with the setting off
+no rows, no error
+-- 7. KILL MUTATION TEST with nothing to kill is an empty preview
+empty preview
