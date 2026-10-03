@@ -547,12 +547,10 @@ void MergeTreeReaderTextIndex::createEmptyColumns(MutableColumns & columns, size
 
 std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makePostingsStream(const TokenPostingsInfo & token_info) const
 {
-    const auto substream = index.index->getSubstreams()[2];
-
     return makeTextIndexInputStream(
         *data_part_info_for_read,
         index.index->getFileName(),
-        substream,
+        index.index->getSubstreams()[2],
         settings,
         estimatePostingListBufferSize(token_info));
 }

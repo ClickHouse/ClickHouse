@@ -565,14 +565,8 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReadGranulesMicroseconds);
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
 
-    const auto get_stream = [&](MergeTreeIndexSubstream::Type type) -> MergeTreeIndexReaderStream *
-    {
-        auto it = streams.find(type);
-        return it == streams.end() ? nullptr : it->second;
-    };
-
     /// Only the index stream is passed in `streams`: the dictionary and postings streams are opened by the analysis.
-    auto * index_stream = get_stream(MergeTreeIndexSubstream::Type::Regular);
+    auto * index_stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
     if (!index_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be deserialized with the index stream");
 

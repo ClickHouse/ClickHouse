@@ -4,7 +4,7 @@
 
 -- Posting lists are read through streams whose buffer is sized to the segments they read. This test pins the
 -- effect: a lazy read of a posting list of a few hundred KiB takes a handful of read syscalls instead of one per
--- 16 KiB. The results of the paths that do those reads are pinned by `05233_text_index_postings_stream_buffer`.
+-- 16 KiB.
 
 SET enable_full_text_index = 1;
 SET use_skip_indexes = 1;

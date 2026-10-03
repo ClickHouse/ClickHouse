@@ -215,9 +215,7 @@ using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;
 MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, const String & part_relative_path);
 
 /// Opens a substream of a text index.
-/// If `expected_buffer_size` is set, the read buffer of the dictionary or postings is limited to it,
-/// but at least 16 KiB and at most the regular read buffer size of `reader_settings`.
-/// Otherwise, the stream takes the regular read buffer size.
+/// If `expected_buffer_size` is set, the read buffer of the dictionary or postings is limited to it.
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const IMergeTreeDataPartInfoForReader & data_part_info,
     const String & index_file_name,
@@ -233,7 +231,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const MergeTreeReaderSettings & reader_settings,
     std::optional<size_t> expected_buffer_size);
 
-/// Estimates the read buffer size for the posting list of a token: the size of its largest compressed segment, but at least 16 KiB.
+/// Estimates the read buffer size for the posting list of a token based on max estimated segment size.
 size_t estimatePostingListBufferSize(const TokenPostingsInfo & token_info);
 
 }
