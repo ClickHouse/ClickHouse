@@ -1734,7 +1734,8 @@ std::vector<TableInfo> resolveTables(
         const auto * stored_engine = create && create->storage ? create->storage->engine : nullptr;
         const ASTFunction * engine = stored_engine;
         ASTPtr effective_engine;
-        if (use_database_create && stored_engine && (stored_engine->name == "Remote" || stored_engine->name == "RemoteSecure"))
+        if (use_database_create && stored_engine
+            && (equalsCaseInsensitive(stored_engine->name, "Remote") || equalsCaseInsensitive(stored_engine->name, "RemoteSecure")))
         {
             effective_engine = stored_engine->clone();
             auto * proxy_engine = effective_engine->as<ASTFunction>();
@@ -1749,7 +1750,7 @@ std::vector<TableInfo> resolveTables(
                 continue;
             engine = proxy_engine;
         }
-        else if (use_database_create && stored_engine && stored_engine->name == "Cluster")
+        else if (use_database_create && stored_engine && equalsCaseInsensitive(stored_engine->name, "Cluster"))
         {
             /// `Cluster('name', 'db')` serves each table the way `cluster('name', 'db', 'table')` reads it.
             if (!stored_engine->arguments || stored_engine->arguments->children.size() != 2)
@@ -1761,7 +1762,9 @@ std::vector<TableInfo> resolveTables(
                 make_intrusive<ASTLiteral>(row.name));
             engine = effective_engine->as<ASTFunction>();
         }
-        if (!engine || (engine->name != "Remote" && engine->name != "RemoteSecure" && engine->name != "cluster"))
+        if (!engine
+            || (!equalsCaseInsensitive(engine->name, "Remote") && !equalsCaseInsensitive(engine->name, "RemoteSecure")
+                && !equalsCaseInsensitive(engine->name, "cluster")))
         {
             if (use_database_create)
                 continue;
@@ -1807,7 +1810,7 @@ std::vector<TableInfo> resolveTables(
             }
             auto * create = create_ast->as<ASTCreateQuery>();
             ASTFunction * engine = create && create->storage ? create->storage->engine : nullptr;
-            if (!engine || (engine->name != "Remote" && engine->name != "RemoteSecure"))
+            if (!engine || (!equalsCaseInsensitive(engine->name, "Remote") && !equalsCaseInsensitive(engine->name, "RemoteSecure")))
                 continue;
             select_ast = engine->ptr();
         }
