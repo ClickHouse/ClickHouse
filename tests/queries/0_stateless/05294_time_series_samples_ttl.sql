@@ -6,7 +6,7 @@ DROP TABLE IF EXISTS ts;
 CREATE TABLE ts ENGINE = TimeSeries
 SETTINGS recent_samples_partition_by = 'toStartOfInterval(toDateTime(timestamp, ''UTC''), toIntervalHour(5))'
 SAMPLES INNER ENGINE = MergeTree PARTITION BY toDate(timestamp, 'UTC') ORDER BY (id, timestamp)
-    TTL toDateTime(timestamp) + INTERVAL 30 DAY SETTINGS ttl_only_drop_parts = 1;
+    TTL toDateTime(timestamp, 'UTC') + INTERVAL 30 DAY SETTINGS ttl_only_drop_parts = 1;
 
 SELECT splitByChar('.', name)[3] AS target, partition_key
 FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner_id.%samples.%' ORDER BY target;
@@ -28,7 +28,7 @@ DROP TABLE ts;
 CREATE TABLE ts (samples Array(Tuple(UInt32, Float64))) ENGINE = TimeSeries
 SETTINGS recent_samples_partition_by = 'toStartOfInterval(toDateTime(timestamp, ''UTC''), toIntervalHour(5))'
 SAMPLES INNER ENGINE = MergeTree PARTITION BY toDate(timestamp, 'UTC') ORDER BY (id, timestamp)
-    TTL toDateTime(timestamp) + INTERVAL 30 DAY SETTINGS ttl_only_drop_parts = 1;
+    TTL toDateTime(timestamp, 'UTC') + INTERVAL 30 DAY SETTINGS ttl_only_drop_parts = 1;
 
 SELECT splitByChar('.', name)[3] AS target, partition_key
 FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner_id.%samples.%' ORDER BY target;

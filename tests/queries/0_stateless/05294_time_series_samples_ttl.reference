@@ -1,14 +1,14 @@
 recentsamples	toStartOfInterval(toDateTime(timestamp, \'UTC\'), toIntervalHour(5))
 samples	toDate(timestamp, \'UTC\')
 recentsamples	toDateTime(timestamp) + toIntervalSecond(345600)
-samples	toDateTime(timestamp) + toIntervalDay(30)
+samples	toDateTime(timestamp, \'UTC\') + toIntervalDay(30)
 samples	2
 tags	new_metric
 tags	old_metric
 recentsamples	toStartOfInterval(toDateTime(timestamp, \'UTC\'), toIntervalHour(5))
 samples	toDate(timestamp, \'UTC\')
 recentsamples	toDateTime(timestamp) + toIntervalSecond(345600)
-samples	toDateTime(timestamp) + toIntervalDay(30)
+samples	toDateTime(timestamp, \'UTC\') + toIntervalDay(30)
 recentsamples	UInt32
 samples	UInt32
 samples	2

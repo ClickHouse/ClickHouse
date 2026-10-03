@@ -1412,7 +1412,7 @@ To delete old samples, declare a `TTL` in the engine of the inner samples table:
 CREATE TABLE my_table ENGINE=TimeSeries
 SETTINGS recent_samples_partition_by = 'toStartOfInterval(toDateTime(timestamp, ''UTC''), toIntervalHour(5))'
 SAMPLES INNER ENGINE = MergeTree PARTITION BY toDate(timestamp, 'UTC') ORDER BY (id, timestamp)
-    TTL toDateTime(timestamp) + INTERVAL 30 DAY SETTINGS ttl_only_drop_parts = 1
+    TTL toDateTime(timestamp, 'UTC') + INTERVAL 30 DAY SETTINGS ttl_only_drop_parts = 1
 ```
 
 With `ttl_only_drop_parts` a part is dropped as a whole when all its samples are expired, instead of being rewritten.
