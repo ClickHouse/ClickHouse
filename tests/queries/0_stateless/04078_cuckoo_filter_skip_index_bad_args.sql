@@ -7,6 +7,10 @@ CREATE TABLE t_cuckoo_bad (`k` UInt64, INDEX i k TYPE cuckoo_filter(-0.01) GRANU
 CREATE TABLE t_cuckoo_bad (`k` UInt64, INDEX i k TYPE cuckoo_filter(nan) GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_cuckoo_bad (`k` UInt64, INDEX i k TYPE cuckoo_filter(0.01, 0.02) GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
+-- Hashing rejects arrays of nullable elements, so such an index is refused at DDL instead of failing every insert.
+CREATE TABLE t_cuckoo_bad (`a` Array(Nullable(UInt64)), INDEX i a TYPE cuckoo_filter GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
+CREATE TABLE t_cuckoo_bad (`m` Map(String, Nullable(String)), INDEX i mapValues(m) TYPE cuckoo_filter(0.01) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
+
 -- One ALTER with DROP INDEX + ADD INDEX (same name): must not bypass experimental gate when FPR/expression/granularity change.
 DROP TABLE IF EXISTS t_cuckoo_alter_bypass_fpr;
 DROP TABLE IF EXISTS t_cuckoo_alter_bypass_expr;

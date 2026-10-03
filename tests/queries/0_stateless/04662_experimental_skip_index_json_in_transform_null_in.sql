@@ -42,6 +42,7 @@ SELECT count() FROM t_json_in_null_cuckoo WHERE json.z::Nullable(Int64) IN (1) S
 -- default, so the index must not prune and the result must equal the full scan.
 SELECT count() FROM t_json_in_null_cuckoo WHERE json.a::Int64 IN (0);
 SELECT count() FROM t_json_in_null_cuckoo WHERE json.a::Int64 IN (0) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_json_in_null_cuckoo WHERE json.a::Int64 IN (0) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 -- With the default `transform_null_in = 0` a NULL in the set matches nothing, so pruning is safe.
 SELECT count() FROM t_json_in_null_cuckoo WHERE json.a::Nullable(Int64) IN (1, NULL) SETTINGS force_data_skipping_indices = 'idx';
@@ -53,9 +54,11 @@ SET transform_null_in = 1;
 -- the result with skip indexes enabled must equal the full scan.
 SELECT count() FROM t_json_in_null_cuckoo WHERE json.a::Nullable(Int64) IN (NULL);
 SELECT count() FROM t_json_in_null_cuckoo WHERE json.a::Nullable(Int64) IN (NULL) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_json_in_null_cuckoo WHERE json.a::Nullable(Int64) IN (NULL) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 SELECT count() FROM t_json_in_null_cuckoo WHERE json.a::Nullable(Int64) IN (1, NULL);
 SELECT count() FROM t_json_in_null_cuckoo WHERE json.a::Nullable(Int64) IN (1, NULL) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_json_in_null_cuckoo WHERE json.a::Nullable(Int64) IN (1, NULL) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 SET transform_null_in = 0;
 
@@ -81,6 +84,7 @@ SELECT count() FROM t_json_in_null_fuse WHERE json.z::Nullable(Int64) IN (1) SET
 
 SELECT count() FROM t_json_in_null_fuse WHERE json.a::Int64 IN (0);
 SELECT count() FROM t_json_in_null_fuse WHERE json.a::Int64 IN (0) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_json_in_null_fuse WHERE json.a::Int64 IN (0) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 SELECT count() FROM t_json_in_null_fuse WHERE json.a::Nullable(Int64) IN (1, NULL) SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM t_json_in_null_fuse WHERE json.a::Nullable(Int64) IN (1, NULL) SETTINGS use_skip_indexes = 0;
@@ -89,9 +93,11 @@ SET transform_null_in = 1;
 
 SELECT count() FROM t_json_in_null_fuse WHERE json.a::Nullable(Int64) IN (NULL);
 SELECT count() FROM t_json_in_null_fuse WHERE json.a::Nullable(Int64) IN (NULL) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_json_in_null_fuse WHERE json.a::Nullable(Int64) IN (NULL) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 SELECT count() FROM t_json_in_null_fuse WHERE json.a::Nullable(Int64) IN (1, NULL);
 SELECT count() FROM t_json_in_null_fuse WHERE json.a::Nullable(Int64) IN (1, NULL) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_json_in_null_fuse WHERE json.a::Nullable(Int64) IN (1, NULL) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 SET transform_null_in = 0;
 

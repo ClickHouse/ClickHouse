@@ -46,6 +46,7 @@ SELECT count() FROM t_json_eq_cuckoo WHERE json.a::Int64 = 1 SETTINGS force_data
 -- index must NOT prune. The result with the index must equal the result without skip indexes.
 SELECT count() FROM t_json_eq_cuckoo WHERE json.a::Int64 = 0;
 SELECT count() FROM t_json_eq_cuckoo WHERE json.a::Int64 = 0 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_json_eq_cuckoo WHERE json.a::Int64 = 0 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE t_json_eq_cuckoo;
 
@@ -74,5 +75,6 @@ SELECT count() FROM t_json_eq_fuse WHERE json.a::Int64 = 1 SETTINGS force_data_s
 
 SELECT count() FROM t_json_eq_fuse WHERE json.a::Int64 = 0;
 SELECT count() FROM t_json_eq_fuse WHERE json.a::Int64 = 0 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_json_eq_fuse WHERE json.a::Int64 = 0 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE t_json_eq_fuse;

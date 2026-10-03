@@ -35,6 +35,15 @@ SELECT count() FROM t_bloom WHERE k != 7;
 SELECT count() FROM t_cuckoo WHERE k NOT IN (7);
 SELECT count() FROM t_bloom WHERE k NOT IN (7);
 
+-- A granule can hold both matching and non-matching rows, so the negated forms are not index-backed.
+SELECT count() FROM t_cuckoo WHERE k != 7 SETTINGS force_data_skipping_indices = 'idx_k'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_cuckoo WHERE k NOT IN (7) SETTINGS force_data_skipping_indices = 'idx_k'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_cuckoo WHERE k NOT IN (7, 8) SETTINGS force_data_skipping_indices = 'idx_k'; -- { serverError INDEX_NOT_USED }
+
+-- With `transform_null_in = 1`, `IN` becomes `nullIn`; a NULL-free set of the index type still prunes.
+SELECT count() FROM t_cuckoo WHERE k IN (1000000, 1000001) SETTINGS transform_null_in = 1, force_data_skipping_indices = 'idx_k';
+SELECT count() FROM t_cuckoo WHERE k IN (7, 1000000) SETTINGS transform_null_in = 1, force_data_skipping_indices = 'idx_k';
+
 SELECT count() FROM t_cuckoo WHERE k IN (SELECT number FROM numbers(200));
 SELECT count() FROM t_bloom WHERE k IN (SELECT number FROM numbers(200));
 
@@ -279,3 +288,22 @@ SELECT count() FROM t_tpl_b WHERE x = 99 AND y = 99 SETTINGS force_data_skipping
 
 DROP TABLE t_tpl_c;
 DROP TABLE t_tpl_b;
+
+-- The false positive rate argument is optional.
+DROP TABLE IF EXISTS t_default_c;
+
+CREATE TABLE t_default_c
+(
+    `k` UInt64,
+    INDEX idx_k k TYPE cuckoo_filter GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 64;
+
+INSERT INTO t_default_c SELECT number FROM numbers(200);
+
+SELECT count() FROM t_default_c WHERE k = 137 SETTINGS force_data_skipping_indices = 'idx_k';
+SELECT count() FROM t_default_c WHERE k IN (1000000, 1000001) SETTINGS force_data_skipping_indices = 'idx_k';
+
+DROP TABLE t_default_c;

@@ -34,6 +34,7 @@ SELECT count() FROM t_json_eq_cuckoo WHERE json.a::Int64 = 0;
 4
 SELECT count() FROM t_json_eq_cuckoo WHERE json.a::Int64 = 0 SETTINGS use_skip_indexes = 0;
 4
+SELECT count() FROM t_json_eq_cuckoo WHERE json.a::Int64 = 0 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 DROP TABLE t_json_eq_cuckoo;
 DROP TABLE IF EXISTS t_json_eq_fuse;
 CREATE TABLE t_json_eq_fuse
@@ -64,4 +65,5 @@ SELECT count() FROM t_json_eq_fuse WHERE json.a::Int64 = 0;
 4
 SELECT count() FROM t_json_eq_fuse WHERE json.a::Int64 = 0 SETTINGS use_skip_indexes = 0;
 4
+SELECT count() FROM t_json_eq_fuse WHERE json.a::Int64 = 0 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 DROP TABLE t_json_eq_fuse;

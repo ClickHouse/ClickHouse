@@ -18,6 +18,8 @@ INSERT INTO t_json_cuckoo VALUES (1, '{"b": 1}'), (2, '{"b": 2}');
 INSERT INTO t_json_cuckoo VALUES (3, '{"a": 1}'), (4, '{"a": 2}');
 
 SELECT count() FROM t_json_cuckoo WHERE isNotNull(json.a) = 0;
+SELECT count() FROM t_json_cuckoo WHERE isNotNull(json.a) = 0 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_json_cuckoo WHERE isNotNull(json.a) != 1 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 SELECT
     (
@@ -48,6 +50,8 @@ INSERT INTO t_json_fuse VALUES (1, '{"b": 1}'), (2, '{"b": 2}');
 INSERT INTO t_json_fuse VALUES (3, '{"a": 1}'), (4, '{"a": 2}');
 
 SELECT count() FROM t_json_fuse WHERE isNotNull(json.a) = 0;
+SELECT count() FROM t_json_fuse WHERE isNotNull(json.a) = 0 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_json_fuse WHERE isNotNull(json.a) != 1 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 SELECT
     (
