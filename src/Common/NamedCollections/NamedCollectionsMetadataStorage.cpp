@@ -552,7 +552,21 @@ std::vector<std::string> NamedCollectionsMetadataStorage::listCollections() cons
     std::vector<std::string> collections;
     collections.reserve(paths.size());
     for (const auto & path : paths)
-        collections.push_back(unescapeForFileName(pathToGenericString(std::filesystem::path(path).stem())));
+    {
+        /// `path` is a `/`-separated UTF-8 path in both backends: a file of `LocalStorage` read back
+        /// generically, or a child of the Keeper node of `ZooKeeperStorage`. So take its stem as a
+        /// string rather than through `std::filesystem`, which on Windows would decode the name
+        /// through the active code page and split it at `\` as well.
+        const size_t last_slash = path.rfind('/');
+        std::string_view file_name = path;
+        if (last_slash != std::string::npos)
+            file_name.remove_prefix(last_slash + 1);
+        /// As in `std::filesystem::path::stem`, a leading dot does not start an extension.
+        const size_t last_dot = file_name.rfind('.');
+        if (last_dot != std::string_view::npos && last_dot != 0)
+            file_name = file_name.substr(0, last_dot);
+        collections.push_back(unescapeForFileName(std::string(file_name)));
+    }
     return collections;
 }
 
