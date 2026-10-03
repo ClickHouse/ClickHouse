@@ -2,6 +2,8 @@
 #include <IO/ReadHelpers.h>
 
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
 #include <Core/ProtocolDefines.h>
 
 #include <Common/SipHash.h>
@@ -563,6 +565,40 @@ bool hasAggregateFunctionType(const DataTypePtr & type)
     check(*type);
     type->forEachChild(check);
     return result;
+}
+
+namespace
+{
+
+/// The state versions of all `AggregateFunction` types in `type` (including nested ones), in a fixed traversal order.
+std::vector<size_t> getAggregateStateVersions(const IDataType & type)
+{
+    std::vector<size_t> versions;
+    auto collect = [&](const IDataType & child)
+    {
+        if (const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&child))
+            versions.push_back(aggregate_type->getVersion());
+    };
+    collect(type);
+    type.forEachChild(collect);
+    return versions;
+}
+
+}
+
+bool haveSameAggregateStateVersions(const IDataType & lhs, const IDataType & rhs)
+{
+    return getAggregateStateVersions(lhs) == getAggregateStateVersions(rhs);
+}
+
+ColumnPtr relabelAggregateStateVersions(const ColumnPtr & column, const DataTypePtr & type)
+{
+    if (const auto * const_column = typeid_cast<const ColumnConst *>(column.get()))
+        return ColumnConst::create(relabelAggregateStateVersions(const_column->getDataColumnPtr(), type), column->size());
+
+    auto relabelled_column = type->createColumn();
+    relabelled_column->insertRangeFrom(*recursiveRemoveSparse(column), 0, column->size());
+    return relabelled_column;
 }
 
 }
