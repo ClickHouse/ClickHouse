@@ -163,7 +163,7 @@ public:
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
-    bool supportsSparseSerialization() const override { return true; }
+    bool supportsSparseSerialization() const override { return false; }
     bool canBeInsideSparseColumns() const override { return false; }
     bool isComparable() const override { return true; }
     bool textCanContainOnlyValidUTF8() const override { return true; }
