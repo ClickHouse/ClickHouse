@@ -28,7 +28,7 @@ else
     echo "table_function: unexpected: $result"
 fi
 
-result=$(${CLICKHOUSE_CLIENT} --query "
+result=$(${CLICKHOUSE_CLIENT} --use_native_gcs=1 --query "
     CREATE TABLE gcs_storage_class_${CLICKHOUSE_DATABASE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS disk = disk(name = 'gcs_storage_class_disk_${CLICKHOUSE_DATABASE}', type = object_storage, object_storage_type = gcs,
         metadata_type = local,
