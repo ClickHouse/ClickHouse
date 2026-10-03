@@ -1047,6 +1047,12 @@ Enable heuristic for selecting parts for merge which removes parts from right
 side of range, if their size is less than specified ratio (0.01) of sum_size.
 Works for Simple and StochasticSimple merge selectors
 )", 0) \
+    DECLARE(UInt64, merge_selector_min_age_to_disable_right_tail_heuristic, 0, R"(
+If greater than zero and `merge_selector_enable_heuristic_to_remove_small_parts_at_right` is enabled,
+disables that heuristic for ranges where every part is at least this many seconds old. `0` disables this check.
+Works for Simple and StochasticSimple merge selectors.
+)", 0, \
+        {"26.10", 0, 0, "New setting"}) \
     DECLARE(Float, merge_selector_base, 5.0, R"(Affects write amplification of
     assigned merges (expert level setting, don't change if you don't understand
     what it is doing). Works for Simple and StochasticSimple merge selectors
@@ -2202,6 +2208,9 @@ Supported for object-storage disks whose metadata lives on the object storage it
 (s3_plain, s3_plain_rewritable, web, web_index) and their cached variants. Encrypted
 variants are supported only over the writable s3_plain / s3_plain_rewritable disks, not
 over the read-only web / web_index disks.
+The parts already present under the path are trusted to match the columns and the sorting
+key this table declares. Nothing records the sorting key a part was written with, so a
+table declaring a different one over the same parts returns wrong results or an error.
 )", 0, \
         {"25.2", false, false, "New setting"}) \
     DECLARE(Bool, allow_nullable_key, false, R"(
