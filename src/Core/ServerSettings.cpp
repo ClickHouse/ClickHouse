@@ -2275,6 +2275,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "http_handlers",
         "arrowflight",
         "iceberg_rest_catalog",
+        "redis",
         "proxy",
         "enable_http_stacktrace",
         "enable_verbose_replicas_status",
