@@ -7263,10 +7263,26 @@ List all names of element of large tuple literals in their column names instead 
 )", 0, \
         {"21.7", true, false, "Add this setting only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher"}) \
     DECLARE(Bool, enable_named_columns_in_function_tuple, false, R"(
-Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers.
+Generate named tuples in function `tuple()` when all names are unique and can be treated as unquoted identifiers.
+
+Two ways of naming tuple elements are affected differently by the analyzer:
+
+- Automatic naming from argument aliases, e.g. `tuple(1 AS a, 2 AS b)` producing `Tuple(a, b)`, is performed only by the analyzer (`enable_analyzer = 1`). With `enable_analyzer = 0` the aliases are not rewritten before the query is sent to the shards in distributed queries, so the elements stay unnamed even when this setting is enabled.
+- The explicit named-tuple syntax `tuple('a', 'b')(x, y)` carries the names in the function parameters and produces a named tuple in both analyzers.
 )", 0, \
+        {"26.10", false, false, "Keep the setting disabled pending usability improvements"}, \
         {"24.10", false, false, "Disabled pending usability improvements"}, \
         {"24.7", false, false, "Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers."}) \
+    DECLARE(Bool, allow_named_tuple_conversion_with_extra_source_fields, true, R"(
+Allow conversion between named Tuple types when the source tuple contains fields that do not exist in the destination tuple. Extra source fields are ignored and missing destination fields are filled with default values for backward compatibility. When disabled, such conversions are treated as potentially lossy and an exception is thrown if any extra source fields are lost during conversion. Tuples with fully disjoint sets of element names are converted positionally, lose no fields, and are not affected by this setting.
+)", 0, \
+        {"26.10", true, true, "New setting"}) \
+    DECLARE(Bool, allow_named_tuple_conversion_with_extra_source_fields_on_insert, false, R"(
+Additional INSERT-level guard for named Tuple conversion with extra source fields.
+
+For INSERT queries, the conversion is allowed only if both allow_named_tuple_conversion_with_extra_source_fields and allow_named_tuple_conversion_with_extra_source_fields_on_insert evaluate to true.
+)", 0, \
+        {"26.10", true, false, "New setting. Before this version there was no INSERT-level guard, so named tuple conversions dropping extra source fields were allowed during INSERT. The compatibility value 'true' restores the previous permissive INSERT behavior under compatibility set to a version before 26.10."}) \
     \
     DECLARE(Bool, query_plan_enable_optimizations, true, R"(
 Toggles query optimization at the query plan level.

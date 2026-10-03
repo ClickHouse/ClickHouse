@@ -4,6 +4,11 @@
 -- must still deserialize into the on-disk `LowCardinality(T)` representation, because the substreams it
 -- publishes to the shared substreams cache are adopted directly by a reader of the parent subcolumn.
 
+-- The inserted elements are cast explicitly instead of relying on `tuple(number)`, because with
+-- `enable_named_columns_in_function_tuple` the analyzer derives the element name from the bare
+-- identifier, and inserting such a named tuple into a differently named tuple column is rejected by
+-- `allow_named_tuple_conversion_with_extra_source_fields_on_insert`. The stored values are the same.
+
 SET enable_nullable_tuple_type = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 -- Reading the child `x.a.b` must not change what the parent `x.a` reads: the parent's dictionary must stay
@@ -11,7 +16,7 @@ SET allow_suspicious_low_cardinality_types = 1;
 DROP TABLE IF EXISTS t_04651_no_nulls;
 CREATE TABLE t_04651_no_nulls (x Tuple(a Nullable(Tuple(b LowCardinality(UInt32))))) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 1, min_bytes_for_wide_part = 1000000000, write_marks_for_substreams_in_compact_parts = 1;
-INSERT INTO t_04651_no_nulls SELECT tuple(tuple(number)) FROM numbers(4);
+INSERT INTO t_04651_no_nulls SELECT tuple(tuple(number::UInt32)) FROM numbers(4);
 SELECT dumpColumnStructure(x.a) FROM t_04651_no_nulls LIMIT 1;
 Nullable(Tuple(b LowCardinality(UInt32))), Nullable(size = 1, Tuple(size = 1, LowCardinality(size = 1, UInt8(size = 1), Unique(size = 1, UInt32(size = 1)))), UInt8(size = 1))
 SELECT x.a.b, dumpColumnStructure(x.a) FROM t_04651_no_nulls LIMIT 1;
@@ -29,7 +34,7 @@ DROP TABLE t_04651_no_nulls;
 DROP TABLE IF EXISTS t_04651_compact;
 CREATE TABLE t_04651_compact (x Tuple(a Nullable(Tuple(b LowCardinality(UInt32))))) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 1, min_bytes_for_wide_part = 1000000000, write_marks_for_substreams_in_compact_parts = 1;
-INSERT INTO t_04651_compact SELECT number % 2 ? tuple(NULL) : tuple(tuple(number)) FROM numbers(4);
+INSERT INTO t_04651_compact SELECT number % 2 ? tuple(NULL) : tuple(tuple(number::UInt32)) FROM numbers(4);
 SELECT toTypeName(x.a.b), toTypeName(x.a) FROM t_04651_compact LIMIT 1;
 LowCardinality(Nullable(UInt32))	Nullable(Tuple(b LowCardinality(UInt32)))
 SELECT x.a.b, x, x.a, isNull(x.a.b), ignore(assumeNotNull(x.a)) FROM t_04651_compact;
@@ -103,7 +108,7 @@ DROP TABLE t_04651_lc_nullable;
 DROP TABLE IF EXISTS t_04651_wide;
 CREATE TABLE t_04651_wide (x Tuple(a Nullable(Tuple(b LowCardinality(UInt32))))) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
-INSERT INTO t_04651_wide SELECT number % 2 ? tuple(NULL) : tuple(tuple(number)) FROM numbers(4);
+INSERT INTO t_04651_wide SELECT number % 2 ? tuple(NULL) : tuple(tuple(number::UInt32)) FROM numbers(4);
 SELECT x.a.b, x.a, ignore(assumeNotNull(x.a)) FROM t_04651_wide;
 0	(0)	0
 \N	\N	0
@@ -114,7 +119,7 @@ DROP TABLE t_04651_wide;
 DROP TABLE IF EXISTS t_04651_top_level;
 CREATE TABLE t_04651_top_level (id UInt8, x Nullable(Tuple(b LowCardinality(UInt32)))) ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 1, min_bytes_for_wide_part = 1000000000;
-INSERT INTO t_04651_top_level SELECT number, number % 2 ? NULL : tuple(number) FROM numbers(4);
+INSERT INTO t_04651_top_level SELECT number, number % 2 ? NULL : tuple(number::UInt32) FROM numbers(4);
 SELECT x.b, x, ignore(assumeNotNull(x)) FROM t_04651_top_level ORDER BY id;
 0	(0)	0
 \N	\N	0
