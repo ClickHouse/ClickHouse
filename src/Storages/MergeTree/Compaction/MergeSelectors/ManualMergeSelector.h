@@ -19,7 +19,7 @@ public:
         const MergeConstraints & merge_constraints,
         const RangeFilter & range_filter) const override;
 
-    static void push(const StorageID & id, const Names & parts_to_merge);
+    static void push(const StorageID & id, const Names & parts_to_merge, const ActiveDataPartSet & active_set);
     static bool isAllScheduledPartsCovered(const StorageID & id, const ActiveDataPartSet & active_set);
     static void erase(const StorageID & id);
 

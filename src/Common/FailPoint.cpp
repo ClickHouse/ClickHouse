@@ -370,6 +370,7 @@ static struct InitFiu
     PAUSEABLE(atomic_populate_pause_before_population) \
     PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
+    PAUSEABLE(storage_merge_tree_abandon_selected_merge) \
     ONCE(mt_skip_scheduling_merge_once) \
     ONCE(mt_fail_selected_merge_before_start_once) \
     REGULAR(patch_parts_reverse_column_order) \
