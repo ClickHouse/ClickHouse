@@ -5336,6 +5336,16 @@ ENGINE = Log
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 )", 0) \
+    DECLARE(DefaultDatabaseEngine, default_database_engine, DefaultDatabaseEngine::Atomic, R"(
+Default database engine to use when `ENGINE` is not set in a `CREATE DATABASE` statement.
+
+Possible values:
+
+- `Ordinary` — obsolete engine, kept for compatibility.
+- `Atomic` — default database engine with support for concurrent DDL and non-blocking `DROP TABLE`.
+- `Replicated` — [Replicated](../../engines/database-engines/replicated.md) database engine with DDL replication via ZooKeeper. Default parameters are taken from `DatabaseReplicatedSettings`.
+)", 0, \
+        {"26.3", "Atomic", "Atomic", "Restored from obsolete. Added 'Replicated' as a possible value to allow creating Replicated databases by default."}) \
     DECLARE(DefaultTableEngine, default_table_engine, DefaultTableEngine::MergeTree, R"(
 Default table engine to use when `ENGINE` is not set in a `CREATE` statement.
 
@@ -10799,7 +10809,6 @@ Enable experimental table function `eval`.
         {"25.11", 500, 500, "Changed the value of the obsolete setting"}, \
         {"25.6", 500, 500, "Changed the value of the obsolete setting"}) \
     /* ---- */ \
-    MAKE_OBSOLETE(M, DefaultDatabaseEngine, default_database_engine, DefaultDatabaseEngine::Atomic) \
     MAKE_OBSOLETE(M, UInt64, max_pipeline_depth, 0) \
     MAKE_OBSOLETE(M, Seconds, temporary_live_view_timeout, 1) \
     MAKE_OBSOLETE(M, Seconds, periodic_live_view_refresh, 60) \
