@@ -1,0 +1,30 @@
+--- valid: scalar present in the same row ---
+{"a":42,"a":{"b":43}}
+{"a":42,"a":{"b":43}}
+--- valid: destination declares a typed path below, so the parser descends ---
+{"a":0,"a":{"b":1}}
+{"a":0,"a":{"b":1}}
+{"a":0,"a":{"b":1}}
+{"a":0,"a":{"b":1}}
+{"a":0,"a":{"b":0,"x":1}}
+{"a":0,"a":{"b":0,"x":1}}
+{"a":0,"a":{"b":{"c":1}}}
+{"a":0,"a":{"b":{"c":1}}}
+--- valid: sibling path that only shares a prefix ---
+{"a":0,"ab":1}
+{"a":0,"ab":1}
+--- valid: the new typed path is a scalar in the source ---
+{"a":1}
+{"a":1}
+--- valid: no rows, so nothing is read and nothing raises ---
+--- type_json_skip_invalid_typed_paths drops the data below the typed path ---
+{"a":0}
+{"a":0}
+{"a":0,"z":9}
+{"a":0,"z":9}
+{"a":42,"a":{"b":43}}
+{"a":0}
+{"a":42,"a":{"b":43}}
+{"a":0}
+{"a":0}
+{"a":0}

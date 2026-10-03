@@ -9853,6 +9853,10 @@ instead of glob listing. 0 means disabled.
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0, \
         {"26.1", false, false, "Add a new setting to ignore ON CLUSTER clause for DDL queries with a replicated database."}) \
+    DECLARE(Bool, json_use_optimized_type_conversion, true, R"(
+When enabled, conversions between JSON types with different parameters (typed paths, skip rules) use an optimized path that reuses unchanged sub-columns by pointer and applies CAST only to changed paths. This avoids the full serialize-to-string and parse-from-string pipeline. Disable to force the legacy format+parse conversion for all JSON type changes.
+)", 0, \
+        {"26.10", true, true, "New setting to enable optimized JSON-to-JSON type conversion that avoids full serialize+parse when only a subset of paths change."}) \
     DECLARE_WITH_ALIAS(Bool, enable_nullable_tuple_type, true, R"(
 Allows creation of [Nullable](/reference/data-types/nullable) [Tuple](/reference/data-types/tuple) columns in tables.
 
