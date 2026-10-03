@@ -312,6 +312,57 @@ def _has_uncounted_build_changes(changed_files):
     return False
 
 
+# Pull requests run each sanitizer of the stress test on one architecture only: the TSan,
+# MSan and debug stress tests on amd, the ASan one on arm (next to its `s3` variant and the
+# `arm_release` one, so both architectures stay covered). Master and the release and backport
+# workflows keep running all of them. Over 2026-08-20 to 2026-10-02 the amd and arm runs of the
+# same sanitizer failed together on 9 to 59 PR commits per sanitizer, and alone on 135 to 344,
+# evenly split between the architectures; of the 109 distinct failure reasons (stack ids
+# stripped) in PRs and on master, 71 occurred on both, and the ones seen on arm only made up 31
+# of 1491 failing arm runs. The second architecture is a second random sample of the same
+# nondeterministic failures, not coverage of its own.
+PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS = (
+    f"{JobNames.STRESS} (amd_asan_ubsan)",
+    f"{JobNames.STRESS} (arm_debug)",
+    f"{JobNames.STRESS} (arm_tsan)",
+    f"{JobNames.STRESS} (arm_msan)",
+)
+
+# The builds whose binaries only the skipped stress tests use, skipped with them.
+# `ci/workflows/pull_request.py` asserts that no other job of the PR workflow requires their
+# artifacts.
+PR_SINGLE_ARCH_SKIPPED_BUILDS = (
+    f"{JobNames.BUILD} (arm_debug)",
+    f"{JobNames.BUILD} (arm_tsan)",
+    f"{JobNames.BUILD} (arm_msan)",
+)
+
+PR_SINGLE_ARCH_SKIPPED_JOBS = PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS + PR_SINGLE_ARCH_SKIPPED_BUILDS
+
+assert set(PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS) <= {
+    j.name for j in JobConfigs.stress_test_jobs
+}, "PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS names a job that does not exist"
+assert set(PR_SINGLE_ARCH_SKIPPED_BUILDS) <= {
+    j.name for j in JobConfigs.build_jobs
+}, "PR_SINGLE_ARCH_SKIPPED_BUILDS names a job that does not exist"
+
+# Changes that can behave differently per architecture, so a PR touching them runs the stress
+# tests on both: the build configuration (toolchains, CPU features, sanitizer flags) and the
+# per-architecture glibc compatibility layer. `contrib/` and the build scripts are covered by
+# `_has_uncounted_build_changes`.
+_ARCH_SENSITIVE_PATHS = (
+    "cmake/",
+    "base/glibc-compatibility/",
+)
+
+
+def _has_arch_sensitive_changes(changed_files):
+    return any(
+        _matches_digest_path(f.removeprefix("./"), _ARCH_SENSITIVE_PATHS)
+        for f in changed_files
+    )
+
+
 def _is_small_pr(info):
     """True if the PR changes fewer than `SMALL_PR_CHANGED_LINES` lines of product
     code. False when the count is unknown (the pre-hook failed to fetch it), so an
@@ -525,8 +576,9 @@ def should_skip_job(job_name):
     # of this size introduces;
     # the targeted AST fuzzer still runs, and ClickGap fuzzes every merged PR on
     # master once more. Bypass: the `ci-force-all` label.
+    # The builds that only the skipped stress tests use go with them.
     if (
-        _is_stress_or_fuzzer_job(job_name)
+        (_is_stress_or_fuzzer_job(job_name) or job_name in PR_SINGLE_ARCH_SKIPPED_BUILDS)
         and _is_small_pr(_info_cache)
         and not _has_uncounted_build_changes(changed_files)
         and not _has_stress_or_fuzzer_changes(changed_files)
@@ -535,6 +587,22 @@ def should_skip_job(job_name):
             True,
             f"Skipped, fewer than {SMALL_PR_CHANGED_LINES} lines of product code changed "
             f"(add the '{Labels.CI_FORCE_ALL}' label to run)",
+        )
+
+    # One architecture per sanitizer for the stress tests, see `PR_SINGLE_ARCH_SKIPPED_JOBS`.
+    # The same exemptions as for small PRs, plus `_has_arch_sensitive_changes`.
+    if (
+        job_name in PR_SINGLE_ARCH_SKIPPED_JOBS
+        and _info_cache.pr_number > 0
+        and _info_cache.workflow_name == SMALL_PR_WORKFLOW
+        and not _has_uncounted_build_changes(changed_files)
+        and not _has_stress_or_fuzzer_changes(changed_files)
+        and not _has_arch_sensitive_changes(changed_files)
+    ):
+        return (
+            True,
+            "Skipped in pull requests: the same sanitizer is stress-tested on the other "
+            f"architecture, and master runs both (add the '{Labels.CI_FORCE_ALL}' label to run)",
         )
 
     if (
