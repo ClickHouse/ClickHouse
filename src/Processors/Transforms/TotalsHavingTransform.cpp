@@ -5,6 +5,7 @@
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnsCommon.h>
 
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -12,6 +13,11 @@
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char totals_having_transform_pause[];
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -125,6 +131,12 @@ IProcessor::Status TotalsHavingTransform::prepare()
         finished_transform = true;
     }
 
+    if (isCancelled())
+    {
+        getTotalsPort().finish();
+        return Status::Finished;
+    }
+
     auto & totals_output = getTotalsPort();
 
     /// Check can output.
@@ -145,7 +157,11 @@ IProcessor::Status TotalsHavingTransform::prepare()
 void TotalsHavingTransform::work()
 {
     if (finished_transform)
+    {
+        if (isCancelled())
+            return;
         prepareTotals();
+    }
     else
         ISimpleTransform::work();
 }
@@ -169,6 +185,13 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     if (!chunk)
         return;
 
+    if (isCancelled())
+    {
+        chunk.clear();
+        stopReading();
+        return;
+    }
+
     auto finalized = chunk.clone();
     if (final)
         finalizeChunk(finalized, aggregates_mask);
@@ -178,6 +201,12 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     if (filter_column_name.empty())
     {
         addToTotals(chunk, nullptr);
+        if (isCancelled())
+        {
+            chunk.clear();
+            stopReading();
+            return;
+        }
         chunk = std::move(finalized);
     }
     else
@@ -204,6 +233,12 @@ void TotalsHavingTransform::transform(Chunk & chunk)
         if (const_filter_description.always_true)
         {
             addToTotals(chunk, nullptr);
+            if (isCancelled())
+            {
+                chunk.clear();
+                stopReading();
+                return;
+            }
             chunk.setColumns(std::move(columns), num_rows);
             return;
         }
@@ -211,7 +246,15 @@ void TotalsHavingTransform::transform(Chunk & chunk)
         if (const_filter_description.always_false)
         {
             if (totals_mode == TotalsMode::BEFORE_HAVING)
+            {
                 addToTotals(chunk, nullptr);
+                if (isCancelled())
+                {
+                    chunk.clear();
+                    stopReading();
+                    return;
+                }
+            }
 
             chunk.clear();
             return;
@@ -221,9 +264,25 @@ void TotalsHavingTransform::transform(Chunk & chunk)
 
         /// Add values to `totals` (if it was not already done).
         if (totals_mode == TotalsMode::BEFORE_HAVING)
+        {
             addToTotals(chunk, nullptr);
+            if (isCancelled())
+            {
+                chunk.clear();
+                stopReading();
+                return;
+            }
+        }
         else
+        {
             addToTotals(chunk, filter_description.data);
+            if (isCancelled())
+            {
+                chunk.clear();
+                stopReading();
+                return;
+            }
+        }
 
         /// Filter the block by expression in HAVING.
         for (auto & column : columns)
@@ -266,13 +325,31 @@ void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filt
             if (filter)
             {
                 for (size_t row = 0; row < size; ++row)
+                {
+                    if ((row & 0xFFF) == 0)
+                    {
+                        if (row > 0) [[unlikely]]
+                            FailPointInjection::pauseFailPoint(FailPoints::totals_having_transform_pause);
+                        if (isCancelled())
+                            return;
+                    }
                     if ((*filter)[row])
                         totals_column.insertMergeFrom(vec[row]);
+                }
             }
             else
             {
                 for (size_t row = 0; row < size; ++row)
+                {
+                    if ((row & 0xFFF) == 0)
+                    {
+                        if (row > 0) [[unlikely]]
+                            FailPointInjection::pauseFailPoint(FailPoints::totals_having_transform_pause);
+                        if (isCancelled())
+                            return;
+                    }
                     totals_column.insertMergeFrom(vec[row]);
+                }
             }
         }
     }
@@ -280,6 +357,9 @@ void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filt
 
 void TotalsHavingTransform::prepareTotals()
 {
+    if (isCancelled())
+        return;
+
     /// If totals_mode == AFTER_HAVING_AUTO, you need to decide whether to add aggregates to TOTALS for strings,
     /// not passed max_rows_to_group_by.
     if (overflow_aggregates)
