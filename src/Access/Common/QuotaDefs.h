@@ -21,6 +21,7 @@ enum class QuotaType : uint8_t
     READ_BYTES,                             /// Number of bytes read from tables.
     EXECUTION_TIME,                         /// Total amount of query execution time in nanoseconds.
     WRITTEN_BYTES,                          /// Number of bytes written to tables.
+    WRITTEN_ROWS,                           /// Number of rows written to tables.
     FAILED_SEQUENTIAL_AUTHENTICATIONS,      /// Number of recent failed authentications.
     QUERIES_PER_NORMALIZED_HASH,            /// Max executions of any single normalized query.
 

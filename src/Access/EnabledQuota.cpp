@@ -49,21 +49,18 @@ struct EnabledQuota::Impl
         auto quota_type_i = static_cast<size_t>(quota_type);
         for (const auto & interval : intervals.intervals)
         {
+            /// Start a new interval (resetting its counters) before accounting, if the previous one has ended.
+            /// Otherwise the usage at the beginning of the new interval would be added to the stale value of
+            /// the ended interval and would be lost when an overflow finally triggers the reset.
+            auto end_of_interval = interval.getEndOfInterval(current_time);
+
             QuotaValue used = (interval.used[quota_type_i] += value);
             QuotaValue max = interval.max[quota_type_i];
             if (!max)
                 continue;
 
-            if (used > max)
-            {
-                bool counters_were_reset = false;
-                auto end_of_interval = interval.getEndOfInterval(current_time, counters_were_reset);
-                if (counters_were_reset)
-                    used = (interval.used[quota_type_i] += value);
-
-                if (check_exceeded && (used > max))
-                    throwQuotaExceed(user_name, intervals.quota_name, quota_type, used, max, interval.duration, end_of_interval);
-            }
+            if (check_exceeded && (used > max))
+                throwQuotaExceed(user_name, intervals.quota_name, quota_type, used, max, interval.duration, end_of_interval);
         }
     }
 
@@ -116,18 +113,15 @@ struct EnabledQuota::Impl
         auto quota_type_i = static_cast<size_t>(quota_type);
         for (const auto & interval : intervals.intervals)
         {
-            QuotaValue used = interval.used[quota_type_i];
             QuotaValue max = interval.max[quota_type_i];
             if (!max)
                 continue;
 
+            /// Start a new interval first, so that the stale usage of an ended interval is not reported as exceeded.
+            auto end_of_interval = interval.getEndOfInterval(current_time);
+            QuotaValue used = interval.used[quota_type_i];
             if (used > max)
-            {
-                bool counters_were_reset = false;
-                auto end_of_interval = interval.getEndOfInterval(current_time, counters_were_reset);
-                if (!counters_were_reset)
-                    throwQuotaExceed(user_name, intervals.quota_name, quota_type, used, max, interval.duration, end_of_interval);
-            }
+                throwQuotaExceed(user_name, intervals.quota_name, quota_type, used, max, interval.duration, end_of_interval);
         }
     }
 
@@ -424,8 +418,19 @@ void EnabledQuota::usedForQuery(UInt64 normalized_query_hash, std::initializer_l
         auto target = resolveTargetIntervals(*quota, normalized_query_hash);
         if (!target)
             continue;
+
+        /// Account every counter first and check for overflow only afterwards: the usages of one call
+        /// describe the same chunk of work (e.g. `WRITTEN_ROWS` and `WRITTEN_BYTES` of one inserted
+        /// block), so if the first counter throws before the rest are added, the other counters
+        /// underreport the attempted usage and stop being independent of each other.
         for (const auto & usage : usages)
-            Impl::used(getUserName(), *target, usage.first, usage.second, current_time, check_exceeded);
+            Impl::used(getUserName(), *target, usage.first, usage.second, current_time, /* check_exceeded = */ false);
+
+        if (check_exceeded)
+        {
+            for (const auto & usage : usages)
+                Impl::checkExceeded(getUserName(), *target, usage.first, current_time);
+        }
     }
 }
 

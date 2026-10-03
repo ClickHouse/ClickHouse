@@ -58,7 +58,7 @@ public:
     void usedPerNormalizedHash(UInt64 normalized_query_hash) const;
 
     /// Tracks consumption of a per-query counter (e.g. `QUERIES`, `QUERY_SELECTS`, `ERRORS`,
-    /// `READ_ROWS`, `RESULT_ROWS`, `WRITTEN_BYTES`) against every governing quota. For
+    /// `READ_ROWS`, `RESULT_ROWS`, `WRITTEN_ROWS`, `WRITTEN_BYTES`) against every governing quota. For
     /// `NORMALIZED_QUERY_HASH` quotas the consumption is accounted against the intervals resolved
     /// for `normalized_query_hash`; for all other quotas it is accounted against the shared session
     /// intervals. For each quota the target intervals are resolved once, so passing several usages
@@ -66,7 +66,8 @@ public:
     void usedForQuery(UInt64 normalized_query_hash, QuotaType quota_type, QuotaValue value, bool check_exceeded = true) const;
     /// The multi-counter overload takes `std::initializer_list` (stack-backed, no heap allocation): the
     /// hot read/result callbacks (`ReadProgressCallback`, `LimitsCheckingTransform`) pass a braced list
-    /// on every progress/result chunk.
+    /// on every progress/result chunk. All the counters are accounted before any of them is checked, so
+    /// an overflow of one counter does not leave the others underreported for the same chunk of work.
     void usedForQuery(UInt64 normalized_query_hash, std::initializer_list<std::pair<QuotaType, QuotaValue>> usages, bool check_exceeded = true) const;
 
     /// Checks if any of the governing quotas is exceeded. If so, throws an exception.
