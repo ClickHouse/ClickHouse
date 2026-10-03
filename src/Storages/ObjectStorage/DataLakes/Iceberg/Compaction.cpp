@@ -1535,9 +1535,9 @@ void compactIcebergTable(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Iceberg metadata changed during compaction planning; retry OPTIMIZE");
 
-        /// The rewrite rebuilds metadata from the loaded schema; matching columns alone
-        /// cannot protect properties, refs, or other metadata-only changes.
-        if (loaded_metadata_path != plan.metadata_file_path)
+        /// An explicit metadata pointer intentionally pins the table to one metadata file.
+        /// Do not rewrite a newer authoritative head from stale pinned state.
+        if (!loaded_metadata_path.empty() && loaded_metadata_path != plan.metadata_file_path)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Iceberg metadata changed since the table metadata was loaded; refusing OPTIMIZE to avoid rewriting stale metadata");

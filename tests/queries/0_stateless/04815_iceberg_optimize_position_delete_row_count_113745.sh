@@ -60,9 +60,6 @@ run_case()
     ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query \
         "INSERT INTO ${table} SELECT number, char(number + ascii('a')) FROM numbers(100, 10)"
 
-    # Refresh the loaded Iceberg state after the writes above so OPTIMIZE starts
-    # from the same metadata head that the test just committed.
-    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${table}" >/dev/null
 
     local pd_before pd_after
     pd_before=$(count_position_deletes "${table}")
