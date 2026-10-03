@@ -770,7 +770,7 @@ async function checkAuthHeaderTransport(js) {
             && !new URL(modernBadCalls[0].url).searchParams.has('password'),
         { modernBadCalls });
 
-    /// The legacy URL mode is per-request, not sticky.    /// The legacy URL mode is per-request, not sticky. Once the backend upgrades, the very next
+    /// The legacy URL mode is per-request, not sticky. Once the backend upgrades, the very next
     /// request retries the self-describing encoded headers and stops putting credentials in the URL.
     let rollingEncodedLegacy = true;
     const rollingEncodedCalls = [];
