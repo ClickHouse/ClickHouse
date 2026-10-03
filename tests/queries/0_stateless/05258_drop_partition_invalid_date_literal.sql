@@ -78,6 +78,8 @@ SELECT 'datetime64, nothing dropped', groupArray(x) FROM (SELECT x FROM t_dateti
 ALTER TABLE t_datetime64 DROP PARTITION '2024-03-01 00:00:00';
 ALTER TABLE t_datetime64 DROP PARTITION '2024-03-01 12:34:56.78900';
 ALTER TABLE t_datetime64 DROP PARTITION '1970-01-01';
+-- A `.` date separator is not a fractional point.
+ALTER TABLE t_datetime64 DROP PARTITION '2024.03.01 01:00:00.000';
 SELECT 'datetime64, valid literals', groupArray(x) FROM (SELECT x FROM t_datetime64 ORDER BY x);
 DROP TABLE t_datetime64;
 
