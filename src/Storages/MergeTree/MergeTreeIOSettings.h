@@ -78,6 +78,8 @@ struct MergeTreeReaderSettings
     std::optional<UInt64> query_condition_cache_top_k_salt;
     /// Force reading complete granules, even when the readers could read incomplete granules.
     bool force_read_complete_granules = false;
+    /// How long the select processor may keep reading after empty results before yielding to the executor.
+    UInt64 max_read_time_without_output_us = 100000;
     bool use_deserialization_prefixes_cache = false;
     bool use_prefixes_deserialization_thread_pool = false;
     bool prefetch_json_shared_data_substreams = true;
