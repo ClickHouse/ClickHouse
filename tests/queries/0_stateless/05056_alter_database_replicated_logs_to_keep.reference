@@ -1,0 +1,17 @@
+keeper node after create	1234
+after create	replica1	1234
+after create	replica2	1234
+keeper node after alter	777
+after alter	replica1	777
+after alter	replica2	777
+logs_to_keep alone	777
+metadata files	replica1	777
+metadata files	replica2	4321
+keeper node after rejected alters	777
+after rejected alters	replica1	777
+after rejected alters	replica2	777
+keeper node after failed metadata write	555
+after failed metadata write	replica1	555
+after failed metadata write	replica2	555
+metadata file after failed metadata write	777
+metadata file after re-running	555
