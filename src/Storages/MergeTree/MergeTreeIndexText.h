@@ -21,6 +21,7 @@
 #include <base/types.h>
 #include <base/PackedStringRef.h>
 
+#include <unordered_map>
 #include <span>
 #include <variant>
 #include <vector>
@@ -385,6 +386,8 @@ class TextIndexAnalyzer;
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
+    using PostingsBlockCache = std::unordered_map<UInt128, PostingListPtr, UInt128TrivialHash>;
+
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
     ~MergeTreeIndexGranuleText() override;
 
@@ -400,7 +403,17 @@ public:
     const TextIndexAnalyzer & getAnalyzer() const { return *analyzer; }
 
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
+    void setPostingsReadContext(
+        MergeTreeIndexReaderStream & postings_stream,
+        MergeTreeIndexDeserializationState & state,
+        PostingsSerialization & postings_serialization,
+        PostingsBlockCache & postings_block_cache);
+    void resetPostingsReadContext() { postings_read_context.reset(); }
     const std::optional<RowsRange> & getCurrentRange() const { return current_range; }
+    /// Refines the result of the per-range analysis of a token query by reading posting blocks
+    /// of multi-block tokens, if the postings read context is set. Returns false only if it is proven
+    /// that the query has no match in the current range.
+    bool mayBeTrueOnCurrentRangeWithPostings(const TextSearchQuery & query, TextSearchMode search_mode) const;
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
     IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
     MergeTreeTextIndexSerializationVersion getSerializationVersion() const { return serialization_version; }
@@ -415,6 +428,14 @@ public:
         const String & index_id_for_caches);
 
 private:
+    struct PostingsReadContext
+    {
+        MergeTreeIndexReaderStream * postings_stream = nullptr;
+        MergeTreeIndexDeserializationState * state = nullptr;
+        PostingsSerialization * postings_serialization = nullptr;
+        PostingsBlockCache * postings_block_cache = nullptr;
+    };
+
     /// Reads dictionary blocks and analyzes them for tokens.
     void analyzeDictionaryForTokens(const DictionarySparseIndex & sparse_index, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
     /// Reads dictionary blocks and analyzes them for patterns.
@@ -433,6 +454,7 @@ private:
     std::unique_ptr<TextIndexAnalyzer> analyzer;
     /// Current range of rows that is being processed. If set, mayBeTrueOnGranule returns more precise result.
     std::optional<RowsRange> current_range;
+    std::optional<PostingsReadContext> postings_read_context;
     /// Unique identifier for text index in the current data part.
     String index_id_for_caches;
     /// Codec type used to serialize postings in this granule.

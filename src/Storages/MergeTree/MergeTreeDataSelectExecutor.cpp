@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <optional>
+#include <base/scope_guard.h>
 #include <numeric>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
@@ -2814,7 +2815,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     PartialDisjunctionResult & partial_disjunction_result,
     LoggerPtr log)
 {
-    if (!index_helper->getDeserializedFormat(*part_info, index_helper->getFileName()))
+    auto index_format = index_helper->getDeserializedFormat(*part_info, index_helper->getFileName());
+    if (!index_format)
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
             (fs::path(part_info->getDataPartStorage()->getFullPath()) / index_helper->getFileName()).string());
@@ -2901,6 +2903,22 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         MergeTreeIndexGranulePtr granule;
         reader.read(0, condition.get(), granule, all_match ? nullptr : &ranges);
         auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
+        auto * postings_stream = reader.getStreams().at(MergeTreeIndexSubstream::Type::TextIndexPostings);
+        MergeTreeIndexDeserializationState state
+        {
+            .version = index_format.version,
+            .condition = condition.get(),
+            .part_info = *part_info,
+            .index = *index_helper,
+            .readable_ranges = nullptr,
+            .skip_postings_deserialization = false,
+        };
+
+        auto postings_codec = PostingListCodecFactory::createPostingListCodec(granule_text.getPostingsCodecType());
+        PostingsSerialization postings_serialization(std::move(postings_codec), granule_text.getSerializationVersion());
+        MergeTreeIndexGranuleText::PostingsBlockCache postings_block_cache;
+        granule_text.setPostingsReadContext(*postings_stream, state, postings_serialization, postings_block_cache);
+        SCOPE_EXIT({ granule_text.resetPostingsReadContext(); });
 
         auto may_be_true_on_range = [&](size_t mark_begin, size_t mark_end, auto && disjunction_result_fn) -> bool
         {

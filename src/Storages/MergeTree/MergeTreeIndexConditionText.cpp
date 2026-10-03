@@ -575,7 +575,8 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
             const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAnyTokensInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = hasAnyTokensInRange(*text_search_query, query_builder, current_range)
+                && granule->mayBeTrueOnCurrentRangeWithPostings(*text_search_query, TextSearchMode::Any);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ALL_TOKENS)
@@ -583,7 +584,8 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
             const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAllTokensInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = hasAllTokensInRange(*text_search_query, query_builder, current_range)
+                && granule->mayBeTrueOnCurrentRangeWithPostings(*text_search_query, TextSearchMode::All);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_HAS_PHRASE)
@@ -593,7 +595,8 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
             const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAllTokensInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = hasAllTokensInRange(*text_search_query, query_builder, current_range)
+                && granule->mayBeTrueOnCurrentRangeWithPostings(*text_search_query, TextSearchMode::All);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS)
@@ -601,7 +604,9 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
             const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAllTokensOrEmptyInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = hasAllTokensOrEmptyInRange(*text_search_query, query_builder, current_range)
+                && (text_search_query->getTokens().empty()
+                    || granule->mayBeTrueOnCurrentRangeWithPostings(*text_search_query, TextSearchMode::All));
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ANY_ELEMENTS)
@@ -613,7 +618,9 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             {
                 const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
 
-                if (hasAllTokensOrEmptyInRange(*text_search_query, query_builder, current_range))
+                if (hasAllTokensOrEmptyInRange(*text_search_query, query_builder, current_range)
+                    && (text_search_query->getTokens().empty()
+                        || granule->mayBeTrueOnCurrentRangeWithPostings(*text_search_query, TextSearchMode::All)))
                 {
                     exists_in_granule = true;
                     break;
