@@ -13,6 +13,12 @@
 #include <limits>
 #include <vector>
 
+namespace ProfileEvents
+{
+    extern const Event RegexpLocalCacheHit;
+    extern const Event RegexpLocalCacheMiss;
+}
+
 namespace DB
 {
 
@@ -87,6 +93,61 @@ struct ReplaceRegexpImpl
         regexp_options.set_dot_nl(true);
         return regexp_options;
     }
+
+    class LocalRegexpCache
+    {
+    public:
+        struct Entry
+        {
+            size_t hash = 0;
+            std::unique_ptr<re2::RE2> regexp;
+            int num_captures = 0;
+        };
+
+        explicit LocalRegexpCache(size_t rows) : entries(std::bit_ceil(std::min(4 * rows, CACHE_SIZE))) {}
+
+        ~LocalRegexpCache()
+        {
+            ProfileEvents::increment(ProfileEvents::RegexpLocalCacheHit, hits);
+            ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss, misses);
+        }
+
+        const Entry & getOrSet(std::string_view pattern, const re2::RE2::Options & options)
+        {
+            const size_t hash = hasher(pattern);
+            Entry & entry = entries[hash & (entries.size() - 1)];
+            if (entry.regexp && entry.regexp->pattern() == pattern)
+            {
+                ++hits;
+                return entry;
+            }
+            if (scratch.regexp && scratch.regexp->pattern() == pattern)
+            {
+                ++hits;
+                return scratch;
+            }
+            /// A pattern is kept in its bucket only when it comes back after another new pattern, so that one which never repeats,
+            /// or repeats only in a run served by `scratch`, does not keep its DFA memory; until then the bucket holds its hash.
+            Entry & target = entry.hash == hash ? entry : scratch;
+            ++misses;
+            auto regexp = std::make_unique<re2::RE2>(pattern, options);
+            if (!regexp->ok())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", regexp->error());
+            entry.hash = hash;
+            entry.regexp.reset();
+            target.num_captures = std::min(regexp->NumberOfCapturingGroups() + 1, max_captures);
+            target.regexp = std::move(regexp);
+            return target;
+        }
+
+    private:
+        static constexpr size_t CACHE_SIZE = 256;
+        std::hash<std::string_view> hasher;
+        VectorWithMemoryTracking<Entry> entries;
+        Entry scratch;
+        size_t hits = 0;
+        size_t misses = 0;
+    };
 
     /// The replacement string references must not contain non-existing capturing groups.
     static void checkSubstitutions(std::string_view replacement, int num_captures, CancellationBudget & budget)
@@ -462,6 +523,8 @@ struct ReplaceRegexpImpl
         res_offsets.resize(input_rows_count);
 
         auto regexp_options = createRegexpOptions();
+        LocalRegexpCache cache(input_rows_count);
+        std::array<std::optional<Instructions>, max_captures + 1> instructions_by_captures;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -486,17 +549,15 @@ struct ReplaceRegexpImpl
                 continue;
             }
 
-            /// Matcher and instruction list are rebuilt per row, and scale with the pattern.
+            /// Looking up or compiling the matcher scales with the pattern.
             budget.charge(needle.size());
 
-            re2::RE2 searcher(needle, regexp_options);
-            if (!searcher.ok())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
+            const auto & entry = cache.getOrSet(needle, regexp_options);
+            auto & instructions = instructions_by_captures[entry.num_captures];
+            if (!instructions)
+                instructions = createInstructions(replacement, entry.num_captures, budget);
 
-            int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
-            Instructions instructions = createInstructions(replacement, num_captures, budget);
-
-            processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions, budget);
+            processString(hs_data, hs_length, res_data, res_offset, *entry.regexp, entry.num_captures, *instructions, budget);
             res_offsets[i] = res_offset;
         }
     }
@@ -578,6 +639,7 @@ struct ReplaceRegexpImpl
         res_offsets.resize(input_rows_count);
 
         auto regexp_options = createRegexpOptions();
+        LocalRegexpCache cache(input_rows_count);
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -607,17 +669,13 @@ struct ReplaceRegexpImpl
             const size_t repl_length = static_cast<size_t>(replacement_offsets[i] - repl_from);
             std::string_view replacement(repl_data, repl_length);
 
-            /// Per-row matcher construction, its cost scales with the pattern rather than the haystack.
+            /// Looking up or compiling the matcher scales with the pattern rather than the haystack.
             budget.charge(needle.size());
 
-            re2::RE2 searcher(needle, regexp_options);
-            if (!searcher.ok())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
+            const auto & entry = cache.getOrSet(needle, regexp_options);
+            Instructions instructions = createInstructions(replacement, entry.num_captures, budget);
 
-            int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
-            Instructions instructions = createInstructions(replacement, num_captures, budget);
-
-            processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions, budget);
+            processString(hs_data, hs_length, res_data, res_offset, *entry.regexp, entry.num_captures, instructions, budget);
             res_offsets[i] = res_offset;
         }
     }
