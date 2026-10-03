@@ -23,6 +23,7 @@ histogram	Array(Tuple(is_float Bool, counter_reset_hint UInt8, schema Int8, zero
 --- prometheus queries fail on histogram samples until they support them ---
 2.5
 7
+7
 --- a table of version 5: three columns ---
 id	Tuple(UInt64, LowCardinality(UUID))					
 timestamp	DateTime64(3)					

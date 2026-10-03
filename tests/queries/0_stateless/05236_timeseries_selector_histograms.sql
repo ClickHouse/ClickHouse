@@ -78,9 +78,12 @@ SELECT '--- prometheus queries fail on histogram samples until they support them
 -- A float-only time series of a table with histograms works.
 SELECT value FROM prometheusQuery(ts_hist, 'm_float', toDateTime64('2026-01-01 00:01:30', 3));
 -- The histogram sample of `m_mixed` is in the lookback window.
-SELECT value FROM prometheusQuery(ts_hist, 'm_mixed', toDateTime64('2026-01-01 00:01:30', 3)); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+SELECT value FROM prometheusQuery(ts_hist, 'm_mixed', toDateTime64('2026-01-01 00:01:30', 3)); -- { serverError NOT_IMPLEMENTED }
 -- Only the float sample of `m_mixed` is in the lookback window.
 SELECT value FROM prometheusQuery(ts_hist, 'm_mixed', toDateTime64('2026-01-01 00:00:30', 3));
+-- The same for a range selector, which also filters out stale markers.
+SELECT value FROM prometheusQuery(ts_hist, 'sum_over_time(m_mixed[2m])', toDateTime64('2026-01-01 00:01:30', 3)); -- { serverError NOT_IMPLEMENTED }
+SELECT value FROM prometheusQuery(ts_hist, 'sum_over_time(m_mixed[1m])', toDateTime64('2026-01-01 00:00:30', 3));
 
 SELECT '--- a table of version 5: three columns ---';
 CREATE TABLE ts_v5 ENGINE = TimeSeries SETTINGS version = 5;
