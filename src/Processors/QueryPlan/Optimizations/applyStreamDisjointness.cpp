@@ -49,9 +49,23 @@ static bool partitionDeterminedByKeys(const StreamDisjointnessProperty & propert
         property.partition_key_actions, property.partition_key_actions.getOutputs(), property.column_actions, keys);
 }
 
-static std::optional<StreamDisjointnessProperty> applyStreamDisjointness(
-    IQueryPlanStep & step, std::optional<StreamDisjointnessProperty> property, const QueryPlanOptimizationSettings & settings)
+/// A preliminary `DISTINCT` in input order emits only the first row of every run of equal keys. On sorted
+/// input with many rows per key, its output is a stream of small chunks. Scattering would split each of
+/// them across all partitions, so the per-chunk overhead of the scatter mesh would exceed the gain from
+/// parallel deduplication of the few remaining rows.
+static bool isPreliminaryDistinctInOrder(const QueryPlan::Node & node)
 {
+    if (node.children.size() != 1)
+        return false;
+    const auto * distinct = typeid_cast<const DistinctStep *>(node.children.front()->step.get());
+    return distinct && distinct->isPreliminary() && !distinct->getSortDescription().empty();
+}
+
+static std::optional<StreamDisjointnessProperty> applyStreamDisjointness(
+    QueryPlan::Node & node, std::optional<StreamDisjointnessProperty> property, const QueryPlanOptimizationSettings & settings)
+{
+    IQueryPlanStep & step = *node.step;
+
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(&step))
     {
         if (!reading->willOutputEachPartitionThroughSeparatePort())
@@ -88,7 +102,7 @@ static std::optional<StreamDisjointnessProperty> applyStreamDisjointness(
         }
 
         /// Without parallel hash deduplication, the final step merges its inputs into a single stream.
-        if (!settings.parallel_distinct || !distinct->getSortDescription().empty())
+        if (!settings.parallel_distinct || !distinct->getSortDescription().empty() || isPreliminaryDistinctInOrder(node))
             return {};
 
         distinct->enableParallelDistinct();
@@ -235,7 +249,7 @@ void applyStreamDisjointness(const QueryPlanOptimizationSettings & optimization_
         if (node.children.size() != 1)
             property.reset();
 
-        property = applyStreamDisjointness(*node.step, std::move(property), optimization_settings);
+        property = applyStreamDisjointness(node, std::move(property), optimization_settings);
     };
 
     Stack stack;
