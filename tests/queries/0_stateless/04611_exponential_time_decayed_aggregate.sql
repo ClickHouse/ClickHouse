@@ -314,10 +314,10 @@ DROP TABLE exponential_time_decaying_simple_aggregate;
 -- Different decay lengths cannot be represented by one decay curve and are rejected.
 SELECT exponentialTimeDecayingAdd(
     exponentialTimeDecaying(10)(8, toFloat64(0)),
-    exponentialTimeDecaying(20)(4, toFloat64(10))); -- { serverError BAD_ARGUMENTS }
+    exponentialTimeDecaying(20)(4, toFloat64(10))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT
     exponentialTimeDecaying(10)(8, toFloat64(0))
-    + exponentialTimeDecaying(20)(4, toFloat64(10)); -- { serverError BAD_ARGUMENTS }
+    + exponentialTimeDecaying(20)(4, toFloat64(10)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Repeated addition with the same decay length remains independent of grouping.
 WITH
