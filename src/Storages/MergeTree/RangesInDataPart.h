@@ -41,9 +41,9 @@ struct RangesInDataPartDescription
     /// protocol or coordinator-internal queue entry).
     size_t total_marks_in_part = 0;
 
-    /// Content fingerprint of the underlying part: the two halves of a 128-bit `SipHash` of
-    /// `data_part->checksums.computeTotalChecksumDataOnly`, i.e. of the names, uncompressed sizes
-    /// and uncompressed hashes of the part's `.bin` files. Two replicas that hold the same data
+    /// Content fingerprint of the underlying part (`IMergeTreeDataPart::getContentFingerprint`): the two
+    /// halves of a 128-bit `SipHash` of the names, uncompressed sizes and uncompressed hashes of the
+    /// part's `.bin` files and of the number of rows in every mark. Two replicas that hold the same data
     /// produce the same fingerprint, even when they wrote it with different compression codecs or
     /// server versions (the same tolerance `ReplicatedMergeTree` applies when it compares checksums
     /// of same-named parts), and it is independent of per-replica PK or skip-index analysis. Two replicas that

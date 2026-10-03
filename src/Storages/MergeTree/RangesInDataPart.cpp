@@ -10,7 +10,6 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <IO/VarInt.h>
-#include <Common/SipHash.h>
 
 template <>
 struct fmt::formatter<DB::RangesInDataPartDescription>
@@ -213,24 +212,9 @@ RangesInDataPartDescription RangesInDataPart::getDescription() const
 {
     chassert(!data_part->isProjectionPart() || parent_part);
 
-    /// Content fingerprint of the underlying part. Identifies the data, so two genuinely-different
-    /// same-named parts produce different fingerprints (used by `ParallelReplicasReadingCoordinator`
-    /// to reject divergent local data even when mark counts happen to coincide). It covers only the
-    /// uncompressed contents of the data files, like the comparison `ReplicatedMergeTree` does for
-    /// same-named parts, so the same data written with a different codec or by a different server
-    /// version is not mistaken for divergent data. When `checksums` is empty (rare paths where the
-    /// file is not loaded), the fingerprint is left at `(0, 0)` and the coordinator falls back to
-    /// `total_marks_in_part` where the part name identity allows it.
-    UInt64 fingerprint_low64 = 0;
-    UInt64 fingerprint_high64 = 0;
-    if (!data_part->checksums.empty())
-    {
-        SipHash hash;
-        data_part->checksums.computeTotalChecksumDataOnly(hash);
-        const auto fingerprint = getSipHash128AsPair(hash);
-        fingerprint_low64 = fingerprint.low64;
-        fingerprint_high64 = fingerprint.high64;
-    }
+    /// `(0, 0)` when checksums are not loaded: the coordinator then falls back to `total_marks_in_part`
+    /// where the part name identity allows it.
+    const UInt128 fingerprint = data_part->getContentFingerprint();
 
     return RangesInDataPartDescription{
         .info = data_part->isProjectionPart() ? parent_part->info : data_part->info,
@@ -241,8 +225,8 @@ RangesInDataPartDescription RangesInDataPart::getDescription() const
         /// underlying data and unaffected by per-replica PK or skip-index analysis. Used by
         /// `ParallelReplicasReadingCoordinator` as a cheap sanity check.
         .total_marks_in_part = data_part->index_granularity->getMarksCountWithoutFinal(),
-        .part_checksum_low64 = fingerprint_low64,
-        .part_checksum_high64 = fingerprint_high64,
+        .part_checksum_low64 = static_cast<UInt64>(fingerprint),
+        .part_checksum_high64 = static_cast<UInt64>(fingerprint >> 64),
         /// Tells the coordinator whether a part name is a content identity here (replicated engines)
         /// or same-named parts must be verified by fingerprint (a plain `MergeTree`).
         .part_name_identity = partNameIdentityOf(data_part->storage),

@@ -104,7 +104,7 @@ RangesInDataPartDescription makePart(const String & partition_id, Int64 min_bloc
 }
 
 /// Like `makePart` but additionally sets the part fingerprint
-/// (halves of the data-only checksum) on the description, exercising the fingerprint
+/// (the two halves of the content fingerprint) on the description, exercising the fingerprint
 /// branch of `sameLocalLayout`. Used by the divergent-checksum tests.
 RangesInDataPartDescription makePartWithFingerprint(
     const String & partition_id,
@@ -588,33 +588,6 @@ TEST(ParallelReplicasCoordinator, DefaultRejectsDivergentChecksumWithSameMarks)
         DB::Exception);
 }
 
-/// The fingerprint covers only the uncompressed data, so it does not pin the mark layout: the same
-/// rows can be split into a different number of granules. Ranges are dispatched in marks of the
-/// first replica's part, so a same-named part with an equal fingerprint but a different mark count
-/// is still rejected.
-TEST(ParallelReplicasCoordinator, InOrderRejectsSameChecksumWithDivergentTotalMarks)
-{
-    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
-
-    {
-        RangesInDataPartsDescription parts;
-        parts.push_back(makePartWithFingerprint(
-            "all", 1, 1, 0, /*marks=*/8,
-            /*fingerprint_low64=*/0x5555555555555555ull,
-            /*fingerprint_high64=*/0x6666666666666666ull));
-        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/0, std::move(parts)));
-    }
-
-    RangesInDataPartsDescription divergent;
-    divergent.push_back(makePartWithFingerprint(
-        "all", 1, 1, 0, /*marks=*/16,
-        /*fingerprint_low64=*/0x5555555555555555ull,
-        /*fingerprint_high64=*/0x6666666666666666ull));
-    EXPECT_THROW(
-        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/1, std::move(divergent))),
-        DB::Exception);
-}
-
 /// A projection part is identified by its parent part's info plus `projection_name`, so it is a
 /// different object from its parent part with a different fingerprint and mark count. One replica
 /// may read a part through a projection while another, which has not materialized the projection
@@ -908,9 +881,8 @@ TEST(ParallelReplicasCoordinator, InOrderFailsClosedOnSplitStreamOfTableWhoseNam
         DB::Exception);
 }
 
-/// The authoritative class must not over-reject: a `ReplicatedMergeTree` (or a plain `MergeTree` on
-/// shared-metadata storage) classifies as `ClusterWide`, where a part name does imply identical
-/// content, so two pre-upgrade announcements of the same-named part keep working. This is what makes
+/// The authoritative class must not over-reject: a `ReplicatedMergeTree` classifies as `ClusterWide`,
+/// where a part name does imply identical content, so two pre-upgrade announcements of the same-named part keep working. This is what makes
 /// the fix safe for rolling upgrades of replicated tables.
 TEST(ParallelReplicasCoordinator, InOrderKeepsMarkFallbackWhenInitiatorReportsClusterWidePartNames)
 {

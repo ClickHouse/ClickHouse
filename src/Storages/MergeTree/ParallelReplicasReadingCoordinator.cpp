@@ -190,8 +190,8 @@ namespace
 /// Identity check, in priority order:
 ///
 ///   1. **Content fingerprint** — `(part_checksum_low64, part_checksum_high64)`, a hash of the
-///      uncompressed contents of the part's data files (`computeTotalChecksumDataOnly`), plus
-///      equal `total_marks_in_part` when both sides carry it. The fingerprint is computed over
+///      uncompressed contents of the part's data files (`computeTotalChecksumDataOnly`) and of the
+///      number of rows in every mark. The fingerprint is computed over
 ///      the part's data and is therefore the strongest available cross-replica identity, while
 ///      tolerating codec or server-version differences in how the same data was written. Two
 ///      replicas that hold the same part agree on the fingerprint; two
@@ -236,15 +236,8 @@ bool sameLocalLayout(const Part & known, const RangesInDataPartDescription & ann
         = announced.part_checksum_low64 != 0 || announced.part_checksum_high64 != 0;
 
     if (known_has_fingerprint && announced_has_fingerprint)
-    {
-        /// The fingerprint covers the uncompressed data only, so also require the same mark layout:
-        /// ranges are dispatched in marks of the first replica's part.
-        if (known.initial_total_marks_in_part != 0 && announced.total_marks_in_part != 0
-            && known.initial_total_marks_in_part != announced.total_marks_in_part)
-            return false;
         return known.initial_part_checksum_low64 == announced.part_checksum_low64
             && known.initial_part_checksum_high64 == announced.part_checksum_high64;
-    }
 
     /// Fingerprint is unset on at least one side. If either side reports `NodeLocal` part names,
     /// same-named parts are not guaranteed to hold the same data (block numbers come from a
