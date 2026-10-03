@@ -167,8 +167,8 @@ SET allow_experimental_time_decay_aggregate_functions = 0;
 
 -- Reconstruction is allowed, but normal aggregate execution remains gated.
 SELECT exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0)); -- { serverError BAD_ARGUMENTS }
-SELECT exponentialTimeDecayedAvg(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
-SELECT exponentialTimeDecayedCount(10)(toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+SELECT exponentialTimeDecayedAvg(10)(toFloat64(1), toFloat64(0)); -- { serverError BAD_ARGUMENTS }
+SELECT exponentialTimeDecayedCount(10)(toFloat64(0)); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecaying(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_FUNCTION }
 
 -- Existing metadata must remain attachable for recovery, but new CREATE and
