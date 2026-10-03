@@ -851,6 +851,8 @@ In native mode credentials are resolved via the Google-native mechanisms rather 
 
 Positional HMAC `access_key_id`/`secret_access_key` arguments only apply to the default S3-compatibility path; leave `use_native_gcs` unset (the default) to keep using them.
 
+The native backend uploads objects in the bucket's default storage class, so `storage_class_name` is rejected when `use_native_gcs` is enabled.
+
 Native GCS is also available as a MergeTree storage disk via `object_storage_type: gcs` (or `type: gcs`). `use_native_gcs` gates the `gcs` table function and a dynamic `disk(...)` definition, while a disk defined in the server configuration is selected by that configuration alone and needs no session setting. The `GCS` table engine always stays on the S3-compatible backend, because table metadata must describe a stable backend across `ATTACH` and server restart and the backend choice is not persisted there yet. Such a disk can back an [`Iceberg`](/reference/engines/table-engines/integrations/iceberg) table through the `disk` setting.
 
 ## Arguments {#arguments}
