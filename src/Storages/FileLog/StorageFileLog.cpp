@@ -1160,7 +1160,6 @@ bool StorageFileLog::addOtherName(const String & file_name, UInt64 inode, bool i
                 return false;
             }
             const String link = read->first;
-            /// A file previously read under `file_name` moves its meta file away before this one moves in.
             untrackReadName(file_name);
             /// Until its meta file has moved, `file_name` is another name of the file, so a failed move leaves it tracked.
             file_infos.other_names.emplace(file_name, OtherName{.inode = inode, .is_symlink = is_symlink});
@@ -1185,7 +1184,6 @@ bool StorageFileLog::addOtherName(const String & file_name, UInt64 inode, bool i
 std::optional<std::pair<String, bool>> StorageFileLog::findOtherName(UInt64 inode)
 {
     /// A hard link is a name of the file until its removal event is processed, so a gone one is kept. A symbolic link is dropped when gone, or when it resolves through another name in the directory, which has its own events.
-    /// Preferred: a name that still has the file, then a hard link, then the smallest name.
     std::optional<std::tuple<bool, bool, String>> best; /// (gone, is_symlink, name)
     for (auto it = file_infos.other_names.begin(); it != file_infos.other_names.end();)
     {
@@ -1334,14 +1332,12 @@ bool StorageFileLog::updateFileInfos()
                         break;
 
                     /// The file kept another name in the directory, so it is not new: it is read on like a renamed one.
-                    /// Checked before `onFileAppeared`, which may release a meta.
                     const bool kept_other_name = file_infos.meta_by_inode.contains(inode) && findOtherName(inode).has_value();
 
                     if (kept_other_name)
                     {
                         if (const String read_name = file_infos.meta_by_inode.at(inode).file_name; read_name != file_name)
                         {
-                            /// A file previously read under `file_name` moves its meta file away before this one moves in.
                             untrackReadName(file_name);
                             /// Until its meta file has moved, `file_name` is another name of the file, so a failed move leaves it tracked.
                             file_infos.other_names.emplace(file_name, OtherName{.inode = inode, .is_symlink = is_symlink});
@@ -1377,7 +1373,6 @@ bool StorageFileLog::updateFileInfos()
                 /// skip it, the file info will be handled in DW_ITEM_ADDED case.
                 if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                     it->second.status = FileStatus::UPDATED;
-                /// A write through another name updates the name the file is read under.
                 else if (auto other = file_infos.other_names.find(file_name); other != file_infos.other_names.end())
                     markReadNameUpdated(other->second.inode);
                 break;
