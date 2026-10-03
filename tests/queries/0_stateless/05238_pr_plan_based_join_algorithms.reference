@@ -1,0 +1,21 @@
+truth
+1000	4500
+500	249500
+hash, prefer_local_join=0: distributed, then the answer
+1
+1000	4500
+hash, prefer_local_join=1: distributed, then the answer
+1
+1000	4500
+full_sorting_merge, prefer_local_join=0: distributed, then the answer
+1
+1000	4500
+full_sorting_merge, prefer_local_join=1: distributed, then the answer
+1
+1000	4500
+right join, hash: distributed, then the answer
+1
+500	249500
+right join, full_sorting_merge: distributed, then the answer
+1
+500	249500

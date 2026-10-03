@@ -26,6 +26,10 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2, parallel
     parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET enable_analyzer = 1;
+-- Pinned to the query-based implementation: with `parallel_replicas_plan_based` no runtime dataflow
+-- statistics are collected, so the assertions below read 0. See
+-- https://github.com/ClickHouse/ClickHouse/issues/118265.
+SET parallel_replicas_plan_based = 0;
 -- Lazy materialization only applies to a `LIMIT` up to this value, and `clickhouse-test` randomizes
 -- it down to 1, which would leave the plan without the step under test. Zero means no limit.
 SET query_plan_max_limit_for_lazy_materialization = 0;

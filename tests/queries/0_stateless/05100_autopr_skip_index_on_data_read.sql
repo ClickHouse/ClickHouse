@@ -22,6 +22,10 @@ INSERT INTO t_autopr_skip_index SELECT number, number FROM numbers(400000);
 OPTIMIZE TABLE t_autopr_skip_index FINAL;
 
 SET enable_analyzer = 1;
+-- Pinned to the query-based implementation: with `parallel_replicas_plan_based` no runtime dataflow
+-- statistics are collected, so the assertions below read 0. See
+-- https://github.com/ClickHouse/ClickHouse/issues/118265.
+SET parallel_replicas_plan_based = 0;
 SET use_skip_indexes_on_data_read = 1;
 SET max_threads = 1;
 SET merge_tree_min_bytes_per_task_for_remote_reading = 1024;

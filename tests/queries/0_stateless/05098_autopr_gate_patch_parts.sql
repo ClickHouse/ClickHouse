@@ -11,6 +11,11 @@
 -- `RuntimeDataflowStatisticsInputBytes` is non-zero only for a query the gate let through and the
 -- optimization then instrumented, so it is what says the query is still a candidate.
 
+-- Pinned to the query-based implementation: with `parallel_replicas_plan_based` the plan shapes do
+-- not hash-match, so no statistics are collected.
+-- https://github.com/ClickHouse/ClickHouse/issues/118265
+SET parallel_replicas_plan_based = 0;
+
 DROP TABLE IF EXISTS t_autopr_patch;
 
 -- Far below `automatic_parallel_replicas_min_bytes_per_replica`, so the gate would reject this read

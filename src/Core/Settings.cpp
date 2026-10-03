@@ -9225,15 +9225,16 @@ Build local plan for local replica
         {"24.11", false, true, "Use local plan for local replica in a query with parallel replicas"}, \
         {"24.10", false, true, "Use local plan for local replica in a query with parallel replicas"}, \
         {"24.9", false, false, "Use local plan for local replica in a query with parallel replicas"}) \
-    DECLARE(Bool, parallel_replicas_plan_based, false, R"(
+    DECLARE(Bool, parallel_replicas_plan_based, true, R"(
 Decide whether and where to use parallel replicas by analyzing the query plan, as opposed to the query-tree-based analysis. As a result, a plan fragment is sent to the remote replicas instead of a SQL query. Experimental.
-
 Has no effect on a distributed `INSERT SELECT` ([parallel_distributed_insert_select](#parallel_distributed_insert_select) = 2), which ships the whole `INSERT` as a query to every replica: a replica executing that query reads with the query-tree-based implementation, so the initiator, taking part as one more replica, uses it too.
 )", EXPERIMENTAL, \
+        {"26.10", false, true, "Enable plan-based parallel replicas by default on this experiment branch. previous_value=false so `compatibility` with versions before 26.9 restores the old behavior."}, \
         {"26.7", false, false, "New setting"}) \
-    DECLARE(Bool, parallel_replicas_allow_merge_tables, false, R"(
+    DECLARE(Bool, parallel_replicas_allow_merge_tables, true, R"(
 Allow reading from a `Merge` table with parallel replicas. Effective only together with [parallel_replicas_plan_based](#parallel_replicas_plan_based): the read from the `Merge` table is expanded into a union of the reads from the underlying `MergeTree` tables, which is then distributed like any other union. A `Merge` table is left to a single replica when any of its underlying tables cannot be read that way (a non-`MergeTree` table, a `FINAL` read). Set it to `false` to read every `Merge` table on a single replica, as before the support was added. Experimental.
-)", EXPERIMENTAL, \
+)", BETA, \
+        {"26.10", false, true, "New setting to allow reading from a `Merge` table with plan-based parallel replicas, by expanding the `Merge` read into a union of the reads from the underlying `MergeTree` tables. It only has an effect together with `parallel_replicas_plan_based`. Enabled by default on this experiment branch."}, \
         {"26.9", false, false, "New setting to allow reading from a `Merge` table with plan-based parallel replicas, by expanding the `Merge` read into a union of the reads from the underlying `MergeTree` tables. It only has an effect together with `parallel_replicas_plan_based`."}) \
     DECLARE(Bool, parallel_replicas_prefer_local_replica, true, R"(
 When enabled (default), the local replica is always included in the set of replicas used for parallel reading.
