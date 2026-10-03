@@ -111,7 +111,7 @@ MutableColumnPtr createColumn(size_t rows)
     auto & data = column->getData();
     data.resize(rows);
     for (size_t i = 0; i < rows; ++i)
-        data[i] = static_cast<UInt128>(i);
+        data[i] = static_cast<T>(i);
     return column;
 }
 
