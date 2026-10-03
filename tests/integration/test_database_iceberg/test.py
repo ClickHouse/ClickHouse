@@ -1442,6 +1442,22 @@ def test_ambient_parquet_field_id_settings_are_ignored(started_cluster):
         == "AAPL\tNASDAQ\nMSFT\tNASDAQ\n"
     )
 
+    # With parallel replicas the catalog builds a `StorageObjectStorageCluster`
+    # instead, which must ignore the ambient values in the same way.
+    parallel_replicas_settings = {
+        "parallel_replicas_for_cluster_engines": 1,
+        "enable_parallel_replicas": 2,
+        "cluster_for_parallel_replicas": "cluster_simple",
+    }
+    node.query(
+        f"INSERT INTO {table_ref} VALUES ('GOOG', 'NASDAQ');",
+        settings={**write_settings, **parallel_replicas_settings},
+    )
+    assert (
+        node.query(f"SELECT * FROM {table_ref} ORDER BY ALL")
+        == "AAPL\tNASDAQ\nGOOG\tNASDAQ\nMSFT\tNASDAQ\n"
+    )
+
 
 def test_create_gzip_metadata(started_cluster):
     # Catalog-backed CREATE TABLE from ClickHouse with gzip metadata
