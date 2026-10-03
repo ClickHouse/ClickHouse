@@ -9,6 +9,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Interpreters/FileCache/FileCache.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <boost/algorithm/string/case_conv.hpp>
@@ -154,6 +155,13 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
     result.add(
         ColumnDescription(
             "idle_bytes", std::make_shared<DataTypeUInt64>(), "Bytes of file segments with no cache hit in the last full efficiency window"));
+    const auto map_type = std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>());
+    result.add(
+        ColumnDescription(
+            "file_segments_by_size", map_type, "The number of file segments by the size of their range. The key is the inclusive upper bound of the size bucket in bytes, or `inf`. Temporary data is not counted"));
+    result.add(
+        ColumnDescription(
+            "bytes_by_segment_size", map_type, "Bytes by the size of the file segment range. The key is the inclusive upper bound of the size bucket in bytes, or `inf`. Temporary data is not counted"));
 
     return result;
 }
@@ -178,6 +186,18 @@ void FileCacheSettings::dumpToSystemSettingsColumns(
     res_columns[i++]->insert(efficiency.active_bytes);
     res_columns[i++]->insert(efficiency.passive_bytes);
     res_columns[i++]->insert(efficiency.idle_bytes);
+
+    Map segments_by_size;
+    Map bytes_by_size;
+    const auto buckets = cache->getSegmentSizes().getBuckets();
+    for (size_t bucket = 0; bucket < buckets.size(); ++bucket)
+    {
+        const String name = FileCacheSegmentSizes::getBucketName(bucket);
+        segments_by_size.push_back(Tuple{name, buckets[bucket].segments});
+        bytes_by_size.push_back(Tuple{name, buckets[bucket].bytes});
+    }
+    res_columns[i++]->insert(segments_by_size);
+    res_columns[i++]->insert(bytes_by_size);
 }
 
 void FileCacheSettings::loadFromConfig(

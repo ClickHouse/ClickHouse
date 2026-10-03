@@ -95,6 +95,9 @@ FileSegment::FileSegment(
     /// with the `DOWNLOADED` state (used when loading cache metadata on startup).
     chassert(!size_in_filename || download_state == State::DOWNLOADED);
 
+    if (cache && !is_unbound)
+        size_class = cache->getSegmentSizes().getClass(range().size());
+
     /// On creation, file segment state can be EMPTY, DOWNLOADED, DOWNLOADING.
     switch (download_state)
     {
@@ -970,6 +973,7 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
              range().size(), result_size, downloaded_size.load());
 
     segment_range.right = segment_range.left + result_size - 1;
+    onRangeShrunk();
 
     if (downloaded_size == result_size)
     {
@@ -1554,7 +1558,7 @@ void FileSegment::markRead(size_t offset, size_t size)
         return;
 
     std::lock_guard lock(efficiency_mutex);
-    if (removed_from_efficiency)
+    if (removed_from_cache)
         return;
 
     const auto window = efficiency.currentWindow();
@@ -1620,7 +1624,7 @@ void FileSegment::addReservedSize(Int64 delta)
             reserved_size.fetch_sub(static_cast<size_t>(-delta));
     };
 
-    if (!cache || is_unbound || !cache->getEfficiency().isEnabled())
+    if (!cache || is_unbound)
     {
         apply();
         return;
@@ -1629,8 +1633,37 @@ void FileSegment::addReservedSize(Int64 delta)
     /// Under the lock, so the first window start of `markRead` sees either none or all of `delta`.
     std::lock_guard lock(efficiency_mutex);
     apply();
-    if (!removed_from_efficiency && efficiency_state)
+    if (removed_from_cache)
+        return;
+    cache->getSegmentSizes().add(size_class, counted_in_segment_sizes ? 0 : 1, delta);
+    counted_in_segment_sizes = true;
+    if (efficiency_state)
         cache->getEfficiency().addPassiveBytes(efficiency_state->window_id, delta);
+}
+
+void FileSegment::onLoadedIntoCache()
+{
+    if (!cache || is_unbound)
+        return;
+    std::lock_guard lock(efficiency_mutex);
+    chassert(!counted_in_segment_sizes);
+    cache->getSegmentSizes().add(size_class, 1, static_cast<Int64>(reserved_size.load()));
+    counted_in_segment_sizes = true;
+}
+
+void FileSegment::onRangeShrunk()
+{
+    if (!cache || is_unbound)
+        return;
+    std::lock_guard lock(efficiency_mutex);
+    const auto new_class = cache->getSegmentSizes().getClass(range().size());
+    if (counted_in_segment_sizes)
+    {
+        const auto bytes = static_cast<Int64>(reserved_size.load());
+        cache->getSegmentSizes().add(size_class, -1, -bytes);
+        cache->getSegmentSizes().add(new_class, 1, bytes);
+    }
+    size_class = new_class;
 }
 
 void FileSegment::onRemovedFromCache(const FileSegmentGuard::Lock &)
@@ -1638,7 +1671,10 @@ void FileSegment::onRemovedFromCache(const FileSegmentGuard::Lock &)
     if (!cache || is_unbound)
         return;
     std::lock_guard lock(efficiency_mutex);
-    removed_from_efficiency = true;
+    removed_from_cache = true;
+    if (counted_in_segment_sizes)
+        cache->getSegmentSizes().add(size_class, -1, -static_cast<Int64>(reserved_size.load()));
+    counted_in_segment_sizes = false;
     if (!efficiency_state)
         return;
     auto & efficiency = cache->getEfficiency();

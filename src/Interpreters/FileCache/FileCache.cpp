@@ -325,6 +325,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , skip_cache_on_disk_failure(settings[FileCacheSetting::skip_cache_on_disk_failure])
     , expose_eviction_metrics(settings[FileCacheSetting::expose_prometheus_eviction_metrics])
     , expose_eviction_metrics_per_user(settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user])
+    , segment_sizes(boundary_alignment)
     , efficiency(settings[FileCacheSetting::efficiency_window_sec], [this] { return getUsedCacheSize(); })
     , name(cache_name)
     , log(getLogger("FileCache(" + cache_name + ")"))
@@ -2621,7 +2622,9 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
                     segment.cache_it,
                     /* size_in_filename */segment.size_in_filename);
 
-                inserted = key_metadata->emplaceUnlocked(segment.offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
+                inserted = key_metadata->emplaceUnlocked(segment.offset, std::make_shared<FileSegmentMetadata>(FileSegmentPtr(file_segment))).second;
+                if (inserted)
+                    file_segment->onLoadedIntoCache();
             }
             catch (...)
             {

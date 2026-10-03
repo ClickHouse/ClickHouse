@@ -4667,3 +4667,118 @@ TEST_F(FileCacheTest, EfficiencyShrinkWithinWindow)
     EXPECT_EQ(snapshot.passive_bytes, G);
 }
 
+TEST(FileCacheSegmentSizes, Buckets)
+{
+    const FileCacheSegmentSizes sizes(4_MiB);
+    auto expect = [&](size_t range_size, UInt8 bucket, bool large)
+    {
+        const auto size_class = sizes.getClass(range_size);
+        EXPECT_EQ(size_class.bucket, bucket) << range_size;
+        EXPECT_EQ(size_class.large, large) << range_size;
+    };
+    expect(1, 0, false);
+    expect(512_KiB, 0, false);
+    expect(512_KiB + 1, 1, false);
+    expect(4_MiB, 3, false);
+    expect(4_MiB + 1, 4, true);
+    expect(16_MiB, 5, true);
+    expect(16_MiB + 1, 6, true);
+    expect(32_MiB, 6, true);
+
+    EXPECT_EQ(FileCacheSegmentSizes::getBucketName(0), "524288");
+    EXPECT_EQ(FileCacheSegmentSizes::getBucketName(5), "16777216");
+    EXPECT_EQ(FileCacheSegmentSizes::getBucketName(6), "inf");
+}
+
+namespace
+{
+
+void expectSegmentSizes(FileCache & cache, const std::map<size_t, FileCacheSegmentSizes::Bucket> & expected, UInt64 large_bytes)
+{
+    const auto buckets = cache.getSegmentSizes().getBuckets();
+    for (size_t i = 0; i < buckets.size(); ++i)
+    {
+        const auto it = expected.find(i);
+        const auto bucket = it == expected.end() ? FileCacheSegmentSizes::Bucket{} : it->second;
+        EXPECT_EQ(buckets[i].segments, bucket.segments) << "bucket " << FileCacheSegmentSizes::getBucketName(i);
+        EXPECT_EQ(buckets[i].bytes, bucket.bytes) << "bucket " << FileCacheSegmentSizes::getBucketName(i);
+    }
+    EXPECT_EQ(cache.getSegmentSizes().getLargeBytes(), large_bytes);
+}
+
+}
+
+TEST_F(FileCacheTest, SegmentSizes)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("segment_sizes_test"));
+    /// File segments up to `4 * S` (2 MiB), aligned to `S` (512 KiB, the first bucket bound).
+    auto settings = efficiencyCacheSettings(0);
+    settings[FileCacheSetting::max_size] = 32 * S;
+    settings[FileCacheSetting::max_file_segment_size] = 4 * S;
+    settings[FileCacheSetting::reserve_granularity] = 0;
+    const auto & user = FileCache::getCommonOrigin();
+    const size_t bucket_512k = 0;
+    const size_t bucket_2m = 2;
+
+    {
+        auto cache = DB::FileCache("segment_sizes", settings);
+        cache.initialize();
+
+        /// A file segment counts from its first reservation.
+        auto key = FileCacheKey::fromPath("segment_sizes_key");
+        {
+            auto holder = cache.getOrSet(key, 0, 4 * S, /*file_size=*/4 * S, {}, 0, user);
+            auto segment = get(holder, 0);
+            ASSERT_EQ(segment->range().size(), 4 * S);
+            expectSegmentSizes(cache, {}, 0);
+
+            ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+            std::string failure_reason;
+            ASSERT_TRUE(segment->reserve(3 * G, 1000, failure_reason));
+            expectSegmentSizes(cache, {{bucket_2m, {1, 3 * G}}}, 3 * G);
+
+            auto key_str = key.toString();
+            fs::create_directories(fs::path(cache_base_path) / key_str.substr(0, 3) / key_str);
+            std::string data(3 * G, '0');
+            segment->write(data.data(), data.size(), segment->getCurrentWriteOffset());
+        }
+        /// The last holder shrinks it to `S` (the downloaded size rounded up to the alignment),
+        /// so it moves to the 512 KiB bucket and is not large anymore.
+        expectSegmentSizes(cache, {{bucket_512k, {1, 3 * G}}}, 0);
+
+        auto small_key = FileCacheKey::fromPath("segment_sizes_small");
+        auto small_holder = cache.getOrSet(small_key, 0, G + 100, /*file_size=*/G + 100, {}, 0, user);
+        download(get(small_holder, 0));
+        expectSegmentSizes(cache, {{bucket_512k, {2, 4 * G + 100}}}, 0);
+
+        auto big_key = FileCacheKey::fromPath("segment_sizes_big");
+        auto big_holder = cache.getOrSet(big_key, 0, 4 * S, /*file_size=*/4 * S, {}, 0, user);
+        download(get(big_holder, 0));
+        big_holder = nullptr;
+        expectSegmentSizes(cache, {{bucket_512k, {2, 4 * G + 100}}, {bucket_2m, {1, 4 * S}}}, 4 * S);
+        EXPECT_EQ(cache.getUsedCacheSize(), 4 * G + 100 + 4 * S);
+
+        /// Temporary data does not count.
+        {
+            auto temporary_holder = cache.set(
+                FileCacheKey::fromPath("segment_sizes_temporary"), 0, G, CreateFileSegmentSettings(FileSegmentKind::Ephemeral), user);
+            auto & temporary = temporary_holder->front();
+            ASSERT_EQ(temporary.getOrSetDownloader(), FileSegment::getCallerId());
+            std::string failure_reason;
+            ASSERT_TRUE(temporary.reserve(G, 1000, failure_reason));
+            EXPECT_EQ(cache.getUsedCacheSize(), 5 * G + 100 + 4 * S);
+            expectSegmentSizes(cache, {{bucket_512k, {2, 4 * G + 100}}, {bucket_2m, {1, 4 * S}}}, 4 * S);
+        }
+
+        /// Removal subtracts the file segment.
+        small_holder = nullptr;
+        cache.removeFileSegment(small_key, 0, user.user_id);
+        expectSegmentSizes(cache, {{bucket_512k, {1, 3 * G}}, {bucket_2m, {1, 4 * S}}}, 4 * S);
+    }
+
+    /// On startup the file segments count with the sizes of their files.
+    auto cache = DB::FileCache("segment_sizes", settings);
+    cache.initialize();
+    expectSegmentSizes(cache, {{bucket_512k, {1, 3 * G}}, {bucket_2m, {1, 4 * S}}}, 4 * S);
+}

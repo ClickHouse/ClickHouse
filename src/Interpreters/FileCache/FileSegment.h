@@ -15,6 +15,7 @@
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 #include <Interpreters/FileCache/FileCacheEfficiency.h>
+#include <Interpreters/FileCache/FileCacheSegmentSizes.h>
 #include <Common/ByteMutex.h>
 #include <optional>
 #include <vector>
@@ -274,7 +275,11 @@ private:
     /// The only way to change `reserved_size` after construction.
     void addReservedSize(Int64 delta);
 
+    /// For a file segment loaded on startup: it has the reserved size from the start.
+    void onLoadedIntoCache();
     void onRemovedFromCache(const FileSegmentGuard::Lock &);
+    /// Moves the file segment to the size class of its new range.
+    void onRangeShrunk();
     FileSegmentEfficiencyInfo getEfficiencyInfo(const FileSegmentGuard::Lock &) const;
 
     void startEfficiencyWindowUnlocked(FileCacheEfficiency::Window window) TSA_REQUIRES(efficiency_mutex);
@@ -358,10 +363,14 @@ private:
     std::condition_variable cv;
     /// Dedups concurrent increasePriority() calls; a pure try-lock, so an atomic flag is enough.
     std::atomic_flag increasing_priority;
-    /// A leaf lock for the efficiency state: only the mutex of `FileCacheEfficiency` is taken under it.
-    /// One byte each, so they fill the padding after `increasing_priority`.
+    /// A leaf lock for the efficiency state and the size class: only the mutex of `FileCacheEfficiency`
+    /// is taken under it. The fields below are 1 or 2 bytes, so they fill the padding after
+    /// `increasing_priority`.
     mutable ByteMutex efficiency_mutex;
-    bool removed_from_efficiency TSA_GUARDED_BY(efficiency_mutex) = false;
+    bool removed_from_cache TSA_GUARDED_BY(efficiency_mutex) = false;
+    /// Whether the reserved size of this file segment is counted in `FileCacheSegmentSizes`, in `size_class`.
+    bool counted_in_segment_sizes TSA_GUARDED_BY(efficiency_mutex) = false;
+    FileCacheSegmentSizes::Class size_class TSA_GUARDED_BY(efficiency_mutex);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     /// Per-segment logger with a unique name; only in debug/sanitizer builds.
