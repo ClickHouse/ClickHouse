@@ -152,23 +152,58 @@ AI function activity is tracked through ClickHouse [ProfileEvents](/reference/sy
 | ProfileEvent | Description |
 |-------|-------------|
 | `AIAPICalls` | Number of HTTP requests made to the AI provider. |
-| `AIInputTokens` | Total input tokens consumed. |
+| `AIInputTokens` | Total input tokens consumed, including cache reads and writes. |
 | `AIOutputTokens` | Total output tokens consumed. |
+| `AICacheReadTokens` | Input tokens read from the provider's prompt cache. |
+| `AICacheWriteTokens` | Input tokens written to the provider's prompt cache. |
+| `AIRequestMicroseconds` | Total time in provider requests, including failed attempts and response parsing, excluding retry backoff. |
+| `AIExecutionMicroseconds` | Total time executing AI functions, including request preparation, retry backoff, and result processing. |
+| `AIInputRows` | Rows passed to each AI function, including `NULL` and empty inputs. Retries do not add rows. |
 | `AIRowsProcessed` | Number of rows that received a result. |
 | `AIRowsSkipped` | Number of rows skipped (quota exceeded, or error with `ai_function_throw_on_error = 0`). |
+
+Times are summed across executions and threads, so they can exceed query wall-clock time.
+Divide `AIRequestMicroseconds` by `AIAPICalls` to get mean request latency, including failed attempts.
+These counters do not provide per-request latency percentiles.
+
+`AIInputRows` counts function inputs, rather than HTTP requests or final query rows.
+For example, `aiEmbed` can send several rows in one request, and `aiSimilarity` embeds two operands per row.
+If a query calls multiple AI functions, their counts are added together.
+Use `AIRowsProcessed` to count successful AI results and `AIRowsSkipped` for quota or error defaults.
+
+Cache counters are subsets of `AIInputTokens`, not additional tokens. OpenAI-compatible chat responses report
+cache reads in `usage.prompt_tokens_details.cached_tokens`. Anthropic reports cache reads and writes in
+`usage.cache_read_input_tokens` and `usage.cache_creation_input_tokens`; these are added to its uncached
+`usage.input_tokens` for both metrics and the input-token quota. A provider that omits cache usage contributes
+zero cache tokens. Cache-write usage is collected from Anthropic responses. These metrics report provider usage;
+they do not enable prompt caching or represent the ClickHouse query cache.
 
 Query these events:
 
 ```sql
+SYSTEM FLUSH LOGS;
+
 SELECT
+    query_duration_ms,
     ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIRequestMicroseconds'] / 1000 AS request_ms,
+    request_ms / nullIf(api_calls, 0) AS mean_request_ms,
+    ProfileEvents['AIExecutionMicroseconds'] / 1000 AS execution_ms,
+    ProfileEvents['AIInputRows'] AS input_rows,
+    ProfileEvents['AIRowsProcessed'] AS rows_processed,
+    ProfileEvents['AIRowsSkipped'] AS rows_skipped,
     ProfileEvents['AIInputTokens'] AS input_tokens,
-    ProfileEvents['AIOutputTokens'] AS output_tokens
+    ProfileEvents['AIOutputTokens'] AS output_tokens,
+    ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
+    ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens
 FROM system.query_log
 WHERE query_id = 'query_id'
-AND type = 'QueryFinish'
+AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
 ORDER BY event_time DESC;
 ```
+
+Enable `log_queries` and `log_profile_events` to record these events in `system.query_log`.
+Server-wide totals are also available in `system.events`.
 
 {/*
 The inner content of the tags below are replaced at doc framework build time with
