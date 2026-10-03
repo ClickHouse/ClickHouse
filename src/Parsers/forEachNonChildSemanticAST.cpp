@@ -36,6 +36,12 @@ namespace
         {
             if (!member)
                 return;
+            /// Some members are moved into `children` only in some cases (e.g. the user names of
+            /// `CREATE USER` when one of them is a query parameter); the generic `children` walks
+            /// already reach them then, so do not visit them a second time.
+            for (const auto & child : node.children)
+                if (child.get() == member.get())
+                    return;
             using Member = std::remove_reference_t<decltype(member)>;
             if constexpr (std::is_same_v<std::remove_const_t<Member>, ASTPtr>)
             {
@@ -102,6 +108,7 @@ namespace
             /// `children` walks never see. The tree hash folds `names` in, so the walks must
             /// reach it too.
             visit_if(create_user->names);
+            visit_if(create_user->new_name);
 
             /// The same holds for every other `ASTCreateUserQuery` member that
             /// `updateTreeHashImpl` folds in: they all live outside `children`, so without
@@ -116,6 +123,8 @@ namespace
         }
         else if (auto * create_role = node.template as<ASTCreateRoleQuery>())
         {
+            visit_if(create_role->names);
+            visit_if(create_role->new_name);
             visit_if(create_role->settings);
             visit_if(create_role->alter_settings);
         }

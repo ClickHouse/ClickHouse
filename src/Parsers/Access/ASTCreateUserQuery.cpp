@@ -14,9 +14,13 @@ namespace DB
 
 namespace
 {
-    void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings &)
+    void formatRenameTo(const ASTUserNameWithHost & new_name, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << " RENAME TO " << quoteString(new_name);
+        ostr << " RENAME TO ";
+        if (new_name.usernameWasQueryParameter())
+            new_name.format(ostr, settings);
+        else
+            ostr << quoteString(new_name.toString());
     }
 
     void formatAuthenticationData(const std::vector<boost::intrusive_ptr<ASTAuthenticationData>> & authentication_methods, WriteBuffer & ostr, const IAST::FormatSettings & settings)
@@ -191,7 +195,18 @@ ASTPtr ASTCreateUserQuery::clone() const
     res->authentication_methods.clear();
 
     if (names)
+    {
         res->names = boost::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
+        if (res->names->hasQueryParameters())
+            res->children.push_back(res->names);
+    }
+
+    if (new_name)
+    {
+        res->new_name = boost::static_pointer_cast<ASTUserNameWithHost>(new_name->clone());
+        if (res->new_name->usernameWasQueryParameter())
+            res->children.push_back(res->new_name);
+    }
 
     if (roles)
         res->roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
@@ -369,9 +384,9 @@ void ASTCreateUserQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_al
     hash_state.update(storage_name);
     hash_state.update(cluster);
 
-    hash_state.update(new_name.has_value());
+    hash_state.update(static_cast<bool>(new_name));
     if (new_name)
-        hash_state.update(*new_name);
+        new_name->updateTreeHash(hash_state, ignore_aliases);
 
     /// `authentication_methods` and `global_valid_until` are kept in `children` and are already
     /// hashed by the base `IAST::updateTreeHashImpl`, but the deadline expression alone cannot

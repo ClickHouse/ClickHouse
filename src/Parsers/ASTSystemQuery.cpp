@@ -359,6 +359,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::FLUSH_DISTRIBUTED:
         case Type::PREWARM_MARK_CACHE:
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
+        case Type::CLEAR_TIME_SERIES_CACHES:
         {
             if (table)
             {
@@ -1114,6 +1115,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
         case Type::PAUSE:
         case Type::CANCEL:
         case Type::REFRESH:
+        case Type::CLEAR_TIME_SERIES_CACHES:
             if (!table)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM {}` requires 'table' during AST JSON deserialization", typeToString(type));
             break;

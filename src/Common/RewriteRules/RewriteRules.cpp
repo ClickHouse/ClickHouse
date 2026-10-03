@@ -362,64 +362,6 @@ namespace
         return {};
     }
 
-    /// Returns the name of the first `{name:Type}` placeholder that a rule template flattened into
-    /// a plain `String` member, and is therefore invisible as an AST node. The only such carrier is
-    /// the `RENAME TO` target of `ALTER USER`: `parseRenameTo` parses it with
-    /// `parseUserName(..., /*allow_query_parameter=*/true)` and stores
-    /// `ASTUserNameWithHost::toString`, i.e. the text `{name:Type}` (optionally followed by
-    /// `@host_pattern`), into `ASTCreateUserQuery::new_name`. No `ASTQueryParameter` survives there,
-    /// so the matcher cannot bind such a placeholder (the rule would silently never match) and the
-    /// substitution cannot replace it (the result template would rename the user to the literal
-    /// name `{name:Type}`). Reject it at DDL time, like the other unreachable-placeholder cases.
-    std::optional<String> findFlattenedQueryParameterInUserName(const ASTPtr & ast)
-    {
-        if (!ast)
-            return {};
-
-        if (const auto * create_user = ast->as<ASTCreateUserQuery>(); create_user && create_user->new_name)
-        {
-            const String & new_name = *create_user->new_name;
-            const auto closing = new_name.find('}');
-            const auto colon = new_name.find(':');
-            /// `{` + non-empty name + `:` + type + `}`.
-            if (new_name.starts_with('{') && closing != String::npos && colon > 1 && colon < closing)
-                return new_name.substr(1, colon - 1);
-        }
-
-        /// A nested rule template can carry the same flattened placeholder, and its
-        /// `source_query` / `resulting_query` live outside both `children` and
-        /// `forEachNonChildSemanticAST`, so descend into them explicitly.
-        if (const auto * create_rule = ast->as<ASTCreateRewriteRuleQuery>())
-        {
-            if (auto found = findFlattenedQueryParameterInUserName(create_rule->source_query))
-                return found;
-            if (auto found = findFlattenedQueryParameterInUserName(create_rule->resulting_query))
-                return found;
-        }
-        else if (const auto * alter_rule = ast->as<ASTAlterRewriteRuleQuery>())
-        {
-            if (auto found = findFlattenedQueryParameterInUserName(alter_rule->source_query))
-                return found;
-            if (auto found = findFlattenedQueryParameterInUserName(alter_rule->resulting_query))
-                return found;
-        }
-
-        std::optional<String> found;
-        forEachNonChildSemanticAST(*ast, [&](const ASTPtr & member)
-        {
-            if (!found)
-                found = findFlattenedQueryParameterInUserName(member);
-        });
-        if (found)
-            return found;
-
-        for (const auto & child : ast->children)
-            if (auto nested = findFlattenedQueryParameterInUserName(child))
-                return nested;
-
-        return {};
-    }
-
     /// Whether `node`'s AST class has been audited for complete tree-hash coverage: every data
     /// member that affects the formatted text is folded into `getTreeHash(true)` (via an
     /// `updateTreeHashImpl` override, membership in `children`, the `getID` string, or the
@@ -651,18 +593,6 @@ namespace
                     "a SETTINGS clause value, a CREATE USER name, or a ROW POLICY filter); such "
                     "placeholders are not supported",
                     query.rule_name, *non_child);
-
-        /// A placeholder in an `ALTER USER ... RENAME TO` clause is flattened by the parser into a
-        /// plain string, leaving no AST node for the matcher to bind or for the substitution to
-        /// replace, so the rule could never work as intended.
-        for (const auto & template_query : {query.source_query, query.resulting_query})
-            if (auto flattened = findFlattenedQueryParameterInUserName(template_query))
-                throw Exception(
-                    ErrorCodes::REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE,
-                    "Rewrite rule `{}` uses query parameter `{}` in an ALTER USER ... RENAME TO "
-                    "clause; the parser flattens that name into a plain string, so such placeholders "
-                    "are not supported",
-                    query.rule_name, *flattened);
 
         std::unordered_set<String> source_parameters;
         std::vector<String> source_duplicates;
