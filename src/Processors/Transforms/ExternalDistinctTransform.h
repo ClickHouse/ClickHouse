@@ -73,6 +73,11 @@ private:
         {
         }
 
+        /// Memory charged to the global `max_bytes_in_distinct` check. A set without keys counts as empty,
+        /// like in a serial `DISTINCT` that checks limits only after inserting keys: otherwise the
+        /// preallocated hash table of a transform that spills before hashing would exceed tiny limits.
+        size_t getRetainedSetBytes() const { return set.getTotalRowCount() ? set.getTotalByteCount() : 0; }
+
         DistinctSetFilter set;
         /// EOF is observed in `prepare`, but releasing the set belongs to `work`.
         bool input_finished = false;

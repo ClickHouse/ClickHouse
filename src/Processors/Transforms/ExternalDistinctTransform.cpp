@@ -347,7 +347,7 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
     }
 
     hashing.set.prepareForInsert(input_chunk);
-    set_memory.update(hashing.set.getTotalByteCount());
+    set_memory.update(hashing.getRetainedSetBytes());
 
     /// The input columns and existing set are already charged to query memory. The estimates below
     /// cover additional allocations for inserting keys, filtering rows, and preparing the first spill run.
@@ -455,7 +455,7 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
     }
 
     consumed_rows += processed_rows;
-    set_memory.report(output_chunk, outputs.front().getHeader(), hashing.set.getTotalByteCount());
+    set_memory.report(output_chunk, outputs.front().getHeader(), hashing.getRetainedSetBytes());
     result_rows += output_chunk.getNumRows();
 
     /// A hint or a size limit in the 'break' overflow mode retains this final result chunk.
