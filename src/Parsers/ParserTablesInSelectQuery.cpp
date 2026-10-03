@@ -13,8 +13,6 @@
 #include <Parsers/ParserSampleRatio.h>
 #include <Parsers/ParserStreamSettings.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Core/Joins.h>
 
 
@@ -392,14 +390,11 @@ bool ParserTablesInSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserTablesInSelectQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementTablesInSelect(StatementFactory & factory)
-{
-    factory.registerStatement("FROM",
+    documentation["FROM"] =
     {
         .description = R"DOCS_MD(
 The `FROM` clause specifies the source to read data from:
@@ -517,9 +512,9 @@ FROM [db.]table SELECT ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "JOIN", "ARRAY JOIN", "SAMPLE", "WHERE"},
-    });
+    };
 
-    factory.registerStatement("JOIN",
+    documentation["JOIN"] =
     {
         .description = R"DOCS_MD(
 The `JOIN` clause produces a new table by combining columns from one or multiple tables by using values common to each. It is a common operation in databases with SQL support, which corresponds to [relational algebra](https://en.wikipedia.org/wiki/Relational_algebra#Joins_and_join-like_operators) join. The special case of one table join is often referred to as a "self-join".
@@ -1075,9 +1070,9 @@ FROM <left_table>
 )",
         .parent = "SELECT",
         .related = {"SELECT", "FROM", "ARRAY JOIN", "IN", "UNION"},
-    });
+    };
 
-    factory.registerStatement("ARRAY JOIN",
+    documentation["ARRAY JOIN"] =
     {
         .description = R"DOCS_MD(
 It is a common operation for tables that contain an array column to produce a new table that has a row with each individual array element of that initial column, while values of other columns are duplicated. This is the basic case of what `ARRAY JOIN` clause does.
@@ -1516,9 +1511,9 @@ FROM <left_subquery>
 )",
         .parent = "SELECT",
         .related = {"SELECT", "JOIN", "FROM"},
-    });
+    };
 
-    factory.registerStatement("SAMPLE",
+    documentation["SAMPLE"] =
     {
         .description = R"DOCS_MD(
 The `SAMPLE` clause allows for approximated `SELECT` query processing.
@@ -1636,7 +1631,9 @@ SELECT ... FROM table SAMPLE k OFFSET m
 )",
         .parent = "SELECT",
         .related = {"SELECT", "FROM", "CREATE TABLE", "ALTER TABLE ... MODIFY SAMPLE BY"},
-    });
+    };
+
+    return documentation;
 }
 
 }
