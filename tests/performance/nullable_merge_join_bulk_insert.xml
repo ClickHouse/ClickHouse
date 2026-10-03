@@ -1,10 +1,11 @@
 <test>
     <!--
-        Compare unique keys and repeated right values with and without Nullable
-        output. ANY LEFT JOIN keeps the left rows in place and isolates repeated
-        right-column expansion instead of also copying the left duplicate range.
-        Explicit Nullable payloads exercise the already-Nullable source path.
-        Select the payload directly so aggregation does not obscure insertion.
+        Focus on MergeJoin::copyRightRange with repeated right values. The optimized
+        path only matters when the destination is Nullable but the stored right
+        source column is not. Use wide payloads so repeated insertion dominates
+        sorting and key-comparison overhead instead of disappearing in whole-query
+        noise. The join_use_nulls=0 and explicitly Nullable payload queries are
+        controls for paths that were already bulk.
     -->
     <settings>
         <max_threads>1</max_threads>
@@ -16,16 +17,8 @@
         <substitution>
             <name>fanout</name>
             <values>
-                <value>1</value>
-                <value>256</value>
+                <value>64</value>
                 <value>65536</value>
-            </values>
-        </substitution>
-        <substitution>
-            <name>use_nulls</name>
-            <values>
-                <value>0</value>
-                <value>1</value>
             </values>
         </substitution>
     </substitutions>
@@ -40,47 +33,106 @@
         CREATE TABLE nullable_bulk_right_{fanout}
         (
             k UInt64,
-            value_number UInt64,
-            value_string String,
-            value_nullable_number Nullable(UInt64),
-            value_nullable_string Nullable(String)
+            n0 UInt64,
+            n1 UInt64,
+            n2 UInt64,
+            n3 UInt64,
+            n4 UInt64,
+            n5 UInt64,
+            n6 UInt64,
+            n7 UInt64,
+            n8 UInt64,
+            n9 UInt64,
+            n10 UInt64,
+            n11 UInt64,
+            n12 UInt64,
+            n13 UInt64,
+            n14 UInt64,
+            n15 UInt64,
+            s0 String,
+            s1 String,
+            s2 String,
+            s3 String,
+            nullable_number Nullable(UInt64),
+            nullable_string Nullable(String)
         ) ENGINE = MergeTree ORDER BY k
     </create_query>
 
     <fill_query>
         INSERT INTO nullable_bulk_left_{fanout}
-        SELECT intDiv(number, {fanout}) FROM numbers(262144)
+        SELECT intDiv(number, {fanout})
+        FROM numbers(1048576)
     </fill_query>
     <fill_query>
         INSERT INTO nullable_bulk_right_{fanout}
         SELECT
             number,
-            number + 42,
-            repeat('x', 64),
-            if(number % 2 = 0, NULL, number + 42),
-            if(number % 2 = 0, NULL, repeat('y', 64))
-        FROM numbers(intDiv(262144, {fanout}))
+            number,
+            number + 1,
+            number + 2,
+            number + 3,
+            number + 4,
+            number + 5,
+            number + 6,
+            number + 7,
+            number + 8,
+            number + 9,
+            number + 10,
+            number + 11,
+            number + 12,
+            number + 13,
+            number + 14,
+            number + 15,
+            repeat('x', 32),
+            repeat('y', 32),
+            repeat('z', 32),
+            repeat('w', 32),
+            if(number % 2 = 0, NULL, number),
+            if(number % 2 = 0, NULL, repeat('n', 32))
+        FROM numbers(intDiv(1048576, {fanout}))
     </fill_query>
 
+    <!-- Main target: non-Nullable numeric sources copied into Nullable join output. -->
     <query>
-        SELECT r.value_number
+        SELECT
+            r.n0, r.n1, r.n2, r.n3,
+            r.n4, r.n5, r.n6, r.n7,
+            r.n8, r.n9, r.n10, r.n11,
+            r.n12, r.n13, r.n14, r.n15
         FROM nullable_bulk_left_{fanout} AS l
         ANY LEFT JOIN nullable_bulk_right_{fanout} AS r ON l.k = r.k
-        SETTINGS join_use_nulls = {use_nulls}
+        SETTINGS join_use_nulls = 1
         FORMAT Null
     </query>
+
+    <!-- Variable-size target path. -->
     <query>
-        SELECT r.value_string
+        SELECT r.s0, r.s1, r.s2, r.s3
         FROM nullable_bulk_left_{fanout} AS l
         ANY LEFT JOIN nullable_bulk_right_{fanout} AS r ON l.k = r.k
-        SETTINGS join_use_nulls = {use_nulls}
+        SETTINGS join_use_nulls = 1
         FORMAT Null
     </query>
+
+    <!-- Control: no Nullable destination, so this PR should not change the path. -->
     <query>
-        SELECT r.value_nullable_number, r.value_nullable_string
+        SELECT
+            r.n0, r.n1, r.n2, r.n3,
+            r.n4, r.n5, r.n6, r.n7,
+            r.n8, r.n9, r.n10, r.n11,
+            r.n12, r.n13, r.n14, r.n15
         FROM nullable_bulk_left_{fanout} AS l
         ANY LEFT JOIN nullable_bulk_right_{fanout} AS r ON l.k = r.k
-        SETTINGS join_use_nulls = {use_nulls}
+        SETTINGS join_use_nulls = 0
+        FORMAT Null
+    </query>
+
+    <!-- Control: Nullable source already used ColumnNullable::insertManyFrom in master. -->
+    <query>
+        SELECT r.nullable_number, r.nullable_string
+        FROM nullable_bulk_left_{fanout} AS l
+        ANY LEFT JOIN nullable_bulk_right_{fanout} AS r ON l.k = r.k
+        SETTINGS join_use_nulls = 1
         FORMAT Null
     </query>
 
