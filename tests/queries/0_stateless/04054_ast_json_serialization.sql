@@ -1480,6 +1480,7 @@ SELECT 'RT_system_stop' AS t, formatQueryFromJSON(parseQueryToJSON('SYSTEM STOP 
 -- SHOW queries
 SELECT 'RT_show_tables' AS t, formatQueryFromJSON(parseQueryToJSON('SHOW TABLES FROM db'));
 SELECT 'RT_show_tables_like' AS t, formatQueryFromJSON(parseQueryToJSON('SHOW TABLES LIKE \'%test%\''));
+SELECT 'RT_show_tables_empty_like' AS t, formatQueryFromJSON(parseQueryToJSON('SHOW TABLES LIKE \'\''));
 SELECT 'RT_show_databases' AS t, formatQueryFromJSON(parseQueryToJSON('SHOW DATABASES'));
 SELECT 'RT_show_columns' AS t, formatQueryFromJSON(parseQueryToJSON('SHOW COLUMNS FROM t'));
 
