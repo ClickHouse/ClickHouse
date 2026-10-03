@@ -1085,10 +1085,13 @@ setting and merges small fresh parts regardless of their count.
 The selector never considers merge candidates wider than `max_parts_to_merge_at_once`, nor
 candidates reaching further back than `merge_selector_window_size` parts, so configuring
 either of them below this minimum is a contradictory configuration: small fresh parts then
-merge only after `merge_selector_small_parts_max_age`. Keep both at or above this minimum.
+merge only after `merge_selector_small_parts_max_age` (or earlier, once force merge applies by
+`min_age_to_force_merge_seconds` or `min_partition_age_to_force_merge_seconds`). Keep both at
+or above this minimum.
 (If the built-in fullness heuristic temporarily lowers its effective cap below this minimum,
 the selector still considers the first all-small, all-fresh candidate of this width. Stale or
-large candidates, and candidates that already reached `min_age_to_force_merge`, retain the
+large candidates, and candidates that already qualify for force merge by
+`min_age_to_force_merge_seconds` or `min_partition_age_to_force_merge_seconds`, retain the
 lowered cap.)
 )", 0, \
         {"26.10", 0, 0, "Minimum part count to allow merging small fresh parts (0 = disabled)"}) \
