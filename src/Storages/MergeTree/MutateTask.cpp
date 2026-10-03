@@ -1268,6 +1268,9 @@ static NameSet collectFilesToSkip(
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
     files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
 
+    /// Recomputed and rewritten at the end of mutation, so do not hardlink the source part's copy.
+    files_to_skip.insert(IMergeTreeDataPart::SECONDARY_INDEX_COLUMN_TYPES_FILE_NAME);
+
     /// We need to hardlink this file because otherwise hardlinked persistent virtual columns may be rolled back.
     files_to_skip.erase(IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
 
@@ -1573,6 +1576,12 @@ static NameToNameVector collectFilesForRenames(
     if (source_part->getSerializationInfos().needsPersistence() && !new_part->getSerializationInfos().needsPersistence())
         add_rename(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, "");
 
+    /// The record is always recomputed and rewritten in finalize, so drop the source part's inherited
+    /// checksum entry here; otherwise a recomputed-empty record leaves checksums.txt referencing a file
+    /// the new part does not have. The new record is unknown this early, hence the source-only condition.
+    if (!source_part->getSecondaryIndexColumnTypes().empty())
+        add_rename(IMergeTreeDataPart::SECONDARY_INDEX_COLUMN_TYPES_FILE_NAME, "");
+
     return rename_vector;
 }
 
@@ -1707,6 +1716,18 @@ static void finalizeMutatedPart(
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
         written_files.push_back(std::move(out_serialization));
+    }
+
+    const auto & secondary_index_column_types = new_data_part->getSecondaryIndexColumnTypes();
+    if (!secondary_index_column_types.empty())
+    {
+        auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SECONDARY_INDEX_COLUMN_TYPES_FILE_NAME, 4096, context->getWriteSettings());
+        HashingWriteBuffer out_hashing(*out);
+        secondary_index_column_types.writeJSON(out_hashing);
+        out_hashing.finalize();
+        new_data_part->checksums.files[IMergeTreeDataPart::SECONDARY_INDEX_COLUMN_TYPES_FILE_NAME].file_size = out_hashing.count();
+        new_data_part->checksums.files[IMergeTreeDataPart::SECONDARY_INDEX_COLUMN_TYPES_FILE_NAME].file_hash = out_hashing.getHash();
+        written_files.push_back(std::move(out));
     }
 
     const auto & statistics = all_gathered_data.statistics;
@@ -3426,6 +3447,28 @@ private:
                 ctx->new_data_part->checksums.files[rename_to] = ctx->new_data_part->checksums.files[rename_from];
                 ctx->new_data_part->checksums.files.erase(rename_from);
             }
+        }
+
+        {
+            /// So the read path can still prune with an index materialized over a column type the part
+            /// has not materialized itself. Hardlinked indices keep the source part's record.
+            std::vector<MergeTreeIndexPtr> rebuilt_indices(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end());
+            rebuilt_indices.insert(rebuilt_indices.end(), ctx->text_indices_to_recalc.begin(), ctx->text_indices_to_recalc.end());
+
+            NameSet rebuilt_index_names;
+            for (const auto & index : rebuilt_indices)
+                rebuilt_index_names.insert(index->index.name);
+
+            std::vector<String> hardlinked_index_names;
+            for (const auto & index : ctx->metadata_snapshot->getSecondaryIndices())
+                if (!rebuilt_index_names.contains(index.name) && !ctx->indices_to_drop_names.contains(index.name))
+                    hardlinked_index_names.push_back(index.name);
+
+            ctx->new_data_part->setSecondaryIndexColumnTypes(SecondaryIndexColumnTypes::compute(
+                rebuilt_indices,
+                hardlinked_index_names,
+                ctx->new_data_part->getColumnsDescription(),
+                ctx->source_part->getSecondaryIndexColumnTypes()));
         }
 
         MutationHelpers::finalizeMutatedPart(

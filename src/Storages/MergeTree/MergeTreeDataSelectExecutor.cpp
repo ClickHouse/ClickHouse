@@ -792,7 +792,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
 std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseIndex(
     const MergeTreeIndexPtr & index,
     const StorageMetadataPtr & metadata_snapshot,
-    const NameSet & all_updated_columns)
+    const NameSet & all_updated_columns,
+    const NameSet & value_updated_columns,
+    const IMergeTreeDataPart * part)
 {
     if (all_updated_columns.empty())
         return {};
@@ -815,15 +817,35 @@ std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseInde
 
     for (const auto & required_column : required_columns_list)
     {
+        std::string_view updated_by;
+        bool overlaps_value_update = false;
         for (const auto & updated_column : all_updated_columns)
         {
             if (overlaps(updated_column, required_column.name))
             {
-                return std::unexpected(PreformattedMessage::create(
-                    "Index {} depends on column `{}` which will be updated on the fly (by update of `{}`)",
-                    index->index.name, required_column.name, updated_column));
+                updated_by = updated_column;
+                if (value_updated_columns.contains(updated_column))
+                    overlaps_value_update = true;
             }
         }
+
+        if (updated_by.empty())
+            continue;
+
+        /// A value update makes the granules describe stale values, so the index is unusable however it
+        /// was typed. A value-preserving type change keeps the values, so the index still prunes when
+        /// its granules were built against the current read type, which the part records. Without a
+        /// part, stay conservative and reject.
+        if (!overlaps_value_update && part)
+        {
+            auto built_type_name = part->getSecondaryIndexColumnTypes().tryGetBuiltType(index->index.name, required_column.name);
+            if (built_type_name && *built_type_name == required_column.type->getName())
+                continue;
+        }
+
+        return std::unexpected(PreformattedMessage::create(
+            "Index {} depends on column `{}` which will be updated on the fly (by update of `{}`)",
+            index->index.name, required_column.name, updated_by));
     }
 
     return {};
@@ -954,7 +976,7 @@ static bool partHasStaleTopKIndex(
         /// A pending update / patch / MODIFY COLUMN that touches the indexed column makes its minmax
         /// stale. Reuse the same overlap check the regular skip-index path uses (canUseIndex), so the
         /// top-k path is consistent with it. Changes to other columns leave the index valid.
-        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns()))
+        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns(), alter_conversions->getValueUpdatedColumns(), part.get()))
             return true;
     }
 
@@ -1240,11 +1262,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 #endif
                 );
                 const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
+                const auto & value_updated_columns = alter_conversions->getValueUpdatedColumns();
                 auto part_info_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges.data_part, alter_conversions);
 
                 auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
                 {
-                    auto check_result = canUseIndex(index, metadata_snapshot, all_updated_columns);
+                    auto check_result = canUseIndex(index, metadata_snapshot, all_updated_columns, value_updated_columns, ranges.data_part.get());
                     if (!check_result)
                     {
                         return std::unexpected(PreformattedMessage::create(
