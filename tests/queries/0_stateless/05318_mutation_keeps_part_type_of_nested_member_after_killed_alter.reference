@@ -1,0 +1,5 @@
+n.a	Array(Int8)
+n.y	Array(LowCardinality(String))
+x	UInt32
+1	[10,20]	QBit(Int8, 2)	['a','bb']
+2	[30,40]	QBit(Int8, 2)	['ccc','dddd']

@@ -1014,9 +1014,13 @@ getColumnsForNewDataPart(
                 continue;
             }
 
+            /// Assign the whole pair: `NameAndTypePair` keeps `type_in_storage` apart from `type`, and
+            /// assigning only `type` would leave the type in storage from the metadata. Code that groups
+            /// the part's columns by the type in storage, such as `Nested::collect`, would then see
+            /// a type the part does not have.
             auto updated_type = updated_header.getByName(it->name).type;
             if (updated_type != it->type)
-                it->type = updated_type;
+                *it = NameAndTypePair(it->name, updated_type);
 
             if (fill_columns_substreams)
             {
@@ -1049,7 +1053,7 @@ getColumnsForNewDataPart(
                         /// so the new part must record the type in storage - see the same-named
                         /// case below.
                         if (!rewrites_all_columns)
-                            it->type = source_col->second;
+                            *it = NameAndTypePair(it->name, source_col->second);
 
                         if (fill_columns_substreams)
                             addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, source_col->first, *source_part->getColumnPosition(source_col->first));
@@ -1101,7 +1105,7 @@ getColumnsForNewDataPart(
                         /// A full rewrite produces this column at the type in storage, the same
                         /// way it does for the two cases around this one.
                         if (!rewrites_all_columns)
-                            it->type = maybe_name_and_type->type;
+                            *it = NameAndTypePair(it->name, maybe_name_and_type->type);
 
                         if (fill_columns_substreams)
                             addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, renamed_from, *source_part->getColumnPosition(renamed_from));
@@ -1121,7 +1125,7 @@ getColumnsForNewDataPart(
                         /// the pipeline, so it would hand, say, a `ColumnNullable` to
                         /// `SerializationString` and throw `Bad cast` before writing anything.
                         if (!rewrites_all_columns)
-                            it->type = source_col->second;
+                            *it = NameAndTypePair(it->name, source_col->second);
 
                         if (fill_columns_substreams)
                         {
