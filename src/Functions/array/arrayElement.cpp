@@ -397,7 +397,6 @@ struct ArrayElementNumImpl
     /** Implementation for non-constant index.
       */
     template <typename TIndex>
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     static void vector(
         const PaddedPODArray<T> & data,
         const ColumnArray::Offsets & offsets,
@@ -843,7 +842,6 @@ struct ArrayElementStringImpl
     /** Implementation for non-constant index.
       */
     template <typename TIndex>
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     static void vector(
         const ColumnString::Chars & data,
         const ColumnArray::Offsets & offsets,
