@@ -1,7 +1,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnExponentialTimeDecaying.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <Core/Range.h>
 #include <DataTypes/IDataType.h>
 #include <IO/Operators.h>
@@ -18,7 +18,7 @@ namespace
 
 bool typeContainsExponentialTimeDecaying(const IDataType & type)
 {
-    if (type.getTypeId() == TypeIndex::ExponentialTimeDecayingFloat64)
+    if (type.getTypeId() == TypeIndex::ExponentialTimeDecaying)
         return true;
 
     bool found = false;
@@ -40,7 +40,7 @@ const ColumnWithTypeAndName * getColumnBackedValue(const FieldRef & field)
 
 std::optional<UInt64> getExponentialTimeDecayingPrefixFromField(
     const FieldRef & field,
-    const DataTypeExponentialTimeDecayingFloat64 & type)
+    const DataTypeExponentialTimeDecaying & type)
 {
     if (field.isNull() || field.isNegativeInfinity() || field.isPositiveInfinity())
         return std::nullopt;
@@ -106,7 +106,7 @@ std::optional<int> compareFieldRefsByColumn(const FieldRef & lhs, const FieldRef
         return std::nullopt;
 
     const auto * direct_type
-        = typeid_cast<const DataTypeExponentialTimeDecayingFloat64 *>(typed_value->type.get());
+        = typeid_cast<const DataTypeExponentialTimeDecaying *>(typed_value->type.get());
 
     if (direct_type)
     {

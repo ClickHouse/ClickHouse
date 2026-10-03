@@ -99,14 +99,14 @@ getExponentialTimeDecayingCanonicalDirectValue(UInt64 ordering_key)
     return {negative ? -1.0 : 1.0, unit_timestamp};
 }
 
-struct ExponentialTimeDecayingFloat64Value
+struct ExponentialTimeDecayingValue
 {
     UInt64 ordering_key;
     Float64 value_at_anchor;
     Float64 anchor_time;
 };
 
-inline bool isFiniteExponentialTimeDecayingFloat64Curve(
+inline bool isFiniteExponentialTimeDecayingCurve(
     Float64 value, Float64 time, Float64 decay_length)
 {
     if (!std::isfinite(value)
@@ -119,7 +119,7 @@ inline bool isFiniteExponentialTimeDecayingFloat64Curve(
         || std::isfinite(getExponentialTimeDecayingUnitTimestamp(value, time, decay_length));
 }
 
-inline ExponentialTimeDecayingFloat64Value normalizeExponentialTimeDecayingFloat64(
+inline ExponentialTimeDecayingValue normalizeExponentialTimeDecaying(
     Float64 value, Float64 time, Float64 decay_length)
 {
     if (value == 0)
@@ -131,26 +131,26 @@ inline ExponentialTimeDecayingFloat64Value normalizeExponentialTimeDecayingFloat
         time};
 }
 
-inline bool isCanonicalExponentialTimeDecayingFloat64Value(
+inline bool isCanonicalExponentialTimeDecayingValue(
     UInt64 ordering_key, Float64 value, Float64 time, Float64 decay_length)
 {
-    if (!isFiniteExponentialTimeDecayingFloat64Curve(value, time, decay_length))
+    if (!isFiniteExponentialTimeDecayingCurve(value, time, decay_length))
         return false;
 
-    const auto normalized = normalizeExponentialTimeDecayingFloat64(
+    const auto normalized = normalizeExponentialTimeDecaying(
         value, time, decay_length);
     return normalized.ordering_key == ordering_key
         && normalized.value_at_anchor == value
         && normalized.anchor_time == time;
 }
 
-class DataTypeExponentialTimeDecayingFloat64 final : public IDataType
+class DataTypeExponentialTimeDecaying final : public IDataType
 {
 public:
-    explicit DataTypeExponentialTimeDecayingFloat64(Float64 decay_length_);
+    explicit DataTypeExponentialTimeDecaying(Float64 decay_length_);
 
-    TypeIndex getTypeId() const override { return TypeIndex::ExponentialTimeDecayingFloat64; }
-    TypeIndex getColumnType() const override { return TypeIndex::ExponentialTimeDecayingFloat64; }
+    TypeIndex getTypeId() const override { return TypeIndex::ExponentialTimeDecaying; }
+    TypeIndex getColumnType() const override { return TypeIndex::ExponentialTimeDecaying; }
     String doGetName() const override;
     const char * getFamilyName() const override { return "ExponentialTimeDecaying"; }
 
@@ -188,43 +188,43 @@ private:
     const DataTypePtr logical_type;
 };
 
-DataTypePtr createDataTypeExponentialTimeDecayingFloat64(Float64 decay_length);
-std::optional<Float64> tryGetExponentialTimeDecayingFloat64DecayLength(const IDataType & type);
-std::optional<Float64> tryGetExponentialTimeDecayingFloat64DecayLength(const DataTypePtr & type);
-bool isExponentialTimeDecayingFloat64(const IDataType & type);
-bool isExponentialTimeDecayingFloat64(const DataTypePtr & type);
-bool containsExponentialTimeDecayingFloat64(const IDataType & type);
-bool containsExponentialTimeDecayingFloat64(const DataTypePtr & type);
+DataTypePtr createDataTypeExponentialTimeDecaying(Float64 decay_length);
+std::optional<Float64> tryGetExponentialTimeDecayingDecayLength(const IDataType & type);
+std::optional<Float64> tryGetExponentialTimeDecayingDecayLength(const DataTypePtr & type);
+bool isExponentialTimeDecaying(const IDataType & type);
+bool isExponentialTimeDecaying(const DataTypePtr & type);
+bool containsExponentialTimeDecaying(const IDataType & type);
+bool containsExponentialTimeDecaying(const DataTypePtr & type);
 
 /// Rejects pairwise use when decaying values occupy different nested positions
 /// or have different decay lengths.
-void assertExponentialTimeDecayingFloat64TypesCompatible(
+void assertExponentialTimeDecayingTypesCompatible(
     const DataTypePtr & left_type, const DataTypePtr & right_type, const String & operation);
 
 /// Permits a source whose exact semantic type is an alternative of a target Variant,
 /// while otherwise requiring decaying values to keep their type identity.
-void assertExponentialTimeDecayingFloat64ConversionTypesCompatible(
+void assertExponentialTimeDecayingConversionTypesCompatible(
     const DataTypePtr & source_type, const DataTypePtr & target_type, const String & operation);
 
 /// Set-key compatibility uses the same conversion rule.
-void assertExponentialTimeDecayingFloat64SetKeyTypesCompatible(
+void assertExponentialTimeDecayingSetKeyTypesCompatible(
     const DataTypePtr & probe_type, const DataTypePtr & set_type);
 
 /// Rejects rows whose stored canonical ordering fields are invalid.
-void validateExponentialTimeDecayingFloat64Column(
+void validateExponentialTimeDecayingColumn(
     const IColumn & column, const String & operation);
 
-ColumnPtr materializeExponentialTimeDecayingFloat64LogicalColumn(
+ColumnPtr materializeExponentialTimeDecayingLogicalColumn(
     const IColumn & storage_column, Float64 decay_length);
 
-ColumnPtr materializeExponentialTimeDecayingFloat64StorageColumn(
+ColumnPtr materializeExponentialTimeDecayingStorageColumn(
     const IColumn & logical_column, Float64 decay_length, const String & operation);
 
 /// Applies the same validation recursively when the experimental value is nested in
 /// `Array`, `Tuple`, `Map`, `Variant`, `Nullable`, or `LowCardinality`.
-void validateExponentialTimeDecayingFloat64Column(
+void validateExponentialTimeDecayingColumn(
     const IColumn & column, const DataTypePtr & type, const String & operation);
 
-void registerDataTypeExponentialTimeDecayingFloat64(DataTypeFactory & factory);
+void registerDataTypeExponentialTimeDecaying(DataTypeFactory & factory);
 
 }

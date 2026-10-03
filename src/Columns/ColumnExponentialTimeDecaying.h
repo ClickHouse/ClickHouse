@@ -46,7 +46,7 @@ public:
     }
 
     const char * getFamilyName() const override { return "ExponentialTimeDecaying"; }
-    TypeIndex getDataType() const override { return TypeIndex::ExponentialTimeDecayingFloat64; }
+    TypeIndex getDataType() const override { return TypeIndex::ExponentialTimeDecaying; }
     std::string getName() const override;
 
     MutableColumnPtr cloneResized(size_t new_size) const override;

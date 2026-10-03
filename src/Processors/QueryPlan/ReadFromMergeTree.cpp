@@ -12,7 +12,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatSettings.h>
@@ -2942,7 +2942,7 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
             minmax_columns,
             [](const NameAndTypePair & column)
             {
-                return containsExponentialTimeDecayingFloat64(column.type);
+                return containsExponentialTimeDecaying(column.type);
             });
 
         if (!contains_decay)

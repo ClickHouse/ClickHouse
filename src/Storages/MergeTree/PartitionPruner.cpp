@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Common/logger_useful.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 
 namespace DB
 {
@@ -29,7 +29,7 @@ PartitionPruner::PartitionPruner(
             partition_key.data_types,
             [](const DataTypePtr & type)
             {
-                return containsExponentialTimeDecayingFloat64(type);
+                return containsExponentialTimeDecaying(type);
             });
     }
 }

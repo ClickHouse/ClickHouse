@@ -8,7 +8,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -159,7 +159,7 @@ public:
         if constexpr (result_kind == ExponentialTimeDecayedResult::Avg)
             return std::make_shared<DataTypeFloat64>();
 
-        return std::make_shared<DataTypeExponentialTimeDecayingFloat64>(decay_length);
+        return std::make_shared<DataTypeExponentialTimeDecaying>(decay_length);
     }
 
     AggregateFunctionExponentialTimeDecayed(
@@ -258,13 +258,13 @@ public:
                 ? state.weighted_sum
                 : state.weight;
             const Float64 result_time = state.empty() ? 0 : state.max_time;
-            if (!isFiniteExponentialTimeDecayingFloat64Curve(result, result_time, decay_length))
+            if (!isFiniteExponentialTimeDecayingCurve(result, result_time, decay_length))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Result of aggregate function {} does not define a finite ExponentialTimeDecaying curve",
                     getName());
 
-            const auto normalized = normalizeExponentialTimeDecayingFloat64(
+            const auto normalized = normalizeExponentialTimeDecaying(
                 result,
                 result_time,
                 decay_length);
@@ -374,7 +374,7 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedSum(
 {
     if (argument_types.size() == 1)
     {
-        const auto type_decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(argument_types[0]);
+        const auto type_decay_length = tryGetExponentialTimeDecayingDecayLength(argument_types[0]);
         if (type_decay_length)
         {
             const Float64 decay_length = parameters.empty()

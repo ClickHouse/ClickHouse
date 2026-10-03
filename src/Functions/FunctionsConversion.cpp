@@ -2,7 +2,7 @@
 #include <Columns/ColumnExponentialTimeDecaying.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -408,18 +408,18 @@ namespace detail
 ExecutableFunctionPtr FunctionCast::prepare(const ColumnsWithTypeAndName & /*sample_columns*/) const
 {
     if (!settings.allow_experimental_time_decay_aggregate_functions
-        && (containsExponentialTimeDecayingFloat64(getArgumentTypes()[0])
-            || containsExponentialTimeDecayingFloat64(getResultType())))
+        && (containsExponentialTimeDecaying(getArgumentTypes()[0])
+            || containsExponentialTimeDecaying(getResultType())))
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Type {} is experimental and disabled by default. Enable it with setting "
             "allow_experimental_time_decay_aggregate_functions",
-            containsExponentialTimeDecayingFloat64(getResultType()) ? getResultType()->getName() : getArgumentTypes()[0]->getName());
+            containsExponentialTimeDecaying(getResultType()) ? getResultType()->getName() : getArgumentTypes()[0]->getName());
 
     try
     {
         auto wrapper = prepareUnpackDictionaries(getArgumentTypes()[0], getResultType());
-        if (containsExponentialTimeDecayingFloat64(getResultType()))
+        if (containsExponentialTimeDecaying(getResultType()))
         {
             wrapper = [nested = std::move(wrapper)](
                           ColumnsWithTypeAndName & arguments,
@@ -428,7 +428,7 @@ ExecutableFunctionPtr FunctionCast::prepare(const ColumnsWithTypeAndName & /*sam
                           size_t input_rows_count)
             {
                 auto result = nested(arguments, result_type, nullable, input_rows_count);
-                validateExponentialTimeDecayingFloat64Column(
+                validateExponentialTimeDecayingColumn(
                     *result, result_type, "conversion to ExponentialTimeDecaying");
                 return result;
             };
@@ -1066,7 +1066,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
     const DataTypeTuple * from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
     if (!from_type)
     {
-        if (const auto * decaying_type = checkAndGetDataType<DataTypeExponentialTimeDecayingFloat64>(from_type_untyped.get()))
+        if (const auto * decaying_type = checkAndGetDataType<DataTypeExponentialTimeDecaying>(from_type_untyped.get()))
         {
             const auto & logical_type = decaying_type->getLogicalTupleType();
             const auto & logical_tuple = assert_cast<const DataTypeTuple &>(*logical_type);
@@ -1082,7 +1082,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
                 {
                     ColumnsWithTypeAndName logical_arguments = arguments;
                     logical_arguments[0].column
-                        = materializeExponentialTimeDecayingFloat64LogicalColumn(*arguments[0].column, decay_length);
+                        = materializeExponentialTimeDecayingLogicalColumn(*arguments[0].column, decay_length);
                     logical_arguments[0].type = logical_type;
                     return logical_wrapper(logical_arguments, result_type, nullable_source, input_rows_count);
                 };
@@ -3192,8 +3192,8 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
 
 FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
 {
-    const auto from_decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(from_type);
-    const auto to_decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(to_type);
+    const auto from_decay_length = tryGetExponentialTimeDecayingDecayLength(from_type);
+    const auto to_decay_length = tryGetExponentialTimeDecayingDecayLength(to_type);
     if (from_decay_length && to_decay_length && *from_decay_length != *to_decay_length)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -3205,8 +3205,8 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
     /// A finalized decaying value must not become a layout-compatible plain Tuple, or
     /// silently change its decay length. Container conversions recurse through this path.
     if (cast_type != CastType::nonAccurate
-        && (isExponentialTimeDecayingFloat64(from_type) || isExponentialTimeDecayingFloat64(to_type)))
-        assertExponentialTimeDecayingFloat64TypesCompatible(from_type, to_type, "accurate CAST");
+        && (isExponentialTimeDecaying(from_type) || isExponentialTimeDecaying(to_type)))
+        assertExponentialTimeDecayingTypesCompatible(from_type, to_type, "accurate CAST");
 
     if (isUInt8(from_type) && isBool(to_type))
         return createUInt8ToBoolWrapper(from_type, to_type);
@@ -3412,9 +3412,9 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
             return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()));
         case TypeIndex::QBit:
             return createQBitWrapper(from_type, static_cast<const DataTypeQBit &>(*to_type));
-        case TypeIndex::ExponentialTimeDecayingFloat64:
+        case TypeIndex::ExponentialTimeDecaying:
         {
-            const auto & decaying_type = assert_cast<const DataTypeExponentialTimeDecayingFloat64 &>(*to_type);
+            const auto & decaying_type = assert_cast<const DataTypeExponentialTimeDecaying &>(*to_type);
             const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type.get());
             if (!from_tuple)
                 throw Exception(
@@ -3455,7 +3455,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
             {
                 auto raw_column
                     = wrapper(arguments, raw_type, nullable_source, input_rows_count);
-                return materializeExponentialTimeDecayingFloat64StorageColumn(
+                return materializeExponentialTimeDecayingStorageColumn(
                     *raw_column, decay_length, "CAST to ExponentialTimeDecaying");
             };
         }

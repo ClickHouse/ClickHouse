@@ -6,7 +6,7 @@
 #include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTime64.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -3353,7 +3353,7 @@ bool KeyCondition::tryPrepareSetIndexForIn(
             data_types,
             [](const DataTypePtr & type)
             {
-                return isExponentialTimeDecayingFloat64(removeNullable(type));
+                return isExponentialTimeDecaying(removeNullable(type));
             }))
         return false;
 
@@ -5069,7 +5069,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         /// column comparator. Keep the row predicate active because sparse index marks
         /// still describe ranges of rows rather than complete values.
         const auto key_type_for_index = removeNullable(key_expr_type);
-        if (isExponentialTimeDecayingFloat64(key_type_for_index))
+        if (isExponentialTimeDecaying(key_type_for_index))
         {
             if (!chain.empty())
                 return false;
@@ -6196,7 +6196,7 @@ std::optional<UInt64> getProjectedExponentialTimeDecayingKey(
     }
 
     const auto * decay_type
-        = typeid_cast<const DataTypeExponentialTimeDecayingFloat64 *>(nested_type.get());
+        = typeid_cast<const DataTypeExponentialTimeDecaying *>(nested_type.get());
     if (!decay_type)
         return std::nullopt;
 
@@ -6287,7 +6287,7 @@ void KeyCondition::projectExponentialTimeDecayingIndexKeys(const DataTypes & key
             break;
         }
 
-        if (!isExponentialTimeDecayingFloat64(nested_type))
+        if (!isExponentialTimeDecaying(nested_type))
             continue;
 
         switch (element.function)

@@ -49,7 +49,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -172,7 +172,7 @@ static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
     std::vector<std::optional<size_t>> mapping(primary_key.column_names.size());
     for (size_t i = 0; i < primary_key.column_names.size(); ++i)
     {
-        if (i < primary_key.data_types.size() && containsExponentialTimeDecayingFloat64(primary_key.data_types[i]))
+        if (i < primary_key.data_types.size() && containsExponentialTimeDecaying(primary_key.data_types[i]))
             continue;
 
         /// `forAnyHyperrectangle` uses these bounds as the column universe, so a bound that can hide a
@@ -1157,7 +1157,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             skip_indexes.skip_index_for_top_k_filtering->index.data_types,
             [](const DataTypePtr & type)
             {
-                return containsExponentialTimeDecayingFloat64(type);
+                return containsExponentialTimeDecaying(type);
             });
     const bool top_k_handle_ties
         = perform_top_k_optimization
@@ -2378,7 +2378,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             const auto & value = (*index_columns)[column];
             chassert(value.column);
 
-            if (containsExponentialTimeDecayingFloat64(value.type))
+            if (containsExponentialTimeDecaying(value.type))
                 field = {index_columns.get(), row, column};
             else
                 value.column->get(row, field);

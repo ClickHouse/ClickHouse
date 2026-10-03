@@ -5,7 +5,7 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -51,7 +51,7 @@ void assertExperimentalFeatureEnabled(const ContextPtr & context, const String &
 
 void assertDecayingType(const DataTypePtr & type, const String & function_name, size_t argument)
 {
-    if (!isExponentialTimeDecayingFloat64(type))
+    if (!isExponentialTimeDecaying(type))
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Argument {} of function {} must be ExponentialTimeDecaying, got {}",
@@ -79,7 +79,7 @@ struct DecayingColumnView
 
 DecayingColumnView getDecayingColumnView(const ColumnPtr & column, const DataTypePtr & type)
 {
-    const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(type);
+    const auto decay_length = tryGetExponentialTimeDecayingDecayLength(type);
     chassert(decay_length);
 
     const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*column);
@@ -129,12 +129,12 @@ struct DecayingColumnBuilder
 
     void append(Float64 value, Float64 time)
     {
-        if (!isFiniteExponentialTimeDecayingFloat64Curve(value, time, decay_length))
+        if (!isFiniteExponentialTimeDecayingCurve(value, time, decay_length))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "ExponentialTimeDecaying value does not define a finite decay curve");
 
-        const auto normalized = normalizeExponentialTimeDecayingFloat64(value, time, decay_length);
+        const auto normalized = normalizeExponentialTimeDecaying(value, time, decay_length);
         value_at_anchor->insertValue(normalized.value_at_anchor);
         anchor_time->insertValue(normalized.anchor_time);
     }
@@ -190,7 +190,7 @@ public:
                 arguments[0].type->getName());
 
         assertTimeType(arguments[1].type, getName());
-        return std::make_shared<DataTypeExponentialTimeDecayingFloat64>(*decay_length);
+        return std::make_shared<DataTypeExponentialTimeDecaying>(*decay_length);
     }
 
     ColumnPtr executeImpl(
@@ -244,8 +244,8 @@ public:
         assertDecayingType(arguments[0].type, getName(), 1);
         assertDecayingType(arguments[1].type, getName(), 2);
 
-        const Float64 left_decay_length = *tryGetExponentialTimeDecayingFloat64DecayLength(arguments[0].type);
-        const Float64 right_decay_length = *tryGetExponentialTimeDecayingFloat64DecayLength(arguments[1].type);
+        const Float64 left_decay_length = *tryGetExponentialTimeDecayingDecayLength(arguments[0].type);
+        const Float64 right_decay_length = *tryGetExponentialTimeDecayingDecayLength(arguments[1].type);
         if (left_decay_length != right_decay_length)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -361,7 +361,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const Float64 decay_length = *tryGetExponentialTimeDecayingFloat64DecayLength(arguments[0].type);
+        const Float64 decay_length = *tryGetExponentialTimeDecayingDecayLength(arguments[0].type);
         return ColumnFloat64::create(input_rows_count, decay_length);
     }
 };

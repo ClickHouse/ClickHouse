@@ -20,7 +20,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 
@@ -750,7 +750,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         return applyVisitor(FieldVisitorToString(), src);
     }
-    else if (const auto * decaying_type = typeid_cast<const DataTypeExponentialTimeDecayingFloat64 *>(&type))
+    else if (const auto * decaying_type = typeid_cast<const DataTypeExponentialTimeDecaying *>(&type))
     {
         if (src.getType() == Field::Types::Tuple)
         {
@@ -805,7 +805,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                     ErrorCodes::TYPE_MISMATCH,
                     "ExponentialTimeDecaying value and timestamp must define a finite decay curve");
 
-            const auto normalized = normalizeExponentialTimeDecayingFloat64(value, time, decay_length);
+            const auto normalized = normalizeExponentialTimeDecaying(value, time, decay_length);
             return Tuple{normalized.value_at_anchor, normalized.anchor_time};
         }
     }

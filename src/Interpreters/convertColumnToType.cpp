@@ -15,7 +15,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -155,8 +155,8 @@ DataTypePtr resolveActiveAlternativeType(const IColumn & value, const DataTypePt
 
 void validateConvertedColumn(const IColumn & column, const DataTypePtr & type)
 {
-    if (containsExponentialTimeDecayingFloat64(type))
-        validateExponentialTimeDecayingFloat64Column(
+    if (containsExponentialTimeDecaying(type))
+        validateExponentialTimeDecayingColumn(
             column, type, "conversion to ExponentialTimeDecaying");
 }
 
@@ -189,7 +189,7 @@ ColumnPtr convertColumnToTypeOrNull(
     /// the delegated `convertFieldToType` behaves as it would for a genuine value of the constant.
     const DataTypePtr source = resolveActiveAlternativeType(unwrapped, from);
     if (strict)
-        assertExponentialTimeDecayingFloat64ConversionTypesCompatible(source, to, "strict conversion");
+        assertExponentialTimeDecayingConversionTypesCompatible(source, to, "strict conversion");
     retagBoolInField(field, source);
 
     const Field converted = convertFieldToType(field, *to, source.get(), format_settings, strict, convert_inexact_floats);

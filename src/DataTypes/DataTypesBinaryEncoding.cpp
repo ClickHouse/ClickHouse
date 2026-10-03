@@ -21,7 +21,7 @@
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeDynamic.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesCache.h>
@@ -195,7 +195,7 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::Variant;
         case TypeIndex::Dynamic:
             return BinaryTypeIndex::Dynamic;
-        case TypeIndex::ExponentialTimeDecayingFloat64:
+        case TypeIndex::ExponentialTimeDecaying:
             /// Encode the parameterized logical type through the existing custom-type tag.
             return BinaryTypeIndex::Custom;
         /// JSONPaths is used only during schema inference and cannot be used anywhere else.

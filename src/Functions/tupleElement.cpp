@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NullableUtils.h>
@@ -101,7 +101,7 @@ public:
             }
             return arguments[2].type;
         }
-        else if (const auto * decaying = checkAndGetDataType<DataTypeExponentialTimeDecayingFloat64>(input_type))
+        else if (const auto * decaying = checkAndGetDataType<DataTypeExponentialTimeDecaying>(input_type))
         {
             const auto & storage_tuple = assert_cast<const DataTypeTuple &>(*decaying->getNestedType());
             std::optional<size_t> index = getTupleElementIndex(arguments[1].column, storage_tuple, number_of_arguments);
@@ -211,7 +211,7 @@ public:
             if (null_map_column)
                 res = applyOuterNullMap(res, input_type_as_tuple->getElements()[index.value()], null_map_column);
         }
-        else if (const auto * input_type_as_decaying = checkAndGetDataType<DataTypeExponentialTimeDecayingFloat64>(input_type))
+        else if (const auto * input_type_as_decaying = checkAndGetDataType<DataTypeExponentialTimeDecaying>(input_type))
         {
             const auto & type_storage_tuple
                 = assert_cast<const DataTypeTuple &>(*input_type_as_decaying->getNestedType());

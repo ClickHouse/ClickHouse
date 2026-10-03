@@ -23,7 +23,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -2304,7 +2304,7 @@ public:
             prepared_merge_intervals_function = getFunctionForMergeIntervalsArithmetic(type0, type1, context_);
             if constexpr (is_plus)
             {
-                if (context_ && isExponentialTimeDecayingFloat64(type0) && isExponentialTimeDecayingFloat64(type1))
+                if (context_ && isExponentialTimeDecaying(type0) && isExponentialTimeDecaying(type1))
                     prepared_exponential_time_decaying_add_function
                         = FunctionFactory::instance().get("exponentialTimeDecayingAdd", context_);
             }
@@ -2368,17 +2368,17 @@ public:
     {
         if constexpr (is_plus)
         {
-            if (isExponentialTimeDecayingFloat64(arguments[0]) && isExponentialTimeDecayingFloat64(arguments[1]))
+            if (isExponentialTimeDecaying(arguments[0]) && isExponentialTimeDecaying(arguments[1]))
             {
-                const Float64 left_decay_length = *tryGetExponentialTimeDecayingFloat64DecayLength(arguments[0]);
-                const Float64 right_decay_length = *tryGetExponentialTimeDecayingFloat64DecayLength(arguments[1]);
+                const Float64 left_decay_length = *tryGetExponentialTimeDecayingDecayLength(arguments[0]);
+                const Float64 right_decay_length = *tryGetExponentialTimeDecayingDecayLength(arguments[1]);
                 if (left_decay_length != right_decay_length)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Cannot add ExponentialTimeDecaying values with different decay lengths: {} and {}",
                         left_decay_length,
                         right_decay_length);
-                return createDataTypeExponentialTimeDecayingFloat64(left_decay_length);
+                return createDataTypeExponentialTimeDecaying(left_decay_length);
             }
         }
 

@@ -55,7 +55,7 @@ enum class TypeIndex : uint8_t
     JSONPaths,
     Variant,
     Dynamic,
-    ExponentialTimeDecayingFloat64
+    ExponentialTimeDecaying
 };
 
 /**

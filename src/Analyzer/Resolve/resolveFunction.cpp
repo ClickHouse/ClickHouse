@@ -1,6 +1,6 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeString.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
@@ -3341,11 +3341,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 if (typeid_cast<const DataTypeNothing *>(removeNullable(set_element_type).get()))
                     return;
 
-                assertExponentialTimeDecayingFloat64TypesCompatible(
+                assertExponentialTimeDecayingTypesCompatible(
                     first_argument_constant_type, set_element_type, "IN constant set");
             };
 
-            if (isExponentialTimeDecayingFloat64(removeNullable(second_argument_constant_type)))
+            if (isExponentialTimeDecaying(removeNullable(second_argument_constant_type)))
                 assert_set_element_type_compatible(second_argument_constant_type);
             else if (const auto * set_element_types = typeid_cast<const DataTypeTuple *>(second_argument_constant_type.get()))
             {

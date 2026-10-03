@@ -8,7 +8,7 @@
 #include <Columns/ColumnExponentialTimeDecaying.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -42,7 +42,7 @@ DataTypePtr getMinMaxPhysicalType(const DataTypePtr & type)
         nested = nullable_type->getNestedType();
     }
 
-    if (!isExponentialTimeDecayingFloat64(nested))
+    if (!isExponentialTimeDecaying(nested))
         return type;
 
     DataTypePtr result = std::make_shared<DataTypeUInt64>();
@@ -70,7 +70,7 @@ bool getDecayPrefixExtremes(
         nested_type = nullable_type->getNestedType();
     }
 
-    if (!isExponentialTimeDecayingFloat64(nested_type))
+    if (!isExponentialTimeDecaying(nested_type))
         return false;
 
     ColumnPtr full = source->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
@@ -649,8 +649,8 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach, const Mer
         if (const auto * nullable = typeid_cast<const DataTypeNullable *>(decay_candidate.get()))
             decay_candidate = nullable->getNestedType();
 
-        if (containsExponentialTimeDecayingFloat64(column.type)
-            && !isExponentialTimeDecayingFloat64(decay_candidate))
+        if (containsExponentialTimeDecaying(column.type)
+            && !isExponentialTimeDecaying(decay_candidate))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Nested ExponentialTimeDecaying values are not supported by minmax index for column {}",

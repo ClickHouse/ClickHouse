@@ -21,7 +21,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnExponentialTimeDecaying.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <IO/WriteHelpers.h>
 #include <Compression/CompressionCodecAdaptive.h>
 #include <Compression/CompressionFactory.h>
@@ -151,7 +151,7 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
 
         for (const auto & type : primary_key_types)
         {
-            if (isExponentialTimeDecayingFloat64(type))
+            if (isExponentialTimeDecaying(type))
                 index_serializations.push_back(nullptr);
             else
                 index_serializations.push_back(type->getDefaultSerialization());
@@ -256,7 +256,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndexRow(const B
         const auto & value = index_block.getByPosition(i);
         const auto & column = value.column;
 
-        if (isExponentialTimeDecayingFloat64(value.type))
+        if (isExponentialTimeDecaying(value.type))
         {
             const auto full_column = column->convertToFullColumnIfConst();
             const auto & decaying
@@ -303,7 +303,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
             for (size_t i = 0; i < primary_index_block.columns(); ++i)
             {
                 const auto & value = primary_index_block.getByPosition(i);
-                if (isExponentialTimeDecayingFloat64(value.type))
+                if (isExponentialTimeDecaying(value.type))
                     index_columns.push_back(ColumnUInt64::create());
                 else
                     index_columns.push_back(value.column->cloneEmpty());

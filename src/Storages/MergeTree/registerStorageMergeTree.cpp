@@ -12,7 +12,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Core/ServerSettings.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <Core/Settings.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -1189,7 +1189,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         for (size_t i = 0; i < data_types.size(); ++i)
         {
-            if (containsExponentialTimeDecayingFloat64(data_types[i]))
+            if (containsExponentialTimeDecaying(data_types[i]))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "ExponentialTimeDecaying values are not supported in partition keys because part-level minmax metadata cannot preserve their exact ordering: {}",

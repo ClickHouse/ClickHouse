@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -303,7 +303,7 @@ protected:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "CAST AS ExponentialTimeDecaying without a type parameter requires a source tuple");
-            type = createDataTypeExponentialTimeDecayingFloat64(
+            type = createDataTypeExponentialTimeDecaying(
                 inferExponentialTimeDecayingDecayLength(arguments.front()));
         }
         else

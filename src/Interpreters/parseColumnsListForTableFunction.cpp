@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeCustom.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
@@ -72,7 +72,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
     {
         if (!settings.allow_experimental_time_decay_aggregate_functions)
         {
-            bool is_experimental_time_decay_type = isExponentialTimeDecayingFloat64(data_type);
+            bool is_experimental_time_decay_type = isExponentialTimeDecaying(data_type);
             if (const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(&data_type))
             {
                 const String & function_name = aggregate_function_type->getFunctionName();

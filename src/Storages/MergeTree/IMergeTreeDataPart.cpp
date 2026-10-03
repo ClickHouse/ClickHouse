@@ -6,7 +6,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
@@ -1804,7 +1804,7 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
 
     for (size_t i = 0; i < key_size; ++i)
     {
-        if (isExponentialTimeDecayingFloat64(primary_key.data_types[i]))
+        if (isExponentialTimeDecaying(primary_key.data_types[i]))
             loaded_index[i] = ColumnUInt64::create();
         else
             loaded_index[i] = primary_key.data_types[i]->createColumn();
@@ -1820,7 +1820,7 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
     Serializations key_serializations(key_size);
     for (size_t j = 0; j < key_size; ++j)
     {
-        if (!isExponentialTimeDecayingFloat64(primary_key.data_types[j]))
+        if (!isExponentialTimeDecaying(primary_key.data_types[j]))
             key_serializations[j] = primary_key.data_types[j]->getDefaultSerialization();
     }
 
@@ -1829,7 +1829,7 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
     {
         for (size_t j = 0; j < key_size; ++j)
         {
-            if (isExponentialTimeDecayingFloat64(primary_key.data_types[j]))
+            if (isExponentialTimeDecaying(primary_key.data_types[j]))
             {
                 UInt64 key = 0;
                 readBinaryLittleEndian(key, *index_file);

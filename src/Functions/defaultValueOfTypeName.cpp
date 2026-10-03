@@ -1,4 +1,4 @@
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
@@ -68,7 +68,7 @@ public:
 
         auto result_type = DataTypeFactory::instance().get(col_type_const->getValue<String>());
         if (!allow_experimental_time_decay_aggregate_functions
-            && containsExponentialTimeDecayingFloat64(result_type))
+            && containsExponentialTimeDecaying(result_type))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Type {} is experimental and disabled by default. Enable it with setting "

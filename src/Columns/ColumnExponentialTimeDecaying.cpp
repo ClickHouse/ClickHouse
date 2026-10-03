@@ -11,7 +11,7 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/transformEndianness.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 

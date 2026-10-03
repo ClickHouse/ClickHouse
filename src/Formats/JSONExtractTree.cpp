@@ -42,7 +42,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -1686,7 +1686,7 @@ public:
             return false;
         }
 
-        auto storage_column = materializeExponentialTimeDecayingFloat64StorageColumn(
+        auto storage_column = materializeExponentialTimeDecayingStorageColumn(
             *logical_column, decay_length, "JSON extraction");
         column.insertRangeFrom(*storage_column, 0, storage_column->size());
         return true;
@@ -2843,9 +2843,9 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             const auto & value_type = map_type.getValueType();
             return std::make_unique<MapNode<JSONParser>>(buildJSONExtractTree<JSONParser>(value_type, source_for_exception_message));
         }
-        case TypeIndex::ExponentialTimeDecayingFloat64:
+        case TypeIndex::ExponentialTimeDecaying:
         {
-            const auto & decaying_type = assert_cast<const DataTypeExponentialTimeDecayingFloat64 &>(*type);
+            const auto & decaying_type = assert_cast<const DataTypeExponentialTimeDecaying &>(*type);
             const auto & logical_type = decaying_type.getLogicalTupleType();
             return std::make_unique<ExponentialTimeDecayingNode<JSONParser>>(
                 logical_type,
