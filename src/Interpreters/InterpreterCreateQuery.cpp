@@ -986,7 +986,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (hasNonEmptyLookupIndices(create.columns_list))
         {
-            if (mode <= LoadingStrictnessLevel::CREATE)
+            /// A user-supplied full `ATTACH` introduces new metadata just like `CREATE`, so it is gated too.
+            /// Short `ATTACH` and `SECONDARY_CREATE` stay permissive to load previously persisted metadata.
+            if (is_fresh_create || is_full_user_attach)
                 checkExperimentalLookupIndexIsEnabled(getContext());
 
             properties.lookup_indices = getLookupIndicesFromAST(create.columns_list->lookup_indices, properties.columns, getContext());
@@ -1066,7 +1068,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     properties.indices.push_back(index);
 
             properties.lookup_indices = as_storage_metadata->getLookupIndices();
-            if (mode <= LoadingStrictnessLevel::CREATE && !properties.lookup_indices.empty())
+            if ((is_fresh_create || is_full_user_attach) && !properties.lookup_indices.empty())
                 checkExperimentalLookupIndexIsEnabled(getContext());
 
             /// Copy projections.
