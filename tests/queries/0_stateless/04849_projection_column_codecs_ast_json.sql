@@ -16,6 +16,13 @@ SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (x UInt64, y UInt64,
 
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (x UInt64, y UInt64, PROJECTION p (WITH x AS a, y AS b SELECT a, b GROUP BY a, b)) ENGINE = MergeTree ORDER BY x'));
 
+-- The JSON boundary must preserve the parser's column-list disambiguation for keyword names.
+SELECT position(formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (with UInt64, PROJECTION p (with CODEC(NONE)) AS (SELECT with ORDER BY with)) ENGINE = MergeTree ORDER BY with')), 'PROJECTION p (`with` CODEC(NONE)) AS') > 0;
+
+-- A parenthesized subquery and COLUMNS matcher are parser-produced expression roots.
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (x UInt64, PROJECTION p (SELECT x WHERE (SELECT 1))) ENGINE = MergeTree ORDER BY x'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (x UInt64, PROJECTION p (SELECT x WHERE COLUMNS(''x''))) ENGINE = MergeTree ORDER BY x'));
+
 -- ---------------------------------------------------------------------------
 -- `ProjectionDeclaration`: `columns` must be a non-empty `ASTExpressionList` of
 -- `ASTColumnDeclaration`, and it is only meaningful together with a `SELECT` query.
@@ -52,6 +59,18 @@ SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","select":{"type":"Ex
 SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","select":{"type":"ExpressionList","children":[]}}'); -- { serverError BAD_ARGUMENTS }
 
 SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","with":{"type":"ExpressionList","children":[]},"select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
+
+-- Projection clauses parsed as expressions cannot hold a bare list, query, declaration, or
+-- another non-expression AST node. Parenthesized SELECT expressions use `ASTSubquery` instead.
+SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]},"where":{"type":"ExpressionList","separator":";","children":[{"type":"Identifier","name":"a"},{"type":"Identifier","name":"b"}]}}'); -- { serverError BAD_ARGUMENTS }
+
+SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]},"where":{"type":"ProjectionSelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"y"}]}}}'); -- { serverError BAD_ARGUMENTS }
+
+SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]},"where":{"type":"ColumnDeclaration","name":"y"}}'); -- { serverError BAD_ARGUMENTS }
+
+SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","select":{"type":"ExpressionList","children":[{"type":"ColumnDeclaration","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
+
+SELECT formatQueryFromJSON('{"type":"ProjectionDeclaration","name":"p","index":{"type":"ExpressionList","children":[{"type":"ColumnDeclaration","name":"x"}]},"projection_type":{"type":"Function","name":"basic","no_empty_args":true}}'); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
 -- `formatQuery` fixpoint. A projection's column list is the only caller of
