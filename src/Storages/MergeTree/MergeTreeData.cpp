@@ -5791,10 +5791,16 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// an ALTER that an older version let through must apply it rather than wedge its DDL queue on
     /// an entry it cannot skip (the sort-direction check above follows the same rule). A table that
     /// did reach that state is handled without throwing by `hasMaterializedSecondaryIndex`.
+    /// Shared Catalog secondaries replay without a metadata transaction and are told apart by the
+    /// client info instead.
     {
         bool is_initial_alter = true;
         if (auto txn = local_context->getZooKeeperMetadataTransaction())
             is_initial_alter = txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+        if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
+            is_initial_alter = false;
+#endif
 
         bool touches_escape_index_filenames = false;
         for (const auto & command : commands)
