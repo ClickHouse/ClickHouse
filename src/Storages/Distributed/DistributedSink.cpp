@@ -869,11 +869,11 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
                 // if the distributed tracing is enabled, use the trace context in current thread as parent of next span
                 auto client_info = context->getClientInfo();
                 client_info.client_trace_context = OpenTelemetry::CurrentContext();
-                client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+                client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION, /*with_trailing_fields=*/ false);
             }
             else
             {
-                context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+                context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION, /*with_trailing_fields=*/ false);
             }
 
             writeVarUInt(block.rows(), header_buf);

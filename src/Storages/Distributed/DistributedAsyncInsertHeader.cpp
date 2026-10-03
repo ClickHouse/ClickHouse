@@ -63,7 +63,7 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
         distributed_header.insert_settings->read(header_buf);
 
         if (header_buf.hasPendingData())
-            distributed_header.client_info.read(header_buf, distributed_header.revision);
+            distributed_header.client_info.read(header_buf, distributed_header.revision, /*with_trailing_fields=*/ false);
 
         if (header_buf.hasPendingData())
         {

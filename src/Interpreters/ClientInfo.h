@@ -91,6 +91,9 @@ public:
     String os_user;
     String client_hostname;
     String client_name;
+    /// Received from newer clients and never populated by this branch; kept so that the wire layout
+    /// matches a peer that speaks `DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO`.
+    String client_agent;
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
@@ -133,6 +136,9 @@ public:
 
     UInt64 distributed_depth = 0;
 
+    /// Received from newer clients and never acted on by this branch; see `client_agent`.
+    bool is_internal = false;
+
     bool is_replicated_database_internal = false;
     bool is_shared_catalog_internal = false;
 
@@ -147,8 +153,11 @@ public:
       * Only values that are not calculated automatically or passed separately are serialized.
       * Revisions are passed to use format that server will understand or client was used.
       */
-    void write(WriteBuffer & out, UInt64 server_protocol_revision) const;
-    void read(ReadBuffer & in, UInt64 client_protocol_revision);
+    /// `with_trailing_fields` must be `false` for the embedded `ClientInfo` of the persisted async
+    /// `Distributed` insert header: that layout is read back without them, so writing them there
+    /// would shift the fields that follow.
+    void write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_trailing_fields = true) const;
+    void read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_trailing_fields = true);
 
     /// Initialize parameters on client initiating query.
     void setInitialQuery();
