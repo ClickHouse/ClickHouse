@@ -68,6 +68,7 @@ public:
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
 
     static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
+    static void resolveInsertByNameColumns(ContextMutablePtr context_, ASTInsertQuery & query);
 
     /// Convert SELECT output to the insert schema, without attaching the write sink.
     static Block convertSelectToInsertSchema(
@@ -114,6 +115,7 @@ private:
     const bool is_initial_insert;
     bool select_query_sorted = false;
     bool skip_target_insert_access_check = false;
+    bool was_by_name = false;
 
     size_t max_threads = 0;
     size_t max_insert_threads = 0;
