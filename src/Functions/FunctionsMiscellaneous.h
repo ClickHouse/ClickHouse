@@ -251,6 +251,17 @@ public:
 
     String getName() const override { return "FunctionExpression"; }
 
+    /// ExecutableFunctionCapture builds a new FunctionExpression per chunk; identity is the shared
+    /// LambdaCapture + ExpressionActions, not the FunctionExpression object itself.
+    bool isEqual(const IFunctionBase & rhs) const override
+    {
+        const auto * other = typeid_cast<const FunctionExpression *>(&rhs);
+        if (!other)
+            return false;
+        return capture.get() == other->capture.get()
+            && expression_actions.get() == other->expression_actions.get();
+    }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
