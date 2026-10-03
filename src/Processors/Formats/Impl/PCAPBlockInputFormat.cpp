@@ -544,9 +544,9 @@ Chunk PCAPBlockInputFormat::read()
                 /// are taken from the raw bytes and listed right after the IPv6 layer.
                 if (const auto * ipv6_layer = dynamic_cast<const Tins::IPv6 *>(p))
                 {
-                    walkIPv6ExtensionHeaders(*ipv6_layer, data, caplen, offsetOfLayer(*pdu, *ipv6_layer), [&](UInt8 header)
+                    walkIPv6ExtensionHeaders(*ipv6_layer, data, caplen, offsetOfLayer(*pdu, *ipv6_layer), [&](UInt8 extension_header)
                     {
-                        String header_name = ipProtocolName(header);
+                        String header_name = ipProtocolName(extension_header);
                         col_protocols_data->insertData(header_name.data(), header_name.size());
                     });
                 }

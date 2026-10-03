@@ -30,15 +30,15 @@ raw	String
 5	ETHERNET_II	['ETHERNET_II','IP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	\N	\N	\N
 6	ETHERNET_II	['ETHERNET_II','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
 7	ETHERNET_II	['ETHERNET_II','IPv6','UDP']	6	2001:db8::1	2001:db8::2	UDP	68	67	\N
-8	ETHERNET_II	['ETHERNET_II','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
-9	ETHERNET_II	['ETHERNET_II','IPv6','RAW']	6	2001:db8::1	2001:db8::2	UDP	\N	\N	\N
-10	ETHERNET_II	['ETHERNET_II','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
-11	ETHERNET_II	['ETHERNET_II','IPv6','UDP']	6	2001:db8::1	2001:db8::2	UDP	68	67	\N
+8	ETHERNET_II	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
+9	ETHERNET_II	['ETHERNET_II','IPv6','IPv6-Frag','RAW']	6	2001:db8::1	2001:db8::2	UDP	\N	\N	\N
+10	ETHERNET_II	['ETHERNET_II','IPv6','AH','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
+11	ETHERNET_II	['ETHERNET_II','IPv6','Shim6','UDP']	6	2001:db8::1	2001:db8::2	UDP	68	67	\N
 --- UDP ---
 2	['ETHERNET_II','IP','UDP']	UDP	68	67
 7	['ETHERNET_II','IPv6','UDP']	UDP	68	67
-9	['ETHERNET_II','IPv6','RAW']	UDP	\N	\N
-11	['ETHERNET_II','IPv6','UDP']	UDP	68	67
+9	['ETHERNET_II','IPv6','IPv6-Frag','RAW']	UDP	\N	\N
+11	['ETHERNET_II','IPv6','Shim6','UDP']	UDP	68	67
 --- ICMP protocol/count ---
 ICMP	1
 --- all Ethernet/IPv4/TCP ---
@@ -51,10 +51,10 @@ ICMP	1
 5	ETHERNET_II	['ETHERNET_II','IP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	\N	\N	\N
 6	ETHERNET_II	['ETHERNET_II','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
 7	ETHERNET_II	['ETHERNET_II','IPv6','UDP']	6	2001:db8::1	2001:db8::2	UDP	68	67	\N
-8	ETHERNET_II	['ETHERNET_II','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
-9	ETHERNET_II	['ETHERNET_II','IPv6','RAW']	6	2001:db8::1	2001:db8::2	UDP	\N	\N	\N
-10	ETHERNET_II	['ETHERNET_II','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
-11	ETHERNET_II	['ETHERNET_II','IPv6','UDP']	6	2001:db8::1	2001:db8::2	UDP	68	67	\N
+8	ETHERNET_II	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
+9	ETHERNET_II	['ETHERNET_II','IPv6','IPv6-Frag','RAW']	6	2001:db8::1	2001:db8::2	UDP	\N	\N	\N
+10	ETHERNET_II	['ETHERNET_II','IPv6','AH','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
+11	ETHERNET_II	['ETHERNET_II','IPv6','Shim6','UDP']	6	2001:db8::1	2001:db8::2	UDP	68	67	\N
 --- pcapng and pcap agree on every column ---
 1
 --- VLAN-tagged frame: eth_type unwraps the 802.1Q tag ---
@@ -64,15 +64,15 @@ ICMP	1
 --- native IPv6: addresses, next header and ports ---
 6	['ETHERNET_II','IPv6','TCP','RAW']	IPv6	6	2001:db8::1	2001:db8::2	TCP	64	12345	80	ACK,PSH
 7	['ETHERNET_II','IPv6','UDP']	IPv6	6	2001:db8::1	2001:db8::2	UDP	64	68	67	\N
-8	['ETHERNET_II','IPv6','TCP','RAW']	IPv6	6	2001:db8::1	2001:db8::2	TCP	64	12345	80	ACK,PSH
-9	['ETHERNET_II','IPv6','RAW']	IPv6	6	2001:db8::1	2001:db8::2	UDP	64	\N	\N	\N
-10	['ETHERNET_II','IPv6','TCP','RAW']	IPv6	6	2001:db8::1	2001:db8::2	TCP	64	12345	80	ACK,PSH
-11	['ETHERNET_II','IPv6','UDP']	IPv6	6	2001:db8::1	2001:db8::2	UDP	64	68	67	\N
+8	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route','TCP','RAW']	IPv6	6	2001:db8::1	2001:db8::2	TCP	64	12345	80	ACK,PSH
+9	['ETHERNET_II','IPv6','IPv6-Frag','RAW']	IPv6	6	2001:db8::1	2001:db8::2	UDP	64	\N	\N	\N
+10	['ETHERNET_II','IPv6','AH','TCP','RAW']	IPv6	6	2001:db8::1	2001:db8::2	TCP	64	12345	80	ACK,PSH
+11	['ETHERNET_II','IPv6','Shim6','UDP']	IPv6	6	2001:db8::1	2001:db8::2	UDP	64	68	67	\N
 --- IPv6 extension headers: ip_protocol is the protocol after the chain ---
-8	['ETHERNET_II','IPv6','TCP','RAW']	TCP	12345	80	ACK,PSH
-9	['ETHERNET_II','IPv6','RAW']	UDP	\N	\N	\N
-10	['ETHERNET_II','IPv6','TCP','RAW']	TCP	12345	80	ACK,PSH
-11	['ETHERNET_II','IPv6','UDP']	UDP	68	67	\N
+8	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route','TCP','RAW']	TCP	12345	80	ACK,PSH
+9	['ETHERNET_II','IPv6','IPv6-Frag','RAW']	UDP	\N	\N	\N
+10	['ETHERNET_II','IPv6','AH','TCP','RAW']	TCP	12345	80	ACK,PSH
+11	['ETHERNET_II','IPv6','Shim6','UDP']	UDP	68	67	\N
 --- protocol filters see extension-header traffic ---
 TCP	6	1
 UDP	4	1
@@ -109,3 +109,8 @@ truncated.pcap	0	0	0
 CANNOT_DECOMPRESS
 --- schema inference via file() extension is PCAP-explicit only (count) ---
 11
+--- format is inferred from the .pcap and .pcapng extensions ---
+packets.pcap	11	6
+packets.pcapng	11	6
+number
+timestamp
