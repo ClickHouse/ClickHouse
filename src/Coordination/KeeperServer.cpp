@@ -62,6 +62,7 @@
 namespace ProfileEvents
 {
     extern const Event KeeperServerWriteLockWaitMicroseconds;
+    extern const Event KeeperRejectedCommittedLogRollback;
 }
 
 namespace DB
@@ -1065,6 +1066,32 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     }
     else if (type == nuraft::cb_func::BecomeFollower)
         stopLeaderUptimeMetrics();
+    else if (type == nuraft::cb_func::RejectedCommittedLogRollback)
+    {
+        const auto & args = *static_cast<nuraft::cb_func::RejectedCommittedLogRollbackArgs *>(param->ctx);
+
+        ProfileEvents::increment(ProfileEvents::KeeperRejectedCommittedLogRollback);
+
+        LOG_ERROR(
+            log,
+            "Refused an `append_entries` request from server {} (term {}) which would have rolled back already "
+            "committed logs: it wanted to overwrite starting at log index {}, but this node's commit indices are "
+            "already at quick={}, state machine={} (its own last log index is {}, log store start index is {}). "
+            "This most likely means that server {} is not a legitimate leader for this term: it may have "
+            "(re)started with an empty or stale data directory, or the cluster configuration has a duplicated or "
+            "mismatched server id that let it win an election without a genuine majority of votes. This node will "
+            "keep its data and continue rejecting the conflicting requests.",
+            args.reqSrc,
+            args.reqTerm,
+            args.logIdx,
+            args.quickCommitIndex,
+            args.smCommitIndex,
+            args.myLastLogIdx,
+            args.logStoreStartIndex,
+            args.reqSrc);
+
+        return nuraft::cb_func::ReturnCode::Ok;
+    }
 
     if (is_recovering)
     {
