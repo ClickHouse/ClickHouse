@@ -278,6 +278,13 @@ buildIntersectsAndContains(
     if (key_column >= index_data_types.size() || key_column >= minmax_input_nodes.size())
         return {nullptr, nullptr};
 
+    /// `lower_bound` below repairs the NaN semantics only for a top-level float. The bounds of a `Tuple`
+    /// are built from `getExtremes` per element, so they may combine a NaN with values of different rows,
+    /// and an SQL comparison of such a bound does not agree with the scalar `Range` ordering.
+    const auto key_type = removeLowCardinality(index_data_types[key_column]);
+    if (!WhichDataType(key_type).isFloat() && KeyCondition::typeMayHideNaN(key_type))
+        return {nullptr, nullptr};
+
     const auto & min_node = *minmax_input_nodes[key_column].first;
     const auto & max_node = *minmax_input_nodes[key_column].second;
     const auto & comparison = *element.direct_comparison;
@@ -294,7 +301,7 @@ buildIntersectsAndContains(
         const ActionsDAG::Node * contains = compare(name, min_node);
 
         /// SQL comparisons with NaN are unordered, unlike the scalar Range ordering.
-        if (WhichDataType(removeLowCardinality(index_data_types[key_column])).isFloat())
+        if (WhichDataType(key_type).isFloat())
         {
             const auto & max_is_nan = addNamedFunction(dag, "isNaN", {&max_node}, context);
             const auto & min_is_nan = addNamedFunction(dag, "isNaN", {&min_node}, context);
