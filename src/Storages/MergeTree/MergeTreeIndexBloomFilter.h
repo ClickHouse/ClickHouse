@@ -105,7 +105,7 @@ private:
 
     bool traverseTreeIn(
         const String & function_name,
-        const RPNBuilderTreeNode & key_node,
+        const RPNBuilderTreeNode & wrapped_key_node,
         const ConstSetPtr & prepared_set,
         const DataTypePtr & type,
         const ColumnPtr & column,
@@ -113,7 +113,7 @@ private:
 
     bool traverseTreeEquals(
         const String & function_name,
-        const RPNBuilderTreeNode & key_node,
+        const RPNBuilderTreeNode & wrapped_key_node,
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out,
