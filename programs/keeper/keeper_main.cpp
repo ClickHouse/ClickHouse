@@ -95,8 +95,12 @@ static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & a
 /// We absolutely discourage the ancient technique of loading
 /// 3rd-party uncontrolled dangerous libraries into the process address space,
 /// because it is insane.
+///
+/// `USE_GPU` lifts it for the same reason `programs/main.cpp` does - the CUDA runtime reaches a
+/// device only by `dlopen`. This translation unit is linked into the single `clickhouse` binary as
+/// well, so leaving the override here would keep it in a GPU build no matter what that file says.
 
-#if !defined(USE_MUSL)
+#if !(defined(USE_MUSL) || USE_GPU)
 extern "C"
 {
     void * dlopen(const char *, int);
