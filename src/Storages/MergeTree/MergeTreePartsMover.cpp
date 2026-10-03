@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int DIRECTORY_ALREADY_EXISTS;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace FailPoints
@@ -30,22 +31,32 @@ namespace FailPoints
 namespace
 {
 
+struct PartsComparatorBySizeOnDisk
+{
+    bool operator()(const MergeTreeData::DataPartPtr & f, const MergeTreeData::DataPartPtr & s) const
+    {
+        /// If parts have equal sizes, than order them by names (names are unique)
+        UInt64 first_part_size = f->getBytesOnDisk();
+        UInt64 second_part_size = s->getBytesOnDisk();
+        return std::tie(first_part_size, f->name) < std::tie(second_part_size, s->name);
+    }
+};
+
+struct PartsComparatorByOldestData
+{
+    bool operator()(const MergeTreeData::DataPartPtr & f, const MergeTreeData::DataPartPtr & s) const
+    {
+        return std::forward_as_tuple(f->getMinTimeOfDataInsertion(), f->getMaxTimeOfDataInsertion()) >
+                std::forward_as_tuple(s->getMinTimeOfDataInsertion(), s->getMaxTimeOfDataInsertion());
+    }
+};
+
 /// Contains minimal number of heaviest parts, which sum size on disk is greater than required.
 /// If there are not enough summary size, than contains all parts.
+template<typename PartsComparator>
 class LargestPartsWithRequiredSize
 {
-    struct PartsSizeOnDiskComparator
-    {
-        bool operator()(const MergeTreeData::DataPartPtr & f, const MergeTreeData::DataPartPtr & s) const
-        {
-            /// If parts have equal sizes, than order them by names (names are unique)
-            UInt64 first_part_size = f->getBytesOnDisk();
-            UInt64 second_part_size = s->getBytesOnDisk();
-            return std::tie(first_part_size, f->name) < std::tie(second_part_size, s->name);
-        }
-    };
-
-    std::set<MergeTreeData::DataPartPtr, PartsSizeOnDiskComparator> elems;
+    std::set<MergeTreeData::DataPartPtr, PartsComparator> elems;
     UInt64 required_size_sum;
     UInt64 current_size_sum = 0;
 
@@ -62,7 +73,7 @@ public:
         }
 
         /// Adding smaller element
-        if (!elems.empty() && (*elems.begin())->getBytesOnDisk() >= part->getBytesOnDisk())
+        if (!elems.empty() && PartsComparator()(part, *elems.begin()))
             return;
 
         elems.emplace(part);
@@ -100,7 +111,8 @@ private:
 
 }
 
-bool MergeTreePartsMover::selectPartsForMove(
+template<typename Comparator>
+bool MergeTreePartsMover::selectPartsForMoveImpl(
     MergeTreeMovingParts & parts_to_move,
     const AllowedMovingPredicate & can_move,
     const std::lock_guard<std::mutex> & /* moving_parts_lock */)
@@ -114,10 +126,9 @@ bool MergeTreePartsMover::selectPartsForMove(
     if (data_parts.empty())
         return false;
 
-    std::unordered_map<DiskPtr, LargestPartsWithRequiredSize> need_to_move;
+    std::unordered_map<DiskPtr, LargestPartsWithRequiredSize<Comparator>> need_to_move;
     const auto policy = data->getStoragePolicy();
     const auto & volumes = policy->getVolumes();
-
     if (!volumes.empty())
     {
         /// Do not check last volume
@@ -218,6 +229,26 @@ bool MergeTreePartsMover::selectPartsForMove(
         return true;
     }
     return false;
+}
+
+bool MergeTreePartsMover::selectPartsForMove(
+    MergeTreeMovingParts & parts_to_move,
+    const AllowedMovingPredicate & can_move,
+    const std::lock_guard<std::mutex> & moving_parts_lock)
+{
+    IStoragePolicy::MovePolicy move_policy = data->getStoragePolicy()->getMovePolicy();
+    if (move_policy == IStoragePolicy::MovePolicy::BY_PART_SIZE)
+    {
+        return selectPartsForMoveImpl<PartsComparatorBySizeOnDisk>(parts_to_move, can_move, moving_parts_lock);
+    }
+    else if (move_policy == IStoragePolicy::MovePolicy::BY_INSERT_DATA_TIME)
+    {
+        return selectPartsForMoveImpl<PartsComparatorByOldestData>(parts_to_move, can_move, moving_parts_lock);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown move policy.");
+    }
 }
 
 MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const

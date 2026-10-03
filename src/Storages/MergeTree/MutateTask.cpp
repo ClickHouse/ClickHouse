@@ -97,6 +97,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
+    extern const MergeTreeSettingsBool allow_generate_min_max_data_insert_file;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
@@ -1793,6 +1794,16 @@ static void finalizeMutatedPart(
         else
             DB::writeText(codec->getFullCodecDescription()->formatWithSecretsOneLine(), *out_comp);
         written_files.push_back(std::move(out_comp));
+    }
+
+    if ((*new_data_part->storage.getSettings())[MergeTreeSetting::allow_generate_min_max_data_insert_file])
+    {
+        auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::MIN_MAX_TIME_OF_DATA_INSERT_FILE, 4096, context->getWriteSettings());
+        DB::writeIntText(new_data_part->getMinTimeOfDataInsertion(), *out);
+        DB::writeText(" ", *out);
+        DB::writeIntText(new_data_part->getMaxTimeOfDataInsertion(), *out);
+
+        written_files.emplace_back(std::move(out));
     }
 
     if (!new_data_part->storage.storesMetadataVersionInPartAttributes())
@@ -4229,6 +4240,11 @@ bool MutateTask::prepare()
     ctx->new_data_part->is_temp = true;
     ctx->new_data_part->ttl_infos = ctx->source_part->ttl_infos;
 
+    if ((*ctx->new_data_part->storage.getSettings())[MergeTreeSetting::allow_generate_min_max_data_insert_file])
+    {
+        ctx->new_data_part->min_time_of_data_insert = ctx->future_part->parts.front()->getMinTimeOfDataInsertion();
+        ctx->new_data_part->max_time_of_data_insert = ctx->future_part->parts.front()->getMaxTimeOfDataInsertion();
+    }
     /// It shouldn't be changed by mutation.
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 

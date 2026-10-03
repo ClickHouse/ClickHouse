@@ -2589,6 +2589,11 @@ Enabled cleanup of Keeper entries of empty partition.
 How many seconds partition will be stored in keeper if it has no parts.
 )", 0, \
         {"25.9", 86400, 86400, "New setting"}) \
+    DECLARE(Bool, allow_generate_min_max_data_insert_file, false, R"(
+Allow to generate min/max_insert_data file.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting"}, \
+        {"25.1", false, false, "New setting."}) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, R"(

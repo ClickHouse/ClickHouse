@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <allow_generate_min_max_data_insert_file>1</allow_generate_min_max_data_insert_file>
+    </merge_tree>
+</clickhouse>
