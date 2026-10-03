@@ -167,14 +167,19 @@ public:
             origin_column = arguments[2];
 
         const DateLUTImpl * time_zone_tmp = nullptr;
+        const size_t time_zone_arg_num = (overload == ToStartOfIntervalOverload::Default) ? 2 : 3;
 
         if (isDateTimeOrDateTime64(time_column.type) || isDateTimeOrDateTime64(result_type))
         {
-            const size_t time_zone_arg_num = (overload == ToStartOfIntervalOverload::Default) ? 2 : 3;
             time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, time_zone_arg_num, 0);
         }
         else /// As we convert date to datetime and perform calculation, we don't need to take the timezone into account, so we set it to default
+        {
+            /// The time zone argument has no effect here, but it is still validated, so that a typo is not silently ignored.
+            if (arguments.size() == time_zone_arg_num + 1)
+                extractTimeZoneFromFunctionArguments(arguments, time_zone_arg_num, 0);
             time_zone_tmp = &DateLUT::instance("UTC");
+        }
 
         const DateLUTImpl & time_zone = *time_zone_tmp;
 
@@ -765,10 +770,12 @@ REGISTER_FUNCTION(ToStartOfInterval)
 This function generalizes other `toStartOf*()` functions with `toStartOfInterval(date_or_date_with_time, INTERVAL x unit [, time_zone])` syntax.
 
 For example,
-- `toStartOfInterval(t, INTERVAL 1 YEAR)` returns the same as `toStartOfYear(t)`,
-- `toStartOfInterval(t, INTERVAL 1 MONTH)` returns the same as `toStartOfMonth(t)`,
-- `toStartOfInterval(t, INTERVAL 1 DAY)` returns the same as `toStartOfDay(t)`,
-- `toStartOfInterval(t, INTERVAL 15 MINUTE)` returns the same as `toStartOfFifteenMinutes(t)`.
+- `toStartOfInterval(t, INTERVAL 1 YEAR)` rounds to the same boundary as `toStartOfYear(t)`,
+- `toStartOfInterval(t, INTERVAL 1 MONTH)` rounds to the same boundary as `toStartOfMonth(t)`,
+- `toStartOfInterval(t, INTERVAL 1 DAY)` rounds to the same boundary as `toStartOfDay(t)`,
+- `toStartOfInterval(t, INTERVAL 15 MINUTE)` rounds to the same boundary as `toStartOfFifteenMinutes(t)`.
+
+The result type may differ from that of these functions (see below).
 
 The calculation is performed relative to specific points in time:
 

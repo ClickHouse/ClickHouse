@@ -29,6 +29,10 @@ SELECT toStartOfInterval(toDate('2023-05-17'), INTERVAL 1 YEAR) AS x, toTypeName
 -- A time zone argument has no effect on a `Date`.
 SELECT toStartOfInterval(toDate('2023-05-17'), INTERVAL 1 DAY, 'Asia/Tokyo') AS x, toTypeName(x);
 SELECT toStartOfInterval(toDate('2023-05-17'), INTERVAL 1 WEEK, 'Asia/Tokyo') AS x, toTypeName(x);
+-- But it is still validated.
+SELECT toStartOfInterval(toDate('2023-05-17'), INTERVAL 1 DAY, 'not-a-timezone'); -- { serverError BAD_ARGUMENTS }
+SELECT toStartOfInterval(toDate32('2023-05-17'), INTERVAL 1 WEEK, 'not-a-timezone'); -- { serverError BAD_ARGUMENTS }
+SELECT toStartOfInterval(toDate('2023-05-17'), INTERVAL 1 DAY, toDate('2023-01-01'), 'not-a-timezone'); -- { serverError BAD_ARGUMENTS }
 -- Rounding the first days of the epoch down to a week reaches before the range of `Date`; the result is clamped.
 SELECT toStartOfInterval(toDate('1970-01-01') + number, INTERVAL 1 WEEK) FROM numbers(6);
 SELECT toStartOfInterval(toDate('2149-06-06'), INTERVAL 1 DAY), toStartOfInterval(toDate('2149-06-06'), INTERVAL 1 YEAR);
