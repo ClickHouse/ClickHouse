@@ -2115,6 +2115,29 @@ def test_shared_memory_udf_pool_command_logging_after_its_answer_keeps_its_worke
         assert logged == "1", f"query {query_id} logged the command's line {logged} times"
 
 
+def test_shared_memory_udf_worker_discarded_for_its_stdout_does_not_fail_a_query_under_throw(started_cluster):
+    skip_test_msan(node)
+
+    # The command answers correctly and leaves one byte past its response frame, so the worker is
+    # discarded - and that discard looks at its stderr, to report whatever the command left there
+    # along with the reason. Here it left nothing: the byte was on its *stdout*.
+    #
+    # Under `stderr_reaction` `throw` an empty read must stay empty. "The command wrote to stderr"
+    # is a verdict on the query, and a query whose rows are already correct must not be failed by
+    # a probe that read nothing - least of all with an empty message where the diagnostic would be.
+    discards_before = profile_event_value("ExecutableUDFSharedMemoryDirtyChannelDiscards")
+
+    # The command answers with its own pid (see the script), so the answer is just "a row that is
+    # this borrow's": what matters here is that the query is answered at all.
+    answer = node.query("SELECT test_function_shm_busy_chatty_throw_pool_python(1)").strip()
+    assert answer.isdigit(), answer
+
+    # The discard really happened, so this is the path under test and not the ordinary one.
+    assert (
+        profile_event_value("ExecutableUDFSharedMemoryDirtyChannelDiscards") == discards_before + 1
+    )
+
+
 def test_shared_memory_udf_pool_discard_survives_being_decided_twice(started_cluster):
     skip_test_msan(node)
 

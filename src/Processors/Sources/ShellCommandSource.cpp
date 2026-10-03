@@ -613,6 +613,15 @@ private:
     /// keep the command from blocking, and that is true whether or not the bytes are still wanted.
     void accumulateStderrForThrow(std::string_view str)
     {
+        /// Nothing read is not something written. `hasStderr` is "the command has produced output
+        /// on its stderr", and under `throw` that is a verdict on the query - so a read that came
+        /// back empty must leave it alone. The probes call this with whatever the pipe held, and
+        /// for a worker discarded over its *stdout* the pipe usually holds nothing at all: a
+        /// value emplaced here would fail a query whose rows were already correct, with an empty
+        /// message to explain it.
+        if (str.empty())
+            return;
+
         const size_t current_size = stderr_full_output ? stderr_full_output->size() : 0;
         if (current_size >= MAX_STDERR_SIZE)
             return;
@@ -3681,6 +3690,25 @@ namespace
                     /// them anyway, since it is the process that inherits a region's descriptor at
                     /// `exec`, and a replacement gets its own. resetSharedMemory drops the holder's
                     /// reference (the region dies with the last one, below) and uncharges memory.
+                    ///
+                    /// The process goes first, before those references and the accounting that
+                    /// goes with them: a region's pages are freed when the last descriptor to it
+                    /// is closed, and while the process is around it holds one. Its stdin was
+                    /// closed above, so this is where a worker written to exit on EOF exits, and
+                    /// `~ShellCommand` starts by waiting for it - whatever is left of
+                    /// `command_termination_timeout` - which reaps it and takes its descriptor
+                    /// with it before the charge below goes.
+                    ///
+                    /// That is as far as it goes, and not a guarantee: when the budget runs out
+                    /// the destructor signals the process and does not wait for the signal to
+                    /// land, so the charge is dropped while it may still be running - briefly for
+                    /// a command that acts on `SIGTERM`, indefinitely for one that ignores it or
+                    /// for a descendant it left holding the inherited descriptor. The pages then
+                    /// outlive the charge, as untracked as anything else a process running as the
+                    /// server's user allocates (see the note on the cap in
+                    /// `docs/reference/functions/regular-functions/udf.mdx`).
+                    command = nullptr;
+
                     for (size_t i = 0; i < regions.size(); ++i)
                     {
                         regions[i].reset();
