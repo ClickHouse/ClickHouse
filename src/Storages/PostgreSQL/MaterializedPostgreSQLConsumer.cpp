@@ -1376,7 +1376,7 @@ bool MaterializedPostgreSQLConsumer::consume()
 
         while (true)
         {
-            const std::vector<pqxx::zview> * row{stream.read_row()};
+            const std::vector<std::string_view> * row{stream.read_row()};
 
             if (!row)
             {
@@ -1398,7 +1398,7 @@ bool MaterializedPostgreSQLConsumer::consume()
             try
             {
                 /// LOG_DEBUG(log, "Current message: {}", (*row)[1]);
-                processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
+                processReplicationMessage((*row)[1].data(), (*row)[1].size());
             }
             catch (const Exception & e)
             {

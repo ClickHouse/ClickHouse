@@ -660,7 +660,7 @@ String PostgreSQLIntegration::truncateStatement()
     return "TRUNCATE";
 }
 
-int PostgreSQLIntegration::sqlstateToInt(const String & sqlstate)
+int PostgreSQLIntegration::sqlstateToInt(std::string_view sqlstate)
 {
     /// Convert the 5-character SQLSTATE to an integer
     /// This treats it as a base-36 number or you can create your own scheme
