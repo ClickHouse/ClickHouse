@@ -3,6 +3,8 @@
 #include <atomic>
 #include <chrono>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -20,6 +22,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Common/tests/gtest_global_context.h>
@@ -183,6 +186,31 @@ struct ClientFake : DB::S3::Client
             Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(std::move(response_stream), Aws::Http::HeaderValueCollection());
             DB::S3::Model::GetObjectResult result(std::move(aws_result));
             return DB::S3::Model::GetObjectOutcome(std::move(result));
+        };
+    }
+
+    /// Serves `object` honoring the `Range` header as S3 does: `bytes=a-b` (inclusive) or `bytes=a-`.
+    void setGetObjectRanges(std::string object)
+    {
+        auto bodies = std::make_shared<std::vector<std::shared_ptr<StringHTTPBasicStreamBuf>>>();
+        getObjectImpl = [body = std::move(object), bodies](const Aws::S3::Model::GetObjectRequest & request) -> Aws::S3::Model::GetObjectOutcome
+        {
+            size_t begin = 0;
+            size_t end = body.size();
+            if (request.RangeHasBeenSet())
+            {
+                const std::string & range = request.GetRange();
+                const size_t prefix = std::string_view("bytes=").size();
+                const size_t dash = range.find('-');
+                begin = std::stoull(range.substr(prefix, dash - prefix));
+                if (dash + 1 < range.size())
+                    end = std::min<size_t>(end, std::stoull(range.substr(dash + 1)) + 1);
+            }
+            bodies->push_back(std::make_shared<StringHTTPBasicStreamBuf>(body.substr(begin, end - begin)));
+            auto response_stream = Aws::Utils::Stream::ResponseStream(Aws::New<DB::SessionAwareIOStream<CountedSessionPtr>>(
+                "test response stream", std::make_shared<CountedSession>(), bodies->back().get()));
+            Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(std::move(response_stream), Aws::Http::HeaderValueCollection());
+            return DB::S3::Model::GetObjectOutcome(DB::S3::Model::GetObjectResult(std::move(aws_result)));
         };
     }
 
@@ -378,6 +406,58 @@ TEST_F(ReadBufferFromS3Test, MissingResponseETagIsNotRejected)
 
     readAndAssert(subject, "1234");
     ASSERT_TRUE(subject.eof());
+}
+
+TEST_F(ReadBufferFromS3Test, GatherFillsWholeBufferAfterShortRead)
+{
+    /// Contract: a gather with its own buffer lends the whole buffer to the object reader on every fill,
+    /// so a short fill at the end of one bounded range does not cap the fills of the next range.
+    std::string data(1000, '\0');
+    for (size_t i = 0; i < data.size(); ++i)
+        data[i] = static_cast<char>('a' + i % 26);
+
+    const auto client = std::make_shared<ClientFake>();
+    client->setGetObjectRanges(data);
+
+    DB::ReadSettings read_settings;
+    DB::ReadBufferFromRemoteFSGather::ReadBufferCreator creator
+        = [client, read_settings](bool restricted_seek, const DB::StoredObject & object) -> std::unique_ptr<DB::ReadBufferFromFileBase>
+    {
+        return std::make_unique<DB::ReadBufferFromS3>(
+            client, "test_bucket", object.remote_path, /*version_id_=*/"", DB::S3::S3RequestSettings(), read_settings,
+            /*use_external_buffer=*/true, /*offset_=*/0, /*read_until_position_=*/0, restricted_seek, object.bytes_size);
+    };
+
+    DB::ReadBufferFromRemoteFSGather gather(
+        std::move(creator),
+        DB::StoredObjects{DB::StoredObject("test_key", "", data.size())},
+        read_settings.remote_fs_settings.min_bytes_for_seek,
+        /*use_external_buffer_=*/false,
+        /*buffer_size=*/100,
+        /*query_status_=*/nullptr);
+
+    auto read_and_check = [&](size_t n)
+    {
+        const size_t begin = gather.getPosition();
+        std::string chunk(n, '\0');
+        gather.readStrict(chunk.data(), n);
+        ASSERT_EQ(chunk, data.substr(begin, n));
+    };
+
+    /// Fills of 100 and 50 bytes.
+    gather.setReadUntilPosition(150);
+    read_and_check(150);
+
+    gather.setReadUntilPosition(630);
+    ASSERT_TRUE(gather.next());
+    EXPECT_EQ(gather.available(), 100);
+    read_and_check(480);
+
+    gather.setReadUntilPosition(1000);
+    ASSERT_TRUE(gather.next());
+    EXPECT_EQ(gather.available(), 100);
+    read_and_check(370);
+    ASSERT_TRUE(gather.eof());
 }
 
 TEST_F(ReadBufferFromS3Test, IterateUsesStartAfter)
