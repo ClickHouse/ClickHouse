@@ -1801,6 +1801,19 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
     }
 }
 
+void MergeTreeData::checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata)
+{
+    if (new_metadata.column_ttls_by_name.empty())
+        return;
+
+    NameSet key_columns = old_metadata.getStorageColumnsRequiredForKeys();
+    key_columns.merge(new_metadata.getStorageColumnsRequiredForKeys());
+
+    for (const auto & [name, _] : new_metadata.column_ttls_by_name)
+        if (key_columns.contains(name))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Trying to set TTL for key column {}", name);
+}
+
 namespace
 {
 
@@ -6607,6 +6620,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
+    if (!is_secondary_replay)
+        checkColumnTTLsForKeyColumns(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())
     {
