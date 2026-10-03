@@ -10,9 +10,7 @@ sidebarTitle: 'API 참조'
 
 이 문서는 ClickHouse Operator의 사용자 정의 리소스에 대한 자세한 API 참조를 제공합니다.
 
-<div id="additionalport">
-  ## AdditionalPort
-</div>
+## AdditionalPort {#additionalport}
 
 AdditionalPort는 ClickHouse 파드와 공개 헤드리스 Service에 노출할 추가 TCP 포트 하나를 선언합니다.
 
@@ -25,9 +23,7 @@ AdditionalPort는 ClickHouse 파드와 공개 헤드리스 Service에 노출할 
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="cabundleselector">
-  ## CABundleSelector
-</div>
+## CABundleSelector {#cabundleselector}
 
 CABundleSelector는 클러스터 네임스페이스의 시크릿에서 CA 번들을 담고 있는 키를 선택하는 데 사용됩니다.
 
@@ -40,15 +36,11 @@ CABundleSelector는 클러스터 네임스페이스의 시크릿에서 CA 번들
 
 * [ClusterTLSSpec](#clustertlsspec)
 
-<div id="clickhousecluster">
-  ## ClickHouseCluster
-</div>
+## ClickHouseCluster {#clickhousecluster}
 
 ClickHouseCluster는 `clickhouseclusters` API의 스키마입니다.
 
-<div id="clickhousecluster-api-version-and-kind">
-  ### API 버전 및 Kind
-</div>
+### API 버전 및 Kind {#clickhousecluster-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -64,15 +56,11 @@ kind: ClickHouseCluster
 
 * [ClickHouseClusterList](#clickhouseclusterlist)
 
-<div id="clickhouseclusterlist">
-  ## ClickHouseClusterList
-</div>
+## ClickHouseClusterList {#clickhouseclusterlist}
 
 ClickHouseClusterList에는 ClickHouseCluster 목록이 포함됩니다.
 
-<div id="clickhousecluster-api-version-and-kind">
-  ### API 버전 및 Kind
-</div>
+### API 버전 및 Kind {#clickhouseclusterlist-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -83,9 +71,7 @@ kind: ClickHouseClusterList
 | ------- | ------------------------------------------ | -- | ---- | --- |
 | `items` | [ClickHouseCluster](#clickhousecluster) 배열 |    | true |     |
 
-<div id="clickhouseclusterspec">
-  ## ClickHouseClusterSpec
-</div>
+## ClickHouseClusterSpec {#clickhouseclusterspec}
 
 ClickHouseClusterSpec는 ClickHouseCluster의 원하는 상태를 정의합니다.
 
@@ -113,9 +99,7 @@ ClickHouseClusterSpec는 ClickHouseCluster의 원하는 상태를 정의합니�
 
 * [ClickHouseCluster](#clickhousecluster)
 
-<div id="clickhouseclusterstatus">
-  ## ClickHouseClusterStatus
-</div>
+## ClickHouseClusterStatus {#clickhouseclusterstatus}
 
 ClickHouseClusterStatus는 ClickHouseCluster의 현재 관찰된 상태를 정의합니다.
 
@@ -135,9 +119,7 @@ ClickHouseClusterStatus는 ClickHouseCluster의 현재 관찰된 상태를 정�
 
 * [ClickHouseCluster](#clickhousecluster)
 
-<div id="clickhousenetworkpolicyspec">
-  ## ClickHouseNetworkPolicySpec
-</div>
+## ClickHouseNetworkPolicySpec {#clickhousenetworkpolicyspec}
 
 ClickHouseNetworkPolicySpec는 ClickHouse 클러스터에 대해 관리되는 NetworkPolicy를 구성합니다.
 관리형 정책은 클러스터 내부 트래픽을 포괄합니다.
@@ -154,9 +136,7 @@ ClickHouseNetworkPolicySpec는 ClickHouse 클러스터에 대해 관리되는 Ne
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="clickhousesettings">
-  ## ClickHouseSettings
-</div>
+## ClickHouseSettings {#clickhousesettings}
 
 ClickHouseSettings는 ClickHouse 서버 설정 옵션을 정의합니다.
 
@@ -174,9 +154,7 @@ ClickHouseSettings는 ClickHouse 서버 설정 옵션을 정의합니다.
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="clustertlsspec">
-  ## ClusterTLSSpec
-</div>
+## ClusterTLSSpec {#clustertlsspec}
 
 ClusterTLSSpec는 클러스터의 TLS 구성을 정의합니다.
 
@@ -192,9 +170,7 @@ ClusterTLSSpec는 클러스터의 TLS 구성을 정의합니다.
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-<div id="configmapkeyselector">
-  ## ConfigMapKeySelector
-</div>
+## ConfigMapKeySelector {#configmapkeyselector}
 
 ConfigMapKeySelector는 ConfigMap의 키를 선택합니다.
 
@@ -207,9 +183,7 @@ ConfigMapKeySelector는 ConfigMap의 키를 선택합니다.
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-<div id="containerimage">
-  ## ContainerImage
-</div>
+## ContainerImage {#containerimage}
 
 ContainerImage는 리포지토리, 태그 또는 해시를 포함하는 컨테이너 이미지를 정의합니다.
 
@@ -223,9 +197,7 @@ ContainerImage는 리포지토리, 태그 또는 해시를 포함하는 컨테�
 
 * [ContainerTemplateSpec](#containertemplatespec)
 
-<div id="containertemplatespec">
-  ## ContainerTemplateSpec
-</div>
+## ContainerTemplateSpec {#containertemplatespec}
 
 ContainerTemplateSpec는 클러스터의 컨테이너에 대한 구성 재정의 항목을 설명합니다.
 
@@ -245,9 +217,7 @@ ContainerTemplateSpec는 클러스터의 컨테이너에 대한 구성 재정의
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="defaultpasswordselector">
-  ## DefaultPasswordSelector
-</div>
+## DefaultPasswordSelector {#defaultpasswordselector}
 
 DefaultPasswordSelector는 기본 사용자 비밀번호의 소스를 선택합니다.
 
@@ -261,9 +231,7 @@ DefaultPasswordSelector는 기본 사용자 비밀번호의 소스를 선택합�
 
 * [ClickHouseSettings](#clickhousesettings)
 
-<div id="encryptionsettings">
-  ## EncryptionSettings
-</div>
+## EncryptionSettings {#encryptionsettings}
 
 EncryptionSettings는 테이블 데이터의 저장 데이터 암호화(저장 시 암호화)를 활성화합니다. 이 설정이 있으면 연산자가 각 데이터 디스크를 감싸는
 암호화된 ClickHouse 스토리지 정책을 생성하며, 테이블은 `SETTINGS storage_policy`를 통해 이 정책을 사용하도록 설정합니다.
@@ -277,9 +245,7 @@ EncryptionSettings는 테이블 데이터의 저장 데이터 암호화(저장 �
 
 * [ClickHouseSettings](#clickhousesettings)
 
-<div id="externalsecret">
-  ## ExternalSecret
-</div>
+## ExternalSecret {#externalsecret}
 
 ExternalSecret는 동일한 네임스페이스에 있는 시크릿을 가리키는 참조입니다.
 
@@ -292,9 +258,7 @@ ExternalSecret는 동일한 네임스페이스에 있는 시크릿을 가리키�
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="externalsecretpolicy">
-  ## ExternalSecretPolicy
-</div>
+## ExternalSecretPolicy {#externalsecretpolicy}
 
 ExternalSecretPolicy는 연산자가 외부 시크릿의 내용을 어떻게 다룰지 제어합니다.
 
@@ -307,15 +271,11 @@ ExternalSecretPolicy는 연산자가 외부 시크릿의 내용을 어떻게 다
 
 * [ExternalSecret](#externalsecret)
 
-<div id="keepercluster">
-  ## KeeperCluster
-</div>
+## KeeperCluster {#keepercluster}
 
 KeeperCluster는 `keeperclusters` API의 스키마입니다.
 
-<div id="clickhousecluster-api-version-and-kind">
-  ### API 버전 및 Kind
-</div>
+### API 버전 및 Kind {#keepercluster-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -331,15 +291,11 @@ kind: KeeperCluster
 
 * [KeeperClusterList](#keeperclusterlist)
 
-<div id="keeperclusterlist">
-  ## KeeperClusterList
-</div>
+## KeeperClusterList {#keeperclusterlist}
 
 KeeperClusterList에는 KeeperCluster 목록이 포함되어 있습니다.
 
-<div id="clickhousecluster-api-version-and-kind">
-  ### API 버전 및 Kind
-</div>
+### API 버전 및 Kind {#keeperclusterlist-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -350,9 +306,7 @@ kind: KeeperClusterList
 | ------- | ---------------------------------- | -- | ---- | --- |
 | `items` | [KeeperCluster](#keepercluster) 배열 |    | true |     |
 
-<div id="keeperclusterreference">
-  ## KeeperClusterReference
-</div>
+## KeeperClusterReference {#keeperclusterreference}
 
 KeeperClusterReference는 ClickHouseCluster에서 사용하는 KeeperCluster를 식별합니다.
 
@@ -365,9 +319,7 @@ KeeperClusterReference는 ClickHouseCluster에서 사용하는 KeeperCluster를 
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="keeperclusterspec">
-  ## KeeperClusterSpec
-</div>
+## KeeperClusterSpec {#keeperclusterspec}
 
 KeeperClusterSpec는 KeeperCluster의 원하는 상태를 정의합니다.
 
@@ -390,9 +342,7 @@ KeeperClusterSpec는 KeeperCluster의 원하는 상태를 정의합니다.
 
 * [KeeperCluster](#keepercluster)
 
-<div id="keeperclusterstatus">
-  ## KeeperClusterStatus
-</div>
+## KeeperClusterStatus {#keeperclusterstatus}
 
 KeeperClusterStatus는 KeeperCluster의 관찰된 상태를 정의합니다.
 
@@ -412,9 +362,7 @@ KeeperClusterStatus는 KeeperCluster의 관찰된 상태를 정의합니다.
 
 * [KeeperCluster](#keepercluster)
 
-<div id="keepernetworkpolicyspec">
-  ## KeeperNetworkPolicySpec
-</div>
+## KeeperNetworkPolicySpec {#keepernetworkpolicyspec}
 
 KeeperNetworkPolicySpec는 Keeper 클러스터에 적용되는 관리형 NetworkPolicy를 구성합니다.
 관리형 정책은 클러스터 내부 트래픽에 적용됩니다.
@@ -432,9 +380,7 @@ KeeperNetworkPolicySpec는 Keeper 클러스터에 적용되는 관리형 Network
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="keepersettings">
-  ## KeeperSettings
-</div>
+## KeeperSettings {#keepersettings}
 
 KeeperSettings는 ClickHouse Keeper 서버 구성을 정의합니다.
 
@@ -448,9 +394,7 @@ KeeperSettings는 ClickHouse Keeper 서버 구성을 정의합니다.
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="loggerconfig">
-  ## LoggerConfig
-</div>
+## LoggerConfig {#loggerconfig}
 
 LoggerConfig는 server 로깅 구성을 정의합니다.
 
@@ -467,9 +411,7 @@ LoggerConfig는 server 로깅 구성을 정의합니다.
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-<div id="namedtemplatemeta">
-  ## NamedTemplateMeta
-</div>
+## NamedTemplateMeta {#namedtemplatemeta}
 
 NamedTemplateMeta는 이름이 필요한 템플릿 객체에서 지원되는 메타데이터 설정을 정의합니다.
 
@@ -483,9 +425,7 @@ NamedTemplateMeta는 이름이 필요한 템플릿 객체에서 지원되는 메
 
 * [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
 
-<div id="networkpolicypolicy">
-  ## NetworkPolicyPolicy
-</div>
+## NetworkPolicyPolicy {#networkpolicypolicy}
 
 NetworkPolicyPolicy는 연산자가 클러스터의 NetworkPolicy를 관리할지 결정합니다.
 
@@ -499,9 +439,7 @@ NetworkPolicyPolicy는 연산자가 클러스터의 NetworkPolicy를 관리할�
 * [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)
 * [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)
 
-<div id="pdbpolicy">
-  ## PDBPolicy
-</div>
+## PDBPolicy {#pdbpolicy}
 
 PDBPolicy는 PodDisruptionBudget를 생성할지 여부를 제어합니다.
 
@@ -515,9 +453,7 @@ PDBPolicy는 PodDisruptionBudget를 생성할지 여부를 제어합니다.
 
 * [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)
 
-<div id="persistentvolumeclaimtemplate">
-  ## PersistentVolumeClaimTemplate
-</div>
+## PersistentVolumeClaimTemplate {#persistentvolumeclaimtemplate}
 
 PersistentVolumeClaimTemplate는 레플리카별 PersistentVolumeClaim에 사용하는 이름 있는 템플릿입니다.
 
@@ -530,9 +466,7 @@ PersistentVolumeClaimTemplate는 레플리카별 PersistentVolumeClaim에 사용
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="poddisruptionbudgetspec">
-  ## PodDisruptionBudgetSpec
-</div>
+## PodDisruptionBudgetSpec {#poddisruptionbudgetspec}
 
 PodDisruptionBudgetSpec는 클러스터에 대해 생성되는 PDB를 구성합니다.
 `MinAvailable` 또는 `MaxUnavailable` 중 하나만 설정할 수 있습니다.
@@ -550,9 +484,7 @@ PodDisruptionBudgetSpec는 클러스터에 대해 생성되는 PDB를 구성합�
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="podtemplatespec">
-  ## PodTemplateSpec
-</div>
+## PodTemplateSpec {#podtemplatespec}
 
 PodTemplateSpec는 클러스터의 파드에 적용되는 파드 구성 재정의 항목을 설명합니다.
 
@@ -562,15 +494,16 @@ PodTemplateSpec는 클러스터의 파드에 적용되는 파드 구성 재정�
 | `topologySpreadConstraints`     | [TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#topologyspreadconstraint-v1-core) 배열 | TopologySpreadConstraints는 파드 그룹이 토폴로지<br />도메인 전반에 어떻게 분산되어야 하는지 설명합니다. 스케줄러는 이러한 제약 조건을 준수하도록 파드를 스케줄링합니다.<br />모든 topologySpreadConstraints는 AND 조건으로 함께 적용됩니다.<br />`topologyKey`를 기준으로 operator 기본값과 병합됩니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | false |     |
 | `imagePullSecrets`              | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) 배열         | ImagePullSecrets는 이 PodSpec에서 사용하는 이미지들을 가져올 때 사용할, 동일한 네임스페이스 내 시크릿 참조의 선택적 목록입니다.<br />지정하면 이러한 시크릿이 각 puller 구현체에 전달되어 사용됩니다.<br />자세한 내용: https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod<br />이름을 기준으로 operator 기본값과 머지됩니다.                                                                                                                                                                                                                                                                                                                                                                                                                 | false |     |
 | `nodeSelector`                  | 객체 (keys:string, values:string)                                                                                                      | NodeSelector는 파드가 노드에 배치되기 위해 충족되어야 하는 선택자입니다.<br />파드가 해당 노드에 스케줄되려면 노드의 레이블과 일치해야 하는 선택자입니다.<br />자세한 정보: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | false |     |
-| `affinity`                      | [Affinity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#affinity-v1-core)                                    | 지정하면 파드의 스케줄링 제약 조건이 설정됩니다.<br />Operator 기본값에 추가되며, 스케줄링 조건 목록은 이어 붙여집니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | false |     |
+| `affinity`                      | [친화성](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#affinity-v1-core)                                         | 지정하면 파드의 스케줄링 제약 조건이 설정됩니다.<br />Operator 기본값에 추가되며, 스케줄링 조건 목록은 이어 붙여집니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | false |     |
 | `tolerations`                   | [Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#toleration-v1-core) 배열                             | 지정하면 파드의 톨러레이션이 설정됩니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | false |     |
 | `schedulerName`                 | string                                                                                                                               | 지정하면 해당 파드는 지정된 스케줄러에 의해 스케줄링됩니다.<br />지정하지 않으면 해당 파드는 기본 스케줄러에 의해 스케줄링됩니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | false |     |
 | `serviceAccountName`            | string                                                                                                                               | ServiceAccountName은 이 파드를 실행할 때 사용할 ServiceAccount의 이름입니다.<br />자세한 내용: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | false |     |
 | `priorityClassName`             | string                                                                                                                               | PriorityClassName은 파드에서 사용할 PriorityClass의 이름입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | false |     |
-| `runtimeClassName`              | string                                                                                                                               | RuntimeClassName은 파드에서 사용할 RuntimeClass의 이름입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | false |     |
+| `runtimeClassName`              | String                                                                                                                               | RuntimeClassName은 파드에서 사용할 RuntimeClass의 이름입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | false |     |
 | `volumes`                       | [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core) 배열                                     | Volumes는 파드에 속한 컨테이너가 마운트할 수 있는 볼륨 목록을 정의합니다.<br />자세한 내용: https://kubernetes.io/docs/concepts/storage/volumes<br />이름을 기준으로 operator 기본값과 머지되며, 사용자 볼륨은 동일한 이름의 operator 볼륨을 대체합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | false |     |
 | `securityContext`               | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core)                | SecurityContext는 파드 수준의 보안 속성과 공통 컨테이너 설정을 포함합니다.<br />nil이 아닌 SecurityContext는 operator 기본값을 완전히 대체하며, 사용자가<br />전체 구조체를 직접 관리합니다. nil인 경우 operator 기본값이 유지됩니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | false |     |
-| `topologyZoneKey`               | string                                                                                                                               | TopologyZoneKey는 노드 레이블의 키입니다.<br />이 키를 가진 레이블이 있고 그 값이 동일한 노드는 동일한 토폴로지 도메인에 있는 것으로 간주됩니다.<br />예를 들어 &quot;topology.kubernetes.io/zone&quot;의 경우 동일한 가용 영역, &quot;kubernetes.io/hostname&quot;의 경우 동일한 노드입니다.<br />동일한 데이터를 보유한 파드(ClickHouse에서는 하나의 세그먼트에 대한 레플리카, Keeper에서는 모든 레플리카)가<br />도메인 전반에 걸쳐 균형 있게 분산되도록 이 값을 설정하십시오. 즉, 필수 TopologySpreadConstraint(maxSkew 1, DoNotSchedule)와 선호되는 PodAntiAffinity 규칙이 함께 적용됩니다.<br />서로 다른 세그먼트의 파드는 동일한 도메인을 공유할 수 있으므로 도메인당 여러 파드가 허용됩니다.<br />도메인 수가 레플리카 수보다 적으면 여러 레플리카가 하나의 도메인을 공유하게 되지만, 여전히 균등하게 분산됩니다.<br />ClickHouse 파드는 추가로 자신이 사용하는 Keeper 파드가 배치된 도메인을 선호합니다.<br />&quot;topology.kubernetes.io/zone&quot;으로 설정하는 것을 권장합니다. | false |     |
+| `topologyZoneKey`               | String                                                                                                                               | TopologyZoneKey는 노드 레이블의 키입니다.<br />이 키를 가진 레이블이 있고 그 값이 동일한 노드는 동일한 토폴로지 도메인에 있는 것으로 간주됩니다.<br />예를 들어 &quot;topology.kubernetes.io/zone&quot;의 경우 동일한 가용 영역, &quot;kubernetes.io/hostname&quot;의 경우 동일한 노드입니다.<br />동일한 데이터를 보유한 파드(ClickHouse에서는 하나의 세그먼트에 대한 레플리카, Keeper에서는 모든 레플리카)가<br />도메인 전반에 걸쳐 균형 있게 분산되도록 이 값을 설정하십시오. 즉, 필수 TopologySpreadConstraint(maxSkew 1, DoNotSchedule)와 선호되는 PodAntiAffinity 규칙이 함께 적용됩니다.<br />서로 다른 세그먼트의 파드는 동일한 도메인을 공유할 수 있으므로 도메인당 여러 파드가 허용됩니다.<br />도메인 수가 레플리카 수보다 적으면 여러 레플리카가 하나의 도메인을 공유하게 되지만, 여전히 균등하게 분산됩니다.<br />ClickHouse 파드는 추가로 자신이 사용하는 Keeper 파드가 배치된 도메인을 선호합니다.<br />&quot;topology.kubernetes.io/zone&quot;으로 설정하는 것을 권장합니다. | false |     |
+| `topologyMinDomains`            | integer                                                                                                                              | TopologyMinDomains는 TopologyZoneKey에 의해 생성되는 TopologySpreadConstraint의 minDomains 필드를 설정합니다.<br />Kubernetes 스케줄러는 이미 배치 가능한 노드가 존재하는 영역만 토폴로지 도메인으로 계산합니다.<br />따라서 수요 기반 자동 스케일러(예: Karpenter, Cluster Autoscaler)를 사용하는 경우, 스케줄링 시점에<br />노드가 두 개의 AZ에만 존재한다면 maxSkew:1/DoNotSchedule 제약 조건이 2/1 분배로도 충족되어<br />자동 스케일러가 세 번째 AZ에 노드를 프로비저닝하지 않습니다.<br />TopologyMinDomains를 예상되는 영역 수(일반적으로 3)로 설정하면, 스케줄러는 모든 영역에 노드가<br />존재하는지와 무관하게 해당 수만큼의 영역을 도메인으로 취급하므로 자동 스케일러가<br />누락된 영역에 노드를 프로비저닝하도록 강제됩니다.<br />이를 위해서는 TopologyZoneKey가 설정되어 있어야 합니다. 배치 가능한 노드가 이미 존재하는 영역만 계산하는<br />스케줄러의 기본 동작을 유지하려면 생략(nil)하십시오.                                                                  | false |     |
 | `nodeHostnameKey`               | string                                                                                                                               | NodeHostnameKey는 노드 레이블의 키입니다.<br />이 키를 가진 레이블이 있고 그 값이 동일한 노드는 같은 노드에 있는 것으로 간주됩니다.<br />클러스터의 모든 파드에 대해 필수 PodAntiAffinity 규칙을 적용하여 노드의 배타적 점유를 강제하려면 이 값을 설정하십시오.<br />세그먼트와 관계없이 노드당 최대 하나의 파드만 배치됩니다. 이를 위해서는 최소한 파드 수만큼의 노드가 필요합니다;<br />노드 수가 더 적으면 초과하는 파드는 Pending 상태로 유지됩니다.<br />노드당 여러 파드를 배치하면서 동일한 세그먼트의 레플리카를 여러 노드에 분산하려면<br />대신 TopologyZoneKey를 &quot;kubernetes.io/hostname&quot;으로 설정하십시오.<br />&quot;kubernetes.io/hostname&quot;로 설정하는 것을 권장합니다.                                                                                                                                                                                                                    | false |     |
 | `initContainers`                | [Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core) 배열                               | InitContainers는 메인 server 컨테이너가 시작되기 전에 실행할 init 컨테이너 목록입니다.<br />이름을 기준으로 연산자의 기본값과 머지됩니다.<br />이름이 동일한 경우.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | false |     |
 
@@ -579,9 +512,7 @@ PodTemplateSpec는 클러스터의 파드에 적용되는 파드 구성 재정�
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="secretkeyselector">
-  ## SecretKeySelector
-</div>
+## SecretKeySelector {#secretkeyselector}
 
 SecretKeySelector는 시크릿의 키를 선택하는 데 사용됩니다.
 
@@ -594,9 +525,7 @@ SecretKeySelector는 시크릿의 키를 선택하는 데 사용됩니다.
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-<div id="templatemeta">
-  ## TemplateMeta
-</div>
+## TemplateMeta {#templatemeta}
 
 TemplateMeta는 템플릿 객체에 지원되는 메타데이터 설정을 정의합니다.
 
@@ -610,9 +539,7 @@ TemplateMeta는 템플릿 객체에 지원되는 메타데이터 설정을 정�
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 * [VersionProbeTemplate](#versionprobetemplate)
 
-<div id="versionprobecontainer">
-  ## VersionProbeContainer
-</div>
+## VersionProbeContainer {#versionprobecontainer}
 
 VersionProbeContainer는 버전 프로브의 컨테이너 수준 재정의를 정의합니다.
 필드 이름과 JSON 태그는 `corev1.Container`와 일치하므로 SMP가 이름 기준으로 머지됩니다.
@@ -627,9 +554,7 @@ VersionProbeContainer는 버전 프로브의 컨테이너 수준 재정의를 �
 
 * [VersionProbePodSpec](#versionprobepodspec)
 
-<div id="versionprobejobspec">
-  ## VersionProbeJobSpec
-</div>
+## VersionProbeJobSpec {#versionprobejobspec}
 
 VersionProbeJobSpec는 버전 프로브에 대한 Job 수준의 재정의 설정을 정의합니다.
 
@@ -642,9 +567,7 @@ VersionProbeJobSpec는 버전 프로브에 대한 Job 수준의 재정의 설정
 
 * [VersionProbeTemplate](#versionprobetemplate)
 
-<div id="versionprobepodspec">
-  ## VersionProbePodSpec
-</div>
+## VersionProbePodSpec {#versionprobepodspec}
 
 VersionProbePodSpec는 버전 프로브의 파드 수준 재정의를 정의합니다.
 필드 이름과 JSON 태그는 전략적 머지 패치 호환성을 위해 corev1.PodSpec과 일치합니다.
@@ -660,9 +583,7 @@ VersionProbePodSpec는 버전 프로브의 파드 수준 재정의를 정의합�
 
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 
-<div id="versionprobepodtemplate">
-  ## VersionProbePodTemplate
-</div>
+## VersionProbePodTemplate {#versionprobepodtemplate}
 
 VersionProbePodTemplate는 버전 프로브 파드에 적용할 재정의 항목을 설명합니다.
 
@@ -675,9 +596,7 @@ VersionProbePodTemplate는 버전 프로브 파드에 적용할 재정의 항목
 
 * [VersionProbeJobSpec](#versionprobejobspec)
 
-<div id="versionprobetemplate">
-  ## VersionProbeTemplate
-</div>
+## VersionProbeTemplate {#versionprobetemplate}
 
 VersionProbeTemplate은 버전 감지 Job의 재정의 항목을 정의합니다.
 이 구조는 batchv1.JobTemplateSpec과 동일한 구조를 따르며, 지원되는 필드만 노출합니다.

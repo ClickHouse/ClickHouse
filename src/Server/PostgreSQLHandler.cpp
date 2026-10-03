@@ -76,6 +76,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsString default_session_user;
+    extern const ServerSettingsUInt64 handshake_timeout_milliseconds;
 }
 
 namespace ErrorCodes
@@ -450,9 +451,15 @@ PostgreSQLHandler::PostgreSQLHandler(
 
 void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 {
+    const std::shared_ptr<ReadBufferFromPocoSocket> previous_in = in;
+
     in = std::make_shared<ReadBufferFromPocoSocket>(socket, read_event);
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(socket, write_event);
     message_transport = std::make_shared<PostgreSQLProtocol::Messaging::MessageTransport>(in.get(), out.get());
+
+    /// The deadline lives in the buffer, so carry it over to the replacement.
+    if (previous_in)
+        in->adoptHandshakeDeadlineFrom(*previous_in);
 }
 
 void PostgreSQLHandler::run()
@@ -468,6 +475,10 @@ void PostgreSQLHandler::run()
     /// to be reachable from the whole server for as long as this one is open.
     server.context()->getProcessList().registerPostgreSQLCancellationKey(connection_id, secret_key, currentQueryId());
     SCOPE_EXIT({ server.context()->getProcessList().unregisterPostgreSQLCancellationKey(connection_id, secret_key); });
+
+    /// The listener leaves this socket without a receive timeout, so nothing else bounds a peer
+    /// that connects and says nothing.
+    in->setHandshakeTimeout(server.context()->getServerSettings()[ServerSetting::handshake_timeout_milliseconds]);
 
     try
     {
@@ -628,6 +639,8 @@ bool PostgreSQLHandler::startup()
     }
 
     authentication_manager.authenticate(user_name, *session, *message_transport, socket().peerAddress());
+
+    in->clearHandshakeTimeout();
 
     try
     {
