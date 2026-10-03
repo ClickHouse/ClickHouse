@@ -68,6 +68,9 @@ public:
       * final - choose to merge even a single part - that is, allow to merge one part "with itself",
       * but if setting optimize_skip_merged_partitions is true than single part with level > 0
       * and without expired TTL won't be merged with itself.
+      * may_assign_ttl_merge - for a table where `rowTTLNeedsWholePartitionMerge` holds, the merge is assigned as a
+      * `TTLDelete` merge, so that it deletes rows by row TTL, if the parts have TTL to apply, merges with TTL
+      * may run and the merge covers the partition. Otherwise it keeps the expired rows.
       */
     std::expected<MergeSelectorChoices, SelectMergeFailure> selectAllPartsToMergeWithinPartition(
         const StorageMetadataPtr & metadata_snapshot,
@@ -75,7 +78,8 @@ public:
         const MergePredicatePtr & merge_predicate,
         const String & partition_id,
         bool final,
-        bool optimize_skip_merged_partitions);
+        bool optimize_skip_merged_partitions,
+        bool may_assign_ttl_merge);
 
     /** Creates a task to merge parts.
       * If `reservation != nullptr`, now and then reduces the size of the reserved space
@@ -181,6 +185,7 @@ MergeSelectorChoices chooseMergesFrom(
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
+    bool row_ttl_needs_whole_partition,
     time_t current_time,
     const LoggerPtr & log);
 

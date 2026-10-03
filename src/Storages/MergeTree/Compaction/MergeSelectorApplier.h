@@ -49,6 +49,7 @@ public:
         const PartitionIdToTTLs & next_delete_times,
         const PartitionIdToTTLs & next_recompress_times,
         bool can_use_ttl_merges,
+        bool row_ttl_needs_whole_partition,
         time_t current_time) const;
 };
 

@@ -9,6 +9,7 @@
 
 #include <Common/logger_useful.h>
 
+#include <algorithm>
 #include <limits>
 
 namespace DB
@@ -51,28 +52,180 @@ struct ChooseContext
     const PartitionIdToTTLs & next_recompress_times;
     const time_t current_time;
     const bool aggressive;
+    /// See `rowTTLNeedsWholePartitionMerge`.
+    const bool row_ttl_needs_whole_partition;
 };
+
+MergeSelectorChoice createChoice(const ChooseContext & ctx, PartsRange && parts, MergeType merge_type)
+{
+    const bool apply_patch_parts = ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
+    PartsRange patch_parts = apply_patch_parts ? ctx.predicate.getPatchesToApplyOnMerge(parts) : PartsRange{};
+    return MergeSelectorChoice{std::move(parts), std::move(patch_parts), merge_type};
+}
 
 MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, MergeType type)
 {
-    auto create_choice = [&](PartsRange && parts, MergeType merge_type)
-    {
-        const bool apply_patch_parts = ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
-        PartsRange patch_parts = apply_patch_parts ? ctx.predicate.getPatchesToApplyOnMerge(parts) : PartsRange{};
-        return MergeSelectorChoice{std::move(parts), std::move(patch_parts), merge_type};
-    };
-
     MergeSelectorChoices choices;
     choices.reserve(ranges.size());
 
     for (auto & range : ranges)
-        choices.push_back(create_choice(std::move(range), type));
+        choices.push_back(createChoice(ctx, std::move(range), type));
+
+    return choices;
+}
+
+MergeSelectorChoices tryChooseRecompressTTLMerge(const ChooseContext & ctx)
+{
+    if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyRecompressionTTL())
+    {
+        TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time);
+
+        if (auto merge_ranges = recompress_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter);
+            !merge_ranges.empty())
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLRecompress);
+    }
+
+    return {};
+}
+
+/// For a table where `rowTTLNeedsWholePartitionMerge` holds. `MergeTask` deletes rows by row TTL only in `TTLDrop` and
+/// `TTLDelete` merges, so every such merge of the table, the ones for column TTL included, is assigned here, and only
+/// for a range that holds every part of its partition.
+MergeSelectorChoices tryChooseWholePartitionTTLMerge(const ChooseContext & ctx)
+{
+    struct Candidate
+    {
+        const PartsRange * range{nullptr};
+        MergeType type{MergeType::TTLDelete};
+        time_t due{0};
+    };
+
+    const bool ttl_only_drop_parts = ctx.merge_tree_settings[MergeTreeSetting::ttl_only_drop_parts];
+    const size_t max_parts = ctx.merge_tree_settings[MergeTreeSetting::max_parts_to_merge_at_once];
+    /// A `TTLDrop` merge of such parts deletes every row, so it writes nothing, see `MergeTask`.
+    const bool drop_writes_nothing = ctx.metadata_snapshot.hasOnlyRowsTTL();
+
+    const auto earliest = [](time_t current, time_t candidate) { return current ? std::min(current, candidate) : candidate; };
+
+    std::vector<Candidate> candidates;
+    for (const auto & range : ctx.ranges)
+    {
+        chassert(!range.empty());
+        const String & partition_id = range.front().info.getPartitionId();
+
+        /// The partition statistics count every part of the partition, the ones that are being merged or mutated
+        /// included, so a range with as many parts holds all of them.
+        const auto stats = ctx.partitions_stats.find(partition_id);
+        if (stats == ctx.partitions_stats.end() || stats->second.part_count != range.size())
+            continue;
+
+        bool all_parts_expired{true};
+        bool avoid_merges{false};
+        time_t rows_due{0};
+        time_t columns_due{0};
+        for (const auto & part : range)
+        {
+            avoid_merges = avoid_merges || part.is_in_volume_where_merges_avoid;
+
+            const auto & ttl = part.general_ttl_info;
+            if (!ttl || !ttl->has_any_non_finished_ttls || !ttl->part_max_ttl || ttl->part_max_ttl > ctx.current_time)
+                all_parts_expired = false;
+
+            if (ttl && ttl->has_any_non_finished_row_ttls && ttl->part_min_ttl && ttl->part_min_ttl <= ctx.current_time)
+                rows_due = earliest(rows_due, ttl->part_min_ttl);
+
+            if (ttl && ttl->has_any_non_finished_column_ttls && ttl->column_min_ttl && ttl->column_min_ttl <= ctx.current_time)
+                columns_due = earliest(columns_due, ttl->column_min_ttl);
+        }
+
+        /// Like `TTLPartDropMergeSelector`, not postponed, and not limited in size or number of parts if the merge
+        /// writes nothing.
+        if (all_parts_expired && (drop_writes_nothing || !max_parts || range.size() <= max_parts))
+        {
+            candidates.push_back({&range, MergeType::TTLDrop, earliest(rows_due, columns_due)});
+            continue;
+        }
+
+        time_t due = columns_due;
+        if (!ttl_only_drop_parts && rows_due)
+            due = earliest(due, rows_due);
+
+        if (!due || avoid_merges)
+            continue;
+
+        if (auto it = ctx.next_delete_times.find(partition_id);
+            it != ctx.next_delete_times.end() && it->second > ctx.current_time)
+            continue;
+
+        if (max_parts && range.size() > max_parts)
+            continue;
+
+        candidates.push_back({&range, MergeType::TTLDelete, due});
+    }
+
+    /// The partition whose TTL expired first goes first, as in `ITTLMergeSelector`.
+    std::ranges::stable_sort(candidates, {}, &Candidate::due);
+
+    MergeSelectorChoices choices;
+    for (const auto & candidate : candidates)
+    {
+        if (choices.size() == ctx.merge_constraints.size())
+            break;
+
+        const auto & range = *candidate.range;
+        const String & partition_id = range.front().info.getPartitionId();
+
+        if (!(candidate.type == MergeType::TTLDrop && drop_writes_nothing))
+        {
+            const auto & constraint = ctx.merge_constraints[choices.size()];
+            size_t bytes{0};
+            size_t rows{0};
+            for (const auto & part : range)
+            {
+                bytes += part.size;
+                rows += part.rows;
+            }
+
+            if (bytes > constraint.max_size_bytes || rows > constraint.max_size_rows)
+            {
+                LOG_INFO(LogFrequencyLimiter(getLogger("MergeSelectorApplier"), 600),
+                    "TTL of partition {} of table {} is due, but a merge of the whole partition ({} parts, {} bytes, {} rows) "
+                    "exceeds the current limit ({} bytes, {} rows), see the setting `replacing_ttl_whole_partition_only`",
+                    partition_id, ctx.storage_id.getNameForLogs(), range.size(), bytes, rows, constraint.max_size_bytes, constraint.max_size_rows);
+
+                continue;
+            }
+        }
+
+        /// A replica may not have all parts of the partition yet.
+        if (auto covered = ctx.predicate.checkRangeCoversPartition(range); !covered.has_value())
+        {
+            LOG_TRACE(LogFrequencyLimiter(getLogger("MergeSelectorApplier"), 60),
+                "Cannot assign a TTL merge of the whole partition {} of table {}: {}",
+                partition_id, ctx.storage_id.getNameForLogs(), covered.error().text);
+            continue;
+        }
+
+        if (ctx.range_filter && !ctx.range_filter(range))
+            continue;
+
+        choices.push_back(createChoice(ctx, PartsRange(range), candidate.type));
+    }
 
     return choices;
 }
 
 MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
 {
+    if (ctx.row_ttl_needs_whole_partition)
+    {
+        if (auto choices = tryChooseWholePartitionTTLMerge(ctx); !choices.empty())
+            return choices;
+
+        /// A recompression merge keeps the expired rows, see `MergeTask`.
+        return tryChooseRecompressTTLMerge(ctx);
+    }
+
     /// Drop parts - 1 priority
     if (!ctx.merge_constraints.empty())
     {
@@ -107,15 +260,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     }
 
     /// Recompression - 4 priority
-    if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyRecompressionTTL())
-    {
-        TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time);
-
-        if (auto merge_ranges = recompress_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
-            return pack(ctx, std::move(merge_ranges), MergeType::TTLRecompress);
-    }
-
-    return {};
+    return tryChooseRecompressTTLMerge(ctx);
 }
 
 SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
@@ -213,6 +358,7 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
+    bool row_ttl_needs_whole_partition,
     time_t current_time) const
 {
     ChooseContext ctx{
@@ -228,6 +374,7 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .next_recompress_times = next_recompress_times,
         .current_time = current_time,
         .aggressive = aggressive,
+        .row_ttl_needs_whole_partition = row_ttl_needs_whole_partition,
     };
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && can_use_ttl_merges)

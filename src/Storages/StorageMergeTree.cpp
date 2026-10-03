@@ -2045,7 +2045,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 merge_predicate,
                 partition_id,
                 final,
-                optimize_skip_merged_partitions);
+                optimize_skip_merged_partitions,
+                /*may_assign_ttl_merge=*/ true);
 
             if (!select_result.has_value())
             {

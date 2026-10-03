@@ -1,7 +1,9 @@
+#include <algorithm>
 #include <cstddef>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/ReplacingTTLCoverage.h>
 
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/quoteString.h>
@@ -46,6 +48,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_max_bytes_limit_for_min_age_to_force_merge;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_optimize_entire_partition;
     extern const MergeTreeSettingsBool apply_patches_on_merge;
+    extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
 }
 
 namespace
@@ -187,6 +190,19 @@ std::optional<time_t> getTTLMergeTime(const PartitionIdToTTLs & times, const Str
     return it->second;
 }
 
+/// Whether a merge of `parts` would delete rows or clear columns by TTL, as `MergeTask` decides it.
+bool hasTTLToApply(const PartsRange & parts, time_t current_time)
+{
+    return std::ranges::any_of(parts, [current_time](const PartProperties & part)
+    {
+        if (!part.all_ttl_calculated_if_any)
+            return true;
+
+        const auto & ttl = part.general_ttl_info;
+        return ttl && ttl->has_any_non_finished_ttls && ttl->part_min_ttl && ttl->part_min_ttl <= current_time;
+    });
+}
+
 }
 
 void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices & choices, const MergeTreeSettingsPtr & settings, time_t current_time)
@@ -289,6 +305,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
 
     const auto & partitions_stats = collected.partitions_stats;
     const auto ranges_by_partitions = combineByPartitions(std::move(ranges));
+    const bool row_ttl_needs_whole_partition = rowTTLNeedsWholePartitionMerge(*metadata_snapshot, data.merging_params, *settings);
 
     PartitionIdsHint partitions_hint;
     for (const auto & [partition, ranges_in_partition] : ranges_by_partitions)
@@ -300,7 +317,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
             selector, *merge_predicate,
             ranges_in_partition, partitions_stats, metadata_snapshot, settings,
             next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
-            can_use_ttl_merges, current_time, log);
+            can_use_ttl_merges, row_ttl_needs_whole_partition, current_time, log);
 
         const String & partition_id = ranges_in_partition.front().front().info.getPartitionId();
 
@@ -356,11 +373,12 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     }
 
     const auto & partitions_stats = collected.partitions_stats;
+    const bool row_ttl_needs_whole_partition = rowTTLNeedsWholePartitionMerge(*metadata_snapshot, data.merging_params, *settings);
     auto merge_choices = chooseMergesFrom(
         selector, *merge_predicate,
         ranges, partitions_stats, metadata_snapshot, settings,
         next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
-        can_use_ttl_merges, current_time, log);
+        can_use_ttl_merges, row_ttl_needs_whole_partition, current_time, log);
 
     if (!merge_choices.empty())
     {
@@ -370,13 +388,22 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
 
     if (auto best = getBestPartitionToOptimizeEntire(selector.merge_constraints[0].max_size_bytes, context, settings, partitions_stats, log); !best.empty())
     {
-        return selectAllPartsToMergeWithinPartition(
+        /// A merge with TTL only where TTL selectors could assign one: merges with TTL may run and
+        /// the partition is not postponed.
+        const bool may_assign_ttl_merge = selector.merge_with_ttl_allowed && can_use_ttl_merges && getTTLMergeTime(next_delete_ttl_merge_times_by_partition, best).value_or(0) <= current_time;
+        auto choices = selectAllPartsToMergeWithinPartition(
             metadata_snapshot,
             parts_collector,
             merge_predicate,
             /*partition_id=*/best,
             /*final=*/true,
-            /*optimize_skip_merged_partitions=*/true);
+            /*optimize_skip_merged_partitions=*/true,
+            may_assign_ttl_merge);
+
+        if (choices.has_value())
+            updateTTLMergeTimes(*choices, settings, current_time);
+
+        return choices;
     }
 
     return std::unexpected(SelectMergeFailure{
@@ -391,7 +418,8 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     const MergePredicatePtr & merge_predicate,
     const String & partition_id,
     bool final,
-    bool optimize_skip_merged_partitions)
+    bool optimize_skip_merged_partitions,
+    bool may_assign_ttl_merge)
 {
     /// time is not important in this context, since the parts will not be passed through the merge selector.
     const time_t current_time = std::time(nullptr);
@@ -424,9 +452,24 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         });
     }
 
+    /// See `rowTTLNeedsWholePartitionMerge`: a merge deletes rows by such a row TTL only if it is a `TTLDrop` or
+    /// `TTLDelete` merge. This merge includes the whole partition, so assign it as a `TTLDelete` merge if the
+    /// partition has something to delete and merges with TTL may run, or it would keep the expired rows.
+    MergeType merge_type = MergeType::Regular;
+    const auto data_settings = data.getSettings();
+    if (may_assign_ttl_merge && !ttl_merges_blocker.isCancelled() && (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool] > 0
+        && rowTTLNeedsWholePartitionMerge(*metadata_snapshot, data.merging_params, *data_settings) && hasTTLToApply(parts, current_time))
+    {
+        if (auto covered = merge_predicate->checkRangeCoversPartition(parts); covered.has_value())
+            merge_type = MergeType::TTLDelete;
+        else
+            LOG_INFO(LogFrequencyLimiter(log, 60), "The merge of partition {} keeps the rows with expired TTL: {}",
+            partition_id, covered.error().text);
+    }
+
     /// If final, optimize_skip_merged_partitions is true and we have only one part in partition with level > 0
     /// than we don't select it to merge. But if there are some expired TTL then merge is needed
-    if (final && optimize_skip_merged_partitions && parts.size() == 1)
+    if (final && optimize_skip_merged_partitions && parts.size() == 1 && merge_type == MergeType::Regular)
     {
         const PartProperties & part = parts.front();
 
@@ -481,7 +524,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     auto patch_parts = apply_patch_parts ? merge_predicate->getPatchesToApplyOnMerge(parts) : PartsRange{};
 
     LOG_TRACE(log, "Selected {} parts from {} to {}. Will apply {} patch parts", parts.size(), parts.front().name, parts.back().name, patch_parts.size());
-    return MergeSelectorChoices{{std::move(parts), std::move(patch_parts), MergeType::Regular, final}};
+    return MergeSelectorChoices{{std::move(parts), std::move(patch_parts), merge_type, final}};
 }
 
 /// parts should be sorted.
@@ -757,6 +800,7 @@ MergeSelectorChoices chooseMergesFrom(
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
+    bool row_ttl_needs_whole_partition,
     time_t current_time,
     const LoggerPtr & log)
 {
@@ -765,7 +809,7 @@ MergeSelectorChoices chooseMergesFrom(
     auto choices = selector.chooseMergesFrom(
         ranges, partitions_stats, predicate, metadata_snapshot,
         data_settings, next_delete_times, next_recompress_times,
-        can_use_ttl_merges, current_time);
+        can_use_ttl_merges, row_ttl_needs_whole_partition, current_time);
 
     if (!choices.empty())
     {
