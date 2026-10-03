@@ -1087,7 +1087,7 @@ bool SerializationVariant::tryDeserializeTextEscapedOrRawImpl(
     /// We don't have enough data in buffer to check if it's a null.
     /// Use PeekableReadBuffer to make a checkpoint before checking null
     /// representation and rollback if check was failed.
-    PeekableReadBuffer peekable_buf(istr, true);
+    PeekableReadBuffer peekable_buf(istr);
     peekable_buf.setCheckpoint();
     if (checkString(null_representation, peekable_buf)
         && (peekable_buf.eof() || *peekable_buf.position() == '\t' || *peekable_buf.position() == '\n'

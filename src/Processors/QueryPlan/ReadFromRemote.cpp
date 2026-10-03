@@ -32,6 +32,7 @@
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnConst.h>
@@ -324,6 +325,16 @@ ASTPtr tryBuildAdditionalFilterAST(
         if (WhichDataType(node->result_type).isFunction()
             || (node->type == ActionsDAG::ActionType::FUNCTION
                 && typeid_cast<const FunctionCapture *>(node->function_base.get())))
+        {
+            node_to_ast[node] = nullptr;
+            stack.pop();
+            continue;
+        }
+
+        /// An `IgnoreSet` call has no set operand, so it cannot be written back as IN syntax.
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && isNameOfInFunction(node->function_base->getName())
+            && node->function_base->getName().ends_with("IgnoreSet"))
         {
             node_to_ast[node] = nullptr;
             stack.pop();
@@ -726,7 +737,7 @@ void ReadFromRemote::addLazyPipe(
         // has no local storage and reaches a lazy shard only via the failpoint, so it always reads remotely.
         if (!use_delayed_remote_source && !my_table_func_ptr)
         {
-            const auto replicated_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(my_storage);
+            const auto replicated_storage = castStorage<StorageReplicatedMergeTree>(my_storage, DeferredTable::Load);
             if (!replicated_storage)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected lazy remote read from a non-replicated table: {}", my_storage->getName());

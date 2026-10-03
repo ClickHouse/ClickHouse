@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
+#include <cstring>
 #include <type_traits>
 
 #include <Functions/IFunction.h>
@@ -80,6 +82,114 @@ struct CountEqualAction
 /// How to perform the search depending on the arguments data types.
 namespace Impl
 {
+template <typename T>
+concept ArrayIndexNumeric = std::is_integral_v<T> || std::is_floating_point_v<T>;
+
+/// Constant, exactly representable needles in non-nullable numeric arrays.
+template <typename ConcreteAction, ArrayIndexNumeric T>
+    requires (std::is_same_v<ConcreteAction, HasAction> || std::is_same_v<ConcreteAction, IndexOfAction>)
+struct NumericArrayIndex
+{
+private:
+    using ResultType = typename ConcreteAction::ResultType;
+
+    static ALWAYS_INLINE ResultType findScalar(const T * data, size_t size, T value, size_t offset = 0)
+    {
+        ResultType result = 0;
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (data[i] == value)
+            {
+                ConcreteAction::apply(result, offset + i);
+                break;
+            }
+        }
+        return result;
+    }
+
+    static ALWAYS_INLINE ResultType findInBlocks(const T * data, size_t size, T value, size_t offset)
+    {
+        constexpr size_t elements_per_block = 64 / sizeof(T);
+        if (size < elements_per_block)
+            return findScalar(data, size, value, offset);
+
+        if constexpr (sizeof(T) == 1 && std::is_integral_v<T>)
+        {
+            const auto * found = static_cast<const T *>(std::memchr(data, static_cast<unsigned char>(value), size));
+            ResultType result = 0;
+            if (found)
+                ConcreteAction::apply(result, offset + static_cast<size_t>(found - data));
+            return result;
+        }
+
+        size_t i = 0;
+        for (; size - i >= elements_per_block; i += elements_per_block)
+        {
+            unsigned found = 0;
+            for (size_t j = 0; j < elements_per_block; ++j)
+                found |= static_cast<unsigned>(data[i + j] == value);
+
+            if (found)
+            {
+#if defined(__x86_64__)
+                /// On x86 the rescan of a whole block becomes branchless code that reuses the comparisons above.
+                if constexpr (std::is_same_v<ConcreteAction, HasAction>)
+                    return 1;
+                else
+                    return findScalar(data + i, elements_per_block, value, offset + i);
+#else
+                /// Elsewhere it keeps the comparisons above from being vectorized for 4- and 8-byte elements
+                /// (checked on ARM), so only `break` here and rescan after the loop.
+                break;
+#endif
+            }
+        }
+
+        if constexpr (std::is_same_v<ConcreteAction, HasAction>)
+            if (size - i >= elements_per_block)
+                return 1;
+
+        /// The first match, if any, is in the block at `i` or, if no block matched, in the tail.
+        return findScalar(data + i, std::min(size - i, elements_per_block), value, offset + i);
+    }
+
+    static ALWAYS_INLINE ResultType find(const T * data, size_t size, T value)
+    {
+        /// Keep early matches cheap before the branchless block scan.
+        constexpr size_t scalar_prefix_size = 8;
+        const size_t prefix_size = std::min(size, scalar_prefix_size);
+
+        const auto result = findScalar(data, prefix_size, value);
+        if (result || prefix_size == size)
+            return result;
+
+        return findInBlocks(data + prefix_size, size - prefix_size, value, prefix_size);
+    }
+
+public:
+    static void vector(
+        const PaddedPODArray<T> & data,
+        const ColumnArray::Offsets & offsets,
+        T value,
+        PaddedPODArray<ResultType> & result)
+    {
+        const size_t size = offsets.size();
+        result.resize(size);
+
+        const T * __restrict raw_data = data.data();
+        const ColumnArray::Offset * __restrict raw_offsets = offsets.data();
+        ResultType * __restrict raw_result = result.data();
+
+        ColumnArray::Offset current_offset = 0;
+        for (size_t i = 0; i < size; ++i)
+        {
+            const ColumnArray::Offset next_offset = raw_offsets[i];
+            raw_result[i] = find(raw_data + current_offset, next_offset - current_offset, value);
+            current_offset = next_offset;
+        }
+    }
+};
+
 template <
     typename ConcreteAction,
     bool RightArgIsConstant = false,
@@ -787,12 +897,16 @@ private:
 
     ColumnPtr executeOnNonNullable(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
-        ColumnPtr res;
-        if (!((res = executeNothing(arguments))
-              || (res = executeIntegral<INTEGRAL_PACK>(arguments))
-              || (res = executeConst(arguments, result_type))
-              || (res = executeString(arguments))
-              || (res = executeGeneric(arguments))))
+        ColumnPtr res = executeNothing(arguments);
+        if (!res)
+            res = executeIntegral<INTEGRAL_PACK>(arguments);
+        if (!res)
+            res = executeConst(arguments, result_type);
+        if (!res)
+            res = executeString(arguments);
+        if (!res)
+            res = executeGeneric(arguments);
+        if (!res)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
 
         return res;
@@ -886,6 +1000,30 @@ private:
             return false;
 
         if (const auto * item_arg_const = checkAndGetColumnConst<ColumnVector<Resulting>>(&data.right))
+        {
+            if constexpr (
+                Impl::ArrayIndexNumeric<Initial>
+                && (std::is_same_v<ConcreteAction, HasAction> || std::is_same_v<ConcreteAction, IndexOfAction>))
+            {
+                if (!data.null_maps.first && !data.null_maps.second)
+                {
+                    const auto needle = item_arg_const->template getValue<Resulting>();
+                    Initial converted_needle{};
+                    if (isNaN(needle) || !accurate::convertNumeric<Resulting, Initial>(needle, converted_needle))
+                    {
+                        result.getData().resize_fill(data.offsets.size());
+                        return true;
+                    }
+
+                    Impl::NumericArrayIndex<ConcreteAction, Initial>::vector(
+                        left_typed->getData(),
+                        data.offsets,
+                        converted_needle,
+                        result.getData());
+                    return true;
+                }
+            }
+
             Impl::Main<ConcreteAction, true, Initial, Resulting>::vector(
                 left_typed->getData(),
                 data.offsets,
@@ -893,6 +1031,7 @@ private:
                 result.getData(),
                 data.null_maps.first,
                 nullptr);
+        }
         else if (const auto * item_arg_vector = checkAndGetColumn<ColumnVector<Resulting>>(&data.right))
             Impl::Main<ConcreteAction, false, Initial, Resulting>::vector(
                 left_typed->getData(),
