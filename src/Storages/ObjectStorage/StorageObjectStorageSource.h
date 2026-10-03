@@ -364,6 +364,25 @@ public:
 
         size_t fileSizeInArchive() const override { return file_info.uncompressed_size; }
 
+        ObjectInfoPtr clone() const override
+        {
+            auto copied_file_info = file_info;
+            auto cloned = std::make_shared<ObjectInfoInArchive>(
+                archive_object, path_in_archive, archive_reader, std::move(copied_file_info));
+            /// `RelativePathWithMetadata` has a user-declared destructor, so its implicit
+            /// assignment operator is ill-formed under `-Werror`. Copy the fields instead.
+            cloned->relative_path_with_metadata.relative_path = relative_path_with_metadata.relative_path;
+            cloned->relative_path_with_metadata.read_source_index = relative_path_with_metadata.read_source_index;
+            cloned->relative_path_with_metadata.path_for_glob_matching = relative_path_with_metadata.path_for_glob_matching;
+            cloned->relative_path_with_metadata.path_for_deduplication = relative_path_with_metadata.path_for_deduplication;
+            cloned->relative_path_with_metadata.derive_file_name_from_url_path = relative_path_with_metadata.derive_file_name_from_url_path;
+            cloned->relative_path_with_metadata.metadata = relative_path_with_metadata.metadata;
+            cloned->data_lake_metadata = data_lake_metadata;
+            cloned->file_bucket_info = file_bucket_info;
+            cloned->rows_to_read = rows_to_read;
+            return cloned;
+        }
+
         const ObjectInfoPtr archive_object;
         const std::string path_in_archive;
         const std::shared_ptr<IArchiveReader> archive_reader;

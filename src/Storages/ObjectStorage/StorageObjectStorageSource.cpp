@@ -214,6 +214,7 @@ namespace Setting
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool s3_validate_etag_on_read;
+    extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 }
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
@@ -239,7 +240,8 @@ static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerP
 /// number of rows the file contributes WITHOUT touching the file itself, so both
 /// directions are unsafe: a count cached before a delete resurfaces deleted rows, and a
 /// count cached after it goes stale once the deletes are compacted away. Such files must
-/// neither use nor populate the cache.
+/// neither use nor populate the cache. `need_only_count` stays enabled when `DeletionVectorTransform`
+/// applies the deletes. Streaming position deletes and equality deletes disable it.
 static bool hasAttachedDeletes(const ObjectInfo & object_info)
 {
 #if USE_AVRO
@@ -251,6 +253,13 @@ static bool hasAttachedDeletes(const ObjectInfo & object_info)
 #endif
     return object_info.data_lake_metadata && object_info.data_lake_metadata->excluded_rows
         && object_info.data_lake_metadata->excluded_rows->size() > 0;
+}
+
+/// Count-from-files cache key is data-file identity only. Skip when deletes can change the
+/// contributed row count, when the task is a bucket subset, or when only some rows are requested.
+static bool canUseCountFromFilesCache(const ObjectInfo & object_info)
+{
+    return !hasAttachedDeletes(object_info) && !object_info.file_bucket_info && !object_info.rows_to_read;
 }
 
 static bool readsIdentityPartitionColumn(
@@ -1064,8 +1073,7 @@ Chunk StorageObjectStorageSource::generate()
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && !format_filter_info->filter_actions_dag
-            && !hasAttachedDeletes(*reader.getObjectInfo())
-            && !reader.getObjectInfo()->rows_to_read)
+            && canUseCountFromFilesCache(*reader.getObjectInfo()))
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -1255,16 +1263,20 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         return schema_cache->tryGetNumRows(cache_key, get_last_mod_time);
     };
 
-    /// Row-level delete transformers need real row values: an equality-delete FilterTransform
-    /// evaluates its predicate against column values, but the count-only fast path
-    /// (`input_format->needOnlyCount()`) makes the format emit synthetic chunks filled with
-    /// default values, so the predicate would filter the wrong rows and count() would come
-    /// back wrong. Position deletes and deletion vectors filter by row index, which synthetic
-    /// chunks do preserve, but they would still build the huge synthetic chunks only to drop
-    /// rows from them, so the fast path is disabled for any attached deletes. This also
-    /// covers the count-from-cache shortcut below: a cached per-file row count is keyed only
-    /// by path + mtime, both untouched by delete files, so it must not be used either.
-    need_only_count = need_only_count && !hasAttachedDeletes(*object_info);
+    /// Equality deletes need column values. Streaming position deletes (`IcebergStreamingPositionDeleteTransform`)
+    /// build a dense filter per input chunk, so a `need_only_count` row-group chunk would allocate one filter
+    /// of that length. `DeletionVectorTransform` already resizes const count chunks from the bitmap, so
+    /// deletion vectors and `use_roaring_bitmap_iceberg_positional_deletes` keep `need_only_count`.
+#if USE_AVRO
+    if (const auto * iceberg_object = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
+    {
+        const bool streaming_position_deletes = !iceberg_object->info.position_deletes_objects.empty()
+            && !iceberg_object->info.deletion_vector.has_value()
+            && !context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes];
+        if (!iceberg_object->info.equality_deletes_objects.empty() || streaming_position_deletes)
+            need_only_count = false;
+    }
+#endif
 
     /// The count-from-cache shortcut builds a `ConstChunkGenerator` without opening the read buffer, so a
     /// requested `_headers` virtual column (the HTTP response headers of the data `GET`) would have to fall
@@ -1272,9 +1284,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// response. Skip the shortcut when `_headers` is requested so the real `GET` headers are used.
     const bool headers_requested = read_from_format_info.requested_virtual_columns.contains("_headers");
 
-    std::optional<size_t> num_rows_from_cache
-        = need_only_count && !headers_requested && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
-        ? try_get_num_rows_from_cache() : std::nullopt;
+    const bool can_use_count_cache = need_only_count && !headers_requested
+        && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
+        && canUseCountFromFilesCache(*object_info);
+
+    std::optional<size_t> num_rows_from_cache = can_use_count_cache ? try_get_num_rows_from_cache() : std::nullopt;
 
     if (num_rows_from_cache)
     {
