@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Common/typeid_cast.h>
 #include <memory>
 
@@ -34,6 +35,7 @@ public:
         /// Steps with specialized implementation rules.
         if (typeid_cast<const AggregatingStep *>(step) != nullptr
             || typeid_cast<const JoinStepLogical *>(step) != nullptr
+            || typeid_cast<const WindowStep *>(step) != nullptr
             || typeid_cast<const ReadFromMergeTree *>(step) != nullptr)
             return false;
         /// A top-N sort is handled by `TopNImplementation`; any other sort left in the memo

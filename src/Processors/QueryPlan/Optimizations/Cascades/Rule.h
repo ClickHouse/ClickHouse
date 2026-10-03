@@ -57,6 +57,7 @@ OptimizationRulePtr createReplicatedReadImplementation();
 OptimizationRulePtr createReplicatedSubplanImplementation();
 OptimizationRulePtr createTopNImplementation();
 OptimizationRulePtr createTwoStageTopN();
+OptimizationRulePtr createWindowImplementation();
 OptimizationRulePtr createDefaultImplementation();
 OptimizationRulePtr createDistributionPassthrough();
 OptimizationRulePtr createDistributionEnforcer();
