@@ -881,7 +881,10 @@ bool StorageFileLog::streamToViews()
     }
 
     /// Nothing to read until the watcher events are applied, e.g. when only files that the glob excludes changed.
-    if (std::ranges::all_of(file_infos.context_by_name, [](const auto & file) { return file.second.status == FileStatus::NO_CHANGE; }))
+    /// A file that could not be opened is retried by `openFilesAndSetPos`.
+    if (std::ranges::all_of(
+            file_infos.context_by_name,
+            [](const auto & file) { return file.second.status == FileStatus::NO_CHANGE && !file.second.open_failed; }))
         return updateFileInfos();
 
     // Create an INSERT query for streaming data
