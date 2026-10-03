@@ -34,6 +34,16 @@ public:
         return "TableProxy";
     }
 
+    /// Same forwarding as `getInMemoryMetadataPtr` below, for the same reason: the proxy's own
+    /// metadata is seeded from the `CREATE TABLE` query and never carries a unique key.
+    bool hasUniqueKey() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->hasUniqueKey();
+        return IStorage::hasUniqueKey();
+    }
+
     /// Forward the metadata query to the nested storage once it has been materialized.
     /// `IStorage::metadata` on the proxy itself is only seeded with the columns from the
     /// `CREATE TABLE` query and is updated lazily in `StorageProxy::alter` *after*
@@ -55,11 +65,13 @@ public:
     /// The underlying storage if it has already been materialized, and nullptr otherwise. Lets a caller
     /// that recognizes an engine by downcasting see through this stand-in without loading a table that
     /// has not been accessed yet.
-    StoragePtr tryGetNested() const
+    StoragePtr tryGetNested() const override
     {
         std::lock_guard lock{nested_mutex};
         return nested;
     }
+
+    bool isLazyStandIn() const override { return true; }
 
     /// The same, but never waits: `nested_mutex` is held for the whole first-access materialization,
     /// which is unbounded (it reads the data parts and starts the table up). A caller that holds a
@@ -256,17 +268,6 @@ inline StoragePtr unwrapMaterializedLazyTable(const StoragePtr & storage, bool w
         if (auto nested = wait_for_materialization ? proxy->tryGetNested() : proxy->tryGetNestedWithoutWaiting())
             return nested;
     }
-
-    return storage;
-}
-
-/// The same, for a caller that is going to touch the data anyway and so can afford to materialize the
-/// table: besides defeating a downcast, an untouched stand-in also answers metadata queries from the
-/// columns cached out of the `CREATE TABLE` query alone, without the projections and the indices.
-inline StoragePtr materializeLazyTable(const StoragePtr & storage)
-{
-    if (const auto * proxy = dynamic_cast<const StorageTableProxy *>(storage.get()))
-        return proxy->getNested();
 
     return storage;
 }

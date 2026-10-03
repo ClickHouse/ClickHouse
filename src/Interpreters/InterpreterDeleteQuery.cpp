@@ -26,6 +26,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageTableProxy.h>
 
@@ -102,12 +103,15 @@ BlockIO InterpreterDeleteQuery::execute()
         && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
 
+    if (delete_query.cluster.empty())
+        checkNoRowPolicyForSetOperands(query_ptr, table_id.database_name, getContext());
+
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = true}, std::move(guard));
     }
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
@@ -116,7 +120,7 @@ BlockIO InterpreterDeleteQuery::execute()
     /// defeats a downcast to the engine and answers metadata queries from the columns cached out of the
     /// `CREATE TABLE` query alone - without the projections, which the guard below has to see. A
     /// `DELETE` materializes the table in any case, so resolve it to the real storage right away.
-    StoragePtr engine_table = materializeLazyTable(table);
+    StoragePtr engine_table = resolveStorageProxyLoading(table);
 
     /// For DataLake tables with lazy initialization (e.g. from DatabaseDataLake / REST catalog),
     /// metadata is not loaded until the first access.  Initialize it now so that
@@ -170,9 +174,8 @@ BlockIO InterpreterDeleteQuery::execute()
 
         if (metadata_snapshot->hasProjections())
         {
-            /// Note that the downcast is of the storage behind a possible lazy-load stand-in: otherwise
-            /// the guard is silently skipped and the `THROW` mode drops the projections instead.
-            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(engine_table.get()))
+            /// `MutateTask` treats THROW like DROP, so missing this check drops the projections.
+            if (const auto * merge_tree_data = castStorage<MergeTreeData>(engine_table, DeferredTable::Load).get())
                 if ((*merge_tree_data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::THROW)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "DELETE query is not allowed for table {} because as it has projections and setting "
@@ -198,6 +201,10 @@ BlockIO InterpreterDeleteQuery::execute()
 
             DDLQueryOnClusterParams params;
             params.access_to_check.emplace_back(AccessType::ALTER_DELETE, table_id.database_name, table_id.table_name);
+            params.additional_access_check = [captured_query_ptr = query_ptr, table_id, context = getContext()](const String &, bool throw_if_unresolved)
+            {
+                checkNoRowPolicyForSetOperands(captured_query_ptr, table_id.database_name, context, throw_if_unresolved);
+            };
             return executeDDLQueryOnCluster(query_ptr, getContext(), params);
         }
 

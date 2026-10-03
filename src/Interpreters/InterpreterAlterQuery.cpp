@@ -2,7 +2,10 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 
+#include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/Common/SQLSecurityDefs.h>
+#include <Access/User.h>
 #include <Backups/BackupsWorker.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
@@ -36,6 +39,7 @@
 #include <Storages/StorageKeeperMap.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -373,12 +377,12 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             /// A lazy-load stand-in that has not been materialized yet knows only the columns of the
             /// `CREATE TABLE` query and hides the engine from the downcast below, while `alter` below
             /// materializes it in any case. Prepare the commands against the real storage.
-            StoragePtr engine_table = materializeLazyTable(table);
+            StoragePtr engine_table = resolveStorageProxyLoading(table);
             auto metadata_snapshot = engine_table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
             alter_commands->validate(table, context);
 
             bool share_nested = true;
-            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(engine_table.get()))
+            if (auto * merge_tree = castStorage<MergeTreeData>(engine_table, DeferredTable::Load).get())
                 share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
@@ -393,7 +397,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 /// Validate against the real storage: `MutationsInterpreter` reads the MergeTree settings of
                 /// the table through a downcast, which a lazy-load stand-in defeats, and `mutate` below
                 /// materializes the stand-in in any case.
-                StoragePtr engine_table = materializeLazyTable(table);
+                StoragePtr engine_table = resolveStorageProxyLoading(table);
                 auto metadata_snapshot = engine_table->getInMemoryMetadataPtr(context, true);
                 engine_table->checkMutationIsPossible(*mutation_commands, settings);
                 /// Checked ahead of the full validation below, which repeats it, so that a
@@ -481,11 +485,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (table_id)
     {
         query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
-        table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+        /// Resolve once here so every branch below validates against the real structure instead of
+        /// the columns-only metadata a lazily loaded table reports.
+        table = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(table_id, getContext()));
     }
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
+        /// NOLINT(storage-cast): `table` is resolved above.
         if (table && table->as<StorageKeeperMap>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
 
@@ -501,8 +508,27 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             visitor.substituteDatabaseInTableFunctions(*alter.command_list);
         }
 
+        /// The hosts run the entry without the user, unless `distributed_ddl_use_initial_user_and_roles` is on,
+        /// so the view's SQL security is authorized here, which needs the view on this host.
+        if (modify_query && !table)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE,
+                "Table {}.{} does not exist on this host. `ALTER TABLE ... ON CLUSTER ... MODIFY QUERY` is authorized "
+                "on the initiator, so it must be run from a host that has the view",
+                backQuoteIfNeed(alter.getDatabase()), backQuoteIfNeed(alter.getTable()));
+
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
+        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
+        {
+            const auto & captured_alter = captured_query_ptr->as<const ASTAlterQuery &>();
+            const auto default_database = captured_alter.getDatabase().empty() ? cluster_default_database : captured_alter.getDatabase();
+            for (const auto & child : captured_alter.command_list->children)
+            {
+                const auto & command = child->as<const ASTAlterCommand &>();
+                if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
+                    checkNoRowPolicyForSetOperands(child, default_database, context, throw_if_unresolved);
+            }
+        };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
@@ -513,11 +539,22 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    bool is_mutation = false;
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
+        {
+            is_mutation = true;
+            checkNoRowPolicyForSetOperands(child, table_id.database_name, getContext());
+        }
+    }
+
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = is_mutation}, std::move(guard));
     }
 
 #if CLICKHOUSE_CLOUD
@@ -555,6 +592,24 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         // Expand CTE before filling default database
         ApplyWithSubqueryVisitor::visit(*modify_query);
+    }
+
+    /// The same for the expressions of the mutation commands, as `InterpreterUpdateQuery` does: the
+    /// context makes CTE expansion respect `enable_global_with_statement`, so a CTE name that is not
+    /// visible in a subquery is left there as a table name and is qualified below.
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto * command = child->as<ASTAlterCommand>();
+        if (!command || (command->type != ASTAlterCommand::UPDATE && command->type != ASTAlterCommand::DELETE))
+            continue;
+
+        for (IAST * expression : {command->predicate, command->update_assignments})
+        {
+            if (!expression)
+                continue;
+            ASTPtr expression_ptr = expression->ptr();
+            ApplyWithSubqueryVisitor::visit(expression_ptr, getContext());
+        }
     }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
@@ -651,7 +706,8 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
     return res;
 }
 
-bool InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(const StoragePtr & storage, const ContextPtr & context_)
+InterpreterAlterQuery::RowExistsColumnKind InterpreterAlterQuery::getRowExistsColumnKind(
+    const StoragePtr & storage, const ContextPtr & context_)
 {
     /// `_row_exists` is the hidden lightweight-delete marker only on storages that register it as a
     /// virtual column (the MergeTree family). Testing merely for the absence of a physical `_row_exists`
@@ -659,27 +715,87 @@ bool InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(const StoragePtr 
     /// physical column either, so a user could `ADD COLUMN _row_exists, UPDATE _row_exists = 0` and edit
     /// a real physical column with only `ALTER DELETE`. `isVirtualColumn` is true only when `_row_exists`
     /// is a registered virtual and not shadowed by a real column, which precisely identifies the marker.
-    /// A null storage (non-local ON CLUSTER target) fails closed -> treated as a regular column.
     if (!storage)
-        return false;
+        return RowExistsColumnKind::Unknown;
     const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context_, false);
-    return metadata_snapshot->isVirtualColumn(RowExistsColumn::name);
+    return metadata_snapshot->isVirtualColumn(RowExistsColumn::name)
+        ? RowExistsColumnKind::LightweightDeleteMarker
+        : RowExistsColumnKind::Regular;
+}
+
+/** `MODIFY QUERY` replaces the body a view executes, and for `SQL SECURITY DEFINER` or `NONE` that body does
+  * not run with the caller's privileges. Writing it is the same act of impersonation that `CREATE` and
+  * `MODIFY SQL SECURITY` gate behind `SET DEFINER` and `ALLOW SQL SECURITY NONE` in
+  * `processSQLSecurityOption`, so it takes the same grants.
+  */
+void InterpreterAlterQuery::addRequiredAccessForModifyQuerySQLSecurity(
+    AccessRightsElements & required_access, const StoragePtr & storage) const
+{
+    /// Without the view there is no body to replace: the local path fails on the missing table, and an
+    /// `ON CLUSTER` statement refuses to dispatch a `MODIFY QUERY` for a view this host does not have.
+    if (!storage)
+        return;
+
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
+    if (!metadata_snapshot->sql_security_type)
+        return;
+
+    if (*metadata_snapshot->sql_security_type == SQLSecurityType::NONE)
+    {
+        required_access.emplace_back(AccessType::ALLOW_SQL_SECURITY_NONE);
+        return;
+    }
+
+    if (*metadata_snapshot->sql_security_type != SQLSecurityType::DEFINER || !metadata_snapshot->definer)
+        return;
+
+    /// `processSQLSecurityOption` stores an ephemeral definer as a clone named `<user>:definer`, and the grant is
+    /// held on the user it was cloned from. A real user can have the same suffix, so strip it only when the base
+    /// user is ephemeral, which is the condition under which the clone is made.
+    String definer_name = *metadata_snapshot->definer;
+    static constexpr std::string_view ephemeral_suffix = ":definer";
+    if (definer_name.ends_with(ephemeral_suffix))
+    {
+        String base_name = definer_name.substr(0, definer_name.size() - ephemeral_suffix.size());
+        const auto & access_control = getContext()->getAccessControl();
+        if (auto base_id = access_control.find<User>(base_name); base_id && access_control.isEphemeral(*base_id))
+            definer_name = std::move(base_name);
+    }
+
+    if (definer_name != getContext()->getUserName())
+        required_access.emplace_back(AccessType::SET_DEFINER, definer_name);
 }
 
 AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr & storage) const
 {
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
-    const bool row_exists_is_marker = isRowExistsLightweightDeleteMarker(storage, getContext());
+    const auto row_exists_column_kind = getRowExistsColumnKind(storage, getContext());
+    /// A `MODIFY SQL SECURITY` in the same statement decides what the new body will execute as, and
+    /// `processSQLSecurityOption` has already authorized exactly that. The stored security then says
+    /// nothing about the body being written, so it must not add a requirement of its own.
+    const bool sql_security_is_being_replaced = std::ranges::any_of(
+        alter.command_list->children,
+        [](const auto & child) { return child->template as<ASTAlterCommand &>().sql_security != nullptr; });
+
     for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<ASTAlterCommand &>();
         required_access.append_range(
-            getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable(), row_exists_is_marker));
+            getRequiredAccessForCommand(command, alter.getDatabase(), alter.getTable(), row_exists_column_kind));
+
+        if (command.type == ASTAlterCommand::MODIFY_QUERY && !sql_security_is_being_replaced)
+            addRequiredAccessForModifyQuerySQLSecurity(required_access, storage);
+    }
 
     return required_access;
 }
 
 AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
-    const ASTAlterCommand & command, const String & database, const String & table, bool row_exists_is_lightweight_marker)
+    const ASTAlterCommand & command,
+    const String & database,
+    const String & table,
+    RowExistsColumnKind row_exists_column_kind)
 {
     AccessRightsElements required_access;
 
@@ -701,10 +817,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
             for (const ASTPtr & assignment_ast : command.update_assignments->children)
             {
                 const auto & assignment = assignment_ast->as<const ASTAssignment &>();
-                if (row_exists_is_lightweight_marker && isLightweightDeleteAssignment(assignment))
-                    deletes_via_row_exists = true;
-                else
+                const bool is_lightweight_delete_assignment = isLightweightDeleteAssignment(assignment);
+                if (!is_lightweight_delete_assignment || row_exists_column_kind != RowExistsColumnKind::LightweightDeleteMarker)
                     updated_columns.emplace_back(assignment.column_name);
+                if (is_lightweight_delete_assignment && row_exists_column_kind != RowExistsColumnKind::Regular)
+                    deletes_via_row_exists = true;
             }
             if (!updated_columns.empty())
                 required_access.emplace_back(AccessType::ALTER_UPDATE, database, table, updated_columns);
