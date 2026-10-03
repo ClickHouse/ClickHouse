@@ -18,6 +18,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
@@ -407,26 +408,16 @@ private:
             }
             else if (!only_recursive_with_hides_table)
             {
-                collectWithExpressionAliases(*child);
+                collectWithExpressionAliases(child);
             }
         }
     }
 
-    /// Like the analyzer, take the aliases at any depth of a `WITH` expression, but not inside
-    /// a lambda or a subquery: those aliases are their own.
-    void collectWithExpressionAliases(const IAST & ast) const
+    /// The same rule as `ApplyWithSubqueryVisitor` uses.
+    void collectWithExpressionAliases(const ASTPtr & ast) const
     {
-        String alias = ast.tryGetAlias();
-        if (!alias.empty())
-            with_expression_aliases.insert(alias);
-
-        if (ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>())
-            return;
-        if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
-            return;
-
-        for (const auto & child : ast.children)
-            collectWithExpressionAliases(*child);
+        ApplyWithSubqueryVisitor::forEachWithExpressionAlias(
+            ast, [&](const String & alias, const ASTPtr &) { with_expression_aliases.insert(alias); });
     }
 
     bool isExpressionAlias(const String & name) const

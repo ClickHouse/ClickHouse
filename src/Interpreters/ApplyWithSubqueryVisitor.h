@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <map>
 
 #include <base/types.h>
@@ -39,6 +40,10 @@ public:
     }
     static void visit(ASTSelectQuery & select) { visit(select, {}); }
     static void visit(ASTSelectWithUnionQuery & select) { visit(select, {}); }
+
+    /// Calls `callback` for each alias a `WITH` expression declares that its nested select queries see, the way the
+    /// analyzer collects them: at any depth, but not inside a lambda or a subquery. The expression's own alias is last.
+    static void forEachWithExpressionAlias(const ASTPtr & expression, const std::function<void(const String &, const ASTPtr &)> & callback);
 
 private:
     static void visit(ASTPtr & ast, const Data & data);
