@@ -1437,7 +1437,18 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_co
 
 void IMergeTreeDataPart::loadStatisticsToCache(StatisticsCache & cache) const
 {
-    loadStatistics({}, &cache);
+    /// Prewarming runs after the part is committed (insert, merge, fetch) or while the table is being
+    /// loaded, so a failure to read the statistics (an I/O error, a corrupted file) must not fail the
+    /// operation: an insert would report an error for a part that is already visible, and a retry would
+    /// duplicate the data. Nothing is cached then, and a query reads the statistics on demand and gets the error.
+    try
+    {
+        loadStatistics({}, &cache);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("while prewarming the statistics cache for part {}", name));
+    }
 }
 
 void IMergeTreeDataPart::removeStatisticsFromCache(StatisticsCache * cache) const
