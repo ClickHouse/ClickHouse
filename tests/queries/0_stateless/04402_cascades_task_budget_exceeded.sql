@@ -15,7 +15,7 @@ INSERT INTO t_task_budget SELECT number % 100, number FROM numbers(1000);
 
 SELECT '-- default budget: the query optimizes and runs';
 SELECT k, sum(x) FROM t_task_budget GROUP BY k ORDER BY k LIMIT 3
-SETTINGS distributed_plan_execute_locally = 1;
+SETTINGS distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- task budget of 1 cannot finish: rejected';
 SET param__internal_cascades_task_limit = 1;
@@ -25,6 +25,6 @@ SELECT k, sum(x) FROM t_task_budget GROUP BY k ORDER BY k; -- { serverError SUPP
 SET param__internal_cascades_task_limit = 100000000;
 SELECT '-- an over-large override is clamped to the built-in cap, so the query still runs';
 SELECT k, sum(x) FROM t_task_budget GROUP BY k ORDER BY k LIMIT 3
-SETTINGS distributed_plan_execute_locally = 1;
+SETTINGS distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_task_budget;

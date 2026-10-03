@@ -30,13 +30,13 @@ extern const int NOT_IMPLEMENTED;
 namespace
 {
 
+/// The flag of row `i` is at index `i - row_begin`.
 std::unique_ptr<UInt8[]>
 mergeIfAndNullFlags(const UInt8 * __restrict null_map, const UInt8 * __restrict if_flags, size_t row_begin, size_t row_end)
 {
-    /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
-    auto final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
+    auto final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end - row_begin);
     for (size_t i = row_begin; i < row_end; ++i)
-        final_flags[i] = (!null_map[i]) & !!if_flags[i];
+        final_flags[i - row_begin] = (!null_map[i]) & !!if_flags[i];
     return final_flags;
 }
 
@@ -172,14 +172,6 @@ void SingleValueDataFixed<T>::insertResultInto(IColumn & to, const DataTypePtr &
     /// value is set to 0 in the constructor (also with JIT), so no need to check has_data()
     chassert(has() || value == T{});
     assert_cast<ColVecType &>(to).getData().push_back(value);
-}
-
-template <typename T>
-void SingleValueDataFixed<T>::write(WriteBuffer & buf, const ISerialization &) const
-{
-    writeBinary(has(), buf);
-    if (has())
-        writeBinaryLittleEndian(value, buf);
 }
 
 template <typename T>
@@ -423,7 +415,7 @@ void SingleValueDataFixed<T>::setSmallestNotNullIf(
         else
         {
             auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
-            opt = findExtremeMinIf(vec.getData().data(), final_flags.get(), row_begin, row_end);
+            opt = findExtremeMinIf(vec.getData().data() + row_begin, final_flags.get(), 0, row_end - row_begin);
         }
 
         if (opt.has_value())
@@ -467,7 +459,7 @@ void SingleValueDataFixed<T>::setGreatestNotNullIf(
         else
         {
             auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
-            opt = findExtremeMaxIf(vec.getData().data(), final_flags.get(), row_begin, row_end);
+            opt = findExtremeMaxIf(vec.getData().data() + row_begin, final_flags.get(), 0, row_end - row_begin);
         }
 
         if (opt.has_value())
@@ -616,7 +608,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
         else
         {
             auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
-            opt = findExtremeMinIf(vec.getData().data(), final_flags.get(), row_begin, row_end);
+            opt = findExtremeMinIf(vec.getData().data() + row_begin, final_flags.get(), 0, row_end - row_begin);
             if (!opt.has_value())
                 return std::nullopt;
             T smallest = *opt;
@@ -625,12 +617,12 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
                 if constexpr (is_floating_point<T>)
                 {
                     static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
-                    if (final_flags[i] && std::memcmp(&vec_data[i], &smallest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                    if (final_flags[i - row_begin] && std::memcmp(&vec_data[i], &smallest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
                         return {i};
                 }
                 else
                 {
-                    if (final_flags[i] && vec_data[i] == smallest)
+                    if (final_flags[i - row_begin] && vec_data[i] == smallest)
                         return {i};
                 }
             }
@@ -729,7 +721,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
         else
         {
             auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
-            opt = findExtremeMaxIf(vec.getData().data(), final_flags.get(), row_begin, row_end);
+            opt = findExtremeMaxIf(vec.getData().data() + row_begin, final_flags.get(), 0, row_end - row_begin);
             if (!opt.has_value())
                 return std::nullopt;
             T greatest = *opt;
@@ -738,12 +730,12 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
                 if constexpr (is_floating_point<T>)
                 {
                     static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
-                    if (final_flags[i] && std::memcmp(&vec_data[i], &greatest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                    if (final_flags[i - row_begin] && std::memcmp(&vec_data[i], &greatest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
                         return {i};
                 }
                 else
                 {
-                    if (final_flags[i] && vec_data[i] == greatest)
+                    if (final_flags[i - row_begin] && vec_data[i] == greatest)
                         return {i};
                 }
             }
