@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Common/Macros.h>
+#include <Common/typeid_cast.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/FormatFactory.h>
@@ -12,7 +13,7 @@
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
-#include <Databases/DatabaseReplicatedHelpers.h>
+#include <Databases/DatabaseReplicated.h>
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
@@ -146,11 +147,9 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         info.expand_special_macros_only = true;
 
         const auto database = DatabaseCatalog::instance().getDatabase(args.table_id.database_name);
-        const auto is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
-        const auto is_replicated_database = is_on_cluster && database->getEngineName() == "Replicated";
 
-        if (is_replicated_database)
-            info.replica = getReplicatedDatabaseReplicaName(database);
+        if (auto database_replicated = typeid_cast<const DatabaseReplicated *>(database.get()))
+            info.replica = database_replicated->getReplicaName();
         else
             info.replica = Context::getGlobalContextInstance()->getMacros()->tryGetValue("replica");
 
