@@ -108,6 +108,9 @@ public:
 
     inline bool isStalled() const { return stalled_status != StalledStatus::NOT_STALLED; }
 
+    /// True when the last `consume` was cut short by a stop, leaving the batch incomplete.
+    inline bool wasStoppedWhileConsuming() const { return stalled_status == StalledStatus::CONSUMER_STOPPED; }
+
     void updateOffsets(TopicPartitionOffsets && topic_partition_offsets);
 
     /// Polls batch of messages from the given topic-partition and returns read buffer containing the next message or
