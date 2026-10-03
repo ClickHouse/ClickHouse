@@ -13,3 +13,7 @@
 977
 05259_reorder_0	0
 05259_reorder_1	1
+1
+1
+05259_sleep_select	100000
+05259_sleep_where	100000
