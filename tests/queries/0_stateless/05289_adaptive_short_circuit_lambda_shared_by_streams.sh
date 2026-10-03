@@ -45,3 +45,28 @@ compare "constant" "
 compare "serialized" "
     SELECT sum(arrayCount(x -> and(x % 2 = 0, intDiv(x, x % 3 + 1) % 5 != 0), range(number % 50)))
     FROM remote('127.0.0.{1,2}', numbers(100000))" "$STREAMS, serialize_query_plan = 1, prefer_localhost_replica = 0"
+
+# A lambda with a captured column is serialized with the query plan as a `FunctionCapture` and rebuilt on
+# the remote side. Besides the result, check that the heuristic is really active in the rebuilt lambda body:
+# `AdaptiveShortCircuitEagerExecutions` counts the actions which the static schedule would have executed
+# lazily and the heuristic executed eagerly, so it is only non-zero if the adaptive schedule was used.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE lambda_probe (b UInt8, arr Array(UInt8)) ENGINE = MergeTree ORDER BY tuple();
+    INSERT INTO lambda_probe SELECT number % 3 != 0, arrayMap(i -> toUInt8((number + i) % 5 != 0), range(10)) FROM numbers(500000);"
+
+QUERY_ID="${CLICKHOUSE_DATABASE}_serialized_captured"
+CAPTURED_QUERY="
+    SELECT sum(arrayCount(x -> if(x % 2, and(x, b), 0), arr))
+    FROM remote('127.0.0.{1,2}', currentDatabase(), lambda_probe)"
+SERIALIZED="serialize_query_plan = 1, prefer_localhost_replica = 0, max_threads = 1, max_block_size = 8192"
+adaptive_result=$(${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID" --query "$CAPTURED_QUERY SETTINGS $ADAPTIVE, $SERIALIZED")
+static_result=$(${CLICKHOUSE_CLIENT} --query "$CAPTURED_QUERY SETTINGS $STATIC, $SERIALIZED")
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT
+        'serialized_captured',
+        $adaptive_result = $static_result,
+        sum(ProfileEvents['AdaptiveShortCircuitEagerExecutions']) > 0
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND initial_query_id = '$QUERY_ID' AND is_initial_query = 0 AND type = 'QueryFinish'"
