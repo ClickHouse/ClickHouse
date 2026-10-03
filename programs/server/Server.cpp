@@ -3251,7 +3251,9 @@ try
         for (const auto & server : servers_to_start_before_tables)
         {
             if (server.bindsOnStart())
-                global_context->registerServerPort(server.getPortName(), static_cast<UInt16>(config().getInt(server.getPortName())));
+                global_context->registerServerPort(
+                    server.getPortName(),
+                    applyPortOffset(static_cast<UInt16>(config().getInt(server.getPortName())), server_settings[ServerSetting::port_offset]));
         }
     }
 
@@ -3911,7 +3913,9 @@ try
             for (const auto & server : servers)
             {
                 if (server.bindsOnStart())
-                    global_context->registerServerPort(server.getPortName(), static_cast<UInt16>(config().getInt(server.getPortName())));
+                    global_context->registerServerPort(
+                        server.getPortName(),
+                        applyPortOffset(static_cast<UInt16>(config().getInt(server.getPortName())), server_settings[ServerSetting::port_offset]));
             }
             if (servers.empty())
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
@@ -4632,7 +4636,7 @@ void Server::createServers(
 
             if (handler_factory)
             {
-                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(server_settings, socket, listen_host, port);
@@ -4967,7 +4971,12 @@ void Server::updateServers(
                 LOG_TRACE(log, "<default_session_user> had been changed, will reload {}", server->getDescription());
             }
 
-            if (!has_host || !has_port || config.getInt(server->getPortName()) != server->portNumber() || force_restart)
+            /// The listener bound the configured port shifted by `port_offset`, so compare against the shifted
+            /// value: otherwise every listener of a server with a non-zero offset would restart on each reload.
+            if (!has_host || !has_port
+                || applyPortOffset(static_cast<UInt16>(config.getInt(server->getPortName())), server_settings[ServerSetting::port_offset])
+                    != server->portNumber()
+                || force_restart)
             {
                 server->stop();
                 LOG_INFO(log, "Stopped listening for {}", server->getDescription());
