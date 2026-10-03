@@ -6,6 +6,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SessionTracker.h>
+#include <Loggers/AuditLog.h>
 #include <Poco/Net/SocketAddress.h>
 
 #include <chrono>
@@ -13,6 +14,7 @@
 #include <mutex>
 #include <optional>
 #include <vector>
+
 
 namespace Poco::Net { class SocketAddress; }
 
@@ -50,7 +52,7 @@ public:
     std::unordered_set<AuthenticationType> getAuthenticationTypes(const String & user_name) const;
 
     /// Same as getAuthenticationType, but adds LoginFailure event in case of error.
-    std::unordered_set<AuthenticationType> getAuthenticationTypesOrLogInFailure(const String & user_name) const;
+    std::unordered_set<AuthenticationType> getAuthenticationTypesOrLogInFailure(const String & user_name, const Poco::Net::SocketAddress & address) const;
 
     /// Sets the current user, checks the credentials and that the specified address is allowed to connect from.
     /// The function throws an exception if there is no such user or password is wrong.
@@ -66,6 +68,24 @@ public:
 
     /// Writes a row about login failure into session log (if enabled)
     void onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e);
+
+    /// Records a `LoginFailure` entry in the audit log (only) for authentication failures that
+    /// happen during protocol negotiation, before `Session::authenticate` is reached — for
+    /// example an unsupported authentication method for the protocol, a too-old client, or a
+    /// malformed authentication packet. Idempotent within a session: at most one audit
+    /// `LoginFailure` is emitted, so it is safe to call from a catch-all that may also wrap
+    /// `getAuthenticationTypesOrLogInFailure` or `Session::authenticate`, both of which already
+    /// audit the failure themselves.
+    void recordAuditLoginFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address) const;
+
+    /// Clears the `recordAuditLoginFailure` idempotency latch so the next authentication attempt on
+    /// this connection is audited again. A single connection can make several *distinct* attempts —
+    /// most notably the native TLS path, where a failed client-certificate authentication falls back
+    /// to password authentication. Without this reset the session-wide latch set by the certificate
+    /// failure would suppress the audit record for a subsequent, genuinely different failure (e.g. a
+    /// wrong password), losing a distinct failed login attempt from the audit trail. Call it before
+    /// starting such a fallback attempt.
+    void resetAuditLoginFailureLatch();
 
     /// Remembers the TLS client certificate presented on this connection (if any), so that
     /// session_log records it for the login/logout events of this session.
@@ -121,6 +141,7 @@ private:
     std::shared_ptr<SessionLog> getSessionLog() const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move, bool detached = false) const;
     void recordLoginSuccess(ContextPtr login_context) const;
+    DB::AuditLog * getAuditLogIfEnabled() const;
 
     /// Returns the GRANTS clause of the authentication method the user logged in with
     /// (the access rights of the session are limited to the intersection with it), or null if there is no limit.
@@ -131,6 +152,9 @@ private:
     time_t getAuthenticationValidUntil() const;
 
     mutable bool notified_session_log_about_login = false;
+    /// Ensures at most one `LoginFailure` line is written to the audit log per session,
+    /// even when a single failed authentication propagates through several catch layers.
+    mutable bool audit_login_failure_recorded = false;
     const UUID auth_id;
     const ContextPtr global_context;
 

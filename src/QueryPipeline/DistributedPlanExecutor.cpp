@@ -882,6 +882,9 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     /// helpers below treat a null AST as QueryKind::Select, which is correct here.
     const ASTPtr no_ast;
     UInt64 query_plan_hash = sipHash64(task_description.serialized_query_plan);
+    /// A task is a fragment of a distributed query plan, not a statement: it has no SQL text (only the task id)
+    /// and no statement kind, so it is not written to the audit log. The statement itself is audited on the initiator.
+    const bool audit = false;
 
     auto query_log_elem = logQueryStart(
         std::chrono::system_clock::now(),
@@ -922,11 +925,11 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         }
 
         logQueryFinish(query_log_elem, context, no_ast, std::move(pipeline), false,
-            query_span, QueryResultCacheUsage::None, false, /*log_as_internal*/ false);
+            query_span, QueryResultCacheUsage::None, false, /*log_as_internal*/ false, audit);
     }
     catch (...)
     {
-        logQueryException(query_log_elem, context, execute_task_watch, no_ast, query_span, false, /*log_as_internal*/ false, true);
+        logQueryException(query_log_elem, context, execute_task_watch, no_ast, query_span, false, /*log_as_internal*/ false, true, audit);
         throw;
     }
 }
