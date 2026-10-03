@@ -8,10 +8,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # BACKUP of a Memory table must stop serializing the table's blocks once the query is past
 # max_execution_time (or killed), instead of writing all of them first.
 #
-# temporary_files_buffer_size = 21 makes the serialization take far longer than the 1 s limit.
-# The temporary file is accounted in ExternalProcessingUncompressedBytesTotal only when it is
-# finished, so the counter stays 0 when the serialization is interrupted, and is the full stream
-# size when the limit is only checked after it.
+# temporary_files_buffer_size = 21 makes the serialization take far longer than the 1 s limit, and
+# the finished data.bin larger than the 780 MB of table data (each 21-byte frame gets a header), so
+# a backup that stops during the serialization writes less than 780 MB to the temporary file.
 
 $CLICKHOUSE_CLIENT -m -q "
 CREATE TABLE t (x String) ENGINE = Memory SETTINGS compress = 1;
@@ -25,7 +24,7 @@ BACKUP TABLE t TO Null SETTINGS id = '${CLICKHOUSE_TEST_UNIQUE_NAME}';
 " > /dev/null 2>&1
 
 $CLICKHOUSE_CLIENT -q "
-SELECT status, error LIKE '%TIMEOUT_EXCEEDED%', ProfileEvents['ExternalProcessingUncompressedBytesTotal']
+SELECT status, error LIKE '%TIMEOUT_EXCEEDED%', ProfileEvents['WriteBufferFromFileDescriptorWriteBytes'] < 780000000
 FROM system.backups WHERE id = '${CLICKHOUSE_TEST_UNIQUE_NAME}';
 DROP TABLE t;
 "
