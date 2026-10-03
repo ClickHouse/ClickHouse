@@ -232,27 +232,25 @@ void ASTProjectionSelectQuery::readJSON(const Poco::JSON::Object & json)
 
     /// `with` and `group_by` are parser-owned `ASTExpressionList`s; `formatImpl` formats them via
     /// `as<ASTExpressionList &>()`, so reject a non-list node from malformed `clickhouse_json`.
-    auto setExprList = [&](const char * key, ASTProjectionSelectQuery::Expression expr)
+    auto setExprList = [&](const char * key, ASTProjectionSelectQuery::Expression expr, bool require_nonempty)
     {
-        if (auto child = r.readChildOfType<ASTExpressionList>(key))
+        if (auto child = r.readCommaSeparatedExpressionListChild(key, require_nonempty))
             this->setExpression(expr, std::move(child));
     };
 
-    setExprList("with", Expression::WITH);
+    setExprList("with", Expression::WITH, /* require_nonempty = */ true);
 
     /// `formatImpl` always formats the SELECT expression list and unconditionally
     /// casts it to `ASTExpressionList`, so it must be present and of the right type.
-    auto select_child = r.readChild("select");
+    auto select_child = r.readCommaSeparatedExpressionListChild("select", /* require_nonempty = */ true);
     if (!select_child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'select' during AST JSON deserialization");
-    if (!select_child->as<ASTExpressionList>())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ASTExpressionList for 'select' during AST JSON deserialization");
     setExpression(Expression::SELECT, std::move(select_child));
 
     /// `WHERE` must be inserted between `SELECT` and `GROUP BY` to match the canonical child order
     /// produced by `ParserProjectionSelectQuery` (see the ordering comment in `clone`).
     setExpr("where", Expression::WHERE);
-    setExprList("group_by", Expression::GROUP_BY);
+    setExprList("group_by", Expression::GROUP_BY, /* require_nonempty = */ false);
 
     /// `ParserProjectionSelectQuery` stores `ORDER BY` either as a single expression or as a
     /// `tuple(...)` function whose arguments carry the comma-separated keys — never as a bare

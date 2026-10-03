@@ -12,6 +12,10 @@ SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (ts DateTime, id UIn
 -- A column list combined with `WITH SETTINGS`.
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (x UInt64, PROJECTION p (x UInt64 CODEC(NONE)) AS (SELECT x ORDER BY x) WITH SETTINGS (index_granularity = 1024)) ENGINE = MergeTree ORDER BY x'));
 
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (x UInt64, y UInt64, PROJECTION p INDEX x, y TYPE basic) ENGINE = MergeTree ORDER BY x'));
+
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (x UInt64, y UInt64, PROJECTION p (WITH x AS a, y AS b SELECT a, b GROUP BY a, b)) ENGINE = MergeTree ORDER BY x'));
+
 -- ---------------------------------------------------------------------------
 -- `ProjectionDeclaration`: `columns` must be a non-empty `ASTExpressionList` of
 -- `ASTColumnDeclaration`, and it is only meaningful together with a `SELECT` query.
@@ -34,6 +38,20 @@ WITH
         '"order_by":{"type":"Identifier","name":"x"}},"columns":{"type":"ExpressionList"',
         '"order_by":{"type":"Identifier","name":"x"}},"columns":{"type":"ExpressionList","separator":";"') AS malformed
 SELECT formatQueryFromJSON(malformed); -- { serverError BAD_ARGUMENTS }
+
+-- These lists all come from comma-list parsers. The generic ExpressionList JSON reader also
+-- accepts other separators, so each projection-owned list must enforce its parser shape.
+SELECT formatQueryFromJSON('{"type":"ProjectionDeclaration","name":"p","index":{"type":"ExpressionList","separator":";","children":[{"type":"Identifier","name":"x"},{"type":"Identifier","name":"y"}]},"projection_type":{"type":"Function","name":"basic","no_empty_args":true}}'); -- { serverError BAD_ARGUMENTS }
+
+SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","with":{"type":"ExpressionList","separator":";","children":[{"type":"Identifier","name":"x","alias":"a"},{"type":"Identifier","name":"y","alias":"b"}]},"select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"}]}}'); -- { serverError BAD_ARGUMENTS }
+
+SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","select":{"type":"ExpressionList","separator":";","children":[{"type":"Identifier","name":"x"},{"type":"Identifier","name":"y"}]}}'); -- { serverError BAD_ARGUMENTS }
+
+SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]},"group_by":{"type":"ExpressionList","separator":";","children":[{"type":"Identifier","name":"x"},{"type":"Identifier","name":"y"}]}}'); -- { serverError BAD_ARGUMENTS }
+
+SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","select":{"type":"ExpressionList","children":[]}}'); -- { serverError BAD_ARGUMENTS }
+
+SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","with":{"type":"ExpressionList","children":[]},"select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
 -- `formatQuery` fixpoint. A projection's column list is the only caller of

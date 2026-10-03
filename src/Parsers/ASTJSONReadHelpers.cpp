@@ -37,6 +37,24 @@ bool hasQueryOutputOptions(const IAST * node)
     return query_with_output && query_with_output->hasOutputOptions();
 }
 
+ASTPtr JSONObjectReader::readCommaSeparatedExpressionListChild(
+    const char * key, bool require_nonempty, bool screen_expressions) const
+{
+    ASTPtr child = screen_expressions ? readExpressionChild(key) : readChild(key);
+    if (!child)
+        return nullptr;
+
+    const auto * list = child->as<ASTExpressionList>();
+    if (!list)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected an expression list for key '{}' during AST JSON deserialization", key);
+    if (list->getSeparator() != ',' || (require_nonempty && list->children.empty()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected a {}comma-separated expression list for key '{}' during AST JSON deserialization",
+            require_nonempty ? "non-empty " : "", key);
+    return child;
+}
+
 ASTPtr JSONObjectReader::readIdentifierChild(const char * key) const
 {
     ASTPtr child = readChild(key);

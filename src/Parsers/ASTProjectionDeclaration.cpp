@@ -79,15 +79,10 @@ void ASTProjectionDeclaration::readJSON(const Poco::JSON::Object & json)
     /// `ProjectionIndexCommitOrder::fillProjectionDescription` clones `index` straight into the
     /// projection SELECT slot, and `ASTProjectionSelectQuery::cloneToASTSelect` throws a logical
     /// error unless that slot is an `ASTExpressionList` — so reject any other shape at the boundary.
-    auto index_child = r.readExpressionChild("index");
+    auto index_child = r.readCommaSeparatedExpressionListChild(
+        "index", /* require_nonempty = */ true, /* screen_expressions = */ true);
     if (index_child)
     {
-        if (!index_child->as<ASTExpressionList>())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Unexpected node type for key 'index' during AST JSON deserialization");
-        if (index_child->children.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "`ProjectionDeclaration` INDEX must be a non-empty expression list during AST JSON deserialization");
         set(index, index_child);
     }
 
@@ -104,15 +99,9 @@ void ASTProjectionDeclaration::readJSON(const Poco::JSON::Object & json)
 
     /// `ProjectionDescription` reads each element with `as<ASTColumnDeclaration &>`, so reject any other
     /// shape here rather than let it surface as an internal cast error.
-    auto columns_child = r.readChildOfType<ASTExpressionList>("columns");
+    auto columns_child = r.readCommaSeparatedExpressionListChild("columns", /* require_nonempty = */ true);
     if (columns_child)
     {
-        if (columns_child->as<ASTExpressionList &>().getSeparator() != ',')
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "`ProjectionDeclaration` column list must use a comma separator during AST JSON deserialization");
-        if (columns_child->children.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "`ProjectionDeclaration` column list must be non-empty during AST JSON deserialization");
         for (const auto & child : columns_child->children)
         {
             if (!child->as<ASTColumnDeclaration>())

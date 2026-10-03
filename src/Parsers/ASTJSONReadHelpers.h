@@ -140,6 +140,12 @@ public:
         return child;
     }
 
+    /// Read a parser-owned comma-separated expression list. The generic `ExpressionList` JSON
+    /// format also supports other separators, so slots parsed with a comma-list parser must
+    /// check their separator at this boundary. Some comma-list parsers allow an empty list.
+    ASTPtr readCommaSeparatedExpressionListChild(
+        const char * key, bool require_nonempty = false, bool screen_expressions = false) const;
+
     /// Read a child AST node and require it to be an identifier (`ASTIdentifier` or a subclass such
     /// as `ASTTableIdentifier`; this also accepts a parameterized identifier, which the parser
     /// produces as an `ASTIdentifier` carrying an `ASTQueryParameter` child). Database/table target
