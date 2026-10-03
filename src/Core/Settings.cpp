@@ -10015,6 +10015,37 @@ Allows creation of tables with the [TimeSeries](/reference/engines/table-engines
 Read from the recent samples table of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table instead of the main samples table when the whole requested time range fits in the TTL window of the recent samples table (see the `recent_samples_ttl_seconds` setting of the TimeSeries table engine).
 )", PRIVATE_PREVIEW, \
         {"26.8", true, true, "New setting to read from the recent samples table of a TimeSeries table when the requested time range fits in its TTL window."}) \
+    DECLARE(Bool, allow_experimental_queue_table_engine, false, R"(
+Allows creation of tables with the experimental `Queue` table engine.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to enable the experimental Queue table engine."}) \
+    DECLARE(String, queue_consumer_group, "", R"(
+Selects the consumer group used when reading from an experimental `Queue` table.
+For a materialized view, specify this setting in the view's `SELECT` query.
+An empty value gives each materialized view an independent group.
+)", EXPERIMENTAL, \
+        {"26.10", "", "", "New setting to select a consumer group for the experimental Queue table engine."}) \
+    DECLARE(Bool, queue_commit_on_select, false, R"(
+Whether a successful direct `SELECT` from an experimental `Queue` table acknowledges queue rows selected by the query.
+Rows excluded by a `WHERE` filter remain pending. Acknowledgements are written only to the selected consumer group's state.
+Committing queries with joins, `DISTINCT`, or `LIMIT` are rejected until their message identity can be tracked safely.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to acknowledge a Queue batch after a successful direct SELECT."}) \
+    DECLARE(UInt64, queue_max_batch_size, 0, R"(
+Maximum number of post-filter result rows returned and acknowledged by a direct committing `SELECT` from an experimental `Queue` table.
+Filtered-out rows do not consume the batch quota. A value of `0` uses the table engine's `max_batch_size`.
+)", EXPERIMENTAL, \
+        {"26.10", 0, 0, "New setting to limit the post-filter result batch of a direct committing SELECT from Queue."}) \
+    DECLARE(String, queue_consumer_offset, "earliest", R"(
+Initial offset for a new experimental `Queue` consumer group.
+Supported values are `earliest` and `latest`.
+)", EXPERIMENTAL, \
+        {"26.10", "earliest", "earliest", "New setting to choose the initial Queue consumer-group offset."}) \
+    DECLARE(Bool, queue_reset_consumer_offset, false, R"(
+Recreates the selected experimental `Queue` consumer group's pending-message table at
+`queue_consumer_offset`. The setting requires `queue_consumer_group`.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to reset a Queue consumer group to its configured offset."}) \
     DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
 Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.
 )", EXPERIMENTAL, \

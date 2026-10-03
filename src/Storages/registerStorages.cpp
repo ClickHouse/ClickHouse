@@ -28,6 +28,7 @@ void registerStorageExecutable(StorageFactory & factory);
 void registerStorageLoop(StorageFactory & factory);
 void registerStorageFuzzQuery(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory);
+void registerStorageQueue(StorageFactory & factory);
 void registerStorageAlias(StorageFactory & factory);
 
 #if USE_ARROWFLIGHT
@@ -140,6 +141,7 @@ void registerStorages()
     registerStorageLoop(factory);
     registerStorageFuzzQuery(factory);
     registerStorageTimeSeries(factory);
+    registerStorageQueue(factory);
     registerStorageAlias(factory);
 
 #if USE_ARROWFLIGHT
