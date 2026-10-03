@@ -12,7 +12,6 @@ simple aggregate metadata attach preserved
 materialized view short attach preserved
 1
 unrelated materialized view validation preserved
-1
 Float64	Float64	8	8
 0	18.873127
 10	4
