@@ -156,11 +156,19 @@ ALTER TABLE t_conversion DROP PARTITION tuple(toDate('2024-02-30')); -- { server
 ALTER TABLE t_conversion DROP PARTITION tuple(toDate(concat('2024-02-', '30'))); -- { serverError INVALID_PARTITION_VALUE }
 ALTER TABLE t_conversion DROP PARTITION CAST(tuple(toDate(concat('2024-02-', '30'))), 'Tuple(Date)'); -- { serverError INVALID_PARTITION_VALUE }
 ALTER TABLE t_conversion DROP PARTITION CAST(tuple('2024-02-30'), 'Tuple(Date)'); -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_conversion DROP PARTITION tuple(toDate('2024-02-30 12:00:00')); -- { serverError INVALID_PARTITION_VALUE }
 ALTER TABLE t_conversion_datetime64 DROP PARTITION tuple(toDateTime64('2024-02-29 24:00:00', 3, 'UTC')); -- { serverError INVALID_PARTITION_VALUE }
 ALTER TABLE t_conversion_datetime64 DROP PARTITION CAST('2024-03-01 00:00:00.0001', 'DateTime64(3, \'UTC\')'); -- { serverError INVALID_PARTITION_VALUE }
 SELECT 'conversion, nothing dropped', (SELECT groupArray(x) FROM t_conversion), (SELECT groupArray(x) FROM t_conversion_datetime64);
 ALTER TABLE t_conversion DROP PARTITION CAST(tuple(toDate(concat('2024-03-', '01'))), 'Tuple(Date)');
 ALTER TABLE t_conversion_datetime64 DROP PARTITION tuple(toDateTime64('2024-03-01 00:00:00', 3, 'UTC'));
 SELECT 'conversion, valid literals', (SELECT groupArray(x) FROM t_conversion), (SELECT groupArray(x) FROM t_conversion_datetime64);
+-- A conversion may spell a value in forms a partition literal does not accept: the time of a date, or a time zone.
+INSERT INTO t_conversion VALUES ('2024-02-28', 1), ('2024-02-29', 2);
+INSERT INTO t_conversion_datetime64 VALUES ('2024-03-01 00:00:00', 1);
+ALTER TABLE t_conversion DROP PARTITION tuple(toDate('2024-02-29 12:00:00'));
+ALTER TABLE t_conversion DROP PARTITION CAST('2024-02-28 12:00:00' AS Date);
+ALTER TABLE t_conversion_datetime64 DROP PARTITION tuple(toDateTime64('2024-03-01 00:00:00Z', 3, 'UTC'));
+SELECT 'conversion, other spellings', (SELECT groupArray(x) FROM t_conversion), (SELECT groupArray(x) FROM t_conversion_datetime64);
 DROP TABLE t_conversion;
 DROP TABLE t_conversion_datetime64;
