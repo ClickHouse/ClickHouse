@@ -462,7 +462,7 @@ private:
         for (size_t b = 0; b < NUM_BUCKETS; ++b)
             res.offsets[b + 1] = res.offsets[b] + counts[b];
 
-        std::array<UInt32, NUM_BUCKETS> positions;
+        std::array<UInt32, NUM_BUCKETS> positions{};
         std::copy_n(res.offsets.begin(), NUM_BUCKETS, positions.begin());
 
         res.keys.resize(size);
