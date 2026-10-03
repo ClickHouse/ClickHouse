@@ -14,6 +14,7 @@
 #include <Analyzer/TableNode.h>
 #include <Core/Settings.h>
 #include <Storages/StorageView.h>
+#include <Storages/ColumnCodecResolver.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -22,7 +23,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
-#include <Storages/ColumnCodecResolver.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
@@ -270,7 +270,11 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
     auto metadata_snapshot = table->getInMemoryMetadataPtr(query_context, false);
     const auto & column_descriptions = metadata_snapshot->getColumns();
     for (const auto & column : column_descriptions)
+    {
         columns.emplace_back(column);
+        if (const auto * declarations = column_descriptions.tryGetTupleElementCodecs(column.name))
+            tuple_element_codecs.emplace(column.name, *declarations);
+    }
 
     if (settings[Setting::describe_include_virtual_columns])
     {
@@ -306,8 +310,8 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
 
         res_columns[i++]->insert(column.comment);
 
-        if (column.codec.hasRoot())
-            res_columns[i++]->insert(column.codec.getRoot()->as<ASTFunction>()->arguments->formatForLogging());
+        if (column.codec)
+            res_columns[i++]->insert(column.codec->as<ASTFunction>()->arguments->formatForLogging());
         else
             res_columns[i++]->insertDefault();
 
@@ -326,11 +330,10 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
 
 void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, bool is_virtual, MutableColumns & res_columns)
 {
+    const auto declarations = tuple_element_codecs.find(column.name);
     ColumnCodecResolver codec_resolver(
-        column.codec,
-        column.type,
-        NameAndTypePair(column.name, column.type),
-        nullptr);
+        ColumnCodecPolicyView(column.codec, declarations == tuple_element_codecs.end() ? nullptr : &declarations->second),
+        column.type, NameAndTypePair(column.name, column.type), nullptr);
     IDataType::forEachSubcolumn([&](const auto & path, const auto & name, const auto & data)
     {
         size_t i = 0;
@@ -349,12 +352,10 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
             res_columns[i++]->insertDefault();
             res_columns[i++]->insert(column.comment);
 
-            const auto resolved_codec = codec_resolver.resolve(path);
-            /// Keep the existing root-only DESCRIBE behavior: a column codec is not repeated on
-            /// structural subcolumns. A Tuple-element declaration is shown because this is the
-            /// only row where its effective structural codec can be inspected.
-            if (resolved_codec.codec && (!resolved_codec.stream.structural || !resolved_codec.declaration_path.empty()))
-                res_columns[i++]->insert(resolved_codec.codec->template as<ASTFunction>()->arguments->formatForLogging());
+            const auto resolved_codec = is_virtual || ISerialization::isEphemeralSubcolumn(path, path.size())
+                ? ASTPtr{} : codec_resolver.resolve(path).codec;
+            if (const auto * codec_function = resolved_codec ? resolved_codec->template as<ASTFunction>() : nullptr)
+                res_columns[i++]->insert(codec_function->arguments->formatForLogging());
             else
                 res_columns[i++]->insertDefault();
 

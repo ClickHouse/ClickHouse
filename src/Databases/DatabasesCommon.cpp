@@ -95,8 +95,11 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
     /// SECONDARY_CREATE should check most of the important things.
     const auto columns_desc
         = InterpreterCreateQuery::getColumnsDescription(*columns.columns, context, LoadingStrictnessLevel::SECONDARY_CREATE, false);
+    auto complete_columns_desc = columns_desc;
+    InterpreterCreateQuery::applyCodecOnlyDeclarations(
+        columns.codec_declarations, complete_columns_desc, context, /* trusted_metadata = */ true);
 
-    if (columns_desc.getInsertable().empty())
+    if (complete_columns_desc.getInsertable().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
 
     /// Default expressions are only validated in level CREATE, so let's check them now
@@ -200,11 +203,14 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     if (!ast_create_query.is_dictionary && !ast_create_query.isParameterizedView())
     {
         ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
+        ASTPtr new_codec_declarations = InterpreterCreateQuery::formatTupleElementCodecDeclarations(metadata.columns);
         ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
         ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
         ASTPtr new_projections = InterpreterCreateQuery::formatProjections(metadata.projections);
 
         ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
+        ast_create_query.columns_list->setOrReplace(
+            ast_create_query.columns_list->codec_declarations, new_codec_declarations);
         ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
         ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
         ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->projections, new_projections);
@@ -344,6 +350,10 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
         }
 
         ast_columns_list->set(ast_columns_list->columns, ast_expression_list);
+        if (!only_ordinary)
+            ast_columns_list->setOrReplace(
+                ast_columns_list->codec_declarations,
+                InterpreterCreateQuery::formatTupleElementCodecDeclarations(metadata_ptr->columns));
         create_table_query->set(create_table_query->columns_list, ast_columns_list);
     }
     return create_table_query;

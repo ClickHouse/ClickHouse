@@ -45,14 +45,13 @@ namespace
 ColumnCodecs resolveCodecsForWholeColumn(const ColumnDescription & description, const CompressionCodecPtr & default_codec)
 {
     auto & factory = CompressionCodecFactory::instance();
-    const auto & root_codec = description.codec.getRoot();
-    auto generic = factory.get(root_codec, nullptr, default_codec, /*only_generic=*/true);
+    auto generic = factory.get(description.codec, nullptr, default_codec, /*only_generic=*/true);
 
     if (!isSerializedAsSingleStreamOfColumnType(*description.type->getDefaultSerialization(), description.type))
         return {.generic = std::move(generic)};
 
     return {
-        .type_specific = factory.get(root_codec, description.type.get(), default_codec),
+        .type_specific = factory.get(description.codec, description.type.get(), default_codec),
         .type_specific_for = description.type,
         .generic = std::move(generic)};
 }
@@ -145,9 +144,7 @@ MergeTreeReadTask::MergeTreeReadTask(
         for (const auto & name : info->task_columns.getAllColumnNames())
         {
             const auto * description = metadata_columns.tryGet(name);
-            /// A whole-column sample cannot model different codecs for tuple elements.
-            /// Use the root declaration when present; otherwise estimate with the part default.
-            if (description && description->codec.hasRoot())
+            if (description && description->codec)
                 resolved_codecs.emplace(name, resolveCodecsForWholeColumn(*description, default_codec));
         }
 

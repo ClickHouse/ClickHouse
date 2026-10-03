@@ -1,7 +1,4 @@
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ColumnCodecDescription.h>
-#include <Storages/ColumnCodecAST.h>
-#include <Storages/ColumnCodecValidation.h>
 
 #include <memory>
 #include <mutex>
@@ -24,7 +21,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/PeekableReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -46,9 +42,9 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ParserDataType.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/ColumnCodecValidation.h>
 #include <Storages/StorageDummy.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
@@ -111,7 +107,7 @@ ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other
     type = other.type;
     default_desc = other.default_desc;
     comment = other.comment;
-    codec = other.codec;
+    codec = other.codec ? other.codec->clone() : nullptr;
     settings = other.settings;
     ttl = other.ttl ? other.ttl->clone() : nullptr;
     statistics = other.statistics;
@@ -129,7 +125,7 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) ///
     default_desc = std::move(other.default_desc);
     comment = std::move(other.comment);
 
-    codec = other.codec.clone();
+    codec = other.codec ? other.codec->clone() : nullptr;
     other.codec.reset();
 
     settings = std::move(other.settings);
@@ -150,7 +146,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
         && type->equals(*other.type)
         && default_desc == other.default_desc
         && statistics == other.statistics
-        && codec == other.codec
+        && ast_to_str(codec) == ast_to_str(other.codec)
         && settings == other.settings
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
@@ -167,86 +163,13 @@ static String formatASTStateAware(IAST & ast, IAST::FormatState & state)
     return buf.str();
 }
 
-static String serializeTupleElementCodecs(const ColumnCodecDescription & codec, IAST::FormatState & state)
-{
-    WriteBufferFromOwnString out;
-    const size_t count = codec.getCodecs().size() - static_cast<size_t>(codec.hasRoot());
-    DB::writeText(count, out);
-    writeChar('\n', out);
-    for (const auto & [path, codec_ast] : codec.getCodecs())
-    {
-        if (path.empty())
-            continue;
-        DB::writeText(path.size(), out);
-        for (const auto & segment : path)
-        {
-            writeChar('\t', out);
-            writeEscapedString(segment, out);
-        }
-        writeChar('\t', out);
-        writeEscapedString(formatASTStateAware(*codec_ast, state), out);
-        writeChar('\n', out);
-    }
-    return out.str();
-}
-
-static ColumnCodecDescription::CodecsByPath deserializeTupleElementCodecs(const String & text)
-{
-    ReadBufferFromString in(text);
-    size_t count = 0;
-    readText(count, in);
-    assertChar('\n', in);
-
-    ColumnCodecDescription::CodecsByPath result;
-    ParserColumnDeclaration column_parser(/* require type */ true);
-    for (size_t i = 0; i < count; ++i)
-    {
-        size_t path_size = 0;
-        readText(path_size, in);
-        CodecPath path;
-        path.reserve(path_size);
-        for (size_t j = 0; j < path_size; ++j)
-        {
-            assertChar('\t', in);
-            String segment;
-            readEscapedString(segment, in);
-            path.push_back(std::move(segment));
-        }
-        if (path.empty())
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Tuple-element codec metadata cannot contain the root path");
-
-        assertChar('\t', in);
-        String codec_text;
-        readEscapedString(codec_text, in);
-        assertChar('\n', in);
-        ASTPtr declaration = parseQuery(
-            column_parser,
-            "x UInt8 " + codec_text,
-            "tuple-element codec metadata parser",
-            0,
-            DBMS_DEFAULT_MAX_PARSER_DEPTH,
-            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-        auto codec_ast = declaration->as<ASTColumnDeclaration &>().getCodec();
-        if (!codec_ast || !result.emplace(std::move(path), codec_ast->clone()).second)
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Invalid or duplicate Tuple-element codec metadata entry");
-    }
-    assertEOF(in);
-    return result;
-}
-
-void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment, UInt64 format_version) const
+void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const
 {
     /// NOTE: Serialization format is insane.
 
     writeBackQuotedString(name, buf);
     writeChar(' ', buf);
     writeEscapedString(type->getName(), buf);
-
-    if (format_version >= 2 && codec.hasSubcolumns())
-    {
-        writeCString("\tTUPLE_ELEMENT_CODECS ", buf);
-        writeEscapedString(serializeTupleElementCodecs(codec, state), buf);
-    }
 
     if (default_desc.expression)
     {
@@ -264,10 +187,10 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
         writeEscapedString(formatASTStateAware(ast, state), buf);
     }
 
-    if (codec.hasRoot())
+    if (codec)
     {
         writeChar('\t', buf);
-        writeEscapedString(formatASTStateAware(*codec.getRoot(), state), buf);
+        writeEscapedString(formatASTStateAware(*codec, state), buf);
     }
 
     if (statistics.hasExplicitStatistics())
@@ -298,39 +221,14 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
     writeChar('\n', buf);
 }
 
-void ColumnDescription::readText(PeekableReadBuffer & buf, UInt64 format_version)
+void ColumnDescription::readText(ReadBuffer & buf)
 {
     readBackQuotedString(name, buf);
     assertChar(' ', buf);
 
     String type_string;
     readEscapedString(type_string, buf);
-    ParserDataType type_parser(
-        format_version == 1 ? TupleElementCodecSyntax::AllowSet : TupleElementCodecSyntax::Disallow);
-    ASTPtr type_ast = parseQuery(type_parser, type_string, "column type parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    type = DataTypeFactory::instance().get(type_ast);
-
-    ASTColumnDeclaration codec_declaration;
-    codec_declaration.name = name;
-    codec_declaration.setType(type_ast->clone());
-
-    ColumnCodecDescription::CodecsByPath tuple_element_codecs;
-    bool has_tuple_element_codecs = false;
-    if (format_version >= 2)
-    {
-        buf.setCheckpoint();
-        has_tuple_element_codecs = checkString("\tTUPLE_ELEMENT_CODECS ", buf);
-        if (has_tuple_element_codecs)
-            buf.dropCheckpoint();
-        else
-            buf.rollbackToCheckpoint(/* drop = */ true);
-    }
-    if (has_tuple_element_codecs)
-    {
-        String policy_text;
-        readEscapedString(policy_text, buf);
-        tuple_element_codecs = deserializeTupleElementCodecs(policy_text);
-    }
+    type = DataTypeFactory::instance().get(type_string);
 
     if (checkChar('\t', buf))
     {
@@ -353,7 +251,7 @@ void ColumnDescription::readText(PeekableReadBuffer & buf, UInt64 format_version
                 comment = col_comment->as<ASTLiteral &>().value.safeGet<String>();
 
             if (auto col_codec = col_ast->getCodec())
-                codec_declaration.setCodec(col_codec->clone());
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_codec, type, CodecValidationSettings::trusted());
 
             if (auto col_ttl = col_ast->getTTL())
                 ttl = col_ttl;
@@ -367,22 +265,6 @@ void ColumnDescription::readText(PeekableReadBuffer & buf, UInt64 format_version
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");
     }
-
-    ColumnCodecDescription parsed_codec;
-    if (const auto root_codec = codec_declaration.getCodec())
-        parsed_codec.setRoot(root_codec);
-
-    /// Version 1 stored Tuple-element codecs inside the type text. Combine them with the
-    /// separately stored version 2 entries before validating and normalizing the complete policy.
-    for (const auto & [path, operation] : tupleElementCodecPatchFromAST(codec_declaration, type))
-    {
-        if (operation.kind != ColumnCodecPatchKind::Set)
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Column metadata cannot remove a Tuple-element codec");
-        parsed_codec.set(path, operation.codec);
-    }
-    for (const auto & [path, codec_ast] : tuple_element_codecs)
-        parsed_codec.set(path, codec_ast);
-    codec = validateColumnCodecDescription(parsed_codec, type, CodecValidationSettings::trusted());
 }
 
 ColumnsDescription & ColumnsDescription::operator=(const ColumnsDescription & other)
@@ -391,6 +273,7 @@ ColumnsDescription & ColumnsDescription::operator=(const ColumnsDescription & ot
     {
         columns = other.columns;
         subcolumns = other.subcolumns;
+        tuple_element_codecs = cloneTupleElementCodecs(other.tuple_element_codecs);
         invalidateGetCache();
     }
     return *this;
@@ -402,6 +285,7 @@ ColumnsDescription & ColumnsDescription::operator=(ColumnsDescription && other) 
     {
         columns = std::move(other.columns);
         subcolumns = std::move(other.subcolumns);
+        tuple_element_codecs = std::move(other.tuple_element_codecs);
         /// Steal the cache from `other`: it is consistent with the columns we just moved.
         /// Lock `*this` only; `other` is moved-from and has no concurrent users by contract.
         std::lock_guard lock(get_cache_mutex);
@@ -508,7 +392,7 @@ namespace
 /// non-shared) type instance, so it does not affect any other column of the same type.
 void attachQuantizeSerializationIfNeeded(ColumnDescription & column)
 {
-    auto params = tryExtractQuantizedCodecParams(column.codec.getRoot());
+    auto params = tryExtractQuantizedCodecParams(column.codec);
     if (!params)
         return;
 
@@ -536,11 +420,11 @@ void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDesc
     {
         /// Same type only: a dropped and re-added column would throw in the helper.
         const auto * column_in_metadata = metadata.tryGet(column.name);
-        if (!column_in_metadata || column_in_metadata->codec.empty() || !column_in_metadata->type->equals(*column.type))
+        if (!column_in_metadata || !column_in_metadata->codec || !column_in_metadata->type->equals(*column.type))
             continue;
 
         /// The customization lands on the shared type instance, i.e. on column.type itself.
-        ColumnDescription column_with_codec(column.name, column.type, column_in_metadata->codec.getRoot(), {});
+        ColumnDescription column_with_codec(column.name, column.type, column_in_metadata->codec, {});
         attachQuantizeSerializationIfNeeded(column_with_codec);
     }
 }
@@ -596,6 +480,7 @@ void ColumnsDescription::remove(const String & column_name)
 
     for (auto list_it = range.first; list_it != range.second;)
     {
+        removeTupleElementCodecs(list_it->name);
         removeSubcolumns(list_it->name);
         list_it = columns.get<0>().erase(list_it);
     }
@@ -611,10 +496,22 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
                         column_from, getHintsMessage(column_from));
     }
 
+    if (tuple_element_codecs && tuple_element_codecs->contains(column_to))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot rename codec policy from {} to {}: destination policy exists", column_from, column_to);
+
     columns.get<1>().modify_key(it, [&column_to] (String & old_name)
     {
         old_name = column_to;
     });
+    if (tuple_element_codecs)
+    {
+        auto policy = tuple_element_codecs->extract(column_from);
+        if (!policy.empty())
+        {
+            policy.key() = column_to;
+            tuple_element_codecs->insert(std::move(policy));
+        }
+    }
     invalidateGetCache();
 }
 
@@ -683,6 +580,10 @@ void ColumnsDescription::flattenNested()
             ++it;
             continue;
         }
+
+        if (tryGetTupleElementCodecs(it->name))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Cannot flatten Nested column {} while it owns Tuple-element codec declarations", it->name);
 
         ColumnDescription column = *it;
         removeSubcolumns(column.name);
@@ -1150,13 +1051,78 @@ bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
 {
     const auto it = columns.get<1>().find(column_name);
 
-    return it != columns.get<1>().end() && !it->codec.empty();
+    return it != columns.get<1>().end()
+        && (it->codec != nullptr || tryGetTupleElementCodecs(column_name) != nullptr);
+}
+
+std::unique_ptr<TupleElementCodecsByColumn> ColumnsDescription::cloneTupleElementCodecs(
+    const std::unique_ptr<TupleElementCodecsByColumn> & source)
+{
+    if (!source)
+        return nullptr;
+
+    auto result = std::make_unique<TupleElementCodecsByColumn>();
+    for (const auto & [owner, declarations] : *source)
+        for (const auto & [path, codec] : declarations)
+            (*result)[owner][path] = codec->clone();
+    return result;
+}
+
+const TupleElementCodecs * ColumnsDescription::tryGetTupleElementCodecs(const String & owner) const
+{
+    if (!tuple_element_codecs)
+        return nullptr;
+    const auto it = tuple_element_codecs->find(owner);
+    return it == tuple_element_codecs->end() ? nullptr : &it->second;
+}
+
+ColumnCodecPolicyView ColumnsDescription::getCodecPolicy(const String & owner) const
+{
+    const auto & column = get(owner);
+    return ColumnCodecPolicyView(column.codec, tryGetTupleElementCodecs(owner));
+}
+
+void ColumnsDescription::setTupleElementCodec(String owner, TupleCodecPath path, const ASTPtr & codec)
+{
+    if (path.empty() || !codec)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A Tuple-element codec requires a non-empty path and codec AST");
+    const auto * column = tryGet(owner);
+    if (!column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot attach a Tuple-element codec to unknown column {}", owner);
+    if (canonicalizeTupleCodecPath(column->type, path) != path)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple-element codec path for column {} is not canonical", owner);
+    if (!tuple_element_codecs)
+        tuple_element_codecs = std::make_unique<TupleElementCodecsByColumn>();
+    (*tuple_element_codecs)[std::move(owner)][std::move(path)] = codec->clone();
+}
+
+bool ColumnsDescription::removeTupleElementCodec(const String & owner, const TupleCodecPath & path)
+{
+    if (!tuple_element_codecs)
+        return false;
+    const auto owner_it = tuple_element_codecs->find(owner);
+    if (owner_it == tuple_element_codecs->end() || !owner_it->second.erase(path))
+        return false;
+    if (owner_it->second.empty())
+        tuple_element_codecs->erase(owner_it);
+    if (tuple_element_codecs->empty())
+        tuple_element_codecs.reset();
+    return true;
+}
+
+void ColumnsDescription::removeTupleElementCodecs(const String & owner)
+{
+    if (!tuple_element_codecs)
+        return;
+    tuple_element_codecs->erase(owner);
+    if (tuple_element_codecs->empty())
+        tuple_element_codecs.reset();
 }
 
 bool ColumnsDescription::hasExplicitDefaultCompressionCodec(const String & column_name) const
 {
     const auto it = columns.get<1>().find(column_name);
-    if (it == columns.get<1>().end() || !it->codec.hasRoot() || it->codec.hasSubcolumns())
+    if (it == columns.get<1>().end() || it->codec == nullptr || tryGetTupleElementCodecs(column_name))
         return false;
 
     /// The stored codec descriptor is a `CODEC(...)` function whose arguments are the pipeline
@@ -1165,7 +1131,7 @@ bool ColumnsDescription::hasExplicitDefaultCompressionCodec(const String & colum
     /// codec". It can be the only stage (`CODEC(Default)`) or the generic-compression stage of a
     /// longer pipeline (`CODEC(Delta, Default)`, `CODEC(NONE, Default)`), so look for it among all
     /// stages rather than requiring the degenerate single-stage form.
-    const auto * codec_func = it->codec.getRoot()->as<ASTFunction>();
+    const auto * codec_func = it->codec->as<ASTFunction>();
     if (!codec_func || !codec_func->arguments)
         return false;
 
@@ -1210,33 +1176,52 @@ String ColumnsDescription::toString(bool include_comments) const
     WriteBufferFromOwnString buf;
     IAST::FormatState ast_format_state;
 
-    const UInt64 format_version = std::any_of(columns.begin(), columns.end(), [](const auto & column)
-    {
-        return column.codec.hasSubcolumns();
-    }) ? 2 : 1;
-    writeCString("columns format version: ", buf);
-    DB::writeText(format_version, buf);
-    writeChar('\n', buf);
+    writeCString("columns format version: 1\n", buf);
     DB::writeText(columns.size(), buf);
     writeCString(" columns:\n", buf);
 
     for (const ColumnDescription & column : columns)
-        column.writeText(buf, ast_format_state, include_comments, format_version);
+        column.writeText(buf, ast_format_state, include_comments);
+
+    return buf.str();
+}
+
+String ColumnsDescription::toStringWithCodecDeclarations(bool include_comments) const
+{
+    WriteBufferFromOwnString buf;
+    writeString(toString(include_comments), buf);
+
+    if (!hasTupleElementCodecs())
+        return buf.str();
+
+    size_t declaration_count = 0;
+    for (const auto & [_, declarations] : *tuple_element_codecs)
+        declaration_count += declarations.size();
+
+    DB::writeText(declaration_count, buf);
+    writeCString(" subcolumn codec declarations:\n", buf);
+    for (const auto & [owner, declarations] : *tuple_element_codecs)
+    {
+        for (const auto & [path, codec] : declarations)
+        {
+            std::vector<String> parts{owner};
+            parts.insert(parts.end(), path.begin(), path.end());
+            ASTColumnDeclaration declaration;
+            declaration.codec_target = make_intrusive<ASTIdentifier>(std::move(parts));
+            declaration.setCodec(codec->clone());
+            writeString(declaration.formatWithSecretsOneLine(), buf);
+            writeChar('\n', buf);
+        }
+    }
 
     return buf.str();
 }
 
 ColumnsDescription ColumnsDescription::parse(const String & str)
 {
-    ReadBufferFromString source{str};
-    PeekableReadBuffer buf{source};
+    ReadBufferFromString buf{str};
 
-    assertString("columns format version: ", buf);
-    UInt64 format_version = 0;
-    readText(format_version, buf);
-    assertChar('\n', buf);
-    if (format_version != 1 && format_version != 2)
-        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Unsupported columns format version {}", format_version);
+    assertString("columns format version: 1\n", buf);
     size_t count{};
     readText(count, buf);
     assertString(" columns:\n", buf);
@@ -1245,9 +1230,52 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
     for (size_t i = 0; i < count; ++i)
     {
         ColumnDescription column;
-        column.readText(buf, format_version);
+        column.readText(buf);
         buf.ignore(1); /// ignore new line
         result.add(column);
+    }
+
+    if (!buf.eof())
+    {
+        size_t declarations_count{};
+        readText(declarations_count, buf);
+        assertString(" subcolumn codec declarations:\n", buf);
+
+        std::map<String, TupleElementCodecs> pending;
+        for (size_t i = 0; i < declarations_count; ++i)
+        {
+            String line;
+            readStringUntilNewlineInto(line, buf);
+            if (!buf.eof())
+                assertChar('\n', buf);
+
+            ParserCodecOnlyDeclaration parser;
+            auto ast = parseQuery(parser, line, "subcolumn codec declaration", 0,
+                DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            const auto * declaration = ast->as<ASTColumnDeclaration>();
+            const auto * target = declaration && declaration->codec_target
+                ? declaration->codec_target->as<ASTIdentifier>() : nullptr;
+            if (!target || !declaration->getCodec())
+                throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Invalid subcolumn codec declaration");
+
+            auto resolved = resolveCodecTarget(result, *target);
+            if (resolved.isRoot())
+                throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
+                    "Subcolumn codec declaration {} resolves to a physical column", target->name());
+            if (!pending[resolved.owner_name].emplace(resolved.path, declaration->getCodec()).second)
+                throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
+                    "Duplicate subcolumn codec declaration for {}", target->name());
+        }
+
+        for (auto & [owner, declarations] : pending)
+        {
+            const auto & column = result.get(owner);
+            ColumnCodecPolicyView policy(column.codec, &declarations);
+            auto normalized = validateColumnCodecPolicy(
+                policy, column.type, CodecValidationSettings::trusted());
+            for (const auto & [path, codec] : normalized.elements)
+                result.setTupleElementCodec(owner, path, codec);
+        }
     }
 
     assertEOF(buf);

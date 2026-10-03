@@ -67,6 +67,7 @@ void ASTColumns::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "Columns definition");
     w.writeChild("columns", columns);
+    w.writeChild("codec_declarations", codec_declarations);
     w.writeChild("indices", indices);
     w.writeChild("constraints", constraints);
     w.writeChild("projections", projections);
@@ -99,6 +100,7 @@ void ASTColumns::readJSON(const Poco::JSON::Object & json)
     };
 
     readDeclarationList.operator()<ASTColumnDeclaration>("columns", columns);
+    readDeclarationList.operator()<ASTColumnDeclaration>("codec_declarations", codec_declarations);
 
     /// A column-level PRIMARY KEY is a parser-intermediate bit in a CREATE column list:
     /// `ParserTablePropertiesDeclarationList` transfers it into `primary_key_from_columns` (which
@@ -327,6 +329,8 @@ ASTPtr ASTColumns::clone() const
 
     if (columns)
         res->set(res->columns, columns->clone());
+    if (codec_declarations)
+        res->set(res->codec_declarations, codec_declarations->clone());
     if (indices)
         res->set(res->indices, indices->clone());
     if (constraints)
@@ -352,6 +356,16 @@ void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
             auto elem = make_intrusive<ASTColumnsElement>();
             elem->prefix = "";
             elem->set(elem->elem, column->clone());
+            list.children.push_back(elem);
+        }
+    }
+    if (codec_declarations)
+    {
+        for (const auto & declaration : codec_declarations->children)
+        {
+            auto elem = make_intrusive<ASTColumnsElement>();
+            elem->prefix = "";
+            elem->set(elem->elem, declaration->clone());
             list.children.push_back(elem);
         }
     }

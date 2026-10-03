@@ -1,40 +1,56 @@
 #pragma once
 
-#include <Storages/ColumnCodecDescription.h>
+#include <Storages/ColumnCodecPath.h>
+#include <Storages/ColumnCodecPolicy.h>
 
-#include <DataTypes/IDataType_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
+
+#include <optional>
 
 namespace DB
 {
 
 struct CodecValidationSettings;
+struct NameAndTypePair;
 
 struct ApplicableCodecStream
 {
-    CodecPath logical_path;
-    /// Physical type of the stream, when serialization provides it.
+    TupleCodecPath logical_path;
     DataTypePtr leaf_type;
     bool structural = false;
+    /// The physical route to this stream enters a Map. Lossy codecs are unsafe
+    /// there because they can alter serialized keys.
+    bool enters_map = false;
 };
 
-/// Return the logical Tuple-element path recorded in a serialization stream path.
-CodecPath getCodecPath(const ISerialization::SubstreamPath & path);
+/// Shared logical classification for DDL validation, runtime writing, key checks,
+/// and subcolumn introspection.
+class CodecStreamClassifier
+{
+public:
+    explicit CodecStreamClassifier(DataTypePtr owner_type_);
+    CodecStreamClassifier(DataTypePtr owner_type_, const NameAndTypePair & written_column);
 
-/// Classify one physical serialization stream. Runtime resolution uses the same function.
-ApplicableCodecStream classifyCodecStream(const ISerialization::SubstreamPath & path);
+    /// Empty means that the complete path identifies an ephemeral stream.
+    std::optional<ApplicableCodecStream> classify(const ISerialization::SubstreamPath & path) const;
 
-ColumnCodecDescription validateColumnCodecDescription(
-    const ColumnCodecDescription & policy,
-    const DataTypePtr & logical_type,
-    const CodecValidationSettings & settings);
+private:
+    DataTypePtr owner_type;
+    /// Exact serialization route from the owner to a partially written subcolumn.
+    /// It preserves structural steps such as array sizes and nullable null maps.
+    ISerialization::SubstreamPath written_column_substream_prefix;
+};
 
-/// Validate the complete policy. Apply session settings only to codecs changed by this ALTER.
-/// Validate retained codecs as trusted metadata, including their paths and data types.
-ColumnCodecDescription validateColumnCodecDescriptionForAlter(
-    const ColumnCodecDescription & policy,
-    const DataTypePtr & logical_type,
-    const ColumnCodecDescription::CodecsByPath & declarations_to_admit,
-    const CodecValidationSettings & settings);
+struct NormalizedColumnCodecPolicy
+{
+    ASTPtr root;
+    TupleElementCodecs elements;
+};
+
+NormalizedColumnCodecPolicy validateColumnCodecPolicy(
+    const ColumnCodecPolicyView & policy,
+    const DataTypePtr & owner_type,
+    const CodecValidationSettings & settings,
+    const CodecDeclarationPaths * declarations_requiring_full_validation = nullptr);
 
 }

@@ -6,7 +6,6 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
-#include <Parsers/ASTTupleDataType.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -15,18 +14,11 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Poco/String.h>
 
+#include <type_traits>
+
+
 namespace DB
 {
-
-inline void removeTupleElementCodecOperations(ASTPtr & ast)
-{
-    if (!ast)
-        return;
-    if (auto * tuple = ast->as<ASTTupleDataType>())
-        tuple->resetCodecOperations();
-    for (auto & child : ast->children)
-        removeTupleElementCodecOperations(child);
-}
 
 /** Parses sql security option. DEFINER = user_name SQL SECURITY DEFINER
  */
@@ -52,16 +44,9 @@ protected:
 template <typename NameParser>
 class IParserNameTypePair : public IParserBase
 {
-public:
-    explicit IParserNameTypePair(TupleElementCodecSyntax tuple_element_codec_syntax_ = TupleElementCodecSyntax::Disallow)
-        : tuple_element_codec_syntax(tuple_element_codec_syntax_) {}
-
 protected:
     const char * getName() const  override{ return "name and type pair"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
-private:
-    TupleElementCodecSyntax tuple_element_codec_syntax;
 };
 
 /** The name and type are separated by a space. For example, URL String. */
@@ -71,7 +56,7 @@ template <typename NameParser>
 bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     NameParser name_parser;
-    ParserDataType type_parser(tuple_element_codec_syntax);
+    ParserDataType type_parser;
 
     ASTPtr name;
     ASTPtr type;
@@ -132,15 +117,10 @@ template <typename NameParser>
 class IParserColumnDeclaration : public IParserBase
 {
 public:
-    explicit IParserColumnDeclaration(
-        bool require_type_ = true,
-        bool allow_null_modifiers_ = false,
-        bool check_keywords_after_name_ = false,
-        TupleElementCodecSyntax tuple_element_codec_syntax_ = TupleElementCodecSyntax::AllowSet)
+    explicit IParserColumnDeclaration(bool require_type_ = true, bool allow_null_modifiers_ = false, bool check_keywords_after_name_ = false)
         : require_type(require_type_)
         , allow_null_modifiers(allow_null_modifiers_)
         , check_keywords_after_name(check_keywords_after_name_)
-        , tuple_element_codec_syntax(tuple_element_codec_syntax_)
     {
     }
 
@@ -156,7 +136,6 @@ protected:
     const bool check_keywords_after_name = false;
     /// just for ALTER TABLE ALTER COLUMN use
     bool check_type_keyword = false;
-    const TupleElementCodecSyntax tuple_element_codec_syntax = TupleElementCodecSyntax::AllowSet;
 };
 
 using ParserColumnDeclaration = IParserColumnDeclaration<ParserIdentifier>;
@@ -186,7 +165,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_primary_key{Keyword::PRIMARY_KEY};
 
     NameParser name_parser;
-    ParserDataType type_parser(tuple_element_codec_syntax);
+    ParserDataType type_parser;
     ParserExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserLiteral literal_parser;
@@ -207,6 +186,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
     tryGetIdentifierNameInto(name, column_declaration->name);
+    if constexpr (std::is_same_v<NameParser, ParserCompoundIdentifier>)
+        column_declaration->codec_target = name->clone();
+
     /// This keyword may occur only in MODIFY COLUMN query. We check it here
     /// because ParserDataType parses types as an arbitrary identifiers and
     /// doesn't check that parsed string is existing data type. In this way,
@@ -239,6 +221,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr collation_expression;
     ASTPtr settings;
     bool primary_key_specifier = false;
+    /// The type as written in the query - what `astText` needs when there is no formatter.
+    std::string_view type_text;
+
     auto null_check_without_moving = [&]() -> bool
     {
         if (!allow_null_modifiers)
@@ -276,8 +261,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     {
         if (check_type_keyword && !s_type.ignore(pos, expected))
             return false;
+        Pos type_begin = pos;
         if (!type_parser.parse(pos, type, expected))
             return false;
+        type_text = textBetween(type_begin, pos);
         if (s_collate.ignore(pos, expected)
             && !collation_parser.parse(pos, collation_expression, expected))
             return false;
@@ -338,12 +325,13 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             default_function->name = "defaultValueOfTypeName";
             default_function->arguments = make_intrusive<ASTExpressionList>();
             default_function->children.push_back(default_function->arguments);
-            /// Tuple-element CODEC operations are column metadata, not part of the logical type
-            /// accepted by defaultValueOfTypeName.
-            auto logical_type_ast = type->clone();
-            removeTupleElementCodecOperations(logical_type_ast);
-            default_function->arguments->children.emplace_back(
-                make_intrusive<ASTLiteral>(logical_type_ast->formatWithSecretsOneLine()));
+            /// Not formatted at all: the type is taken from the query text as written, so
+            /// `defaultValueOfTypeName` parses back exactly what the user wrote. This also subsumes
+            /// master's move away from `formatForLogging`, which hid secrets a data type does not
+            /// have and ran the server's `query_masking_rules` over the result.
+            /// Reached only when a type was parsed above, which is what fills in `type_text`.
+            chassert(!type_text.empty());
+            default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(astText(*type, type_text)));
             default_expression = default_function;
         }
 
@@ -577,6 +565,13 @@ class ParserTablePropertyDeclaration : public IParserBase
 {
 protected:
     const char * getName() const override { return "table property (column, index, constraint) declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserCodecOnlyDeclaration : public IParserBase
+{
+protected:
+    const char * getName() const override { return "codec-only column declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

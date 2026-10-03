@@ -77,29 +77,30 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         cached_marks[MergeTreeDataPartCompact::DATA_FILE_NAME] = std::make_unique<MarksInCompressedFile::PlainArray>();
 }
 
-void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ColumnCodecDescription & codec_policy)
+void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, ColumnCodecPolicyView codec_policy)
 {
-    const ASTPtr default_codec_desc = default_codec->getFullCodecDescription();
     ColumnCodecResolver codec_resolver(
-        codec_policy,
-        name_and_type.getTypeInStorage(),
-        name_and_type,
-        default_codec_desc,
-        settings.apply_adaptive_codec);
+        std::move(codec_policy), name_and_type.getTypeInStorage(), name_and_type,
+        default_codec->getFullCodecDescription(), settings.apply_adaptive_codec);
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
+        if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+            return;
         String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
-        /// Logical columns can share a physical stream. The first writer chooses its codec.
+        /// Shared offsets for Nested type.
         if (compressed_streams.contains(stream_name))
             return;
 
-        CompressionCodecPtr compression_codec = codec_resolver.getCodec(substream_path, default_codec);
+        auto compression_codec = codec_resolver.getCodec(substream_path, default_codec);
+        if (!compression_codec)
+            return;
 
         UInt64 codec_id = compression_codec->getHash();
-        /// A codec that needs the vector size keeps state for one stream.
-        /// Use a stream-specific key so each stream gets a separate codec object.
+        /// Codecs that need the vector dimension upfront (e.g. SZ3) keep per-stream state in the codec
+        /// object, so they must not be shared between streams. Make the key unique per stream so that
+        /// every such stream gets its own codec instance, while still being tracked for finalize/cancel.
         if (compression_codec->needsVectorDimensionUpfront())
         {
             SipHash codec_hash;

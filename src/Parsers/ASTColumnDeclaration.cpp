@@ -3,6 +3,7 @@
 #include <Parsers/ASTCollation.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTWithAlias.h>
@@ -91,6 +92,7 @@ ASTPtr ASTColumnDeclaration::clone() const
     const auto res = make_intrusive<ASTColumnDeclaration>(*this);
     res->children.clear();
     res->packed_indices = kAllNotSet;
+    res->codec_target = codec_target ? codec_target->clone() : nullptr;
 
     if (auto node = getType())
         res->setType(node->clone());
@@ -121,7 +123,9 @@ void ASTColumnDeclaration::updateTreeHashImpl(SipHash & hash_state, bool ignore_
     /// non-child members carry meaning and must be hashed here: `x UInt8 DEFAULT 1` and
     /// `x UInt8 MATERIALIZED 1` differ only in `default_specifier`.
     /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
-    static_assert(sizeof(void *) != 8 || sizeof(*this) == 64, "If members were added to ASTColumnDeclaration, hash them here unless they are purely cosmetic.");
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 72, "If members were added to ASTColumnDeclaration, hash them here unless they are purely cosmetic.");
+    if (codec_target)
+        codec_target->updateTreeHash(hash_state, ignore_aliases);
     hash_state.update(default_specifier);
     hash_state.update(null_modifier.has_value());
     if (null_modifier.has_value())
@@ -137,7 +141,10 @@ void ASTColumnDeclaration::updateTreeHashImpl(SipHash & hash_state, bool ignore_
 
 void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
 {
-    format_settings.writeIdentifier(ostr, name, /*ambiguous=*/true);
+    if (codec_target)
+        codec_target->format(ostr, format_settings, state, frame);
+    else
+        format_settings.writeIdentifier(ostr, name, /*ambiguous=*/true);
 
     if (auto type = getType())
     {
@@ -222,6 +229,7 @@ void ASTColumnDeclaration::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "ColumnDeclaration");
     w.writeString("name", name);
+    w.writeChild("codec_target", codec_target);
 
     if (default_specifier != ColumnDefaultSpecifier::Empty)
         w.writeString("default_specifier", std::string_view(toString(default_specifier)));
@@ -247,6 +255,7 @@ void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
 
     name = r.getString("name");
+    codec_target = r.readChildOfType<ASTIdentifier>("codec_target");
 
     String spec = r.getString("default_specifier");
     default_specifier = columnDefaultSpecifierFromString(spec);
@@ -314,6 +323,8 @@ void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
 
 void ASTColumnDeclaration::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
 {
+    if (codec_target)
+        f(nullptr, &codec_target);
     auto callIfSet = [&](IndexSlot slot)
     {
         UInt8 idx = getIndex(slot);

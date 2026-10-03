@@ -6,7 +6,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnDefault.h>
-#include <Storages/ColumnCodecDescription.h>
+#include <Storages/ColumnCodecPath.h>
+#include <Storages/ColumnCodecPolicy.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
@@ -23,12 +24,11 @@
 #include <boost/multi_index_container.hpp>
 
 #include <optional>
+#include <memory>
 
 
 namespace DB
 {
-
-class PeekableReadBuffer;
 
 namespace ErrorCodes
 {
@@ -103,7 +103,7 @@ struct ColumnDescription
     DataTypePtr type;
     ColumnDefault default_desc;
     String comment;
-    ColumnCodecDescription codec;
+    ASTPtr codec;
     SettingsChanges settings;
     ASTPtr ttl;
     ColumnStatisticsDescription statistics;
@@ -122,8 +122,8 @@ struct ColumnDescription
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
 
-    void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment, UInt64 format_version) const;
-    void readText(PeekableReadBuffer & buf, UInt64 format_version);
+    void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const;
+    void readText(ReadBuffer & buf);
 };
 
 
@@ -136,9 +136,20 @@ public:
     /// Mutable cache members (`get_cache_mutex`, `get_cache`) are non-copyable; define
     /// explicit copy / move. Copy discards the cache (it's reproducible); move steals it,
     /// because the cache content is consistent with the columns being transferred.
-    ColumnsDescription(const ColumnsDescription & other) : IHints<>(other), columns(other.columns), subcolumns(other.subcolumns) {}
+    ColumnsDescription(const ColumnsDescription & other)
+        : IHints<>(other)
+        , columns(other.columns)
+        , subcolumns(other.subcolumns)
+        , tuple_element_codecs(cloneTupleElementCodecs(other.tuple_element_codecs))
+    {
+    }
     ColumnsDescription(ColumnsDescription && other) noexcept
-        : columns(std::move(other.columns)), subcolumns(std::move(other.subcolumns)), get_cache(std::move(other.get_cache)) {}
+        : columns(std::move(other.columns))
+        , subcolumns(std::move(other.subcolumns))
+        , tuple_element_codecs(std::move(other.tuple_element_codecs))
+        , get_cache(std::move(other.get_cache))
+    {
+    }
     ColumnsDescription & operator=(const ColumnsDescription & other);
     ColumnsDescription & operator=(ColumnsDescription && other) noexcept;
 
@@ -166,7 +177,10 @@ public:
     /// NOTE Must correspond with Nested::flatten function.
     void flattenNested(); /// TODO: remove, insert already flattened Nested columns.
 
-    bool operator==(const ColumnsDescription & other) const { return toString(false) == other.toString(false); }
+    bool operator==(const ColumnsDescription & other) const
+    {
+        return toStringWithCodecDeclarations(false) == other.toStringWithCodecDeclarations(false);
+    }
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }
 
     auto begin() const { return columns.begin(); }
@@ -254,11 +268,21 @@ public:
     /// `CODEC(Delta, Default)`, ...)? Such a column carries a codec descriptor (so
     /// `hasCompressionCodec` is true), yet its generic-compression stage is the part's default
     /// codec, so its `.bin` proves the default codec family - unlike a column with an explicit
-    /// non-default codec. Returns false for a policy with tuple-element declarations because an
-    /// arbitrary stream of such a column may use an element-specific codec.
+    /// non-default codec.
     bool hasExplicitDefaultCompressionCodec(const String & column_name) const;
 
+    bool hasTupleElementCodecs() const { return tuple_element_codecs && !tuple_element_codecs->empty(); }
+    const TupleElementCodecs * tryGetTupleElementCodecs(const String & owner) const;
+    ColumnCodecPolicyView getCodecPolicy(const String & owner) const;
+
+    void setTupleElementCodec(String owner, TupleCodecPath path, const ASTPtr & codec);
+    bool removeTupleElementCodec(const String & owner, const TupleCodecPath & path);
+    void removeTupleElementCodecs(const String & owner);
+
+    /// Historical physical representation used by data parts, query plans, and client schema transport.
     String toString(bool include_comments) const;
+    /// Full table metadata including Tuple-element codec declarations.
+    String toStringWithCodecDeclarations(bool include_comments) const;
     static ColumnsDescription parse(const String & str);
 
     size_t size() const
@@ -287,6 +311,9 @@ public:
             boost::multi_index::hashed_non_unique<boost::multi_index::const_mem_fun<NameAndTypePair, String, &NameAndTypePair::getNameInStorage>>>>;
 
 private:
+    static std::unique_ptr<TupleElementCodecsByColumn> cloneTupleElementCodecs(
+        const std::unique_ptr<TupleElementCodecsByColumn> & source);
+
     ColumnsContainer columns;
 
     /// Subcolumns are not nested columns.
@@ -297,6 +324,10 @@ private:
     ///
     /// While nested columns have form like foo.bar
     SubcolumnsContainter subcolumns;
+
+    /// Absent for the common root-only schema. Paths are relative to the owning
+    /// physical column and are always non-empty and canonical.
+    std::unique_ptr<TupleElementCodecsByColumn> tuple_element_codecs;
 
     void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
     void addSubcolumnsToList(NamesAndTypesList & source_list, const GetColumnsOptions & options) const;

@@ -22,15 +22,20 @@ String ASTDataType::getID(char delim) const
 ASTPtr ASTDataType::clone() const
 {
     auto res = make_intrusive<ASTDataType>(*this);
+    const auto & arguments = getArguments();
     res->children.clear();
-    if (const auto arguments = getArguments())
+
+    if (arguments)
         res->children.push_back(arguments->clone());
+
     return res;
 }
 
 ASTPtr ASTDataType::getArguments() const
 {
-    return children.empty() ? nullptr : children.front();
+    if (!children.empty())
+        return children[0];
+    return nullptr;
 }
 
 void ASTDataType::writeJSON(WriteBuffer & out) const
@@ -52,7 +57,6 @@ void ASTDataType::readJSON(const Poco::JSON::Object & json)
     /// `arguments` is the `ASTExpressionList` produced by `ParserDataType`. `formatImpl` only prints
     /// the `(...)` when this child has its own `children`, so a non-list node here would be silently
     /// dropped (e.g. `Nullable(UInt8)` formatting as bare `Nullable`). Reject it at the JSON boundary.
-    children.clear();
     auto args = r.readChildOfType<ASTExpressionList>("arguments");
     if (args)
         children.push_back(args);

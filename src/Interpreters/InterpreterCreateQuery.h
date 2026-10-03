@@ -39,6 +39,12 @@ public:
     static ASTPtr formatColumns(const NamesAndTypesList & columns);
     static ASTPtr formatColumns(const NamesAndTypesList & columns, const NamesAndAliases & alias_columns);
     static ASTPtr formatColumns(const ColumnsDescription & columns);
+    static ASTPtr formatTupleElementCodecDeclarations(const ColumnsDescription & columns);
+    static void applyCodecOnlyDeclarations(
+        const ASTExpressionList * declarations,
+        ColumnsDescription & columns,
+        const ContextPtr & context,
+        bool trusted_metadata);
     static ASTPtr formatIndices(const IndicesDescription & indices);
     static ASTPtr formatConstraints(const ConstraintsDescription & constraints);
     static ASTPtr formatProjections(const ProjectionsDescription & projections);

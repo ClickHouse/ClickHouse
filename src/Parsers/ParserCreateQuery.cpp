@@ -411,6 +411,7 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     ParserConstraintDeclaration constraint_p;
     ParserProjectionDeclaration projection_p;
     ParserForeignKeyDeclaration foreign_key_p;
+    ParserCodecOnlyDeclaration codec_only_p;
     ParserColumnDeclaration column_p{true, true};
     ParserExpression primary_key_p;
 
@@ -441,6 +442,9 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
         if (!foreign_key_p.parse(pos, new_node, expected))
             return false;
     }
+    else if (codec_only_p.parse(pos, new_node, expected))
+    {
+    }
     else
     {
         if (!column_p.parse(pos, new_node, expected))
@@ -448,6 +452,27 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     }
 
     node = new_node;
+    return true;
+}
+
+bool ParserCodecOnlyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserCompoundColumnDeclaration parser(/* require_type = */ false);
+    ASTPtr declaration_ast;
+    if (!parser.parse(pos, declaration_ast, expected))
+        return false;
+
+    const auto & declaration = declaration_ast->as<ASTColumnDeclaration &>();
+    if (declaration.getType() || !declaration.getCodec()
+        || declaration.getDefaultExpression() || declaration.getComment()
+        || declaration.getStatisticsDesc() || declaration.getTTL()
+        || declaration.getCollation() || declaration.getSettings()
+        || declaration.default_specifier != ColumnDefaultSpecifier::Empty
+        || declaration.null_modifier || declaration.ephemeral_default
+        || declaration.primary_key_specifier)
+        return false;
+
+    node = std::move(declaration_ast);
     return true;
 }
 
@@ -479,6 +504,7 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
         return false;
 
     ASTPtr columns = make_intrusive<ASTExpressionList>();
+    ASTPtr codec_declarations = make_intrusive<ASTExpressionList>();
     ASTPtr indices = make_intrusive<ASTExpressionList>();
     ASTPtr constraints = make_intrusive<ASTExpressionList>();
     ASTPtr projections = make_intrusive<ASTExpressionList>();
@@ -489,6 +515,11 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
     {
         if (auto * cd = elem->as<ASTColumnDeclaration>())
         {
+            if (cd->codec_target && !cd->getType())
+            {
+                codec_declarations->children.push_back(elem);
+                continue;
+            }
             if (cd->primary_key_specifier)
             {
                 if (!primary_key_from_columns)
@@ -532,6 +563,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
 
     if (!columns->children.empty())
         res->set(res->columns, columns);
+    if (!codec_declarations->children.empty())
+        res->set(res->codec_declarations, codec_declarations);
     if (!indices->children.empty())
         res->set(res->indices, indices);
     if (!constraints->children.empty())
@@ -2764,8 +2797,8 @@ ENGINE = <Engine>
 ...
 ```
 
-The `Default` codec can be specified to reference default compression which may depend on different settings (and properties of data) at runtime.
-For a top-level column, `value UInt64 CODEC(Default)` has the same effective behavior as omitting the codec specification. On a Tuple element, an explicit `CODEC(Default)` also prevents that element from inheriting an enclosing codec.
+The `Default` codec can be specified to reference default compression which may depend on different settings (and properties of data) in runtime.
+Example: `value UInt64 CODEC(Default)` — the same as lack of codec specification.
 See also [Adaptive Codec Selection](#adaptive-codec-selection).
 
 Also you can remove current CODEC from the column and use default compression from config.xml:
@@ -2775,96 +2808,6 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 ```
 
 Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
-
-## Tuple element codecs {#tuple-element-codecs}
-
-<ExperimentalBadge/>
-
-For a stored column with [`Tuple`](/reference/data-types/tuple) elements, you can assign a different codec to each element. Enable the [`enable_tuple_element_codecs`](/reference/settings/session-settings/enable#enable_tuple_element_codecs) setting before creating or altering such a column:
-
-```sql
-SET enable_tuple_element_codecs = 1;
-
-CREATE TABLE tuple_codec_example
-(
-    id UInt64,
-    payload Tuple(
-        timestamp DateTime64(3) CODEC(DoubleDelta, ZSTD),
-        value Float64 CODEC(Gorilla, ZSTD),
-        source String
-    ) CODEC(LZ4)
-)
-ENGINE = MergeTree
-ORDER BY id;
-```
-
-The codec after the closing parenthesis belongs to the whole `payload` column. An element-level declaration overrides it for that element. In this example, `payload.timestamp` and `payload.value` use their own codecs, while `payload.source` inherits `CODEC(LZ4)`.
-
-An explicit `CODEC(Default)` on an element selects the part's default codec instead of inheriting the column codec.
-
-Element codecs are also supported for nested `Tuple` types and for a `Tuple` reached through `Array`, `Nullable`, or `SimpleAggregateFunction`. These wrappers are transparent when ClickHouse matches a stream to its Tuple element: adding a supported wrapper does not create another codec declaration level. For example:
-
-```sql
-CREATE TABLE tuple_array_codec_example
-(
-    values Array(Tuple(
-        timestamp DateTime64(3) CODEC(DoubleDelta, ZSTD),
-        value Float64 CODEC(Gorilla, ZSTD)
-    )) CODEC(LZ4)
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-```
-
-For `Nullable(Tuple(...))`, the outer null-mask stream is governed by the codec declared for the whole column, or by the part default when the column has no codec. Because the null mask is a structural stream, only generic codec stages apply to it. Streams below the Tuple elements use their element codecs. The same behavior applies when a column-level `NULL` modifier or `data_type_default_nullable` adds the outer Nullable wrapper.
-
-`Nullable` is transparent at any supported level. For example, with `Tuple(sample Nullable(UInt64) CODEC(Delta, ZSTD))`, the value stream uses `Delta, ZSTD`, while the null-mask stream uses only the generic `ZSTD` stage because type-specific codecs do not apply to structural streams. With `Tuple(record Nullable(Tuple(...)) CODEC(ZSTD))`, the null mask for `record` uses `ZSTD`, and declarations on elements inside the wrapped Tuple can override it for their own value streams.
-
-The usual `enable_nullable_tuple_type` requirement still applies whenever the resulting logical type contains `Nullable(Tuple(...))`. Tuple element codecs do not change Nullable's type rules or NULL behavior.
-
-When an otherwise valid typed `MODIFY COLUMN` adds or removes a supported `Nullable` wrapper, the wrapper does not rename the stored element declarations. Omitted element codec clauses therefore continue to preserve those declarations.
-
-To add or change an element codec, use `MODIFY COLUMN` and restate the type of the owning top-level column:
-
-```sql
-ALTER TABLE tuple_codec_example
-MODIFY COLUMN payload Tuple(
-    timestamp DateTime64(3) CODEC(DoubleDelta, ZSTD(3)),
-    value Float64,
-    source String
-);
-```
-
-In a typed `MODIFY COLUMN`, element codec clauses form a patch. `CODEC(...)` adds or replaces the declaration on that element. Omitting `CODEC` preserves any existing declaration; it does not remove it.
-
-Use the ALTER-only `REMOVE CODEC` modifier to remove an element's own declaration:
-
-```sql
-ALTER TABLE tuple_codec_example
-MODIFY COLUMN payload Tuple(
-    timestamp DateTime64(3) REMOVE CODEC,
-    value Float64,
-    source String
-);
-```
-
-The declaration must exist directly on that element. After it is removed, the element inherits the nearest enclosing declaration, or uses the part default if there is none. Existing column-level forms such as `MODIFY COLUMN payload CODEC(ZSTD)` and `MODIFY COLUMN payload REMOVE CODEC` continue to affect only the column-level declaration.
-
-Changing codec metadata does not recompress existing data immediately. New parts use the new policy, and existing parts use it after a merge or mutation rewrites them. The codec stored in each compressed block is used when that block is read.
-
-`SHOW CREATE TABLE` shows the complete stored policy. The `compression_codec` column of [`system.columns`](/reference/system-tables/columns) keeps its existing meaning and shows only the codec declared for the whole column. Codec annotations are storage metadata and are not included in the value returned by `toTypeName`.
-
-The following limitations apply:
-
-- Tuple element codecs are currently supported by the `MergeTree` engine family.
-- Element declarations are accepted only in stored column definitions, not in general type expressions such as `CAST`.
-- `Array`, `Nullable`, and `SimpleAggregateFunction` are the supported transparent wrappers. Declarations below other wrappers, including `Map`, `LowCardinality`, `Nested`, and typed `JSON`, are rejected.
-- The `Quantized` codec cannot be assigned to a Tuple element.
-- There is no dotted codec target or `MODIFY SUBCOLUMN` syntax. Alter the owning top-level column instead.
-
-The `enable_tuple_element_codecs` setting controls adding or changing element codec declarations. Existing metadata can still be attached, restored, read, preserved, or have declarations removed while the setting is disabled. This allows a server to load tables that already use the feature without enabling new declarations globally.
-
-Because the feature uses a new columns metadata version, upgrade every replica and metadata consumer before enabling it. Remove all Tuple element codec declarations before downgrading to a version that does not support the feature.
 
 <Tip>
 You can't decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.

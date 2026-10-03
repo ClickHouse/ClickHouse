@@ -3,18 +3,19 @@
 #include <Compression/CompressionCodecQuantized.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
+#include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/NestedUtils.h>
 #include <Parsers/IAST.h>
-#include <Storages/ColumnCodecAST.h>
-
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 
 #include <map>
-#include <optional>
 #include <vector>
 
 namespace DB
@@ -26,203 +27,225 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-CodecPath getCodecPath(const ISerialization::SubstreamPath & path)
+CodecStreamClassifier::CodecStreamClassifier(DataTypePtr owner_type_)
+    : owner_type(std::move(owner_type_))
 {
-    CodecPath result;
-    for (const auto & entry : path)
-        if (entry.type == ISerialization::Substream::TupleElement)
-            result.push_back(entry.name_of_substream);
-    return result;
 }
 
-ApplicableCodecStream classifyCodecStream(const ISerialization::SubstreamPath & path)
+CodecStreamClassifier::CodecStreamClassifier(DataTypePtr owner_type_, const NameAndTypePair & written_column)
+    : owner_type(std::move(owner_type_))
 {
-    if (path.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot classify an empty serialization stream path");
+    if (!written_column.isSubcolumn())
+        return;
+    const auto info = owner_type->tryGetSubcolumnInfo(written_column.getSubcolumnName());
+    if (!info)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot resolve subcolumn {} in type {}", written_column.getSubcolumnName(), owner_type->getName());
+    written_column_substream_prefix = info->substreams_path;
+}
 
-    const bool structural = !ISerialization::isSpecialCompressionAllowed(path);
-    return {
-        .logical_path = getCodecPath(path),
-        .leaf_type = path.back().data.type,
-        .structural = structural,
+std::optional<ApplicableCodecStream> CodecStreamClassifier::classify(const ISerialization::SubstreamPath & path) const
+{
+    /// A subcolumn serialization enumerates paths relative to that subcolumn. Always prepend
+    /// the exact owner-to-subcolumn route; guessing from equal path entries is ambiguous for
+    /// types such as Tuple(a Tuple(a UInt64)).
+    ISerialization::SubstreamPath complete = written_column_substream_prefix;
+    complete.insert(complete.end(), path.begin(), path.end());
+    if (complete.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot classify an empty serialization stream path");
+    /// A partial write can append the subcolumn type's own stream after the resolved
+    /// owner-to-subcolumn prefix. In that form the ephemeral marker is not necessarily
+    /// the final entry, so check every prefix rather than only the complete path.
+    for (size_t prefix_size = 1; prefix_size <= complete.size(); ++prefix_size)
+        if (ISerialization::isEphemeralSubcolumn(complete, prefix_size))
+            return std::nullopt;
+
+    TupleCodecPath logical_path;
+    DataTypePtr logical_type = owner_type;
+    DataTypePtr physical_route_type = owner_type;
+    bool crossed_unsupported_branch = false;
+    bool enters_map = false;
+    for (const auto & entry : complete)
+    {
+        if (typeid_cast<const DataTypeMap *>(physical_route_type.get()))
+            enters_map = true;
+
+        /// Follow the actual serialization route separately from the public Tuple path.
+        /// In particular, Nested is not a declaration-path wrapper, but we still need to
+        /// notice a Map reached below it for lossy-codec validation.
+        if (entry.type == ISerialization::Substream::ArrayElements)
+        {
+            if (const auto * array = typeid_cast<const DataTypeArray *>(physical_route_type.get()))
+                physical_route_type = array->getNestedType();
+        }
+        else if (entry.type == ISerialization::Substream::NullableElements)
+        {
+            if (const auto * nullable = typeid_cast<const DataTypeNullable *>(physical_route_type.get()))
+                physical_route_type = nullable->getNestedType();
+        }
+        else if (entry.type == ISerialization::Substream::TupleElement)
+        {
+            if (const auto * tuple = typeid_cast<const DataTypeTuple *>(physical_route_type.get()))
+                if (const auto position = tuple->tryGetPositionByName(entry.name_of_substream))
+                    physical_route_type = tuple->getElements()[*position];
+        }
+
+        if (entry.type == ISerialization::Substream::ArrayElements)
+        {
+            if (const auto * array = typeid_cast<const DataTypeArray *>(logical_type.get()); array && !isNested(logical_type))
+                logical_type = array->getNestedType();
+            else
+                crossed_unsupported_branch = true;
+        }
+        else if (entry.type == ISerialization::Substream::NullableElements)
+        {
+            if (const auto * nullable = typeid_cast<const DataTypeNullable *>(logical_type.get()))
+                logical_type = nullable->getNestedType();
+        }
+        else if (entry.type == ISerialization::Substream::TupleElement && !crossed_unsupported_branch)
+        {
+            const auto * tuple = typeid_cast<const DataTypeTuple *>(logical_type.get());
+            if (!tuple)
+            {
+                /// Map is physically Array(Tuple(keys, values)). Those TupleElement markers are
+                /// serialization details and must not become user-visible codec path components.
+                crossed_unsupported_branch = true;
+                continue;
+            }
+
+            const auto position = tuple->tryGetPositionByName(entry.name_of_substream);
+            if (!position)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Serialization stream refers to unknown Tuple element {} in type {}",
+                    entry.name_of_substream, tuple->getName());
+            logical_path.push_back(tuple->getNameByPosition(*position + 1));
+            logical_type = tuple->getElements()[*position];
+        }
+    }
+    if (typeid_cast<const DataTypeMap *>(physical_route_type.get()))
+        enters_map = true;
+
+    return ApplicableCodecStream{
+        .logical_path = std::move(logical_path),
+        .leaf_type = complete.back().data.type,
+        .structural = !ISerialization::isSpecialCompressionAllowed(complete),
+        .enters_map = enters_map,
     };
 }
 
 namespace
 {
-
-using StreamsByDeclaration = std::map<CodecPath, std::vector<ApplicableCodecStream>>;
-
-/// Return true if the logical route to a stream enters a Map.
-/// Map serialization exposes keys and values as ordinary Tuple leaves, so the leaf type alone
-/// is not enough to prevent a lossy codec from changing Map keys.
-bool streamRouteEntersMap(DataTypePtr type, const CodecPath & path)
-{
-    size_t path_position = 0;
-    while (type)
-    {
-        if (typeid_cast<const DataTypeMap *>(type.get()))
-            return true;
-
-        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
-        {
-            type = nullable->getNestedType();
-            continue;
-        }
-
-        if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
-        {
-            type = array->getNestedType();
-            continue;
-        }
-
-        const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get());
-        if (!tuple || path_position == path.size())
-            return false;
-
-        const auto position = tuple->tryGetPositionByName(path[path_position]);
-        if (!position)
-            return false;
-
-        type = tuple->getElements()[*position];
-        ++path_position;
-    }
-
-    return false;
+using StreamsByDeclaration = std::map<TupleCodecPath, std::vector<ApplicableCodecStream>>;
 }
 
-/// Canonicalize, normalize, and instantiate every effective declaration.
-ColumnCodecDescription validatePolicy(
-    const ColumnCodecDescription & policy,
-    const DataTypePtr & logical_type,
+NormalizedColumnCodecPolicy validateColumnCodecPolicy(
+    const ColumnCodecPolicyView & policy,
+    const DataTypePtr & owner_type,
     const CodecValidationSettings & settings,
-    const ColumnCodecDescription::CodecsByPath * declarations_to_admit)
+    const CodecDeclarationPaths * declarations_requiring_full_validation)
 {
-    if (policy.empty())
-        return {};
-
-    ColumnCodecDescription canonical_policy;
-    for (const auto & [declaration_path, codec] : policy.getCodecs())
+    ASTPtr canonical_root = policy.getRoot();
+    TupleElementCodecs canonical_elements;
+    if (const auto * elements = policy.getElements())
     {
-        auto canonical_path = declaration_path.empty() ? CodecPath{} : canonicalizeCodecPath(logical_type, declaration_path);
-        if (canonical_policy.getCodecs().contains(canonical_path))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate codec declaration for Tuple subcolumn");
-        if (!canonical_path.empty() && tryExtractQuantizedCodecParams(codec))
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Quantized codec on Tuple elements is not supported yet because its custom serialization must be path-aware");
-        canonical_policy.set(std::move(canonical_path), codec);
+        for (const auto & [path, codec] : *elements)
+        {
+            if (path.empty() || !codec)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Tuple-element codec declarations require a non-empty path and codec");
+            auto canonical_path = canonicalizeTupleCodecPath(owner_type, path);
+            if (!canonical_elements.emplace(canonical_path, codec).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate codec declaration for Tuple element");
+            if (tryExtractQuantizedCodecParams(codec))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Quantized codec on Tuple elements is not supported because its serialization is not path-aware");
+        }
     }
 
+    ColumnCodecPolicyView canonical_policy(canonical_root, &canonical_elements);
     StreamsByDeclaration streams_by_declaration;
-    auto serialization = logical_type->getDefaultSerialization();
-    serialization->enumerateStreams(
+    CodecStreamClassifier classifier(owner_type);
+    owner_type->getDefaultSerialization()->enumerateStreams(
         [&](const ISerialization::SubstreamPath & path)
         {
-            if (path.empty() || ISerialization::isEphemeralSubcolumn(path, path.size()))
+            const auto stream = classifier.classify(path);
+            if (!stream)
                 return;
-            auto stream = classifyCodecStream(path);
-            auto declaration = canonical_policy.find(stream.logical_path);
-            if (declaration.codec)
-                streams_by_declaration[declaration.declaration_path].push_back(std::move(stream));
-        },
-        logical_type);
+            const auto declaration = canonical_policy.find(stream->logical_path);
+            if (declaration)
+                streams_by_declaration[declaration->declaration_path].push_back(*stream);
+        }, owner_type);
 
-    ColumnCodecDescription result;
-    const auto trusted_settings = CodecValidationSettings::trusted();
+    NormalizedColumnCodecPolicy result;
     auto & factory = CompressionCodecFactory::instance();
-
-    for (const auto & [declaration_path, ast] : canonical_policy.getCodecs())
+    const auto trusted = CodecValidationSettings::trusted();
+    const auto validate_declaration = [&](const TupleCodecPath & declaration_path, const ASTPtr & ast) -> ASTPtr
     {
-        const bool use_session_settings = !declarations_to_admit || declarations_to_admit->contains(declaration_path);
-        const auto & declaration_settings = use_session_settings ? settings : trusted_settings;
-        const auto stream_group_it = streams_by_declaration.find(declaration_path);
-
+        const bool session_validation = !declarations_requiring_full_validation
+            || declarations_requiring_full_validation->contains(declaration_path);
+        const auto & declaration_settings = session_validation ? settings : trusted;
+        const auto group_it = streams_by_declaration.find(declaration_path);
         ASTPtr common_normalized;
-        std::optional<UInt64> common_codec_hash;
+        std::optional<UInt64> common_hash;
+        bool hashes_equal = true;
         bool has_value_stream = false;
-        bool all_codec_hashes_equal = true;
-        if (stream_group_it != streams_by_declaration.end())
+
+        if (group_it != streams_by_declaration.end())
         {
-            for (const auto & stream : stream_group_it->second)
+            for (const auto & stream : group_it->second)
             {
                 if (stream.structural)
                     continue;
                 has_value_stream = true;
-                auto candidate = factory.validateCodecAndGetPreprocessedAST(ast, stream.leaf_type, declaration_settings);
-                auto candidate_codec = factory.get(candidate, stream.leaf_type);
-                if (candidate_codec->isLossyCompression() && streamRouteEntersMap(logical_type, stream.logical_path))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Lossy codec cannot be applied to a Map stream because it can change Map keys");
-                /// The AST is not a complete runtime identity: FPC on Float32 and Float64
-                /// normalizes to FPC(12) for both, but its codec hash also includes the float width.
-                const UInt64 candidate_hash = candidate_codec->getHash();
+                auto normalized = factory.validateCodecAndGetPreprocessedAST(ast, stream.leaf_type, declaration_settings);
+                auto codec = factory.get(normalized, stream.leaf_type);
+                if (codec->isLossyCompression() && stream.enters_map)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lossy codec cannot be applied to a Map stream");
+                const auto hash = codec->getHash();
                 if (!common_normalized)
                 {
-                    common_normalized = candidate;
-                    common_codec_hash = candidate_hash;
+                    common_normalized = normalized;
+                    common_hash = hash;
                 }
-                else if (*common_codec_hash != candidate_hash)
-                    all_codec_hashes_equal = false;
+                else if (*common_hash != hash)
+                    hashes_equal = false;
             }
         }
 
         if (!common_normalized)
+        {
+            /// Validate the complete chain and current-session sanity gates, but keep the
+            /// original AST so a dormant type-dependent declaration remains symbolic.
             factory.validateCodecAndGetPreprocessedAST(ast, DataTypePtr{}, declaration_settings);
+        }
+        ASTPtr stored = has_value_stream && hashes_equal ? common_normalized : ast;
 
-        /// With no value type, keep implicit type parameters unresolved. A dormant parent such as
-        /// CODEC(Delta) must not turn into CODEC(Delta(1)) before a child override is removed.
-        const ASTPtr stored = has_value_stream && all_codec_hashes_equal ? common_normalized : ast;
-        result.set(declaration_path, stored);
-        const bool declaration_is_part_default = CompressionCodecFactory::isDefaultCodec(ast);
-
-        if (stream_group_it == streams_by_declaration.end())
+        if (group_it == streams_by_declaration.end())
         {
-            /// A shadowed declaration still needs complete argument and chain validation.
             factory.get(stored, static_cast<const IDataType *>(nullptr));
-            continue;
+            return stored;
         }
-
-        for (const auto & stream : stream_group_it->second)
+        if (!CompressionCodecFactory::isDefaultCodec(ast))
         {
-            if (declaration_is_part_default)
+            for (const auto & stream : group_it->second)
             {
-                /// The part default is selected later and can change for a recompression TTL.
-                continue;
-            }
-            else if (stream.structural)
-            {
-                factory.get(stored, static_cast<const IDataType *>(nullptr), nullptr, /* only_generic = */ true);
-            }
-            else
-            {
-                auto normalized = factory.validateCodecAndGetPreprocessedAST(ast, stream.leaf_type, declaration_settings);
-                factory.get(normalized, stream.leaf_type);
+                if (stream.structural)
+                    factory.get(stored, static_cast<const IDataType *>(nullptr), nullptr, /* only_generic = */ true);
+                else
+                {
+                    auto normalized = factory.validateCodecAndGetPreprocessedAST(ast, stream.leaf_type, declaration_settings);
+                    factory.get(normalized, stream.leaf_type);
+                }
             }
         }
-    }
+        return stored;
+    };
 
+    if (canonical_root)
+        result.root = validate_declaration({}, canonical_root);
+    for (const auto & [path, codec] : canonical_elements)
+        result.elements.emplace(path, validate_declaration(path, codec));
     return result;
-}
-
-}
-
-ColumnCodecDescription validateColumnCodecDescription(
-    const ColumnCodecDescription & policy,
-    const DataTypePtr & logical_type,
-    const CodecValidationSettings & settings)
-{
-    return validatePolicy(policy, logical_type, settings, nullptr);
-}
-
-ColumnCodecDescription validateColumnCodecDescriptionForAlter(
-    const ColumnCodecDescription & policy,
-    const DataTypePtr & logical_type,
-    const ColumnCodecDescription::CodecsByPath & declarations_to_admit,
-    const CodecValidationSettings & settings)
-{
-    return validatePolicy(policy, logical_type, settings, &declarations_to_admit);
 }
 
 }

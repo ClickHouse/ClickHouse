@@ -37,6 +37,7 @@ private:
 
     std::vector<ColumnDescription> columns;
     std::vector<ColumnDescription> virtual_columns;
+    TupleElementCodecsByColumn tuple_element_codecs;
 };
 
 

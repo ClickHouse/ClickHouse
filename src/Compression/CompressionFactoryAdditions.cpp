@@ -147,7 +147,7 @@ void CompressionCodecFactory::validateCodecDeclaration(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} codec cannot have arguments", DEFAULT_CODEC_NAME);
             continue;
         }
-        auto registered = std::find_if(
+        const auto registered = std::find_if(
             family_name_with_codec.begin(), family_name_with_codec.end(),
             [&](const auto & entry) { return Poco::icompare(entry.first, family) == 0; });
         if (registered == family_name_with_codec.end())
@@ -156,15 +156,22 @@ void CompressionCodecFactory::validateCodecDeclaration(
 
         if (validation_settings.settings)
         {
-            const String enable_setting_name = fmt::format("enable_{}_codec", Poco::toLower(family));
-            Field enabled;
-            if (validation_settings.settings->tryGet(enable_setting_name, enabled)
-                && !enabled.safeGet<bool>())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Codec {} is experimental and not meant to be used in production. You can enable it with the '{}' setting",
-                    family,
-                    enable_setting_name);
+            const String setting_name = getGateSettingName(family);
+            const auto tier = getGateTier(setting_name);
+            if (tier && !validation_settings.settings->get(setting_name).safeGet<bool>())
+            {
+                std::string_view reason;
+                switch (*tier)
+                {
+                    case SettingsTierType::EXPERIMENTAL: reason = "is experimental and not meant to be used in production"; break;
+                    case SettingsTierType::BETA: reason = "is in beta and not yet recommended for production use"; break;
+                    case SettingsTierType::PRODUCTION:
+                    case SettingsTierType::PRIVATE_PREVIEW:
+                    case SettingsTierType::OBSOLETE: reason = "is disabled"; break;
+                }
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Codec {} {}. You can enable it with the '{}' setting", family, reason, setting_name);
+            }
         }
     }
 }

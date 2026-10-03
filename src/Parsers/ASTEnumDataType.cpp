@@ -38,6 +38,7 @@ void ASTEnumDataType::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_ali
 {
     hash_state.update(name.size());
     hash_state.update(name);
+
     hash_state.update(values.size());
     for (const auto & [elem_name, elem_value] : values)
     {
@@ -47,11 +48,7 @@ void ASTEnumDataType::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_ali
     }
 }
 
-void ASTEnumDataType::formatImpl(
-    WriteBuffer & ostr,
-    const FormatSettings & /*settings*/,
-    FormatState & /*state*/,
-    FormatStateStacked /*frame*/) const
+void ASTEnumDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
 {
     ostr << name;
 
@@ -79,6 +76,7 @@ void ASTEnumDataType::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "EnumDataType");
     w.writeString("name", name);
+
     /// The enum values live in the `values` vector (not as AST children), so write them explicitly
     /// as an array of `{"name": <string>, "value": <int>}` objects, symmetric to `readJSON`.
     w.writeKey("values");
@@ -106,9 +104,6 @@ void ASTEnumDataType::readJSON(const Poco::JSON::Object & json)
     name = r.getString("name");
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'name' for ASTEnumDataType during AST JSON deserialization");
-
-    children.clear();
-    values.clear();
 
     if (auto arr = r.getArray("values"))
     {

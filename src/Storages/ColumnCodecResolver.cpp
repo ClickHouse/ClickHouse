@@ -4,141 +4,107 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/NamesAndTypes.h>
-#include <DataTypes/IDataType.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/IAST.h>
-
 #include <Common/Exception.h>
-
-#include <algorithm>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
-
-/// Keep only generic compression stages without replacing symbolic Default.
 ASTPtr getGenericCodecDescription(const ASTPtr & codec)
 {
-    const auto & codec_function = codec->as<ASTFunction &>();
-    ASTs generic_stages;
-    for (const auto & stage : codec_function.arguments->children)
+    const auto & function = codec->as<ASTFunction &>();
+    ASTs stages;
+    for (const auto & stage : function.arguments->children)
     {
         const auto * identifier = stage->as<ASTIdentifier>();
         if (identifier && identifier->name() == DEFAULT_CODEC_NAME)
         {
-            generic_stages.push_back(stage->clone());
+            stages.push_back(stage->clone());
             continue;
         }
-
-        auto single_stage = makeASTFunction("CODEC", stage->clone());
+        auto single = makeASTFunction("CODEC", stage->clone());
         if (CompressionCodecFactory::instance()
-                .get(single_stage, static_cast<const IDataType *>(nullptr), nullptr, /* only_generic = */ true)
+                .get(single, static_cast<const IDataType *>(nullptr), nullptr, /* only_generic = */ true)
                 ->isGenericCompression())
-            generic_stages.push_back(stage->clone());
+            stages.push_back(stage->clone());
     }
-
-    if (generic_stages.empty())
-        generic_stages.push_back(make_intrusive<ASTIdentifier>("NONE"));
-
+    if (stages.empty())
+        stages.push_back(make_intrusive<ASTIdentifier>("NONE"));
     auto result = makeASTFunction("CODEC");
     result->setKind(ASTFunction::Kind::CODEC);
-    result->arguments->children = std::move(generic_stages);
+    result->arguments->children = std::move(stages);
     return result;
 }
-
-/// Find the Tuple path represented by a partial written column once per resolver.
-CodecPath getWrittenColumnPrefix(const NameAndTypePair & written_column, const DataTypePtr & owning_type)
-{
-    if (!written_column.isSubcolumn())
-        return {};
-
-    /// Subcolumn names can collide. Use the same first exact match as normal subcolumn lookup.
-    const auto subcolumn = owning_type->tryGetSubcolumnInfo(written_column.getSubcolumnName());
-    if (!subcolumn)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Cannot resolve subcolumn {} in type {}",
-            written_column.getSubcolumnName(),
-            owning_type->getName());
-    return getCodecPath(subcolumn->substreams_path);
-}
-
 }
 
 ColumnCodecResolver::ColumnCodecResolver(
-    const ColumnCodecDescription & policy_,
-    DataTypePtr owning_type_,
+    ColumnCodecPolicyView policy_,
+    DataTypePtr owner_type_,
     const NameAndTypePair & written_column,
     ASTPtr part_default_,
     bool apply_adaptive_default_)
-    : policy(policy_)
-    , owning_type(std::move(owning_type_))
-    , written_column_prefix(getWrittenColumnPrefix(written_column, owning_type))
+    : policy(std::move(policy_))
+    , classifier(std::move(owner_type_), written_column)
     , part_default(std::move(part_default_))
     , apply_adaptive_default(apply_adaptive_default_)
 {
 }
 
-CodecPath ColumnCodecResolver::getLogicalPath(const ISerialization::SubstreamPath & stream_path) const
+std::optional<ResolvedCodecDeclaration> ColumnCodecResolver::tryResolveRaw(
+    const ISerialization::SubstreamPath & stream_path) const
 {
-    CodecPath suffix = getCodecPath(stream_path);
-    if (suffix.size() >= written_column_prefix.size()
-        && std::equal(written_column_prefix.begin(), written_column_prefix.end(), suffix.begin()))
-        return suffix;
+    auto stream = classifier.classify(stream_path);
+    if (!stream)
+        return std::nullopt;
 
-    CodecPath result = written_column_prefix;
-    result.insert(result.end(), suffix.begin(), suffix.end());
-    return result;
-}
+    const auto declaration = policy.find(stream->logical_path);
+    const bool use_part_default = !declaration || CompressionCodecFactory::isDefaultCodec(declaration->codec);
+    ASTPtr codec = use_part_default && part_default ? part_default : (declaration ? declaration->codec : ASTPtr{});
+    TupleCodecPath declaration_path = declaration ? declaration->declaration_path : TupleCodecPath{};
 
-ResolvedCodecDeclaration ColumnCodecResolver::resolveRaw(const ISerialization::SubstreamPath & stream_path) const
-{
-    auto stream = classifyCodecStream(stream_path);
-    stream.logical_path = getLogicalPath(stream_path);
-
-    auto declaration = policy.find(stream.logical_path);
-    const bool use_part_default = !declaration.codec || CompressionCodecFactory::isDefaultCodec(declaration.codec);
-    ASTPtr codec = use_part_default && part_default ? part_default : declaration.codec;
-
-    return {
+    return ResolvedCodecDeclaration{
         .codec = std::move(codec),
-        .declaration_path = std::move(declaration.declaration_path),
+        .declaration_path = std::move(declaration_path),
         .codec_is_part_default = use_part_default,
-        .stream = std::move(stream),
+        .stream = std::move(*stream),
     };
 }
 
 ResolvedCodecDeclaration ColumnCodecResolver::resolve(const ISerialization::SubstreamPath & stream_path) const
 {
-    auto resolved = resolveRaw(stream_path);
-    /// Preserve symbolic Default when no concrete part default is available for introspection.
-    if (resolved.stream.structural && resolved.codec && !(resolved.codec_is_part_default && !part_default))
-        resolved.codec = getGenericCodecDescription(resolved.codec);
-    return resolved;
+    auto resolved = tryResolveRaw(stream_path);
+    if (!resolved)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot resolve a codec for an ephemeral stream");
+
+    if (resolved->stream.structural && resolved->codec
+        && !(resolved->codec_is_part_default && !part_default))
+        resolved->codec = getGenericCodecDescription(resolved->codec);
+    return std::move(*resolved);
 }
 
 CompressionCodecPtr ColumnCodecResolver::getCodec(
     const ISerialization::SubstreamPath & stream_path,
     const CompressionCodecPtr & part_default_codec) const
 {
-    auto resolved = resolveRaw(stream_path);
+    auto resolved = tryResolveRaw(stream_path);
+    if (!resolved)
+        return nullptr;
     auto codec = CompressionCodecFactory::instance().get(
-        resolved.codec,
-        resolved.stream.structural ? nullptr : resolved.stream.leaf_type.get(),
+        resolved->codec,
+        resolved->stream.structural ? nullptr : resolved->stream.leaf_type.get(),
         part_default_codec,
-        resolved.stream.structural);
-
-    if (apply_adaptive_default && resolved.codec_is_part_default && !codec->isEncryption())
-        return std::make_shared<CompressionCodecAdaptive>(resolved.stream.leaf_type, codec);
+        resolved->stream.structural);
+    if (apply_adaptive_default && resolved->codec_is_part_default && !codec->isEncryption())
+        return std::make_shared<CompressionCodecAdaptive>(resolved->stream.leaf_type, codec);
     return codec;
 }
 
