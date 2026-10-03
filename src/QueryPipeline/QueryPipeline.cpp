@@ -41,7 +41,6 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/StreamInQueryResultCacheTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
-#include <Processors/StepWallClockRegistry.h>
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -747,6 +746,11 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
     progress_callback = callback;
 }
 
+void QueryPipeline::setStepProfiler(StepProfilerPtr step_profiler_)
+{
+    step_profiler = std::move(step_profiler_);
+}
+
 void QueryPipeline::setProcessListElement(QueryStatusPtr elem)
 {
     process_list_element = elem;
@@ -788,11 +792,6 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
     result_rows = output_format->getResultRows();
     result_bytes = output_format->getResultBytes();
     return true;
-}
-
-void QueryPipeline::setStepWallClockRegistry(StepWallClockRegistryPtr step_wall_clock_registry_)
-{
-    step_wall_clock_registry = std::move(step_wall_clock_registry_);
 }
 
 void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer)

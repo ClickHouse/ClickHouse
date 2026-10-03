@@ -67,6 +67,7 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool async_insert_select_as_async_insert;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
     extern const SettingsBool http_allow_database_as_path;
@@ -305,6 +306,18 @@ void stripInitiatorOnlySettings(Settings & settings)
     settings[Setting::query_result_previews_max_result_rows].changed = false;
     settings[Setting::query_result_previews_max_result_bytes].changed = false;
 
+    /// `async_insert_select_as_async_insert` gates the initiator's local `INSERT ... SELECT` async-queue
+    /// route, which the `parallel_distributed_insert_select` path never reaches on the initiator. A shard
+    /// resolves its own value (including through the forwarded `compatibility`), so the initiator's copy is
+    /// redundant, and forwarding this name to an older shard on a rolling upgrade triggers `UNKNOWN_SETTING`.
+    /// Its default is `true`.
+    if (settings[Setting::async_insert_select_as_async_insert].changed
+        || !settings[Setting::async_insert_select_as_async_insert])
+    {
+        settings[Setting::async_insert_select_as_async_insert] = true;
+        settings[Setting::async_insert_select_as_async_insert].changed = false;
+    }
+
     /// `database` is an initiator-only setting as well: the query sent to a shard may leave the remote
     /// table unqualified (e.g. a `Distributed` table created with an empty database argument), and
     /// the shard must resolve it against its own default database.
@@ -324,6 +337,7 @@ constexpr std::string_view initiator_only_setting_names[] = {
     "format", "input_format", "output_format", "default_format", "compression",
     "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
     "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level",
+    "async_insert_select_as_async_insert",
     "database",
     "query_result_previews", "query_result_previews_min_interval_ms", "query_result_previews_min_rows",
     "query_result_previews_min_bytes", "query_result_previews_max_result_rows",
@@ -629,7 +643,7 @@ void executeQuery(
                 shard_info,
                 not_optimized_cluster->getSlotToShard(),
             };
-            optimizeShardingKeyRewriteIn(query_for_shard, std::move(visitor_data), new_context);
+            optimizeShardingKeyRewriteIn(query_for_shard, std::move(visitor_data), query_info.table_expression->getAlias(), new_context);
         }
 
         // decide for each shard if parallel reading from replicas should be enabled
