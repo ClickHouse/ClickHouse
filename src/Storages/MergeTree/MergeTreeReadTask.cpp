@@ -114,6 +114,20 @@ void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges, 
         patches[i]->getReader()->updateAllMarkRanges(patches_ranges[i]);
 }
 
+void MergeTreeReadTask::Readers::updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps)
+{
+    main->updateReadRequestMap(request_map);
+
+    for (auto & reader : prewhere)
+        reader->updateReadRequestMap(request_map);
+
+    if (!patch_request_maps.empty() && patch_request_maps.size() != patches.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} patch request maps for {} patch readers", patch_request_maps.size(), patches.size());
+
+    for (size_t i = 0; i < patch_request_maps.size(); ++i)
+        patches[i]->getReader()->updateReadRequestMap(patch_request_maps[i]);
+}
+
 MergeTreeReadTask::MergeTreeReadTask(
     MergeTreeReadTaskInfoPtr info_,
     Readers readers_,
@@ -229,7 +243,9 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     const MergeTreeReadTaskInfoPtr & read_info,
     const Extras & extras,
     const MarkRanges & ranges,
-    const std::vector<MarkRanges> & patches_ranges)
+    const std::vector<MarkRanges> & patches_ranges,
+    const MarkRangesPtr & read_request_map,
+    const std::vector<MarkRangesPtr> & patch_read_request_maps)
 {
     Readers new_readers;
 
@@ -306,6 +322,11 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             create_patch_reader(i),
             extras.patch_join_cache));
     }
+
+    const auto & map = read_request_map ? read_request_map : read_info->read_request_map;
+    const auto & patch_maps = patch_read_request_maps.empty() ? read_info->patch_read_request_maps : patch_read_request_maps;
+    if (map || !patch_maps.empty())
+        new_readers.updateReadRequestMap(map, patch_maps);
 
     return new_readers;
 }

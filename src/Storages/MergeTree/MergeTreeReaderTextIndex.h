@@ -46,8 +46,11 @@ public:
         size_t max_rows_to_read,
         MutableColumns & res_columns) override;
 
-    bool canReadIncompleteGranules() const override { return false; }
+    /// The virtual columns are resolved from per-mark posting lists addressed
+    /// by absolute row number, so a read may start or stop inside a mark.
+    bool canReadIncompleteGranules() const override { return can_read_incomplete_granules; }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
+    void updateReadRequestMap(MarkRangesPtr request_map) override;
 
     /// Sets a pre-computed granule from the skip index reader (Path 2: use_skip_indexes_on_data_read = 1).
     /// Looks up its own index name in the map.
@@ -107,6 +110,7 @@ private:
     using TextIndexGranulePtr = std::shared_ptr<const MergeTreeIndexGranuleText>;
 
     MergeTreeIndexWithCondition index;
+    bool can_read_incomplete_granules = false;
     std::shared_ptr<MergeTreeIndexConditionText> condition_text;
     std::vector<TextSearchQueryPtr> search_queries;
     TextIndexGranulePtr granule;
@@ -155,7 +159,7 @@ private:
 
     /// Cached lazy cursors, indexed by column position in `columns_to_read` and keyed by token.
     /// Cursors are forward-only and hold mutable segment/block position, so they must not be
-    /// shared across columns. Dropped on granule reload and on backward `readRows` jumps (`from_mark < current_mark`).
+    /// shared across columns. Dropped on granule reload and on backward `readRows` jumps (`from_row < current_row`).
     std::vector<absl::flat_hash_map<String, PostingListCursorPtr>> lazy_cursors;
 
     /// Per-column synthetic cursor over the analyzer-folded postings of small/embedded tokens,

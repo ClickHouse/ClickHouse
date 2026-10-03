@@ -68,6 +68,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         main_reader_->all_mark_ranges,
         main_reader_->settings)
     , index(std::move(index_))
+    , can_read_incomplete_granules(main_reader_->canReadIncompleteGranules())
     , condition_text(std::dynamic_pointer_cast<MergeTreeIndexConditionText>(index.condition_template->generateUnsubstituted()))
 {
     search_queries.reserve(columns_.size());
@@ -222,6 +223,14 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
             /*avg_value_size_hints=*/{},
             /*profile_callback=*/{});
     }
+}
+
+void MergeTreeReaderTextIndex::updateReadRequestMap(MarkRangesPtr request_map)
+{
+    IMergeTreeReader::updateReadRequestMap(request_map);
+    /// Only the fallback reader reads the part's data. The index streams count index granules or tokens, not data marks.
+    if (fallback_reader)
+        fallback_reader->updateReadRequestMap(std::move(request_map));
 }
 
 void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
@@ -435,13 +444,13 @@ size_t MergeTreeReaderTextIndex::readRows(
     }
     else
     {
+        from_row = index_granularity.getMarkStartingRow(from_mark);
+
         /// Backward jump invalidates the per-token cursor cache: cached cursors are
         /// forward-only (their `linearOr` / `linearAnd` / `advance` walk segments from
         /// `current_segment_idx` onward), so they cannot serve an earlier row.
-        if (from_mark < current_mark)
+        if (from_row < current_row)
             resetCursors();
-
-        from_row = index_granularity.getMarkStartingRow(from_mark);
     }
 
     size_t total_rows = data_part_info_for_read->getRowCount();
@@ -450,16 +459,21 @@ size_t MergeTreeReaderTextIndex::readRows(
     else
         max_rows_to_read = 0;
 
+    size_t total_marks = index_granularity.getMarksCountWithoutFinal();
+
     if (res_columns.empty())
     {
-        ++current_mark;
-        current_row += max_rows_to_read;
+        /// Keep `current_mark` the mark containing `current_row`, as the main loop does.
+        current_row = from_row + max_rows_to_read;
+        current_mark = from_mark;
+        while (current_mark < total_marks && index_granularity.getMarkStartingRow(current_mark + 1) <= current_row)
+            ++current_mark;
+
         return max_rows_to_read;
     }
 
     size_t read_rows = 0;
     createEmptyColumns(res_columns, max_rows_to_read);
-    size_t total_marks = data_part_info_for_read->getIndexGranularity().getMarksCountWithoutFinal();
 
     if (!is_initialized && max_rows_to_read > 0)
     {
@@ -490,13 +504,24 @@ size_t MergeTreeReaderTextIndex::readRows(
     }
 
     size_t fallback_offset = 0;
+    std::optional<size_t> last_processed_mark;
 
     while (read_rows < max_rows_to_read && from_mark < total_marks)
     {
-        /// When the number of rows in a part is smaller than `index_granularity`,
-        /// `MergeTreeReaderTextIndex` must ensure that the virtual column it reads
-        /// contains no more data rows than actually exist in the part
-        size_t rows_to_read = std::min(index_granularity.getMarkRows(from_mark), max_rows_to_read - read_rows);
+        /// Postings are addressed per mark: rows past a mark's last row belong to the next mark
+        /// and would resolve against the wrong posting lists.
+        size_t mark_begin_row = index_granularity.getMarkStartingRow(from_mark);
+        size_t mark_end_row = mark_begin_row + index_granularity.getMarkRows(from_mark);
+
+        if (from_row < mark_begin_row || from_row >= mark_end_row)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Text index reader position is out of sync: row {} is outside of mark {} with rows [{}, {})",
+                from_row, from_mark, mark_begin_row, mark_end_row);
+        }
+
+        size_t rows_left_in_mark = mark_end_row - from_row;
+        size_t rows_to_read = std::min(rows_left_in_mark, max_rows_to_read - read_rows);
 
         /// In lazy mode skip per-mark Roaring Bitmap materialization — cursors decode on demand.
         PostingList range_posting;
@@ -539,15 +564,21 @@ size_t MergeTreeReaderTextIndex::readRows(
             }
         }
 
-        ++from_mark;
         from_row += rows_to_read;
         read_rows += rows_to_read;
         fallback_offset += rows_to_read;
+        last_processed_mark = from_mark;
+
+        if (from_row == mark_end_row)
+            ++from_mark;
     }
 
-    /// Remove blocks that are no longer needed.
-    if (auto rows_range = getRowsRangeForMark(from_mark - 1))
-        cleanupPostingsBlocks(*rows_range);
+    /// Remove blocks that are no longer needed; those covering the mark the next read continues in are kept.
+    if (last_processed_mark)
+    {
+        if (auto rows_range = getRowsRangeForMark(*last_processed_mark))
+            cleanupPostingsBlocks(*rows_range);
+    }
 
     current_mark = from_mark;
     current_row = from_row;
@@ -828,17 +859,8 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, size_t column_id
                 return;
             }
 
-            /// Convert postings to a sorted array and build a cursor from it.
-            auto key = TextIndexPostingsCache::hash(granule->getIndexIdForCaches(), columns_to_read[column_idx].name, static_cast<UInt8>(TextIndexPostingsCacheKind::Flat));
-
-            auto cell = condition_text->postingsCache()->getOrSet(key, [&]
-            {
-                auto flat = std::make_shared<PaddedPODArray<UInt32>>(query_builder.postings->cardinality());
-                query_builder.postings->toUint32Array(flat->data());
-                return std::make_shared<TextIndexPostingsCacheCell>(std::move(flat));
-            });
-
-            prebuilt_cursor = std::make_shared<PostingListCursor>(std::get<FlatPostingsPtr>(cell->value));
+            /// Build a cursor over the sorted array of postings, shared by all readers of the granule.
+            prebuilt_cursor = std::make_shared<PostingListCursor>(query_builder.getFlatPostings());
             cursors.push_back(prebuilt_cursor);
         }
     }

@@ -141,6 +141,14 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
 }
 
+void MergeTreeReaderWide::updateReadRequestMap(MarkRangesPtr request_map)
+{
+    IMergeTreeReader::updateReadRequestMap(request_map);
+    /// Announcing the map can load marks, which never happens under the `FileStreams` mutex.
+    for (auto * stream : streams.getAll())
+        stream->updateReadRequestMap(request_map);
+}
+
 void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
 {
     streams.clearPrefetched();
@@ -1082,6 +1090,16 @@ void MergeTreeReaderWide::FileStreams::release(const String & stream_name)
     /// Dropped outside the mutex: `~MergeTreeMarksLoader` waits for an in-flight marks load.
 }
 
+std::vector<MergeTreeReaderStream *> MergeTreeReaderWide::FileStreams::getAll() const
+{
+    std::vector<MergeTreeReaderStream *> result;
+    std::lock_guard lock(mutex);
+    result.reserve(streams.size());
+    for (const auto & [_, stream] : streams)
+        result.push_back(stream.get());
+    return result;
+}
+
 bool MergeTreeReaderWide::FileStreams::isPrefetched(const String & stream_name) const
 {
     std::lock_guard lock(mutex);
@@ -1135,11 +1153,14 @@ MergeTreeReaderStream * MergeTreeReaderWide::getOrAddStream(const ISerialization
 
         auto create_stream = [&]<typename Stream>()
         {
-            return std::make_unique<Stream>(
+            auto stream = std::make_unique<Stream>(
                 data_part_info_for_read->getDataPartStorage(), stream_name, DATA_FILE_EXTENSION,
                 num_marks_in_part, all_mark_ranges, stream_settings,
                 uncompressed_cache, data_file_size,
                 std::move(marks_loader), profile_callback, clock_type);
+            /// Streams of `Dynamic` subcolumns are created while a task reads, after the map was announced.
+            stream->updateReadRequestMap(read_request_map);
+            return stream;
         };
 
         if (read_without_marks)
