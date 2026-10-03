@@ -1114,25 +1114,6 @@ static size_t findLocalReplicaIndexAndUpdatePools(std::vector<ConnectionPoolPtr>
     return *local_replica_index;
 }
 
-/// Returns the `MergeTreeData` that `storage` reads from, looking through `StorageProxy` wrappers
-/// (for example, `StorageTableProxy` of a database with `lazy_load_tables`), or `nullptr` when it is
-/// not a `MergeTree` table. The bound on the number of wrappers mirrors
-/// `getDistributedStorageFromTableExpression`.
-static std::shared_ptr<const MergeTreeData> getMergeTreeDataThroughProxies(StoragePtr storage)
-{
-    for (size_t i = 0; storage && i < 16; ++i)
-    {
-        if (auto merge_tree = std::dynamic_pointer_cast<const MergeTreeData>(storage))
-            return merge_tree;
-
-        const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get());
-        if (!proxy)
-            return nullptr;
-        storage = proxy->getNested();
-    }
-    return nullptr;
-}
-
 /// Registers the initiator's own classification of the table's part names on the coordinator, so
 /// that announcements from replicas whose protocol predates
 /// `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT` (they report
@@ -1145,7 +1126,7 @@ static std::shared_ptr<const MergeTreeData> getMergeTreeDataThroughProxies(Stora
 static void seedAuthoritativePartNameIdentity(
     ParallelReplicasReadingCoordinator & coordinator, const StorageID & storage_id, const ContextPtr & context)
 {
-    const auto merge_tree = getMergeTreeDataThroughProxies(DatabaseCatalog::instance().tryGetTable(storage_id, context));
+    const auto merge_tree = castStorage<const MergeTreeData>(DatabaseCatalog::instance().tryGetTable(storage_id, context), DeferredTable::Load);
     if (!merge_tree)
         return;
 
@@ -1187,7 +1168,7 @@ static void seedAuthoritativePartNameIdentity(
 
         if (const auto * table_node = node->as<TableNode>())
         {
-            if (const auto merge_tree = getMergeTreeDataThroughProxies(table_node->getStorage()))
+            if (const auto merge_tree = castStorage<const MergeTreeData>(table_node->getStorage(), DeferredTable::Load))
                 coordinator.setAuthoritativePartNameIdentity(
                     merge_tree->getStorageID().getFullTableName(), partNameIdentityOf(*merge_tree));
         }
