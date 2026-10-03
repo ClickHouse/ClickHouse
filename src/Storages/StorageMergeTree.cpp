@@ -1801,7 +1801,22 @@ MergeTreeMutationEntry StorageMergeTree::loadMutationEntry(const DiskPtr & disk,
         /// between the listing and this read. The table cannot load without the entry - a part below its version
         /// would miss the commands - so the load fails, but with the reason instead of a missing object: the error
         /// is transient, and the caller can retry once the metadata of the disk, which still lists the entry, is reloaded.
-        if (!disk->isReadOnly() || disk->checkUniqueId(disk->getUniqueId(fs::path(relative_data_path) / file_name)))
+        /// Convert the error only when the probe proves that the metadata still lists the entry, but its object is
+        /// gone. If the probe itself fails, the original read failure is the more useful one.
+        if (!disk->isReadOnly())
+            throw;
+
+        bool object_exists = true;
+        try
+        {
+            object_exists = disk->checkUniqueId(disk->getUniqueId(fs::path(relative_data_path) / file_name));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("While checking whether the mutation entry {} still exists", file_name));
+        }
+
+        if (object_exists)
             throw;
 
         throw Exception(
