@@ -1,0 +1,47 @@
+-- both_levels
+20252
+1	1	6	4
+-- disabled
+20252
+9	1	0	0
+-- range_and_in
+20251
+20253
+20261
+20263
+4	4	9	3
+-- second_level_only
+20243
+20253
+20263
+3	3	12	6
+-- no_matching_partition
+0
+0	0	3	3
+-- condition_on_file_column_and_virtual_column
+20252
+20253
+3	3	6	2
+-- or_condition
+20241
+20263
+2	2
+-- max_prefixes_fallback
+20243
+20253
+20263
+9	3	3	0
+-- literal_first_level
+20242
+1	1	3	2
+-- partial_literal_in_glob
+20261
+1	1	6	4
+-- double_star_only
+20252
+9	1	0	0
+-- level_before_double_star
+20261
+20262
+20263
+3	3	3	2

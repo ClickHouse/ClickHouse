@@ -2061,3 +2061,92 @@ def test_invalid_upload_settings_do_not_affect_reads(cluster):
     )
 
     azure_query(node, "DROP TABLE test_reads_with_invalid_upload_settings")
+
+
+def test_hive_partition_pruning_during_listing(cluster):
+    node = cluster.instances["node"]
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    prefix = f"hive_partition_pruning_during_listing_{random.randint(0, 10**9)}"
+    structure = "id UInt64, year UInt16, country String"
+
+    countries = ["DE", "FR", "US"]
+    for year in (2024, 2025, 2026):
+        for idx, country in enumerate(countries, start=1):
+            azure_query(
+                node,
+                f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{storage_account_url}', "
+                f"container = 'cont', blob_path = '{prefix}/year={year}/country={country}/data.csv', format = 'CSV', structure = 'id UInt64') "
+                f"SELECT toUInt64({year} * 10 + {idx})",
+                settings={"azure_truncate_on_insert": 1},
+            )
+
+    def globbed(blob_path):
+        return (
+            f"azureBlobStorage(azure_conf2, storage_account_url = '{storage_account_url}', container = 'cont', "
+            f"blob_path = '{blob_path}', format = 'CSV', structure = '{structure}')"
+        )
+
+    def run(query, **settings):
+        log_comment = f"hive_pruning_{random.randint(0, 10**9)}"
+        result = azure_query(
+            node,
+            query,
+            settings={
+                "use_hive_partitioning": 1,
+                "log_queries": 1,
+                "log_comment": log_comment,
+                **settings,
+            },
+        )
+        node.query("SYSTEM FLUSH LOGS")
+        events = node.query(
+            f"""
+            SELECT
+                ProfileEvents['ObjectStorageListedObjects'],
+                ProfileEvents['ObjectStorageReadObjects'],
+                ProfileEvents['ObjectStorageListedCommonPrefixes'],
+                ProfileEvents['ObjectStorageHivePartitionPrunedPrefixes']
+            FROM system.query_log
+            WHERE log_comment = '{log_comment}' AND type = 'QueryFinish'
+            ORDER BY event_time_microseconds DESC
+            LIMIT 1
+            """
+        )
+        return result, tuple(int(value) for value in events.strip().split("\t"))
+
+    two_levels = globbed(f"{prefix}/year=*/country=*/*.csv")
+
+    # Both partition levels are constrained: the year level lists 3 directories and keeps 1,
+    # the country level lists 3 directories below it and keeps 1, so a single blob is listed.
+    result, events = run(
+        f"SELECT id FROM {two_levels} WHERE year = 2025 AND country = 'FR'"
+    )
+    assert result == "20252\n"
+    assert events == (1, 1, 6, 4)
+
+    # Without the optimization every blob under the common prefix is listed and filtered afterwards.
+    result, events = run(
+        f"SELECT id FROM {two_levels} WHERE year = 2025 AND country = 'FR'",
+        use_hive_partition_pruning_during_listing=0,
+    )
+    assert result == "20252\n"
+    assert events == (9, 1, 0, 0)
+
+    # A condition on the second level only: the first level is enumerated without pruning.
+    result, events = run(
+        f"SELECT id FROM {two_levels} WHERE country = 'US' ORDER BY id"
+    )
+    assert result == "20243\n20253\n20263\n"
+    assert events == (3, 3, 12, 6)
+
+    # Nothing matches: no blob is listed at all.
+    result, events = run(f"SELECT count() FROM {two_levels} WHERE year = 1999")
+    assert result == "0\n"
+    assert events == (0, 0, 3, 3)
+
+    # `**` spans levels and stops the enumeration; the levels before it are still pruned.
+    result, events = run(
+        f"SELECT id FROM {globbed(f'{prefix}/year=*/**.csv')} WHERE year = 2026 ORDER BY id"
+    )
+    assert result == "20261\n20262\n20263\n"
+    assert events == (3, 3, 3, 2)
