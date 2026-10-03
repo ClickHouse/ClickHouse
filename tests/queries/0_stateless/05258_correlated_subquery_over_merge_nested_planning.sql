@@ -1,5 +1,5 @@
 -- A correlated subquery reads a `Merge` table, and one non-empty source table of that `Merge` lacks a column the subquery reads.
--- Planned inside `EXPLAIN`, a subquery in `FROM`, a view, an `IN` subquery or another correlated subquery, it read freed memory (heap-use-after-free under ASan).
+-- Planned inside `EXPLAIN`, a subquery in `FROM`, a view, an `IN` subquery or a scalar correlated subquery, it read freed memory (heap-use-after-free under ASan).
 
 SET allow_correlated_subqueries = 1;
 
@@ -36,8 +36,8 @@ SELECT number FROM numbers(3) WHERE number IN (SELECT x FROM (SELECT 1 AS x) AS 
 SELECT 'view';
 SELECT x FROM v_correlated;
 
-SELECT 'correlated subquery inside a correlated subquery';
-SELECT x FROM (SELECT 1 AS x) AS o WHERE EXISTS (SELECT 1 FROM (SELECT 1 AS y) AS m WHERE m.y = o.x AND EXISTS (SELECT 1 FROM t_merge AS i WHERE m.y < i.n AND i.n = i.c));
+SELECT 'correlated subquery inside a scalar correlated subquery';
+SELECT (SELECT max(m.y) FROM (SELECT 1 AS y) AS m WHERE m.y = o.x AND EXISTS (SELECT 1 FROM t_merge AS i WHERE m.y < i.n AND i.n = i.c)) FROM (SELECT 1 AS x) AS o;
 
 DROP VIEW v_correlated;
 DROP TABLE t_merge;
