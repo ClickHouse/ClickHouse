@@ -45,6 +45,9 @@ $CLICKHOUSE_CLIENT --query_id $query_id -q "
     SET use_query_condition_cache = 0;
     SET distributed_index_analysis_for_non_shared_merge_tree = 1;
     SET enable_parallel_replicas = 1;
+    -- Pinned to the query-based implementation: the plan-based one runs the greater(key, ...)
+    -- index analysis twice, see https://github.com/ClickHouse/ClickHouse/issues/118275.
+    SET parallel_replicas_plan_based = 0;
     SET distributed_index_analysis = 1;
     SET distributed_index_analysis_only_on_coordinator = 1;
     SET cluster_for_parallel_replicas = 'test_cluster_one_shard_two_replicas';
