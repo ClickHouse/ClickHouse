@@ -1095,6 +1095,16 @@ improving compression ratio but requiring more data to be decompressed during re
 This is beneficial for workloads that always read all columns (e.g. projections).
 )", 0, \
         {"26.4", true, true, "New setting"}) \
+    DECLARE(Bool, compress_per_substream_in_compact_parts, true, R"(
+Controls the physical layout of Compact parts. If true (default), a column substream in a granule starts
+a new compressed block once the current block reached `min_compress_block_size`, so reading a single
+subcolumn (e.g. an `Array` size, a `Tuple` element, or a JSON path) decompresses only that substream,
+while small substreams still share a block. If false, all substreams of a column in a granule are packed
+into the same compressed block, improving compression ratio but requiring more data to be decompressed
+when reading a subcolumn. Has an effect only when `write_marks_for_substreams_in_compact_parts` and
+`compress_per_column_in_compact_parts` are enabled.
+)", 0, \
+        {"26.10", false, true, "New setting: start a new compressed block at column substream boundaries in Compact parts for faster subcolumn reads"}) \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, R"(
 If the number of active parts in a single partition exceeds the
