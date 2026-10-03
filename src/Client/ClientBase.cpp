@@ -2965,7 +2965,6 @@ void ClientBase::processParsedSingleQuery(
         /// transport dialect is pinned to match the outbound text in `pinOutboundDialectForJSONDialect`.
         current_query_parsed_as_json_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
-        connection->setFormatSettings(getNativeWireFormatSettings(client_context, server_revision));
 
         /// Deliberately without a round trip: this runs before every query. The only case that needs
         /// the stronger check is a session that continues after a failed query - the protocol can be
@@ -2976,6 +2975,7 @@ void ClientBase::processParsedSingleQuery(
         else if (!connection->checkConnectedWithoutRoundTrip())
             connect();
 
+        connection->setFormatSettings(getNativeWireFormatSettings(client_context, server_revision));
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
 
         /// With `use_client_time_zone`, DateTime string literals must be interpreted in the client time

@@ -22,7 +22,7 @@ SELECT 'parallel replicas';
 SELECT d, dynamicType(d) FROM t_src ORDER BY toString(d)
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0,
-    automatic_parallel_replicas_mode = 0, log_comment = '05317_parallel_replicas';
+    automatic_parallel_replicas_mode = 0, enable_parallel_blocks_marshalling = 1, log_comment = '05317_parallel_replicas';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['ParallelReplicasUsedCount'] > 0 FROM system.query_log
