@@ -641,9 +641,9 @@ async function checkAuthHeaderTransport(js) {
             && !new URL(modernEmptyUserCalls[0].url).searchParams.has('password'),
         { modernEmptyUserCalls });
 
-    /// A pre-26.7 server rejects X-ClickHouse-Key without a user before authentication. That
-    /// exact rejection can use the historical password-only URL path to prove the old version,
-    /// then retry the real request. No hidden request authenticates as literal "default".
+    /// A pre-26.7 server rejects X-ClickHouse-Key without a user before authentication. The
+    /// same response must include a pre-26.7 version before the real request may retry through
+    /// the historical password-only URL path. There is no separate credential-bearing probe.
     const legacyRawCalls = [];
     const legacyRawHelpers = makeAuthHelpers(async (url, options) => {
         const parsed = new URL(url);
