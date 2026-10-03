@@ -6887,6 +6887,14 @@ Rewrite `tupleElement(dictGet('dict', ('a', 'b', 'c'), key), 2)` into `dictGet('
 Rewrite LIKE expressions with perfect prefix or suffix (e.g. `col LIKE 'ClickHouse%'`) to startsWith or endsWith functions (e.g. `startsWith(col, 'ClickHouse')`).
 )", 0, \
         {"25.10", false, true, "New setting"}) \
+    DECLARE(Bool, optimize_prune_impossible_string_comparisons, true, R"(
+Replace expressions like `equals`, `like`, `ilike`, `position` over a string conversion of a restricted-alphabet type (numbers, dates, and arrays/tuples/maps of them) with a constant when the string constant requires characters that can never appear in the text representation of that type. For example, `toString(number) LIKE '%hello%'` is always false because the text representation of an unsigned integer consists only of digits.
+)", 0, \
+        {"26.10", false, true, "New optimization that replaces comparisons of stringified restricted-alphabet types (e.g. `toString(number) LIKE '%hello%'`) with a constant when the string constant can never appear in the text representation of the type. `compatibility` with versions before 26.8 disables it."}) \
+    DECLARE(Bool, optimize_destructure_tuple_string_comparisons, true, R"(
+Rewrite `toString(tuple) LIKE '%needle%'` (and `ILIKE`) into a chain of per-element conditions `toString(x) LIKE '%needle%' OR toString(y) LIKE '%needle%'` when the needle can neither span multiple tuple elements nor match the quoting and escaping of the tuple rendering. This may allow the query to use a text index.
+)", 0, \
+        {"26.10", false, true, "New optimization that rewrites `toString(tuple) LIKE '%needle%'` into a chain of per-element `LIKE` conditions joined by `OR`, which may allow using a text index. `compatibility` with versions before 26.8 disables it."}) \
 DECLARE(Bool, execute_exists_as_scalar_subquery, true, R"(
 Execute non-correlated EXISTS subqueries as scalar subqueries. As for scalar subqueries, the cache is used, and the constant folding applies to the result.
 
