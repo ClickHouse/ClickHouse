@@ -834,7 +834,12 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::undo()
     }
 
     if (marker_written)
-        removeTombstoneMarker(*object_storage, *layout, tmp_name);
+    {
+        undoWithRetries(log, fmt::format("remove the tombstone marker of the removal of '{}'", path), [&]
+        {
+            removeTombstoneMarker(*object_storage, *layout, tmp_name);
+        });
+    }
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()

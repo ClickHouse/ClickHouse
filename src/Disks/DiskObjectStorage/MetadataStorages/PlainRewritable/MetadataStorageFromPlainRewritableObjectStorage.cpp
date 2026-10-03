@@ -265,6 +265,9 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
         LOG_DEBUG(log, "Found {} removals that were not finished", tombstones.size());
 
     const bool remove_orphaned_objects = is_initial_load && !object_storage->isReadOnly();
+    /// A pending removal may still be in progress in this process only on a writable disk. On a read-only disk
+    /// nothing can change the subtree, so every load keeps showing it under its original path.
+    const bool skip_pending_removals = !is_initial_load && !object_storage->isReadOnly();
 
     /// The data objects of an orphaned subtree have to be deleted before its `prefix.path` objects, and the
     /// markers only after both, for the same reason as in `RemoveRecursiveOperation::finalize`: whatever is
@@ -449,7 +452,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             /// result: Same, and no two tasks are given the same slot
             /// In any case we have a try {} catch (...) around runner usage, so exceptions will call runner.waitForAllToFinish() first
             /// Thus the order of destruction of the variables is not important
-            runner.enqueueAndKeepTrack([remote_path = std::move(directory.remote_path), object_path = std::move(directory.object_path), metadata = std::move(directory.metadata), read_snapshot, do_not_load_unchanged_directories, files_are_prelisted, is_initial_load, remove_orphaned_objects, &tombstones, &result = results[i], &log, &settings, this]
+            runner.enqueueAndKeepTrack([remote_path = std::move(directory.remote_path), object_path = std::move(directory.object_path), metadata = std::move(directory.metadata), read_snapshot, do_not_load_unchanged_directories, files_are_prelisted, skip_pending_removals, remove_orphaned_objects, &tombstones, &result = results[i], &log, &settings, this]
             {
                 DB::setThreadName(ThreadName::PLAIN_REWRITABLE_META_LOAD);
 
@@ -474,7 +477,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                     const auto tombstone = removed_name ? tombstones.find(removed_name.value()) : tombstones.end();
                     if (tombstone != tombstones.end() && tombstone->second)
                     {
-                        if (!is_initial_load)
+                        if (skip_pending_removals)
                         {
                             LOG_TRACE(log, "The directory '{}' with the key '{}' is being removed, skipping", local_path, object_path);
                             return;
