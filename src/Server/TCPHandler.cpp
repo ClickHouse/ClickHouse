@@ -936,6 +936,14 @@ void TCPHandler::runImpl()
                         if (query_state->stop_read_return_partial_result)
                             return true;
 
+                        /// While `executeQuery` prepares an `INSERT` that takes its data from the client
+                        /// (building the set of a column default `IN <table>`, for example), the client is
+                        /// waiting in `receiveSampleBlock` for the header of the table and accepts neither a
+                        /// `Progress` nor a `ProfileEvents` packet there. Keep polling for cancellation, but
+                        /// do not send the updates until the query is prepared.
+                        if (query_state->preparing_query && !query_state->query_context->getInsertionTable().empty())
+                            return false;
+
                         sendInteractiveUpdates(*query_state);
                         return false;
                     });
@@ -945,7 +953,12 @@ void TCPHandler::runImpl()
                 query_state->query_context->setSetting("enable_producing_buckets_out_of_order_in_aggregation", false);
 
             /// Processing Query
+            query_state->preparing_query = true;
             std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
+            {
+                std::lock_guard lock(*callback_mutex);
+                query_state->preparing_query = false;
+            }
 
             after_check_cancelled.restart();
             after_send_progress.restart();

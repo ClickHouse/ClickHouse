@@ -14,6 +14,7 @@ DROP TABLE IF EXISTS t_default_in_set_keys;
 DROP TABLE IF EXISTS t_default_in_set_alias;
 DROP TABLE IF EXISTS t_default_in_set_default;
 DROP TABLE IF EXISTS t_default_in_set_materialized;
+DROP TABLE IF EXISTS t_default_in_set_added;
 DROP TABLE IF EXISTS t_default_in_set_engine_keys;
 DROP TABLE IF EXISTS t_default_in_set_engine;
 
@@ -62,6 +63,15 @@ SELECT p, f FROM t_default_in_set_default ORDER BY p;
 SELECT 'MATERIALIZED after the set grew';
 SELECT p, f FROM t_default_in_set_materialized ORDER BY p;
 
+-- A column added by `ALTER` is physically missing from the parts written before, so reading them
+-- evaluates its `DEFAULT` on the fly - a separate path from the conversion of an `INSERT` block.
+SELECT 'DEFAULT of a column added to existing parts';
+CREATE TABLE t_default_in_set_added (p UInt8) ENGINE = MergeTree ORDER BY p;
+INSERT INTO t_default_in_set_added VALUES (1), (2), (3);
+ALTER TABLE t_default_in_set_added ADD COLUMN f UInt8 DEFAULT p IN t_default_in_set_keys;
+SELECT p, f FROM t_default_in_set_added ORDER BY p;
+SELECT p FROM t_default_in_set_added WHERE f ORDER BY p;
+
 -- A `Set` engine table on the right-hand side is a ready set rather than a deferred one, and worked
 -- all along.
 SELECT 'Set engine on the right';
@@ -78,6 +88,7 @@ ENGINE = MergeTree ORDER BY p; -- { serverError THERE_IS_NO_DEFAULT_VALUE }
 
 DROP TABLE t_default_in_set_engine;
 DROP TABLE t_default_in_set_engine_keys;
+DROP TABLE t_default_in_set_added;
 DROP TABLE t_default_in_set_materialized;
 DROP TABLE t_default_in_set_default;
 DROP TABLE t_default_in_set_alias;

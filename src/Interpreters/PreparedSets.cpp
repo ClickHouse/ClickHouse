@@ -82,6 +82,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
@@ -467,10 +468,10 @@ void FutureSetFromSubquery::prepareForDistributedPlan(const ContextPtr & context
         convertSetSourceForDistributedPlan(*source, context);
 }
 
-void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context, bool allow_interactive_cancel)
+void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 {
     if (external_table_set)
-        external_table_set->buildSetInplace(context, allow_interactive_cancel);
+        external_table_set->buildSetInplace(context);
 
     /// Correlated subqueries contain PLACEHOLDER actions that cannot be executed standalone.
     /// They will be decorrelated and executed as part of the outer query instead.
@@ -500,7 +501,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context, bool all
     /// cancellation so a source already consumed by `build` cannot leave an uncreated set behind.
     bool observed_cancel = false;
     CompletedPipelineExecutor executor(pipeline);
-    if (allow_interactive_cancel && context->hasQueryContext())
+    if (context->hasQueryContext())
     {
         if (auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback())
             executor.setCancelCallback(
@@ -517,6 +518,15 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context, bool all
 
     if (observed_cancel && !set_and_key->set->isCreated())
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while building a set for subquery");
+
+    /// The pipeline may also stop without an exception and without creating the set, for example on a
+    /// subquery timeout with `timeout_overflow_mode = 'break'`. `build` has consumed `source`, so the set
+    /// can never be built afterwards, and `FunctionIn` would report "Not-ready Set is passed as the second
+    /// argument" later. Report the real reason instead.
+    if (!set_and_key->set->isCreated())
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED,
+            "Building a set for subquery stopped before the set was created, "
+            "probably because a limit with the `break` overflow mode was reached");
 
     /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
     pipeline.finalizeWriteInQueryResultCache();

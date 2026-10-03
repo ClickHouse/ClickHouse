@@ -21,6 +21,12 @@ DEFAULT after the set grew
 MATERIALIZED after the set grew
 1	1
 2	0
+DEFAULT of a column added to existing parts
+1	1
+2	1
+3	0
+1
+2
 Set engine on the right
 1	1
 5	0
