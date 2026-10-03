@@ -197,6 +197,18 @@ timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM syst
 # mutation error after the upgrade becomes an anomaly instead of an expected message to be filtered.
 echo "Kill the mutations left unfinished by the stress phase"
 
+# Killing a mutation leaves the MUTATE_PART entries that replicas queued or are still logging for it. The
+# replicas that may hold them are listed before the kill, for the drain after it.
+mutation_replicas=$(timeout 1m clickhouse-client --query "
+    SELECT DISTINCT base64Encode(database), base64Encode(table)
+    FROM system.replicas
+    WHERE (zookeeper_name, zookeeper_path) IN (
+        SELECT zookeeper_name, zookeeper_path FROM system.replicas WHERE (database, table) IN (
+            SELECT database, table FROM system.mutations WHERE NOT is_done
+            UNION ALL
+            SELECT database, table FROM system.replication_queue WHERE type = 'MUTATE_PART'))
+    FORMAT TSV" 2>> /test_output/undrained_mutation_errors.txt) || mutation_replicas=unknown
+
 timeout 1m clickhouse-client --query "
     SELECT database, table, mutation_id, command, parts_to_do, latest_fail_error_code_name, latest_fail_reason
     FROM system.mutations
@@ -319,10 +331,86 @@ else
     echo -e "Cannot count the mutations left unfinished by the stress phase$FAIL" >> /test_output/test_results.tsv
 fi
 
+# A MUTATE_PART entry of a killed mutation runs without commands and clones its source part, which fails the
+# checksum check after the upgrade where another replica had applied the mutation (a test stopped merges on this
+# replica only). Restarting the replicas listed above waits out their merge selection and drops the tests' stops,
+# as the upgrade restart would, so the old server runs these entries instead.
+drain_deadline=$((SECONDS + 180))
+
+function run_on_mutation_replicas()
+{
+    local encoded_database encoded_table database table failed=0
+    while IFS=$'\t' read -r encoded_database encoded_table
+    do
+        [ -n "$encoded_database" ] || continue
+        database=$(base64 -d <<< "$encoded_database")
+        table=$(base64 -d <<< "$encoded_table")
+        if [ "$SECONDS" -ge "$drain_deadline" ]
+        then
+            echo "The deadline passed before $database.$table" >> /test_output/undrained_mutation_errors.txt
+            return 1
+        fi
+        timeout 1m clickhouse-client --param_database="$database" --param_table="$table" --query "$1" \
+            2>> /test_output/undrained_mutation_errors.txt \
+            || { failed=1; echo "Failed on $database.$table" >> /test_output/undrained_mutation_errors.txt; }
+    done <<< "$mutation_replicas"
+    return $failed
+}
+
+drain_failed=0
+queued_mutation_entries=0
+if [ "$mutation_replicas" = unknown ]
+then
+    drain_failed=1
+elif [ -n "$mutation_replicas" ]
+then
+    # A restart returns after the first initialization attempt, whether it succeeded or not.
+    run_on_mutation_replicas "
+        SYSTEM RESTART REPLICA {database:Identifier}.{table:Identifier};
+        SELECT throwIf(count() != 1, 'The replica is missing or read-only after SYSTEM RESTART REPLICA')
+        FROM system.replicas WHERE database = {database:String} AND table = {table:String} AND NOT is_readonly
+        FORMAT Null" || drain_failed=1
+
+    # Only after the last restart can no replica log another MUTATE_PART for a killed mutation.
+    run_on_mutation_replicas "SYSTEM SYNC REPLICA {database:Identifier}.{table:Identifier} PULL" || drain_failed=1
+
+    wait_deadline=$((SECONDS + 60))
+    while :
+    do
+        # Read-only replicas count too: their queue survives into the upgraded server.
+        queued_mutation_entries=$(timeout 10s clickhouse-client --query "
+            SELECT count() FROM system.replication_queue WHERE type = 'MUTATE_PART'") \
+            || { drain_failed=1; break; }
+        if [ "$queued_mutation_entries" = 0 ] || [ "$SECONDS" -ge "$wait_deadline" ]
+        then
+            break
+        fi
+        sleep 1
+    done
+fi
+
+if [ "$drain_failed" != 0 ]
+then
+    echo -e "Cannot run the mutation entries left behind by the killed mutations (see undrained_mutation_errors.txt)$FAIL$(head_escaped /test_output/undrained_mutation_errors.txt)" >> /test_output/test_results.tsv
+fi
+if [ "$queued_mutation_entries" != 0 ]
+then
+    timeout 10s clickhouse-client --query "
+        SELECT queue.database, queue.table, queue.replica_name, replica.is_readonly, queue.new_part_name,
+            queue.num_tries, queue.last_exception, queue.postpone_reason
+        FROM system.replication_queue AS queue
+        LEFT JOIN system.replicas AS replica ON replica.database = queue.database AND replica.table = queue.table
+        WHERE queue.type = 'MUTATE_PART'
+        ORDER BY queue.database, queue.table, queue.new_part_name
+        FORMAT Vertical" > /test_output/undrained_mutation_entries.txt ||:
+fi
+
 # The reports are only interesting when there was something to kill, or something left after it
 [ -s /test_output/unfinished_mutations.txt ] || rm -f /test_output/unfinished_mutations.txt
 [ -s /test_output/unkilled_mutations.txt ] || rm -f /test_output/unkilled_mutations.txt
 [ -s /test_output/unkilled_mutation_errors.txt ] || rm -f /test_output/unkilled_mutation_errors.txt
+[ -s /test_output/undrained_mutation_entries.txt ] || rm -f /test_output/undrained_mutation_entries.txt
+[ -s /test_output/undrained_mutation_errors.txt ] || rm -f /test_output/undrained_mutation_errors.txt
 
 # A mutation submitted to the old server and finished by the new one is a real part of the upgrade
 # contract - a submitted mutation is persisted and continues to execute after a restart - and the kill
