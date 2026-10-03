@@ -125,6 +125,16 @@ inline bool maskURIUserinfo(std::string & url)
     return true;
 }
 
+/// Query parameters can contain arbitrary credentials, not only presigned S3 parameters.
+inline bool maskURIQuery(std::string & url)
+{
+    const auto query = url.find('?');
+    if (query == std::string::npos)
+        return false;
+    url.replace(query + 1, std::string::npos, "[HIDDEN]");
+    return true;
+}
+
 /** Mask the values of the query parameters that carry credentials in a presigned URL, so that
   * `...?X-Amz-Signature=abc&foo=1` becomes `...?X-Amz-Signature=[HIDDEN]&foo=1`. Every occurrence
   * is masked. Returns whether anything was masked.

@@ -193,6 +193,7 @@ private:
     std::map<String, String> response_headers; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     HTTPHeaderEntries http_header_entries;
+    const bool hide_body;
     std::function<void(size_t)> next_callback;
 
     size_t offset_from_begin_pos = 0;

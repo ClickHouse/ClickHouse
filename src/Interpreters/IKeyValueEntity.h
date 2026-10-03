@@ -6,6 +6,7 @@
 #include <Core/Names.h>
 #include <Processors/Chunk.h>
 #include <Columns/IColumn.h>
+#include <memory>
 
 namespace DB
 {
@@ -20,6 +21,12 @@ public:
     /// Get primary key name that supports key-value requests.
     /// Primary key can constist of multiple columns.
     virtual Names getPrimaryKey() const = 0;
+
+    /// Optionally pin an immutable resource version for the lifetime of a direct join.
+    virtual std::shared_ptr<const IKeyValueEntity> getLookupSnapshot() const
+    {
+        return {};
+    }
 
     /*
      * Get data from storage directly by keys.

@@ -45,7 +45,7 @@ public:
 
     off_t getPosition() override;
 
-    String getFileName() const override { return current_url.empty() ? urls.front() : current_url; }
+    String getFileName() const override;
 
     void setReadUntilPosition(size_t position) override;
 
