@@ -114,7 +114,7 @@ namespace
 {
 
 /// FNV-64 hash matching LLVM's IndexedInstrProf::ComputeHash / __llvm_profile_str2hash.
-static uint64_t fnv64(const char * s) __attribute__((xray_never_instrument));
+static uint64_t NO_SANITIZE_UNSIGNED_OVERFLOW fnv64(const char * s) __attribute__((xray_never_instrument));
 static uint64_t NO_SANITIZE_UNSIGNED_OVERFLOW fnv64(const char * s)
 {
     uint64_t h = 0xcbf29ce484222325ULL;
