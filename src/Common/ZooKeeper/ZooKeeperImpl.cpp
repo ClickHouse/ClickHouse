@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <exception>
@@ -591,46 +592,52 @@ void ZooKeeper::connect(
     size_t num_tries = args.num_connection_retries + 1;
 
     bool connected = false;
-    bool dns_error = false;
 
-    size_t resolved_count = 0;
-    for (const auto & node : nodes)
+    /// The nodes are resolved before every try, not once: a failed connection attempt below drops the
+    /// host from the DNS cache, so the next try resolves it again and picks up an address it has moved
+    /// to (a restarted container or pod), while the hosts that did not fail are taken from the cache.
+    /// A node that cannot be resolved on a later try keeps the address of the previous one.
+    auto resolve_nodes = [&]
     {
-        try
+        bool dns_error = false;
+        for (const auto & node : nodes)
         {
-            /// Resolve through `DNSResolver` so that the lookup is counted in `system.events` and shared
-            /// with the rest of the server through the DNS cache. A stale entry cannot pin us to a dead
-            /// address: every failed connection attempt below drops the host from the cache.
-            const Poco::Net::SocketAddress host_socket_addr = DB::DNSResolver::instance().resolveAddress(node.host);
-            LOG_TRACE(log, "Adding ZooKeeper host {} ({}), az: {}, priority: {}", node.host, host_socket_addr.toString(), node.az_info, node.priority.value);
-            node.address = host_socket_addr;
-            ++resolved_count;
+            try
+            {
+                /// Resolve through `DNSResolver` so that the lookup is counted in `system.events` and shared
+                /// with the rest of the server through the DNS cache.
+                const Poco::Net::SocketAddress host_socket_addr = DB::DNSResolver::instance().resolveAddress(node.host);
+                LOG_TRACE(log, "Adding ZooKeeper host {} ({}), az: {}, priority: {}", node.host, host_socket_addr.toString(), node.az_info, node.priority.value);
+                node.address = host_socket_addr;
+            }
+            catch (const DB::NetException & e)
+            {
+                /// Either DNS is not available now, or there is no such host name
+                dns_error = true;
+                LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", node.host, e.displayText());
+            }
+            catch (const DB::Exception & e)
+            {
+                /// Most likely it's misconfiguration and a malformed host and port was specified
+                LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", node.host, e.displayText());
+            }
         }
-        catch (const DB::NetException & e)
-        {
-            /// Either DNS is not available now, or there is no such host name
-            dns_error = true;
-            LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", node.host, e.displayText());
-        }
-        catch (const DB::Exception & e)
-        {
-            /// Most likely it's misconfiguration and a malformed host and port was specified
-            LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", node.host, e.displayText());
-        }
-    }
 
-    if (resolved_count == 0)
-    {
-        /// For DNS errors we throw exception with ZCONNECTIONLOSS code, so it will be considered as hardware error, not user error
-        if (dns_error)
-            throw zkutil::KeeperException::fromMessage(
-                Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
-        throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
-    }
+        if (std::none_of(nodes.begin(), nodes.end(), [](const zkutil::ShuffleHost & node) { return node.address.has_value(); }))
+        {
+            /// For DNS errors we throw exception with ZCONNECTIONLOSS code, so it will be considered as hardware error, not user error
+            if (dns_error)
+                throw zkutil::KeeperException::fromMessage(
+                    Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
+            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
+        }
+    };
 
     WriteBufferFromOwnString fail_reasons;
     for (size_t try_no = 0; try_no < num_tries; ++try_no)
     {
+        resolve_nodes();
+
         for (const auto & node : nodes)
         {
             try
@@ -707,8 +714,8 @@ void ZooKeeper::connect(
                 fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address->toString();
                 cancelWriteBuffer();
 
-                /// Remove this possibly stale entry from the DNS cache, so that the next attempt to
-                /// connect to this host resolves it again instead of retrying a dead address.
+                /// Remove this possibly stale entry from the DNS cache, so that the next try (and the next
+                /// connection) resolves this host again instead of retrying a dead address.
                 /// `node.host` is well formed here - otherwise `node.address` would not have been set.
                 DB::DNSResolver::instance().removeHostFromCache(DB::DNSResolver::splitHostAndPort(node.host).first);
             }
