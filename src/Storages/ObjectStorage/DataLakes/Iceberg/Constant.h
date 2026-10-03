@@ -45,6 +45,7 @@ DEFINE_ICEBERG_FIELD(summary);
 DEFINE_ICEBERG_FIELD(time);
 DEFINE_ICEBERG_FIELD(timestamp);
 DEFINE_ICEBERG_FIELD(timestamptz);
+DEFINE_ICEBERG_FIELD_ALIAS(timestamp_with_local_time_zone, timestamp with local time zone);
 DEFINE_ICEBERG_FIELD(timestamp_ns);
 DEFINE_ICEBERG_FIELD(timestamptz_ns);
 DEFINE_ICEBERG_FIELD(type)

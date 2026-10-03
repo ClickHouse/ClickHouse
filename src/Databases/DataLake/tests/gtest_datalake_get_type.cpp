@@ -8,6 +8,8 @@
 /// table. Tests for https://github.com/ClickHouse/ClickHouse/issues/121850: Glue reports an Iceberg
 /// `binary` column as `varbyte`, and reports a list column with the Iceberg spelling `list<...>`
 /// rather than the Hive spelling `array<...>`; both were rejected as unknown types.
+/// https://github.com/ClickHouse/ClickHouse/issues/87716: Hive 3 reports an Iceberg `timestamptz`
+/// column as `timestamp with local time zone`.
 
 TEST(DataLakeGetType, VarbyteIsString)
 {
@@ -27,6 +29,14 @@ TEST(DataLakeGetType, ListIsTheIcebergSpellingOfArray)
     EXPECT_EQ(
         DataLake::getType("list<struct<key:string,value:varbyte>>", false)->getName(),
         "Array(Tuple(key String, value String))");
+}
+
+TEST(DataLakeGetType, HiveTimestampWithLocalTimeZoneIsUTC)
+{
+    EXPECT_EQ(DataLake::getType("timestamp with local time zone", false)->getName(), "DateTime64(6, 'UTC')");
+    EXPECT_EQ(
+        DataLake::getType("struct<ts:timestamp with local time zone>", true)->getName(),
+        "Tuple(ts Nullable(DateTime64(6, 'UTC')))");
 }
 
 TEST(DataLakeGetType, UnknownSpellingsAreStillRejected)

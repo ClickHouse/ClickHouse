@@ -597,7 +597,8 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
         return std::make_shared<DataTypeInt64>();
     if (type_name == f_timestamp)
         return std::make_shared<DataTypeDateTime64>(6);
-    if (type_name == f_timestamptz)
+    /// Hive 3 reports an Iceberg `timestamptz` column as `timestamp with local time zone`.
+    if (type_name == f_timestamptz || type_name == f_timestamp_with_local_time_zone)
         return std::make_shared<DataTypeDateTime64>(6, "UTC");
     if (type_name == f_timestamp_ns)
         return std::make_shared<DataTypeDateTime64>(9);
