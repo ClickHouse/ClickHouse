@@ -13,9 +13,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `CLICKHOUSE_TMP` is a fresh directory of this test that is removed after it, and `clickhouse local`
+# creates its path itself, so nothing has to be created or removed here.
 LOCAL_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
-rm -rf "${LOCAL_PATH}"
-mkdir -p "${LOCAL_PATH}"
 
 function local_query()
 {
@@ -56,5 +56,3 @@ echo "--- format_version = 0"
 read_parts ", format_version = 0"
 echo "--- the source table"
 local_query "SELECT count(), sum(id), min(d), max(d), min(_block_number), max(_block_number) FROM mtpos_old"
-
-rm -rf "${LOCAL_PATH}"
