@@ -1,4 +1,5 @@
 #include <Disks/DiskLocal.h>
+#include <Common/FailPoint.h>
 #include <Common/IThrottler.h>
 #include <Core/Defines.h>
 #include <Common/createHardLink.h>
@@ -21,12 +22,25 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <base/scope_guard.h>
+
+#if defined(OS_LINUX)
+#    include <sys/sendfile.h>
+#    if defined(USE_MUSL) || (defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 27)))
+#        define USE_COPY_FILE_RANGE 1
+#    endif
+#elif defined(OS_FREEBSD)
+#    define USE_COPY_FILE_RANGE 1
+#endif
 
 #include <Disks/IO/WriteBufferFromTemporaryFile.h>
 
 #include <Common/randomSeed.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
 #include <pcg_random.hpp>
 #include <Common/logger_useful.h>
 #include <Common/ErrnoException.h>
@@ -57,6 +71,16 @@ namespace ErrorCodes
     extern const int CANNOT_RMDIR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_STAT;
+    extern const int CANNOT_FSTAT;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int UNEXPECTED_END_OF_FILE;
+}
+
+namespace FailPoints
+{
+    extern const char copy_local_file_pause_before_open[];
+    extern const char copy_local_file_pause_after_chunk[];
 }
 
 namespace
@@ -586,6 +610,188 @@ bool inline isSameDiskType(const IDisk & one, const IDisk & another)
     return typeid(one) == typeid(another);
 }
 
+namespace
+{
+
+void copyFileWithCancellation(
+    const fs::path & from_path,
+    const fs::path & to_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook)
+{
+    /// Copy on the caller thread so cancellation does not wait for shared worker pools.
+    const int source_fd = ::open(from_path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    if (source_fd == -1)
+        ErrnoException::throwFromPath(
+            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE,
+            from_path, "Cannot open file {}", from_path);
+    SCOPE_EXIT({ (void)::close(source_fd); });
+
+    struct stat source_stat;
+    if (::fstat(source_fd, &source_stat) != 0)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSTAT, from_path, "Cannot stat file {}", from_path);
+    if (!S_ISREG(source_stat.st_mode))
+        throw fs::filesystem_error("Cannot copy file", from_path, to_path, std::make_error_code(std::errc::not_supported));
+
+    struct stat destination_stat;
+    const bool destination_exists = ::stat(to_path.c_str(), &destination_stat) == 0;
+    if (!destination_exists && errno != ENOENT)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, to_path, "Cannot stat file {}", to_path);
+    if (destination_exists)
+    {
+        if (!S_ISREG(destination_stat.st_mode))
+            throw fs::filesystem_error("Cannot copy file", from_path, to_path, std::make_error_code(std::errc::not_supported));
+        if (source_stat.st_dev == destination_stat.st_dev && source_stat.st_ino == destination_stat.st_ino)
+            throw fs::filesystem_error("Cannot copy file onto itself", from_path, to_path, std::make_error_code(std::errc::file_exists));
+    }
+
+    fiu_do_on(FailPoints::copy_local_file_pause_before_open,
+    {
+        FailPointInjection::notifyPauseAndWaitForResume(FailPoints::copy_local_file_pause_before_open);
+    });
+
+    /// Preserve creation permissions; defer truncation until the opened inode is checked.
+    const int destination_fd = ::open(
+        to_path.c_str(), O_WRONLY | O_NONBLOCK | O_CLOEXEC | (destination_exists ? 0 : O_CREAT), source_stat.st_mode);
+    if (destination_fd == -1)
+        ErrnoException::throwFromPath(
+            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE,
+            to_path, "Cannot open file {}", to_path);
+    SCOPE_EXIT({ (void)::close(destination_fd); });
+
+    struct stat opened_destination_stat;
+    if (::fstat(destination_fd, &opened_destination_stat) != 0)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSTAT, to_path, "Cannot stat file {}", to_path);
+    if (!S_ISREG(opened_destination_stat.st_mode))
+        throw fs::filesystem_error("Cannot copy file", from_path, to_path, std::make_error_code(std::errc::not_supported));
+    if (source_stat.st_dev == opened_destination_stat.st_dev && source_stat.st_ino == opened_destination_stat.st_ino)
+        throw fs::filesystem_error("Cannot copy file onto itself", from_path, to_path, std::make_error_code(std::errc::file_exists));
+
+    if (destination_exists)
+    {
+        if (destination_stat.st_dev != opened_destination_stat.st_dev || destination_stat.st_ino != opened_destination_stat.st_ino)
+            throw fs::filesystem_error(
+                "Destination changed while copying file", from_path, to_path, std::make_error_code(std::errc::bad_file_descriptor));
+        if (::fchmod(destination_fd, source_stat.st_mode) != 0)
+            ErrnoException::throwFromPath(ErrorCodes::PATH_ACCESS_DENIED, to_path, "Cannot chmod file {}", to_path);
+    }
+    /// `ftruncate` on a fresh empty ext4 file forces allocation of copied data on close.
+    if ((destination_exists || opened_destination_stat.st_size != 0) && ::ftruncate(destination_fd, 0) != 0)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, to_path, "Cannot truncate file {}", to_path);
+
+    const auto source_size = static_cast<size_t>(source_stat.st_size);
+    size_t bytes_copied = 0;
+#if defined(OS_LINUX) || defined(USE_COPY_FILE_RANGE)
+#    if defined(USE_COPY_FILE_RANGE)
+    bool use_copy_file_range = true;
+#    else
+    constexpr bool use_copy_file_range = false;
+#    endif
+    /// Bound kernel copies so large files can be cancelled between transfers.
+    while (bytes_copied < source_size)
+    {
+        cancellation_hook();
+        const auto count = std::min<size_t>(source_size - bytes_copied, DBMS_DEFAULT_BUFFER_SIZE);
+        ssize_t copied;
+#    if defined(USE_COPY_FILE_RANGE)
+        if (use_copy_file_range)
+            copied = ::copy_file_range(source_fd, nullptr, destination_fd, nullptr, count, 0);
+        else
+#    endif
+#    if defined(OS_LINUX)
+            copied = ::sendfile(destination_fd, source_fd, nullptr, count);
+#    else
+            break;
+#    endif
+
+        if (copied == -1)
+        {
+            const auto error = errno;
+            if (error == EINTR)
+                continue;
+#    if defined(USE_COPY_FILE_RANGE)
+            /// Preserve `std::filesystem::copy` support for filesystems without `copy_file_range`.
+            if (use_copy_file_range && (error == EINVAL || error == ENOTSUP || error == EOPNOTSUPP || error == ETXTBSY
+                || error == EXDEV || error == ENOENT || error == ENOSYS))
+            {
+                use_copy_file_range = false;
+                continue;
+            }
+#    endif
+            if (!use_copy_file_range && error == EINVAL)
+                break;
+            throw fs::filesystem_error("Cannot copy file", from_path, to_path, std::error_code(error, std::generic_category()));
+        }
+        if (copied == 0)
+            throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "Unexpected end of file {} while copying {} bytes", from_path, source_size);
+        bytes_copied += static_cast<size_t>(copied);
+
+        if (bytes_copied < source_size)
+        {
+            fiu_do_on(FailPoints::copy_local_file_pause_after_chunk,
+            {
+                FailPointInjection::notifyPauseAndWaitForResume(FailPoints::copy_local_file_pause_after_chunk);
+            });
+        }
+    }
+    if (source_size > 0 && bytes_copied == source_size)
+        return;
+#endif
+
+    ReadBufferFromFileDescriptor in(source_fd, read_settings.local_fs_settings.buffer_size);
+    in.seek(static_cast<off_t>(bytes_copied), SEEK_SET);
+    WriteBufferFromFileDescriptor out(
+        destination_fd,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        nullptr,
+        write_settings.local_throttler,
+        0,
+        to_path,
+        write_settings.use_adaptive_write_buffer,
+        write_settings.adaptive_write_buffer_initial_size);
+    /// Some regular files expose data despite reporting a zero size.
+    if (source_size == 0)
+        copyData(in, out, cancellation_hook);
+    else
+        copyData(in, out, source_size - bytes_copied, cancellation_hook);
+    out.finalize();
+}
+
+void copyDirectoryWithCancellation(
+    const fs::path & from_path,
+    const fs::path & to_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook)
+{
+    cancellation_hook();
+    const auto source_status = fs::status(from_path);
+    const auto destination_status = fs::status(to_path);
+    if (!fs::exists(source_status) || fs::is_other(source_status) || fs::is_other(destination_status)
+        || (fs::is_directory(source_status) && fs::is_regular_file(destination_status))
+        || (fs::exists(destination_status) && fs::equivalent(from_path, to_path)))
+        throw fs::filesystem_error("Cannot copy", from_path, to_path, std::make_error_code(std::errc::function_not_supported));
+
+    if (fs::is_regular_file(source_status))
+    {
+        copyFileWithCancellation(
+            from_path,
+            fs::is_directory(destination_status) ? to_path / from_path.filename() : to_path,
+            read_settings,
+            write_settings,
+            cancellation_hook);
+        return;
+    }
+
+    if (!fs::exists(destination_status))
+        fs::create_directory(to_path, from_path);
+    for (const auto & entry : fs::directory_iterator(from_path))
+        copyDirectoryWithCancellation(entry.path(), to_path / entry.path().filename(), read_settings, write_settings, cancellation_hook);
+}
+
+}
+
 void DiskLocal::copyDirectoryContent(
     const String & from_dir,
     const std::shared_ptr<IDisk> & to_disk,
@@ -595,10 +801,18 @@ void DiskLocal::copyDirectoryContent(
     const std::function<void()> & cancellation_hook)
 {
     /// If throttling was configured we cannot use copying directly.
-    if (isSameDiskType(*this, *to_disk) && !read_settings.local_throttler && !write_settings.local_throttler)
-        fs::copy(fs::path(disk_path) / from_dir, fs::path(to_disk->getPath()) / to_dir, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
-    else
+    if (!isSameDiskType(*this, *to_disk) || read_settings.local_throttler || write_settings.local_throttler)
+    {
         IDisk::copyDirectoryContent(from_dir, to_disk, to_dir, read_settings, write_settings, cancellation_hook);
+        return;
+    }
+
+    const auto from_path = fs::path(disk_path) / from_dir;
+    const auto to_path = fs::path(to_disk->getPath()) / to_dir;
+    if (cancellation_hook)
+        copyDirectoryWithCancellation(from_path, to_path, read_settings, write_settings, cancellation_hook);
+    else
+        fs::copy(from_path, to_path, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
 }
 
 SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
