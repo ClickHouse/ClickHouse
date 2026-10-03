@@ -1,4 +1,6 @@
 #include <Storages/MergeTree/PartitionPruner.h>
+
+#include <Storages/MergeTree/MergeTreeIndexAnalyzerNames.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -12,6 +14,9 @@ PartitionPruner::PartitionPruner(
     bool skip_analysis,
     bool require_ready_sets)
     : partition_key(MergeTreePartition::adjustPartitionKey(metadata, context))
+    /// Match the partition key not only by the original names of its expressions but also by the
+    /// names the same expressions get after the query's rewrite passes, otherwise a rewritten
+    /// filter expression does not match an expression partition key (issue #103128).
     , partition_condition(
           filter_dag,
           context,
@@ -19,7 +24,8 @@ PartitionPruner::PartitionPruner(
           partition_key.expression,
           true /* single_point */,
           skip_analysis,
-          require_ready_sets)
+          require_ready_sets,
+          skip_analysis ? nullptr : getAlternativeKeyExpression(partition_key, context))
     , useless((strict && partition_condition.isRelaxed()) || partition_condition.alwaysUnknownOrTrue())
 {
 }
