@@ -59,16 +59,6 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     if (ReadFromMergeTree::filterDependsOnNonDeterministicVirtuals(read_from_merge_tree->getStorageMetadata()->virtuals, query_info))
         return;
 
-    /// PREWHERE runs before the tagged filter sees a row, so a granule that filter empties may still
-    /// hold rows only PREWHERE removed. Sound while the PREWHERE condition is in `filter_actions_dag`
-    /// (the hash covers it) or is `__topKFilter` (key salted with the TopK plan); a runtime filter is neither.
-    if (const auto & prewhere_info = read_from_merge_tree->getPrewhereInfo())
-    {
-        const auto * prewhere_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
-        if (!prewhere_node || !isDeterministicAllowingTopKFilter(prewhere_node))
-            return;
-    }
-
     const auto & outputs = filter_actions_dag->getOutputs();
 
     /// Restrict to the case that ActionsDAG has a single output. This isn't technically necessary but de-risks
@@ -117,6 +107,19 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
                 optimization_settings.query_condition_cache_time_condition_grid_factor,
                 time(nullptr));
     };
+
+    /// PREWHERE runs before the tagged filter sees a row, so a granule that filter empties may still
+    /// hold rows only PREWHERE removed. Sound while the PREWHERE condition is in `filter_actions_dag`
+    /// (the hash covers it) or is `__topKFilter` (key salted with the TopK plan); a runtime filter is neither.
+    /// A PREWHERE condition involving the current time (e.g. `time >= today() - 10` moved to PREWHERE
+    /// out of `WHERE time >= today() - 10 AND flag = 1`) is part of `filter_actions_dag` as well, so the
+    /// derived condition covers it.
+    if (const auto & prewhere_info = read_from_merge_tree->getPrewhereInfo())
+    {
+        const auto * prewhere_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
+        if (!prewhere_node || !is_deterministic_or_time_condition(prewhere_node))
+            return;
+    }
 
     FilterStep * filter_step_to_tag = nullptr;
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
