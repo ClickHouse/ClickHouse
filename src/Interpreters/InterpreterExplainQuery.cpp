@@ -442,17 +442,17 @@ namespace
             auto & arguments = function->arguments->children;
             for (size_t i = 0; i < arguments.size(); ++i)
             {
+                if (auto replaced = secret_arguments.replaced_arguments.find(i); replaced != secret_arguments.replaced_arguments.end())
+                {
+                    replaceWithMaskedText(arguments[i], replaced->second);
+                    continue;
+                }
+
                 if (auto * map = arguments[i]->as<ASTFunction>();
                     map && map->arguments && std::ranges::contains(secret_arguments.nested_maps, map->name))
                 {
                     for (auto & entry : map->arguments->children)
                         hideWholeNode(secretValueSlot(entry));
-                    continue;
-                }
-
-                if (auto replaced = secret_arguments.replaced_arguments.find(i); replaced != secret_arguments.replaced_arguments.end())
-                {
-                    replaceWithMaskedText(arguments[i], replaced->second);
                     continue;
                 }
 

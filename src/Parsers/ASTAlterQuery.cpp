@@ -1,4 +1,5 @@
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTBackupQuery.h>
 
 #include <Databases/DataLake/DataLakeConstants.h>
 #include <IO/Operators.h>
@@ -253,7 +254,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     execute_command_name = r.getString("execute_command_name");
     remove_property = r.getString("remove_property");
 
-    /// `snapshot_desc` and `execute_args` are arbitrary expressions/lists with no single parser-produced node type.
+    /// `execute_args` is an arbitrary expression list with no single parser-produced node type.
     auto readRawChild = [&](const char * key, IAST *& field)
     {
         auto child = r.readChild(key);
@@ -412,7 +413,11 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     }
     readTypedChild.operator()<ASTSQLSecurity>("sql_security", sql_security);
     readTypedChild.operator()<ASTIdentifier>("rename_to", rename_to);
-    readRawChild("snapshot_desc", snapshot_desc);
+    if (auto snapshot_desc_child = r.readBackupLocatorChild("snapshot_desc"))
+    {
+        snapshot_desc = snapshot_desc_child.get();
+        children.push_back(std::move(snapshot_desc_child));
+    }
     readRawChild("execute_args", execute_args);
 
     readTypedChild.operator()<ASTRefreshStrategy>("refresh", refresh);
@@ -890,7 +895,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         if (snapshot_desc != nullptr)
         {
             ostr << " FROM ";
-            snapshot_desc->format(ostr, settings, state, frame);
+            formatBackupOrSnapshotLocator(*snapshot_desc, ostr, settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::ADD_CONSTRAINT)

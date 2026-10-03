@@ -5,6 +5,7 @@
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Poco/String.h>
@@ -399,7 +400,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             if (backup_source)
             {
                 print_keyword(" FROM ");
-                backup_source->format(ostr, settings);
+                formatBackupOrSnapshotLocator(*backup_source, ostr, settings);
             }
             break;
         }
@@ -903,7 +904,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     if (r.has("offset_to_drop"))
         offset_to_drop = r.getUInt("offset_to_drop");
     backup_name = r.getString("backup_name");
-    backup_source = r.readChild("backup_source");
+    backup_source = r.readBackupLocatorChild("backup_source");
     if (backup_source)
         children.push_back(backup_source);
     /// `scheduled_merge_parts` is a non-empty `ASTExpressionList` of string `ASTLiteral`s

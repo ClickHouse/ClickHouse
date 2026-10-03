@@ -3,9 +3,12 @@
 #include <Access/ContextAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Core/Settings.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -32,10 +35,22 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+String formatBackupInfo(const BackupInfo & info, bool show_secrets)
+{
+    WriteBufferFromOwnString buffer;
+    IAST::FormatSettings settings(true);
+    settings.show_secrets = show_secrets;
+    formatBackupOrSnapshotLocator(*info.toAST(), buffer, settings);
+    /// Match the final masking step in `IAST::formatWithPossiblyHidingSensitiveData`.
+    return wipeSensitiveDataAndCutToLength(buffer.str(), 0, !show_secrets);
+}
+}
+
 String BackupInfo::toString() const
 {
-    ASTPtr ast = toAST();
-    return ast->formatWithSecretsOneLine();
+    return formatBackupInfo(*this, /* show_secrets= */ true);
 }
 
 
@@ -351,7 +366,7 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
 
 String BackupInfo::toStringForLogging() const
 {
-    return toAST()->formatForLogging();
+    return formatBackupInfo(*this, /* show_secrets= */ false);
 }
 
 bool BackupInfo::canCopyS3CredentialsTo(const BackupInfo & dest, ContextPtr context) const

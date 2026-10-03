@@ -103,6 +103,13 @@ public:
         if (!function->hasArguments())
             return;
 
+        if (function_.name == "Backup")
+        {
+            if (!backupS3LocatorMasksItself(function_))
+                findBackupDatabaseSecretArguments();
+            return;
+        }
+
         switch (function_.getKind())
         {
             case ASTFunction::Kind::ORDINARY_FUNCTION: findOrdinaryFunctionSecretArguments(); break;
@@ -117,6 +124,18 @@ public:
     }
 
     FunctionSecretArgumentsFinder::Result getResult() const { return result; }
+
+private:
+    static bool backupS3LocatorMasksItself(const ASTFunction & backup)
+    {
+        if (backup.arguments->children.size() != 2 || !backup.arguments->children[0]->as<ASTLiteral>())
+            return false;
+
+        const auto * locator = backup.arguments->children[1]->as<ASTFunction>();
+        return locator && locator->name == "S3" && locator->getKind() == ASTFunction::Kind::BACKUP_NAME
+            && !locator->parameters && locator->tryGetAlias().empty() && !locator->isWindowFunction()
+            && locator->getNullsAction() == NullsAction::EMPTY;
+    }
 };
 
 

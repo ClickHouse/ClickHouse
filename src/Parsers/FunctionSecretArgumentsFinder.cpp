@@ -123,6 +123,32 @@ bool FunctionSecretArgumentsFinder::isCredentialFreeBackupLocator(const Abstract
     return true;
 }
 
+bool FunctionSecretArgumentsFinder::isBinaryEquals(const AbstractFunction & argument)
+{
+    return argument.name() == "equals" && argument.hasArguments() && argument.arguments->size() == 2;
+}
+
+bool FunctionSecretArgumentsFinder::backupS3MapHasUnsafeVisibleArgument(const AbstractFunction & map)
+{
+    if (!map.hasArguments())
+        return true;
+
+    for (size_t i = 0; i < map.arguments->size(); ++i)
+    {
+        const auto child = map.arguments->at(i)->getFunction();
+        if (!child || !isBinaryEquals(*child))
+            continue;
+
+        String key;
+        if (!tryGetStringFromArgument(*child->arguments->at(0), &key))
+            return true;
+        if (map.name() == "extra_credentials" && isNonSecretExtraCredentialsKey(key)
+            && !tryGetStringFromArgument(*child->arguments->at(1), nullptr))
+            return true;
+    }
+    return false;
+}
+
 void FunctionSecretArgumentsFinder::markSecretArgument(size_t index, bool argument_is_named)
 {
     if (index >= function->arguments->size())
@@ -164,7 +190,7 @@ std::vector<size_t> FunctionSecretArgumentsFinder::classifyS3Arguments(size_t st
             const auto name = f->name();
             if (name == "headers" || name == "extra_credentials")
                 continue;
-            if (name == "equals" && f->hasArguments() && f->arguments->size() == 2)
+            if (isBinaryEquals(*f))
             {
                 seen_named = true;
                 String key;
@@ -345,14 +371,16 @@ void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
              || (name == "paimonS3"))
     {
         /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
-        find_secrets = [this] { findS3FunctionSecretArguments(/* is_cluster_function= */ false); };
+        findS3FunctionSecretArguments(/* is_cluster_function= */ false);
+        return;
     }
     else if ((name == "s3Cluster") || (name == "hudiCluster") || (name == "deltaLakeCluster") || (name == "deltaLakeS3Cluster")
              || (name == "icebergS3Cluster") || (name == "icebergCluster") || (name == "paimonCluster")
              || (name == "paimonS3Cluster"))
     {
         /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
-        find_secrets = [this] { findS3FunctionSecretArguments(/* is_cluster_function= */ true); };
+        findS3FunctionSecretArguments(/* is_cluster_function= */ true);
+        return;
     }
     else if ((name == "azureBlobStorage") || (name == "deltaLakeAzure") || (name == "icebergAzure") || (name == "paimonAzure"))
     {
@@ -1087,7 +1115,8 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
              || (engine_name == "S3Queue"))
     {
         /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
-        find_secrets = [this] { findS3TableEngineSecretArguments(); };
+        findS3TableEngineSecretArguments();
+        return;
     }
     else if (engine_name == "URL")
     {
@@ -1399,15 +1428,13 @@ void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
     else if (engine_name == "S3")
     {
         /// S3('url', 'access_key_id', 'secret_access_key')
-        find_secrets = [this] { findS3DatabaseSecretArguments(); };
+        findS3DatabaseSecretArguments();
+        return;
     }
     else if (engine_name == "DataLakeCatalog")
     {
-        find_secrets = [this] { findDataLakeCatalogSecretArguments(); };
-    }
-    else if (engine_name == "Backup")
-    {
-        find_secrets = [this] { findBackupDatabaseSecretArguments(); };
+        findDataLakeCatalogSecretArguments();
+        return;
     }
     else if (engine_name == "URL")
     {
@@ -1477,183 +1504,23 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
         return;
     }
 
-    /// The nested S3 destination is not recognized as an S3 engine when the formatter recurses into it,
-    /// so its secrets must be masked here. Handle both forms:
-    ///   Backup('', S3('url', 'access_key_id', 'secret_access_key' [, ...]))
-    ///   Backup('', S3(named_collection, ..., secret_access_key = '...', session_token = '...', ...))
-    /// by reconstructing the nested `S3(...)` with the secret arguments replaced by `[HIDDEN]`.
-    if (storage_function->name() != "S3")
+    /// A parsed `S3` locator normally masks itself as `BACKUP_NAME`. The parent rule handles locators
+    /// that `backupS3LocatorMasksItself` cannot delegate safely, including untagged JSON ASTs.
+    if (storage_function->name() == "S3")
     {
-        if (isCredentialFreeBackupLocator(*storage_function))
-            return;
-
-        /// Any other locator holds a credential no rule below reconstructs (`AzureBlobStorage` holds
-        /// `account_key` and connection-string material); its engine name and arity are not secrets.
-        std::string replacement = backQuoteIfNeed(storage_function->name()) + "(";
-        for (size_t i = 0, size = storage_function->hasArguments() ? storage_function->arguments->size() : 0; i < size; ++i)
-            replacement += i > 0 ? ", '[HIDDEN]'" : "'[HIDDEN]'";
-        replacement += ")";
-
-        result.start = 1;
-        result.count = 1;
-        result.replacement = std::move(replacement);
-        result.quote_replacement = false;
+        markSecretArgument(1);
         return;
     }
 
-    if (!storage_function->hasArguments())
+    if (isCredentialFreeBackupLocator(*storage_function))
         return;
 
-    const auto & nested_args = *storage_function->arguments;
-    const bool is_named_collection = nested_args.size() >= 1 && nested_args.at(0)->isIdentifier();
-
-    /// Count the positional arguments first (everything that is not `key = value` or a nested map):
-    /// the visibility rule below depends on the total, mirroring `BackupInfo::fromAST`, which collects
-    /// positionals independently of named overrides.
-    size_t total_positionals = 0;
-    for (size_t i = 0; i < nested_args.size(); ++i)
-    {
-        const auto f = nested_args.at(i)->getFunction();
-        if (f && (f->name() == "extra_credentials"
-                  || (f->name() == "equals" && f->hasArguments() && f->arguments->size() == 2)))
-            continue;
-        ++total_positionals;
-    }
-
-    /// Named-collection locator: slot 0 is the collection and slot 1 the non-secret filename.
-    /// Explicit-url locator: valid signatures have one positional (the url) or three (url,
-    /// access_key_id, secret_access_key) with the secret at slot 2; any other count is invalid and
-    /// the intended slots are unknowable, so everything after the url is hidden (fail closed).
-    const size_t first_hidden_slot = (is_named_collection || total_positionals == 3) ? 2 : 1;
-
-    std::string replacement = "S3(";
-    bool has_secret = false;
-    size_t positional_slot = 0;
-    for (size_t i = 0; i < nested_args.size(); ++i)
-    {
-        if (i > 0)
-            replacement += ", ";
-
-        auto arg = nested_args.at(i);
-
-        /// Named argument `key = value`.
-        if (auto key_value = arg->getFunction();
-            key_value && key_value->name() == "equals" && key_value->hasArguments() && key_value->arguments->size() == 2)
-        {
-            String key;
-            if (key_value->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
-            {
-                const bool is_secret = std::find(std::begin(s3_secret_keys), std::end(s3_secret_keys), key) != std::end(s3_secret_keys);
-                replacement += key;
-                replacement += " = ";
-                String value;
-                if (is_secret)
-                {
-                    replacement += "'[HIDDEN]'";
-                    has_secret = true;
-                }
-                else if (key_value->arguments->at(1)->tryGetString(&value, /* allow_identifier= */ true))
-                {
-                    /// A `url` override can itself carry credentials (userinfo, presign parameters).
-                    has_secret |= maskS3URICredentials(value);
-                    replacement += quoteString(value);
-                }
-                else if (String literal_text; key_value->arguments->at(1)->tryGetLiteralText(&literal_text))
-                {
-                    /// A non-string scalar override, e.g. `use_environment_credentials = 1`.
-                    replacement += literal_text;
-                }
-                else
-                {
-                    /// Any remaining value is an expression, not a plain literal or identifier: a `url`
-                    /// built from pieces, or a nested `headers(...)` / `extra_credentials(...)` map or
-                    /// other function whose formatted text would carry its secrets verbatim (the parser
-                    /// evaluates it as a constant, so it is not masked as a nested map here). We cannot
-                    /// evaluate it, so hide it rather than leak. This counts as a secret: otherwise a
-                    /// replacement whose only hidden part is this value would be discarded below and the
-                    /// original expression formatted verbatim.
-                    replacement += "'[HIDDEN]'";
-                    has_secret = true;
-                }
-            }
-            else
-            {
-                /// The key is a constant expression the parser would evaluate, so it can name any
-                /// secret key; fail closed and hide the whole argument.
-                replacement += "'[HIDDEN]'";
-                has_secret = true;
-            }
-            continue;
-        }
-
-        /// Nested `extra_credentials(k = v, ...)` map: reconstruct with every value hidden. Build into
-        /// a temporary; if any inner key is not a plain literal (e.g. a constant expression the parser
-        /// still accepts), fail closed by hiding the whole map rather than emitting it verbatim.
-        if (auto extra_credentials_func = arg->getFunction();
-            extra_credentials_func && extra_credentials_func->name() == "extra_credentials" && extra_credentials_func->hasArguments())
-        {
-            std::string masked_map = "extra_credentials(";
-            bool reconstructed = true;
-            const auto & cred_args = *extra_credentials_func->arguments;
-            for (size_t j = 0; j < cred_args.size(); ++j)
-            {
-                String cred_key;
-                auto cred_kv = cred_args.at(j)->getFunction();
-                if (cred_kv && cred_kv->name() == "equals" && cred_kv->hasArguments() && cred_kv->arguments->size() == 2
-                    && cred_kv->arguments->at(0)->tryGetString(&cred_key, /* allow_identifier= */ true))
-                {
-                    if (j > 0)
-                        masked_map += ", ";
-                    String cred_value;
-                    if (isNonSecretExtraCredentialsKey(cred_key)
-                        && cred_kv->arguments->at(1)->tryGetString(&cred_value, /* allow_identifier= */ true))
-                        masked_map += cred_key + " = " + quoteString(cred_value);
-                    else
-                        masked_map += cred_key + " = '[HIDDEN]'";
-                }
-                else
-                {
-                    reconstructed = false;
-                    break;
-                }
-            }
-            masked_map += ")";
-            replacement += reconstructed ? masked_map : "'[HIDDEN]'";
-            has_secret = true;
-            continue;
-        }
-
-        /// Positional argument: the slot is counted over positionals only, and its visibility follows
-        /// the signature rule computed above.
-        const size_t slot = positional_slot++;
-        if (slot >= first_hidden_slot)
-        {
-            replacement += "'[HIDDEN]'";
-            has_secret = true;
-            continue;
-        }
-
-        String arg_value;
-        if (arg->isIdentifier() && arg->tryGetString(&arg_value, /* allow_identifier= */ true))
-            replacement += arg_value; /// e.g. the named collection name, kept unquoted.
-        else if (arg->tryGetString(&arg_value, /* allow_identifier= */ true))
-        {
-            /// The url positional can itself carry credentials (userinfo, presign parameters).
-            has_secret |= maskS3URICredentials(arg_value);
-            replacement += quoteString(arg_value);
-        }
-        else
-        {
-            /// Fail closed: an argument we cannot reconstruct safely (e.g. an unsupported tail like
-            /// `headers(..)`, or a non-literal expression) must not be emitted verbatim. Hide it.
-            replacement += "'[HIDDEN]'";
-            has_secret = true;
-        }
-    }
+    /// Any other locator holds a credential no rule here masks (`AzureBlobStorage` holds
+    /// `account_key` and connection-string material); its engine name and arity are not secrets.
+    std::string replacement = backQuoteIfNeed(storage_function->name()) + "(";
+    for (size_t i = 0, size = storage_function->hasArguments() ? storage_function->arguments->size() : 0; i < size; ++i)
+        replacement += i > 0 ? ", '[HIDDEN]'" : "'[HIDDEN]'";
     replacement += ")";
-
-    if (!has_secret)
-        return;
 
     result.start = 1;
     result.count = 1;
@@ -1666,23 +1533,46 @@ void FunctionSecretArgumentsFinder::findBackupNameSecretArguments()
     const String & engine_name = function->name();
     if (engine_name == "S3")
     {
-        if (isNamedCollectionName(0))
+        const bool is_named_collection = isNamedCollectionName(0);
+        const auto positional = classifyS3Arguments(is_named_collection ? 1 : 0, /* positionals_allowed_after_named= */ true);
+        /// `BackupInfo::fromAST` reads only literals as positionals (a last function is the credential clause)
+        /// and rejects anything else after the statement is logged, so such a locator has no valid triple.
+        bool only_literals = true;
+        for (const size_t index : positional)
+        {
+            if (!function->arguments->at(index)->tryGetLiteralText(nullptr))
+            {
+                markSecretArgument(index);
+                only_literals = false;
+            }
+        }
+        if (is_named_collection)
         {
             /// BACKUP ... TO S3(named_collection[, 'filename'], ..., secret_access_key = '...', ...):
             /// unlike the other named-collection S3 forms, the backup locator accepts one positional
             /// (the non-secret filename), in any position relative to the named overrides; anything
             /// positional beyond it is invalid, so fail closed there.
-            maskS3PositionalsFrom(classifyS3Arguments(1, /* positionals_allowed_after_named= */ true), 1);
-            return;
+            maskS3PositionalsFrom(positional, 1);
         }
-        /// BACKUP ... TO S3(url [, aws_access_key_id, aws_secret_access_key] [, session_token = ..., ...]):
-        /// the locator accepts exactly one or three positionals; the valid triple keeps the url and
-        /// access_key_id visible and hides the secret at slot 2. Any other positional count is invalid
-        /// but logged before validation, and the intended slots are unknowable, so fail closed on
-        /// everything after the url.
-        const auto positional = classifyS3Arguments(0, /* positionals_allowed_after_named= */ true);
-        maskS3UrlArgument(positional, 0);
-        maskS3PositionalsFrom(positional, positional.size() == 3 ? 2 : 1);
+        else
+        {
+            /// `BackupInfo::fromAST` also rejects a function other than `key = value` before the last argument, such as a
+            /// map skipped above, so such a locator has no valid triple either.
+            bool has_function_before_last = false;
+            for (size_t i = 0; i + 1 < function->arguments->size() && !has_function_before_last; ++i)
+            {
+                const auto f = function->arguments->at(i)->getFunction();
+                has_function_before_last = f && f->name() != "equals";
+            }
+            /// BACKUP ... TO S3(url [, aws_access_key_id, aws_secret_access_key] [, session_token = ..., ...]):
+            /// the locator accepts exactly one or three positionals; the valid triple keeps the url and
+            /// access_key_id visible and hides the secret at slot 2. Any other positional count is invalid
+            /// but logged before validation, and the intended slots are unknowable, so fail closed on
+            /// everything after the url.
+            maskS3UrlArgument(positional, 0);
+            maskS3PositionalsFrom(positional, positional.size() == 3 && only_literals && !has_function_before_last ? 2 : 1);
+        }
+        maskBackupS3VisibleArguments(positional);
     }
     else if (engine_name == "AzureBlobStorage")
     {
@@ -1690,10 +1580,54 @@ void FunctionSecretArgumentsFinder::findBackupNameSecretArguments()
     }
     else if (!isCredentialFreeBackupLocator(*function))
     {
-        /// Everything else either is an engine no rule here reconstructs, or has arguments the named
+        /// Everything else either is an engine no rule here can show safely, or has arguments the named
         /// engine does not read (an override, a nested map, a surplus slot), which can carry a credential.
         /// `AzureQueue` reaches this branch: it is a table engine, not a registered backup engine.
         maskEveryArgument();
+    }
+}
+
+void FunctionSecretArgumentsFinder::maskBackupS3VisibleArguments(const std::vector<size_t> & positional)
+{
+    for (const size_t index : positional)
+    {
+        if (result.masked_arguments.contains(index) || result.replaced_arguments.contains(index))
+            continue;
+        String value;
+        if (!function->arguments->at(index)->tryGetString(&value, /* allow_identifier= */ false))
+        {
+            markSecretArgument(index);
+            continue;
+        }
+        if (maskS3URICredentials(value))
+            result.replaced_arguments[index] = quoteString(value);
+    }
+
+    for (size_t i = 0; i < function->arguments->size(); ++i)
+    {
+        const auto named = function->arguments->at(i)->getFunction();
+        if (!named)
+            continue;
+
+        if ((named->name() == "headers" || named->name() == "extra_credentials")
+            && backupS3MapHasUnsafeVisibleArgument(*named))
+        {
+            result.replaced_arguments[i] = "'[HIDDEN]'";
+            continue;
+        }
+
+        if (!isBinaryEquals(*named))
+            continue;
+        if (!tryGetStringFromArgument(*named->arguments->at(0), nullptr))
+        {
+            markSecretArgument(i);
+            continue;
+        }
+        if (result.masked_arguments.contains(i) || result.replaced_arguments.contains(i))
+            continue;
+        String value;
+        if (named->arguments->at(1)->tryGetString(&value, /* allow_identifier= */ true) && maskS3URICredentials(value))
+            markSecretArgument(i, /* argument_is_named= */ true);
     }
 }
 
