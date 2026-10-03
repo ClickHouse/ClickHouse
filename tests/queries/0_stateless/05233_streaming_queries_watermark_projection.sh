@@ -42,10 +42,11 @@ SELECT count() FROM t_streaming_watermark_projection STREAM BOUNDED WATERMARK FO
 
 # The per-round read plan is built at runtime and is invisible to EXPLAIN. With `lag` in the watermark,
 # only the data stream can read the projection, and only if the projection metadata has `_time_attribute`.
-$CLICKHOUSE_CLIENT -q "
+output=$($CLICKHOUSE_CLIENT -q "
 SELECT x, _time_attribute FROM t_streaming_watermark_projection STREAM BOUNDED WATERMARK FOR ts AS ts - toIntervalSecond(lag) FORMAT Null
 SETTINGS enable_streaming_queries = 1, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, enable_analyzer = 1,
          optimize_use_projections = 1, send_logs_level = 'debug'
-" 2>&1 | grep -o -m1 "Projection commit_order is selected"
+" 2>&1) || { echo "$output" >&2; exit 1; }
+grep -o -m1 "Projection commit_order is selected" <<< "$output"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_streaming_watermark_projection"
