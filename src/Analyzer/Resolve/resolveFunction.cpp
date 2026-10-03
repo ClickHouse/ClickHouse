@@ -2315,7 +2315,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
       */
     if (is_special_function_dict_get || is_special_function_assign_centroid)
     {
-        /// `dictGet` and its variations take the dictionary name as the first argument, `assignCentroid` as the second.
         const size_t dictionary_name_position = is_special_function_dict_get ? 0 : 1;
         auto & arguments = function_node_ptr->getArguments().getNodes();
         if (dictionary_name_position < arguments.size())
