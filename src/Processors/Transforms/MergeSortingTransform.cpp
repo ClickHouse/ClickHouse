@@ -12,12 +12,6 @@
 #include <Common/logger_useful.h>
 
 
-namespace ProfileEvents
-{
-    extern const Event ExternalSortMerge;
-}
-
-
 namespace DB
 {
 
@@ -39,7 +33,9 @@ MergeSortingTransform::MergeSortingTransform(
     size_t max_bytes_in_query_before_external_sort_,
     TemporaryDataOnDiskScopePtr tmp_data_,
     size_t min_free_disk_space_,
-    TopKThresholdTrackerPtr threshold_tracker_)
+    TopKThresholdTrackerPtr threshold_tracker_,
+    MergeSorter::Mode merge_mode_,
+    ProfileEvents::Event external_merge_event_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
@@ -49,7 +45,10 @@ MergeSortingTransform::MergeSortingTransform(
     , min_free_disk_space(min_free_disk_space_)
     , max_block_bytes(max_block_bytes_)
     , threshold_tracker(threshold_tracker_)
+    , merge_mode(merge_mode_)
+    , external_merge_event(external_merge_event_)
 {
+    chassert(merge_mode == MergeSorter::Mode::PreserveRows || limit_ == 0);
 }
 
 IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
@@ -147,7 +146,8 @@ void MergeSortingTransform::consume(Chunk chunk)
                 /// max_merged_block_size >= 128
                 max_merged_block_size = std::max(std::min(max_merged_block_size, max_block_bytes / avg_row_bytes), 128UL);
             }
-            merge_sorter = std::make_unique<MergeSorter>(shared_header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
+            merge_sorter = std::make_unique<MergeSorter>(
+                shared_header_without_constants, std::move(chunks), description, max_merged_block_size, limit, merge_mode);
             auto sink = std::make_shared<BufferingToFileSink>(shared_header_without_constants, std::move(tmp_stream), log);
             auto source = std::make_shared<BufferingFromFileSource>(shared_header_without_constants, sink->getHolder(), log);
 
@@ -200,15 +200,27 @@ void MergeSortingTransform::generate()
     {
         if (temporary_files_num == 0)
         {
-            merge_sorter = std::make_unique<MergeSorter>(std::make_shared<const Block>(header_without_constants), std::move(chunks), description, max_merged_block_size, limit);
+            merge_sorter = std::make_unique<MergeSorter>(
+                std::make_shared<const Block>(header_without_constants),
+                std::move(chunks),
+                description,
+                max_merged_block_size,
+                limit,
+                merge_mode);
         }
         else
         {
-            ProfileEvents::increment(ProfileEvents::ExternalSortMerge);
+            ProfileEvents::increment(external_merge_event);
             LOG_INFO(log, "There are {} temporary sorted parts to merge", temporary_files_num);
 
-            processors.emplace_back(std::make_shared<MergeSorterSource>(
-                    std::make_shared<const Block>(header_without_constants), std::move(chunks), description, max_merged_block_size, limit));
+            processors.emplace_back(
+                std::make_shared<MergeSorterSource>(
+                    std::make_shared<const Block>(header_without_constants),
+                    std::move(chunks),
+                    description,
+                    max_merged_block_size,
+                    limit,
+                    merge_mode));
         }
 
         generated_prefix = true;
