@@ -320,10 +320,11 @@ TEST(UniquesHashSet, MergingLegacyStateDoesNotLoseItsElements)
 
 TEST(UniquesHashSet, InsertPathFeedsTheWideSet)
 {
-    /// Find values whose 64-bit hashes pass the wide thinning.
+    /// Find values whose 64-bit hashes pass the wide thinning. The wide set samples
+    /// the hashes XOR-ed with a constant (see `UniquesHashSet::wideHash`).
     std::vector<UInt64> passing;
     for (UInt64 candidate = 0; passing.size() < 5; ++candidate)
-        if ((DefaultHash<UInt64>()(candidate) & ((1 << 18) - 1)) == 0)
+        if (((DefaultHash<UInt64>()(candidate) ^ 0x9E3779B97F4A0000ULL) & ((1 << 18) - 1)) == 0)
             passing.push_back(candidate);
 
     TestSet set;
@@ -342,6 +343,30 @@ TEST(UniquesHashSet, InsertPathFeedsTheWideSet)
     TestSet restored = deserialize(serialized, false);
     EXPECT_EQ(restored.wideSetSize(), set.wideSetSize());
     EXPECT_EQ(restored.size(), set.size());
+
+    /// The batched insertion collects the same candidates, also when they repeat.
+    std::vector<UInt64> values;
+    for (UInt64 i = 0; i < 100; ++i)
+        values.push_back(i);
+    for (UInt64 candidate : passing)
+        for (size_t i = 0; i < 20; ++i)
+            values.push_back(candidate);
+    TestSet batched;
+    batched.insertMany<UInt64, std::identity{}>(values.data(), values.size());
+    EXPECT_EQ(batched.wideSetSize(), set.wideSetSize());
+    EXPECT_EQ(batched.size(), set.size());
+}
+
+TEST(UniquesHashSet, FrequentZeroIsNotAWideCandidate)
+{
+    /// The hash of the integer 0 is 0. Zeros are frequent in real data, so the wide set
+    /// samples the hashes XOR-ed with a constant that makes 0 never pass its thinning.
+    std::vector<UInt64> zeros(10000, 0);
+    TestSet set;
+    set.insertMany<UInt64, std::identity{}>(zeros.data(), zeros.size());
+    set.insert(0);
+    EXPECT_EQ(set.size(), 1u);
+    EXPECT_EQ(set.wideSetSize(), 0u);
 }
 
 TEST(UniquesHashSet, RejectsCorruptedStates)

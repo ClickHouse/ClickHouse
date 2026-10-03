@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bit>
 #include <math.h>
 
 #include <base/defines.h>
@@ -54,9 +55,9 @@ namespace ErrorCodes
   * A 32-bit hash cannot distinguish more than a few billion elements: the estimate degrades quickly
   * beyond a billion, and above ~30 billion the correction formula even resulted in undefined behavior
   * (issue #6078). To keep the estimate accurate up to trillions, in addition to the main set a small
-  * "wide" set of full 64-bit hashes is maintained (state version 1). It is thinned out aggressively
-  * from the very beginning - only hashes with UNIQUES_HASH_SET_WIDE_INITIAL_SKIP_DEGREE zero
-  * low-order bits enter it - so it stays empty or tiny for the states where the main set is accurate
+  * "wide" set of full 64-bit hashes (XOR-ed with a constant, see `wideHash`) is maintained (state version 1).
+  * It is thinned out aggressively from the very beginning - only values with UNIQUES_HASH_SET_WIDE_INITIAL_SKIP_DEGREE
+  * zero low-order bits enter it - so it stays empty or tiny for the states where the main set is accurate
   * (about 4 values per million distinct elements), and it is bounded by UNIQUES_HASH_SET_WIDE_MAX_SIZE
   * values thinned out further. Once the wide set has enough values for its own estimate to be reliable
   * (which happens at about two billion elements), size() switches to it.
@@ -449,6 +450,7 @@ private:
         }
     }
 
+    /// Insert a value of the wide set, i.e. a full hash already passed through `wideHash`.
     void wideInsert(UInt64 x)
     {
         if (unlikely(wide_incomplete))
@@ -508,16 +510,35 @@ private:
 
     UInt64 wideSkipMask() const { return (1ULL << wideSkipDegree()) - 1; }
 
-    /** Wide candidates have at least UNIQUES_HASH_SET_WIDE_INITIAL_SKIP_DEGREE zero low-order bits,
-      * and the thinning of the main set never exceeds 16 bits (at the degree of 16 the number
+    /** The wide set samples the full hashes XOR-ed with this constant rather than the hashes themselves.
+      * The sample stays just as uniform, but the hash of a frequent value never becomes a candidate
+      * systematically: the default hash of the integer 0 is 0, and zeros are frequent in real data -
+      * without the offset every such row would be a candidate for the wide set and would cost
+      * an extra pass over its batch (this doubled the time of `uniq` over such columns).
+      * The low bits up to the maximum thinning of the main set are zero, so that every candidate
+      * still passes good() of the main set (see `widePrefilterMask`), and the next ones are not,
+      * so that the hash 0 is never a candidate.
+      */
+    static constexpr UInt64 wide_hash_offset = 0x9E3779B97F4A0000ULL;
+    static_assert((wide_hash_offset & ((1ULL << max_skip_degree) - 1)) == 0);
+    static_assert((wide_hash_offset & ((1ULL << UNIQUES_HASH_SET_WIDE_INITIAL_SKIP_DEGREE) - 1)) != 0);
+
+    /// The value of the wide set for a full hash.
+    static UInt64 wideHash(UInt64 full_hash) { return full_hash ^ wide_hash_offset; }
+
+    /** Wide candidates (the values of `wideHash` with at least UNIQUES_HASH_SET_WIDE_INITIAL_SKIP_DEGREE
+      * zero low-order bits) have the low max_skip_degree bits of the hash itself zero (see `wide_hash_offset`),
+      * and the thinning of the main set never exceeds them (at the degree of 16 the number
       * of possible sampled 32-bit hashes is already down to the maximum size of the set),
       * so every wide candidate passes good() of the main set, and it is enough to check
-      * the candidates on that rare path - the hot loops stay free of extra work.
-      * The check is a pre-filter on the truncated hash: it passes a superset of the candidates
-      * (an exact one while the wide thinning fits 32 bits), and `wideInsert` checks the full hash
-      * against the current mask itself - which also makes a stale pre-filter mask harmless.
+      * the candidates on that path.
+      * The check is a pre-filter on the truncated hash: `((hash ^ wide_hash_offset) & widePrefilterMask()) == 0`.
+      * It passes a superset of the candidates (an exact one while the wide thinning fits 32 bits),
+      * and `wideInsert` checks the full value against the current mask itself - which also makes
+      * a stale pre-filter mask harmless.
       */
     HashValue widePrefilterMask() const { return static_cast<HashValue>(wideSkipMask()); }
+    static constexpr HashValue wide_prefilter_offset = static_cast<HashValue>(wide_hash_offset);
 
     /** With how many different elements, when randomly scattered across 2^32 buckets,
       * the given number of non-empty buckets is obtained on average.
@@ -608,7 +629,7 @@ public:
         freeWide();
     }
 
-    /// The full 64-bit hash: its low 32 bits feed the main set, and the whole value the wide set.
+    /// The full 64-bit hash: its low 32 bits feed the main set, and the whole value the wide set (see `wideHash`).
     static UInt64 fullHash(Value key) { return static_cast<UInt64>(Hash()(key)); }
     static HashValue hash(Value key) { return static_cast<HashValue>(fullHash(key)); }
 
@@ -629,8 +650,8 @@ public:
         if (!good(hash_value))
             return;
 
-        if (unlikely((hash_value & widePrefilterMask()) == 0))
-            wideInsert(full_hash);
+        if (unlikely(((hash_value ^ wide_prefilter_offset) & widePrefilterMask()) == 0))
+            wideInsert(wideHash(full_hash));
 
         insertImpl(hash_value);
         shrinkIfNeed();
@@ -641,25 +662,82 @@ public:
     /// We choose a value that is big enough to provide sufficient instruction level parallelism but not too big to bloat the code size.
     static constexpr size_t insert_many_batch_size = 8;
 
+private:
+    /** The candidates for the wide set met by `insertMany`. A candidate is expected once per 262144 values,
+      * but a frequent value can be a candidate too (e.g. the hash of zero is zero), so a run
+      * of the same value is recorded only once.
+      */
+    struct WideCandidates
+    {
+        std::array<Value, 16> values; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first `size` entries are read
+        size_t size = 0;
+        /// The position to rescan from, if `values` has overflowed (pathological input).
+        size_t overflow_position = 0;
+        bool overflow = false;
+    };
+
+    template <typename SourceType, auto Transform>
+    static void ALWAYS_INLINE addWideCandidate(WideCandidates & candidates, const SourceType * data, size_t position)
+    {
+        if (candidates.overflow)
+            return;
+
+        const Value value = Transform(data[position]);
+        if (candidates.size && candidates.values[candidates.size - 1] == value)
+            return;
+
+        if (candidates.size == candidates.values.size())
+        {
+            candidates.overflow = true;
+            candidates.overflow_position = position;
+            return;
+        }
+
+        candidates.values[candidates.size++] = value;
+    }
+
+    template <typename SourceType, auto Transform>
+    static void ALWAYS_INLINE addWideCandidates(WideCandidates & candidates, const SourceType * data, size_t batch_begin, UInt32 candidate_mask)
+    {
+        while (candidate_mask)
+        {
+            addWideCandidate<SourceType, Transform>(candidates, data, batch_begin + std::countr_zero(candidate_mask));
+            candidate_mask &= candidate_mask - 1;
+        }
+    }
+
+    template <typename SourceType, auto Transform>
+    void NO_INLINE insertWideCandidates(const WideCandidates & candidates, const SourceType * data, size_t size)
+    {
+        for (size_t k = 0; k < candidates.size; ++k)
+            wideInsert(wideHash(fullHash(candidates.values[k])));
+
+        /// Insertion into the wide set is idempotent, so on overflow the tail is simply rescanned.
+        if (candidates.overflow)
+        {
+            for (size_t k = candidates.overflow_position; k < size; ++k)
+            {
+                const UInt64 wide_hash = wideHash(fullHash(Transform(data[k])));
+                if (unlikely((wide_hash & wideSkipMask()) == 0))
+                    wideInsert(wide_hash);
+            }
+        }
+    }
+
+public:
     template <typename SourceType, auto Transform>
     requires std::is_invocable_r_v<Value, decltype(Transform), const SourceType &>
     void insertMany(const SourceType * data, size_t size)
     {
         /** The candidates for the wide set (see the comment at `widePrefilterMask`) are detected
           * behind the `good()` test, which every one of them passes and which already rejects all
-          * but one value in 2^skip_degree - so the loop that computes the hashes is left exactly as
-          * it was before the wide set existed. Testing every hash there instead cost 24% of
-          * `SELECT uniq(number) FROM numbers(50000000)`: three instructions per value against the
-          * dozen the loop otherwise executes.
-          * The candidates are inserted after the loop rather than inside it: a call inside would
-          * make the compiler cautiously reload the fields of the set from memory all the time.
-          * A candidate is expected once per 262144 values, so the positions are collected
-          * into a small buffer; on its overflow (pathological input) the tail after the last
-          * recorded position is simply rescanned - insertion into the wide set is idempotent.
+          * but one value in 2^skip_degree, and they are only collected into a local buffer there.
+          * They are inserted after the loop rather than inside it: a call inside would make
+          * the compiler cautiously reload the fields of the set from memory all the time.
+          * This loop is very sensitive to the code generation: the batch loops below must be
+          * fully unrolled as they are without the wide set, otherwise `uniq` gets up to 50% slower.
           */
-        std::array<UInt32, 16> wide_candidate_positions; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_wide_candidates entries are read
-        size_t num_wide_candidates = 0;
-
+        WideCandidates wide_candidates;
         const HashValue wide_prefilter = widePrefilterMask();
 
         size_t i = 0;
@@ -687,18 +765,16 @@ public:
                     place_value_batch[j] = place(hash_value[j]);
                 }
 
+                UInt32 wide_candidate_mask = 0;
+#pragma clang loop unroll(full)
                 for (size_t j = 0; j < insert_many_batch_size; ++j)
                 {
                     const HashValue & x = hash_value[j];
                     if (!good(x))
                         continue;
 
-                    /// Every wide candidate passes `good()` (see `widePrefilterMask`), and `good()`
-                    /// rejects all but one value in 2^skip_degree, so testing the candidates here
-                    /// rather than in the hash loop above keeps the hot loop exactly as it was
-                    /// before the wide set existed.
-                    if (unlikely((x & wide_prefilter) == 0) && num_wide_candidates < wide_candidate_positions.size())
-                        wide_candidate_positions[num_wide_candidates++] = static_cast<UInt32>(batch_begin + j);
+                    if (unlikely(((x ^ wide_prefilter_offset) & wide_prefilter) == 0))
+                        wide_candidate_mask |= 1U << j;
 
                     if (x == 0)
                     {
@@ -724,18 +800,20 @@ public:
                     buf[place_value] = x;
                     ++m_size;
                 }
+
+                if (unlikely(wide_candidate_mask))
+                    addWideCandidates<SourceType, Transform>(wide_candidates, data, batch_begin, wide_candidate_mask);
             }
             else
             {
                 const HashValue hash_value = hash(Transform(data[i]));
                 const size_t position = i;
-
                 i++;
                 if (!good(hash_value))
                     continue;
 
-                if (unlikely((hash_value & wide_prefilter) == 0) && num_wide_candidates < wide_candidate_positions.size())
-                    wide_candidate_positions[num_wide_candidates++] = static_cast<UInt32>(position);
+                if (unlikely(((hash_value ^ wide_prefilter_offset) & wide_prefilter) == 0))
+                    addWideCandidates<SourceType, Transform>(wide_candidates, data, position, 1);
 
                 insertImpl(hash_value);
             }
@@ -744,22 +822,8 @@ public:
             shrinkIfNeed();
         }
 
-        if (unlikely(num_wide_candidates))
-        {
-            for (size_t k = 0; k < num_wide_candidates; ++k)
-                wideInsert(fullHash(Transform(data[wide_candidate_positions[k]])));
-
-            /// The buffer was full: rescan the tail after the last recorded position.
-            if (num_wide_candidates == wide_candidate_positions.size())
-            {
-                for (size_t k = wide_candidate_positions.back() + 1; k < size; ++k)
-                {
-                    const UInt64 full_hash = fullHash(Transform(data[k]));
-                    if (unlikely((full_hash & wideSkipMask()) == 0))
-                        wideInsert(full_hash);
-                }
-            }
-        }
+        if (unlikely(wide_candidates.size))
+            insertWideCandidates<SourceType, Transform>(wide_candidates, data, size);
     }
 
     size_t size() const
