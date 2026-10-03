@@ -2608,7 +2608,7 @@ def test_catalog_commit_conflict_reaches_caller_at_once(started_cluster):
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
     create_clickhouse_iceberg_table(
-        started_cluster, node, root_namespace, table_name, "(x UInt64)"
+        started_cluster, node, root_namespace, table_name, "(x Int64)"
     )
 
     # Every sink reads the branch tip in its constructor, and all `max_insert_threads` sinks are

@@ -134,6 +134,7 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
         case TypeIndex::Int32:
         case TypeIndex::Date:
         case TypeIndex::Date32:
+        case TypeIndex::UInt32:
         case TypeIndex::Int64:
         case TypeIndex::DateTime64:
         case TypeIndex::String:
@@ -300,8 +301,8 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         case TypeIndex::Int8:
         case TypeIndex::UInt16:
         case TypeIndex::Int16:
-        case TypeIndex::UInt32:
             return dumpValue(static_cast<Int32>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), field)));
+        case TypeIndex::UInt32:
         case TypeIndex::UInt64:
             return dumpValue(applyVisitor(FieldVisitorConvertToNumber<Int64>(), field));
         case TypeIndex::DateTime64:

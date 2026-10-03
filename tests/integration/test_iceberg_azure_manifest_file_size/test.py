@@ -61,7 +61,7 @@ def test_manifest_file_size_matches_blob_size(started_cluster):
 
     node.query(
         f"""
-        CREATE TABLE {table} (x UInt64, s String) ENGINE = IcebergAzure(azure,
+        CREATE TABLE {table} (x Int64, s String) ENGINE = IcebergAzure(azure,
             container = '{AZURE_CONTAINER}',
             storage_account_url = '{azurite_url}',
             blob_path = '{blob_path}')
