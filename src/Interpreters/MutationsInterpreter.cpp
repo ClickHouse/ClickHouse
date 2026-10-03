@@ -2516,12 +2516,14 @@ void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
     /// are constants on one server, but replicas of the same table may have different local names or
     /// disks, so a mutation that reads them would produce different parts on different replicas.
     /// A real column with the same name shadows the virtual one and is deterministic.
+    /// `_sample_factor` is non-deterministic only because of the `SAMPLE` clause of a `SELECT`; no `SAMPLE`
+    /// reaches a mutation, so there it is always 1 on every replica.
     NameSet nondeterministic_virtual_columns;
     auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
     const auto & real_columns = metadata_snapshot->getColumns();
     for (const auto & virtual_column : metadata_snapshot->virtuals)
     {
-        if (!virtual_column.deterministic && !real_columns.has(virtual_column.name))
+        if (!virtual_column.deterministic && virtual_column.name != "_sample_factor" && !real_columns.has(virtual_column.name))
             nondeterministic_virtual_columns.insert(virtual_column.name);
     }
 

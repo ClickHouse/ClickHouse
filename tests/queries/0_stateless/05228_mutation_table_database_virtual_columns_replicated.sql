@@ -50,3 +50,14 @@ SELECT key, value FROM t_repl_05228 WHERE key = 2;
 SELECT count() FROM t_repl_05228;
 
 DROP TABLE t_repl_05228 SYNC;
+
+-- `_sample_factor` is declared non-deterministic because of `SELECT ... SAMPLE`, but no `SAMPLE` reaches a
+-- mutation, so it is 1 on every replica and the guard accepts it.
+DROP TABLE IF EXISTS t_repl_05228_sample SYNC;
+CREATE TABLE t_repl_05228_sample (key Int, value Float64)
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_05228/t_sample', 'r1') ORDER BY key;
+INSERT INTO t_repl_05228_sample (key) VALUES (1), (2);
+ALTER TABLE t_repl_05228_sample UPDATE value = _sample_factor WHERE key = 1 SETTINGS mutations_sync = 2;
+ALTER TABLE t_repl_05228_sample DELETE WHERE _sample_factor = 1 AND key = 2 SETTINGS mutations_sync = 2;
+SELECT key, value FROM t_repl_05228_sample ORDER BY key;
+DROP TABLE t_repl_05228_sample SYNC;
