@@ -2014,6 +2014,18 @@ merging mode, to a table with a rows TTL and no column or `GROUP BY` TTL, and on
 in the merge has a lightweight delete. Any other TTL merge stays horizontal.
 )", 0, \
         {"26.3", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"}) \
+    DECLARE(Bool, allow_experimental_vertical_merge_tuple_subcolumns, false, R"(
+When enabled, flattenable named `Tuple` leaves are merged one at a time in Vertical
+merge instead of keeping the parent tuple in memory. The number of those leaves
+(including nested flattenable tuples) counts toward
+`vertical_merge_algorithm_min_columns_to_activate`. Flatten is refused for Compact
+sources, leaves with a dynamic structure (`Dynamic` or `JSON`), skip indexes or
+statistics that must be rebuilt from the parent column, leaf-name collisions, or
+parts that cannot read the leaf as a subcolumn. A `Map` leaf is gathered; its
+bucket streams are copied from the leaf writer. The output part schema does not
+change: `columns.txt` still lists one column. Default is disabled.
+)", 0, \
+        {"26.10", false, false, "New setting. When enabled, flattenable named Tuple leaves may be merged one at a time in Vertical merge. Nested flattenable Tuple fields count as separate leaves toward vertical_merge_algorithm_min_columns_to_activate. Disabled by default."}) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
 Maximum exponential backoff, in milliseconds, before retrying a failed mutation on the same data part. The delay increases after repeated failures and is capped by this value. Set to `0` to retry without postponement.
 )", 0) \
