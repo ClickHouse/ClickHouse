@@ -149,18 +149,12 @@ def test_readonly_replica_uses_snapshot(start_cluster):
     assert event(reader, "DiskPlainRewritableSnapshotRead") >= 1
     assert event(reader, "DiskPlainRewritableSnapshotWritten") == 0
 
-    reads_before = event(reader, "DiskPlainRewritableSnapshotRead")
     reader.query(f"ATTACH TABLE t_reader UUID '{table_uuid}' (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS storage_policy = 'snapshot_readonly', refresh_parts_interval = 1")
     assert reader.query("SELECT count(), sum(id) FROM t_reader") == "10\t45\n"
 
-    # The changes of the writer become visible through the snapshot.
+    # The changes of the writer become visible through the periodic refresh.
     writer.query("INSERT INTO t_reader SELECT number FROM numbers(10, 10)")
     wait_for(lambda: reader.query("SELECT count(), sum(id) FROM t_reader") == "20\t190\n")
-    assert event(reader, "DiskPlainRewritableSnapshotRead") > reads_before
-
-    # Without changes, the periodic refresh finds the same ETag and does not read the snapshot again.
-    unchanged_before = event(reader, "DiskPlainRewritableSnapshotUnchanged")
-    wait_for(lambda: event(reader, "DiskPlainRewritableSnapshotUnchanged") > unchanged_before)
     assert event(reader, "DiskPlainRewritableSnapshotWritten") == 0
 
     reader.query("DROP TABLE t_reader SYNC")

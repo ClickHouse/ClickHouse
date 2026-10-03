@@ -80,20 +80,19 @@ class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataSt
 
     struct SnapshotFileContents
     {
-        /// The file exists (but `layout` is empty if it could not be read or was not read).
+        /// The file exists (but `layout` is empty if it could not be read).
         bool exists = false;
-        /// The file has the ETag that was asked to skip, so it was not read.
-        bool unchanged = false;
         std::optional<PlainRewritableRemoteLayout> layout;
-        std::string etag;
     };
 
-    /// Reads the snapshot file if it exists, unless its ETag is `skip_if_etag`.
-    SnapshotFileContents tryReadSnapshotFile(const LoggerPtr & log, const std::optional<std::string> & skip_if_etag) const;
+    /// Reads the snapshot file if it exists.
+    SnapshotFileContents tryReadSnapshotFile(const LoggerPtr & log) const;
 
     /// Lists the object storage. If `base` is provided, directories whose `prefix.path` has the same ETag as in `base`
-    /// are taken from it without reading. `differs_from_base` tells whether the result is different from `base`.
-    PlainRewritableRemoteLayout listRemoteLayout(const PlainRewritableRemoteLayout * base, bool & differs_from_base, const LoggerPtr & log) const;
+    /// take the local path from it without reading `prefix.path`; their files are taken from `base` too if `reuse_files`,
+    /// otherwise listed. `differs_from_base` tells whether the result is different from `base`.
+    PlainRewritableRemoteLayout listRemoteLayout(
+        const PlainRewritableRemoteLayout * base, bool reuse_files, bool & differs_from_base, const LoggerPtr & log) const;
     PlainRewritableRemoteLayout getCurrentLayout() const;
 
     /// Whether this disk writes the snapshot file: snapshots are enabled and the object storage is writable.
@@ -158,9 +157,6 @@ private:
 
     std::mutex load_mutex;
     AtomicStopwatch previous_refresh;
-    /// ETag of the snapshot file the state was loaded from; a refresh does not read the file again if it did not change.
-    /// Guarded by `load_mutex`.
-    std::string loaded_snapshot_etag;
 
     /// Set after every change of the state, cleared when the snapshot write starts.
     std::atomic<bool> snapshot_dirty = false;

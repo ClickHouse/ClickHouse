@@ -457,16 +457,18 @@ disk with a single table.
 
 To speed this up, the disk that writes the data also writes a compact
 snapshot of the whole state to `__meta/snapshot.bin` (a versioned binary
-format compressed with `ZSTD`). On startup, the writer reads the snapshot and
+format compressed with `ZSTD`). On startup, the disk reads the snapshot and
 reconciles it with a listing of the metadata directory (a request per thousand
-directories), so only the directories changed after the snapshot are loaded
-from the object storage. A read-only disk pointing to the same location
-(`readonly` set to `true`) does the same on startup and on every periodic
-refresh (see the `MergeTree` setting `refresh_parts_interval`), and does not
-read the snapshot again when its ETag did not change. Since the snapshot is
-always reconciled with the listing, a snapshot that lags behind (because of the
-write delay, a failed write, or a crash of the writer) never hides the changes
-from the loaded state.
+directories), so `prefix.path` is read only for the directories created or
+renamed after the snapshot. The files of the directories are always listed
+(for a large disk, by a few listings of the whole disk in parallel), because
+they can change without changing `prefix.path`. A read-only disk pointing to
+the same location (`readonly` set to `true`) uses the snapshot on startup too;
+its periodic refreshes (see the `MergeTree` setting `refresh_parts_interval`)
+reconcile the state in memory with the listing of the metadata directory.
+Since the snapshot is always reconciled with the object storage, a snapshot
+that lags behind (because of the write delay, a failed write, or a crash of the
+writer) never hides the changes from the loaded state.
 
 | Setting                             | Description                                                                                                                                                                                                                  | Default |
 |-------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
@@ -482,8 +484,8 @@ from the loaded state.
 </s3_plain_rewritable>
 ```
 
-The events `DiskPlainRewritableSnapshotRead`, `DiskPlainRewritableSnapshotUnchanged`,
-`DiskPlainRewritableSnapshotWritten` and `DiskPlainRewritableSnapshotWriteFailed` in
+The events `DiskPlainRewritableSnapshotRead`, `DiskPlainRewritableSnapshotWritten`
+and `DiskPlainRewritableSnapshotWriteFailed` in
 [system.events](/reference/system-tables/events) show how the snapshot is used.
 
 ### Using Azure Blob Storage {#azure-blob-storage}

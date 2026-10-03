@@ -781,6 +781,56 @@ TEST_F(MetadataPlainRewritableDiskTest, RewriteFileUpdatesSize)
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root_file").front().remote_path), "Hello world!");
 }
 
+TEST_F(MetadataPlainRewritableDiskTest, StaleSnapshotDoesNotHideFileChanges)
+{
+    const std::string test = "StaleSnapshotDoesNotHideFileChanges";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    auto write_file = [&](const std::string & path, const std::string & data)
+    {
+        auto tx = metadata->createTransaction();
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath(path).serialize(), data);
+        tx->createMetadataFile(path, {StoredObject(path, path, size)});
+        tx->commit(DB::NoCommitOptions{});
+    };
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+    write_file("A/file", "test");
+    write_file("A/removed", "test");
+
+    const auto snapshot_files = std::filesystem::recursive_directory_iterator(fmt::format("./{}", test))
+        | std::views::filter([](const auto & inode) { return inode.path().string().ends_with("/__meta/" + PlainRewritableLayout::SNAPSHOT_FILE_NAME); })
+        | std::views::transform([](const auto & inode) { return inode.path(); })
+        | std::ranges::to<std::vector<std::filesystem::path>>();
+    ASSERT_EQ(snapshot_files.size(), 1u);
+    const auto stale_snapshot = fmt::format("./{}.stale_snapshot", test);
+    std::filesystem::copy_file(snapshot_files.front(), stale_snapshot, std::filesystem::copy_options::overwrite_existing);
+    SCOPE_EXIT({ std::filesystem::remove(stale_snapshot); });
+
+    /// The files of `A` change, but its `prefix.path` stays the same.
+    write_file("A/file", "Hello world!");
+    write_file("A/new", "test");
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("A/removed", /*if_exists=*/ false, /*should_remove_objects=*/ true);
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// Simulate a server that crashed before writing the latest snapshot.
+    std::filesystem::copy_file(stale_snapshot, snapshot_files.front(), std::filesystem::copy_options::overwrite_existing);
+    metadata = restartMetadataStorage(test);
+
+    EXPECT_EQ(metadata->getFileSize("A/file"), 12u);
+    EXPECT_TRUE(metadata->existsFile("A/new"));
+    EXPECT_FALSE(metadata->existsFile("A/removed"));
+    EXPECT_EQ(sorted(metadata->listDirectory("A")), std::vector<std::string>({"file", "new"}));
+}
+
 TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndo)
 {
     auto metadata = getMetadataStorage("MoveFileUndo");

@@ -44,7 +44,6 @@ namespace ProfileEvents
 {
     extern const Event DiskPlainRewritableLegacyLayoutDiskCount;
     extern const Event DiskPlainRewritableSnapshotRead;
-    extern const Event DiskPlainRewritableSnapshotUnchanged;
     extern const Event DiskPlainRewritableSnapshotWritten;
     extern const Event DiskPlainRewritableSnapshotWriteFailed;
 }
@@ -98,6 +97,8 @@ struct DirectoryObject
     std::string object_path;
     std::string remote_path;
     std::optional<ObjectMetadata> metadata;
+    /// The entry of the base with the same `prefix.path`: the local path is taken from it without reading the object.
+    const PlainRewritableRemoteLayout::value_type * base_entry = nullptr;
 };
 
 /// The outcome of loading one directory. `loaded` stays false for a directory that disappeared while
@@ -107,6 +108,8 @@ struct DirectoryLoadResult
     bool loaded = false;
     std::string local_path;
     DirectoryRemoteInfo info;
+    /// The state of the directory in the base, if its `prefix.path` did not change.
+    const DirectoryRemoteInfo * base_info = nullptr;
 };
 
 /// Split `names` into groups by their common prefix, so that listing every returned prefix in turn
@@ -165,7 +168,7 @@ bool MetadataStorageFromPlainRewritableObjectStorage::isSnapshotWriter() const
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::SnapshotFileContents MetadataStorageFromPlainRewritableObjectStorage::tryReadSnapshotFile(
-    const LoggerPtr & log, const std::optional<std::string> & skip_if_etag) const
+    const LoggerPtr & log) const
 {
     SnapshotFileContents result;
     const auto key = layout->constructSnapshotObjectKey();
@@ -178,14 +181,6 @@ MetadataStorageFromPlainRewritableObjectStorage::SnapshotFileContents MetadataSt
     }
 
     result.exists = true;
-    result.etag = metadata->etag;
-
-    /// An empty ETag cannot tell whether the file changed.
-    if (skip_if_etag && !result.etag.empty() && result.etag == *skip_if_etag)
-    {
-        result.unchanged = true;
-        return result;
-    }
 
     try
     {
@@ -207,7 +202,7 @@ MetadataStorageFromPlainRewritableObjectStorage::SnapshotFileContents MetadataSt
 }
 
 PlainRewritableRemoteLayout MetadataStorageFromPlainRewritableObjectStorage::listRemoteLayout(
-    const PlainRewritableRemoteLayout * base, bool & differs_from_base, const LoggerPtr & log) const
+    const PlainRewritableRemoteLayout * base, bool reuse_files, bool & differs_from_base, const LoggerPtr & log) const
 {
     ThreadPool & pool = getIOThreadPool().get();
 
@@ -235,9 +230,11 @@ PlainRewritableRemoteLayout MetadataStorageFromPlainRewritableObjectStorage::lis
     PlainRewritableRemoteLayout remote_layout;
     remote_layout[""] = makeRootDirectoryInfo();
 
-    /// A directory whose `prefix.path` object has the same ETag as in the base has the same logical path, and its files
-    /// are assumed to be the same as well (MergeTree does not modify the files of a part after it is written and renamed).
-    /// Such directories are taken from the base without reading `prefix.path` and listing the files.
+    /// A directory whose `prefix.path` object has the same ETag as in the base has the same logical path, so `prefix.path`
+    /// is not read again. The ETag of `prefix.path` does not change when files are added, removed or replaced inside the
+    /// directory (e.g. `mutation_*.txt` of a table, or the metadata of a database), so the files of such a directory are
+    /// taken from the base only if `reuse_files` is set, that is, when the base is the state in memory: it is as fresh as
+    /// the previous refresh. A snapshot file can be older than any of the changes, so with a snapshot the files are listed.
     std::unordered_map<std::string_view, const PlainRewritableRemoteLayout::value_type *> base_by_remote_path;
     if (base)
     {
@@ -392,11 +389,15 @@ PlainRewritableRemoteLayout MetadataStorageFromPlainRewritableObjectStorage::lis
                     && directory.metadata->isEtagUsableAsCacheKey()
                     && it->second->second.etag == directory.metadata->etag)
                 {
-                    remote_layout[it->second->first] = it->second->second;
-                    ++reused_directories;
+                    if (reuse_files)
+                    {
+                        remote_layout[it->second->first] = it->second->second;
+                        ++reused_directories;
+                        continue;
+                    }
+                    directory.base_entry = it->second;
                 }
-                else
-                    directories_to_load.push_back(std::move(directory));
+                directories_to_load.push_back(std::move(directory));
             }
             directories = std::move(directories_to_load);
         }
@@ -438,7 +439,7 @@ PlainRewritableRemoteLayout MetadataStorageFromPlainRewritableObjectStorage::lis
             /// result: Same, and no two tasks are given the same slot
             /// In any case we have a try {} catch (...) around runner usage, so exceptions will call runner.waitForAllToFinish() first
             /// Thus the order of destruction of the variables is not important
-            runner.enqueueAndKeepTrack([remote_path = std::move(directory.remote_path), object_path = std::move(directory.object_path), metadata = std::move(directory.metadata), files_are_prelisted, &result = results[i], &log, &settings, this]
+            runner.enqueueAndKeepTrack([remote_path = std::move(directory.remote_path), object_path = std::move(directory.object_path), metadata = std::move(directory.metadata), base_entry = directory.base_entry, files_are_prelisted, &result = results[i], &log, &settings, this]
             {
                 DB::setThreadName(ThreadName::PLAIN_REWRITABLE_META_LOAD);
 
@@ -450,7 +451,9 @@ PlainRewritableRemoteLayout MetadataStorageFromPlainRewritableObjectStorage::lis
 
                 try
                 {
-                    if (metadata->size_bytes == 0)
+                    if (base_entry)
+                        local_path = base_entry->first;
+                    else if (metadata->size_bytes == 0)
                         LOG_TRACE(log, "The object with the key '{}' has size 0, skipping the read", object_path);
                     else
                     {
@@ -519,7 +522,8 @@ PlainRewritableRemoteLayout MetadataStorageFromPlainRewritableObjectStorage::lis
                 result = DirectoryLoadResult{
                     true,
                     std::move(local_path),
-                    DirectoryRemoteInfo{remote_path, metadata->etag, last_modified.epochTime(), std::move(files)}};
+                    DirectoryRemoteInfo{remote_path, metadata->etag, last_modified.epochTime(), std::move(files)},
+                    base_entry ? &base_entry->second : nullptr};
             });
         }
 
@@ -546,10 +550,13 @@ PlainRewritableRemoteLayout MetadataStorageFromPlainRewritableObjectStorage::lis
                 result.info.files = std::move(it->second);
         }
 
+        if (result.base_info && result.base_info->files == result.info.files)
+            ++reused_directories;
+
         remote_layout[std::move(result.local_path)] = std::move(result.info);
     }
 
-    LOG_DEBUG(log, "Listed metadata for {} directories (listed {}, files listed {}, {} unchanged directories taken from the base)",
+    LOG_DEBUG(log, "Listed metadata for {} directories (listed {}, files listed {}, {} directories unchanged since the base)",
         remote_layout.size(),
         list_in_parallel ? "by prefix shards" : "sequentially",
         files_are_prelisted ? "for the whole disk at once" : "per directory",
@@ -570,52 +577,39 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
     LOG_DEBUG(log, "Loading metadata");
 
-    /// The state is obtained either from the snapshot file (see `PlainRewritableSnapshotFile.h`) reconciled with a listing
-    /// of the `__meta` directory, or by listing the object storage (see `listRemoteLayout`), which is a request per directory.
+    /// At startup, the state is obtained from the snapshot file (see `PlainRewritableSnapshotFile.h`) reconciled with
+    /// the object storage, or, if there is no snapshot, by listing the object storage (see `listRemoteLayout`).
     ///
     /// The snapshot can lag behind the actual state: it is written after the changes, the server writing it could
     /// have crashed in between, the write is delayed by `write_delay_ms`, or it has failed (a failed write does not fail
-    /// the commit). So the snapshot is never trusted alone: it is always reconciled with the listing of the `__meta`
-    /// directory. This is cheap (a request per thousand directories) and detects the directories that were created,
-    /// removed or renamed after the snapshot was written; only those are loaded from the object storage.
-    /// - The disk that writes the data (and the snapshot) uses the snapshot only at startup.
-    ///   Later reloads of the writer (`SYSTEM RESTART DISK`, `SYSTEM CLEAR DISK METADATA CACHE`) list the object storage:
-    ///   the state in memory is authoritative and the snapshot is derived from it, so it cannot be a source of the state.
-    /// - A read-only disk uses the snapshot both at startup and on the periodic refreshes. When the ETag of the file did
-    ///   not change since the previous refresh, the file is not read again and the state in memory is reconciled with
-    ///   the listing instead. It lists the object storage fully only when there is no snapshot or when the cache
-    ///   is dropped explicitly.
+    /// the commit). So the snapshot is never trusted alone: it is reconciled with the listing of the `__meta` directory
+    /// (a request per thousand directories), which detects the directories that were created, removed or renamed after
+    /// the snapshot was written; only those have their `prefix.path` read. The files of every directory are listed
+    /// (by a few listings of the whole disk if it is large), because the files inside a directory can change without
+    /// changing its `prefix.path`. The snapshot saves reading `prefix.path` of every directory, a request per directory.
+    ///
+    /// Later loads do not use the snapshot. A periodic refresh (of a read-only disk) reconciles the state in memory with
+    /// the listing of `__meta` in the same way: it is at least as fresh as any snapshot it could read, so the files of
+    /// the unchanged directories are kept. Other reloads of the disk (`SYSTEM RESTART DISK`,
+    /// `SYSTEM CLEAR DISK METADATA CACHE`) list the object storage fully.
 
     const bool writer = isSnapshotWriter();
-    const bool use_snapshot = snapshot_settings.enabled && mode != LoadMode::Full && (mode == LoadMode::Initial || !writer);
+    const bool use_snapshot = snapshot_settings.enabled && mode == LoadMode::Initial;
 
     bool snapshot_file_exists = false;
     if (use_snapshot)
     {
-        auto snapshot = tryReadSnapshotFile(log, mode == LoadMode::Incremental ? std::make_optional(loaded_snapshot_etag) : std::nullopt);
+        auto snapshot = tryReadSnapshotFile(log);
         snapshot_file_exists = snapshot.exists;
 
-        if (snapshot.unchanged || snapshot.layout)
+        if (snapshot.layout)
         {
-            PlainRewritableRemoteLayout base;
-            if (snapshot.unchanged)
-            {
-                /// The state in memory already includes everything from this snapshot, and possibly more.
-                ProfileEvents::increment(ProfileEvents::DiskPlainRewritableSnapshotUnchanged);
-                base = getCurrentLayout();
-            }
-            else
-            {
-                ProfileEvents::increment(ProfileEvents::DiskPlainRewritableSnapshotRead);
-                loaded_snapshot_etag = snapshot.etag;
-                base = std::move(snapshot.layout.value());
-            }
+            ProfileEvents::increment(ProfileEvents::DiskPlainRewritableSnapshotRead);
 
             bool differs = false;
-            auto remote_layout = listRemoteLayout(&base, differs, log);
-            LOG_DEBUG(log, "Loaded metadata for {} directories from the {} snapshot file{}",
+            auto remote_layout = listRemoteLayout(&snapshot.layout.value(), /*reuse_files=*/ false, differs, log);
+            LOG_DEBUG(log, "Loaded metadata for {} directories from the snapshot file{}",
                 remote_layout.size(),
-                snapshot.unchanged ? "unchanged" : "new",
                 differs ? ", the object storage had changes after the snapshot" : "");
             fs.applyLayout(std::move(remote_layout));
             previous_refresh.restart();
@@ -626,9 +620,6 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
             return;
         }
     }
-
-    /// The state comes from the listing and is not attributed to a snapshot, so the next refresh reads the file.
-    loaded_snapshot_etag.clear();
 
     if (mode == LoadMode::Initial)
     {
@@ -662,7 +653,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
         base = getCurrentLayout();
 
     bool differs = false;
-    auto remote_layout = listRemoteLayout(base ? &base.value() : nullptr, differs, log);
+    auto remote_layout = listRemoteLayout(base ? &base.value() : nullptr, /*reuse_files=*/ true, differs, log);
     LOG_DEBUG(log, "Loaded metadata for {} directories", remote_layout.size());
     const bool empty = isEmptyLayout(remote_layout);
     fs.applyLayout(std::move(remote_layout));
