@@ -1721,15 +1721,13 @@ void PostingListBuilder::Large::flush(const PostingListBuildContext & context)
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document, const PostingListBuildContext & context)
 {
-    UInt32 token_position = 0;
     forEachToken(
         *tokenizer,
         document.data(),
         document.size(),
         [&](const char * token_start, size_t token_length)
         {
-            addToken({token_start, token_length}, token_position, context);
-            ++token_position;
+            addToken({token_start, token_length}, context);
             return false;
         });
 }
@@ -1780,8 +1778,11 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
     }
 }
 
-void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position, const PostingListBuildContext & context)
+void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, const PostingListBuildContext & context)
 {
+    /// Advanced even for a token the drop filter discards below, so that positions stay stable.
+    const UInt32 token_position = current_token_position++;
+
     const auto row = static_cast<UInt32>(current_row);
     auto packed_key = PackedStringRef::build(token.data(), token.size(), PackedStringRefHash{});
 
@@ -1839,6 +1840,13 @@ void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
 {
     is_empty = false;
     ++current_row;
+    current_token_position = 0;
+}
+
+void MergeTreeIndexTextGranuleBuilder::setCurrentRow(size_t row)
+{
+    current_row = row;
+    current_token_position = 0;
 }
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
@@ -1868,6 +1876,7 @@ void MergeTreeIndexTextGranuleBuilder::reset()
 {
     is_empty = true;
     current_row = 0;
+    current_token_position = 0;
     num_processed_tokens = 0;
     tokens_map = {};
     arena = std::make_unique<Arena>();
@@ -1977,9 +1986,7 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
 
     for (size_t i = start_row; i < start_row + rows_read; ++i)
     {
-        /// Dense position counter: dropped (empty/null) tokens leave no gap, so positions
-        /// reflect the surviving token sequence only.
-        UInt32 token_position = 0;
+        /// Dropped (empty/null) elements leave no gap, so positions reflect the surviving tokens only.
         for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
         {
             if (data_is_nullable && column_data.isNullAt(element_idx))
@@ -1992,7 +1999,7 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
             if constexpr (tokenize)
                 granule_builder.addDocument(ref, context);
             else
-                granule_builder.addToken(ref, token_position++, context);
+                granule_builder.addToken(ref, context);
         }
 
         granule_builder.incrementCurrentRow();
@@ -2017,15 +2024,13 @@ void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t 
     {
         keys_in_row.clear();
 
-        /// One position per map entry, in stored order, as the Array path does.
-        UInt32 token_position = 0;
         for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
         {
             const std::string_view key = keys.getDataAt(element_idx);
             const bool is_duplicate = !keys_in_row.insert(key).second;
 
             KeyValuePairsTokenizer::encodeToken(key, values.getDataAt(element_idx), is_duplicate, token);
-            granule_builder.addToken({reinterpret_cast<const char *>(token.data()), token.size()}, token_position++, context);
+            granule_builder.addToken({reinterpret_cast<const char *>(token.data()), token.size()}, context);
         }
 
         granule_builder.incrementCurrentRow();
