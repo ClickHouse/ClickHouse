@@ -126,6 +126,8 @@ void registerInputFormatJSONObjectEachRow(FormatFactory & factory)
     });
 
     factory.markFormatSupportsSubsetOfColumns("JSONObjectEachRow");
+    /// Data in this format is commonly stored in `.json` files, but the `json` extension infers as `JSON`.
+    factory.registerFileExtension("json", "JSONObjectEachRow", /*used_for_format_inference=*/ false);
 
     factory.setDocumentation("JSONObjectEachRow", Documentation{
         .description = R"DOCS_MD(
