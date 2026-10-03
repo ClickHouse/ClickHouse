@@ -670,6 +670,7 @@ public:
         DataMutations,
         AlterMutations,
         MaskingPolicy,
+        UniqueKey,
     };
 
     ColumnDefaultnessStatsUnavailableReason getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context) const;

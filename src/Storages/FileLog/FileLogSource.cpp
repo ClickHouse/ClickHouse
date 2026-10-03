@@ -8,6 +8,7 @@
 #include <Storages/FileLog/FileLogSource.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -51,7 +52,7 @@ FileLogSource::~FileLogSource()
 {
     try
     {
-        if (!finished)
+        if (!closed)
             close();
     }
     catch (...)
@@ -62,9 +63,9 @@ FileLogSource::~FileLogSource()
 
 void FileLogSource::close()
 {
+    closed = true;
+    SCOPE_EXIT(storage.reduceStreams());
     storage.closeFilesAndStoreMeta(start, end);
-    storage.reduceStreams();
-    finished = true;
 }
 
 Chunk FileLogSource::generate()
