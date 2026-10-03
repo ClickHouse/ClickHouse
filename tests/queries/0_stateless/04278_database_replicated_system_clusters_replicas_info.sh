@@ -5,8 +5,8 @@
 # `DatabaseReplicated` method whose catch-block log level was lowered in
 # this PR: `tryGetReplicasInfo`.
 #
-# `StorageSystemClusters::writeCluster` only calls `replicas_info_getter`
-# (which invokes `DatabaseReplicated::tryGetReplicasInfo`) when the query
+# `StorageSystemClusters::fillData` only requests the replica state
+# (`DatabaseReplicated::requestReplicasInfo` / `awaitReplicasInfo`) when the query
 # requests one of the replica-state columns: `is_active`,
 # `unsynced_after_recovery`, `replication_lag`, `recovery_time`, or
 # `is_shared_catalog_cluster`. A `SELECT count()` such as the one used by
@@ -69,7 +69,7 @@ $CLICKHOUSE_KEEPER_CLIENT --query "rmr ${ZK_PATH}/max_log_ptr"
 # The query must succeed; the server-side `tryGetReplicasInfo` failure
 # must NOT be forwarded to client stderr at the default
 # `send_logs_level=warning`. Select a column that triggers
-# `replicas_info_getter` (here: `is_active`).
+# the replica-state request (here: `is_active`).
 stderr=$($CLICKHOUSE_CLIENT --send_logs_level=warning --query "SELECT count() FROM (SELECT is_active FROM system.clusters)" 2>&1 >/dev/null)
 
 if echo "${stderr}" | grep -qE "DatabaseReplicated.*Code: (254|279|999)"; then
