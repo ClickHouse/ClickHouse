@@ -377,6 +377,18 @@ public:
     virtual void beginTransaction() = 0;
     /// Commits a transaction of mutable operations.
     virtual void commitTransaction() = 0;
+    /// Rolls back an uncommitted transaction of mutable operations, removing what it has already written
+    /// (e.g. uploaded blobs on object storage). Does nothing if there is no uncommitted transaction.
+    virtual void undoTransaction() = 0;
+
+    /// Commits the accumulated operations and starts a fresh transaction, keeping the storage
+    /// writable (commit->begin). Used mid-build to bound the volume of a single commit; a storage
+    /// that accumulates no per-file operations may make it a no-op.
+    virtual void checkpointTransaction()
+    {
+        commitTransaction();
+        beginTransaction();
+    }
     /// Prepares transaction to commit.
     /// It may be flush of buffered data or similar.
     virtual void precommitTransaction() = 0;

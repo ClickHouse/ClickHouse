@@ -1,4 +1,5 @@
 #include <Planner/PlannerJoinsLogical.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
 #include <Planner/PlannerJoins.h>
 
 #include <IO/WriteBuffer.h>
@@ -10,6 +11,7 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageDictionary.h>
 
@@ -560,7 +562,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
         outer_scope_columns,
         changed_types,
         settings[Setting::join_use_nulls],
-        JoinSettings(settings),
+        JoinSettings(settings, query_context->getJoinAnalyzeMode()),
         SortingStep::Settings(settings));
 
     bool display_internal_aliases = settings[Setting::query_plan_display_internal_aliases];
@@ -570,8 +572,8 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
 
     {
         const auto & query_params = query_context->getQueryParameters();
-        if (auto it = query_params.find("_internal_join_table_stat_hints"); it != query_params.end())
-            join_step->setDummyStats(it->second);
+        if (auto it = query_params.find(CascadesParams::STAT_HINTS); it != query_params.end())
+            join_step->setTableStatsHint(it->second);
     }
 
     if (shouldForbidReordering(build_context))
@@ -595,18 +597,19 @@ PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expr
     const auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
     result.column_mapping = table_expression_data.getColumnIdentifierToColumnName();
 
-    result.storage_join = std::dynamic_pointer_cast<StorageJoin>(storage);
+    result.storage_join = castStorage<StorageJoin>(storage, DeferredTable::Load);
     if (result.storage_join)
         return result;
 
     auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
     if (storage_dictionary && storage_dictionary->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
     {
+        /// NOLINT(storage-cast): a dictionary, which the catalog never hands out behind a proxy.
         result.storage_key_value = std::dynamic_pointer_cast<const IKeyValueEntity>(storage_dictionary->getDictionary());
         return result;
     }
 
-    result.storage_key_value = std::dynamic_pointer_cast<IKeyValueEntity>(storage);
+    result.storage_key_value = castStorage<IKeyValueEntity>(storage, DeferredTable::Load);
     if (result.storage_key_value)
         return result;
 

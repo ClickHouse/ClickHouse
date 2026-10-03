@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/TypeList.h>
 #include <base/memcmpSmall.h>
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
@@ -104,6 +105,31 @@ static bool hasAlignedStringVsNonStringElement(const DataTypePtr & left_type, co
     const bool left_is_string = left_which.isStringOrFixedString();
     const bool right_is_string = right_which.isStringOrFixedString();
     return left_is_string != right_is_string;
+}
+
+/// For the array element-comparison path: a bare `Nothing` position carries no value, so the element
+/// comparator declares `Nothing` and the comparison cannot be executed.
+static bool containsUndecidableNothing(const DataTypePtr & type)
+{
+    const auto inner_type = removeLowCardinality(type);
+
+    if (isNothing(inner_type))
+        return true;
+
+    if (inner_type->isNullable())
+    {
+        const auto nested = removeNullable(inner_type);
+        return isNothing(nested) ? false : containsUndecidableNothing(nested);
+    }
+
+    if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(inner_type.get()))
+    {
+        for (const auto & element : tuple_type->getElements())
+            if (containsUndecidableNothing(element))
+                return true;
+    }
+
+    return false;
 }
 
 template <bool _int, bool _float, bool _decimal, bool _datetime, typename F>
@@ -776,6 +802,86 @@ template <> struct CompileOp<GreaterOrEqualsOp>
 
 #endif
 
+/** Whether a comparison of two values of these types can throw an exception, see `IFunction::canThrow`.
+  *
+  * A comparison does not throw as long as both sides are compared the way they are stored, or the
+  * narrower side is only widened: numbers are compared by an accurate numeric comparison, strings
+  * byte-wise, and values of exactly the same type by `IColumn::compareAt`. It throws as soon as one
+  * of the sides has to be interpreted as something else: a string parsed as a date, a time or a
+  * tuple (`CANNOT_PARSE_DATE`), a string validated against an enum, or decimals of different scales
+  * brought to a common scale, which can overflow (`DECIMAL_OVERFLOW`).
+  *
+  * These are the same groups of types that `getComparisonOrderDomainForType` keys its domains by:
+  * a comparison inside one domain is direct, a comparison across domains goes through a conversion.
+  * Types that are not listed here are reported as throwing, which is always safe: it only means
+  * that an optimization is lost.
+  */
+inline bool comparisonCanThrow(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    /// `Nullable` and `LowCardinality` are unwrapped by the default implementations before the
+    /// comparison itself is executed.
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+
+    const WhichDataType which_left(left);
+    const WhichDataType which_right(right);
+
+    /// Compared by an accurate numeric comparison of both sides as they are stored, without
+    /// converting either of them. `Enum` is compared by its underlying numeric value.
+    auto is_number = [](const WhichDataType & which)
+    {
+        return which.isInt() || which.isUInt() || which.isFloat() || which.isEnum();
+    };
+    if (is_number(which_left) && is_number(which_right))
+        return false;
+
+    /// Compared byte-wise, `FixedString` of different sizes is zero-padded to the wider one.
+    if (which_left.isStringOrFixedString() && which_right.isStringOrFixedString())
+        return false;
+
+    /// Both share the days-since-epoch order, `Date` is only widened to `Date32`.
+    if (which_left.isDateOrDate32() && which_right.isDateOrDate32())
+        return false;
+
+    /// Types that are compared through their scale. Equal scales are compared as the stored
+    /// integers (the narrower side is only widened), different scales are rescaled to a common
+    /// scale first, and that multiplication can overflow.
+    enum class ScaledKind : uint8_t
+    {
+        TimePoint,
+        TimeOfDay,
+        Decimal,
+    };
+    using ScaleAndKind = std::pair<ScaledKind, UInt32>;
+
+    auto scale_and_kind = [](const DataTypePtr & type, const WhichDataType & which) -> std::optional<ScaleAndKind>
+    {
+        if (which.isDateTime())
+            return ScaleAndKind{ScaledKind::TimePoint, 0};
+        if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(type.get()))
+            return ScaleAndKind{ScaledKind::TimePoint, date_time64->getScale()};
+        if (which.isTime())
+            return ScaleAndKind{ScaledKind::TimeOfDay, 0};
+        if (const auto * time64 = typeid_cast<const DataTypeTime64 *>(type.get()))
+            return ScaleAndKind{ScaledKind::TimeOfDay, time64->getScale()};
+        if (which.isDecimal())
+            return ScaleAndKind{ScaledKind::Decimal, getDecimalScale(*type)};
+        return {};
+    };
+
+    if (const auto left_scaled = scale_and_kind(left, which_left);
+        left_scaled && left_scaled == scale_and_kind(right, which_right))
+        return false;
+
+    /// Values of exactly the same type are compared by `IColumn::compareAt`, which reads the values
+    /// as they are stored. `Variant`, `Dynamic` and `JSON` are excluded: a comparison of those
+    /// dispatches on the type of every individual row.
+    if (left->equals(*right) && !which_left.isVariant() && !which_left.isDynamic() && !which_left.isObject())
+        return false;
+
+    return true;
+}
+
 struct ComparisonParams
 {
     bool check_decimal_overflow = false;
@@ -894,48 +1000,42 @@ private:
         return nullptr;
     }
 
+    using ComparisonNumberTypes = TypeList<UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256, BFloat16, Float32, Float64>;
+
+    template <typename T>
+    ColumnPtr executeNumSameType(const IColumn * col_left_untyped, const IColumn * col_right_untyped) const
+    {
+        if (const auto * col_left = checkAndGetColumn<ColumnVector<T>>(col_left_untyped))
+            return executeNumRightType<T, T>(col_left, col_right_untyped);
+        if (const auto * col_left_const = checkAndGetColumnConst<ColumnVector<T>>(col_left_untyped))
+            return executeNumConstRightType<T, T>(col_left_const, col_right_untyped);
+        return nullptr;
+    }
+
     template <typename T0>
     ColumnPtr executeNumLeftType(const IColumn * col_left_untyped, const IColumn * col_right_untyped) const
     {
         ColumnPtr res = nullptr;
         if (const ColumnVector<T0> * col_left = checkAndGetColumn<ColumnVector<T0>>(col_left_untyped))
         {
-            if (   (res = executeNumRightType<T0, UInt8>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, UInt16>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, UInt32>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, UInt64>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, UInt128>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, UInt256>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, Int8>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, Int16>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, Int32>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, Int64>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, Int128>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, Int256>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, BFloat16>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, Float32>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, Float64>(col_left, col_right_untyped)))
+            TypeListUtils::forEach(ComparisonNumberTypes{}, [&]<typename T1>(TypeList<T1>)
+            {
+                if (!res)
+                    res = executeNumRightType<T0, T1>(col_left, col_right_untyped);
+            });
+            if (res)
                 return res;
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}", col_right_untyped->getName(), getName());
         }
         if (auto col_left_const = checkAndGetColumnConst<ColumnVector<T0>>(col_left_untyped))
         {
-            if ((res = executeNumConstRightType<T0, UInt8>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, UInt16>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, UInt32>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, UInt64>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, UInt128>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, UInt256>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, Int8>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, Int16>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, Int32>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, Int64>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, Int128>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, Int256>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, BFloat16>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, Float32>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, Float64>(col_left_const, col_right_untyped)))
+            TypeListUtils::forEach(ComparisonNumberTypes{}, [&]<typename T1>(TypeList<T1>)
+            {
+                if (!res)
+                    res = executeNumConstRightType<T0, T1>(col_left_const, col_right_untyped);
+            });
+            if (res)
                 return res;
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}", col_right_untyped->getName(), getName());
@@ -1089,7 +1189,7 @@ private:
 
         auto is_string_not_in_enum = [this, &string_value]<typename T>(const EnumValues<T> * enum_values) -> bool
         {
-            if constexpr (!IsOperation<Op>::equals && IsOperation<Op>::not_equals)
+            if constexpr (!IsOperation<Op>::equals && !IsOperation<Op>::not_equals)
                 return false;
             if (params.validate_enum_literals_in_operators)
                 return false;
@@ -1465,6 +1565,26 @@ private:
     {
         /// Recurse over indexes to compare flat columns at element-level
         auto impl = resolver->build(gathered.element_args);
+
+        /// A `Nothing` element type has no values, so it cannot be executed and yields a `ColumnNothing`
+        /// the callers cannot consume.
+        if (isNothing(impl->getResultType()))
+        {
+            auto masked = [&](size_t arg, const NullMap * null_map)
+            {
+                return isNothing(removeLowCardinality(gathered.element_args[arg].type)) && null_map
+                    && std::all_of(null_map->begin(), null_map->begin() + gathered.num_elements,
+                                   [](UInt8 byte) { return byte != 0; });
+            };
+
+            if (masked(0, gathered.null_map0) || masked(1, gathered.null_map1))
+                return ColumnUInt8::create(gathered.num_elements, UInt8(0));
+
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
+                " of function {}", backQuote(gathered.element_args[0].type->getName()),
+                backQuote(gathered.element_args[1].type->getName()), backQuote(name));
+        }
+
         return impl->execute(gathered.element_args, impl->getResultType(), gathered.num_elements, /*dry_run=*/false)->convertToFullColumnIfConst();
     }
 
@@ -1644,6 +1764,14 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// A comparison is cheap, so it is not worth executing it lazily, but it is not free of
+    /// exceptions either: comparing a date to a string parses that string. These two properties
+    /// have to be answered separately.
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        return arguments.size() != 2 || comparisonCanThrow(arguments[0].type, arguments[1].type);
+    }
+
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -1713,7 +1841,10 @@ public:
                         = WhichDataType(element_result_type.get()).isUInt8()
                         || (is_equality && element_result_type->isNullable()
                             && WhichDataType(removeNullable(element_result_type).get()).isUInt8());
-                    if (element_result_ok && !has_string_vs_non_string)
+                    /// Tested on the unstripped nested types, so the `Nullable` arms stay visible.
+                    if (element_result_ok && !has_string_vs_non_string
+                        && !containsUndecidableNothing(left_array->getNestedType())
+                        && !containsUndecidableNothing(right_array->getNestedType()))
                         return std::make_shared<DataTypeUInt8>();
                 }
 
@@ -1866,21 +1997,12 @@ public:
         if (left_is_num && right_is_num && !date_and_time_datetime
             && (!left_is_interval || !right_is_interval || types_equal))
         {
-            if (!((res = executeNumLeftType<UInt8>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<UInt16>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<UInt32>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<UInt64>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<UInt128>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<UInt256>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<Int8>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<Int16>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<Int32>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<Int64>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<Int128>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<Int256>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<BFloat16>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<Float32>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<Float64>(col_left_untyped, col_right_untyped))))
+            TypeListUtils::forEach(ComparisonNumberTypes{}, [&]<typename T0>(TypeList<T0>)
+            {
+                if (!res)
+                    res = executeNumLeftType<T0>(col_left_untyped, col_right_untyped);
+            });
+            if (!res)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of the first argument of function {}",
                     col_left_untyped->getName(), getName());
 
@@ -1890,13 +2012,24 @@ public:
         {
             return executeTuple(result_type, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
         }
-        if (left_is_string && right_is_string && (res = executeString(col_left_untyped, col_right_untyped)))
+        if (left_is_string && right_is_string)
         {
-            return res;
+            res = executeString(col_left_untyped, col_right_untyped);
+            if (res)
+                return res;
         }
-        if ((res = executeWithConstString(result_type, col_left_untyped, col_right_untyped, left_type, right_type, input_rows_count)))
-        {
+        res = executeWithConstString(result_type, col_left_untyped, col_right_untyped, left_type, right_type, input_rows_count);
+        if (res)
             return res;
+        if (types_equal && (which_left.isUUID() || which_left.isIPv4() || which_left.isIPv6()))
+        {
+            res = executeNumSameType<UUID>(col_left_untyped, col_right_untyped);
+            if (!res)
+                res = executeNumSameType<IPv4>(col_left_untyped, col_right_untyped);
+            if (!res)
+                res = executeNumSameType<IPv6>(col_left_untyped, col_right_untyped);
+            if (res)
+                return res;
         }
         if ((((left_is_ipv6 && right_is_fixed_string) || (right_is_ipv6 && left_is_fixed_string))
              && fixed_string_size == IPV6_BINARY_LENGTH)
@@ -1949,11 +2082,15 @@ public:
             DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
             ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
             ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, common_type);
-            if (!((res = executeNumLeftType<UInt32>(c0_converted.get(), c1_converted.get()))
-                  || (res = executeNumLeftType<UInt64>(c0_converted.get(), c1_converted.get()))
-                  || (res = executeNumLeftType<Int32>(c0_converted.get(), c1_converted.get()))
-                  || (res = executeDecimal<Op, Name>(
-                          {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, params.check_decimal_overflow))))
+            res = executeNumLeftType<UInt32>(c0_converted.get(), c1_converted.get());
+            if (!res)
+                res = executeNumLeftType<UInt64>(c0_converted.get(), c1_converted.get());
+            if (!res)
+                res = executeNumLeftType<Int32>(c0_converted.get(), c1_converted.get());
+            if (!res)
+                res = executeDecimal<Op, Name>(
+                    {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, params.check_decimal_overflow);
+            if (!res)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Date related common types can only be UInt32/UInt64/Int32/Decimal");
             return res;
         }

@@ -4,7 +4,11 @@
 #include <cctype>
 #include <limits>
 
+#include <base/arithmeticOverflow.h>
 #include <Common/Exception.h>
+#include <Core/DecimalFunctions.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 
@@ -98,7 +102,140 @@ std::vector<Int64> fieldToInt64Array(const Field & value, std::string_view conte
     return result;
 }
 
+namespace
+{
+
+/// Iceberg store decimal values as unscaled value with two's-complement big-endian binary
+/// using the minimum number of bytes for the value
+/// Our decimal binary representation is little endian
+/// so we cannot reuse our default code for parsing it.
+///
+/// NOTE: It's very weird, but Decimal values for lower bound and upper bound
+/// are stored rounded, without fractional part. What is more strange
+/// the integer part is rounded mathematically correctly according to fractional part.
+/// Example: 17.22 -> 17, 8888.999 -> 8889, 1423.77 -> 1424.
+/// I've checked two implementations: Spark and Amazon Athena and both of them
+/// do this.
+///
+/// The problem is -- we cannot use rounded values for lower bounds and upper bounds.
+/// Example: upper_bound(x) = 17.22, but it's rounded 17.00, now condition WHERE x >= 17.21 will
+/// check rounded value and say: "Oh largest value is 17, so values bigger than 17.21 cannot be in this file,
+/// let's skip it". But it will produce incorrect result since actual value (17.22 >= 17.21) is stored in this file.
+///
+/// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
+/// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
+/// but at least it doesn't lead to incorrect results.
+template <typename DecimalType>
+std::optional<Field> deserializeDecimalBound(const String & str, UInt32 scale, bool lower_bound, bool compensate_rounding)
+{
+    using NativeType = typename DecimalType::NativeType;
+    using UnsignedType = make_unsigned_t<NativeType>;
+
+    if (str.empty() || str.size() > sizeof(NativeType))
+        return std::nullopt;
+
+    /// Accumulate into the unsigned counterpart, pre-filled with the sign bits,
+    /// so that the sign extension comes out of the shifts themselves.
+    UnsignedType unscaled = (str[0] & 0x80) ? ~UnsignedType(0) : UnsignedType(0);
+    for (const auto byte : str)
+        unscaled = (unscaled << 8) | static_cast<UInt8>(byte);
+
+    NativeType unscaled_value = static_cast<NativeType>(unscaled);
+
+    if (compensate_rounding && scale)
+    {
+        /// Every value in the file fits the precision of the type it is read as, so the largest
+        /// magnitude that precision allows is on the outer side of all of them: it stands in for a
+        /// widened bound that leaves the type, and it is the tightest bound that does. Dropping the
+        /// bound instead would cost min/max pruning for the whole column.
+        const NativeType limit
+            = DecimalUtils::scaleMultiplier<NativeType>(DecimalUtils::max_precision<DecimalType>) - NativeType(1);
+
+        NativeType scaler = lower_bound ? -10 : 10;
+        for (UInt32 i = 1; i < scale; ++i)
+            scaler *= 10;
+
+        /// Widening can leave the type: a `Decimal(38, 38)` bound of magnitude above roughly 0.7
+        /// needs almost `2 * 10^38` while `Int128` holds `1.7 * 10^38`.
+        NativeType widened_value;
+        if (common::addOverflow(unscaled_value, scaler, widened_value))
+            widened_value = lower_bound ? -limit : limit;
+
+        /// A bound is stored as raw bytes that are never checked against a precision, so the
+        /// rounding the Iceberg writers apply can put it one unit outside the type: a file whose
+        /// extreme value is `0.99` carries `1.0` (`10^38` unscaled) at scale 38. Saturating such a
+        /// bound keeps it outside every value in the file, where rejecting it loses the column's
+        /// pruning. Saturation is monotonic, so it cannot invert a pair that was not inverted.
+        ///
+        /// Only the outer side saturates: a lower bound above the largest value the type holds (or an
+        /// upper bound below the smallest) is on the inner side of every value in the file, and
+        /// clamping it would collapse the range to a single point that excludes the data. Such a
+        /// bound is not a usable range border.
+        if (lower_bound)
+        {
+            if (widened_value > limit)
+                return std::nullopt;
+            if (widened_value < -limit)
+                widened_value = -limit;
+        }
+        else
+        {
+            if (widened_value < -limit)
+                return std::nullopt;
+            if (widened_value > limit)
+                widened_value = limit;
+        }
+
+        unscaled_value = widened_value;
+    }
+
+    return DecimalField<DecimalType>(unscaled_value, scale);
 }
+
+}
+
+std::optional<Field> deserializeDecimalFromBinaryRepr(
+    const String & str, const IDataType & decimal_type, bool lower_bound, bool compensate_rounding)
+{
+    if (!WhichDataType(decimal_type).isDecimal())
+        return std::nullopt;
+
+    const UInt32 scale = getDecimalScale(decimal_type);
+    if (checkDecimal<Decimal32>(decimal_type))
+        return deserializeDecimalBound<Decimal32>(str, scale, lower_bound, compensate_rounding);
+    if (checkDecimal<Decimal64>(decimal_type))
+        return deserializeDecimalBound<Decimal64>(str, scale, lower_bound, compensate_rounding);
+    if (checkDecimal<Decimal128>(decimal_type))
+        return deserializeDecimalBound<Decimal128>(str, scale, lower_bound, compensate_rounding);
+    if (checkDecimal<Decimal256>(decimal_type))
+        return deserializeDecimalBound<Decimal256>(str, scale, lower_bound, compensate_rounding);
+    return std::nullopt;
+}
+
+std::optional<Field> deserializeFieldFromBinaryRepr(
+    const String & str, const DataTypePtr & expected_type, bool lower_bound, bool compensate_rounding)
+{
+    auto non_nullable_type = removeNullable(expected_type);
+    if (WhichDataType(non_nullable_type).isDecimal())
+        return deserializeDecimalFromBinaryRepr(str, *non_nullable_type, lower_bound, compensate_rounding);
+    if (non_nullable_type->getTypeId() == TypeIndex::Variant)
+        return std::nullopt;
+
+    /// `insertData` of a fixed-size column ignores the length and reads the width of the type, so a
+    /// shorter bound would read past the buffer. Iceberg keeps the bound as written, which for a
+    /// promoted column (`int` -> `long`) is narrower than the column is now.
+    if (non_nullable_type->haveMaximumSizeOfValue() && str.size() < non_nullable_type->getSizeOfValueInMemory())
+        return std::nullopt;
+
+    auto column = non_nullable_type->createColumn();
+    column->insertData(str.data(), str.length());
+    Field result;
+    column->get(0, result);
+    return result;
+}
+
+}
+
 }
 
 #endif
