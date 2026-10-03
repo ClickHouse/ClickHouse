@@ -259,7 +259,7 @@ void KafkaConsumer2::commit(const TopicPartitionOffset & topic_partition_offset)
             // replicas available for the __consumer_offsets topic. also some other temporary issues like client-server
             // connectivity problems are possible
 
-            consumer->commit(topic_partition_list);
+            consumer->commit(topic_partition_list, StorageKafkaUtils::COMMIT_TIMEOUT_MS);
             committed = true;
             LOG_INFO(
                 log,
