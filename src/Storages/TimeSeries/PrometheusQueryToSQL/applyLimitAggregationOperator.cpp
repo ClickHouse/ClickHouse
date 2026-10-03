@@ -278,8 +278,9 @@ namespace
         auto & r_arg = arguments[0];
         auto & vector_arg = arguments[1];
 
-        /// If either argument is empty then the result is also empty.
-        if (r_arg.store_method == StoreMethod::EMPTY || vector_arg.store_method == StoreMethod::EMPTY)
+        /// If the ratio is empty then the result is also empty. An empty vector goes on below,
+        /// so that a NaN ratio is still rejected, as in Prometheus.
+        if (r_arg.store_method == StoreMethod::EMPTY)
             return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
 
         vector_arg = toVectorGrid(std::move(vector_arg), context);

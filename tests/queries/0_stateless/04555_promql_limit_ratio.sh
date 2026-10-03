@@ -85,6 +85,14 @@ promql_nan_ratio_error "limit_ratio(scalar(up), up)"
 echo "-- The same for a computed ratio which varies along the grid of a subquery."
 promql_nan_ratio_error "limit_ratio(scalar(up), up)[200s:100s]"
 
+echo "-- A NaN ratio is rejected even if the vector is known to be empty when the query is built."
+promql_nan_ratio_error "limit_ratio(NaN, clamp(up, 1, -1))"
+promql_nan_ratio_error "limit_ratio(scalar(clamp(up, 1, -1)), clamp(up, 1, -1))"
+promql_nan_ratio_error "limit_ratio(scalar(up), clamp(up, 1, -1))"
+
+echo "-- limit_ratio(1, clamp(up, 1, -1)): a valid ratio over such a vector gives an empty result."
+promql_count "limit_ratio(1, clamp(up, 1, -1))"
+
 echo "-- limit_ratio(0.5, up) and limit_ratio(-0.5, up) keep complementary, reproducible subsets."
 echo -n "r=0.5:  "; promql_instances "limit_ratio(0.5, up)"
 echo -n "r=-0.5: "; promql_instances "limit_ratio(-0.5, up)"
