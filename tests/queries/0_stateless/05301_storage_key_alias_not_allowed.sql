@@ -42,6 +42,14 @@ ALTER TABLE t_key_alias MODIFY TTL toDate(c0) + INTERVAL 1 DAY GROUP BY c0 SET c
 ALTER TABLE t_key_alias ADD INDEX i (c1 AS a) TYPE minmax; -- { serverError BAD_ARGUMENTS }
 CREATE INDEX i ON t_key_alias (c1 * 2 AS a) TYPE minmax; -- { serverError BAD_ARGUMENTS }
 CREATE HYPOTHETICAL INDEX h ON t_key_alias (c1 AS a) TYPE minmax; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_key_alias ADD INDEX IF NOT EXISTS i (c1 AS a) TYPE minmax; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_key_alias ADD INDEX i c1 TYPE minmax;
+ALTER TABLE t_key_alias DROP INDEX i, ADD INDEX IF NOT EXISTS i (c1 AS a) TYPE minmax; -- { serverError BAD_ARGUMENTS }
+-- IF NOT EXISTS over an existing index changes nothing, so nothing is checked.
+ALTER TABLE t_key_alias ADD INDEX IF NOT EXISTS i (c1 AS a) TYPE minmax;
+CREATE INDEX IF NOT EXISTS i ON t_key_alias (c1 AS a) TYPE minmax;
+CREATE HYPOTHETICAL INDEX IF NOT EXISTS i ON t_key_alias (c1 AS a) TYPE minmax;
+SELECT expr FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_key_alias' AND name = 'i';
 ALTER TABLE t_key_alias ADD COLUMN c2 Int64, MODIFY ORDER BY (c0, c1, c2);
 SELECT sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_key_alias';
 

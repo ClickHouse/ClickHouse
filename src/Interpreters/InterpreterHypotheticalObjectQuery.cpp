@@ -98,8 +98,6 @@ BlockIO createHypotheticalIndex(
 {
     const auto & index_ast = query.index_decl->as<ASTIndexDeclaration &>();
 
-    KeyDescription::checkNoAlias(query.index_decl.get(), "INDEX");
-
     /// `IF NOT EXISTS` must short-circuit before building/validating the descriptor,
     /// matching `ALTER TABLE ... ADD INDEX IF NOT EXISTS`. The name is taken if a
     /// hypothetical index already uses it or a real secondary index does
@@ -111,6 +109,8 @@ BlockIO createHypotheticalIndex(
         if (metadata->getSecondaryIndices().has(index_ast.name))
             return {};
     }
+
+    KeyDescription::checkNoAlias(query.index_decl.get(), "INDEX");
 
     auto index_desc = IndexDescription::getIndexFromAST(
         query.index_decl,

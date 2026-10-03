@@ -5774,6 +5774,17 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             is_initial_alter = false;
 #endif
 
+        /// An index the ALTER leaves as it was, as `ADD INDEX IF NOT EXISTS` does for an existing one, is not checked.
+        auto is_changed_index = [&](const String & name)
+        {
+            if (!new_metadata.secondary_indices.has(name))
+                return false;
+            if (!old_metadata.secondary_indices.has(name))
+                return true;
+            return old_metadata.secondary_indices.getByName(name).definition_ast->getTreeHash(/*ignore_aliases=*/ false)
+                != new_metadata.secondary_indices.getByName(name).definition_ast->getTreeHash(/*ignore_aliases=*/ false);
+        };
+
         bool changes_order_by = false;
         for (const auto & command : commands)
         {
@@ -5785,8 +5796,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             }
             else if (command.type == AlterCommand::MODIFY_TTL && is_initial_alter)
                 KeyDescription::checkNoAlias(command.ttl.get(), "TTL");
-            else if (command.type == AlterCommand::ADD_INDEX && is_initial_alter)
-                KeyDescription::checkNoAlias(command.index_decl.get(), "INDEX");
+            else if (command.type == AlterCommand::ADD_INDEX && is_initial_alter && is_changed_index(command.index_name))
+                KeyDescription::checkNoAlias(new_metadata.secondary_indices.getByName(command.index_name).definition_ast.get(), "INDEX");
         }
 
         if (is_initial_alter && changes_order_by)
