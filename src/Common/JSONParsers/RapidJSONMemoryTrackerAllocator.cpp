@@ -33,8 +33,7 @@ size_t withHeader(size_t size)
     return header_size + size;
 }
 
-/// Blocks of `RapidJSONStackAllocator` carry the same header: heap blocks store their size, which is
-/// never 0, inline blocks store 0. Payloads in the inline buffer keep the header's alignment.
+/// Heap blocks store their non-zero size in the header, inline blocks of `RapidJSONStackAllocator` store 0.
 static_assert(header_size == alignof(std::max_align_t));
 
 bool isInlineBlock(const void * ptr)
@@ -116,7 +115,6 @@ void * RapidJSONStackAllocator::Realloc(void * original_ptr, size_t original_siz
     if (new_size <= original_size)
         return original_ptr;
 
-    /// The old inline block is reclaimed by the next `reset`.
     void * new_ptr = Malloc(new_size);
     memcpy(new_ptr, original_ptr, original_size);
     return new_ptr;

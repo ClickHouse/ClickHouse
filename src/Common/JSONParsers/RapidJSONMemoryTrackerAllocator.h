@@ -37,9 +37,7 @@ public:
     bool operator!=(const RapidJSONMemoryTrackerAllocator &) const noexcept { return false; }
 };
 
-/// Allocator for the stacks rapidjson uses while parsing one document. Blocks come from an inline buffer
-/// that `reset` rewinds, so a small document is parsed without heap allocations; blocks that do not fit
-/// are allocated with `RapidJSONMemoryTrackerAllocator`.
+/// Allocator for rapidjson parse stacks: an inline buffer rewound by `reset`, `RapidJSONMemoryTrackerAllocator` for the rest.
 class RapidJSONStackAllocator /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - buffer is arena storage, written before read
 {
 public:
