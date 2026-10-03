@@ -37,7 +37,9 @@ CREATE MATERIALIZED VIEW mv TO mv_tgt AS SELECT x FROM src;
 
 SELECT '-- inserted by the replicas';
 INSERT INTO dst WITH t AS (SELECT arrayJoin([1, 2]) AS id) SELECT x FROM src WHERE x IN (SELECT id FROM t) SETTINGS log_comment = 'arm_cte';
-INSERT INTO dst WITH RECURSIVE r AS (SELECT 10 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 11) SELECT x FROM src WHERE x IN (SELECT n FROM r) SETTINGS log_comment = 'arm_recursive';
+-- A serialized query plan cannot carry a recursive CTE, also without parallel replicas.
+INSERT INTO dst WITH RECURSIVE r AS (SELECT 10 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 11) SELECT x FROM src WHERE x IN (SELECT n FROM r)
+    SETTINGS log_comment = 'arm_recursive', serialize_query_plan = 0;
 INSERT INTO dst SELECT x FROM src WHERE x IN (SELECT id FROM ids GROUP BY ROLLUP(id) HAVING grouping(id) = 0) SETTINGS log_comment = 'arm_grouping';
 INSERT INTO dst WITH t(k) AS (SELECT arrayJoin([30, 31])) SELECT x FROM src WHERE x IN (SELECT k FROM t) SETTINGS log_comment = 'arm_cte_columns';
 INSERT INTO dst WITH t AS (SELECT arrayJoin([40, 41]) AS id) SELECT x FROM src WHERE x IN (SELECT id FROM t) SETTINGS log_comment = 'arm_cte_no_local_plan', parallel_replicas_local_plan = 0;
