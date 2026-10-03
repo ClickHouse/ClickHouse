@@ -22,6 +22,12 @@ for enable_parallel_replicas in {0..1}; do
   ${CLICKHOUSE_CLIENT} --query="
   --- Old analyzer uses different code path and it produces wrong result in this case.
   set enable_analyzer=1;
+  -- The harness randomizes 'parallel_replicas_local_plan', and with 'parallel_replicas_plan_based'
+  -- the value 0 drops the totals block coming from the right side of the join:
+  -- https://github.com/ClickHouse/ClickHouse/issues/120000
+  -- Pin the local plan so the assertion stays about the join and the totals rather than about that
+  -- bug; both implementations are still exercised through the loop above.
+  set parallel_replicas_local_plan=1;
   set allow_experimental_parallel_reading_from_replicas=${enable_parallel_replicas}, automatic_parallel_replicas_mode=0, cluster_for_parallel_replicas='parallel_replicas', max_parallel_replicas=100, parallel_replicas_for_non_replicated_merge_tree=1;
 
   SELECT *
