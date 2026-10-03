@@ -99,6 +99,9 @@ public:
 
     bool recursive_with = false;
     bool distinct = false;
+    /// Internal marker for a SELECT synthesized by the PIVOT parser rewrite.
+    /// Analysis uses it to validate final output names after asterisk expansion.
+    bool is_pivot_rewrite = false;
     bool group_by_all = false;
     bool group_by_with_totals = false;
     bool group_by_with_rollup = false;
