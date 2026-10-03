@@ -21,7 +21,7 @@ It is ok to have ASCII NULL bytes in strings, and they will be counted as well.
 
 <Note>
 With [`optimize_functions_to_subcolumns = 1`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns), `length(s)` for a `String` column can be rewritten to read `s.size`.
-When [`optimize_string_size_subcolumn_with_full_read = 1`](/reference/settings/session-settings/optimize#optimize_string_size_subcolumn_with_full_read), this also applies in `WHERE` and `PREWHERE` when the query needs the full String column elsewhere.
+When [`optimize_string_size_subcolumn_with_full_read = 1`](/reference/settings/session-settings/optimize#optimize_string_size_subcolumn_with_full_read), this also applies in `PREWHERE` when the query needs the full String column elsewhere.
 For example, `SELECT s FROM t PREWHERE length(s) > 1000` can benefit when the filter rejects whole granules. This extra optimization is disabled by default.
 
 On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, `PREWHERE` can filter on the size stream before reading String data for surviving granules.

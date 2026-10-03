@@ -932,9 +932,10 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 /// transformation is beneficial when the occurrence is in WHERE/PREWHERE: only
 /// the relevant subcolumn is read for the filter (letting a
 /// skip index on that subcolumn prune granules), while the full column is still
-/// read for matching rows in SELECT. String rewrites additionally require
-/// `optimize_string_size_subcolumn_with_full_read` because splitting reads may add work
-/// when the size filter does not reject whole granules. All String size rewrites are disabled
+/// read for matching rows in SELECT. Full-read String rewrites are restricted to
+/// PREWHERE, where the size stream can reject granules before the String payload
+/// is read. They additionally require `optimize_string_size_subcolumn_with_full_read`
+/// because splitting reads may add work when the size filter does not reject whole granules. All String size rewrites are disabled
 /// for on-fly mutations: a pending UPDATE can change the String while its stored `.size` still
 /// describes the pre-mutation value. For legacy String parts where .size is virtual,
 /// the MergeTree read planner can co-read the parent String when a filtering step
@@ -1337,6 +1338,13 @@ getTypedNodesForChainedOptimization(const QueryTreeNodePtr & node, const Context
     return {function_node, first_argument_column_node, column_source, std::move(intermediates)};
 }
 
+enum class FilterClause
+{
+    None,
+    Where,
+    Prewhere,
+};
+
 /// First pass collects info about identifiers to determine which identifiers are allowed to optimize.
 class FunctionToSubcolumnsVisitorFirstPass : public InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorFirstPass>
 {
@@ -1407,7 +1415,7 @@ public:
             has_where_prewhere_or_group_by = query_node->hasWhere() || query_node->hasPrewhere() || query_node->hasGroupBy();
             /// Push a placeholder for this query level; needChildVisit will update it
             /// to true when we descend into WHERE or PREWHERE.
-            in_where_prewhere_stack.push_back(false);
+            filter_clause_stack.push_back(FilterClause::None);
             correlated_columns.enter(query_node->getCorrelatedColumns());
             return;
         }
@@ -1426,7 +1434,7 @@ public:
 
         if (node->as<QueryNode>())
         {
-            in_where_prewhere_stack.pop_back();
+            filter_clause_stack.pop_back();
             correlated_columns.leave();
         }
         else if (node->as<UnionNode>())
@@ -1439,11 +1447,14 @@ public:
     {
         if (const auto * query_node = parent->as<QueryNode>())
         {
-            if (!in_where_prewhere_stack.empty())
+            if (!filter_clause_stack.empty())
             {
-                bool is_where = query_node->hasWhere() && child.get() == query_node->getWhere().get();
-                bool is_prewhere = query_node->hasPrewhere() && child.get() == query_node->getPrewhere().get();
-                in_where_prewhere_stack.back() = is_where || is_prewhere;
+                if (query_node->hasPrewhere() && child.get() == query_node->getPrewhere().get())
+                    filter_clause_stack.back() = FilterClause::Prewhere;
+                else if (query_node->hasWhere() && child.get() == query_node->getWhere().get())
+                    filter_clause_stack.back() = FilterClause::Where;
+                else
+                    filter_clause_stack.back() = FilterClause::None;
             }
         }
         return true;
@@ -1476,10 +1487,10 @@ public:
         ///
         /// When there are also plain column references but a transformable use
         /// exists in WHERE/PREWHERE (recorded in `identifiers_with_filter_optimization`),
-        /// the identifier goes into `filter_only` — it is rewritten only inside
-        /// WHERE/PREWHERE by the second pass. This is beneficial for Map
-        /// subcolumn filters: only the relevant subcolumn is read for the filter,
-        /// while the full Map is still read for matching rows in SELECT.
+        /// the identifier goes into `filter_only`. The second pass rewrites these
+        /// uses only inside WHERE/PREWHERE, with full-read String rewrites restricted
+        /// further to PREWHERE. This is beneficial for Map subcolumn filters and for
+        /// String size filters that can reject granules before reading the payload.
         ///
         /// Do not optimize index columns (primary, min-max, secondary),
         /// because otherwise analysis of indexes may be broken.
@@ -1516,14 +1527,14 @@ private:
     ColumnInSourceMap<UInt64> optimized_identifiers_count;
     /// Counts only uses of transformers from `transformers_safe_with_indexes`.
     ColumnInSourceMap<UInt64> optimized_identifiers_index_safe_count;
-    /// Identifiers that have at least one use of a transformer from
-    /// `transformers_optimize_in_filter_with_full_column` inside WHERE or PREWHERE.
+    /// Identifiers that have at least one eligible filter use of a transformer from
+    /// `transformers_optimize_in_filter_with_full_column`. String full-read uses are
+    /// eligible only in PREWHERE; other listed transformers remain eligible in WHERE/PREWHERE.
     /// These are optimized even when the column is also read as a full column elsewhere.
     ColumnInSourceSet identifiers_with_filter_optimization;
 
-    /// Stack tracking whether the current node is inside a WHERE or PREWHERE clause.
-    /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
-    std::vector<bool> in_where_prewhere_stack;
+    /// One entry per QueryNode depth. Full-read String rewrites require Prewhere.
+    std::vector<FilterClause> filter_clause_stack;
 
     CorrelatedColumnsStack correlated_columns;
 
@@ -1601,9 +1612,10 @@ private:
             if (transformers_safe_with_indexes.contains(transformer_key))
                 ++optimized_identifiers_index_safe_count[qualified_name];
             if (transformers_optimize_in_filter_with_full_column.contains(transformer_key)
-                && !in_where_prewhere_stack.empty() && in_where_prewhere_stack.back()
+                && !filter_clause_stack.empty() && filter_clause_stack.back() != FilterClause::None
                 && (transformer_key.first != TypeIndex::String
-                    || (getSettings()[Setting::optimize_string_size_subcolumn_with_full_read]
+                    || (filter_clause_stack.back() == FilterClause::Prewhere
+                        && getSettings()[Setting::optimize_string_size_subcolumn_with_full_read]
                         && !getSettings()[Setting::apply_mutations_on_fly])))
                 identifiers_with_filter_optimization.insert(qualified_name);
         }
@@ -1643,17 +1655,17 @@ private:
 
 /// Second pass optimizes functions to subcolumns for allowed identifiers.
 /// For identifiers in `filter_only`, the rewrite is restricted to WHERE/PREWHERE
-/// clauses only, because in post-aggregation clauses (HAVING, ORDER BY, etc.)
-/// the subcolumn would not be present in the block after GROUP BY.
+/// clauses only, with full-read String rewrites restricted further to PREWHERE.
+/// In post-aggregation clauses (HAVING, ORDER BY, etc.) the subcolumn would not
+/// be present in the block after GROUP BY.
 class FunctionToSubcolumnsVisitorSecondPass : public InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>
 {
 private:
     IdentifiersToOptimize identifiers_to_optimize;
     std::unordered_set<const IQueryTreeNode *> outer_joined_tables;
 
-    /// Stack tracking whether the current node is inside a WHERE or PREWHERE clause.
-    /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
-    std::vector<bool> in_where_prewhere_stack;
+    /// One entry per QueryNode depth. Full-read String rewrites require Prewhere.
+    std::vector<FilterClause> filter_clause_stack;
 
     CorrelatedColumnsStack correlated_columns;
 
@@ -1674,11 +1686,14 @@ public:
     {
         if (const auto * query_node = parent->as<QueryNode>())
         {
-            if (!in_where_prewhere_stack.empty())
+            if (!filter_clause_stack.empty())
             {
-                bool is_where = query_node->hasWhere() && child.get() == query_node->getWhere().get();
-                bool is_prewhere = query_node->hasPrewhere() && child.get() == query_node->getPrewhere().get();
-                in_where_prewhere_stack.back() = is_where || is_prewhere;
+                if (query_node->hasPrewhere() && child.get() == query_node->getPrewhere().get())
+                    filter_clause_stack.back() = FilterClause::Prewhere;
+                else if (query_node->hasWhere() && child.get() == query_node->getWhere().get())
+                    filter_clause_stack.back() = FilterClause::Where;
+                else
+                    filter_clause_stack.back() = FilterClause::None;
             }
         }
         return true;
@@ -1691,7 +1706,7 @@ public:
 
         if (const auto * query_node = node->as<QueryNode>())
         {
-            in_where_prewhere_stack.push_back(false);
+            filter_clause_stack.push_back(FilterClause::None);
             correlated_columns.enter(query_node->getCorrelatedColumns());
             return;
         }
@@ -1717,15 +1732,17 @@ public:
                 return;
 
             /// For "filter_only" identifiers, only optimize when inside WHERE/PREWHERE.
+            /// Full-read String rewrites are restricted further to PREWHERE.
             /// The permission is intentionally scoped to the whole identifier,
             /// not to the transformer that caused it to be marked.
             bool should_optimize = identifiers_to_optimize.everywhere.contains(qualified_name);
             if (!should_optimize
                 && identifiers_to_optimize.filter_only.contains(qualified_name)
-                && !in_where_prewhere_stack.empty()
-                && in_where_prewhere_stack.back()
+                && !filter_clause_stack.empty()
+                && filter_clause_stack.back() != FilterClause::None
                 && (column.type->getTypeId() != TypeIndex::String
-                    || (getSettings()[Setting::optimize_string_size_subcolumn_with_full_read]
+                    || (filter_clause_stack.back() == FilterClause::Prewhere
+                        && getSettings()[Setting::optimize_string_size_subcolumn_with_full_read]
                         && !getSettings()[Setting::apply_mutations_on_fly])))
                 should_optimize = true;
 
@@ -1778,7 +1795,7 @@ public:
 
         if (node->as<QueryNode>())
         {
-            in_where_prewhere_stack.pop_back();
+            filter_clause_stack.pop_back();
             correlated_columns.leave();
         }
         else if (node->as<UnionNode>())

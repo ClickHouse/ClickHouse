@@ -69,10 +69,24 @@ FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
     FROM test_string_filter_only
     PREWHERE notEmpty(s)
     SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0);
+SELECT countIf(explain ILIKE '%s.size%') > 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT id
+    FROM test_string_filter_only
+    WHERE notEmpty(s)
+    SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0);
 SET optimize_string_size_subcolumn_with_full_read = 1;
 
-SELECT 'grouped CTE String filter with opt-in 1';
-SELECT countIf(explain ILIKE '%s.size%') > 0
+SELECT 'full String WHERE stays on the full String';
+SELECT countIf(explain ILIKE '%s.size%') = 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT s
+    FROM test_string_filter_only
+    WHERE notEmpty(s)
+    SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0);
+
+SELECT 'grouped CTE WHERE does not use the full-read String rewrite';
+SELECT countIf(explain ILIKE '%s.size%') = 0
 FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
     WITH cte AS (SELECT s, id FROM test_string_filter_only WHERE s != '')
     SELECT s, count() FROM cte GROUP BY s

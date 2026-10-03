@@ -5683,7 +5683,7 @@ These functions can be transformed:
 - [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike) to read the [keys](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 - [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) to read the [values](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 
-String filters in `WHERE` and `PREWHERE` can also use the `size` subcolumn when the full String is needed elsewhere, if [`optimize_string_size_subcolumn_with_full_read`](#optimize_string_size_subcolumn_with_full_read) is enabled.
+String filters in `PREWHERE` can also use the `size` subcolumn when the full String is needed elsewhere, if [`optimize_string_size_subcolumn_with_full_read`](#optimize_string_size_subcolumn_with_full_read) is enabled.
 On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, this can avoid reading String payloads for rejected granules.
 On legacy `single_stream` parts, `size` is virtual and still requires the regular String stream. The reader can read the String and its size together when a filtering step already needs the full String. Strings needed only after `PREWHERE` remain deferred; reading their sizes skips materializing the payloads but still traverses the regular stream.
 
@@ -5696,7 +5696,7 @@ Possible values:
 )", 0, \
         {"24.8", false, true, "Enabled settings by default"}) \
     DECLARE(Bool, optimize_string_size_subcolumn_with_full_read, false, R"(
-Allows `length`, `empty`, and `notEmpty` filters on `String` columns in `WHERE` and `PREWHERE` to read the `size` subcolumn when the query also needs the full String.
+Allows `length`, `empty`, and `notEmpty` filters on `String` columns in `PREWHERE` to read the `size` subcolumn when the query also needs the full String.
 Requires [`optimize_functions_to_subcolumns`](#optimize_functions_to_subcolumns) to be enabled.
 
 On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, filtering on sizes can avoid reading String payloads for rejected granules.
