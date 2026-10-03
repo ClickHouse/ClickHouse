@@ -2940,7 +2940,7 @@ static BlockIO executeQueryImpl(
                 {
                     /// For input('auto'), make sure that Context::insertion_table_info is set.
                     if (insert_table && !context->hasInsertionTableColumnsDescription())
-                        InterpreterInsertQuery::setInsertContextValues(context, *insert_query, insert_table);
+                        InterpreterInsertQuery::setInsertContextValues(context, *insert_query, insert_table, {});
 
                     const ASTSelectQuery * select_query_hint = insert_query->select->as<ASTSelectQuery>();
                     if (!select_query_hint)
