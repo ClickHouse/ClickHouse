@@ -49,4 +49,16 @@ $CLIENT_BINARY_TYPES --query_kind secondary_query -q "INSERT INTO t_dst VALUES (
 $CLIENT_BINARY_TYPES --query_kind secondary_query -q "SELECT d, dynamicType(d) FROM t_src ORDER BY toString(d) SETTINGS enable_parallel_replicas = 0"
 $CLICKHOUSE_CLIENT -q "SELECT x FROM t_dst ORDER BY x"
 
+echo 'QueryRunner on a cluster'
+$CLICKHOUSE_CLIENT <<'EOF'
+CREATE TABLE t_runner (query String, database String, settings Map(String, String)) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', mode = 'synchronous';
+INSERT INTO t_runner SELECT 'SELECT d, dynamicType(d) FROM t_src', currentDatabase(), map('log_comment', '05317_runner_' || name, 'output_format_native_encode_types_in_binary_format', encode, 'input_format_native_decode_types_in_binary_format', decode)
+FROM values('name String, encode String, decode String', ('both', '1', '1'), ('encode', '1', '0'), ('decode', '0', '1'));
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, type, exception_code FROM system.query_log
+WHERE event_date >= yesterday() AND current_database = currentDatabase() AND log_comment LIKE '05317_runner_%' AND is_internal AND type != 'QueryStart'
+ORDER BY log_comment;
+DROP TABLE t_runner;
+EOF
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_src; DROP TABLE t_dst"
