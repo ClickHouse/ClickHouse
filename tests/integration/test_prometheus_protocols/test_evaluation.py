@@ -6114,9 +6114,7 @@ def test_standalone_start_end_range(query, start, end, step, span):
 
 
 def test_standalone_start_end_current_time():
-    assert (
-        node.query(
-            "SELECT * FROM prometheusQuery(prometheus, 'start() - time() + end() - time()', 1000.125)"
-        )
-        == "0\n"
-    )
+    query = "start() - time() + end() - time()"
+    assert execute_query_in_clickhouse_sql(
+        query, 1000.125
+    ) == execute_query_in_clickhouse_sql("0", 1000.125)
