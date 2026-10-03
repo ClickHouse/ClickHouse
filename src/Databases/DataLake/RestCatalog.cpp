@@ -73,6 +73,9 @@ namespace DB::Setting
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
+    extern const char rest_catalog_create_namespace_http_error[];
+    extern const char rest_catalog_skip_namespace_existence_check[];
+    extern const char rest_catalog_update_schema_http_error[];
 }
 
 namespace ProfileEvents
@@ -1810,6 +1813,18 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
         = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name)).generic_string();
     try
     {
+        /// Lets a test reach the "create" request below for a namespace that is already there,
+        /// which is otherwise only possible by losing a race against a concurrent creator.
+        fiu_do_on(DB::FailPoints::rest_catalog_skip_namespace_existence_check,
+        {
+            throw DB::HTTPException(
+                DB::ErrorCodes::FAULT_INJECTED,
+                check_endpoint,
+                Poco::Net::HTTPResponse::HTTP_NOT_FOUND,
+                "Injecting fault when checking namespace existence",
+                "");
+        });
+
         sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true);
         return;
     }
@@ -1837,13 +1852,28 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
 
     try
     {
+        fiu_do_on(DB::FailPoints::rest_catalog_create_namespace_http_error,
+        {
+            throw DB::HTTPException(
+                DB::ErrorCodes::FAULT_INJECTED,
+                endpoint,
+                Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR,
+                "Injecting fault when creating namespace",
+                "");
+        });
+
         sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
     catch (const DB::HTTPException & e)
     {
-        /// Lost the race to a concurrent creator.
+        /// `HTTP_CONFLICT` is how the REST catalog reports that the namespace is already there,
+        /// which is exactly the outcome this method asks for, so it is the only consumed error.
+        /// Any other failure means the namespace may not exist and must not be hidden behind
+        /// whatever the subsequent "create table" request happens to answer.
         if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
             throw;
+
+        LOG_DEBUG(log, "Namespace '{}' already exists, skipping creation", namespace_name);
     }
 }
 
@@ -2025,12 +2055,31 @@ bool RestCatalog::updateSchema(
 
     try
     {
+        fiu_do_on(DB::FailPoints::rest_catalog_update_schema_http_error,
+        {
+            throw DB::HTTPException(
+                DB::ErrorCodes::FAULT_INJECTED,
+                endpoint,
+                Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR,
+                "Injecting fault when updating schema",
+                "");
+        });
+
         sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
     catch (const DB::HTTPException & ex)
     {
-        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
-        return false;
+        /// 409 Conflict: the `assert-current-schema-id` requirement failed because of a concurrent
+        /// schema change, and the caller retries with the current schema.
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+        {
+            LOG_DEBUG(log, "updateSchema conflict for {}/{}: {}", namespace_name, table_name, ex.displayText());
+            return false;
+        }
+        /// Anything else is not something a retry with the current schema can fix, so report it as is
+        /// instead of letting the caller retry until it gives up with an unrelated error.
+        LOG_ERROR(log, "updateSchema failed for {}/{}: {}", namespace_name, table_name, ex.displayText());
+        throw;
     }
     return true;
 }
