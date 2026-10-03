@@ -155,6 +155,15 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
     result.add(
         ColumnDescription(
             "idle_bytes", std::make_shared<DataTypeUInt64>(), "Bytes of file segments with no cache hit in the last full efficiency window"));
+    result.add(
+        ColumnDescription(
+            "large_segments_active_bytes", std::make_shared<DataTypeUInt64>(), "The part of `active_bytes` in file segments with a range larger than `boundary_alignment`"));
+    result.add(
+        ColumnDescription(
+            "large_segments_passive_bytes", std::make_shared<DataTypeUInt64>(), "The part of `passive_bytes` in file segments with a range larger than `boundary_alignment`"));
+    result.add(
+        ColumnDescription(
+            "large_segments_idle_bytes", std::make_shared<DataTypeUInt64>(), "The part of `idle_bytes` in file segments with a range larger than `boundary_alignment`"));
     const auto map_type = std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>());
     result.add(
         ColumnDescription(
@@ -186,6 +195,9 @@ void FileCacheSettings::dumpToSystemSettingsColumns(
     res_columns[i++]->insert(efficiency.active_bytes);
     res_columns[i++]->insert(efficiency.passive_bytes);
     res_columns[i++]->insert(efficiency.idle_bytes);
+    res_columns[i++]->insert(efficiency.large_active_bytes);
+    res_columns[i++]->insert(efficiency.large_passive_bytes);
+    res_columns[i++]->insert(efficiency.large_idle_bytes);
 
     Map segments_by_size;
     Map bytes_by_size;

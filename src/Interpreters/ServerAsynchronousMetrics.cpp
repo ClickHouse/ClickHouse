@@ -214,6 +214,9 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         size_t active_bytes = 0;
         size_t passive_bytes = 0;
         size_t idle_bytes = 0;
+        size_t large_active_bytes = 0;
+        size_t large_passive_bytes = 0;
+        size_t large_idle_bytes = 0;
         FileCacheSegmentSizes::Buckets size_buckets{};
 
         for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
@@ -233,6 +236,9 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             active_bytes += efficiency.active_bytes;
             passive_bytes += efficiency.passive_bytes;
             idle_bytes += efficiency.idle_bytes;
+            large_active_bytes += efficiency.large_active_bytes;
+            large_passive_bytes += efficiency.large_passive_bytes;
+            large_idle_bytes += efficiency.large_idle_bytes;
         }
 
         new_values["FilesystemCacheBytes"] = { total_bytes,
@@ -247,6 +253,12 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             "Bytes of the `cache` virtual filesystem not served from the cache in the last full efficiency window, in file segments with at least one cache hit in it. Cache efficiency is active / (active + passive)." };
         new_values["FilesystemCacheIdleBytes"] = { idle_bytes,
             "Bytes of the `cache` virtual filesystem in file segments with no cache hit in the last full efficiency window." };
+        new_values["FilesystemCacheLargeSegmentsActiveBytes"] = { large_active_bytes,
+            "The part of `FilesystemCacheActiveBytes` in large file segments: the ones with a range larger than `boundary_alignment`." };
+        new_values["FilesystemCacheLargeSegmentsPassiveBytes"] = { large_passive_bytes,
+            "The part of `FilesystemCachePassiveBytes` in large file segments: the ones with a range larger than `boundary_alignment`." };
+        new_values["FilesystemCacheLargeSegmentsIdleBytes"] = { large_idle_bytes,
+            "The part of `FilesystemCacheIdleBytes` in large file segments: the ones with a range larger than `boundary_alignment`." };
 
         AsynchronousMetricKeyValues segments_by_size;
         AsynchronousMetricKeyValues bytes_by_size;

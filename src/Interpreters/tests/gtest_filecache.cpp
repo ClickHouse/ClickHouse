@@ -4785,3 +4785,53 @@ TEST_F(FileCacheTest, SegmentSizes)
     cache.initialize();
     expectSegmentSizes(cache, {{bucket_512k, {1, 3 * G}}, {bucket_2m, {1, 4 * S}}}, 4 * S);
 }
+
+TEST_F(FileCacheTest, EfficiencyLargeSegments)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_large_test"));
+    /// File segments up to `4 * S`, aligned to `S`: a segment of `4 * S` is large, one of `S` is not.
+    auto settings = efficiencyCacheSettings(W);
+    settings[FileCacheSetting::max_size] = 32 * S;
+    settings[FileCacheSetting::max_file_segment_size] = 4 * S;
+    settings[FileCacheSetting::reserve_granularity] = 0;
+    auto cache = DB::FileCache("efficiency_large", settings);
+    cache.initialize();
+    const auto & user = FileCache::getCommonOrigin();
+
+    auto large_holder = cache.getOrSet(FileCacheKey::fromPath("efficiency_large_key"), 0, 4 * S, /*file_size=*/4 * S, {}, 0, user);
+    auto large = get(large_holder, 0);
+    download(large);
+    large->markRead(0, G);
+
+    auto short_holder = cache.getOrSet(FileCacheKey::fromPath("efficiency_short_key"), 0, S, /*file_size=*/S, {}, 0, user);
+    auto short_segment = get(short_holder, 0);
+    download(short_segment);
+    short_segment->markRead(0, G);
+
+    /// A hit on a large file segment, which then shrinks to `S` (the downloaded size rounded up to the
+    /// alignment) and is not large anymore: its bytes leave the large class.
+    auto shrink_key = FileCacheKey::fromPath("efficiency_shrink_to_short_key");
+    {
+        auto holder = cache.getOrSet(shrink_key, 0, 4 * S, /*file_size=*/4 * S, {}, 0, user);
+        auto segment = get(holder, 0);
+        ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+        std::string failure_reason;
+        ASSERT_TRUE(segment->reserve(3 * G, 1000, failure_reason));
+        auto key_str = shrink_key.toString();
+        fs::create_directories(fs::path(cache_base_path) / key_str.substr(0, 3) / key_str);
+        std::string data(3 * G, '0');
+        segment->write(data.data(), data.size(), segment->getCurrentWriteOffset());
+        segment->markRead(0, G);
+    }
+    EXPECT_EQ(cache.getSegmentSizes().getLargeBytes(), 4 * S);
+
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
+    const auto snapshot = cache.getEfficiency().getSnapshot();
+    EXPECT_EQ(snapshot.active_bytes, 3 * G);
+    EXPECT_EQ(snapshot.passive_bytes, (4 * S - G) + (S - G) + 2 * G);
+    EXPECT_EQ(snapshot.idle_bytes, 0);
+    EXPECT_EQ(snapshot.large_active_bytes, G);
+    EXPECT_EQ(snapshot.large_passive_bytes, 4 * S - G);
+    EXPECT_EQ(snapshot.large_idle_bytes, 0);
+}

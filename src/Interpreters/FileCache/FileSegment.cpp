@@ -1571,7 +1571,7 @@ void FileSegment::markRead(size_t offset, size_t size)
 
     if (const auto granules = getGranuleRangeUnlocked(offset, size))
         if (const size_t bytes = setGranulesUnlocked(granules->first, granules->second))
-            efficiency.moveToActive(window, static_cast<Int64>(bytes));
+            efficiency.moveToActive(window, static_cast<Int64>(bytes), size_class.large);
 }
 
 void FileSegment::startEfficiencyWindowUnlocked(FileCacheEfficiency::Window window)
@@ -1584,7 +1584,7 @@ void FileSegment::startEfficiencyWindowUnlocked(FileCacheEfficiency::Window wind
     }
     state.active_granules.assign(lastGranuleNumber(range().size()) + 1, false);
     state.window_id = window;
-    cache->getEfficiency().addPassiveBytes(window, static_cast<Int64>(reserved_size.load()));
+    cache->getEfficiency().addPassiveBytes(window, static_cast<Int64>(reserved_size.load()), size_class.large);
 }
 
 std::optional<std::pair<size_t, size_t>> FileSegment::getGranuleRangeUnlocked(size_t offset, size_t size) const
@@ -1638,7 +1638,7 @@ void FileSegment::addReservedSize(Int64 delta)
     cache->getSegmentSizes().add(size_class, counted_in_segment_sizes ? 0 : 1, delta);
     counted_in_segment_sizes = true;
     if (efficiency_state)
-        cache->getEfficiency().addPassiveBytes(efficiency_state->window_id, delta);
+        cache->getEfficiency().addPassiveBytes(efficiency_state->window_id, delta, size_class.large);
 }
 
 void FileSegment::onLoadedIntoCache()
@@ -1657,11 +1657,17 @@ void FileSegment::onRangeShrunk()
         return;
     std::lock_guard lock(efficiency_mutex);
     const auto new_class = cache->getSegmentSizes().getClass(range().size());
+    const auto bytes = static_cast<Int64>(reserved_size.load());
     if (counted_in_segment_sizes)
     {
-        const auto bytes = static_cast<Int64>(reserved_size.load());
         cache->getSegmentSizes().add(size_class, -1, -bytes);
         cache->getSegmentSizes().add(new_class, 1, bytes);
+    }
+    if (efficiency_state && new_class.large != size_class.large)
+    {
+        /// The same bytes that `onRemovedFromCache` subtracts later, so the classes stay exact.
+        const auto active = static_cast<Int64>(getActiveBytesUnlocked());
+        cache->getEfficiency().moveToClass(efficiency_state->window_id, active, bytes - active, new_class.large);
     }
     size_class = new_class;
 }
@@ -1678,8 +1684,8 @@ void FileSegment::onRemovedFromCache(const FileSegmentGuard::Lock &)
     if (!efficiency_state)
         return;
     auto & efficiency = cache->getEfficiency();
-    efficiency.addPassiveBytes(efficiency_state->window_id, -static_cast<Int64>(reserved_size.load()));
-    efficiency.moveToActive(efficiency_state->window_id, -static_cast<Int64>(getActiveBytesUnlocked()));
+    efficiency.addPassiveBytes(efficiency_state->window_id, -static_cast<Int64>(reserved_size.load()), size_class.large);
+    efficiency.moveToActive(efficiency_state->window_id, -static_cast<Int64>(getActiveBytesUnlocked()), size_class.large);
 }
 
 bool FileSegment::wasServedFromCache() const

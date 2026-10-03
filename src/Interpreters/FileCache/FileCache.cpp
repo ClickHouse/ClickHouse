@@ -327,7 +327,10 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , expose_eviction_metrics(settings[FileCacheSetting::expose_prometheus_eviction_metrics])
     , expose_eviction_metrics_per_user(settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user])
     , segment_sizes(boundary_alignment)
-    , efficiency(settings[FileCacheSetting::efficiency_window_sec], [this] { return getUsedCacheSize(); })
+    , efficiency(
+          settings[FileCacheSetting::efficiency_window_sec],
+          [this] { return getUsedCacheSize(); },
+          [this] { return segment_sizes.getLargeBytes(); })
     , name(cache_name)
     , log(getLogger("FileCache(" + cache_name + ")"))
     , metadata(settings[FileCacheSetting::path],
