@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
+#include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionHelpers.h>
@@ -1775,7 +1776,9 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if ((name == NameEquals::name || name == NameNotEquals::name))
+        bool is_equality = (name == NameEquals::name || name == NameNotEquals::name);
+
+        if (is_equality)
         {
             if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
                 throw Exception(
@@ -1795,62 +1798,52 @@ public:
                 backQuote(getName()));
         }
 
+        bool types_compatible = is_equality
+            ? areTypesComparableForEquality(arguments[0], arguments[1])
+            : areTypesComparableForOrdering(arguments[0], arguments[1]);
+
         WhichDataType left(arguments[0].get());
         WhichDataType right(arguments[1].get());
 
         const DataTypeTuple * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
         const DataTypeTuple * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].get());
 
-        bool both_represented_by_number = arguments[0]->isValueRepresentedByNumber() && arguments[1]->isValueRepresentedByNumber();
-        bool has_date = left.isDateOrDate32() || right.isDateOrDate32();
-
-        if (!((both_represented_by_number && !has_date)   /// Do not allow to compare date and number.
-            || (left.isStringOrFixedString() || right.isStringOrFixedString())  /// Everything can be compared with string by conversion.
-            /// You can compare the date, datetime, or datetime64 and an enumeration with a constant string.
-            || ((left.isDate() || left.isDate32() || left.isDateTime() || left.isDateTime64()) && (right.isDate() || right.isDate32() || right.isDateTime() || right.isDateTime64()) && left.idx == right.idx) /// only date vs date, or datetime vs datetime
-            || (left.isUUID() && right.isUUID())
-            || ((left.isIPv4() || left.isIPv6()) && (right.isIPv4() || right.isIPv6()))
-            || (left.isEnum() && right.isEnum() && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
-            || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
-            || (arguments[0]->equals(*arguments[1]))))
+        /// `types_compatible` already includes the `tryGetLeastSupertype` check.
+        if (!types_compatible)
         {
-            if (!tryGetLeastSupertype(arguments))
+            /// Arrays with elements types bigger than 32 bits (e.g. `Array(Int64)` vs
+            /// `Array(UInt64)`, can still be compared
+            /// element-wise using the accurate scalar comparison.
+            const auto * left_array = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+            const auto * right_array = checkAndGetDataType<DataTypeArray>(arguments[1].get());
+            if (left_array && right_array)
             {
-                /// Arrays with elements types bigger than 32 bits (e.g. `Array(Int64)` vs
-                /// `Array(UInt64)`, can still be compared
-                /// element-wise using the accurate scalar comparison.
-                const auto * left_array = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-                const auto * right_array = checkAndGetDataType<DataTypeArray>(arguments[1].get());
-                if (left_array && right_array)
-                {
-                    /// Array element comparison treats inner NULLs as regular comparable values (a NULL
-                    /// is equal only to another NULL and sorts after every non-NULL value)
-                    auto left_nested_type = removeLowCardinalityAndNullable(left_array->getNestedType());
-                    auto right_nested_type = removeLowCardinalityAndNullable(right_array->getNestedType());
+                /// Array element comparison treats inner NULLs as regular comparable values (a NULL
+                /// is equal only to another NULL and sorts after every non-NULL value)
+                auto left_nested_type = removeLowCardinalityAndNullable(left_array->getNestedType());
+                auto right_nested_type = removeLowCardinalityAndNullable(right_array->getNestedType());
 
-                    /// Recurse directly instead of going through an overload resolver.
-                    DataTypePtr element_result_type = getReturnTypeImpl(DataTypes{left_nested_type, right_nested_type});
+                /// Recurse directly instead of going through an overload resolver.
+                DataTypePtr element_result_type = getReturnTypeImpl(DataTypes{left_nested_type, right_nested_type});
 
-                    /// Reject only aligned string-vs-non-string positions
-                    bool has_string_vs_non_string = hasAlignedStringVsNonStringElement(left_nested_type, right_nested_type);
+                /// Reject only aligned string-vs-non-string positions
+                bool has_string_vs_non_string = hasAlignedStringVsNonStringElement(left_nested_type, right_nested_type);
 
-                    /// The element comparator yields `UInt8` for the mixed signed/unsigned case. For a
-                    /// nested-`Nullable` composite element (e.g. `Tuple(Nullable(T))`) it yields `Nullable(UInt8)`;
-                    const bool is_equality = (name == NameEquals::name || name == NameNotEquals::name);
-                    const bool element_result_ok
-                        = WhichDataType(element_result_type.get()).isUInt8()
-                        || (is_equality && element_result_type->isNullable()
-                            && WhichDataType(removeNullable(element_result_type).get()).isUInt8());
-                    /// Tested on the unstripped nested types, so the `Nullable` arms stay visible.
-                    if (element_result_ok && !has_string_vs_non_string
-                        && !containsUndecidableNothing(left_array->getNestedType())
-                        && !containsUndecidableNothing(right_array->getNestedType()))
-                        return std::make_shared<DataTypeUInt8>();
-                }
-
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
-                    " of function {}", backQuote(arguments[0]->getName()), backQuote(arguments[1]->getName()), backQuote(getName()));
+                /// The element comparator yields `UInt8` for the mixed signed/unsigned case. For a
+                /// nested-`Nullable` composite element (e.g. `Tuple(Nullable(T))`) it yields `Nullable(UInt8)`;
+                const bool element_result_ok
+                    = WhichDataType(element_result_type.get()).isUInt8()
+                    || (is_equality && element_result_type->isNullable()
+                        && WhichDataType(removeNullable(element_result_type).get()).isUInt8());
+                /// Tested on the unstripped nested types, so the `Nullable` arms stay visible.
+                if (element_result_ok && !has_string_vs_non_string
+                    && !containsUndecidableNothing(left_array->getNestedType())
+                    && !containsUndecidableNothing(right_array->getNestedType()))
+                    return std::make_shared<DataTypeUInt8>();
             }
+
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
+                " of function {}", backQuote(arguments[0]->getName()), backQuote(arguments[1]->getName()), backQuote(getName()));
         }
 
         bool both_tuples = left_tuple && right_tuple;

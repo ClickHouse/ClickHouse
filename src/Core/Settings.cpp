@@ -6858,6 +6858,11 @@ Possible values:
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
 )", 0, \
         {"24.4", false, true, "Only available for the analyzer, where it works correctly"}) \
+    DECLARE(Bool, optimize_in_to_equal, true, R"(
+Convert `IN` with a single element to `equals`, and `NOT IN` to `notEquals`.
+For example, `x IN (1)` becomes `x = 1`, `x NOT IN (1)` becomes `x != 1`.
+)", 0, \
+        {"26.10", false, true, "New setting: optimize `IN` with single element to `equals`, and `NOT IN` to `notEquals`."}) \
     DECLARE(Bool, optimize_empty_string_comparisons, true, R"(
 Convert expressions like col = '' or '' = col into empty(col), and col != '' or '' != col into notEmpty(col),
 only when col is of String or FixedString type.

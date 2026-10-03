@@ -1,0 +1,52 @@
+a	1	1
+---
+b	2	2
+c	3	\N
+---
+FUNCTION function_name: in, function_type: ordinary, result_type: UInt8
+---
+FUNCTION function_name: in, function_type: ordinary, result_type: UInt8
+---
+FUNCTION function_name: in, function_type: ordinary, result_type: UInt8
+---
+FUNCTION function_name: notIn, function_type: ordinary, result_type: UInt8
+---
+FUNCTION function_name: equals, function_type: ordinary, result_type: UInt8
+---
+FUNCTION function_name: notEquals, function_type: ordinary, result_type: UInt8
+---
+a	1	1
+---
+FUNCTION function_name: in, function_type: ordinary, result_type: Nullable(UInt8)
+---
+FUNCTION function_name: notIn, function_type: ordinary, result_type: Nullable(UInt8)
+---
+0
+1
+\N
+---
+---
+FUNCTION function_name: in, function_type: ordinary, result_type: UInt8
+---
+a	1	1
+---
+b	2	2
+c	3	\N
+---
+0
+---
+FUNCTION function_name: in, function_type: ordinary, result_type: UInt8
+---
+---
+a
+---
+FUNCTION function_name: in, function_type: ordinary, result_type: LowCardinality(Nullable(UInt8))
+---
+0
+1
+\N
+---
+---
+FUNCTION function_name: equals, function_type: ordinary, result_type: UInt8
+---
+FUNCTION function_name: notEquals, function_type: ordinary, result_type: UInt8
