@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-merge-tree-settings, no-parallel-replicas
+-- Tags: no-parallel, no-random-merge-tree-settings, no-parallel-replicas, no-random-detach
+-- no-random-detach: test checks exact row counts
 
 drop table if exists test;
 

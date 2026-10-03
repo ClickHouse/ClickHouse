@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-object-storage
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-object-storage, no-random-detach
+-- no-random-detach: test checks profile events
 -- add_minmax_index_for_numeric_columns=0: More files opened
 
 drop table if exists t_multi_prewhere;

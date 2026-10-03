@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-asan, no-msan, no-tsan, no-async-insert, no-debug, no-fasttest, no-replicated-database
+# Tags: no-random-settings, no-asan, no-msan, no-tsan, no-async-insert, no-debug, no-fasttest, no-replicated-database, no-random-detach
 # no-fasttest: The test runs for 40 seconds
+# no-random-detach: a concurrent thread runs `select count() from dedup_test` and asserts a fixed row count while
+#     inserts run on other connections; the random `DETACH`/`ATTACH` window makes `dedup_test` momentarily inaccessible
+#     to concurrent queries (`UNKNOWN_TABLE`), which is expected `DETACH` behavior, not a product bug.
 # shellcheck disable=SC2009
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

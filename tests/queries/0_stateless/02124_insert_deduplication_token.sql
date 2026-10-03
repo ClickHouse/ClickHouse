@@ -1,3 +1,5 @@
+-- Tags: no-random-detach
+-- no-random-detach: test checks deduplication
 -- insert data duplicates by providing deduplication token on insert
 
 DROP TABLE IF EXISTS insert_dedup_token SYNC;

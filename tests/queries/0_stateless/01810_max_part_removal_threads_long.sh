@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-object-storage
+# Tags: long, no-object-storage, no-random-detach
+# no-random-detach: test checks profile events
 # Because parallel parts removal disabled for s3 storage
 
 # NOTE: this done as not .sql since we need to Ordinary database

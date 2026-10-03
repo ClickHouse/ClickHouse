@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-object-storage, no-random-settings, no-replicated-database
+# Tags: no-fasttest, no-parallel, no-object-storage, no-random-settings, no-replicated-database, no-random-detach
+# no-random-detach: test checks profile events and cache state
 
 # set -x
 

@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-shared-merge-tree
+-- Tags: no-parallel, no-shared-merge-tree, no-random-detach
+-- no-random-detach: test checks cache state
 
 DROP TABLE IF EXISTS t_prewarm_cache_rmt_1;
 DROP TABLE IF EXISTS t_prewarm_cache_rmt_2;
