@@ -2975,8 +2975,8 @@ void ClientBase::processParsedSingleQuery(
         else if (!connection->checkConnectedWithoutRoundTrip())
             connect();
 
-        applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
         connection->setFormatSettings(getNativeWireFormatSettings(client_context, server_revision));
+        applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
 
         /// With `use_client_time_zone`, DateTime string literals must be interpreted in the client time
         /// zone. The client parses synchronous INSERT literals itself, but literals interpreted server-side

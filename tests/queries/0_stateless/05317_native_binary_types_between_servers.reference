@@ -18,7 +18,3 @@ secondary query from a client
 str	String
 7
 8
-flags from a user profile
-42	UInt64
-str	String
-9
