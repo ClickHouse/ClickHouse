@@ -35,12 +35,16 @@ struct CurrentlyMergingPartsTagger
         size_t total_size,
         StorageMergeTree & storage_,
         const StorageMetadataPtr & metadata_snapshot,
-        bool is_mutation);
+        bool is_mutation,
+        time_t time_of_move = 0);
 
     /// The finalize() method acquires the `currently_processing_in_background_mutex` lock
     /// to remove the parts from the `currently_merging_mutating_parts` set.
     /// This might take a lot of time and it's important not to do it in the destructor.
     void finalize();
+    /// The same as `finalize`, for a caller that already holds `currently_processing_in_background_mutex`
+    /// (a selection that fails after the tagger was created, before it is published).
+    void finalizeUnlocked();
     ~CurrentlyMergingPartsTagger();
 };
 

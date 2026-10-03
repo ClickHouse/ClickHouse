@@ -1008,7 +1008,8 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
     size_t total_size,
     StorageMergeTree & storage_,
     const StorageMetadataPtr & metadata_snapshot,
-    bool is_mutation)
+    bool is_mutation,
+    time_t time_of_move)
     : future_part(future_part_), storage(storage_)
 {
     /// Assume mutex is already locked, because this method is called from mergeTask.
@@ -1038,11 +1039,13 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
             future_part->part_info,
             future_part->parts,
             &tagger,
-            &ttl_infos);
+            &ttl_infos,
+            /*is_insert=*/false,
+            time_of_move);
 
         if (!reserved_space)
-            reserved_space
-                = storage.tryReserveSpacePreferringTTLRules(metadata_snapshot, total_size, ttl_infos, time(nullptr), max_volume_index);
+            reserved_space = storage.tryReserveSpacePreferringTTLRules(
+                metadata_snapshot, total_size, ttl_infos, time_of_move ? time_of_move : time(nullptr), max_volume_index);
     }
 
     if (!reserved_space)
@@ -1069,6 +1072,11 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
 void CurrentlyMergingPartsTagger::finalize()
 {
     std::lock_guard lock(storage.currently_processing_in_background_mutex);
+    finalizeUnlocked();
+}
+
+void CurrentlyMergingPartsTagger::finalizeUnlocked()
+{
     finalized = true;
 
     for (const auto & part : future_part->parts)
@@ -2130,42 +2138,59 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 }
             }
 
+            /// The tagger chooses the destination with the same captured timestamp the candidate destinations
+            /// above were narrowed with, so a selection that straddles a move TTL boundary cannot price the
+            /// pre-boundary destination and then reserve on the post-boundary one.
             uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
-            auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, needed_disk_space, *this, metadata_snapshot, false);
+            auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(
+                future_part, needed_disk_space, *this, metadata_snapshot, /*is_mutation=*/false, time_of_merge);
 
-            /// The tagger has now chosen the actual destination disk. Redo the reservation with that disk's
-            /// own write buffer sizes whenever the output is on a remote disk (its multipart upload sizing
-            /// can be smaller than the worst case over the policy's remote disks the admission used - or
-            /// absent: a remote disk like HDFS has no multipart upload buffers and gets the local
-            /// per-stream estimate) or when the admission priced a possible remote destination the tagger
-            /// did not pick (a local destination re-estimates at the local price). Since the admission
-            /// check already used the worst case over the disks this table can write to, this correction
-            /// only keeps or lowers the reservation; the merge is already committed to run at this point,
-            /// so reserve unconditionally (as the replicated path does) - the corrected reservation still
-            /// throttles selection of further merges. The swap must be atomic (`replace`, not a fresh
-            /// `reserve` moved over the old value): concurrent selectors would otherwise observe the
-            /// transient `old + new` total and spuriously reject merges that fit.
-            const DiskPtr actual_disk = tagger->reserved_space->getDisk();
-            const bool actual_output_on_remote_disk = actual_disk->isRemote();
-            if (actual_output_on_remote_disk || actual_output_on_remote_disk != output_may_be_on_remote_disk)
+            /// The tagger is live while `currently_processing_in_background_mutex` (`lock`) is held, and its
+            /// destructor would re-lock that mutex in `finalize`. Until ownership leaves this scope, an
+            /// exception (from the re-estimate or the entry allocation below) must untag the parts without
+            /// locking, instead of deadlocking on stack unwinding.
+            try
             {
-                memory_reservation = MergeMemoryReservation::replace(
-                    std::move(*memory_reservation),
-                    CompactionStatistics::estimateNeededMemoryForMerge(
-                        *future_part, metadata_snapshot, merge_context, *data_settings, mutations_snapshot, time_of_merge,
-                        actual_output_on_remote_disk,
-                        {CompactionStatistics::getDiskWriteBufferMemory(actual_disk, merge_write_settings)},
-                        deduplicate, merge_with_cleanup));
+                /// The tagger has now chosen the actual destination disk. Redo the reservation with that disk's
+                /// own write buffer sizes whenever the output is on a remote disk (its multipart upload sizing
+                /// can be smaller than the worst case over the policy's remote disks the admission used - or
+                /// absent: a remote disk like HDFS has no multipart upload buffers and gets the local
+                /// per-stream estimate) or when the admission priced a possible remote destination the tagger
+                /// did not pick (a local destination re-estimates at the local price). Since the admission
+                /// check already used the worst case over the disks this table can write to, this correction
+                /// only keeps or lowers the reservation; the merge is already committed to run at this point,
+                /// so reserve unconditionally (as the replicated path does) - the corrected reservation still
+                /// throttles selection of further merges. The swap must be atomic (`replace`, not a fresh
+                /// `reserve` moved over the old value): concurrent selectors would otherwise observe the
+                /// transient `old + new` total and spuriously reject merges that fit.
+                const DiskPtr actual_disk = tagger->reserved_space->getDisk();
+                const bool actual_output_on_remote_disk = actual_disk->isRemote();
+                if (actual_output_on_remote_disk || actual_output_on_remote_disk != output_may_be_on_remote_disk)
+                {
+                    memory_reservation = MergeMemoryReservation::replace(
+                        std::move(*memory_reservation),
+                        CompactionStatistics::estimateNeededMemoryForMerge(
+                            *future_part, metadata_snapshot, merge_context, *data_settings, mutations_snapshot, time_of_merge,
+                            actual_output_on_remote_disk,
+                            {CompactionStatistics::getDiskWriteBufferMemory(actual_disk, merge_write_settings)},
+                            deduplicate, merge_with_cleanup));
+                }
+
+                tagger->memory_reservation = std::move(*memory_reservation);
+
+                auto selected_entry = std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
+                selected_entry->time_of_merge = time_of_merge;
+                selected_entry->merge_context = merge_context;
+                selected_entry->data_settings = data_settings;
+                selected_entry->cleanup = merge_with_cleanup;
+                return selected_entry;
             }
-
-            tagger->memory_reservation = std::move(*memory_reservation);
-
-            auto selected_entry = std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
-            selected_entry->time_of_merge = time_of_merge;
-            selected_entry->merge_context = merge_context;
-            selected_entry->data_settings = data_settings;
-            selected_entry->cleanup = merge_with_cleanup;
-            return selected_entry;
+            catch (...)
+            {
+                if (tagger)
+                    tagger->finalizeUnlocked();
+                throw;
+            }
         }
         catch (...)
         {
