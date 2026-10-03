@@ -367,8 +367,10 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     /// A prior run measured the query's staged stream as repeat-dominated and thawed: freezing
     /// cannot pay for this query, so do not engage it again. The verdict lives in the hash-table
     /// statistics; a run without it takes the ordinary path with the statistics-driven
-    /// initialization, exactly as if the feature were off.
-    if (params.stats_collecting_params.isCollectionAndUseEnabled())
+    /// initialization, exactly as if the feature were off. A run that may not thaw does not ask:
+    /// the verdict is the thaw's, and keeping the tables frozen whatever the repeats is what the
+    /// user asked for.
+    if (params.stats_collecting_params.isCollectionAndUseEnabled() && !params.adaptive_aggregator_disable_thaw)
     {
         const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
         if (hint && hint->adaptive_staging_repeat_dominated)

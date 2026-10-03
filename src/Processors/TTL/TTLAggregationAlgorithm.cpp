@@ -160,7 +160,8 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         settings[Setting::enable_packed_string_keys_in_aggregation],
         /* enable_adaptive_aggregator */ false,
         /* adaptive_aggregator_freeze_threshold */ 0,
-        /* adaptive_aggregator_freeze_threshold_bytes */ 0);
+        /* adaptive_aggregator_freeze_threshold_bytes */ 0,
+        /* adaptive_aggregator_disable_thaw */ false);
 
     aggregator = std::make_unique<Aggregator>(header, params);
 

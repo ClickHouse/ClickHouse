@@ -4841,6 +4841,10 @@ The number of keys at which the adaptive aggregator freezes a thread's local has
 The memory size at which the adaptive aggregator freezes a thread's local hash table (see `enable_adaptive_aggregator`). A table freezes at whichever of this and `adaptive_aggregator_freeze_threshold` is reached first. The size is the local table's own allocated bytes (its hash-table buffer plus its arenas), checked between blocks. The byte bound matters when the keys or the aggregation states are wide: the key-count threshold alone would let such tables outgrow the CPU caches. At the default, tables of ordinary key and state widths keep freezing by the key count. 0 disables the byte bound, so the key-count threshold alone decides.
 )", 0, \
         {"26.9", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."}) \
+    DECLARE(Bool, adaptive_aggregator_disable_thaw, false, R"(
+Disables the thaw of the adaptive aggregator (see `enable_adaptive_aggregator`). By default, when the rows that miss the frozen tables keep repeating the same keys instead of bringing new ones, every thread thaws its table and finishes the aggregation in the ordinary way, and the verdict is remembered in the hash-table statistics (`collect_hash_table_stats_during_aggregation`), so that later runs of the query do not use the adaptive aggregator at all. With this setting, the tables stay frozen until the input ends, whatever the repeats, and a remembered verdict is ignored.
+)", 0, \
+        {"26.10", false, false, "New setting to keep the adaptive aggregator's local tables frozen whatever the repeats of the staged keys, ignoring a thaw verdict remembered in the hash-table statistics."}) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 )", 0, \

@@ -454,7 +454,8 @@ Aggregator::Params::Params(
     bool enable_packed_string_keys_,
     bool enable_adaptive_aggregator_,
     UInt64 adaptive_aggregator_freeze_threshold_,
-    UInt64 adaptive_aggregator_freeze_threshold_bytes_)
+    UInt64 adaptive_aggregator_freeze_threshold_bytes_,
+    bool adaptive_aggregator_disable_thaw_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -480,6 +481,7 @@ Aggregator::Params::Params(
     , enable_adaptive_aggregator(enable_adaptive_aggregator_)
     , adaptive_aggregator_freeze_threshold(adaptive_aggregator_freeze_threshold_)
     , adaptive_aggregator_freeze_threshold_bytes(adaptive_aggregator_freeze_threshold_bytes_)
+    , adaptive_aggregator_disable_thaw(adaptive_aggregator_disable_thaw_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , enable_parallel_single_level_merge(enable_parallel_single_level_merge_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)

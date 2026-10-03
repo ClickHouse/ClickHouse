@@ -1132,10 +1132,16 @@ void NO_INLINE Aggregator::appendDelayedRecords(
     /// to freeze also checks it at the crossing, so no table freezes against it. The current
     /// records stay staged: their rows were deferred by the frozen kernel and only the merge
     /// will aggregate them.
+    ///
+    /// With `adaptive_aggregator_disable_thaw` the sampler does not run at all. The verdict can
+    /// then never fire, and a run that gathered no evidence records none in the hash-table
+    /// statistics either (`updateStatistics` and `recordAdaptiveStagingVerdict` record one only
+    /// once the sampler has counted `adaptive_thaw_min_staged_records` staged records), so they
+    /// keep the verdict of the runs that may thaw.
     size_t batch_bytes = key_bytes + (counts_only ? total * sizeof(UInt32) : variable_argument_bytes);
     batch_bytes += total * (sizeof(UInt64) + (adaptive_key_stages_bytes<SharedKey> ? sizeof(UInt64) : 0));
 
-    if (!shared.thaw_all.load(std::memory_order_relaxed))
+    if (!params.adaptive_aggregator_disable_thaw && !shared.thaw_all.load(std::memory_order_relaxed))
     {
         PaddedPODArray<UInt64> sampled_hashes;
         for (const auto hash : adaptive.miss_hashes)
