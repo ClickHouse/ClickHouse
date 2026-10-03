@@ -249,6 +249,11 @@ public:
         const TreeRewriterResultPtr & syntax_analyzer_result,
         ContextPtr context);
 
+    /// Whether a real NULL is nested somewhere in `field`. A `Tuple`, `Array` or `Map` key value holds its
+    /// NULLs inside, where `Field::isNull` does not see them - and where it would answer true for the
+    /// `-inf`/`+inf` stand-ins of a nullable key range, which are not NULLs.
+    static bool fieldHasNullInside(const Field & field);
+
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
         const MonotonicFunctionsChain & functions,

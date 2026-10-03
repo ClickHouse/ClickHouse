@@ -5733,8 +5733,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "detectCharset",
          "detectLanguage",
          "detectLanguageUnknown",
-         "detectLanguageMixed",
-         "detectTonality"},
+         "detectLanguageMixed"},
         /// Word-level NLP (language/extension + word)
         {"stem", "lemmatize", "synonyms"},
         /// AI functions over (text, const String arg, [params]): instruction / condition / language / model
