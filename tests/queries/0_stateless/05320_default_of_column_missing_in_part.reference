@@ -1,0 +1,21 @@
+a
+1970-01-01
+3
+1970
+LowCardinality(String)
+QBit(Float32, 4)
+1
+1
+Dynamic
+\N	1	(0)	1
+1
+1	a	a	1970-01-01	3	1970	LowCardinality(String)	QBit(Float32, 4)	1	1	Dynamic
+2	a	a	1970-01-01	3	1970	LowCardinality(String)	QBit(Float32, 4)	1	1	Dynamic
+a
+a
+11
+21
+(10)	11
+(20)	21
+1	a	a	(10)	11
+2	a	a	(20)	21

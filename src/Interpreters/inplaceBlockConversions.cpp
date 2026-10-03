@@ -142,16 +142,19 @@ void addDefaultRequiredExpressionsRecursively(
 
         /// This column is required, but doesn't have default expression, so lets use "default default"
         const auto & column = columns.get(required_column_name);
-        auto default_value = column.type->getDefault();
-        ASTPtr expr = make_intrusive<ASTLiteral>(default_value);
+        ASTPtr expr = makeASTFunction("defaultValueOfTypeName", make_intrusive<ASTLiteral>(column.type->getName()));
         if (is_column_in_query && convert_null_to_default)
-        {
-            /// We should CAST default value to required type, otherwise the result of ifNull function can be different type.
-            auto cast_expr = makeASTFunction("_CAST", std::move(expr), make_intrusive<ASTLiteral>(columns.get(required_column_name).type->getName()));
-            expr = makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column_name), std::move(cast_expr));
-        }
+            expr = makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column_name), std::move(expr));
         default_expr_list_accum->children.emplace_back(setAlias(expr, required_column_name));
         added_columns.emplace(required_column_name);
+    }
+    else if (auto column_in_storage = columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), required_column_name);
+             column_in_storage && column_in_storage->isSubcolumn())
+    {
+        /// A subcolumn has no default of its own, it is taken from its column.
+        addDefaultRequiredExpressionsRecursively(
+            block, column_in_storage->getNameInStorage(), column_in_storage->getTypeInStorage(),
+            columns, default_expr_list_accum, added_columns, /*null_as_default=*/ false);
     }
 }
 
