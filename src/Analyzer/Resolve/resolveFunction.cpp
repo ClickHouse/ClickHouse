@@ -48,6 +48,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/grouping.h>
 #include <Storages/StorageJoin.h>
+#include <Storages/StorageProxy.h>
 
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -1541,7 +1542,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         scope.scope_node->formatASTForErrorMessage());
 
                 auto & table_node_typed = table_node->as<TableNode &>();
-                if (!std::dynamic_pointer_cast<StorageJoin>(table_node_typed.getStorage()))
+                if (!castStorage<StorageJoin>(table_node_typed.getStorage(), DeferredTable::Load))
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} table '{}' should have engine StorageJoin. In scope {}",
                         function_name,
@@ -2525,8 +2526,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
-            /// Replace storage with values storage of insertion block
-            if (StoragePtr storage = scope.context->getViewSource())
+            /// Replace storage with values storage of insertion block.
+            /// The inner query of an ordinary view referenced by the view query reads the table itself.
+            if (StoragePtr storage = scope.context->getViewSource(); storage && !scope.context->isViewInnerQuery())
             {
                 QueryTreeNodePtr table_expression = in_second_argument;
 
@@ -2913,9 +2915,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 if (query_context->hasScalar(scalar_string))
                 {
                     auto scalar = query_context->getScalar(scalar_string);
-                    argument_column.column = ColumnConst::create(scalar.getByPosition(0).column, 1);
-                    argument_column.type = get_scalar_function_node->getResultType();
-                    argument_is_constant = true;
+                    const auto & scalar_column = scalar.getByPosition(0).column;
+                    const auto & get_scalar_result_type = get_scalar_function_node->getResultType();
+                    /// The column comes from the scalars map while the type comes from the resolved node, and the
+                    /// two disagree when the overload resolver wrapped the node's result type (a Nullable name).
+                    if (scalar_column->size() == 1 && columnMatchesType(*scalar_column, *get_scalar_result_type))
+                    {
+                        argument_column.column = ColumnConst::create(scalar_column, 1);
+                        argument_column.type = get_scalar_result_type;
+                        argument_is_constant = true;
+                    }
                 }
             }
         }
