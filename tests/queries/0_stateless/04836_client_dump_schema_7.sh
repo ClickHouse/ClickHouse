@@ -239,7 +239,7 @@ CREATE MATERIALIZED VIEW ${DB}.mv_udf (y Int64) ENGINE = Memory AS SELECT later_
 CREATE FUNCTION later_udf AS x -> x + 1;
 "
 echo "view calling a later user-defined function, bad-select gate emitted: $(grep -c "$BADSEL_RE" "$DUMP_FILE")"
-echo "view calling a later user-defined function, warning: $(grep -c 'calls user-defined function `later_udf`' "$ERR_FILE")"
+echo "view calling a later user-defined function, warning: $(grep -c 'calls user-defined function later_udf,' "$ERR_FILE")"
 replay_local 'view calling a later user-defined function' 'mv%'
 # A projection's GROUP BY and ORDER BY keys can never be Variant or Dynamic, so only a window in it reads a gate.
 make_dump "
