@@ -54,6 +54,7 @@ def started_cluster():
                 "configs/allowed_disks_for_table_engines.xml",
             ],
             with_gcs=True,
+            stay_alive=True,
             env_variables={
                 "NATIVE_GCS_DYNAMIC_DISK_TYPE": "gcs",
                 "NATIVE_GCS_DYNAMIC_DISK_HEADER": "X-ClickHouse-Native-GCS-Env-Header: 1",
@@ -743,8 +744,11 @@ def test_profile_events(started_cluster):
     )
 
     write_id = f"gcs_ev_write_{uuid.uuid4()}"
+    # A synchronous insert, so the part is written by this query rather than by a background flush
+    # of the asynchronous insert queue, which would account the requests to another query.
     node.query(
         "INSERT INTO gcs_events SELECT number, toString(number) FROM numbers(10000)",
+        settings={"async_insert": 0},
         query_id=write_id,
     )
 
@@ -939,6 +943,7 @@ def test_request_rate_throttler_disk(started_cluster):
     write_id = f"gcs_throttle_disk_write_{uuid.uuid4()}"
     node.query(
         "INSERT INTO gcs_throttle SELECT number, toString(number) FROM numbers(1000)",
+        settings={"async_insert": 0},
         query_id=write_id,
     )
 
