@@ -217,7 +217,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                error_code = static_cast<Int32>(e.StatusCode);
+                error_code = getAzureErrorCodeForLog(e);
                 error_message = e.Message;
                 if (blob_log)
                     blob_log->addEvent(
@@ -280,7 +280,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                error_code = static_cast<Int32>(e.StatusCode);
+                error_code = getAzureErrorCodeForLog(e);
                 error_message = e.Message;
                 if (blob_log)
                     blob_log->addEvent(
@@ -362,7 +362,7 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            error_code = static_cast<Int32>(e.StatusCode);
+            error_code = getAzureErrorCodeForLog(e);
             error_message = e.Message;
             if (blob_log)
                 blob_log->addEvent(
@@ -559,7 +559,7 @@ void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage:
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            error_code = static_cast<Int32>(e.StatusCode);
+            error_code = getAzureErrorCodeForLog(e);
             error_message = e.Message;
             if (blob_log)
                 blob_log->addEvent(

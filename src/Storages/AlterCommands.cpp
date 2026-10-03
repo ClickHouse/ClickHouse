@@ -47,6 +47,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
@@ -1273,7 +1274,14 @@ void AlterCommand::apply(
 
         SharedHeader as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
 
-        metadata.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
+        /// A comment, unlike the other column attributes, stays valid for any type the new query gives the column.
+        ColumnsDescription new_columns;
+        for (const auto & column : as_select_sample->getNamesAndTypesList())
+        {
+            const auto * previous_column = metadata.columns.tryGet(column.name);
+            new_columns.add(ColumnDescription(column.name, column.type, previous_column ? previous_column->comment : String{}));
+        }
+        metadata.columns = std::move(new_columns);
     }
     else if (type == MODIFY_REFRESH)
     {
@@ -2116,7 +2124,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     const auto virtuals = metadata->virtuals;
 
     bool share_nested = true;
-    if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+    if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
         share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
     auto all_columns = metadata->columns;
@@ -2405,7 +2413,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (all_columns.hasNested(command.column_name))
             {
                 bool skip = false;
-                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+                if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
                     skip = !(*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
                 if (!skip)
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename whole Nested struct");
@@ -2448,7 +2456,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             /// When share_nested_offsets is disabled, dotted-name columns are independent
             /// and not part of a Nested group, so they can be freely renamed.
-            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+            if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
             {
                 if (!(*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets])
                 {

@@ -10,6 +10,7 @@
 #include <mutex>
 #include <unistd.h>
 #include <unordered_map>
+#include <vector>
 
 namespace DB
 {
@@ -22,6 +23,7 @@ struct ThreadEventData
 
     UInt64 user_ms      = 0;
     UInt64 system_ms    = 0;
+    UInt64 waited_us    = 0;
     UInt64 memory_usage = 0;
     UInt64 temp_data_on_disk_usage = 0;
 
@@ -104,10 +106,23 @@ public:
     void updateThreadEventData(HostToTimesMap & new_hosts_data);
 
 private:
-    double getCPUUsage();
-    /// IO (disk + object storage + network) rate in bytes per second, without the native
-    /// protocol's own service packets (0 when the server does not report the underlying counters).
-    double getIORate();
+    struct ProfileSnapshot
+    {
+        double cpu_usage = 0;
+        /// Average number of threads sleeping in throttlers or waiting for the IO scheduler.
+        double waited = 0;
+        /// IO (disk + object storage + network) rate in bytes per second, without the native
+        /// protocol's own service packets (0 when the server does not report the underlying counters).
+        double io_rate = 0;
+        MemoryUsage memory;
+        TempDataOnDiskUsage temp_data_on_disk;
+    };
+
+    /// All resource usage values at once, consistent with each other.
+    ProfileSnapshot getProfileSnapshot();
+
+    static MemoryUsage sumMemoryUsage(const HostToTimesMap & hosts);
+    static TempDataOnDiskUsage sumTempDataOnDiskUsage(const HostToTimesMap & hosts);
 
     UInt64 getElapsedNanoseconds() const;
 
@@ -119,6 +134,14 @@ private:
     /// to check whether progress output needs to be cleared.
     size_t written_progress_chars = 0;
 
+    /// Progress counts at which the stalled state flipped; colors the bar by history.
+    /// The counts do not depend on the width of the terminal: the history is compacted to at most
+    /// `bar_history_resolution` cells, and rendered at the current width of the bar.
+    std::vector<std::pair<UInt64, bool>> bar_segments;
+    static constexpr size_t bar_history_resolution = 4096;
+    /// Whether the counts stored in `bar_segments` are numbers of rows (or of bytes otherwise).
+    bool bar_segments_in_rows = false;
+
     /// The server periodically sends information about how much data was read since last time.
     /// This information is stored here.
     Progress progress;
@@ -129,6 +152,7 @@ private:
     bool write_progress_on_update = false;
 
     EventRateMeter cpu_usage_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average cpu utilization last 2 second, skip first 4 points
+    EventRateMeter waited_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4};
     EventRateMeter io_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average IO (disk + object storage + network) rate last 2 seconds
     HostToTimesMap hosts_data;
     /// In case of all of the above:

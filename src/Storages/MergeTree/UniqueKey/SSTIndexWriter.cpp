@@ -479,7 +479,7 @@ UInt64 SSTIndexWriter::writeDenseIndexOnInsert(
     /// The SST needs Full part storage: load-time rebuild calls `removeFileIfExists`
     /// + `writeFile`, but packed storage only supports these through the writer,
     /// which is not initialized at load/ATTACH time.
-    /// (`MergeTreeDataWriter` forces Full storage for UNIQUE KEY parts.)
+    /// (`MergeTreeData::choosePartFormat` forces Full storage for UNIQUE KEY parts.)
     if (storage.getType() != MergeTreeDataPartStorageType::Full)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "UNIQUE KEY dense index requires full part storage, got part storage type {}",
