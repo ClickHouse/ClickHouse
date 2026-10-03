@@ -1,0 +1,7 @@
+--- SHOW COLUMNS on the targets: the temporary aliases expose the target metadata ---
+1	1	1
+1	1
+--- target SHOW COLUMNS revoked: metadata withheld, rows still emitted ---
+0	0	1
+0	1
+ACCESS_DENIED
