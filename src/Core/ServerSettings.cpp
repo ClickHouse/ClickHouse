@@ -677,6 +677,10 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(UInt64, parquet_metadata_cache_size, DEFAULT_PARQUET_METADATA_CACHE_MAX_SIZE, "Maximum size of parquet metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, parquet_metadata_cache_max_entries, DEFAULT_PARQUET_METADATA_CACHE_MAX_ENTRIES, "Maximum size of parquet metadata files cache in entries. Zero means disabled.", 0) \
     DECLARE(Double, parquet_metadata_cache_size_ratio, DEFAULT_PARQUET_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the parquet metadata cache relative to the cache's total size.", 0) \
+    DECLARE(String, puffin_files_cache_policy, DEFAULT_PUFFIN_FILES_CACHE_POLICY, "Puffin files cache policy name (SLRU or LRU).", 0) \
+    DECLARE(UInt64, puffin_files_cache_size, DEFAULT_PUFFIN_FILES_CACHE_MAX_SIZE, "Maximum size of Puffin files cache in bytes. Zero means disabled.", 0) \
+    DECLARE(UInt64, puffin_files_cache_max_entries, DEFAULT_PUFFIN_FILES_CACHE_MAX_ENTRIES, "Maximum number of entries in the Puffin files cache. Zero means unlimited.", 0) \
+    DECLARE(Double, puffin_files_cache_size_ratio, DEFAULT_PUFFIN_FILES_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the Puffin files cache relative to the cache's total size.", 0) \
     DECLARE(String, allowed_disks_for_table_engines, "", "List of disks allowed for use with Iceberg", 0) \
     DECLARE(String, vector_similarity_index_cache_policy, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_POLICY, "Vector similarity index cache policy name.", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_size, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_SIZE, R"(Size of cache for vector similarity indexes. Zero means disabled.

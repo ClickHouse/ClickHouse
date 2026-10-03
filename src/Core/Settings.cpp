@@ -6611,6 +6611,17 @@ Possible values:
 - 1 - Enabled
 )", 0, \
         {"25.4", true, true, "New setting"}) \
+    DECLARE(Bool, use_puffin_files_cache, true, R"(
+Cache parsed Iceberg deletion vectors loaded from Puffin files. A repeated read of the same blob
+(same storage, path, strong etag, offset and size) reuses the cached bitmap instead of reading the
+object again. Weak or empty etags are not cached. Cleared by `SYSTEM DROP PUFFIN FILES CACHE`.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0, \
+        {"26.10", false, true, "New setting."}) \
     DECLARE(Bool, use_paimon_metadata_files_cache, false, R"(
 If turned on, paimon table function and paimon storage may utilize the paimon metadata files cache.
 

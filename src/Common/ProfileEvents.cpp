@@ -127,6 +127,10 @@
     M(ParquetMetadataCacheHits, "Number of times parquet metadata has been found in the cache.", ValueType::Number) \
     M(ParquetMetadataCacheMisses, "Number of times parquet metadata has not been found in the cache and had to be read from disk.", ValueType::Number) \
     M(ParquetMetadataCacheWeightLost, "Approximate number of bytes evicted from the parquet metadata cache.", ValueType::Number) \
+    M(PuffinFilesCacheHits, "Number of times a parsed Puffin deletion vector was served from the cache.", ValueType::Number) \
+    M(PuffinFilesCacheMisses, "Number of times a parsed Puffin deletion vector was not found in the cache.", ValueType::Number) \
+    M(PuffinFilesCacheWeightLost, "Approximate number of bytes evicted from the Puffin files cache.", ValueType::Number) \
+    M(PuffinFilesRead, "Number of Puffin deletion-vector blobs read from storage.", ValueType::Number) \
     M(IcebergIteratorInitializationMicroseconds, "Total time spent on synchronous initialization of iceberg data iterators.", ValueType::Microseconds) \
     M(IcebergMetadataUpdateMicroseconds, "Total time spent updating iceberg storage metadata from state (buildStorageMetadataFromState).", ValueType::Microseconds) \
     M(IcebergMetadataReturnedObjectInfos, "Total number of returned object infos from iceberg iterator.", ValueType::Number) \

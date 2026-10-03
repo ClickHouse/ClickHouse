@@ -528,6 +528,10 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");
 #endif
+        case Type::CLEAR_PUFFIN_FILES_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_PUFFIN_FILES_CACHE);
+            system_context->clearPuffinFilesCache();
+            break;
         case Type::CLEAR_POINT_IN_POLYGON_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_POINT_IN_POLYGON_CACHE);
             clearPointInPolygonCache();
@@ -2848,6 +2852,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         case Type::CLEAR_PARQUET_METADATA_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE);
+            break;
+        case Type::CLEAR_PUFFIN_FILES_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_PUFFIN_FILES_CACHE);
             break;
         case Type::CLEAR_POINT_IN_POLYGON_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_POINT_IN_POLYGON_CACHE);
