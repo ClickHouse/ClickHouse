@@ -129,12 +129,9 @@ public:
     // so that we can cut off a PRECEDING frame at the partition start.
     Partition partition;
 
-    // The row for which we are now computing the window functions, with its
-    // 0-based row and peer group index in the partition for rank() and friends.
+    // The row for which we are now computing the window functions.
     RowPoint current;
-    // The start of current peer group, needed for CURRENT ROW frame start.
-    // For ROWS frame, always equal to the current row, and for RANGE and GROUP
-    // frames may be earlier.
+    // The start of current peer group.
     RowPoint peer_group_start;
 
     // Peer group index (1-based) of the row that frame_start / frame_end currently point to. Used
