@@ -122,6 +122,28 @@ if (ENABLE_LANCE)
     # `prost-build` only ships the well-known types (`google/protobuf/empty.proto` and friends)
     # alongside its own vendored `protoc`, so an external one has to be told where to find them.
     corrosion_set_env_vars(_ch_rust_lance "PROTOC_INCLUDE=${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src")
+
+    # The Lance crates bundle their own copies of lz4 (`lz4-sys`) and zstd (`zstd-sys`), which can win
+    # over `contrib/lz4` and `contrib/zstd` at link time depending on the link order. Localize every
+    # symbol that the Lance archive defines and our contrib libraries also define, so that the binary
+    # (including the Lance crates) uses our copies.
+    if (TARGET localize_rust_c__ch_rust_lance AND TARGET _lz4 AND TARGET _zstd)
+        get_target_property(_lance_lib _ch_rust_lance IMPORTED_LOCATION)
+        if (NOT _lance_lib OR _lance_lib MATCHES "NOTFOUND")
+            set(_lance_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_lance.a")
+        endif()
+        add_custom_target(localize_rust_contrib_symbols__ch_rust_lance
+            COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/localize_rust_c_symbols.sh"
+                "${_lance_lib}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${NM_PATH}"
+                "$<TARGET_FILE:_lz4>" "$<TARGET_FILE:_zstd>"
+            COMMENT "Localizing lz4 and zstd symbols in _ch_rust_lance"
+            VERBATIM
+        )
+        # Both targets rewrite the same archive, so they must not run concurrently.
+        add_dependencies(localize_rust_contrib_symbols__ch_rust_lance
+            localize_rust_c__ch_rust_lance _lz4 _zstd)
+        add_dependencies(_ch_rust_lance localize_rust_contrib_symbols__ch_rust_lance)
+    endif()
 endif()
 
 add_subdirectory (wasmtime)
