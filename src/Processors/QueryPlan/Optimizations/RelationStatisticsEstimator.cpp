@@ -79,7 +79,6 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
         }
 
         UInt64 key_number_of_distinct_values = key_stats->second.num_distinct_values;
-
         if (input_stats.estimated_rows)
             key_number_of_distinct_values = std::min(key_number_of_distinct_values, *input_stats.estimated_rows);
 
@@ -241,7 +240,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     /// which is not linked to current module
     if (step->getName() == "ReadFromSystemOne")
     {
-        /// system.one always produces exactly one row — used to implement constant SELECTs like `SELECT 1`.
+        /// system.one always produces exactly one row - used to implement constant SELECTs like `SELECT 1`.
         return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
     }
 
@@ -283,8 +282,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
     {
         auto stats = estimateReadRowsCount(*node.children.front(), filter);
-        auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
-        return aggregation_stats;
+        return estimateAggregatingStepStats(*aggregating_step, stats);
     }
 
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())

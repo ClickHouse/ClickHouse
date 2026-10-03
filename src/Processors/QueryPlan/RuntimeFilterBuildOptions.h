@@ -15,6 +15,7 @@ struct RuntimeFilterBuildOptions
     RuntimeBloomFilterParameters bloom;
     Float64 max_ratio_of_set_bits;
     RuntimeFilterPolarity polarity;
+    RuntimeFilterMinMaxMode minmax_mode;
     bool track_key_range;
     std::optional<UInt64> distinct_keys_hint;
     bool distinct_keys_hint_matches_filter_key;

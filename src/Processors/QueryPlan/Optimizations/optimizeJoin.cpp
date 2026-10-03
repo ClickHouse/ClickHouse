@@ -57,7 +57,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool use_hash_table_stats_for_join_reordering;
+extern const SettingsBool use_hash_table_stats_for_join_reordering;
 }
 
 namespace QueryPlanOptimizations

@@ -115,6 +115,7 @@ namespace DB
     DECLARE(Double, join_runtime_filter_pass_ratio_threshold_for_disabling, 0.7, "If ratio of passed rows to checked rows is greater than this threshold the runtime filter is considered as poorly performing and is disabled for the next `join_runtime_filter_blocks_to_skip_before_reenabling` blocks to reduce the overhead.", 0) \
     DECLARE(UInt64, join_runtime_filter_blocks_to_skip_before_reenabling, 30, "Number of blocks that are skipped before trying to dynamically re-enable a runtime filter that previously was disabled due to poor filtering ratio.", 0) \
     DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, "If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.", 0) \
+    DECLARE(Bool, join_runtime_filter_use_minmax, false, "Enable using minmax runtime filters that probe minimum and maximum values to avoid unnecessary bloom filter lookups.", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, false, "When enabled, replication of columns data during ARRAY JOIN and JOIN is performed lazily", 0) \
     DECLARE(Bool, enable_software_prefetch_in_join, true, "Enable use of software prefetch in hash join probe phase", 0) \
     DECLARE(Bool, legacy_join_size_limits_trigger_spilling, false, "Treat max_rows_in_join / max_bytes_in_join as a spill trigger instead of a hard cap", 0) \

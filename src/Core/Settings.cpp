@@ -10503,10 +10503,14 @@ Number of blocks that are skipped before trying to dynamically re-enable a runti
         {"26.9", 30, 30, "The JOIN runtime filters became a Production tier feature."}, \
         {"26.1", 30, 30, "New setting"}) \
     DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, R"(
-If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.
+If the number of set bits in a runtime Bloom filter exceeds this ratio, Bloom membership filtering is dropped to reduce overhead. A numeric minmax runtime filter may remain active.
 )", 0, \
         {"26.9", 0.7, 0.7, "The JOIN runtime filters became a Production tier feature."}, \
         {"26.1", 0.7, 0.7, "New setting"}) \
+    DECLARE(Double, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits, 1.0, R"(
+If planner statistics estimate that a forced runtime Bloom filter would have a higher ratio of set bits than this value, membership filtering is omitted. A numeric minmax runtime filter may still be planned. The value `1.0` disables this planning-time check.
+)", EXPERIMENTAL, \
+        {"26.10", 1.0, 1.0, "New setting."}) \
     DECLARE(UInt64, join_runtime_filter_min_probe_rows, 1000, R"(
 If, at query planning time, the probe side of a JOIN is estimated to produce no more than this number of rows, the JOIN runtime filter is not created. Building and applying a runtime filter for a tiny probe side costs more than it saves. Set to 0 to always create the runtime filter regardless of the estimated probe size.
 )", 0, \
@@ -10533,6 +10537,10 @@ The granule pruning is also skipped for a probe side read with `FINAL` (the prun
 Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`.
 )", 0, \
         {"26.7", false, true, "Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`."}) \
+    DECLARE(Bool, join_runtime_filter_use_minmax, true, R"(
+Use a numeric minmax range together with exact-set and bloom JOIN runtime filters. The range rejects values before bloom lookups and remains active if the bloom filter is dropped.
+)", BETA, \
+        {"26.10", false, true, "New setting."}) \
     DECLARE(Bool, rewrite_in_to_join, false, R"(
 Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
 )", EXPERIMENTAL, \

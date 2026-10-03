@@ -12,4 +12,11 @@ enum class RuntimeFilterPolarity : UInt8
     NotContains,
 };
 
+/// Controls whether an adaptive membership runtime filter also builds a numeric min/max filter.
+enum class RuntimeFilterMinMaxMode : UInt8
+{
+    Disabled,
+    Combined,
+    Only,
+};
 }
