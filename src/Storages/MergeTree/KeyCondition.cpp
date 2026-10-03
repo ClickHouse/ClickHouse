@@ -6077,15 +6077,12 @@ BoolMask KeyCondition::checkInRange(
     });
 }
 
-/// Optimized overload for sparse key columns
-BoolMask KeyCondition::checkInRange(
+KeyCondition::SparseRangeCheckScratch::SparseRangeCheckScratch(
     const std::vector<size_t> & sparse_key_indices,
-    const FieldRef * sparse_left_keys,
-    const FieldRef * sparse_right_keys,
     const DataTypes & sparse_data_types,
-    const std::vector<UInt8> & equal_boundaries_mask,
-    BoolMask initial_mask,
-    const Hyperrectangle * key_bounds) const
+    size_t enumerated_key_prefix_size_,
+    const Hyperrectangle * key_bounds)
+    : enumerated_key_prefix_size(enumerated_key_prefix_size_)
 {
     const size_t sparse_keys_size = sparse_key_indices.size();
 
@@ -6096,21 +6093,19 @@ BoolMask KeyCondition::checkInRange(
         chassert(sparse_key_indices[i - 1] < sparse_key_indices[i]);
 #endif
 
-    const size_t enumerated_key_prefix_size = equal_boundaries_mask.size();
-
+    const size_t mapping_size
+        = sparse_keys_size > 0 ? std::max(enumerated_key_prefix_size, sparse_key_indices.back() + 1) : enumerated_key_prefix_size;
     /// Sparse columns at indices >= enumerated_key_prefix_size are constant coordinates: they take their range from `key_bounds`
-    /// here, once per call, and do not participate in the hyperrectangle enumeration. The enumerated columns
+    /// once when the scratch is initialized and do not participate in the hyperrectangle enumeration. The enumerated columns
     /// are overwritten by `forAnySparseHyperrectangle` before every callback.
-    const size_t mapping_size = sparse_keys_size > 0 ? std::max(enumerated_key_prefix_size, sparse_key_indices.back() + 1) : enumerated_key_prefix_size;
     chassert(!key_bounds || key_bounds->size() >= mapping_size);
     chassert(key_bounds || mapping_size == enumerated_key_prefix_size);
 
-    Hyperrectangle sparse_key_ranges;
     sparse_key_ranges.reserve(sparse_keys_size);
     for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
     {
         chassert(sparse_pos < sparse_data_types.size());
-        size_t key_index = sparse_key_indices[sparse_pos];
+        const size_t key_index = sparse_key_indices[sparse_pos];
         if (key_index >= enumerated_key_prefix_size)
             sparse_key_ranges.emplace_back((*key_bounds)[key_index]);
         else
@@ -6118,15 +6113,32 @@ BoolMask KeyCondition::checkInRange(
     }
 
     /// Mapping: full key index -> position in sparse hyperrectangle, or -1 if not tracked.
-    std::vector<int> key_col_to_sparse_pos(mapping_size, -1);
+    key_col_to_sparse_pos.resize(mapping_size, -1);
     for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
     {
-        size_t key_index = sparse_key_indices[sparse_pos];
+        const size_t key_index = sparse_key_indices[sparse_pos];
         chassert(key_index < mapping_size);
         chassert(key_col_to_sparse_pos[key_index] == -1 && "sparse_key_indices contains duplicate entries");
 
         key_col_to_sparse_pos[key_index] = static_cast<int>(sparse_pos);
     }
+}
+
+BoolMask KeyCondition::checkInRange(
+    const std::vector<size_t> & sparse_key_indices,
+    const FieldRef * sparse_left_keys,
+    const FieldRef * sparse_right_keys,
+    const DataTypes & sparse_data_types,
+    const std::vector<UInt8> & equal_boundaries_mask,
+    BoolMask initial_mask,
+    const Hyperrectangle * key_bounds,
+    SparseRangeCheckScratch & scratch) const
+{
+    chassert(scratch.sparse_key_ranges.size() == sparse_key_indices.size());
+    chassert(scratch.enumerated_key_prefix_size == equal_boundaries_mask.size());
+
+    const auto & key_col_to_sparse_pos = scratch.key_col_to_sparse_pos;
+    auto & sparse_key_ranges = scratch.sparse_key_ranges;
 
     return forAnySparseHyperrectangle(
         sparse_key_indices,
@@ -6144,9 +6156,7 @@ BoolMask KeyCondition::checkInRange(
         initial_mask,
         key_bounds,
         [&](const Hyperrectangle & key_ranges_hyperrectangle)
-        {
-            return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types);
-        });
+        { return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types); });
 }
 
 /// Check if a type conversion function preserves the Field value when it's monotonic on the given range.
