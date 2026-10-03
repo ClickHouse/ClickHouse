@@ -306,6 +306,17 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     disconnect();
 
     ProfileEvents::increment(ProfileEvents::DistributedConnectionConnectCount);
+
+    /// Remove the possibly stale entries from the DNS cache. The local `bind_host` too: a client
+    /// program has no `DNSCacheUpdater`, so a cached source address that is no longer assigned to
+    /// this host would otherwise fail every bind until the process is restarted.
+    auto remove_stale_entries_from_dns_cache = [this]
+    {
+        DNSResolver::instance().removeHostFromCache(host);
+        if (!bind_host.empty())
+            DNSResolver::instance().removeHostFromCache(bind_host);
+    };
+
     try
     {
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}. Bind_Host: {}",
@@ -421,8 +432,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
-        /// Remove this possible stale entry from cache
-        DNSResolver::instance().removeHostFromCache(host);
+        remove_stale_entries_from_dns_cache();
 
         /// Add server address to exception. Exception will preserve stack trace.
         e.addMessage("({})", getDescription(/*with_extra*/ true));
@@ -432,8 +442,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
-        /// Remove this possible stale entry from cache
-        DNSResolver::instance().removeHostFromCache(host);
+        remove_stale_entries_from_dns_cache();
 
         /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
         throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription(/*with_extra*/ true));
@@ -442,8 +451,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
-        /// Remove this possible stale entry from cache
-        DNSResolver::instance().removeHostFromCache(host);
+        remove_stale_entries_from_dns_cache();
 
         /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
         /// This exception can only be thrown from socket->connect(), so add information about connection timeout.

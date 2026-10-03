@@ -1546,6 +1546,9 @@ bool DolorIntegration::httpPut(const String & path, const String & body)
     catch (const std::exception & e)
     {
         LOG_ERROR(fc.log, "Request \"{}\" was not successful: \"{}\"", path, e.what());
+        /// Remove this possibly stale entry from the DNS cache: there is no `DNSCacheUpdater` here,
+        /// so nothing else would ever refresh it, and every later request would try the same address.
+        DB::DNSResolver::instance().removeHostFromCache(sc.server_hostname);
         return false;
     }
 }

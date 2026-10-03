@@ -99,6 +99,12 @@ PortsProbeResult probePlainAndSecurePorts(
         {
             probe.pending = false;
             probe.failure = e.displayText();
+
+            /// The failure may be a bind to a cached source address that is no longer assigned to this
+            /// host. A client program has no `DNSCacheUpdater`, so drop the entry here, or the next
+            /// connection would bind to the same dead address again.
+            if (bind_address)
+                DNSResolver::instance().removeHostFromCache(bind_host);
         }
     };
 
