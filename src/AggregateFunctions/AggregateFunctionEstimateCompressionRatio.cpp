@@ -78,7 +78,8 @@ private:
         /// Ideally on finalized buffers we could "reinitialize" without reconstructing the whole object buffer.
         if (!data_ref.calculator || data_ref.calculator->isFinalized())
             data_ref.calculator = std::make_unique<CompressedSizeCalculator>(
-                getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
+                getCodecOrDefault(),
+                roundCompressBlockSizeToWholeValues(block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE), *argument_types[0]));
     }
 
     std::pair<UInt64, UInt64> finalizeAndGetSizes(ConstAggregateDataPtr __restrict place) const
@@ -288,10 +289,10 @@ void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory 
     FunctionDocumentation::Description description = R"(
 Estimates the compression ratio of a given column without compressing it.
 
-:::note
+<Note>
 For the examples below, the result will differ based on the default compression codec of the server.
 See [Column Compression Codecs](/reference/statements/create/table#column_compression_codec).
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "estimateCompressionRatio([codec, block_size_bytes])(column)";
     FunctionDocumentation::Arguments arguments = {
@@ -320,9 +321,9 @@ SELECT number FROM system.numbers LIMIT 100_000;
 SELECT estimateCompressionRatio(number) AS estimate FROM compression_estimate_example
         )",
         R"(
-┌───────────estimate─┐
-│ 1.9988506608699999 │
-└────────────────────┘
+┌──────────estimate─┐
+│ 5.758875867430677 │
+└───────────────────┘
         )"
     },
     {

@@ -539,6 +539,10 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/// the part of a projection declaration after its name: `(SELECT ...)` or `INDEX ... TYPE ...`,
+/// optionally followed by `WITH SETTINGS (...)`
+bool parseProjectionDeclarationBody(IParser::Pos & pos, Expected & expected, const String & name, ASTPtr & node);
+
 class ParserProjectionDeclaration : public IParserBase
 {
 protected:
@@ -717,6 +721,9 @@ protected:
   */
 class ParserCreateQuery : public IParserBase
 {
+public:
+    std::map<String, Documentation> getDocumentation() const override;
+
 protected:
     const char * getName() const override { return "CREATE TABLE or ATTACH TABLE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
