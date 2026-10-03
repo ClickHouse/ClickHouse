@@ -9,6 +9,8 @@
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -23,37 +25,27 @@ namespace
 
 struct NtileState
 {
-    UInt64 buckets = 0;
+    Int64 buckets = 0;
     RowNumber start_row;
-    UInt64 current_partition_rows = 0;
-    UInt64 current_partition_inserted_row = 0;
+    Int64 current_partition_rows = 0;
+    Int64 current_partition_inserted_row = 0;
 
-    void windowInsertResultInto(
-        const WindowTransform * transform,
-        size_t function_index,
-        const DataTypes & argument_types)
+    void windowInsertResultInto(const WindowTransform * transform, size_t function_index)
     {
         if (!buckets) [[unlikely]]
         {
-            const auto & current_block = transform->blockAt(transform->current_row);
+            const auto & current_block = transform->blocks.blockAt(transform->current_row.block);
             const auto & workspace = transform->workspaces[function_index];
-            const auto & arg_col = *current_block.original_input_columns[workspace.argument_column_indices[0]];
+            const auto & arg_col = *current_block.input_columns[workspace.argument_column_indices[0]];
+
             if (!isColumnConst(arg_col))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be a constant");
-            auto type_id = argument_types[0]->getTypeId();
-            if (type_id == TypeIndex::UInt8)
-                buckets = arg_col[transform->current_row.row].safeGet<UInt8>();
-            else if (type_id == TypeIndex::UInt16)
-                buckets = arg_col[transform->current_row.row].safeGet<UInt16>();
-            else if (type_id == TypeIndex::UInt32)
-                buckets = arg_col[transform->current_row.row].safeGet<UInt32>();
-            else if (type_id == TypeIndex::UInt64)
-                buckets = arg_col[transform->current_row.row].safeGet<UInt64>();
 
-            if (!buckets)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be greater than zero");
-            }
+            const UInt64 value = arg_col[transform->current_row.row].safeGet<UInt64>();
+            if (value == 0 || value > std::numeric_limits<Int64>::max())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be in [1, {}], {} given", std::numeric_limits<Int64>::max(), value);
+
+            buckets = value;
         }
         // new partition
         if (WindowRowAccess::isPartitionFirstRow(transform)) [[unlikely]]
@@ -84,8 +76,8 @@ struct NtileState
             auto left_rows = current_bucket_capacity;
             while (left_rows)
             {
-                auto available_block_rows = transform->blockRowsNumber(start_row) - start_row.row;
-                IColumn & to = *transform->blockAt(start_row).output_columns[function_index];
+                auto available_block_rows = transform->blocks.blockAt(start_row.block).rows_count - start_row.row;
+                IColumn & to = *transform->blocks.blockAt(start_row.block).result_columns[function_index];
                 auto & pod_array = assert_cast<ColumnUInt64 &>(to).getData();
                 if (left_rows < available_block_rows)
                 {
@@ -126,7 +118,7 @@ struct WindowFunctionNtile final : public StatefulWindowFunction<NtileState>
 
     bool checkWindowFrameType(const WindowTransform * transform) const override
     {
-        if (transform->order_by_indices.empty())
+        if (transform->params.order_by_indices.empty())
         {
             LOG_ERROR(getLogger("WindowFunctionNtile"), "Window frame for 'ntile' function must have ORDER BY clause");
             return false;
@@ -135,8 +127,8 @@ struct WindowFunctionNtile final : public StatefulWindowFunction<NtileState>
         // We must wait all for the partition end and get the total rows number in this
         // partition. So before the end of this partition, there is no any block could be
         // dropped out.
-        bool is_frame_supported = transform->window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded
-            && transform->window_description.frame.end_type == WindowFrame::BoundaryType::Unbounded;
+        bool is_frame_supported = transform->params.window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded
+            && transform->params.window_description.frame.end_type == WindowFrame::BoundaryType::Unbounded;
         if (!is_frame_supported)
         {
             LOG_ERROR(
@@ -160,7 +152,7 @@ struct WindowFunctionNtile final : public StatefulWindowFunction<NtileState>
     {
         const auto & workspace = transform->workspaces[function_index];
         auto & state = getState(workspace);
-        state.windowInsertResultInto(transform, function_index, argument_types);
+        state.windowInsertResultInto(transform, function_index);
     }
 };
 

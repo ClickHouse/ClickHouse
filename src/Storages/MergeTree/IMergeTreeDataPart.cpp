@@ -33,6 +33,7 @@
 #include <Storages/MergeTree/Backup.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
@@ -894,7 +895,8 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
         /// We avoid covering the whole function with the scope so that transient work stays in the default arena (avoid contention)
         /// The shared bundle and serializations manage their own arena scopes
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        serialization_infos = new_infos;
+        /// A copy, so that the part does not keep objects the writer was charged for.
+        serialization_infos = new_infos.clone();
     }
 
     metadata_version = new_metadata_version;
@@ -1863,6 +1865,16 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
     if (getDataPartStorage().existsFile(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME))
         result.emplace(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
+
+    if (storage.hasUniqueKey())
+    {
+        for (const auto & file : DeleteBitmapFileOps::enumerateFiles(getDataPartStorage()))
+        {
+            auto file_name = file.fileName();
+            if (!checksums.files.contains(file_name))
+                result.emplace(std::move(file_name));
+        }
+    }
 
     return result;
 }
