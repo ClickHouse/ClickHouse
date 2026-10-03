@@ -1921,6 +1921,16 @@ Limits the size of the blocks formed during data parsing in input formats in byt
 0 means no limit in bytes.
 )", 0, \
         {"25.5", 0, 0, "New setting to limit bytes size if blocks created by input format"}) \
+    DECLARE(String, output_format_diagram_type, "SCATTER", "The type of diagram", 0, \
+        {"26.10", "SCATTER", "SCATTER", "Allow to set the type of diagram"}) \
+    DECLARE(String, output_format_diagram_title, "", "The title of plot", 0, \
+        {"26.10", "", "", "Allow to set the title of plot"}) \
+    DECLARE(Bool, output_format_diagram_is_ascii_set, false, "Charset for printing plot. Available charsets: ASCII, UTF-8 (default one).", 0, \
+        {"26.10", false, false, "Allow to set the charset for printing plot"}) \
+    DECLARE(Int64, output_format_diagram_limit_height, -1, "Limit num of rows in plot", 0, \
+        {"26.10", -1, -1, "Allow to limit num of rows in plot"}) \
+    DECLARE(Int64, output_format_diagram_limit_width, -1, "Limit num of columns in plot", 0, \
+        {"26.10", -1, -1, "Allow to limit num of columns in plot"}) \
     DECLARE(UInt64, input_format_json_max_string_column_growth_step, 0, R"(
 When building the JSON column's internal String buffers while parsing JSON from string, cap the power-of-two growth at this many bytes: once the reserved size reaches this value, the buffer grows by increments of this size instead of doubling. This bounds over-allocation for large JSON columns. 0 means unlimited (pure doubling).
 )", 0, \
