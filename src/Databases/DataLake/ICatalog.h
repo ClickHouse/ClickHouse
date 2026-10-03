@@ -13,6 +13,7 @@
 #include <functional>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 namespace DB
 {
@@ -287,6 +288,19 @@ public:
         const String & new_metadata_path,
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const;
+
+    /// Commit the removal of the snapshots `snapshot_ids` and the snapshot references `ref_names` to a
+    /// transactional catalog, which writes the new metadata itself. The files of the removed snapshots are
+    /// not deleted, it is up to the caller. `base_metadata` is the table metadata the removal was decided on:
+    /// the commit is rejected if the table or any of its references has changed since.
+    /// Returns the committed table metadata, or `nullptr` on a recoverable conflict so the caller can retry,
+    /// throws otherwise.
+    virtual Poco::JSON::Object::Ptr removeSnapshots(
+        const String & namespace_name,
+        const String & table_name,
+        Poco::JSON::Object::Ptr base_metadata,
+        const std::vector<Int64> & snapshot_ids,
+        const std::vector<String> & ref_names) const;
 
     /// Drop table from catalog.
     virtual void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const;
