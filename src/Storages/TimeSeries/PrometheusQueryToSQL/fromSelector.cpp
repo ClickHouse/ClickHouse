@@ -4,6 +4,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterDefs.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
@@ -15,6 +16,17 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
+    bool isMetricNameConstant(const PrometheusQueryTree::InstantSelector * instant_selector)
+    {
+        for (const auto & matcher : instant_selector->matchers)
+        {
+            if (matcher.label_name == kMetricName && matcher.matcher_type == PrometheusQueryTree::MatcherType::EQ)
+                return true;
+        }
+
+        return false;
+    }
+
     constexpr UInt64 STALE_NAN_BITS = 0x7ff0000000000002ULL;
 
     ASTPtr isStaleMarker(ASTPtr value)
@@ -27,6 +39,7 @@ namespace
 
     SQLQueryPiece fromRangeSelector(std::string_view instant_selector_text,
                                     const Node * node,
+                                    const PrometheusQueryTree::InstantSelector * instant_selector,
                                     bool filter_stale_markers,
                                     ConverterContext & context)
     {
@@ -35,6 +48,7 @@ namespace
             return SQLQueryPiece{node, ResultType::RANGE_VECTOR, StoreMethod::EMPTY};
 
         SQLQueryPiece res{node, ResultType::RANGE_VECTOR, StoreMethod::RAW_DATA};
+        res.metric_name_is_constant = isMetricNameConstant(instant_selector);
 
         /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
         /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>)
@@ -147,7 +161,7 @@ SQLQueryPiece fromSelector(const PrometheusQueryTree::InstantSelector * instant_
 {
     auto instant_selector_text = instant_selector_node->toString(*context.promql_tree);
     auto range_selector = fromRangeSelector(
-        instant_selector_text, instant_selector_node, /* filter_stale_markers = */ false, context);
+        instant_selector_text, instant_selector_node, instant_selector_node, /* filter_stale_markers = */ false, context);
     auto vector_grid = applyFunctionOverRange(
         instant_selector_node, "last_over_time", {std::move(range_selector)}, context);
     return replaceStaleMarkersWithNulls(std::move(vector_grid), context);
@@ -158,7 +172,7 @@ SQLQueryPiece fromSelectorSampleTimestamps(const PrometheusQueryTree::InstantSel
 {
     auto instant_selector_text = instant_selector_node->toString(*context.promql_tree);
     auto range_selector = fromRangeSelector(
-        instant_selector_text, instant_selector_node, /* filter_stale_markers = */ false, context);
+        instant_selector_text, instant_selector_node, instant_selector_node, /* filter_stale_markers = */ false, context);
 
     if (range_selector.store_method == StoreMethod::RAW_DATA)
     {
@@ -198,7 +212,7 @@ SQLQueryPiece fromSelector(const PrometheusQueryTree::RangeSelector * range_sele
 {
     auto instant_selector_text = range_selector_node->getInstantSelector()->toString(*context.promql_tree);
     return fromRangeSelector(
-        instant_selector_text, range_selector_node, /* filter_stale_markers = */ true, context);
+        instant_selector_text, range_selector_node, range_selector_node->getInstantSelector(), /* filter_stale_markers = */ true, context);
 }
 
 }
