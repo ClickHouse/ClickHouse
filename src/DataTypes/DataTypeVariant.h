@@ -55,6 +55,7 @@ public:
     bool haveSubtypes() const override { return true; }
     bool textCanContainOnlyValidUTF8() const override;
     bool hasDynamicStructure() const override;
+    bool serializationDependsOnQueryContext() const override;
     bool haveMaximumSizeOfValue() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
 

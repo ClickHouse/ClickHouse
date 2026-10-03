@@ -176,6 +176,11 @@ bool DataTypeVariant::hasDynamicStructure() const
     return std::ranges::any_of(variants, [](auto && elem) { return elem->hasDynamicStructure(); });
 }
 
+bool DataTypeVariant::serializationDependsOnQueryContext() const
+{
+    return std::ranges::any_of(variants, [](auto && elem) { return elem->serializationDependsOnQueryContext(); });
+}
+
 bool DataTypeVariant::haveMaximumSizeOfValue() const
 {
     return std::all_of(variants.begin(), variants.end(), [](auto && elem) { return elem->haveMaximumSizeOfValue(); });

@@ -47,6 +47,9 @@ public:
 
     bool equals(const IDataType & rhs) const override;
 
+    /// Without a declared zone `doGetSerialization` resolves the session's and bakes it in.
+    bool serializationDependsOnQueryContext() const override { return !has_explicit_time_zone; }
+
     SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
 };
 

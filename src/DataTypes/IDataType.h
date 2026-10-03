@@ -354,6 +354,11 @@ public:
     /// Checks if this type or any nested type has dynamic internal structure (like JSON or Dynamic).
     virtual bool hasDynamicStructure() const { return false; }
 
+    /// Checks if building this type's serialization, or a nested one's, reads the query context, so
+    /// that the result must not be reused by another query. A `DateTime` with no declared time zone
+    /// resolves `session_timezone` into its serialization, and `getName` does not show that zone.
+    virtual bool serializationDependsOnQueryContext() const { return false; }
+
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
 
