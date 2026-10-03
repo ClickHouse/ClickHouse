@@ -53,20 +53,7 @@ void Aggregator::initAdaptiveSession(AdaptiveAggregationSession & shared) const
     shared.layout = AdaptivePartitionLayout::forProducers(params.max_threads, params.max_bytes_before_external_group_by);
 
     if (params.adaptiveTopKPrunes())
-    {
-        shared.top_k_pruning = std::make_unique<AdaptiveTopKPruning>(params.bucket_top_k, /*floor=*/0);
-    }
-    else if (!params.max_rows_to_group_by)
-    {
-        /// A lower bound of `HAVING count()` prunes as a fixed threshold: a group whose bins bound its count below it is
-        /// rejected by the filter above, so its records and cells need not be merged.
-        using Op = Params::HavingPrefilterOp;
-        const UInt64 bound = params.having_prefilter_threshold;
-        if (params.having_prefilter_op == Op::Greater)
-            shared.top_k_pruning = std::make_unique<AdaptiveTopKPruning>(/*limit=*/0, bound + 1);
-        else if (params.having_prefilter_op == Op::GreaterOrEqual || params.having_prefilter_op == Op::Equal)
-            shared.top_k_pruning = std::make_unique<AdaptiveTopKPruning>(/*limit=*/0, bound);
-    }
+        shared.top_k_pruning = std::make_unique<AdaptiveTopKPruning>(params.bucket_top_k);
 
     if (tmp_data && params.max_bytes_before_external_group_by)
     {
@@ -89,7 +76,7 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     {
         if (!adaptive.count_bins)
             adaptive.count_bins = std::make_unique<UInt16[]>(adaptive_count_bins);
-        addAdaptiveCountsToBins(local_variants, adaptive.count_bins.get(), *shared.top_k_pruning);
+        addAdaptiveCountsToBins(local_variants, adaptive.count_bins.get());
 
         bins.emplace();
         bins->bins = std::move(adaptive.count_bins);
@@ -316,10 +303,8 @@ void Aggregator::mergeAdaptiveSourceStates(AdaptiveMergeScratch & scratch, Arena
 bool Aggregator::adaptiveMayThaw(const AdaptiveAggregationSession & shared) const
 {
     /// Under the top-K pruning the frozen tables pay even for a repetitive stream: the merge skips the units whose
-    /// groups cannot reach the top, which a thawed table, a source of every unit, would no longer allow. A fixed bound
-    /// of `HAVING count()` keeps its bounds through a thaw, because a thawed table counts its rows into the bins at the
-    /// finish, and its pruning does not depend on the frozen tables staying small.
-    return !params.adaptive_aggregator_disable_thaw && !(shared.top_k_pruning && shared.top_k_pruning->limit);
+    /// groups cannot reach the top, which a thawed table, a source of every unit, would no longer allow.
+    return !params.adaptive_aggregator_disable_thaw && !shared.top_k_pruning;
 }
 
 bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const

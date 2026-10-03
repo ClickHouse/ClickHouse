@@ -518,7 +518,7 @@ namespace
             }
         }
         if (pruning.best.size() == pruning.limit)
-            pruning.threshold.store(std::max(pruning.floor, pruning.best.top()), std::memory_order_relaxed);
+            pruning.threshold.store(pruning.best.top(), std::memory_order_relaxed);
     }
 
     /// The same for a set table, whose cells hold only keys.
@@ -1478,11 +1478,11 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
     return skipped;
 }
 
-void Aggregator::addAdaptiveCountsToBins(AggregatedDataVariants & variants, UInt16 * bins, const AdaptiveTopKPruning & pruning) const
+void Aggregator::addAdaptiveCountsToBins(AggregatedDataVariants & variants, UInt16 * bins) const
 {
 #define M(NAME) \
     else if (variants.type == AggregatedDataVariants::Type::NAME) \
-        addAdaptiveCountsToBins(*variants.NAME, variants.aggregates_pool, bins, pruning);
+        addAdaptiveCountsToBins(*variants.NAME, variants.aggregates_pool, bins);
 
     if (variants.empty()) {} // NOLINT
     APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
@@ -1493,22 +1493,20 @@ void Aggregator::addAdaptiveCountsToBins(AggregatedDataVariants & variants, UInt
 }
 
 template <typename Method>
-void Aggregator::addAdaptiveCountsToBins(Method & method, Arena * arena, UInt16 * bins, const AdaptiveTopKPruning & pruning) const
+void Aggregator::addAdaptiveCountsToBins(Method & method, Arena * arena, UInt16 * bins) const
 {
     if constexpr (MapAggregationMethod<Method>)
     {
         /// A `uniqExact` or `uniqExactIf` rank adds the distinct count of the cell: the distinct count of a merged group
         /// is at most the sum of those of the cells and records merged into it, so the bins bound it as they bound a row
-        /// count. A fixed bound of `HAVING count()` adds the cell's `count()`.
-        const bool by_having_count = !pruning.limit;
-        const size_t rank_offset
-            = offsets_of_aggregate_states[by_having_count ? params.having_prefilter_count_index : params.bucket_top_k_rank_index];
+        /// count.
+        const size_t rank_offset = offsets_of_aggregate_states[params.bucket_top_k_rank_index];
         auto scratch = ColumnUInt64::create();
         const auto rank_count = [&](AggregateDataPtr & mapped) -> UInt64
         {
             if (is_simple_count)
                 return getInlineCountState(mapped);
-            if (by_having_count || bucket_top_k_ranks_by_count_state)
+            if (bucket_top_k_ranks_by_count_state)
                 return getCountState(mapped + rank_offset);
             return finalizeBucketTopKRank(mapped, *scratch, arena);
         };
@@ -1914,7 +1912,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             else
                 updater->recordAggregationKeySizes(chunk.chunk, keys_positions, key_types);
         }
-        if (pruning && pruning->limit)
+        if (pruning)
             offerTopKCounts(*pruning, *chunk.chunk.getColumns()[params.keys_size + params.bucket_top_k_rank_index]);
         chunks.push_back(std::move(chunk));
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationMergeUnits);
