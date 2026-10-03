@@ -39,6 +39,7 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -249,6 +250,14 @@ ASTPtr canonicalizeProjectionJSON(ASTPtr node)
 
     try
     {
+        /// A SELECT projection contains only expression slots. Screen it before reparsing:
+        /// otherwise `count` without an `arguments` member can format as `count()` and be
+        /// normalized away before its parent declaration applies the expression check.
+        /// The declaration itself also contains an argument-less INDEX TYPE function, so do not
+        /// apply this screen to the whole declaration.
+        if (!is_declaration)
+            JSONObjectReader::screenArgumentlessFunctions(*node, "query");
+
         WriteBufferFromOwnString out;
         node->format(out, IAST::FormatSettings(/*one_line=*/true));
         const String sql = out.str();
