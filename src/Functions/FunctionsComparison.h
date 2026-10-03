@@ -1754,9 +1754,21 @@ private:
         const ColumnWithTypeAndName & c1,
         size_t input_rows_count) const
     {
-        if (tryGetLeastSupertype(DataTypes{c0.type, c1.type}))
+        /// A `FixedString` element is compared with an element of another type zero-padded, while the cast of
+        /// both arrays to their least supertype keeps the padding, so such arrays are compared element by
+        /// element, like the scalars.
+        auto contains_fixed_string = [](const IDataType & type)
+        {
+            bool found = isFixedString(type);
+            type.forEachChild([&](const IDataType & child) { found = found || isFixedString(child); });
+            return found;
+        };
+        const bool fixed_string_against_other_type = !c0.type->equals(*c1.type)
+            && (contains_fixed_string(*c0.type) || contains_fixed_string(*c1.type));
+
+        if (!fixed_string_against_other_type && tryGetLeastSupertype(DataTypes{c0.type, c1.type}))
             return executeGeneric(c0, c1);
-        /// when leastSupertype does not exist (e.g. `Array(UInt64)` vs `Array(Int64)`), the arrays are compared lexicographically
+        /// When leastSupertype does not exist (e.g. `Array(UInt64)` vs `Array(Int64)`), the arrays are compared lexicographically
         /// element-by-element with the accurate scalar comparison.
         return executeArrayLexicographic(c0, c1, input_rows_count);
     }
