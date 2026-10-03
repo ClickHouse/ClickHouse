@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/IPartsCollector.h>
 
-#include <Common/LoggingFormatStringHelpers.h>
+#include <Common/LazyPreformattedMessage/fwd.h>
 #include <Common/logger_useful.h>
 
 #include <expected>
@@ -25,7 +25,7 @@ std::vector<std::vector<Part>> splitRangeByPredicate(std::vector<Part> && parts,
             /// Close current range if next part can't be used.
             if (auto result = predicate(part); !result)
             {
-                LOG_TRACE(series_log, "Filtered part in collector: {}", result.error().text);
+                LOG_TRACE(series_log, "Filtered part in collector: {}", result.error().format().text);
                 return range;
             }
 
@@ -45,11 +45,11 @@ std::vector<std::vector<Part>> splitRangeByPredicate(std::vector<Part> && parts,
 }
 
 template <class Part, class Predicate>
-std::expected<void, PreformattedMessage> checkAllPartsSatisfyPredicate(const std::vector<Part> & parts, Predicate predicate)
+std::expected<void, LazyPreformattedMessage> checkAllPartsSatisfyPredicate(const std::vector<Part> & parts, Predicate predicate)
 {
     for (const auto & part : parts)
         if (auto result = predicate(part); !result)
-            return std::unexpected(result.error());
+            return std::unexpected(std::move(result.error()));
 
     return {};
 }
