@@ -513,7 +513,8 @@ LimitRangeConditions buildLimitRangeConditions(
         actions.addInput(column);
 
     const auto correlated_columns_set = query_node.getCorrelatedColumnsSet();
-    PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
+    PlannerActionsVisitor actions_visitor(
+        planner_context, correlated_columns_set, /*use_column_identifier_as_action_node_name=*/ true, /*compute_missing_alias_columns=*/ true);
     auto add_boundary = [&](const QueryTreeNodePtr & boundary_node, const String & description) -> std::optional<String>
     {
         if (!boundary_node)
@@ -1546,7 +1547,11 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
-                PlannerActionsVisitor planner_actions_visitor(planner_context, empty_correlated_columns_set);
+                PlannerActionsVisitor planner_actions_visitor(
+                    planner_context,
+                    empty_correlated_columns_set,
+                    /*use_column_identifier_as_action_node_name=*/ true,
+                    /*compute_missing_alias_columns=*/ true);
                 auto [expression_to_interpolate_expression_nodes, expression_to_interpolate_correlated_subtrees] = planner_actions_visitor.visit(interpolate_actions_dag,
                     interpolate_node_typed.getExpression());
                 expression_to_interpolate_correlated_subtrees.assertEmpty("in expression to interpolate");

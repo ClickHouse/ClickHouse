@@ -35,6 +35,10 @@ using ColumnNodes = std::vector<ColumnNodePtr>;
   * During actions build, there is special handling for following functions:
   * 1. Aggregate functions are added in actions dag as INPUT nodes. Aggregate functions arguments are not added.
   * 2. For function `in` and its variants, already collected sets from planner context are used.
+  *
+  * If compute_missing_alias_columns = true, a table ALIAS column that is not present in actions dag is computed
+  * from its expression. It is used for the expressions computed after aggregation, where ALIAS columns
+  * that were computed when the table was read are not available unless they are GROUP BY keys.
   */
 class PlannerActionsVisitor
 {
@@ -42,7 +46,8 @@ public:
     explicit PlannerActionsVisitor(
       const PlannerContextPtr & planner_context_,
       const ColumnNodePtrWithHashSet & correlated_columns_set_,
-      bool use_column_identifier_as_action_node_name_ = true);
+      bool use_column_identifier_as_action_node_name_ = true,
+      bool compute_missing_alias_columns_ = false);
 
     /** Add actions necessary to calculate expression node into expression dag.
       * Necessary actions are not added in actions dag output.
@@ -54,6 +59,7 @@ private:
     const PlannerContextPtr planner_context;
     const ColumnNodePtrWithHashSet & correlated_columns_set;
     bool use_column_identifier_as_action_node_name = true;
+    bool compute_missing_alias_columns = false;
 };
 
 /** Calculate query tree expression node action dag name and add them into node to name map.

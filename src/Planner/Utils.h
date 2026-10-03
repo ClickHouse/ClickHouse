@@ -57,13 +57,15 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
 /** Convert query tree expression node into actions dag.
   * Inputs are not used for actions dag outputs.
   * Only root query tree expression node is used as actions dag output.
+  * See `PlannerActionsVisitor` for compute_missing_alias_columns.
   */
 std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
     const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     const ColumnNodePtrWithHashSet & correlated_columns_set,
-    bool use_column_identifier_as_action_node_name = true);
+    bool use_column_identifier_as_action_node_name = true,
+    bool compute_missing_alias_columns = false);
 
 /// Returns true if prefix sort description is prefix of full sort descriptor, false otherwise
 bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full);
