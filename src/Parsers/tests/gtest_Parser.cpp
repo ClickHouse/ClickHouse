@@ -75,11 +75,16 @@ TEST(ParserCopyQuery, FormattingPreservesTableCopy)
             "COPY `db name`.`table name` (`first col`, second) TO STDOUT",
         },
         {"COPY t TO STDOUT WITH (FORMAT csv)", "COPY t TO STDOUT WITH (FORMAT CSV)"},
+        {"COPY t TO STDOUT (FORMAT csv)", "COPY t TO STDOUT WITH (FORMAT CSV)"},
         {"COPY t TO STDOUT WITH (FORMAT csv, HEADER)", "COPY t TO STDOUT WITH (FORMAT CSV, HEADER)"},
+        {"COPY t FROM STDIN (FORMAT csv, HEADER)", "COPY t FROM STDIN WITH (FORMAT CSV, HEADER)"},
         {"COPY t FROM STDIN WITH (HEADER)", "COPY t FROM STDIN WITH (HEADER)"},
         {"COPY t TO STDOUT WITH (FORMAT binary)", "COPY t TO STDOUT WITH (FORMAT Binary)"},
         {"COPY t TO STDOUT WITH (FORMAT text)", "COPY t TO STDOUT"},
         {"COPY t TO STDOUT WITH CSV HEADER", "COPY t TO STDOUT WITH (FORMAT CSV, HEADER)"},
+        {"COPY t TO STDOUT CSV", "COPY t TO STDOUT WITH (FORMAT CSV)"},
+        {"COPY t TO STDOUT CSV HEADER", "COPY t TO STDOUT WITH (FORMAT CSV, HEADER)"},
+        {"COPY t FROM STDIN CSV HEADER", "COPY t FROM STDIN WITH (FORMAT CSV, HEADER)"},
     };
 
     for (const auto & test_case : test_cases)
