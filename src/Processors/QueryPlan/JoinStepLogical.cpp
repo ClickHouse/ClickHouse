@@ -2523,10 +2523,26 @@ std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 }
 
 
+/// Only the full-sort algorithms (`full_sorting_merge`, `parallel_full_sorting_merge`) and `ie_join`
+/// put local `SortingStep`s under a join, so only they consume `max_streams_per_hierarchical_merge`.
+static bool joinMayBuildFullSort(const JoinSettings & join_settings)
+{
+    return TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::FULL_SORTING_MERGE)
+        || TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
+        || TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::IE_JOIN);
+}
+
 void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
+    /// A peer below this version cannot carry the validation value, so fail closed - but only when the peer
+    /// may actually build a full sort for this join. A join whose algorithms never sort its inputs (e.g. `hash`)
+    /// ignores the setting on both sides and is shipped as is.
+    if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE_VALIDATION
+        && joinMayBuildFullSort(join_settings))
+        sorting_settings.checkMaxStreamsPerHierarchicalMerge();
+
     join_settings.updatePlanSettings(settings, version, join_operator);
-    sorting_settings.updatePlanSettings(settings);
+    sorting_settings.updatePlanSettings(settings, version);
 }
 
 static void serializeNodeList(

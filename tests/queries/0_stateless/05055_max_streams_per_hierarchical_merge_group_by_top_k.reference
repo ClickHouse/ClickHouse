@@ -1,0 +1,4 @@
+-- the synthesized full sort honors the invalid value --
+-- valid values still execute --
+5
+5
