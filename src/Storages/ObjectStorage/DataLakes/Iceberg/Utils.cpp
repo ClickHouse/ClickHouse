@@ -358,8 +358,12 @@ bool writeMetadataFileAndVersionHint(
     const IcebergPathFromMetadata & version_hint_path,
     DB::ObjectStoragePtr object_storage,
     DB::ContextPtr context,
-    bool try_write_version_hint)
+    bool try_write_version_hint,
+    bool * version_hint_confirmed)
 {
+    if (version_hint_confirmed)
+        *version_hint_confirmed = false;
+
     auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
     auto storage_version_hint_path = resolver.resolve(version_hint_path);
     try
@@ -440,6 +444,8 @@ bool writeMetadataFileAndVersionHint(
                     context,
                     write_if_none_match,
                     /* write-if-match */ etag);
+                if (version_hint_confirmed)
+                    *version_hint_confirmed = true;
                 break;
             }
             catch (...)
@@ -449,6 +455,9 @@ bool writeMetadataFileAndVersionHint(
         }
         else
         {
+            /// A newer hint belongs to another writer; compaction must not delete its files.
+            if (version_hint_confirmed)
+                *version_hint_confirmed = old_version == metadata_file_info.version;
             break;
         }
         ++i;
