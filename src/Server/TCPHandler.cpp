@@ -139,6 +139,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_num;
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_seconds;
     extern const ServerSettingsUInt64 handshake_timeout_milliseconds;
+    extern const ServerSettingsBool tcp_with_proxy_allow_interserver_mode;
 }
 
 namespace FailPoints
@@ -2219,6 +2220,26 @@ void TCPHandler::receiveHello()
     is_interserver_mode = !user_substituted_by_default && (user == EncodedUserInfo::USER_INTERSERVER_MARKER) && password.empty();
     if (is_interserver_mode)
     {
+        if (parse_proxy_protocol && !server.context()->getServerSettings()[ServerSetting::tcp_with_proxy_allow_interserver_mode])
+        {
+            auto exception
+                = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver mode is disabled for connections to tcp_with_proxy_port");
+            session = makeSession();
+
+            /// Unlike `getClientAddress`, do not throw on a malformed forwarded address: the rejection
+            /// must stay `AUTHENTICATION_FAILED`, so that it is recorded in `system.session_log` and
+            /// nothing is serialized back to the unauthenticated peer.
+            auto address = socket().peerAddress();
+            if (server.config().getBool("auth_use_forwarded_address", false))
+            {
+                if (auto forwarded_address = session->getClientInfo().getLastForwardedFor())
+                    address = *forwarded_address;
+            }
+
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, address, exception);
+            throw exception; /// NOLINT
+        }
+
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
             LOG_WARNING(LogFrequencyLimiter(log, 10),
                         "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
