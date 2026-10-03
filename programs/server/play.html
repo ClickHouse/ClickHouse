@@ -8322,18 +8322,31 @@ function getLegacyAuthQueryParams(user, password) {
     return params;
 }
 
+function responseLooksLikeClickHouse(response) {
+    const exception_code = response.headers.get('X-ClickHouse-Exception-Code');
+    return response.headers.get('X-ClickHouse-Server-Display-Name') !== null
+        || (exception_code !== null && /^\d+$/.test(exception_code));
+}
+
+function responseIsClickHouseAuthFailure(response) {
+    const code = response.headers.get('X-ClickHouse-Exception-Code');
+    return code === '192' || code === '193' || code === '194' || code === '516';
+}
+
 async function responseRejectsEncodedWebUIAuth(response, url) {
     if (response.status === 404) {
         /// Older path routing rejects unknown Authorization schemes before the query handler.
-        /// Probe the same path without credentials using the long-supported never sentinel. A
-        /// non-404 response proves that the marker, rather than the path, caused the rejection.
+        /// Probe the same path without credentials using the long-supported never sentinel.
+        /// Only a ClickHouse-specific response proves that this is a ClickHouse query endpoint;
+        /// a generic 401/404/405/200 from a proxy or unrelated application must not unlock the
+        /// credential-in-URL compatibility fallback.
         try {
             const route_response = await fetch(url, {
                 method: "POST",
                 body: "SELECT 1",
                 headers: { 'Authorization': 'never' },
             });
-            return route_response.status !== 404;
+            return responseLooksLikeClickHouse(route_response);
         } catch (e) {
             return false;
         }
@@ -8350,37 +8363,62 @@ async function responseRejectsEncodedWebUIAuth(response, url) {
     }
 }
 
-async function fetchWithRequestAuth(url, options, server_address, user, password) {
-    const headers = await getRequestAuthHeaders(user, password, server_address);
-    let response = await fetch(url, { ...options, headers });
-
-    const send_raw = canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
-    if (send_raw || response.ok || !await responseRejectsEncodedWebUIAuth(response, url))
-        return response;
-
-    /// The marker is unsupported, so this is an older endpoint. Retry the same request with the
-    /// historical query-parameter transport. Do not cache this mode: after a rolling upgrade the
-    /// next request should immediately retry the header path instead of keeping credentials in URLs.
-    response = await fetch(
-        url + getLegacyAuthQueryParams(user, password),
-        { ...options, headers: { 'Authorization': 'never' } });
-    return response;
-}
-
 function serverPredatesDefaultSessionUser(version) {
     const [major, minor] = String(version).split('.').map(Number);
     return Number.isFinite(major) && Number.isFinite(minor)
         && (major < 26 || (major === 26 && minor < 7));
 }
 
-/// Share in-flight probes and remember the successful compatibility classification for the exact
-/// endpoint + credential tuple. A real authentication failure drops the settled classification so
-/// the next request re-probes and can adapt if the backend behind that endpoint changed.
-const authProbeRequests = new Map();
-const authProbeResults = new Map();
+async function probeLegacyDefaultUser(server_address, password) {
+    let url = server_address +
+        (server_address.indexOf('?') >= 0 ? '&' : '?') +
+        'add_http_cors_header=1&framing_output_format=None&default_format=JSONEachRow';
+    try {
+        const response = await fetch(url, {
+            method: "POST",
+            body: "SELECT version() AS v, uptime() AS t",
+            headers: getAuthHeaders('', password, true),
+        });
+        if (!response.ok)
+            return false;
 
-function getAuthProbeKey(server_address, user, password) {
-    return JSON.stringify([server_address, user, password]);
+        const status = await response.json();
+        return serverPredatesDefaultSessionUser(status.v);
+    } catch (e) {
+        return false;
+    }
+}
+
+async function fetchWithRequestAuth(url, options, server_address, user, password) {
+    const send_raw = canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
+    let response = await fetch(url, { ...options, headers: getAuthHeaders(user, password) });
+
+    if (send_raw) {
+        /// Before 26.7 a password-only request implicitly meant user "default". Keep that
+        /// compatibility off the normal path: only a ClickHouse authentication failure may
+        /// trigger a harmless explicit-default version probe, and only a confirmed pre-26.7
+        /// endpoint may retry the user's request as "default". Nothing is cached, so a rolling
+        /// upgrade uses default_session_user semantics on the very next successful request.
+        if (!user && password
+            && responseIsClickHouseAuthFailure(response)
+            && await probeLegacyDefaultUser(server_address, password)) {
+            response = await fetch(
+                url,
+                { ...options, headers: getAuthHeaders(user, password, true) });
+        }
+        return response;
+    }
+
+    if (response.ok || !await responseRejectsEncodedWebUIAuth(response, url))
+        return response;
+
+    /// The marker is unsupported, so this is an older ClickHouse endpoint. Retry the same request
+    /// with the historical query-parameter transport. Do not cache this mode: after a rolling
+    /// upgrade the next request immediately retries the header path instead of keeping credentials
+    /// in URLs.
+    return await fetch(
+        url + getLegacyAuthQueryParams(user, password),
+        { ...options, headers: { 'Authorization': 'never' } });
 }
 
 async function probeServerStatus(server_address, user, password) {
@@ -8400,7 +8438,6 @@ async function probeServerStatus(server_address, user, password) {
 
         /// Encoded credentials need the ClickHouse-Play marker. If the endpoint proves that it
         /// predates that marker, retry only this compatibility probe through the old URL transport.
-        /// This mode is deliberately not cached; real requests independently retry the header path.
         if (!send_raw) {
             if (!await responseRejectsEncodedWebUIAuth(response, url))
                 return false;
@@ -8414,12 +8451,9 @@ async function probeServerStatus(server_address, user, password) {
             return { status: await response.json(), use_legacy_default_user: false };
         }
 
-        /// A raw password-only request is the one header-auth case whose semantics changed in
-        /// 26.7. Probe the historical explicit default user only after the modern form fails,
-        /// and adopt it only when the successful probe itself proves the server is older than 26.7.
-        /// The probe runs only SELECT version()/uptime(), never the user's query.
-        const can_probe_legacy_default = !user && password;
-        if (!can_probe_legacy_default)
+        /// The status badge still supports pre-26.7 password-only connections, but this result is
+        /// not reused by real queries. Real queries do their own retry only after an auth failure.
+        if (user || !password)
             return false;
 
         response = await request(url, getAuthHeaders(user, password, true));
@@ -8436,43 +8470,23 @@ async function probeServerStatus(server_address, user, password) {
     }
 }
 
+/// Share only in-flight status probes. Settled compatibility results are deliberately not cached:
+/// real requests must never stay pinned to an explicit "default" user after a backend upgrade.
+const authProbeRequests = new Map();
+
+function getAuthProbeKey(server_address, user, password) {
+    return JSON.stringify([server_address, user, password]);
+}
+
 function getSharedServerStatusProbe(server_address, user, password) {
     const key = getAuthProbeKey(server_address, user, password);
     let probe = authProbeRequests.get(key);
     if (!probe) {
         probe = probeServerStatus(server_address, user, password)
-            .then(result => {
-                if (result)
-                    authProbeResults.set(key, result.use_legacy_default_user);
-                return result;
-            })
             .finally(() => authProbeRequests.delete(key));
         authProbeRequests.set(key, probe);
     }
     return probe;
-}
-
-async function getRequestAuthHeaders(user, password, server_address) {
-    const needs_legacy_default_probe = !user && password
-        && canSendRawAuthHeader(user) && canSendRawAuthHeader(password);
-    if (!needs_legacy_default_probe)
-        return getAuthHeaders(user, password);
-
-    const key = getAuthProbeKey(server_address, user, password);
-    if (authProbeResults.has(key))
-        return getAuthHeaders(user, password, authProbeResults.get(key));
-
-    const probe = await getSharedServerStatusProbe(server_address, user, password);
-    return getAuthHeaders(user, password, !!(probe && probe.use_legacy_default_user));
-}
-
-function invalidateRequestAuthOnFailure(response, server_address, user, password) {
-    if (response.ok)
-        return;
-
-    const code = response.headers.get('X-ClickHouse-Exception-Code');
-    if (code === '192' || code === '193' || code === '194' || code === '516')
-        authProbeResults.delete(getAuthProbeKey(server_address, user, password));
 }
 
 /// `quiet` runs a background panel-maintenance query without touching the main result pane:
@@ -8511,7 +8525,6 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
             server_address,
             user,
             password);
-        invalidateRequestAuthOnFailure(response, server_address, user, password);
     } catch (e) {
         if (!quiet && belongs_to_active_connection()) {
             clear();
@@ -11262,7 +11275,6 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             server_address,
             user,
             password);
-        invalidateRequestAuthOnFailure(response, server_address, user, password);
 
         /// Detect image results (e.g. `FORMAT PNG`) by the response `Content-Type` rather than by
         /// parsing the query, so any format that emits an image is rendered inline as a picture.
@@ -11288,8 +11300,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 server_address,
                 user,
                 password);
-            invalidateRequestAuthOnFailure(response, server_address, user, password);
-            content_type = response.headers.get('Content-Type') ?? '';
+                content_type = response.headers.get('Content-Type') ?? '';
         }
 
         /// A framed error stream is read in full before dispatching on it: when the exception is
@@ -11322,8 +11333,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                     server_address,
                     user,
                     password);
-                invalidateRequestAuthOnFailure(response, server_address, user, password);
-                content_type = response.headers.get('Content-Type') ?? '';
+                        content_type = response.headers.get('Content-Type') ?? '';
             }
         }
 
@@ -18191,7 +18201,6 @@ async function loadCompletions() {
             server_address,
             user,
             password);
-        invalidateRequestAuthOnFailure(response, server_address, user, password);
         /// The connection settings changed while loading — discard this stale result.
         if (generation !== connectionGeneration) {
             return;
