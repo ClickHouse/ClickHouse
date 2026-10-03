@@ -14,6 +14,7 @@
         CREATE TABLE t_column_vector_filter_runs
         (
             value UInt128,
+            value256 UInt256,
             clustered_mask UInt8,
             random_mask UInt8,
             alternating_mask UInt8,
@@ -29,6 +30,7 @@
         INSERT INTO t_column_vector_filter_runs
         SELECT
             toUInt128(number),
+            toUInt256(number),
             toUInt8(
                 (number % 64 BETWEEN 4 AND 11)
                 OR (number % 64 BETWEEN 20 AND 35)
@@ -140,6 +142,33 @@
         SELECT value
         FROM t_column_vector_filter_runs
         WHERE selective_runs_mask = 1
+        FORMAT Null
+    </query>
+
+    <!-- UInt256 covers the same generic fallback with 32-byte rows (also representative of Int256 copy cost). -->
+    <!-- Keep this focused on range-copy wins and fragmented fallback controls for both filter overloads. -->
+    <query>
+        SELECT value256
+        FROM t_column_vector_filter_runs
+        WHERE selective_runs_mask = 1
+        FORMAT Null
+    </query>
+    <query>
+        SELECT value256
+        FROM t_column_vector_filter_runs
+        WHERE random_mask = 1
+        FORMAT Null
+    </query>
+    <query>
+        SELECT value256
+        FROM t_column_vector_filter_runs
+        PREWHERE dense_mask = 1
+        FORMAT Null
+    </query>
+    <query>
+        SELECT value256
+        FROM t_column_vector_filter_runs
+        PREWHERE short_runs_mask = 1
         FORMAT Null
     </query>
 
