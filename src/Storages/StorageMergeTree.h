@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <limits>
 #include <string>
 #include <Core/Names.h>
@@ -270,7 +271,8 @@ private:
         TableLockHolder & table_lock_holder,
         std::unique_lock<std::mutex> & lock,
         const MergeTreeTransactionPtr & txn,
-        bool optimize_skip_merged_partitions = false);
+        bool optimize_skip_merged_partitions = false,
+        const std::function<void()> & on_wait_for_running_merges = {});
 
     MergeMutateSelectedEntryPtr selectPartsToMutate(
         const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,
@@ -440,6 +442,9 @@ private:
     friend class MergeTreeSinkPatch;
     friend class MergeTreeData;
     friend class MergePlainMergeTreeTask;
+    /// Publishes a unique-key merge, so it needs the same reach as `MergePlainMergeTreeTask`:
+    /// the rename runs inside the commit's critical section.
+    friend class UniqueKeyTxnCommit;
     friend class MutatePlainMergeTreeTask;
     friend class MergeTreeCleanupThread;
 
