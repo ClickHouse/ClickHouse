@@ -1,10 +1,13 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnUniqueCompressed.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <gtest/gtest.h>
 #include <Common/Exception.h>
+
+#include <vector>
 
 using namespace DB;
 
@@ -75,6 +78,95 @@ TEST(ColumnLowCardinality, Clone)
 
     ASSERT_TRUE(assert_cast<const ColumnLowCardinality &>(*nullable_column).nestedIsNullable());
     ASSERT_FALSE(assert_cast<const ColumnLowCardinality &>(*column).nestedIsNullable());
+}
+
+TEST(ColumnLowCardinality, CompressedDictionary)
+{
+    MutableColumnPtr indexes = ColumnUInt8::create();
+    MutableColumnPtr dictionary = ColumnUniqueFCBlockDF::create(ColumnString::create(), 4, false);
+    auto low_cardinality_column = ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/ false);
+
+
+    std::vector<String> data = {
+        "banana",
+        "banner",
+        "apple",
+        "application",
+        "banana",
+        "banana"
+    };
+
+    for (const auto & str : data)
+    {
+        low_cardinality_column->insert(str);
+    }
+
+    for (size_t i = 0; i < data.size(); ++i)
+    {
+        EXPECT_EQ((*low_cardinality_column)[i].safeGet<String>(), data[i]);
+    }
+}
+
+TEST(ColumnLowCardinality, CompressedDictionaryCompact)
+{
+    std::vector<String> data = {
+        "banana",
+        "banner",
+        "application",
+        "apple",
+        "fly",
+        "flying",
+        "fascinating",
+        "fantasy",
+        "arrow",
+        "amazing",
+    };
+
+    MutableColumnPtr indexes = ColumnUInt8::create();
+    MutableColumnPtr dictionary = ColumnUniqueFCBlockDF::create(ColumnString::create(), 4, false);
+    auto low_cardinality_column = ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/ false);
+
+    for (const auto & str : data)
+    {
+        low_cardinality_column->insert(str);
+    }
+
+    auto cut_column = low_cardinality_column->cutAndCompact(2, 6);
+
+    EXPECT_EQ(cut_column->size(), 6);
+    for (size_t i = 0; i < cut_column->size(); ++i)
+    {
+        EXPECT_EQ((*cut_column)[i].safeGet<String>(), data[i + 2]);
+    }
+}
+
+TEST(ColumnLowCardinality, CompressedDictionaryNullable)
+{
+    MutableColumnPtr indexes = ColumnUInt8::create();
+    MutableColumnPtr dictionary = ColumnUniqueFCBlockDF::create(ColumnString::create(), 4, true);
+    auto low_cardinality_column = ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/ false);
+
+    std::vector<String> data = {
+        "banana",
+        "banner",
+        "apple",
+        "application",
+    };
+
+    for (const auto & str : data)
+    {
+        low_cardinality_column->insert(str);
+    }
+
+    for (size_t i = 0; i < data.size(); ++i)
+    {
+        EXPECT_FALSE(low_cardinality_column->isNullAt(i));
+        EXPECT_EQ((*low_cardinality_column)[i].safeGet<String>(), data[i]);
+    }
+
+    low_cardinality_column->insert({});
+    const size_t null_pos = low_cardinality_column->size() - 1;
+    EXPECT_TRUE(low_cardinality_column->isNullAt(null_pos));
 }
 
 TEST(ColumnLowCardinality, CloneNullableKeepsZeroValue)

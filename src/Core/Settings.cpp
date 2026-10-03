@@ -10370,6 +10370,24 @@ Write full paths (including s3://) into iceberg metadata files.
 Method to compress `.metadata.json` file.
 )", EXPERIMENTAL, \
         {"25.8", "", "", "New setting"}) \
+    DECLARE(String, low_cardinality_experimental_compression, "", R"(
+Allows to select compression type inside of dictionaries in LowCardinality.
+The compression is applied only if the nested type is String or Nullable(String).
+It's aimed to enhance LowCardinality performance in case of moderate or high number of unique strings.
+
+Possible values:
+
+- "" — The dictionaries are not compressed.
+- "fcblockdf" — The dictionaries are compressed using the Front Coding Block Difference to First algorithm.
+)", EXPERIMENTAL, \
+        {"26.10", "", "", "New setting to allow experimental compression inside of LowCardinality"}) \
+    DECLARE(UInt64, low_cardinality_compression_fc_block_parameter, 5, R"(
+Applies only if "low_cardinality_experimental_compression" = "fcblockdf".
+Sets number of values per compressed block in Front Coding. It's used to fine-tune performance of this compression.
+Values < 2 are senseless, 5 is the best overall option for default block size of 65000 rows.
+It's recommended to increase this value by 1 each time the block size increases by 10 times.
+)", EXPERIMENTAL, \
+        {"26.10", 0, 5, "New setting to set a parameter for experimental compression inside of LowCardinality"}) \
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.
 

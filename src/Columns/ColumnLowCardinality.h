@@ -8,7 +8,6 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
-
 namespace DB
 {
 
@@ -45,7 +44,7 @@ public:
         return Base::create(std::move(column_unique), std::move(indexes), is_shared);
     }
 
-    std::string getName() const override { return "LowCardinality(" + getDictionary().getNestedColumn()->getName() + ")"; }
+    std::string getName() const override { return "LowCardinality(" + getDictionary().getNestedName() + ")"; }
     const char * getFamilyName() const override { return "LowCardinality"; }
     TypeIndex getDataType() const override { return TypeIndex::LowCardinality; }
 
@@ -285,20 +284,20 @@ public:
     size_t sizeOfValueIfFixed() const override { return getDictionary().sizeOfValueIfFixed(); }
     bool isNumeric() const override { return getDictionary().isNumeric(); }
     bool lowCardinality() const override { return true; }
-    bool isCollationSupported() const override { return getDictionary().getNestedColumn()->isCollationSupported(); }
+    bool isCollationSupported() const override { return getDictionary().isCollationSupported(); }
 
     /**
      * Checks if the dictionary column is Nullable(T).
      * So LC(Nullable(T)) would return true, LC(U) -- false.
      */
-    bool nestedIsNullable() const { return isColumnNullable(*dictionary.getColumnUnique().getNestedColumn()); }
+    bool nestedIsNullable() const { return dictionary.getColumnUnique().nestedColumnIsNullable(); }
 
     /// When `offset` is given, only the rows in `[offset, offset + map.size())` are affected and `map`
     /// covers just that range; otherwise it must cover the whole column.
     void applyNegatedNullMap(const NullMap & map, size_t offset = 0);
-    bool nestedCanBeInsideNullable() const { return dictionary.getColumnUnique().getNestedColumn()->canBeInsideNullable(); }
-    void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
-    void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
+    bool nestedCanBeInsideNullable() const { return dictionary.getColumnUnique().nestedCanBeInsideNullable(); }
+    void nestedToNullable();
+    void nestedRemoveNullable();
     MutableColumnPtr cloneNullable() const;
 
     /// Promote a non-nullable dictionary to `Nullable(T)` in place, rebuilding it with a NULL placeholder
@@ -399,6 +398,7 @@ private:
     void compactInplace();
     void compactInplaceToNullable();
     void compactIfSharedDictionary();
+    void reindexIfNeeded();
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;
 

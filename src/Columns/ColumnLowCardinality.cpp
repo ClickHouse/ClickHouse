@@ -142,7 +142,9 @@ ColumnLowCardinality::ColumnLowCardinality(MutableColumnPtr && column_unique_, M
 void ColumnLowCardinality::insert(const Field & x)
 {
     compactIfSharedDictionary();
-    idx.insertIndex(getDictionary().uniqueInsert(x));
+    const size_t index = getDictionary().uniqueInsert(x);
+    reindexIfNeeded();
+    idx.insertIndex(index);
 }
 
 bool ColumnLowCardinality::tryInsert(const Field & x)
@@ -153,6 +155,7 @@ bool ColumnLowCardinality::tryInsert(const Field & x)
     if (!dictionary.getColumnUnique().tryUniqueInsert(x, index))
         return false;
 
+    reindexIfNeeded();
     idx.insertIndex(index);
     return true;
 }
@@ -183,8 +186,10 @@ void ColumnLowCardinality::doInsertFrom(const IColumn & src, size_t n)
     else
     {
         compactIfSharedDictionary();
-        const auto & nested = *low_cardinality_src->getDictionary().getNestedColumn();
-        idx.insertIndex(getDictionary().uniqueInsertFrom(nested, position));
+        const auto nested = low_cardinality_src->getDictionary().getNestedColumn();
+        const size_t index = getDictionary().uniqueInsertFrom(*nested, position);
+        reindexIfNeeded();
+        idx.insertIndex(index);
     }
 }
 
@@ -212,8 +217,9 @@ void ColumnLowCardinality::doInsertManyFrom(const IColumn & src, size_t position
     else
     {
         compactIfSharedDictionary();
-        const auto & nested = *low_cardinality_src->getDictionary().getNestedColumn();
-        const size_t destination_index = getDictionary().uniqueInsertFrom(nested, source_index);
+        const auto nested = low_cardinality_src->getDictionary().getNestedColumn();
+        const size_t destination_index = getDictionary().uniqueInsertFrom(*nested, source_index);
+        reindexIfNeeded();
         idx.insertManyIndexes(destination_index, length);
     }
 }
@@ -221,7 +227,9 @@ void ColumnLowCardinality::doInsertManyFrom(const IColumn & src, size_t position
 void ColumnLowCardinality::insertFromFullColumn(const IColumn & src, size_t n)
 {
     compactIfSharedDictionary();
-    idx.insertIndex(getDictionary().uniqueInsertFrom(src, n));
+    const size_t index = getDictionary().uniqueInsertFrom(src, n);
+    reindexIfNeeded();
+    idx.insertIndex(index);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -267,6 +275,7 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
         auto used_keys = src_nested->index(*idx_map, 0);
 
         auto inserted_indexes = getDictionary().uniqueInsertRangeFrom(*used_keys, 0, used_keys->size());
+        reindexIfNeeded();
         idx.insertIndexesRange(*inserted_indexes->index(*sub_idx, 0), 0, length);
     }
 }
@@ -275,6 +284,7 @@ void ColumnLowCardinality::insertRangeFromFullColumn(const IColumn & src, size_t
 {
     compactIfSharedDictionary();
     auto inserted_indexes = getDictionary().uniqueInsertRangeFrom(src, start, length);
+    reindexIfNeeded();
     idx.insertIndexesRange(*inserted_indexes, 0, length);
 }
 
@@ -317,13 +327,16 @@ void ColumnLowCardinality::insertRangeFromDictionaryEncodedColumn(const IColumn 
     checkIndexesAreLimited(indexes, keys.size());
     compactIfSharedDictionary();
     auto inserted_indexes = getDictionary().uniqueInsertRangeFrom(keys, 0, keys.size());
+    reindexIfNeeded();
     idx.insertIndexesRange(*inserted_indexes->index(indexes, 0), 0, indexes.size());
 }
 
 void ColumnLowCardinality::insertData(const char * pos, size_t length)
 {
     compactIfSharedDictionary();
-    idx.insertIndex(getDictionary().uniqueInsertData(pos, length));
+    const size_t index = getDictionary().uniqueInsertData(pos, length);
+    reindexIfNeeded();
+    idx.insertIndex(index);
 }
 
 std::string_view ColumnLowCardinality::serializeValueIntoArena(
@@ -363,7 +376,9 @@ void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & 
 void ColumnLowCardinality::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     compactIfSharedDictionary();
-    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertFromArena(in, settings));
+    const size_t index = getDictionary().uniqueDeserializeAndInsertFromArena(in, settings);
+    reindexIfNeeded();
+    idx.insertIndex(index);
 }
 
 void ColumnLowCardinality::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
@@ -788,7 +803,7 @@ PaddedPODArray<UInt64> ColumnLowCardinality::getDistinctIndexes(size_t offset, s
 
 ColumnPtr ColumnLowCardinality::countKeys() const
 {
-    const auto & nested_column = getDictionary().getNestedColumn();
+    const auto nested_column = getDictionary().getNestedColumn();
     size_t dict_size = nested_column->size();
 
     auto counter = ColumnUInt64::create(dict_size, 0);
@@ -898,6 +913,29 @@ ColumnPtr ColumnLowCardinality::cloneWithDefaultOnNull() const
     }
 
     return res;
+}
+
+void ColumnLowCardinality::reindexIfNeeded()
+{
+    if (dictionary.getColumnUnique().haveIndexesChanged())
+    {
+        const auto mapping = dictionary.getColumnUnique().detachChangedIndexes();
+        const auto old_indexes = idx.detachIndexes();
+        auto new_indexes = mapping->index(*old_indexes, 0);
+        idx.attachIndexes(IColumn::mutate(std::move(new_indexes)));
+    }
+}
+
+void ColumnLowCardinality::nestedToNullable()
+{
+    getDictionary().nestedToNullable();
+    reindexIfNeeded();
+}
+
+void ColumnLowCardinality::nestedRemoveNullable()
+{
+    getDictionary().nestedRemoveNullable();
+    reindexIfNeeded();
 }
 
 bool isColumnLowCardinalityNullable(const IColumn & column)
