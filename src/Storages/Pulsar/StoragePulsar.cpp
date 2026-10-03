@@ -312,7 +312,16 @@ StoragePulsar::StoragePulsar(
 
 void StoragePulsar::startup()
 {
+    /// `init_task` only (re)creates consumers and never inserts anything, so it stays active:
+    /// direct SELECTs still need it to replace consumers dropped after an error.
     init_task->activateAndSchedule();
+
+    if (getContext()->getMessageQueueDisableInsertion())
+    {
+        LOG_INFO(log, "Streaming to views is disabled");
+        return;
+    }
+
     streamer->activateAndSchedule();
 }
 
