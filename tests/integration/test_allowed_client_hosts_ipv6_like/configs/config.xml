@@ -1,0 +1,4 @@
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <auth_use_forwarded_address>true</auth_use_forwarded_address>
+</clickhouse>

@@ -178,7 +178,9 @@ namespace
         }
 
         size_t first_not_hex = pattern.find_first_not_of("0123456789ABCDEFabcdef");
-        if (((first_not_hex == 4) && pattern[first_not_hex] == ':') || pattern.starts_with("::"))
+        if (((first_not_hex != String::npos) && (first_not_hex >= 1) && (first_not_hex <= 4)
+             && (pattern[first_not_hex] == ':'))
+            || pattern.starts_with("::"))
         {
             parseLikePatternIfIPSubnet(pattern, subnet.emplace(), IPAddress::IPv6);
             return;
