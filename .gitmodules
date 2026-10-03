@@ -426,6 +426,9 @@
 [submodule "contrib/substrait"]
 	path = contrib/substrait
 	url = https://github.com/substrait-io/substrait.git
+[submodule "contrib/optimized-routines"]
+	path = contrib/optimized-routines
+	url = https://github.com/ARM-software/optimized-routines
 [submodule "contrib/cudf"]
 	path = contrib/cudf
 	url = https://github.com/rapidsai/cudf.git
