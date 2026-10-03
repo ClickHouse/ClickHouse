@@ -1902,7 +1902,7 @@ void AlterCommands::apply(
                     /* validate_expressions = */ true);
             }
 
-            index = std::move(new_index);
+            index = new_index;
         }
         catch (const Exception & exception)
         {
