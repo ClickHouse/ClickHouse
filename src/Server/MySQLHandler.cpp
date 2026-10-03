@@ -34,6 +34,7 @@
 #include <Parsers/TokenIterator.h>
 #include <Server/TCPServer.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
 #include <Common/FieldVisitorToString.h>
@@ -82,6 +83,7 @@ using Poco::Net::SSLManager;
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int AUTHENTICATION_FAILED;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int NOT_IMPLEMENTED;
@@ -839,6 +841,11 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     /// Check before getTable() so this command does not become a table-existence oracle.
     session_context->checkAccess(AccessType::SHOW_COLUMNS, database, packet.table);
     StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, session_context);
+    /// An `Alias` forwards its target's metadata, so the alias-level `SHOW_COLUMNS` grant is not enough:
+    /// require the same grant on the target too, exactly as `InterpreterDescribeQuery` does.
+    if (const auto * alias = table_ptr->as<StorageAlias>();
+        alias && !alias->isTargetTableGranted(session_context, AccessType::SHOW_COLUMNS, {}))
+        throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to show metadata exposed by {}", table_ptr->getStorageID().getNameForLogs());
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(session_context, false);
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
