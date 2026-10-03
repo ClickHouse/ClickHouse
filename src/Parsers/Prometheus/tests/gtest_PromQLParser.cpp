@@ -2039,6 +2039,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
     /// Whitespace and comments may separate a function name from '('.
     EXPECT_EQ(parse("foo_bar (x)"), parse("foo_bar(x)"));
     EXPECT_EQ(parse("foo_bar # comment\n (x)"), parse("foo_bar(x)"));
+    EXPECT_EQ(parse("foo_bar # comment\r (x)"), parse("foo_bar(x)"));
     EXPECT_EQ(parse("rate (x[5m])"), parse("rate(x[5m])"));
     expectRoundTrip("min_of (1, 2)", "min_of(1, 2)");
 

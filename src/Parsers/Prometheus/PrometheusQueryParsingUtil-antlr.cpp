@@ -211,9 +211,9 @@ namespace
                     return false;
                 if (c == '#')
                     in_comment = true;
-                else if (c == '\n')
+                else if (c == '\n' || c == '\r')
                     in_comment = false;
-                else if (!in_comment && c != ' ' && c != '\t' && c != '\r')
+                else if (!in_comment && c != ' ' && c != '\t')
                     return c == '(';
             }
         }
