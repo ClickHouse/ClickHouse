@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -16,6 +17,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <fmt/ranges.h>
 
@@ -93,7 +95,9 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.enable_parallel_replicas,
         optimization_settings.short_circuit_function_evaluation_disabled,
         optimization_settings.lower_array_join_function,
+        optimization_settings.legacy_array_join_function_nondeterministic_evaluation,
         optimization_settings.enable_lazy_columns_replication,
+        optimization_settings.filter_push_down_below_limit_by,
     };
 }
 
@@ -247,6 +251,9 @@ void optimizeTreeSecondPass(
 
     Stack stack;
 
+    /// Before the join reordering and index analysis below, which read the join kinds it rewrites.
+    convertOuterJoinToInnerJoinTransitively(optimization_settings, root);
+
     /// Before index analysis, so the copied conjuncts take part in it, and before the runtime
     /// filters, which would hide the source filters
     bool predicates_were_propagated = false;
@@ -326,6 +333,8 @@ void optimizeTreeSecondPass(
     /// added. The plan here is already deterministic (post first pass and subplan materialization).
     setAggregationHashTableCacheKeys(optimization_settings, root);
 
+    /// Join runtime filters are registered and found in the lookup of the thread's query context, so they need a query.
+    const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && CurrentThread::tryGetQueryContext();
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
@@ -336,7 +345,7 @@ void optimizeTreeSecondPass(
         },
         [&](auto & frame_node)
         {
-            if (optimization_settings.enable_join_runtime_filters)
+            if (add_join_runtime_filters)
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
             /// Keep joins logical for `applyParallelReplicas` below: it needs the final (reordered,
             /// runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical` supports.
@@ -372,12 +381,44 @@ void optimizeTreeSecondPass(
                     if (!changed_nodes)
                         break;
                 }
+
+                /// `tryMergeExpressions` fuses an expression step into a filter step, which makes those
+                /// expressions required outputs of the filter, so they run on the rows the filter removes.
+                /// `trySplitFilter` splits such a filter; it also extracts a logical join's ON conditions.
+                if ((rewrite_regardless_of_settings || optimization_settings.split_filter)
+                    && typeid_cast<FilterStep *>(frame_node.step.get()))
+                    trySplitFilter(&frame_node, nodes, extra_settings);
             });
 
         /// After the __applyFilter filters been fixed, do work to indicate index analysis again
         if (join_runtime_filters_were_added && optimization_settings.enable_join_runtime_filters_index_analysis)
             traverseQueryPlan(stack, root,
                 [&](auto & frame_node) { registerLeftSideIndexAnalysisSecondPass(frame_node, optimization_settings); });
+    }
+
+    /// The runtime `FilterStep`s added and pushed down just above are invisible to the
+    /// `updateQueryConditionCache` walk at the beginning of this function, but they change the
+    /// running TopK threshold. Re-walk the plan so a TopK read under such a filter stops reusing and
+    /// writing threshold-dependent query condition cache entries.
+    if (join_runtime_filters_were_added && optimization_settings.use_query_condition_cache)
+    {
+        Stack top_k_qcc_stack;
+        top_k_qcc_stack.push_back({.node = &root});
+        while (!top_k_qcc_stack.empty())
+        {
+            disableTopKQueryConditionCacheUnderNonDeterministicFilters(top_k_qcc_stack, optimization_settings);
+
+            auto & top_k_qcc_frame = top_k_qcc_stack.back();
+            if (top_k_qcc_frame.next_child < top_k_qcc_frame.node->children.size())
+            {
+                auto * next_node = top_k_qcc_frame.node->children[top_k_qcc_frame.next_child];
+                ++top_k_qcc_frame.next_child;
+                top_k_qcc_stack.push_back({.node = next_node});
+                continue;
+            }
+
+            top_k_qcc_stack.pop_back();
+        }
     }
 
     /// Run after runtime filter push-down so that chains of joins are detected correctly. The pass only
@@ -573,9 +614,8 @@ void optimizeTreeSecondPass(
                 pushLimitByIntoSort(frame_node);
         });
 
-    /// The TopK filter is merged into the read's PREWHERE, so it needs the final read: after PREWHERE
-    /// promotion, after a projection has replaced the read, and after reading in order was decided.
-    /// All three change what there is to merge into, and the last one whether to merge at all.
+    /// After PREWHERE promotion, projection replacement and the read-in-order decision: each changes the
+    /// PREWHERE the TopK filter joins, or whether it is added.
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
@@ -881,6 +921,13 @@ void optimizeTreeSecondPass(
     if (optimization_settings.enable_group_by_top_k_optimization)
     {
         traverseQueryPlan(stack, root, [&](auto & frame_node) { tryOptimizeGroupByTopK(&frame_node, nodes, extra_settings); });
+    }
+
+    /// Runs behind every rewrite of the HAVING filter it reads, and behind the pass above, whose `top_k` it refuses.
+    if (optimization_settings.aggregation_having_prefilter)
+    {
+        traverseQueryPlan(
+            stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
 }
 
