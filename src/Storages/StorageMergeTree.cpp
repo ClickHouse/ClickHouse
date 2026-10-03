@@ -1,4 +1,5 @@
 #include <Storages/StorageMergeTree.h>
+#include <Storages/StorageProxy.h>
 
 #include <optional>
 #include <ranges>
@@ -4843,7 +4844,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     const UInt64 src_admission_epoch = currentLeadershipEpoch();
     throwIfTransactionalPartitionOpUnderLeaderElection(local_context->getCurrentTransaction(), "MOVE PARTITION TO TABLE");
     assertNotReadonly();
-    auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(dest_table);
+    auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(resolveStorageProxyLoading(dest_table));
     if (!dest_table_storage)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Table {} supports movePartitionToTable only for MergeTree family of table engines. Got {}",

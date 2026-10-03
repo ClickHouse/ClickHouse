@@ -3,8 +3,6 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -61,14 +59,11 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserKillQueryQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementKillQuery(StatementFactory & factory)
-{
-    factory.registerStatement("KILL",
+    documentation["KILL"] =
     {
         .description = R"DOCS_MD(
 This page describes the `KILL QUERY` and `KILL MUTATION` statements.
@@ -225,7 +220,9 @@ KILL QUERY [ON CLUSTER cluster] WHERE <where expression to SELECT FROM system.pr
 KILL MUTATION [ON CLUSTER cluster] WHERE <where expression to SELECT FROM system.mutations query> [TEST] [FORMAT format]
 )",
         .related = {"SYSTEM", "SHOW", "ALTER"},
-    });
+    };
+
+    return documentation;
 }
 
 }

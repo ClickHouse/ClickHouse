@@ -52,6 +52,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTimeSeries.h>
@@ -170,6 +171,7 @@ namespace FailPoints
     extern const char atomic_populate_pause_before_subscription[];
     extern const char atomic_populate_pause_after_view_publication[];
     extern const char atomic_populate_pause_before_source_guard[];
+    extern const char atomic_populate_pause_before_population[];
 }
 
 namespace ErrorCodes
@@ -977,7 +979,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, create.as_table);
-        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
+        /// A lazily loaded source reports only its columns, so the indices, projections, constraints
+        /// and comment copied below would silently come out empty.
+        StoragePtr as_storage = resolveStorageProxyLoading(
+            DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext()));
 
         /// An `Alias` reports its target's metadata, so copying that metadata requires the privilege on the
         /// target that describing the target requires.
@@ -1010,7 +1015,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
             /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
             /// Note: only supports the source table engine is using the new syntax.
-            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(as_storage.get()))
+            if (const auto * merge_tree_data = castStorage<MergeTreeData>(as_storage, DeferredTable::Load).get())
             {
                 if (merge_tree_data->format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
                 {
@@ -1786,6 +1791,16 @@ bool isReplicated(const ASTStorage & storage)
         return false;
     const auto & storage_name = storage.engine->name;
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
+}
+
+/// The drop privilege matching the kind of an existing table.
+AccessType getDropAccessType(const IStorage & table)
+{
+    if (table.isView())
+        return AccessType::DROP_VIEW;
+    if (table.isDictionary())
+        return AccessType::DROP_DICTIONARY;
+    return AccessType::DROP_TABLE;
 }
 
 }
@@ -2642,7 +2657,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
-        bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
+        bool is_replicated_storage = castStorage<StorageReplicatedMergeTree>(res, DeferredTable::Skip) != nullptr;
         if (!is_replicated_storage && res->storesDataOnDisk() && database && database->getEngineName() == "Replicated")
             throw Exception(ErrorCodes::UNKNOWN_STORAGE,
                             "Only tables with a Replicated engine "
@@ -2654,7 +2669,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                         "ATTACH ... FROM ... query is not supported for {} table engine, "
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
 
-    auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(res.get());
+    /// `res` is the storage this query just built, and for a table function it is a proxy that
+    /// resolving would run during CREATE.
+    auto * replicated_storage = castStorage<StorageReplicatedMergeTree>(res, DeferredTable::Skip).get();
     if (replicated_storage)
     {
         const auto probability = getContext()->getSettingsRef()[Setting::create_replicated_merge_tree_fault_injection_probability];
@@ -3058,12 +3075,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                 {
                     /// The replaced table is dropped after the swap, under an internal temporary name that
                     /// grants cannot cover, so check the drop privilege for its kind here, on its real name.
-                    AccessType drop_access = AccessType::DROP_TABLE;
-                    if (to_drop->isView())
-                        drop_access = AccessType::DROP_VIEW;
-                    else if (to_drop->isDictionary())
-                        drop_access = AccessType::DROP_DICTIONARY;
-                    current_context->checkAccess(drop_access, to_drop_id);
+                    current_context->checkAccess(getDropAccessType(*to_drop), to_drop_id);
                     to_drop->checkTableSizeBelowDropLimit(current_context);
                 }
             });
@@ -3324,7 +3336,8 @@ StoragePtr InterpreterCreateQuery::getValidatedAtomicPopulateSource(const ASTCre
     if (context->hasQueryContext())
         context->getQueryContext()->dropStorageCacheEntry(*ref_dependencies.mv_from_dependency);
 
-    auto source = DatabaseCatalog::instance().tryGetTable(*ref_dependencies.mv_from_dependency, context);
+    auto source = resolveStorageProxyLoading(
+        DatabaseCatalog::instance().tryGetTable(*ref_dependencies.mv_from_dependency, context));
 
     /// The view's SELECT was validated against the source before the view was published, so the source
     /// existed then; not finding it now means it was dropped, renamed or exchanged away in the window
@@ -3557,6 +3570,11 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImp
     if (populate_context->hasQueryContext())
         populate_context->getQueryContext()->setPinnedStorageSnapshot(source_uuid, snapshot);
 
+    /// Models a slow start of the population. The view is already subscribed, so a test inserts into the
+    /// source here and checks that the row reaches the view once - live, not again through the population
+    /// (see 05315_atomic_populate_materialized_view_trivial_count).
+    FailPointInjection::pauseFailPoint(FailPoints::atomic_populate_pause_before_population);
+
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
     insert->select = create.select->clone();
@@ -3770,6 +3788,16 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
         }
     }
 
+    /// Replicated and ON CLUSTER replays run with full access, so the drop privilege for the replaced
+    /// table's kind must be required here, on its real name, while the query still runs as the user.
+    if ((create.replace_table || create.create_or_replace || create.replace_view) && !create.isTemporary())
+    {
+        String database_name = getContext()->resolveDatabase(create.getDatabase());
+        if (auto database = DatabaseCatalog::instance().tryGetDatabase(database_name))
+            if (auto table = database->tryGetTable(create.getTable(), getContext()))
+                required_access.emplace_back(getDropAccessType(*table), database_name, create.getTable());
+    }
+
     if (create.targets)
     {
         for (const auto & target : create.targets->targets)
@@ -3897,9 +3925,9 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
 void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated)
 {
     /// Check engine can be changed
-    if (database->getEngineName() != "Atomic")
+    if (database->getEngineName() != "Atomic" && database->getEngineName() != "Ordinary")
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Table engine conversion to replicated is supported only for Atomic databases");
+            "Table engine conversion to replicated is supported only for Atomic and Ordinary databases");
 
     if (!create.storage || !create.storage->engine || !create.storage->engine->name.contains("MergeTree"))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -3927,30 +3955,45 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
             "ReplicatedMergeTree. Turn it off with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` first.",
             backQuoteIfNeed(create.getTable()));
 
+    const bool ordinary_database = database->getEngineName() == "Ordinary";
+    const bool temporary_uuid = to_replicated && ordinary_database;
+    if (temporary_uuid)
+    {
+        create.uuid = UUIDHelpers::generateV4();
+        create.has_uuid = true;
+    }
     /// Must precede every side effect below: neither the transaction metadata removal nor the
     /// metadata rewrite can be rolled back. The other direction takes no Keeper path at all.
+    std::optional<TableZnodeInfo> znode_info;
     if (to_replicated)
-        DatabaseOrdinary::checkReplicaPathIsSafe(create, getContext());
+        znode_info = DatabaseOrdinary::checkReplicaPathIsSafe(create, getContext(), /*stores_path_literally=*/ordinary_database);
 
     /// Ensure the old detached table instance is destroyed before we remove
     /// transaction metadata files. Otherwise the old table's parts still hold
     /// in-memory version metadata referencing those files, and the debug
     /// assertion in removeIfNeeded() → assertHasValidVersionMetadata() will
-    /// fail when the old storage is destroyed later.
-    if (create.uuid != UUIDHelpers::Nil)
+    /// fail when the old storage is destroyed later. An `Ordinary` table may carry
+    /// such files too, after `RENAME TABLE` from an `Atomic` database; it has no UUID,
+    /// so its guard is keyed by table name.
+    const bool wait_for_detached = getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously];
+    QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+    auto throw_if_cancelled = [&]()
     {
-        if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
-        {
-            QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
-            database->waitDetachedTableNotInUse(create.uuid, [&]()
-            {
-                if (query_status)
-                    query_status->throwIfKilled();
-            });
-        }
+        if (query_status)
+            query_status->throwIfKilled();
+    };
+    if (ordinary_database)
+    {
+        auto & ordinary = typeid_cast<DatabaseOrdinary &>(*database);
+        if (wait_for_detached)
+            ordinary.waitDetachedTableByNameNotInUse(create.getTable(), throw_if_cancelled);
         else
-            database->checkDetachedTableNotInUse(create.uuid);
+            ordinary.checkDetachedTableByNameNotInUse(create.getTable());
     }
+    else if (wait_for_detached)
+        database->waitDetachedTableNotInUse(create.uuid, throw_if_cancelled);
+    else
+        database->checkDetachedTableNotInUse(create.uuid);
 
     /// When converting to replicated, remove all transaction metadata files
     if (to_replicated && !engine_name.starts_with("Replicated"))
@@ -3960,8 +4003,12 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     }
 
     /// Set new engine
-    DatabaseOrdinary::setMergeTreeEngine(create, getContext(), to_replicated);
-
+    DatabaseOrdinary::setMergeTreeEngine(create, getContext(), to_replicated, temporary_uuid ? &*znode_info : nullptr);
+    if (temporary_uuid)
+    {
+        create.uuid = UUIDHelpers::Nil;
+        create.has_uuid = false;
+    }
     /// Save new metadata
     auto db_disk = database->getDisk();
     String table_metadata_path = database->getObjectMetadataPath(create.getTable());
