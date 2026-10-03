@@ -3,6 +3,9 @@
 -- `NaN` out of the optimization tested `nulls_direction` before the direction of the match was known, so it
 -- passed and the elided sort never repaired the placement.
 
+-- `clickhouse-test` randomizes `optimize_read_in_order`; pin it, so the optimized arms test the fixed path.
+SET optimize_read_in_order = 1;
+
 DROP TABLE IF EXISTS t_read_in_order_nan;
 CREATE TABLE t_read_in_order_nan (x Float64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t_read_in_order_nan VALUES (1), (2), (nan), (3);
