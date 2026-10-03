@@ -130,7 +130,12 @@ def test_play_auth_headers_preserve_credentials_with_database_path(started_clust
         # A scripted /play server_address may include a database path. The X-ClickHouse
         # credential values carry their own encoding marker, so an intermediary may strip or
         # rewrite Authorization without corrupting UTF-8 or surrounding-space credentials.
-        for authorization in ("never", None, "Basic Zm9vOmJhcg=="):
+        for authorization in (
+            "never",
+            None,
+            "Basic Zm9vOmJhcg==",
+            "AWS4-HMAC-SHA256 Credential=proxy",
+        ):
             headers = dict(encoded_headers)
             if authorization is not None:
                 headers["Authorization"] = authorization
@@ -178,7 +183,7 @@ def test_play_raw_auth_headers_survive_proxy_authorization_rewrite(started_clust
             },
             data="SELECT currentUser()",
             headers={
-                "Authorization": "Basic Zm9vOmJhcg==",
+                "Authorization": "Bearer proxy-token",
                 "X-Requested-With": "ClickHouse-Play",
                 "X-ClickHouse-User": user,
                 "X-ClickHouse-Key": password,
