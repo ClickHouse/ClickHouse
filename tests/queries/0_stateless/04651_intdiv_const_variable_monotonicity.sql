@@ -4,6 +4,9 @@
 -- randomizer (`randint(1, 65536)`) would make these probes non-deterministic. It is pinned
 -- per DDL below as well.
 
+-- Disable force_primary_key_reverse_order: Test checks granule counts of primary key analysis, which depend on the physical layout of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 -- Every query prints 1 when the count read through the primary key equals the full-scan
 -- ground truth from an identical `ENGINE = Memory` table.
 

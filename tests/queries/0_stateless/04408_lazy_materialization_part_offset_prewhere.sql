@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: filters on `_part_offset` select rows by their physical position, which depends on the key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP ROW POLICY IF EXISTS repro_pol ON repro;
 DROP TABLE IF EXISTS repro;
 
