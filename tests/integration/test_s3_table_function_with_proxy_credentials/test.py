@@ -30,13 +30,15 @@ def run_auth_proxy(cluster, current_dir):
         "import socket,sys;"
         "s=socket.socket();"
         "s.settimeout(1);"
-        f"sys.exit(s.connect_ex(('127.0.0.1',{PROXY_PORT})))"
+        f"print('connect_ex=%d' % s.connect_ex(('127.0.0.1',{PROXY_PORT})))"
     )
     for attempt in range(10):
+        # `exec_in_container` returns only stdout, so report the result explicitly
+        # instead of relying on the exit code.
         response = cluster.exec_in_container(
             container_id, ["python", "-c", probe], nothrow=True
         )
-        if response is not None and "Traceback" not in str(response):
+        if response is not None and "connect_ex=0" in str(response):
             return
         time.sleep(attempt)
 
