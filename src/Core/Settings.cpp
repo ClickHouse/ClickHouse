@@ -3756,9 +3756,9 @@ use `max_bytes_before_external_distinct`, leaving room for additional memory usa
         {"26.9", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."}) \
     \
     DECLARE(UInt64, max_bytes_before_external_set, 0, R"(
-Query memory threshold, in bytes, for spilling the set of `IN` with a subquery to disk while the set is
-being built. Actual memory usage can exceed this threshold. A set that takes less memory than this
-threshold or 16 MiB, whichever is smaller, stays in memory.
+Query memory threshold, in bytes, for spilling the set of `IN` with a subquery to disk, while the set is
+being built or while the query uses it. Actual memory usage can exceed this threshold. A set that takes
+less memory than this threshold or 16 MiB, whichever is smaller, stays in memory.
 
 `0` disables this threshold. If `max_bytes_ratio_before_external_set` also provides a threshold, the
 smaller is used. Set both settings to `0` to disable spilling.

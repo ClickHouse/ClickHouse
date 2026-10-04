@@ -4395,16 +4395,22 @@ WHERE number IN (SELECT number * 3 FROM numbers(10000000))
 SETTINGS max_bytes_before_external_set = 16777216;
 ```
 
+A set is usually built before the rest of the query takes much memory. A set that stays in memory while
+it is built can still be written to disk later, while the query uses it: once query memory exceeds the
+threshold, the set is written to disk, and most of its memory is released for the rest of the query, such
+as an aggregation that grows after the set is built.
+
 `max_memory_usage` does not affect the ratio. To configure spilling relative to a query memory limit,
 set an absolute threshold below that limit. These thresholds do not cap memory usage. Leave room for
 other query processing and the spill itself.
 
-A set on disk cannot be used by the primary key or data skipping indexes. With `GLOBAL IN`, the
-temporary table that sends the result of the subquery to the remote servers stays in memory, while the
-sets that the remote servers build from it can be written to disk.
+A set written to disk while it is built cannot be used by the primary key or data skipping indexes. With
+`GLOBAL IN`, the temporary table that sends the result of the subquery to the remote servers stays in
+memory, while the sets that the remote servers build from it can be written to disk.
 
-Once a set is on disk, the whole subquery is read before the size limits of the set are checked:
-`max_rows_in_set` counts its distinct keys, and `max_bytes_in_set` counts only its part in memory.
+When a set is written to disk while it is built, the whole subquery is read before the size limits of
+the set are checked: `max_rows_in_set` counts its distinct keys, and `max_bytes_in_set` counts only its
+part in memory.
 
 ## Distributed Subqueries {#distributed-subqueries}
 
