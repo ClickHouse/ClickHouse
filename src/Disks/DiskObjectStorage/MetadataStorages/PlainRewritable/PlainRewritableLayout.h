@@ -13,10 +13,13 @@ public:
     constexpr static std::string PREFIX_PATH_FILE_NAME = "prefix.path";
     constexpr static std::string METADATA_DIRECTORY_TOKEN = "__meta";
     constexpr static std::string ROOT_DIRECTORY_TOKEN = "__root";
+    /// A compact serialized copy of the whole in-memory state, see `PlainRewritableSnapshotFile.h`.
+    constexpr static std::string SNAPSHOT_FILE_NAME = "snapshot.bin";
 
     explicit PlainRewritableLayout(std::string object_storage_common_key_prefix_);
 
     std::string constructMetadataDirectoryKey() const;
+    std::string constructSnapshotObjectKey() const;
     std::string constructRootFilesDirectoryKey() const;
     std::string constructFilesDirectoryKey(const std::string & directory_remote_path) const;
     std::string constructFileObjectKey(const std::string & directory_remote_path, const std::string & file_name) const;

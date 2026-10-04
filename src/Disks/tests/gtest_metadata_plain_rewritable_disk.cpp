@@ -13,6 +13,7 @@
 
 #include <Common/thread_local_rng.h>
 #include <Common/FailPoint.h>
+#include <Common/tests/gtest_global_context.h>
 
 #include <base/scope_guard.h>
 
@@ -37,6 +38,8 @@ public:
         {
             ServerUUID::setRandomForUnitTests();
             getIOThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+            /// The metadata storage writes snapshots of its state in a task of the schedule pool of the global context.
+            getContext();
             initialized = true;
         }
     }
@@ -55,7 +58,7 @@ public:
     {
         std::unique_lock<std::mutex> lock(active_metadatas_mutex);
         auto object_storage = active_object_storages.at(key_prefix);
-        active_metadatas[key_prefix] = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
+        active_metadatas[key_prefix] = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", snapshot_settings);
         return active_metadatas.at(key_prefix);
     }
 
@@ -83,7 +86,7 @@ private:
         fs::remove_all("./" + key_prefix);
         LocalObjectStorageSettings settings("test", "./" + key_prefix, /*read_only_=*/false);
         auto object_storage = std::make_shared<LocalObjectStorage>(std::move(settings));
-        auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
+        auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", snapshot_settings);
 
         active_metadatas.emplace(key_prefix, metadata_storage);
         active_object_storages.emplace(key_prefix, object_storage);
@@ -92,6 +95,9 @@ private:
     }
 
     static inline bool initialized = false;
+
+    /// The snapshot is written right after every commit, so that every restart goes through the snapshot and the reconcile.
+    static constexpr PlainRewritableSnapshotSettings snapshot_settings{.enabled = true, .write_delay_ms = 0};
 
     std::mutex active_metadatas_mutex;
     std::unordered_map<std::string, std::shared_ptr<IMetadataStorage>> active_metadatas;
@@ -147,6 +153,8 @@ static std::vector<std::string> sorted(std::vector<std::string> array)
     return array;
 }
 
+/// All objects of the disk except the snapshot of the metadata (`__meta/snapshot.bin`): it is a derived copy of
+/// the state, rewritten after every commit, and the tests check the layout of the data and the `prefix.path` objects.
 static std::vector<std::string> listAllBlobs(std::string test)
 {
     if (!std::filesystem::exists(fmt::format("./{}", test)))
@@ -155,6 +163,7 @@ static std::vector<std::string> listAllBlobs(std::string test)
     return sorted(std::filesystem::recursive_directory_iterator(fmt::format("./{}", test))
                     | std::views::filter([](const auto & inode) { return inode.is_regular_file(); })
                     | std::views::transform([](const auto & file) { return file.path(); })
+                    | std::views::filter([](const std::string & path) { return !path.ends_with("/__meta/" + PlainRewritableLayout::SNAPSHOT_FILE_NAME); })
                     | std::ranges::to<std::vector<std::string>>());
 }
 
@@ -240,7 +249,8 @@ TEST_F(MetadataPlainRewritableDiskTest, RefreshSkipsUnchangedDirectoryReads)
 
     auto object_storage = std::make_shared<CountingStorage>(LocalObjectStorageSettings(
         "reader", getObjectStorage("RefreshSkipsUnchangedDirectoryReads")->getCommonKeyPrefix(), false));
-    MetadataStorageFromPlainRewritableObjectStorage reader(object_storage, "");
+    /// The reader does not use the snapshot file: the test counts the reads of `prefix.path` objects by the listing.
+    MetadataStorageFromPlainRewritableObjectStorage reader(object_storage, "", PlainRewritableSnapshotSettings{.enabled = false});
     ASSERT_EQ(object_storage->reads, 2);
     reader.refresh(0);
     EXPECT_EQ(object_storage->reads, 2);
@@ -769,6 +779,56 @@ TEST_F(MetadataPlainRewritableDiskTest, RewriteFileUpdatesSize)
 
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/file").front().remote_path), "Hello world!");
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root_file").front().remote_path), "Hello world!");
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, StaleSnapshotDoesNotHideFileChanges)
+{
+    const std::string test = "StaleSnapshotDoesNotHideFileChanges";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    auto write_file = [&](const std::string & path, const std::string & data)
+    {
+        auto tx = metadata->createTransaction();
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath(path).serialize(), data);
+        tx->createMetadataFile(path, {StoredObject(path, path, size)});
+        tx->commit(DB::NoCommitOptions{});
+    };
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+    write_file("A/file", "test");
+    write_file("A/removed", "test");
+
+    const auto snapshot_files = std::filesystem::recursive_directory_iterator(fmt::format("./{}", test))
+        | std::views::filter([](const auto & inode) { return inode.path().string().ends_with("/__meta/" + PlainRewritableLayout::SNAPSHOT_FILE_NAME); })
+        | std::views::transform([](const auto & inode) { return inode.path(); })
+        | std::ranges::to<std::vector<std::filesystem::path>>();
+    ASSERT_EQ(snapshot_files.size(), 1u);
+    const auto stale_snapshot = fmt::format("./{}.stale_snapshot", test);
+    std::filesystem::copy_file(snapshot_files.front(), stale_snapshot, std::filesystem::copy_options::overwrite_existing);
+    SCOPE_EXIT({ std::filesystem::remove(stale_snapshot); });
+
+    /// The files of `A` change, but its `prefix.path` stays the same.
+    write_file("A/file", "Hello world!");
+    write_file("A/new", "test");
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("A/removed", /*if_exists=*/ false, /*should_remove_objects=*/ true);
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// Simulate a server that crashed before writing the latest snapshot.
+    std::filesystem::copy_file(stale_snapshot, snapshot_files.front(), std::filesystem::copy_options::overwrite_existing);
+    metadata = restartMetadataStorage(test);
+
+    EXPECT_EQ(metadata->getFileSize("A/file"), 12u);
+    EXPECT_TRUE(metadata->existsFile("A/new"));
+    EXPECT_FALSE(metadata->existsFile("A/removed"));
+    EXPECT_EQ(sorted(metadata->listDirectory("A")), std::vector<std::string>({"file", "new"}));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndo)

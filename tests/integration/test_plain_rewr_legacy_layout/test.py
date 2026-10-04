@@ -83,6 +83,9 @@ def test(storage_policy):
         remote_to_local = {}
         for obj in metadata_it:
             remote_path = obj.object_name
+            # The snapshot of the metadata has no counterpart in the legacy layout.
+            if remote_path.endswith("/__meta/snapshot.bin"):
+                continue
             assert remote_path.endswith("prefix.path")
 
             local_path = get_file_contents(
@@ -97,6 +100,8 @@ def test(storage_policy):
 
         for obj in data_it:
             remote_path = obj.object_name
+            if remote_path.endswith("/__meta/snapshot.bin"):
+                continue
             remote_dir = os.path.dirname(remote_path).replace("__meta/", "")
             assert remote_dir in remote_to_local
             filename = os.path.basename(remote_path)

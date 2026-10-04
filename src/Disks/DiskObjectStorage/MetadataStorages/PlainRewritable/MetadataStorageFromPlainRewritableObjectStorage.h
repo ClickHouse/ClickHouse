@@ -2,14 +2,21 @@
 
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsMetadata.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/PlainRewritableSnapshotFile.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/UncommittedState.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Common/Logger.h>
 
+#include <atomic>
 #include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
 #include <unordered_map>
 
 namespace DB
@@ -36,15 +43,72 @@ namespace DB
   * /__meta/xelohvynszqqinrvcygwzpdwvsklbxkk/prefix.path, contents: /hello/
   * /aaealinyzgdzycgcnpgaapdssrjirnnr/test2.txt
   * /gfkoqxvyhaasroiodbeurnftnwieiihy/test1.txt
+  *
+  * Additionally, `/__meta/snapshot.bin` may contain a compact copy of the whole state (see `PlainRewritableSnapshotFile.h`),
+  * which is written by the disk that owns the data and allows loading the state in a single request instead of
+  * listing the metadata directory and reading every `prefix.path`.
   */
+
+struct PlainRewritableSnapshotSettings
+{
+    /// Whether to write the snapshot file after modifications (if the object storage is writable)
+    /// and to prefer it over listing the object storage when loading the state.
+    bool enabled = true;
+    /// Zero means the snapshot is rewritten right after every modification (in the committing thread).
+    /// A larger value means it is rewritten in the background not more often than the delay, as long as there were modifications.
+    /// The whole state is serialized on every write, so writing it in the committing thread would make the latency of
+    /// every commit proportional to the size of the whole disk; that is why it is delayed by default.
+    UInt64 write_delay_ms = 1000;
+};
+
 class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataStorage
 {
     friend class MetadataStorageFromPlainRewritableObjectStorageTransaction;
 
-    void load(bool is_initial_load, bool do_not_load_unchanged_directories);
+    enum class LoadMode
+    {
+        /// The first load in the constructor.
+        Initial,
+        /// Periodic `refresh`: pick up the changes made by another server, keeping the unchanged directories.
+        Incremental,
+        /// `dropCache`: rebuild the state from the object storage listing, ignoring the snapshot file.
+        Full,
+    };
+
+    /// Must be called under `load_mutex`.
+    void load(LoadMode mode);
+
+    struct SnapshotFileContents
+    {
+        /// The file exists (but `layout` is empty if it could not be read).
+        bool exists = false;
+        std::optional<PlainRewritableRemoteLayout> layout;
+    };
+
+    /// Reads the snapshot file if it exists.
+    SnapshotFileContents tryReadSnapshotFile(const LoggerPtr & log) const;
+
+    /// Lists the object storage. If `base` is provided, directories whose `prefix.path` has the same ETag as in `base`
+    /// take the local path from it without reading `prefix.path`; their files are taken from `base` too if `reuse_files`,
+    /// otherwise listed. `differs_from_base` tells whether the result is different from `base`.
+    PlainRewritableRemoteLayout listRemoteLayout(
+        const PlainRewritableRemoteLayout * base, bool reuse_files, bool & differs_from_base, const LoggerPtr & log) const;
+    PlainRewritableRemoteLayout getCurrentLayout() const;
+
+    /// Whether this disk writes the snapshot file: snapshots are enabled and the object storage is writable.
+    bool isSnapshotWriter() const;
+    /// Called after the in-memory state was changed; writes the snapshot right away or schedules the write.
+    void onLayoutChanged();
+    /// Writes the current state to the snapshot file (or removes the file if the disk is empty) if there were changes.
+    /// Only one write is performed even if there were several changes, since the latest state is written.
+    void writeSnapshotIfDirty();
+    void snapshotWriteTask();
 
 public:
-    MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, std::string storage_path_prefix_);
+    MetadataStorageFromPlainRewritableObjectStorage(
+        ObjectStoragePtr object_storage_,
+        std::string storage_path_prefix_,
+        PlainRewritableSnapshotSettings snapshot_settings_ = {});
 
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
     const std::string & getPath() const override { return storage_path_full; }
@@ -62,6 +126,7 @@ public:
     /// Will reload in-memory structure from scratch.
     void dropCache() override;
     void refresh(UInt64 not_sooner_than_milliseconds) override;
+    void shutdown() override;
 
     bool existsFile(const std::string & path) const override;
     bool existsDirectory(const std::string & path) const override;
@@ -84,15 +149,21 @@ private:
     const std::shared_ptr<PlainRewritableMetrics> metrics;
     const std::string storage_path_prefix;
     const std::string storage_path_full;
+    const PlainRewritableSnapshotSettings snapshot_settings;
 
     std::mutex metadata_mutex;
     FsMetadata fs;
     std::shared_ptr<PlainRewritableLayout> layout;
 
     std::mutex load_mutex;
-    /// Paths from the last completed load. Validate them against the current snapshot before reuse.
-    std::unordered_map<std::string, std::string> local_paths_by_remote_directory;
     AtomicStopwatch previous_refresh;
+
+    /// Set after every change of the state, cleared when the snapshot write starts.
+    std::atomic<bool> snapshot_dirty = false;
+    /// Serializes the snapshot writes.
+    std::mutex snapshot_write_mutex;
+    /// Must be the last member: it is deactivated first in the destructor, and the task uses the other members.
+    BackgroundSchedulePoolTaskHolder snapshot_write_task;
 };
 
 class MetadataStorageFromPlainRewritableObjectStorageTransaction : public IMetadataTransaction
