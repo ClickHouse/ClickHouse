@@ -1,4 +1,5 @@
 #include <Core/Defines.h>
+#include <IO/ReadHelpers.h>
 #include <base/hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
@@ -1733,13 +1734,29 @@ ReturnType readDateTimeTextFallback(
             second = (s[6] - '0') * 10 + (s[7] - '0');
         }
 
-        if (saturate_on_overflow)
+        if (unlikely(year == 0 && (month == 0 || day == 0)))
+        {
+            /// Zero-date placeholders such as `0000-00-00` map to the Unix epoch for both DateTime and DateTime64.
+            datetime = 0;
+        }
+        else if (!dt64_mode && unlikely(year == 0))
+        {
+            /// DateTime can't represent calendar year 0, so a real year-0 date is rejected instead of clamped.
+            /// Calendar year 0 is valid for DateTime64 and is handled below.
+            if constexpr (throw_exception)
+            {
+                if (saturate_on_overflow)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime: year 0 is out of supported range");
+                else
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Year 0000 is out of bounds of type DateTime");
+            }
+            else
+                return false;
+        }
+        else if (saturate_on_overflow)
         {
             /// Use saturating version - makeDateTime saturates out-of-range years
-            if (unlikely(year == 0))
-                datetime = 0;
-            else
-                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+            datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
         }
         else
         {
@@ -1753,6 +1770,7 @@ ReturnType readDateTimeTextFallback(
                     return false;
             }
 
+            /// For usual DateTime check if value is within supported range
             if constexpr (!dt64_mode)
             {
                 if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
@@ -1765,6 +1783,12 @@ ReturnType readDateTimeTextFallback(
             }
 
             datetime = *datetime_maybe;
+        }
+
+        if constexpr (dt64_mode)
+        {
+            if (year == 0 && (month == 0 || day == 0))
+                skipDateTimeSubseconds(buf);
         }
     }
     else

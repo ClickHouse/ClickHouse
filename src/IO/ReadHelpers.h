@@ -539,6 +539,17 @@ inline bool isSymbolIn(char symbol, const char * symbols)
     return false;
 }
 
+/// When a zero-date placeholder is clamped to the Unix epoch, clear the subseconds.
+inline void skipDateTimeSubseconds(ReadBuffer & buf)
+{
+    if (!buf.eof() && *buf.position() == '.')
+    {
+        ++buf.position();
+        while (!buf.eof() && isNumericASCII(*buf.position()))
+            ++buf.position();
+    }
+}
+
 /// In YYYY-MM-DD format.
 /// For convenience, Month and Day parts can have single digit instead of two digits.
 /// Any separators other than '-' are supported.
@@ -969,13 +980,29 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 second = (s[17] - '0') * 10 + (s[18] - '0');
             }
 
-            if (saturate_on_overflow)
+            if (unlikely(year == 0 && (month == 0 || day == 0)))
+            {
+                /// Zero-date placeholders such as `0000-00-00` map to the Unix epoch for both DateTime and DateTime64.
+                datetime = 0;
+            }
+            else if (!dt64_mode && unlikely(year == 0))
+            {
+                /// DateTime can't represent calendar year 0, so a real year-0 date is rejected instead of clamped.
+                /// Calendar year 0 is valid for DateTime64 and is handled below.
+                if constexpr (throw_exception)
+                {
+                    if (saturate_on_overflow)
+                        throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime: year 0 is out of supported range");
+                    else
+                        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Year 0000 is out of bounds of type DateTime");
+                }
+                else
+                    return false;
+            }
+            else if (saturate_on_overflow)
             {
                 /// Use saturating version - makeDateTime saturates out-of-range years
-                if (unlikely(year == 0))
-                    datetime = 0;
-                else
-                    datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
             }
             else
             {
@@ -1008,6 +1035,12 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 buf.position() += date_time_broken_down_length;
             else
                 buf.position() += date_broken_down_length;
+
+            if constexpr (dt64_mode)
+            {
+                if (year == 0 && (month == 0 || day == 0))
+                    skipDateTimeSubseconds(buf);
+            }
 
             return ReturnType(true);
         }
