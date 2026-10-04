@@ -35,68 +35,59 @@ namespace
     M(17) M(18) M(19) M(20) M(21) M(22) M(23) M(24) \
     M(25) M(26) M(27) M(28) M(29) M(30) M(31) M(32)
 
-template <size_t field_size>
-void gatherField(char * __restrict dst, const char * __restrict src, size_t row_length, size_t offset, size_t length)
+template <size_t value_size, bool nullable, typename SourceRow, typename DestinationRow>
+void gatherField(
+    const char * __restrict values,
+    const UInt8 * __restrict null_map,
+    size_t runtime_value_size,
+    size_t count,
+    SourceRow source_row,
+    DestinationRow destination_row)
 {
-    for (size_t row = 0; row < length; ++row)
-        memcpy(dst + row * row_length + offset, src + row * field_size, field_size);
+    const size_t bytes = value_size ? value_size : runtime_value_size;
+    for (size_t i = 0; i < count; ++i)
+    {
+        const size_t row = source_row(i);
+        char * dst = destination_row(i);
+        if constexpr (nullable)
+            *dst++ = static_cast<char>(null_map[row]);
+        memcpy(dst, values + row * bytes, bytes);
+    }
 }
 
-template <size_t value_size>
-void gatherNullableField(char * __restrict dst, const char * __restrict null_src, const char * __restrict data_src, size_t row_length, size_t offset, size_t length)
+template <typename SourceRow, typename DestinationRow>
+void gatherColumn(const IColumn & source, size_t count, SourceRow source_row, DestinationRow destination_row)
 {
-    for (size_t row = 0; row < length; ++row)
+    const auto copy = [&]<bool nullable>(const IColumn & values, const UInt8 * null_map)
     {
-        char * row_dst = dst + row * row_length + offset;
-        row_dst[0] = null_src[row];
-        memcpy(row_dst + 1, data_src + row * value_size, value_size);
-    }
+        chassert(values.isFixedAndContiguous());
+        const size_t value_size = values.sizeOfValueIfFixed();
+        const char * data = values.getRawData().data();
+        switch (value_size)
+        {
+#define M(N) \
+            case N: \
+                gatherField<N, nullable>(data, null_map, value_size, count, source_row, destination_row); \
+                break;
+            APPLY_FOR_FIELD_SIZES(M)
+#undef M
+            default:
+                gatherField<0, nullable>(data, null_map, value_size, count, source_row, destination_row);
+        }
+    };
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&source))
+        copy.template operator()<true>(nullable->getNestedColumn(), nullable->getNullMapData().data());
+    else
+        copy.template operator()<false>(source, nullptr);
 }
 
 void doGatherRows(const RowDataStore::RowLayout & layout, size_t row_length, const Columns & columns, size_t start, size_t length, char * dst)
 {
     for (size_t i = 0; i < layout.size(); ++i)
-    {
-        const auto & field_layout = layout[i];
-        if (field_layout.is_nullable)
-        {
-            const auto * nullable_column = assert_cast<const ColumnNullable *>(columns[i].get());
-            const char * null_src = nullable_column->getNullMapColumn().getDataAt(start).data();
-            const char * data_src = nullable_column->getNestedColumn().getDataAt(start).data();
-            const size_t value_size = field_layout.size - 1;
-
-            switch (value_size)
-            {
-#define M(N) \
-                case N: \
-                    gatherNullableField<N>(dst, null_src, data_src, row_length, field_layout.offset, length); \
-                    break;
-                APPLY_FOR_FIELD_SIZES(M)
-#undef M
-                default:
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "RowDataStore got a nullable field of {} bytes, expected at most 32.", value_size);
-            }
-        }
-        else
-        {
-            const char * src = columns[i]->getDataAt(start).data();
-            const size_t field_size = field_layout.size;
-
-            switch (field_size)
-            {
-#define M(N) \
-                case N: \
-                    gatherField<N>(dst, src, row_length, field_layout.offset, length); \
-                    break;
-                APPLY_FOR_FIELD_SIZES(M)
-#undef M
-                default:
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "RowDataStore got a field of {} bytes, expected at most 32.", field_size);
-            }
-        }
-    }
+        gatherColumn(
+            *columns[i], length,
+            [start](size_t row) { return start + row; },
+            [dst, row_length, offset = layout[i].offset](size_t row) { return dst + row * row_length + offset; });
 }
 
 #undef APPLY_FOR_FIELD_SIZES
@@ -218,6 +209,19 @@ MutableColumns RowDataStore::scatterRows(const PaddedPODArray<UInt64> & row_nums
     for (auto row : row_nums)
         row_store_ptrs.ptrs.push_back(getRowAt(row));
     return doScatterRows(*layout, getBatchSize(), row_store_ptrs, row_nums.size());
+}
+
+void RowDataStore::gatherFieldToRows(
+    const IColumn & source,
+    std::span<const UInt32> source_rows,
+    std::span<char * const> destination_rows,
+    size_t field_offset)
+{
+    chassert(source_rows.size() == destination_rows.size());
+    gatherColumn(
+        source, source_rows.size(),
+        [source_rows](size_t row) { return source_rows[row]; },
+        [destination_rows, field_offset](size_t row) { return destination_rows[row] + field_offset; });
 }
 
 const RowDataStore::FieldLayout & RowDataStore::getFieldLayout(size_t input_col_index) const
