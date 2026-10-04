@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateRowPolicyQuery.h>
+#include <Interpreters/Access/resolveHierarchicalNamesForAccess.h>
 
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
@@ -53,6 +54,16 @@ namespace
 
 BlockIO InterpreterCreateRowPolicyQuery::execute()
 {
+    /// The names are bound to the tables they denote (a hierarchical name `a.b.c` may be the table `b.c` of the
+    /// database `a`, see `DatabaseCatalog`) before the required access is built from them, so that the check and
+    /// the policy agree on the table, and the bound query is the one dispatched `ON CLUSTER`.
+    {
+        auto & original_query = query_ptr->as<ASTCreateRowPolicyQuery &>();
+        original_query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+        if (original_query.names)
+            resolveHierarchicalNamesForAccess(*original_query.names, getContext());
+    }
+
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     auto & query = updated_query_ptr->as<ASTCreateRowPolicyQuery &>();
     auto required_access = getRequiredAccess();
@@ -74,8 +85,6 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     chassert(query.names->cluster.empty());
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(required_access);
-
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)

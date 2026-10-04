@@ -475,7 +475,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (table_id)
     {
+        /// Both parts: a hierarchical name (`ALTER TABLE a.b.c`, `a.b` in `USE a`) may be split differently from
+        /// how it was written, see `DatabaseCatalog::resolveHierarchicalName`.
         query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
+        query_ptr->as<ASTAlterQuery &>().setTable(table_id.table_name);
         /// Resolve once here so every branch below validates against the real structure instead of
         /// the columns-only metadata a lazily loaded table reports.
         table = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(table_id, getContext()));
