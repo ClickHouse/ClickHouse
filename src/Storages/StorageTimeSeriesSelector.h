@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Logger.h>
+#include <Core/Field.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
@@ -34,7 +35,23 @@ public:
         DateTime64 max_time{};
     };
 
-    static Configuration getConfiguration(ASTs & args, const ContextPtr & context);
+    /// What the arguments of timeSeriesSelector() determine without reading the catalog. The time bounds stay
+    /// unconverted: converting them needs the scale of the TimeSeries table's timestamps.
+    struct Arguments
+    {
+        StorageID time_series_storage_id = StorageID::createEmpty();
+        PrometheusQueryTree selector;
+
+        Field min_time;
+        DataTypePtr min_time_type;
+        Field max_time;
+        DataTypePtr max_time_type;
+    };
+
+    /// `parseArgumentsOnly()` must not read the catalog: a stored `AS timeSeriesSelector(...)` definition is replayed
+    /// through it while metadata is loaded, and has to load even when the objects it names are gone.
+    static Arguments parseArgumentsOnly(ASTs & args, const ContextPtr & context);
+    static Configuration resolveConfiguration(const Arguments & parsed_args, const ContextPtr & context);
 
     StorageTimeSeriesSelector(const StorageID & table_id_, const ColumnsDescription & columns_, const Configuration & config_);
 

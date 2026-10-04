@@ -36,7 +36,7 @@ private:
         return "";
     }
 
-    StorageTimeSeriesSelector::Configuration config;
+    StorageTimeSeriesSelector::Arguments parsed_args;
 };
 
 }
