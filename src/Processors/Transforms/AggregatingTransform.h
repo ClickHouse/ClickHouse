@@ -170,6 +170,8 @@ public:
 
     ~AggregatingTransform() override;
 
+    const Aggregator & getAggregator() const { return params->aggregator; }
+
     String getName() const override { return "AggregatingTransform"; }
     Status prepare() override;
     void work() override;
