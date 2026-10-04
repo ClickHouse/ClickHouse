@@ -17,8 +17,9 @@
 #include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-#include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Storages/MergeTree/PostingListBlockCodec.h>
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <limits>
@@ -434,11 +435,14 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     {
         for (const auto & substream : substreams)
         {
+            /// The merge reads the dictionary and the postings of a source part sequentially,
+            /// so their streams take the regular read buffer size.
             auto stream = makeTextIndexInputStream(
                 segments[i].part_storage,
-                segments[i].index_file_name + substream.suffix,
-                substream.extension,
-                MergeTreeIndexReader::patchSettings(reader_settings_, substream.type));
+                segments[i].index_file_name,
+                substream,
+                reader_settings_,
+                /*expected_buffer_size=*/ std::nullopt);
 
             input_streams[i][substream.type] = stream.get();
             input_streams_holders.emplace_back(std::move(stream));
@@ -1186,6 +1190,64 @@ MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, 
     return storage;
 }
 
+size_t estimatePostingListBufferSize(const TokenPostingsInfo & token_info)
+{
+    const size_t num_segments = token_info.offsets.size();
+    if (num_segments == 0)
+        return 0;
+
+    /// Small lists are read in one piece anyway, so do not go below the default buffer size for postings.
+    constexpr size_t min_buffer_size = 16 * 1024;
+    size_t largest_segment_bytes = 0;
+
+    if (num_segments == 1)
+    {
+        /// A single segment holds the whole list.
+        /// Its row-id deltas are bit-packed to the bit width of the gaps:
+        /// take twice the bit width of the average gap per posting to cover larger gaps and block headers.
+        const auto & range = token_info.ranges.front();
+        const size_t cardinality = std::max<size_t>(1, token_info.cardinality);
+        const size_t average_gap = (range.end - range.begin + 1) / cardinality;
+        const size_t bits_per_posting = 2 * static_cast<size_t>(std::bit_width(average_gap));
+        largest_segment_bytes = cardinality * bits_per_posting / 8;
+    }
+    else
+    {
+        /// With several segments all but the last are full.
+        /// Estimate the largest segment by the largest gap between offsets.
+        for (size_t i = 1; i < num_segments; ++i)
+            largest_segment_bytes = std::max(largest_segment_bytes, static_cast<size_t>(token_info.offsets[i] - token_info.offsets[i - 1]));
+    }
+
+    return std::max(largest_segment_bytes, min_buffer_size);
+}
+
+static MergeTreeReaderSettings makeTextIndexReaderSettings(
+    const MergeTreeReaderSettings & reader_settings,
+    MergeTreeIndexSubstream::Type substream_type,
+    std::optional<size_t> expected_buffer_size)
+{
+    using enum MergeTreeIndexSubstream::Type;
+
+    auto settings = reader_settings;
+    settings.is_compressed = MergeTreeIndexSubstream::isCompressed(substream_type);
+
+    if (expected_buffer_size && (substream_type == TextIndexDictionary || substream_type == TextIndexPostings))
+    {
+        constexpr size_t min_buffer_size = 16 * 1024;
+
+        auto adjust = [&](size_t & buffer_size)
+        {
+            buffer_size = std::clamp(*expected_buffer_size, std::min(min_buffer_size, buffer_size), std::max(min_buffer_size, buffer_size));
+        };
+
+        adjust(settings.read_settings.local_fs_settings.buffer_size);
+        adjust(settings.read_settings.remote_fs_settings.buffer_size);
+    }
+
+    return settings;
+}
+
 static std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStreamImpl(
     DataPartStoragePtr data_part_storage,
     const String & actual_stream_name,
@@ -1213,15 +1275,18 @@ static std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStreamImpl(
 
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const IMergeTreeDataPartInfoForReader & data_part_info,
-    const String & stream_name,
-    const String & extension,
-    const MergeTreeReaderSettings & reader_settings)
+    const String & index_file_name,
+    const MergeTreeIndexSubstream & substream,
+    const MergeTreeReaderSettings & reader_settings,
+    std::optional<size_t> expected_buffer_size)
 {
+    const auto stream_name = index_file_name + substream.suffix;
+    const auto & extension = substream.extension;
+
     /// Mirrors IMergeTreeDataPart::getFileSizeOrZeroResolved: the on-disk name (original or hashed)
     /// comes from checksums, and a stream with no checksums entry is resolved and sized via the storage.
     auto data_part_storage = data_part_info.getDataPartStorage();
-    std::optional<String> actual_stream_name
-        = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, data_part_info.getChecksums());
+    std::optional<String> actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, data_part_info.getChecksums());
     size_t data_file_size = 0;
 
     if (actual_stream_name)
@@ -1239,15 +1304,23 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File for text index stream {} does not exist", stream_name + extension);
 
     return makeTextIndexInputStreamImpl(
-        std::move(data_part_storage), *actual_stream_name, extension, data_file_size, reader_settings);
+        std::move(data_part_storage),
+        *actual_stream_name,
+        extension,
+        data_file_size,
+        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size));
 }
 
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     DataPartStoragePtr data_part_storage,
-    const String & stream_name,
-    const String & extension,
-    const MergeTreeReaderSettings & reader_settings)
+    const String & index_file_name,
+    const MergeTreeIndexSubstream & substream,
+    const MergeTreeReaderSettings & reader_settings,
+    std::optional<size_t> expected_buffer_size)
 {
+    const auto stream_name = index_file_name + substream.suffix;
+    const auto & extension = substream.extension;
+
     /// Check for both original and hashed filenames (hashed if the index name is too long)
     auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, *data_part_storage);
     if (!actual_stream_name)
@@ -1258,7 +1331,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
         *actual_stream_name,
         extension,
         data_part_storage->getFileSize(*actual_stream_name + extension),
-        reader_settings);
+        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size));
 }
 
 }
