@@ -1,8 +1,9 @@
 # Detached part directories manipulated on disk before ATTACH / DROP DETACHED:
-# fabricated `_tryN` leftovers, injected canned old-version parts, and legacy
-# index file renames (`.idx` vs `.idx2`, `checksums.txt` removal). These tests
-# emulate parts written by OLD ClickHouse versions, so they tamper with the
-# server's on-disk data and therefore live here rather than in stateless tests.
+# fabricated `_tryN` leftovers, injected canned old-version parts, legacy
+# index file renames (`.idx` vs `.idx2`, `checksums.txt` removal), parts
+# copied from a table with another `index_granularity`, an edited
+# `count.txt` and emptied marks. These tests tamper with the server's
+# on-disk data and therefore live here rather than in stateless tests.
 #
 # Converted from the stateless tests:
 #   04063_drop_detached_part_with_try_n_suffix.sh
@@ -643,3 +644,102 @@ def test_mutate_mixed_legacy_idx_minmax(started_cluster):
     assert node.query("CHECK TABLE t_mixed_minmax_drop SETTINGS check_query_single_value_result = 1") == "1\n"
 
     node.query("DROP TABLE t_mixed_minmax_drop SYNC")
+
+
+def test_attach_part_written_with_other_index_granularity(started_cluster):
+    # A non-adaptive part does not record rows per mark, so it is read with the attaching table's
+    # `index_granularity`. A part written with another value must be rejected.
+    for table, granularity in (("src_g8", 8), ("dst_g4", 4), ("dst_g8", 8)):
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node.query(
+            f"""
+            CREATE TABLE {table} (a UInt64)
+            ENGINE = MergeTree ORDER BY a
+            SETTINGS index_granularity = {granularity}, index_granularity_bytes = 0, storage_policy = 'default'
+            """
+        )
+
+    node.query("INSERT INTO src_g8 SELECT number FROM numbers(18)")
+
+    src_part_dir = active_part_dir("src_g8")
+    part = os.path.basename(src_part_dir)
+    for table in ("dst_g4", "dst_g8"):
+        exec_root(f"cp -a {src_part_dir} {table_data_path(table)}detached/{part}")
+
+    error = node.query_and_get_error(f"ALTER TABLE dst_g4 ATTACH PART '{part}'")
+    assert "BAD_SIZE_OF_FILE_IN_DATA_PART" in error, error
+    assert node.query("SELECT 1") == "1\n"
+    # The failed ATTACH leaves the part in detached/ under its original name.
+    assert (
+        node.query(
+            "SELECT name FROM system.detached_parts WHERE database = 'default' AND table = 'dst_g4'"
+        )
+        == f"{part}\n"
+    )
+
+    # Control: the same files attach into a table with the same `index_granularity`.
+    node.query(f"ALTER TABLE dst_g8 ATTACH PART '{part}'")
+    assert node.query("SELECT count(), sum(a) FROM dst_g8") == "18\t153\n"
+    assert node.query("SELECT count() FROM dst_g8 WHERE a >= 9") == "9\n"
+
+    for table in ("src_g8", "dst_g4", "dst_g8"):
+        node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_attach_part_with_row_count_not_matching_adaptive_marks(started_cluster):
+    # Adaptive marks store the rows of every granule, so `count.txt` must match them exactly.
+    node.query("DROP TABLE IF EXISTS t_adaptive_count SYNC")
+    node.query(
+        """
+        CREATE TABLE t_adaptive_count (s String)
+        ENGINE = MergeTree ORDER BY s
+        SETTINGS index_granularity = 8, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0, storage_policy = 'default'
+        """
+    )
+    node.query("INSERT INTO t_adaptive_count SELECT toString(number) FROM numbers(18)")
+    part = node.query(
+        "SELECT name FROM system.parts WHERE database = 'default' AND table = 't_adaptive_count' AND active"
+    ).strip()
+    node.query(f"ALTER TABLE t_adaptive_count DETACH PART '{part}'")
+    count_file = f"{table_data_path('t_adaptive_count')}detached/{part}/count.txt"
+
+    exec_root(f"printf 17 > {count_file}")
+    error = node.query_and_get_error(f"ALTER TABLE t_adaptive_count ATTACH PART '{part}'")
+    assert "BAD_SIZE_OF_FILE_IN_DATA_PART" in error, error
+
+    # Control: the original row count attaches.
+    exec_root(f"printf 18 > {count_file}")
+    node.query(f"ALTER TABLE t_adaptive_count ATTACH PART '{part}'")
+    assert node.query("SELECT count() FROM t_adaptive_count") == "18\n"
+
+    node.query("DROP TABLE t_adaptive_count SYNC")
+
+
+def test_attach_part_with_rows_but_empty_marks(started_cluster):
+    # A part with rows must have marks.
+    node.query("DROP TABLE IF EXISTS t_empty_marks SYNC")
+    node.query(
+        """
+        CREATE TABLE t_empty_marks (s String)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS index_granularity = 8, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0, storage_policy = 'default'
+        """
+    )
+    node.query("INSERT INTO t_empty_marks SELECT toString(number) FROM numbers(18)")
+    part = node.query(
+        "SELECT name FROM system.parts WHERE database = 'default' AND table = 't_empty_marks' AND active"
+    ).strip()
+    node.query(f"ALTER TABLE t_empty_marks DETACH PART '{part}'")
+    part_dir = f"{table_data_path('t_empty_marks')}detached/{part}"
+    exec_root(f"rm -rf /tmp/{part}.orig && cp -a {part_dir} /tmp/{part}.orig")
+
+    exec_root(f"for f in {part_dir}/*mrk*; do truncate -s 0 $f; done && rm {part_dir}/checksums.txt")
+    error = node.query_and_get_error(f"ALTER TABLE t_empty_marks ATTACH PART '{part}'")
+    assert "BAD_SIZE_OF_FILE_IN_DATA_PART" in error, error
+
+    # Control: the original files attach.
+    exec_root(f"rm -rf {part_dir} && cp -a /tmp/{part}.orig {part_dir} && rm -rf /tmp/{part}.orig")
+    node.query(f"ALTER TABLE t_empty_marks ATTACH PART '{part}'")
+    assert node.query("SELECT count() FROM t_empty_marks") == "18\n"
+
+    node.query("DROP TABLE t_empty_marks SYNC")

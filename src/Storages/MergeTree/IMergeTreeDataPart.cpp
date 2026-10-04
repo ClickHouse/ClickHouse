@@ -2458,9 +2458,19 @@ void IMergeTreeDataPart::loadRowsCount()
         assertEOF(*buf);
     };
 
+    const bool verify = parent_part ? parent_part->verify_rows_against_marks : verify_rows_against_marks;
+
     if (index_granularity->empty())
     {
         rows_count = 0;
+        if (verify)
+        {
+            if (auto buf = readFileIfExists("count.txt"))
+                read_rows_count(buf);
+            if (rows_count != 0)
+                throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+                    "Data part {} has {} rows, but no marks", name, rows_count);
+        }
     }
     else if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || part_type == Type::Compact || parent_part)
     {
@@ -2469,7 +2479,37 @@ void IMergeTreeDataPart::loadRowsCount()
         else
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No count.txt in part {}", name);
 
-#ifndef NDEBUG
+#ifdef NDEBUG
+        const bool check_rows_against_marks = verify;
+#else
+        const bool check_rows_against_marks = true;
+#endif
+        if (!check_rows_against_marks)
+            return;
+        const int error_code = verify ? ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART : ErrorCodes::LOGICAL_ERROR;
+
+        if (index_granularity->getMarksCountWithoutFinal() != 0)
+        {
+            size_t last_possibly_incomplete_mark_rows = index_granularity->getLastNonFinalMarkRows();
+            /// All this rows have to be written
+            size_t index_granularity_without_last_mark = index_granularity->getTotalRows() - last_possibly_incomplete_mark_rows;
+            if (rows_count < index_granularity_without_last_mark)
+                throw Exception(error_code,
+                    "Data part {} has {} rows, but its index granularity without last mark has {} rows, which is more",
+                    name, rows_count, index_granularity_without_last_mark);
+
+            if (rows_count - index_granularity_without_last_mark > last_possibly_incomplete_mark_rows)
+                throw Exception(error_code,
+                    "Data part {} has {} rows in last mark, but its index granularity has {} rows in last mark, which is less",
+                    name, rows_count - index_granularity_without_last_mark, last_possibly_incomplete_mark_rows);
+        }
+
+        /// Adaptive marks store the rows of every granule.
+        if (verify && index_granularity_info.mark_type.adaptive && rows_count != index_granularity->getTotalRows())
+            throw Exception(error_code,
+                "Data part {} has {} rows, but its marks have {} rows",
+                name, rows_count, index_granularity->getTotalRows());
+
         /// columns have to be loaded
         for (const auto & column : getColumns())
         {
@@ -2487,42 +2527,13 @@ void IMergeTreeDataPart::loadRowsCount()
                 if (rows_in_column != rows_count)
                 {
                     throw Exception(
-                                    ErrorCodes::LOGICAL_ERROR,
+                                    error_code,
                                     "Column {} has rows count {} according to size in memory "
                                     "and size of single value, but data part {} has {} rows",
                                     backQuote(column.name), rows_in_column, name, rows_count);
                 }
-
-                size_t last_possibly_incomplete_mark_rows = index_granularity->getLastNonFinalMarkRows();
-                /// All this rows have to be written in column
-                size_t index_granularity_without_last_mark = index_granularity->getTotalRows() - last_possibly_incomplete_mark_rows;
-                /// We have more rows in column than in index granularity without last possibly incomplete mark
-                if (rows_in_column < index_granularity_without_last_mark)
-                {
-                    throw Exception(
-                                    ErrorCodes::LOGICAL_ERROR,
-                                    "Column {} has rows count {} according to size in memory "
-                                    "and size of single value, "
-                                    "but index granularity in part {} without last mark has {} rows, which "
-                                    "is more than in column",
-                                    backQuote(column.name), rows_in_column, name, index_granularity->getTotalRows());
-                }
-
-                /// In last mark we actually written less or equal rows than stored in last mark of index granularity
-                if (rows_in_column - index_granularity_without_last_mark > last_possibly_incomplete_mark_rows)
-                {
-                     throw Exception(
-                                     ErrorCodes::LOGICAL_ERROR,
-                                     "Column {} has rows count {} in last mark according to size in memory "
-                                     "and size of single value, "
-                                     "but index granularity in part {} "
-                                     "in last mark has {} rows which is less than in column",
-                                     backQuote(column.name), rows_in_column - index_granularity_without_last_mark,
-                                     name, last_possibly_incomplete_mark_rows);
-                }
             }
         }
-#endif
     }
     else
     {

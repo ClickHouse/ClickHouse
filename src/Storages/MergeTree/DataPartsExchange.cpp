@@ -967,6 +967,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         /// The blobs have to stay intact, this temporary part does not own them and does not share them yet.
         new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::PRESERVE_BLOBS;
         new_data_part->modification_time = time(nullptr);
+        new_data_part->verify_rows_against_marks = to_detached;
         new_data_part->loadColumnsChecksumsIndexes(true, false);
     }
 #if USE_AWS_S3

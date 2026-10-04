@@ -334,6 +334,9 @@ public:
     bool is_temp = false;
     std::atomic<bool> is_removed = false;
 
+    /// Files not written by this table (`detached/`, a backup): `loadRowsCount` checks rows against marks in every build.
+    bool verify_rows_against_marks = false;
+
     /// This type and the field remove_tmp_policy is used as a hint
     /// to help avoid communication with keeper when temporary part is deleting.
     /// The common procedure is to ask the keeper with unlock request to release a references to the blobs.
