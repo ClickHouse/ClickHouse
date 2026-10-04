@@ -1319,10 +1319,8 @@ void MergeTreeReaderWide::deserializePrefix(
             if (!stream_name)
                 return false;
 
-            auto * stream = streams.find(*stream_name);
-            if (!stream)
-                return false;
-
+            /// Bucket and dynamic streams are opened lazily; the verdict must not depend on which column opened them first.
+            auto * stream = getOrAddStream(substream_path, *stream_name);
             return stream->hasAtMostNDistinctMarks(allowed_distinct_marks);
         };
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_state_map[name], &deserialize_states_cache);
