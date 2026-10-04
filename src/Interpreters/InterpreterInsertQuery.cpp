@@ -72,6 +72,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool async_insert;
     extern const SettingsBool async_insert_select_as_async_insert;
     extern const SettingsBool distributed_foreground_insert;
@@ -1256,9 +1257,10 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         if (auto * sq = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
         {
             select_query = sq;
+            const size_t max_expanded_ast_elements = local_context->getSettingsRef()[Setting::max_expanded_ast_elements];
             if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
-                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
-            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
+                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0), max_expanded_ast_elements);
+            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0), max_expanded_ast_elements);
 
             JoinedTables joined_tables(Context::createCopy(local_context), *sq);
             if (joined_tables.tablesCount() == 1)

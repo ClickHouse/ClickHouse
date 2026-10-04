@@ -209,6 +209,7 @@ namespace Setting
     extern const SettingsBool log_query_settings;
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
@@ -2875,7 +2876,7 @@ static BlockIO executeQueryImpl(
             /// Propagate WITH statement to children ASTSelect.
             if (settings[Setting::enable_global_with_statement])
             {
-                ApplyWithGlobalVisitor::visit(out_ast);
+                ApplyWithGlobalVisitor::visit(out_ast, settings[Setting::max_expanded_ast_elements]);
             }
 
             {

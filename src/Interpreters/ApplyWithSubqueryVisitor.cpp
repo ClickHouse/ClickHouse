@@ -1,5 +1,6 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpandedASTBudget.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/misc.h>
@@ -24,6 +25,7 @@ namespace Setting
 {
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool enable_scopes_for_with_statement;
+    extern const SettingsUInt64 max_expanded_ast_elements;
 }
 
 namespace
@@ -46,6 +48,39 @@ ContextPtr getSubqueryContext(const ASTSelectQuery & select, const ContextPtr & 
     return subquery_context;
 }
 
+}
+
+void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, size_t max_expanded_ast_elements)
+{
+    ExpandedASTBudget budget(max_expanded_ast_elements);
+    Data data;
+    data.budget = &budget;
+    visit(ast, data);
+}
+
+void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, ContextPtr context)
+{
+    ExpandedASTBudget budget(context->getSettingsRef()[Setting::max_expanded_ast_elements]);
+    Data data;
+    data.context = std::move(context);
+    data.budget = &budget;
+    visit(ast, data);
+}
+
+void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & select, size_t max_expanded_ast_elements)
+{
+    ExpandedASTBudget budget(max_expanded_ast_elements);
+    Data data;
+    data.budget = &budget;
+    visit(select, data);
+}
+
+void ApplyWithSubqueryVisitor::visit(ASTSelectWithUnionQuery & select, size_t max_expanded_ast_elements)
+{
+    ExpandedASTBudget budget(max_expanded_ast_elements);
+    Data data;
+    data.budget = &budget;
+    visit(select, data);
 }
 
 void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
@@ -141,7 +176,7 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
                 auto old_alias = table.database_and_table_name->tryGetAlias();
                 table.children.clear();
                 table.database_and_table_name.reset();
-                table.subquery = subquery_it->second->clone();
+                table.subquery = data.budget->clone(subquery_it->second);
                 table.subquery->as<ASTSubquery &>().cte_name = table_id.table_name;
                 if (!old_alias.empty())
                     table.subquery->setAlias(old_alias);
@@ -168,7 +203,7 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                 if (subquery_it != data.subqueries.end())
                 {
                     auto old_alias = func.arguments->children[1]->tryGetAlias();
-                    func.arguments->children[1] = subquery_it->second->clone();
+                    func.arguments->children[1] = data.budget->clone(subquery_it->second);
                     func.arguments->children[1]->as<ASTSubquery>()->cte_name = name;
                     if (!old_alias.empty())
                         func.arguments->children[1]->setAlias(old_alias);
@@ -179,7 +214,7 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                     if (literal_it != data.literals.end())
                     {
                         auto old_alias = func.arguments->children[1]->tryGetAlias();
-                        func.arguments->children[1] = literal_it->second->clone();
+                        func.arguments->children[1] = data.budget->clone(literal_it->second);
                         if (!old_alias.empty())
                             func.arguments->children[1]->setAlias(old_alias);
                     }
@@ -199,7 +234,7 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
             if (literal_it != data.literals.end())
             {
                 auto old_alias = dict_name_arg->tryGetAlias();
-                dict_name_arg = literal_it->second->clone();
+                dict_name_arg = data.budget->clone(literal_it->second);
                 /// Always reset the alias name, otherwise the aliases will not match after AddDefaultDatabaseVisitor
                 dict_name_arg->setAlias(old_alias);
             }

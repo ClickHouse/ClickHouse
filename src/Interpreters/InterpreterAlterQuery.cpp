@@ -61,6 +61,7 @@ namespace MergeTreeSetting
 
 namespace Setting
 {
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
@@ -582,7 +583,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (modify_query)
     {
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor::visit(*modify_query);
+        ApplyWithSubqueryVisitor::visit(*modify_query, getContext()->getSettingsRef()[Setting::max_expanded_ast_elements]);
     }
 
     /// The same for the expressions of the mutation commands, as `InterpreterUpdateQuery` does: the
