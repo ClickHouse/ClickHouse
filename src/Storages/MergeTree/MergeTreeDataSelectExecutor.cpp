@@ -2440,6 +2440,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::vector<FieldRef> part_offset_left(2);
     std::vector<FieldRef> part_offset_right(2);
 
+    /// The conditions that `check_in_range` evaluates. The generic exclusion search may replace them, see below.
+    const KeyCondition * checked_key_condition = &key_condition;
+    const KeyCondition * checked_part_offset_condition = part_offset_condition;
+    const KeyCondition * checked_total_offset_condition = total_offset_condition;
+
     auto check_in_range = [&](const MarkRange & range, BoolMask initial_mask = {})
     {
         auto check_key_condition = [&]() -> BoolMask
@@ -2505,7 +2510,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                 }
 
-                return key_condition.checkInRange(
+                return checked_key_condition->checkInRange(
                     used_key_indices,
                     sparse_key_left.data(),
                     sparse_key_right.data(),
@@ -2553,7 +2558,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                 }
             }
-            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
+            return checked_key_condition->checkInRange(
+                used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
         };
 
         auto check_part_offset_condition = [&]()
@@ -2572,7 +2578,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part_offset_left[1] = part->name;
             part_offset_right[1] = part->name;
 
-            return part_offset_condition->checkInRange(
+            return checked_part_offset_condition->checkInRange(
                 2, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
         };
 
@@ -2588,7 +2594,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
             part_offset_left[0] = begin + part_starting_offset_in_query;
             part_offset_right[0] = end + part_starting_offset_in_query;
-            return total_offset_condition->checkInRange(
+            return checked_total_offset_condition->checkInRange(
                 1, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
         };
 
@@ -2631,16 +2637,49 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             .min_marks_for_seek = min_marks_for_seek,
         };
 
-        auto search_result = genericExclusionSearch(
-            part_ranges,
-            [&](const MarkRange & mark_range) { return check_in_range(mark_range, BoolMask()); },
-            search_settings,
-            exact_ranges != nullptr);
+        GenericExclusionSearchResult search_result;
+        std::list<KeyCondition> substituted_conditions;
+
+        if (exact_ranges)
+        {
+            search_result = genericExclusionSearch(
+                part_ranges,
+                [&](const MarkRange & mark_range) { return check_in_range(mark_range, BoolMask()); },
+                search_settings,
+                /*collect_exact_ranges=*/ true);
+
+            *exact_ranges = std::move(search_result.exact_ranges);
+        }
+        else
+        {
+            /// Without exact ranges only `can_be_true` matters, so the atoms that cannot be evaluated may be assumed true.
+            /// Then a range where no subrange can be excluded is certainly true, and the search does not split it.
+            if (checked_key_condition && checked_key_condition->hasUnknownAtoms())
+            {
+                auto substituted = checked_key_condition->createWithUnknownAtomsAssumedTrue();
+                checked_key_condition = &substituted_conditions.emplace_back(std::move(substituted));
+            }
+
+            if (checked_part_offset_condition && checked_part_offset_condition->hasUnknownAtoms())
+            {
+                auto substituted = checked_part_offset_condition->createWithUnknownAtomsAssumedTrue();
+                checked_part_offset_condition = &substituted_conditions.emplace_back(std::move(substituted));
+            }
+
+            if (checked_total_offset_condition && checked_total_offset_condition->hasUnknownAtoms())
+            {
+                auto substituted = checked_total_offset_condition->createWithUnknownAtomsAssumedTrue();
+                checked_total_offset_condition = &substituted_conditions.emplace_back(std::move(substituted));
+            }
+
+            search_result = genericExclusionSearch(
+                part_ranges,
+                [&](const MarkRange & mark_range) { return check_in_range(mark_range, BoolMask()); },
+                search_settings,
+                /*collect_exact_ranges=*/ false);
+        }
 
         res = std::move(search_result.ranges);
-        if (exact_ranges)
-            *exact_ranges = std::move(search_result.exact_ranges);
-
         res.search_algorithm = MarkRanges::SearchAlgorithm::GenericExclusionSearch;
         ProfileEvents::increment(ProfileEvents::IndexGenericExclusionSearchAlgorithm);
         if (search_result.reached_step_limit)

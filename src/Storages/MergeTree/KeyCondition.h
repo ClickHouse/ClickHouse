@@ -215,6 +215,13 @@ public:
     /// Returns whether there is such a column in the key.
     bool addCondition(const String & column, const Range & range);
 
+    /// Checks if the condition has unknown atoms.
+    bool hasUnknownAtoms() const;
+
+    /// A copy where every atom that cannot be evaluated is replaced with the constant that maximizes the condition.
+    /// It has the same `can_be_true` on every range, but `can_be_false` is not exact, so it must not be used for exact ranges.
+    KeyCondition createWithUnknownAtomsAssumedTrue() const;
+
     String toString() const;
 
     size_t getNumKeyColumns() const { return num_key_columns; }
