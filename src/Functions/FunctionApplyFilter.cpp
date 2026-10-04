@@ -12,6 +12,12 @@
 #include <IO/WriteHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+    extern const Event RuntimeFilterLookupsBeforeBuildFinished;
+}
 
 namespace DB
 {
@@ -103,10 +109,20 @@ public:
         if (!filter_lookup)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter lookup was not initialized");
 
-        /// Look up the filter by the rendezvous id; if it has not been registered/built yet, all rows pass.
+        /// Look up the filter by the rendezvous id; if it has not been registered yet, all rows pass.
         auto filter = filter_lookup->find(filter_id);
-        if (!filter || !filter->isReady())
+        if (!filter)
             return DataTypeUInt8().createColumnConst(input_rows_count, true);
+
+        /// A registered filter may still be building: it becomes findable after the first build
+        /// stream registers it, but is ready only after the last stream merges. The join itself
+        /// keeps the result correct, so the block passes through unfiltered; count it so the
+        /// window is observable.
+        if (!filter->isReady())
+        {
+            ProfileEvents::increment(ProfileEvents::RuntimeFilterLookupsBeforeBuildFinished);
+            return DataTypeUInt8().createColumnConst(input_rows_count, true);
+        }
 
         const auto & data_column = arguments[1];
 

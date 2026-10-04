@@ -1052,7 +1052,7 @@ namespace
         }
 
         std::string_view enumDataTypeValueToString(NumberType value) const { return std::string_view{enum_data_type->getNameForValue(value)}; }
-        NumberType stringToEnumDataTypeValue(const absl::string_view & str) const { return enum_data_type->getValue(std::string(str)); }
+        NumberType stringToEnumDataTypeValue(const absl::string_view & str) const { return enum_data_type->getValue(str); }
 
         void prepareEnumMapping()
         {

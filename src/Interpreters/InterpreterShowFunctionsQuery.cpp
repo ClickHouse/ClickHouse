@@ -39,7 +39,7 @@ FROM {}.{})",
         system_db->getDatabaseName(),
         functions_table);
 
-    if (!query.like.empty())
+    if (query.has_like)
     {
         rewritten_query += " WHERE name ";
         rewritten_query += query.case_insensitive_like ? "ILIKE " : "LIKE ";

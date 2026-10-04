@@ -69,8 +69,8 @@ void ASTTTLElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases
 void ASTTTLElement::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "TTLElement");
-    w.writeString("mode", std::string(magic_enum::enum_name(mode)));
-    w.writeString("destination_type", std::string(magic_enum::enum_name(destination_type)));
+    w.writeString("mode", magic_enum::enum_name(mode));
+    w.writeString("destination_type", magic_enum::enum_name(destination_type));
 
     if (!destination_name.empty())
         w.writeString("destination_name", destination_name);

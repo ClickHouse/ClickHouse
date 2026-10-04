@@ -108,6 +108,10 @@ public:
     /// Resolves `VersionInfo::isVisible`'s `nullopt` (unknown CSN) via `TransactionManager::getCSN`.
     static bool isVisible(const VersionInfo & current_info, CSN snapshot_version, TransactionID current_tid = Tx::EmptyTID);
 
+    /// Whether a transaction started now sees the object. Active is not enough: a part can be Active before
+    /// its transaction commits.
+    bool isVisibleByLatestSnapshot();
+
     /// Sets `creation_csn` when a transaction commits.
     void setAndStoreCreationCSN(CSN csn);
 

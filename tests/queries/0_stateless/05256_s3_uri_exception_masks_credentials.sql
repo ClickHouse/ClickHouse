@@ -29,5 +29,5 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT type, position(exception, 'SECRET_') > 0 AS leaked, extract(exception, 'DB::Exception: (.*)\\. \\(BAD_ARGUMENTS\\)') AS message
 FROM system.query_log
-WHERE current_database = currentDatabase() AND is_initial_query AND type != 'QueryStart' AND exception_code = 36
+WHERE current_database = currentDatabase() AND type != 'QueryStart' AND exception_code = 36
 ORDER BY event_time_microseconds;

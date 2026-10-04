@@ -87,7 +87,7 @@ public:
                 "Must be constant string.", arguments[1].column->getName(), getName());
 
         const String pattern = col->getValue<String>();
-        re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(pattern));
+        re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false, false>(pattern));
         capture = re->getNumberOfSubpatterns() > 0 ? 1 : 0;
 
         matches.resize(capture + 1);

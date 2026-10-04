@@ -32,6 +32,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
+#include <base/errnoToString.h>
 
 #include <sys/stat.h>
 
@@ -152,7 +153,8 @@ private:
                 file_log.getPollTimeoutMillisecond(),
                 stream_number,
                 max_streams_number,
-                (*file_log.filelog_settings)[FileLogSetting::handle_error_mode]));
+                (*file_log.filelog_settings)[FileLogSetting::handle_error_mode],
+                /* skip_broken_records */ false));
         }
 
         return Pipe::unitePipes(std::move(pipes));
@@ -502,16 +504,74 @@ void StorageFileLog::assertStreamGood(const std::ifstream & reader)
     }
 }
 
+bool StorageFileLog::isTrackedByDirectoryEvents(const String & file_name) const
+{
+    return directory_watch && !FS::isSymlinkNoThrow(getFullDataPath(file_name));
+}
+
 void StorageFileLog::openFilesAndSetPos()
 {
+    bool any_open_failed = false;
     for (const auto & file : file_infos.file_names)
     {
         auto & file_ctx = findInMap(file_infos.context_by_name, file);
-        if (file_ctx.status != FileStatus::NO_CHANGE)
+        if (file_ctx.status != FileStatus::NO_CHANGE || file_ctx.open_failed)
         {
             file_ctx.reader.emplace(getFullDataPath(file));
+            const int open_errno = errno;
+            if (!file_ctx.reader->is_open() && open_errno == ENOENT && isTrackedByDirectoryEvents(file))
+            {
+                /// Removed or renamed: the pending directory events drop the file or move its offset to the new name.
+                file_ctx.reader.reset();
+                file_ctx.status = FileStatus::NO_CHANGE;
+                continue;
+            }
+            if (!file_ctx.reader->is_open()
+                && (open_errno == ENOENT || open_errno == EACCES || open_errno == EPERM || open_errno == ELOOP))
+            {
+                if (!file_ctx.open_failed)
+                    LOG_ERROR(log, "Cannot open file {}, will retry: {}", getFullDataPath(file), errnoToString(open_errno));
+                file_ctx.reader.reset();
+                file_ctx.status = FileStatus::NO_CHANGE;
+                file_ctx.open_failed = true;
+                /// The path leads to no file: what appears there later is read from its start, also after a restart.
+                if (open_errno == ENOENT || open_errno == ELOOP)
+                {
+                    if (auto it = file_infos.meta_by_inode.find(file_ctx.inode);
+                        it != file_infos.meta_by_inode.end() && it->second.file_name == file && it->second.last_writen_position != 0)
+                    {
+                        disk->removeFileIfExists(getFullMetaPath(file));
+                        it->second.last_writen_position = 0;
+                    }
+                }
+                any_open_failed = true;
+                /// Published at once: a later file can throw before the end of the loop.
+                has_files_to_reopen = true;
+                continue;
+            }
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
+            if (file_ctx.open_failed)
+            {
+                /// The path may lead to another file now: read it from the start.
+                if (const UInt64 inode = getInode(getFullDataPath(file)); inode != file_ctx.inode)
+                {
+                    if (isTrackedByDirectoryEvents(file))
+                    {
+                        file_ctx.reader.reset();
+                        file_ctx.status = FileStatus::NO_CHANGE;
+                        any_open_failed = true;
+                        has_files_to_reopen = true;
+                        continue;
+                    }
+                    file_infos.meta_by_inode.erase(file_ctx.inode);
+                    disk->removeFileIfExists(getFullMetaPath(file));
+                    file_ctx.inode = inode;
+                    file_infos.meta_by_inode.insert_or_assign(inode, FileMeta{.file_name = file});
+                }
+                file_ctx.open_failed = false;
+                file_ctx.status = FileStatus::UPDATED;
+            }
 
             reader.seekg(0, std::ios::end);
             assertStreamGood(reader);
@@ -540,6 +600,7 @@ void StorageFileLog::openFilesAndSetPos()
             assertStreamGood(reader);
         }
     }
+    has_files_to_reopen = any_open_failed;
     serialize();
 }
 
@@ -666,6 +727,7 @@ void StorageFileLog::threadFunc()
         auto table_id = getStorageID();
 
         auto dependencies_count = getTableDependentCount();
+        reschedule = !dependencies_count;
 
         if (dependencies_count)
         {
@@ -719,7 +781,7 @@ void StorageFileLog::threadFunc()
     {
         if (path_is_directory)
         {
-            if (!getTableDependentCount() || reschedule)
+            if (!getTableDependentCount() || reschedule || has_files_to_reopen)
                 task->holder->scheduleAfter(milliseconds_to_wait);
             else
             {
@@ -785,6 +847,7 @@ bool StorageFileLog::streamToViews()
 
     auto block_io = interpreter.execute();
 
+    read_more_after_skipped_records = false;
     /// Each stream responsible for closing it's files and store meta
     openFilesAndSetPos();
 
@@ -801,7 +864,8 @@ bool StorageFileLog::streamToViews()
             getPollTimeoutMillisecond(),
             stream_number,
             max_streams_number,
-            (*filelog_settings)[FileLogSetting::handle_error_mode]));
+            (*filelog_settings)[FileLogSetting::handle_error_mode],
+            /* skip_broken_records */ true));
     }
 
     auto input= Pipe::unitePipes(std::move(pipes));
@@ -821,7 +885,8 @@ bool StorageFileLog::streamToViews()
     UInt64 milliseconds = watch.elapsedMilliseconds();
     LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", rows.load(), table_id.getNameForLogs(), milliseconds);
 
-    return updateFileInfos();
+    bool stalled = updateFileInfos();
+    return stalled && !read_more_after_skipped_records;
 }
 
 void StorageFileLog::wakeUp()
@@ -961,11 +1026,13 @@ Optional parameters:
 - `poll_directory_watch_events_backoff_init` - The initial sleep value for watch directory thread. Default: `500`.
 - `poll_directory_watch_events_backoff_max` - The max sleep value for watch directory thread. Default: `32000`.
 - `poll_directory_watch_events_backoff_factor` - The speed of backoff, exponential by default. Default: `2`.
-- `handle_error_mode` — How to handle errors for FileLog engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
+- `handle_error_mode` — How to handle errors for FileLog engine. Possible values: default (a direct `SELECT` throws an exception if a record fails to parse; while the table streams into materialized views, such a record is skipped and the error is written to the server log), stream (the exception message and raw record will be saved in virtual columns `_error` and `_raw_record`).
 
 ## Description {#description}
 
 The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read.
+
+A file that cannot be opened (a symlink whose target was removed, a file not readable by the server, or the file of a single-file table that was removed) is skipped with an error in the server log and retried until it can be opened while the table is loaded; a file that was missing is then read from its start. A symlink is read only if its target exists when the table finds it.
 
 `SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
 
@@ -1171,7 +1238,7 @@ bool StorageFileLog::updateFileInfos()
                         if (disk->existsFile(getFullMetaPath(old_name)))
                             disk->replaceFile(getFullMetaPath(old_name), getFullMetaPath(file_name));
                     }
-                    /// May move from other place, adding new meta info
+                    /// The rename source was not tracked, e.g. it was created and renamed within one batch
                     else
                         file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
                 }

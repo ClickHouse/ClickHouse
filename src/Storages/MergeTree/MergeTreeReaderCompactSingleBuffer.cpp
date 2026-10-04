@@ -121,6 +121,7 @@ try
         all_mark_ranges, settings, uncompressed_cache,
         data_part_info_for_read->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION),
         marks_loader, profile_callback, clock_type);
+    stream->updateReadRequestMap(read_request_map);
 
     initialized = true;
 }

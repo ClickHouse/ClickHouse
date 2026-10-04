@@ -105,5 +105,8 @@ SELECT 'probes logged', count(), countIf(query LIKE '%[HIDDEN]%') FROM system.qu
 WHERE current_database = currentDatabase() AND event_date >= yesterday() AND log_comment = '${PROBE}' AND type != 'QueryStart';
 "
 
+# Drop the objects that use the named collections first: a table left with a dropped named collection cannot
+# be attached, so the server would not start again with this database (the stress test restarts the server).
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS e06, e07, e08, e10, f09"
 $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION ${NC}"
 $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION ${NC2}"

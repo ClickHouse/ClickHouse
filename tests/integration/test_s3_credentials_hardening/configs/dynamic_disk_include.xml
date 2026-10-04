@@ -2,4 +2,6 @@
     <!-- Source file for `include` substitutions in dynamic disk definitions (shipped as a config.d file so it
          exists at server startup; its `evil_locations` node injects an S3 `locations` child). -->
     <include_from>/etc/clickhouse-server/config.d/dynamic_disk_include_source.xml</include_from>
+    <!-- So that the local-path fence for dynamic disks has a base directory to compare against. -->
+    <custom_local_disks_base_directory>/var/lib/clickhouse/disks/</custom_local_disks_base_directory>
 </clickhouse>

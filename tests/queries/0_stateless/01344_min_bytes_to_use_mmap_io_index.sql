@@ -3,7 +3,9 @@ DROP TABLE IF EXISTS test_01344;
 -- packed_skip_index_max_bytes=0 and min_bytes_for_full_part_storage=0: this test counts the read
 -- buffers created when reading per-file substreams via mmap. Packing (of skip indices, or of the
 -- whole part into a single data.packed archive) routes those bytes through the archive read path
--- with no per-file mmap, so the count differs (CreatedReadBufferMMap becomes 0 instead of 4).
+-- with no per-file mmap, so the count differs (CreatedReadBufferMMap becomes 0 instead of 3).
+-- The count is 3: the column data and marks, and the index data. The index has a single mark,
+-- so it is read to the end of its file without loading its marks.
 CREATE TABLE test_01344 (x String, INDEX idx (x) TYPE set(10) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, prewarm_mark_cache = 0, serialization_info_version = 'basic', packed_skip_index_max_bytes = 0;
 INSERT INTO test_01344 VALUES ('Hello, world');
 

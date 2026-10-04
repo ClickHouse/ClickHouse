@@ -61,9 +61,13 @@ Default tokenizer (splitByNonAlpha)
 1
 -- Array(FixedString) input
 1
--- a FixedString input needs a tokenizer that splits at its zero padding
+-- a FixedString keeps its zero padding, which some tokenizers put inside a token
 1
 1
+1
+-- the padding joins the last token of these, so nothing matches
+0
+0
 -- Array phrase: elements are tokens
 0
 1

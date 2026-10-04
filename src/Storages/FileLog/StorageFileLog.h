@@ -77,6 +77,8 @@ public:
         FileStatus status = FileStatus::OPEN;
         UInt64 inode{};
         std::optional<std::ifstream> reader = std::nullopt;
+        /// The last attempt to open the file failed for a reason of the file itself (missing, not readable).
+        bool open_failed = false;
     };
 
     struct FileMeta
@@ -131,6 +133,10 @@ public:
 
     const auto & getFileLogSettings() const { return filelog_settings; }
 
+    const LoggerPtr & getLog() const { return log; }
+
+    void setReadMoreAfterSkippedRecords() { read_more_after_skipped_records = true; }
+
 private:
     friend class ReadFromStorageFileLog;
 
@@ -168,6 +174,12 @@ private:
 
     std::mutex file_infos_mutex;
 
+    /// Written by openFilesAndSetPos under file_infos_mutex, read by threadFunc without it.
+    std::atomic<bool> has_files_to_reopen = false;
+
+    /// Set by a stream that stopped after skipping broken records before the end of its files.
+    std::atomic<bool> read_more_after_skipped_records = false;
+
     struct TaskContext
     {
         BackgroundSchedulePoolTaskHolder holder;
@@ -183,6 +195,9 @@ private:
     void loadFiles();
 
     void loadMetaFiles(bool attach);
+
+    /// The directory watcher reports when the file is removed, renamed or replaced (not a change of a symlink's target).
+    bool isTrackedByDirectoryEvents(const String & file_name) const;
 
     void threadFunc();
 

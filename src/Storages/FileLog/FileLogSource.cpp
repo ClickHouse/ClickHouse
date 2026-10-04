@@ -1,6 +1,7 @@
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <Formats/ParseError.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
@@ -9,6 +10,8 @@
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
+
+#include <map>
 
 namespace DB
 {
@@ -23,7 +26,8 @@ FileLogSource::FileLogSource(
     size_t poll_time_out_,
     size_t stream_number_,
     size_t max_streams_number_,
-    StreamingHandleErrorMode handle_error_mode_)
+    StreamingHandleErrorMode handle_error_mode_,
+    bool skip_broken_records_)
     : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -34,6 +38,7 @@ FileLogSource::FileLogSource(
     , stream_number(stream_number_)
     , max_streams_number(max_streams_number_)
     , handle_error_mode(handle_error_mode_)
+    , skip_broken_records(skip_broken_records_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
 {
@@ -96,6 +101,14 @@ Chunk FileLogSource::generate()
     std::optional<String> exception_message;
     size_t total_rows = 0;
 
+    struct SkippedRecords
+    {
+        size_t count = 0;
+        UInt64 first_offset = 0;
+        String first_error;
+    };
+    std::map<String, SkippedRecords> skipped_records;
+
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
         if (handle_error_mode == StreamingHandleErrorMode::STREAM)
@@ -111,6 +124,14 @@ Chunk FileLogSource::generate()
             }
 
             return 1;
+        }
+
+        if (skip_broken_records && isParseError(e.code()))
+        {
+            exception_message = e.message();
+            for (size_t i = 0; i < result_columns.size(); ++i)
+                result_columns[i]->rollback(*checkpoints[i]);
+            return 0;
         }
 
         throw std::move(e);
@@ -158,6 +179,15 @@ Chunk FileLogSource::generate()
         else /// poll succeed, but parse failed
         {
             ++failed_poll_attempts;
+            if (exception_message)
+            {
+                auto & skipped = skipped_records[consumer->getFileName()];
+                if (skipped.count++ == 0)
+                {
+                    skipped.first_offset = consumer->getOffset();
+                    skipped.first_error = std::move(*exception_message);
+                }
+            }
         }
 
         if (!consumer->hasMorePolledRecords()
@@ -168,8 +198,14 @@ Chunk FileLogSource::generate()
         }
     }
 
+    for (const auto & [file_name, skipped] : skipped_records)
+        LOG_ERROR(storage.getLog(), "Skipped {} records of file {} that could not be parsed, the first one at offset {}: {}",
+            skipped.count, file_name, skipped.first_offset, skipped.first_error);
+
     if (total_rows == 0)
     {
+        if (!skipped_records.empty() && !consumer->noRecords())
+            storage.setReadMoreAfterSkippedRecords();
         close();
         return {};
     }

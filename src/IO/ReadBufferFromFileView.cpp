@@ -23,7 +23,12 @@ ReadBufferFromFileView::ReadBufferFromFileView(
     /// file inside an archive on object storage becomes an open-ended range request: it transfers the rest of the
     /// archive instead of the file, and the HTTP connection cannot be returned to the pool.
     if (right_bound > left_bound)
+    {
         impl->setReadUntilPosition(right_bound);
+        ByteRangeSet slice;
+        slice.add({left_bound, right_bound - left_bound});
+        impl->setRequestMap(std::move(slice));
+    }
 
     /// Seek to the begin of file.
     impl->seek(left_bound, SEEK_SET);
@@ -55,6 +60,20 @@ void ReadBufferFromFileView::setReadUntilEnd()
     read_until_position.reset();
     executeWithOriginalBuffer([&]{ impl->setReadUntilPosition(right_bound); });
     resizeWorkingBuffer();
+}
+
+void ReadBufferFromFileView::setRequestMap(ByteRangeSet ranges)
+{
+    if (right_bound == left_bound)
+        return;
+    executeWithOriginalBuffer([&]{ impl->setRequestMap(toArchiveRanges(ranges)); });
+}
+
+ByteRangeSet ReadBufferFromFileView::toArchiveRanges(const ByteRangeSet & ranges) const
+{
+    auto result = ranges.intersect({0, right_bound - left_bound});
+    result.shift(left_bound);
+    return result;
 }
 
 off_t ReadBufferFromFileView::getPosition()
