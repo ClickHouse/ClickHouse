@@ -58,6 +58,7 @@ public:
         PERSISTENT_WATCH,
         PERSISTENT_LIST_WATCH,
         PERSISTENT_RECURSIVE_WATCH,
+        LIST_WITH_DATA_WATCH,
     };
 
     struct WatchInfo
@@ -82,6 +83,13 @@ public:
     using Watches = std::unordered_map<
         String /* path, relative of root_path */,
         SessionIDs,
+        StringHashForHeterogeneousLookup,
+        StringHashForHeterogeneousLookup::transparent_key_equal>;
+
+    /// Path -> session -> the children filter of the session's list requests on the path, `ALL` if they differ.
+    using ListWithDataWatches = std::unordered_map<
+        String,
+        std::unordered_map<int64_t, Coordination::ListRequestType>,
         StringHashForHeterogeneousLookup,
         StringHashForHeterogeneousLookup::transparent_key_equal>;
 
@@ -146,6 +154,9 @@ public:
     /// Currently active watches (node_path -> subscribed sessions)
     Watches watches;
     Watches list_watches; /// Watches for 'list' request (watches on children).
+    /// Watches of list requests that returned children stats or data. They also fire on a change of a child's ACL,
+    /// and of its data if the child passes their filter.
+    ListWithDataWatches list_with_data_watches;
     Watches persistent_watches;
     Watches persistent_list_watches;
     Watches persistent_recursive_watches;
@@ -341,6 +352,8 @@ public:
 
     std::pair<KeeperResponsesForSessions, Int64> processWatchesImpl(
         std::string_view path, Coordination::Event event_type);
+
+    std::pair<KeeperResponsesForSessions, Int64> processACLChangeWatchesImpl(std::string_view path);
 
     void prepareAddAuth(std::shared_ptr<KeeperStorage::AuthID> new_auth, int64_t session_id);
 };
