@@ -172,3 +172,163 @@ FROM
     GROUP BY value
 );
 
+
+
+-- Equivalent negative curves reconstructed at different anchors must remain one
+-- logical value, including equality, ordering, hashing, and serialized GROUP BY keys.
+WITH
+    exponentialTimeDecaying(10)(-2., toFloat64(0)) AS a,
+    exponentialTimeDecaying(10)(-1., toFloat64(10 * log(2))) AS b
+SELECT 'negative re-anchoring mismatch'
+WHERE NOT (
+    a = b
+    AND a <= b
+    AND a >= b
+    AND NOT (a < b)
+    AND NOT (a > b)
+    AND cityHash64(a) = cityHash64(b));
+
+SELECT 'negative re-anchored GROUP BY mismatch'
+WHERE
+(
+    SELECT count()
+    FROM
+    (
+        SELECT value
+        FROM
+        (
+            SELECT exponentialTimeDecaying(10)(-2., toFloat64(0)) AS value
+            UNION ALL
+            SELECT exponentialTimeDecaying(10)(-1., toFloat64(10 * log(2))) AS value
+        )
+        GROUP BY value
+    )
+) != 1;
+
+-- Negative prefixes discard the low sortable-timestamp bit in the opposite
+-- ordering domain. Adjacent timestamps below share one compact UInt64 prefix,
+-- but the full logical-key fallback must keep them distinct and reverse their
+-- order correctly for negative curves.
+WITH
+    toFloat64(1) AS t1,
+    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS t2,
+    exponentialTimeDecaying(1)(-1., t1) AS a,
+    exponentialTimeDecaying(1)(-1., t2) AS b
+SELECT 'negative prefix-collision mismatch'
+WHERE
+    a = b
+    OR a < b
+    OR NOT (a > b)
+    OR cityHash64(a) = cityHash64(b);
+
+SELECT 'negative prefix-collision GROUP BY mismatch'
+WHERE
+(
+    SELECT count()
+    FROM
+    (
+        SELECT value
+        FROM
+        (
+            SELECT exponentialTimeDecaying(1)(-1., toFloat64(1)) AS value
+            UNION ALL
+            SELECT exponentialTimeDecaying(1)(
+                -1.,
+                reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1)) AS value
+        )
+        GROUP BY value
+    )
+) != 2;
+
+-- Exact opposite curves cancel to the canonical zero representation, which
+-- must remain ordered strictly between the negative and positive domains.
+WITH
+    exponentialTimeDecaying(10)(2., toFloat64(7)) AS positive,
+    exponentialTimeDecaying(10)(-2., toFloat64(7)) AS negative,
+    positive + negative AS cancelled,
+    exponentialTimeDecaying(10)(0., toFloat64(123)) AS zero
+SELECT 'signed cancellation mismatch'
+WHERE NOT (
+    cancelled = zero
+    AND cityHash64(cancelled) = cityHash64(zero)
+    AND tupleElement(cancelled, 'value_at_anchor') = 0
+    AND tupleElement(cancelled, 'anchor_time') = 0
+    AND exponentialTimeDecaying(10)(-1., toFloat64(0)) < cancelled
+    AND cancelled < exponentialTimeDecaying(10)(1., toFloat64(0)));
+
+-- The finalized-value significance cutoff uses the compact index for negative
+-- curves too. A contribution more than five decay lengths behind must be
+-- discarded symmetrically with the positive domain.
+SET exponential_time_decay_significance_cutoff = 5;
+
+SELECT 'negative significance-cutoff mismatch'
+WHERE abs(
+    (
+        SELECT exponentialTimeDecayingValueAt(
+            exponentialTimeDecayedSum(value),
+            toFloat64(100))
+        FROM VALUES(
+            'value ExponentialTimeDecaying(10)',
+            ((-1., 0., 10.)),
+            ((-2., 100., 10.)))
+    ) + 2) > 1e-12;
+
+SET exponential_time_decay_significance_cutoff = 0;
+
+-- Signed primary-key and minmax pruning must preserve the same total ordering
+-- as row-level comparison across negative, zero, and positive curves.
+DROP TABLE IF EXISTS time_decay_signed_index;
+CREATE TABLE time_decay_signed_index
+(
+    id UInt8,
+    value ExponentialTimeDecaying(1),
+    INDEX value_minmax value TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY value
+SETTINGS index_granularity = 1;
+
+INSERT INTO time_decay_signed_index
+SELECT *
+FROM VALUES(
+    'id UInt8, value ExponentialTimeDecaying(1)',
+    (1, (-1., 0., 1.)),
+    (2, (-1., 1., 1.)),
+    (3, (0., 0., 1.)),
+    (4, (1., 0., 1.)),
+    (5, (1., 1., 1.)));
+
+SELECT 'signed negative-domain index mismatch'
+WHERE
+(
+    SELECT count()
+    FROM time_decay_signed_index
+    WHERE value < exponentialTimeDecaying(1)(-1., toFloat64(0))
+    SETTINGS
+        force_primary_key = 1,
+        force_data_skipping_indices = 'value_minmax'
+) != 1;
+
+SELECT 'signed zero-boundary index mismatch'
+WHERE
+(
+    SELECT count()
+    FROM time_decay_signed_index
+    WHERE value < exponentialTimeDecaying(1)(0., toFloat64(0))
+    SETTINGS
+        force_primary_key = 1,
+        force_data_skipping_indices = 'value_minmax'
+) != 2;
+
+SELECT 'signed positive-domain index mismatch'
+WHERE
+(
+    SELECT count()
+    FROM time_decay_signed_index
+    WHERE value > exponentialTimeDecaying(1)(0., toFloat64(0))
+    SETTINGS
+        force_primary_key = 1,
+        force_data_skipping_indices = 'value_minmax'
+) != 2;
+
+DROP TABLE time_decay_signed_index;
