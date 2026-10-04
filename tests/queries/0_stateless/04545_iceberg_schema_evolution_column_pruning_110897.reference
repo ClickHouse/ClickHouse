@@ -1,0 +1,10 @@
+sum_id	19999900000
+added_col_null	200000	200000
+wide_col	200	40000000
+filter_nonsel	199914000
+prewhere	200000
+id_read_is_pruned	1
+evolved_sum_id	19999900000
+renamed_col	200	40000000
+retyped_k	9900000	Int64
+evolved_read_is_pruned	1
