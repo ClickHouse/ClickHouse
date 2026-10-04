@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/FunctionTopKFilter.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/getColumnFromBlock.h>
@@ -46,6 +47,8 @@ namespace Setting
 {
 
 extern const SettingsBool enable_multiple_prewhere_read_steps;
+extern const SettingsBool use_query_condition_cache;
+extern const SettingsBool use_query_condition_cache_for_top_k;
 
 }
 
@@ -84,6 +87,34 @@ struct MemorySourceFilter
     /// The columns of the output header that are requested physical columns, in header order.
     /// Those not produced by the steps are read after all steps, only for the passing rows.
     NamesAndTypesList output_columns;
+
+    /// The query condition cache, or nullptr if it is not used. An entry describes one block of the
+    /// snapshot, split into granules of `query_condition_cache_granule_rows` rows, and records the
+    /// granules where no row satisfies a condition. The source skips such blocks and granules without
+    /// evaluating the steps on them. There are two conditions:
+    /// - PREWHERE, which the source evaluates itself. No row passing the steps is the same as no row
+    ///   satisfying PREWHERE only if no other step (the row-level security filter, the TopN threshold)
+    ///   has removed rows before it, so only then the source writes the entries.
+    /// - The filter of the query pushed down to the read (`filter_actions_dag`), the same key as for
+    ///   `MergeTree`. Its entries are written by the `FilterTransform` of the `WHERE` filter, from the
+    ///   `MarkRangesInfo` of the chunks, which the source attaches when it has removed no rows itself.
+    QueryConditionCachePtr query_condition_cache;
+    UUID table_uuid;
+    std::optional<UInt64> prewhere_condition_hash;
+    String prewhere_condition;
+    bool write_prewhere_condition = false;
+    std::optional<UInt64> filter_condition_hash;
+    bool attach_mark_ranges_info = false;
+    /// The identity of the blocks of the snapshot, see `StorageMemory::BlocksWithCounts`.
+    UInt64 generation = 0;
+    UInt64 first_block_number = 0;
+
+    static constexpr size_t query_condition_cache_granule_rows = 8192;
+
+    String getQueryConditionCachePartName(size_t block_index) const
+    {
+        return fmt::format("{}_{}", generation, first_block_number + block_index);
+    }
 };
 
 using MemorySourceFilterPtr = std::shared_ptr<const MemorySourceFilter>;
@@ -270,6 +301,97 @@ private:
         /// read after some step has filtered. Empty while no step has filtered anything.
         IColumn::Filter combined_mask;
 
+        const size_t granule_rows = MemorySourceFilter::query_condition_cache_granule_rows;
+        const size_t num_granules = (num_src_rows + granule_rows - 1) / granule_rows;
+        const bool use_query_condition_cache = filter->query_condition_cache && num_granules;
+        String query_condition_cache_part_name;
+
+        if (use_query_condition_cache)
+        {
+            query_condition_cache_part_name = filter->getQueryConditionCachePartName(block_index);
+
+            /// The granules that may have rows satisfying both conditions, or std::nullopt if nothing is known.
+            std::optional<QueryConditionCache::MatchingMarks> matching_granules;
+            for (const auto & condition_hash : {filter->prewhere_condition_hash, filter->filter_condition_hash})
+            {
+                if (!condition_hash)
+                    continue;
+
+                auto entry = filter->query_condition_cache->read(filter->table_uuid, query_condition_cache_part_name, *condition_hash);
+                if (!entry)
+                    continue;
+
+                if (entry->size() != num_granules)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "The query condition cache entry for block {} of a Memory table has {} granules instead of {}",
+                        query_condition_cache_part_name, entry->size(), num_granules);
+
+                if (!matching_granules)
+                    matching_granules = std::move(entry);
+                else
+                    for (size_t granule = 0; granule < num_granules; ++granule)
+                        (*matching_granules)[granule] = (*matching_granules)[granule] && (*entry)[granule];
+            }
+
+            if (matching_granules)
+            {
+                const size_t num_matching_granules = std::ranges::count(*matching_granules, true);
+                if (num_matching_granules == 0)
+                {
+                    progress(num_src_rows, 0);
+                    return std::nullopt;
+                }
+
+                /// Start with the rows of the granules that may have matches, as if a step had filtered the others out.
+                if (num_matching_granules != num_granules)
+                {
+                    combined_mask.resize_fill(num_src_rows, 0);
+                    num_rows = 0;
+                    for (size_t granule = 0; granule < num_granules; ++granule)
+                    {
+                        if (!(*matching_granules)[granule])
+                            continue;
+                        const size_t begin = granule * granule_rows;
+                        const size_t end = std::min(begin + granule_rows, num_src_rows);
+                        std::fill(combined_mask.begin() + begin, combined_mask.begin() + end, 1);
+                        num_rows += end - begin;
+                    }
+                }
+            }
+        }
+
+        /// Records the granules where no row has passed the steps.
+        auto write_to_query_condition_cache = [&](bool no_rows_passed)
+        {
+            if (!use_query_condition_cache || !filter->write_prewhere_condition)
+                return;
+
+            MarkRanges granules_without_matches;
+            if (no_rows_passed)
+            {
+                granules_without_matches.emplace_back(0, num_granules);
+            }
+            else if (!combined_mask.empty())
+            {
+                for (size_t granule = 0; granule < num_granules; ++granule)
+                {
+                    const size_t begin = granule * granule_rows;
+                    const size_t end = std::min(begin + granule_rows, num_src_rows);
+                    if (std::find(combined_mask.begin() + begin, combined_mask.begin() + end, 1) != combined_mask.begin() + end)
+                        continue;
+                    if (!granules_without_matches.empty() && granules_without_matches.back().end == granule)
+                        ++granules_without_matches.back().end;
+                    else
+                        granules_without_matches.emplace_back(granule, granule + 1);
+                }
+            }
+
+            if (!granules_without_matches.empty())
+                filter->query_condition_cache->write(
+                    filter->table_uuid, query_condition_cache_part_name, *filter->prewhere_condition_hash, filter->prewhere_condition,
+                    granules_without_matches, num_granules, /*has_final_mark=*/ false);
+        };
+
         /// Reads those of the columns that the block does not have yet, only for the rows that
         /// passed the steps so far.
         auto read_missing_columns = [&](const NamesAndTypesList & columns_to_read)
@@ -312,6 +434,7 @@ private:
             ConstantFilterDescription constant_filter(*filter_column);
             if (constant_filter.always_false)
             {
+                write_to_query_condition_cache(/*no_rows_passed=*/ true);
                 progress(num_src_rows, num_read_bytes);
                 return std::nullopt;
             }
@@ -322,6 +445,7 @@ private:
                 const size_t num_passed_rows = filter_description.countBytesInFilter();
                 if (num_passed_rows == 0)
                 {
+                    write_to_query_condition_cache(/*no_rows_passed=*/ true);
                     progress(num_src_rows, num_read_bytes);
                     return std::nullopt;
                 }
@@ -353,6 +477,8 @@ private:
                 block.erase(filter_column_position);
         }
 
+        write_to_query_condition_cache(/*no_rows_passed=*/ false);
+
         read_missing_columns(filter->output_columns);
 
         if (block_start_rows)
@@ -376,7 +502,21 @@ private:
         for (const auto & elem : header)
             result_columns.push_back(block.getByName(elem.name).column);
 
-        return Chunk(std::move(result_columns), num_rows);
+        Chunk chunk(std::move(result_columns), num_rows);
+
+        if (use_query_condition_cache && filter->attach_mark_ranges_info)
+        {
+            /// Without the granules removed above, which are already known to have no matches, the chunk
+            /// does not hold all rows of the block, so only the whole block can be recorded.
+            auto mark_ranges_info = std::make_shared<MarkRangesInfo>(
+                filter->table_uuid, query_condition_cache_part_name, num_granules, /*has_final_mark=*/ false,
+                MarkRanges{MarkRange(0, num_granules)});
+            if (combined_mask.empty())
+                mark_ranges_info->rows_per_mark = granule_rows;
+            chunk.getChunkInfos().add(std::move(mark_ranges_info));
+        }
+
+        return chunk;
     }
 
     void fillVirtualColumns([[maybe_unused]] Columns & result_columns, [[maybe_unused]] UInt64 num_rows) const
@@ -716,6 +856,19 @@ void ReadFromMemoryStorageStep::describeActions(JSONBuilder::JSONMap & map) cons
         map.add("TopN Filter Column", top_k_filter->column_name);
 }
 
+std::optional<UInt64> ReadFromMemoryStorageStep::getFilterConditionHashForQueryConditionCache() const
+{
+    if (!filter_actions_dag || !context->getSettingsRef()[Setting::use_query_condition_cache])
+        return {};
+
+    /// Same as for `MergeTree`, see `updateQueryConditionCache`.
+    const auto & outputs = filter_actions_dag->getOutputs();
+    if (outputs.size() != 1 || !VirtualColumnUtils::isDeterministic(outputs[0]))
+        return {};
+
+    return queryConditionCacheHash(outputs[0]->getHash(), queryConditionCacheSettingsSalt(context->getSettingsRef()));
+}
+
 bool ReadFromMemoryStorageStep::canUseLazyMaterialization() const
 {
     /// A read for a global subquery takes the blocks of the storage when it starts, and the lazy branch
@@ -812,9 +965,6 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
         }
     }
 
-    if (result->steps.empty() && !query_info.row_level_filter && !query_info.prewhere_info)
-        return nullptr;
-
     /// The row-level security filter runs first, so PREWHERE expressions are never evaluated
     /// on the rows the policy hides.
     if (query_info.row_level_filter)
@@ -882,6 +1032,42 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
         if (auto name_and_type = physical_columns.tryGetByName(elem.name))
             result->output_columns.push_back(*name_and_type);
 
+    /// The query condition cache. A read for a global subquery takes the blocks of the storage when it
+    /// starts, not those of the snapshot, so their identity is unknown here.
+    const auto & settings = context->getSettingsRef();
+    const UUID table_uuid = storage->getStorageID().uuid;
+    if (settings[Setting::use_query_condition_cache] && table_uuid != UUIDHelpers::Nil && !delay_read_for_global_sub_queries
+        && (!use_top_k_filter || settings[Setting::use_query_condition_cache_for_top_k]))
+    {
+        if (query_info.prewhere_info)
+        {
+            const auto & prewhere_info = *query_info.prewhere_info;
+            const auto * prewhere_node = prewhere_info.prewhere_actions.tryFindInOutputs(prewhere_info.prewhere_column_name);
+            if (prewhere_node && VirtualColumnUtils::isDeterministic(prewhere_node))
+            {
+                result->prewhere_condition_hash = queryConditionCacheHash(prewhere_node->getHash(), queryConditionCacheSettingsSalt(settings));
+                result->prewhere_condition = prewhere_info.prewhere_column_name;
+                result->write_prewhere_condition = !use_top_k_filter && !query_info.row_level_filter;
+            }
+        }
+
+        result->filter_condition_hash = getFilterConditionHashForQueryConditionCache();
+        result->attach_mark_ranges_info = result->filter_condition_hash && result->steps.empty();
+
+        if (result->prewhere_condition_hash || result->filter_condition_hash)
+        {
+            const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
+            result->query_condition_cache = context->getQueryConditionCache();
+            result->table_uuid = table_uuid;
+            result->generation = snapshot_data.generation;
+            result->first_block_number = snapshot_data.first_block_number;
+        }
+    }
+
+    /// Without the steps, the filter is needed only for the query condition cache.
+    if (result->steps.empty() && !result->query_condition_cache)
+        return nullptr;
+
     return result;
 }
 
@@ -894,6 +1080,9 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader), virtual_column_names);
 
     auto source_filter = makeSourceFilter(physical_columns);
+    /// Virtual columns are not filled by a source with a filter. Such a filter is needed only for the query condition cache then.
+    if (source_filter && source_filter->steps.empty() && !virtual_columns.empty())
+        source_filter = nullptr;
 
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
     auto current_data = snapshot_data.blocks;

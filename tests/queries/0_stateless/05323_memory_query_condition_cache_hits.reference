@@ -1,0 +1,15 @@
+10
+10
+10	50
+10	50
+05323_memory_query_condition_cache_hits.sql-default	0	0
+05323_memory_query_condition_cache_hits.sql-default	0	0
+05323_memory_query_condition_cache_hits.sql-default	0	0
+05323_memory_query_condition_cache_hits.sql-default	0	0
+05323_memory_query_condition_cache_hits.sql-default	0	0
+05323_memory_query_condition_cache_hits.sql-default	0	0
+05323_memory_query_condition_cache_hits.sql-default	0	0
+05323_prewhere_1	0	1
+05323_prewhere_2	1	1
+05323_where_1	0	1
+05323_where_2	1	0
