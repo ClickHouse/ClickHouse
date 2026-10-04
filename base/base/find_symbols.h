@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <array>
+#include <bit>
 #include <string_view>
 
 #if defined(__SSE2__)
@@ -26,8 +27,10 @@
   * - if not found, returns pointer to end instead of nullptr;
   * - maximum number of symbols to search is 16.
   *
-  * Uses SSE 2 in case of small number of symbols for search and SSE 4.2 in the case of large number of symbols,
-  *  that have more than 2x performance advantage over trivial loop
+  * Uses SSE 2 in case of small number of symbols for search and AVX2 for 1-4 compile-time symbols in sufficiently
+  * long x86-v3 ranges.
+  * SSE 4.2 is used in the case of large number of symbols, with more than 2x performance
+  *  advantage over trivial loop
   *  in the case of parsing tab-separated dump with (probably escaped) string fields.
   * In the case of parsing tab separated dump with short strings, there is no performance degradation over trivial loop.
   *
@@ -151,6 +154,52 @@ inline __m128i mm_is_in_execute(__m128i bytes, const std::array<__m128i, 16u> & 
 }
 #endif
 
+#if defined(__AVX2__)
+/// Use compiler vector extensions instead of AVX2 intrinsics. This keeps the
+/// implementation close to scalar C++ while still lowering to 32-byte AVX2
+/// operations in x86-v3 builds.
+using UInt8x32 = uint8_t __attribute__((vector_size(32)));
+
+inline UInt8x32 load_avx2_bytes(const char * pos)
+{
+    UInt8x32 bytes;
+    memcpy(&bytes, pos, sizeof(bytes));
+    return bytes;
+}
+
+template <char s0, char... tail>
+inline UInt8x32 avx2_is_in(UInt8x32 bytes)
+{
+    UInt8x32 matches = bytes == static_cast<uint8_t>(s0);
+    ((matches |= bytes == static_cast<uint8_t>(tail)), ...);
+    return matches;
+}
+
+inline bool avx2_any(UInt8x32 matches)
+{
+    const auto lanes = std::bit_cast<std::array<uint64_t, 4>>(matches);
+    return (lanes[0] | lanes[1] | lanes[2] | lanes[3]) != 0;
+}
+
+inline bool avx2_all(UInt8x32 matches)
+{
+    const auto lanes = std::bit_cast<std::array<uint64_t, 4>>(matches);
+    constexpr uint64_t all_ones = ~uint64_t{};
+    return lanes[0] == all_ones && lanes[1] == all_ones && lanes[2] == all_ones && lanes[3] == all_ones;
+}
+
+inline size_t avx2_first(UInt8x32 matches)
+{
+    const auto lanes = std::bit_cast<std::array<uint64_t, 4>>(matches);
+    for (size_t i = 0; i < lanes.size(); ++i)
+    {
+        if (lanes[i])
+            return i * sizeof(uint64_t) + std::countr_zero(lanes[i]) / 8;
+    }
+    __builtin_unreachable();
+}
+#endif
+
 #if defined(__aarch64__)
 /// On AArch64 we use NEON. There is no direct equivalent of pmovmskb, so we
 /// use the well-known shrn-by-4 trick to compress a 16-byte vector of all-0/all-1
@@ -201,6 +250,15 @@ constexpr uint16_t maybe_negate(uint16_t x)
         return x;
     else
         return static_cast<uint16_t>(~x);
+}
+
+template <bool positive>
+constexpr uint32_t maybe_negate(uint32_t x)
+{
+    if constexpr (positive)
+        return x;
+    else
+        return ~x;
 }
 
 #if defined(__aarch64__)
@@ -296,6 +354,78 @@ inline const char * find_first_symbols_sse2(const char * const begin, const char
 
     return return_mode == ReturnMode::End ? end : nullptr;
 }
+
+#if defined(__AVX2__)
+template <bool positive, char... symbols>
+inline const char * find_first_symbols_avx2_block(const char * pos)
+{
+    UInt8x32 matches0 = avx2_is_in<symbols...>(load_avx2_bytes(pos));
+    UInt8x32 matches1 = avx2_is_in<symbols...>(load_avx2_bytes(pos + 32));
+
+    if constexpr (positive)
+    {
+        if (!avx2_any(matches0 | matches1))
+            return nullptr;
+    }
+    else
+    {
+        /// In a negative search, a 64-byte group has no result only when all
+        /// bytes belong to the symbol set. Testing for all-ones avoids
+        /// materializing an inverted vector on the common no-match path.
+        if (avx2_all(matches0 & matches1))
+            return nullptr;
+        matches0 = ~matches0;
+    }
+
+    if (avx2_any(matches0))
+        return pos + avx2_first(matches0);
+
+    if constexpr (!positive)
+        matches1 = ~matches1;
+    return pos + 32 + avx2_first(matches1);
+}
+
+template <bool positive, ReturnMode return_mode, char... symbols>
+[[gnu::noinline]] const char * find_first_symbols_avx2(const char * const begin, const char * const end)
+{
+    const char * pos = begin;
+
+    /// Scan 128 bytes per loop iteration to keep loop overhead low while still
+    /// stopping after each 64-byte group so the earliest match is preserved.
+    for (; end - pos >= 128; pos += 128)
+    {
+        if (const char * found = find_first_symbols_avx2_block<positive, symbols...>(pos))
+            return found;
+        if (const char * found = find_first_symbols_avx2_block<positive, symbols...>(pos + 64))
+            return found;
+    }
+
+    if (end - pos >= 64)
+    {
+        if (const char * found = find_first_symbols_avx2_block<positive, symbols...>(pos))
+            return found;
+        pos += 64;
+    }
+
+    if (end - pos >= 32)
+    {
+        UInt8x32 matches = avx2_is_in<symbols...>(load_avx2_bytes(pos));
+        if constexpr (positive)
+        {
+            if (avx2_any(matches))
+                return pos + avx2_first(matches);
+        }
+        else if (!avx2_all(matches))
+        {
+            matches = ~matches;
+            return pos + avx2_first(matches);
+        }
+        pos += 32;
+    }
+
+    return find_first_symbols_sse2<positive, return_mode, symbols...>(pos, end);
+}
+#endif
 
 #if defined(__aarch64__)
 /// Runtime-needle NEON body for long haystacks. Always returns either a
@@ -620,6 +750,34 @@ template <bool positive, ReturnMode return_mode, char... symbols>
 inline const char * find_first_symbols_dispatch(const char * begin, const char * end)
     requires(0 <= sizeof...(symbols) && sizeof...(symbols) <= 16)
 {
+    if (begin >= end) [[unlikely]]
+        return return_mode == ReturnMode::End ? end : nullptr;
+
+#if defined(__AVX2__)
+    if constexpr (sizeof...(symbols) >= 1 && sizeof...(symbols) <= 4)
+    {
+        constexpr size_t avx2_threshold = 1024;
+        if (static_cast<size_t>(end - begin) >= avx2_threshold) [[unlikely]]
+        {
+            constexpr size_t prefix_size = 512;
+            const char * const prefix_end = begin + prefix_size;
+
+#if defined(__clang__)
+#pragma clang loop unroll(disable)
+#endif
+            for (const char * pos = begin; pos != prefix_end; pos += 16)
+            {
+                __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
+                __m128i eq = mm_is_in<symbols...>(bytes);
+                uint16_t mask = maybe_negate<positive>(static_cast<uint16_t>(_mm_movemask_epi8(eq)));
+                if (mask)
+                    return pos + __builtin_ctz(mask);
+            }
+
+            return find_first_symbols_avx2<positive, return_mode, symbols...>(prefix_end, end);
+        }
+    }
+#endif
 #if defined(__SSE4_2__)
     if (sizeof...(symbols) >= 5)
         return find_first_symbols_sse42<positive, return_mode, sizeof...(symbols), symbols...>(begin, end);
@@ -630,6 +788,9 @@ inline const char * find_first_symbols_dispatch(const char * begin, const char *
 template <bool positive, ReturnMode return_mode>
 inline const char * find_first_symbols_dispatch(const std::string_view haystack, const SearchSymbols & symbols)
 {
+    if (haystack.empty()) [[unlikely]]
+        return return_mode == ReturnMode::End ? haystack.data() : nullptr;
+
     /// Empty needle: no byte is in the (empty) symbol set. For positive search
     /// nothing is found; for the negative variant every byte qualifies and we
     /// return the first one. Bypassing the SIMD body here keeps `mm_is_in_prepare`
@@ -653,12 +814,18 @@ template <bool positive, ReturnMode return_mode, char... symbols>
 inline const char * find_last_symbols_dispatch(const char * begin, const char * end)
     requires(0 <= sizeof...(symbols) && sizeof...(symbols) <= 16)
 {
+    if (begin >= end) [[unlikely]]
+        return return_mode == ReturnMode::End ? end : nullptr;
+
     return find_last_symbols_sse2<positive, return_mode, symbols...>(begin, end);
 }
 
 template <bool positive, ReturnMode return_mode>
 inline const char * find_last_symbols_dispatch(const std::string_view haystack, const SearchSymbols & symbols)
 {
+    if (haystack.empty()) [[unlikely]]
+        return return_mode == ReturnMode::End ? haystack.data() : nullptr;
+
     /// See the forward dispatcher above.
     if (symbols.str.empty())
     {
