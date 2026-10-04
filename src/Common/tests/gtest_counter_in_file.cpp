@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <csignal>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -20,6 +21,7 @@
 /// from its production caller). Pull them in so this standalone TU compiles.
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <base/scope_guard.h>
 #include <Common/CounterInFile.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -180,6 +182,15 @@ TEST(CounterInFile, ConcurrentFirstCreatorsGetDistinctValues)
     }
 
     ::close(fds[1]);
+    /// Every exit path reaps the child: after a failed assertion it would keep spinning in `meet`.
+    SCOPE_EXIT({
+        ::close(fds[0]);
+        ::kill(pid, SIGKILL);
+        ::waitpid(pid, nullptr, 0);
+        ::munmap(shared, sizeof(std::atomic<unsigned>));
+        std::error_code ec;
+        fs::remove_all(dir, ec);
+    });
 
     for (unsigned round = 0; round < rounds; ++round)
     {
@@ -214,13 +225,6 @@ TEST(CounterInFile, ConcurrentFirstCreatorsGetDistinctValues)
         ASSERT_EQ(std::min(here, there), 1) << "round " << round;
         ASSERT_EQ(std::max(here, there), 2) << "round " << round;
     }
-
-    ::close(fds[0]);
-    int status = 0;
-    ASSERT_EQ(::waitpid(pid, &status, 0), pid);
-    ::munmap(shared, sizeof(std::atomic<unsigned>));
-
-    fs::remove_all(dir);
 }
 
 /// The empty-file recovery must not disturb the ordinary path: a counter that
