@@ -1333,10 +1333,19 @@ void SerializationVariant::serializeTextJSONPretty(const IColumn & column, size_
         variant_serializations[global_discr]->serializeTextJSONPretty(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr, settings, indent);
 }
 
+/// A `Variant` may have `DateTime64` arms, which understand the MongoDB shell `ISODate("...")` wrapper,
+/// so the whole value is tokenized with the wrapper allowed. Arms that cannot consume it reject it later.
+static FormatSettings::JSON jsonSettingsWithISODateWrapper(const FormatSettings::JSON & settings)
+{
+    FormatSettings::JSON result = settings;
+    result.allow_mongodb_isodate_wrapper = true;
+    return result;
+}
+
 bool SerializationVariant::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
-    if (!tryReadJSONField(field, istr, settings.json))
+    if (!tryReadJSONField(field, istr, jsonSettingsWithISODateWrapper(settings.json)))
         return false;
     return tryDeserializeTextJSONImpl(column, field, settings);
 }
@@ -1344,7 +1353,7 @@ bool SerializationVariant::tryDeserializeTextJSON(IColumn & column, ReadBuffer &
 void SerializationVariant::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
-    readJSONField(field, istr, settings.json);
+    readJSONField(field, istr, jsonSettingsWithISODateWrapper(settings.json));
     if (!tryDeserializeTextJSONImpl(column, field, settings))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON value of type {} here: {}", variant_name, field);
 }
