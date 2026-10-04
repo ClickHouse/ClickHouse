@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Verify that `s3_allow_server_credentials_in_user_queries` can be locked to its secure value for an
 # untrusted profile so that neither a direct change nor an old `compatibility` version can re-enable it.
-# A `readonly` constraint alone is not enough: `compatibility` with a version before this setting was
-# introduced would restore the old (allowing) default. Pinning the value explicitly with `CONST` (the
-# SQL form of "explicit value + readonly") defeats `compatibility`.
+# `compatibility` with a version before this setting was introduced would restore the old (allowing)
+# default, but it never applies a value the constraints refuse, so the explicit value pinned with `CONST`
+# holds.
 #
 # The user and profile names are qualified with $CLICKHOUSE_DATABASE so the test can run in parallel.
 
