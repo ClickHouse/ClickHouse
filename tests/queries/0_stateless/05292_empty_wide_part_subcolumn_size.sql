@@ -49,7 +49,9 @@ ALTER TABLE t_empty_compact DELETE WHERE p = 1 SETTINGS mutations_sync = 2;
 INSERT INTO t_empty_compact VALUES (2, {'k': 'v'}, {'k': 'v'}, ('v', 1), 'v', 'v', '{"a": "v"}');
 INSERT INTO t_empty_compact VALUES (3, {'k': 'v'}, {'k': 'v'}, ('v', 1), 'v', 'v', '{"a": "v"}');
 
+SET optimize_on_insert = 0;
 INSERT INTO t_empty_ttl VALUES (1, '2000-01-01', {'k': 'v'});
+SET optimize_on_insert = 1;
 -- Keep the part written by the TTL drop instead of merging it again.
 OPTIMIZE TABLE t_empty_ttl PARTITION 1 FINAL SETTINGS optimize_skip_merged_partitions = 1;
 INSERT INTO t_empty_ttl VALUES (2, '2100-01-01', {'k': 'v'});

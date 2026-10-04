@@ -42,6 +42,8 @@ CREATE TABLE ttl_on_insert_where (d DateTime, x UInt32)
 ENGINE = MergeTree ORDER BY x
 TTL d + INTERVAL 1 DAY DELETE WHERE x % 2 = 0;
 
+SYSTEM STOP MERGES ttl_on_insert_where;
+
 INSERT INTO ttl_on_insert_where VALUES ('2000-01-01 00:00:00', 1), ('2000-01-01 00:00:00', 2);
 
 SELECT x FROM ttl_on_insert_where ORDER BY x;
