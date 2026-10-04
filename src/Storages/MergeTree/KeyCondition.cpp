@@ -51,6 +51,7 @@
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -2832,7 +2833,20 @@ static bool constantMayHoldFloatZero(const Field & field, const DataTypePtr & ty
 
     const DataTypePtr type = removeNullable(removeLowCardinality(type_with_wrappers));
 
-    if (!typeContainsFloat(type))
+    /// A `Dynamic` or `JSON` value has no static float element, but it can still be a float.
+    if (WhichDataType which(type); which.isDynamic() || which.isObject())
+    {
+        /// The comparison converts a `String` constant to the float, so `d = '0'` matches both zeros too.
+        /// A string that does not parse as a number compares as a string and never equals a float.
+        if (field.getType() == Field::Types::String)
+        {
+            Float64 value;
+            return tryParse(value, field.safeGet<String>()) && value == 0;
+        }
+        return isNumericallyZeroConstant(field).value_or(true);
+    }
+
+    if (!typeContainsFloat(type) && !type->hasDynamicStructure())
         return false;
 
     if (isFloat(type))
