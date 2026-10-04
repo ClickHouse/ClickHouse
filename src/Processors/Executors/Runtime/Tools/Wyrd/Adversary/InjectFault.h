@@ -1,14 +1,15 @@
 #pragma once
 
 #include <Processors/Executors/Runtime/Tools/Wyrd/Config.h>
-#include <Processors/Executors/Runtime/Tools/Wyrd/Adversary/Adversary.h>
+#include <Processors/Executors/Runtime/Tools/Wyrd/Adversary/Access.h>
 
 namespace DB::Runtime::Wyrd
 {
 
 inline void injectFault()
 {
-    adversary()->threadFault();
+    if (auto * current = adversary())
+        current->threadFault();
 }
 
 inline void injectFaultBefore()
@@ -27,7 +28,9 @@ inline void injectFaultAfter()
 
 inline bool spuriousFailure()
 {
-    return adversary()->threadSpuriousFailure();
+    if (auto * current = adversary())
+        return current->threadSpuriousFailure();
+    return false;
 }
 
 }

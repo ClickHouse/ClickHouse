@@ -17,7 +17,7 @@ namespace DB::Runtime::Wyrd
 struct SimulatedThread;
 struct SyscallRecord;
 
-struct Result
+struct SimulatorResult
 {
     enum class Status
     {
@@ -46,7 +46,7 @@ struct SimulatorParams
 
 class Simulator
 {
-    Result::Status runLoop();
+    SimulatorResult::Status runLoop();
     void recordSyscall(const char * operation, std::source_location location);
     void createThread(std::function<void()> user_body);
 
@@ -55,7 +55,7 @@ public:
     ~Simulator();
 
     /// Test entry point
-    Result run(std::function<void()> main);
+    SimulatorResult run(std::function<void()> main);
     static Simulator * current();
 
     /// Syscalls

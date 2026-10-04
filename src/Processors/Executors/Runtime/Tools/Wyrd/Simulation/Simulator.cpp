@@ -59,16 +59,16 @@ Simulator::Simulator(SimulatorParams params_, SchedulerParams scheduler_params)
 
 Simulator::~Simulator() = default;
 
-Result Simulator::run(std::function<void()> main)
+SimulatorResult Simulator::run(std::function<void()> main)
 {
     if (current_simulator)
         throw std::logic_error("Nested simulation");
 
     setRandomSeed(params.seed);
     createThread(std::move(main));
-    Result::Status status = runLoop();
+    SimulatorResult::Status status = runLoop();
 
-    return Result{
+    return SimulatorResult{
         .status = status,
         .exception_message = exception ? getExceptionMessage(exception, false) : std::string(),
         .total_steps = steps,
@@ -77,16 +77,16 @@ Result Simulator::run(std::function<void()> main)
     };
 }
 
-Result::Status Simulator::runLoop()
+SimulatorResult::Status Simulator::runLoop()
 {
     while (true)
     {
         SimulatedThread * next = scheduler.pickNext();
         if (!next)
-            return alive == 0 ? Result::Status::Ok : Result::Status::Deadlock;
+            return alive == 0 ? SimulatorResult::Status::Ok : SimulatorResult::Status::Deadlock;
 
         if (steps >= params.step_limit)
-            return Result::Status::StepLimit;
+            return SimulatorResult::Status::StepLimit;
 
         ++steps;
 
@@ -99,7 +99,7 @@ Result::Status Simulator::runLoop()
         if (next->finished())
         {
             if (exception)
-                return Result::Status::Exception;
+                return SimulatorResult::Status::Exception;
             --alive;
             scheduler.onExit();
         }
