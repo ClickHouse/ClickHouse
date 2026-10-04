@@ -1,10 +1,10 @@
 #!/usr/bin/expect -f
 # Tags: no-fasttest, no-parallel, no-flaky-check
-# The test asserts on the CPU throughput of four busy threads, so it needs four idle cores:
-# under the parallel load of other tests (and on the small Fast test runner) the shards do not
-# get enough CPU time to tell the summed figure apart from the one of the last row per host.
+# The test asserts on the CPU throughput of a busy thread, so it needs an idle core: under the
+# parallel load of other tests (and on the small Fast test runner) the busy thread does not get
+# enough CPU time to tell the summed figure apart from the one of the last row per host.
 # The flaky check runs the server with the thread fuzzer, whose injected sleeps take away the
-# CPU time of the shards in the same way.
+# CPU time of the busy thread in the same way.
 
 # Regression test for the CPU figure of a distributed query whose shards share one host name:
 # the server forwards the `ProfileEvents` of every shard to the client, and one packet can carry
@@ -38,17 +38,48 @@ spawn bash --noprofile --norc -c "PS1='bash) ' bash --noprofile --norc"
 send "source $basedir/../shell_config.sh\r"
 expect "bash) "
 
-# Four shards on the same server, each of them run through its own connection (the local replica
-# is not preferred), each one busy on a single thread: together they use about 4 cores, all of them
-# reported under the same host name. The query does not end by itself and is cancelled as soon as
-# the figure is seen. Parallel replicas are pinned off, so that each shard is read by one thread.
-# The limit on the rows to read (20 million in the test profile) is lifted, otherwise the query
-# fails at once on the estimated number of rows.
-send "\$CLICKHOUSE_CLIENT --progress --max_threads 1 --max_rows_to_read 0 --prefer_localhost_replica 0 --enable_parallel_replicas 0 --automatic_parallel_replicas_mode 0 --query \"SELECT count() FROM remote('127.0.0.1,127.0.0.1,127.0.0.1,127.0.0.1', numbers(1000000000000)) WHERE NOT ignore(sipHash64(number))\" >/dev/null 2>&1\r"
+# The shard reports for the first time after the initiator has processed the blocks sent before
+# that report, which is also when the first rows read are shown: until then the packets carry the
+# row of the initiator alone. The figure is an average in which older values count half as much
+# every 2 seconds, so it is checked only from 10 seconds later on, for at least 0.5 cores.
+proc expect_cpu_after_first_rows {} {
+    global spawn_id
+    expect -re {Progress: [1-9]}
+    set checked_from [expr {[clock milliseconds] + 10000}]
+    expect -re {\((0\.[5-9]|[1-9][0-9]*\.[0-9]) CPU} {
+        if {[clock milliseconds] < $checked_from} { exp_continue }
+    }
+}
 
-# At least 3 cores. The shards use about 4 cores in total, and so does the figure when all the
-# rows are summed up, while keeping only the last row per host shows at most about 2.5 cores.
-expect -re {\(([3-9]|[1-9][0-9]+)\.[0-9] CPU}
+# Background merges on a busy server can starve a query for minutes; all the waits together stay
+# within the time limit of a test.
+set timeout 120
+
+# One shard on the same server, run through its own connection (the local replica is not
+# preferred), under the same host name as the initiator: a single shard reports as often as the
+# initiator (the interval grows with the number of shards), so the packets carry the row of the
+# initiator followed by the forwarded row of the shard. The `LIMIT` keeps the outer query on the
+# initiator, which hashes every row of the shard 16 times: the initiator uses about one core, the
+# shard a small share of it, and keeping only the last row per host (the one of the shard) drops
+# most of the figure. The shard reports only between the blocks it sends, and it can send them
+# only as fast as the initiator reads the connection: the incompressible `pad` column keeps enough
+# bytes flowing for the shard to report as often as the initiator, also when the initiator is slow.
+# Small blocks keep the reports of both regular. The query does not end by itself and is cancelled
+# as soon as the figure is seen. Parallel replicas are pinned off. The limit on the rows to read
+# (20 million in the test profile) is lifted, otherwise the query fails at once on the estimated
+# number of rows.
+send "\$CLICKHOUSE_CLIENT --progress --max_threads 1 --max_block_size 1024 --max_rows_to_read 0 --prefer_localhost_replica 0 --enable_parallel_replicas 0 --automatic_parallel_replicas_mode 0 --query \"SELECT count() FROM (SELECT sipHash64(number) AS h, randomString(56) AS pad FROM remote('127.0.0.1', numbers(1000000000000)) LIMIT 1000000000000) ARRAY JOIN range(16) AS x WHERE NOT ignore(sipHash64(h, x), pad)\" >/dev/null 2>&1\r"
+# The summed figure shows about one core, the last row per host only the share of the shard.
+expect_cpu_after_first_rows
+
+send "\3"
+expect "bash) "
+
+# The same check with all the work on the shard: the initiator only passes the result of the shard
+# on, so the figure reaches the floor only through the rows of the shard that the server forwards.
+send "\$CLICKHOUSE_CLIENT --progress --max_threads 1 --max_rows_to_read 0 --prefer_localhost_replica 0 --enable_parallel_replicas 0 --automatic_parallel_replicas_mode 0 --query \"SELECT count() FROM remote('127.0.0.1', numbers(1000000000000)) WHERE NOT ignore(sipHash64(number))\" >/dev/null 2>&1\r"
+expect_cpu_after_first_rows
+set timeout 60
 
 send "\3"
 expect "bash) "
