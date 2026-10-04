@@ -6,6 +6,7 @@ from pathlib import Path
 
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
+from ci.praktika import SecretFetchFailed
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -68,13 +69,21 @@ def main():
             install_introspection,
             install_clickbench_cache,
         ]
+
+        def configure_log_export(config_dir, var_lib_dir):
+            # Without the credentials `setup_log_cluster.sh` creates no `_sender` table,
+            # so leaving the export unconfigured is a supported state. Returns truthy
+            # because `ClickHouseService` fails a hook that returns exactly `False`.
+            try:
+                return ch.create_log_export_config(config_dir)
+            except SecretFetchFailed as e:
+                print(f"WARNING: Failed to configure log export: {e}")
+                info.add_workflow_warning(f"Failed to configure log export: {e}")
+                return True
+
         if not info.is_local_run:
             config_hooks.append(install_ci_logs_sender)
-            config_hooks.append(
-                lambda config_dir, var_lib_dir: ch.create_log_export_config(
-                    config_dir
-                )
-            )
+            config_hooks.append(configure_log_export)
 
         with ClickHouseService(
             results=results,
