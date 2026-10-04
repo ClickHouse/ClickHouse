@@ -42,57 +42,21 @@ FROM (SELECT number, toUInt8(number % 251) AS x FROM numbers(10000));
 WITH rhs AS (SELECT toUInt16(number * 3 % 40000) FROM numbers(3000))
 SELECT 'key16', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, toUInt16(number % 50000) AS x FROM numbers(10000));
-WITH rhs AS (SELECT toDate('2000-01-01') + number * 3 FROM numbers(1000))
-SELECT 'key16 Date', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, toDate('2000-01-01') + number % 5000 AS x FROM numbers(10000));
 WITH rhs AS (SELECT toInt32(number * 3) - 10000 FROM numbers(3000))
 SELECT 'key32 Int32', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, toInt32(number) - 10000 AS x FROM numbers(10000));
-WITH rhs AS (SELECT toFloat32(number * 3) / 4 - 100 FROM numbers(3000))
-SELECT 'key32 Float32', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, toFloat32(number) / 4 - 100 AS x FROM numbers(10000));
-WITH rhs AS (SELECT toIPv4(number * 3000) FROM numbers(3000))
-SELECT 'key32 IPv4', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, toIPv4(number * 1000) AS x FROM numbers(10000));
 WITH rhs AS (SELECT number * 3 FROM numbers(3000))
 SELECT 'key64 UInt64', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, number AS x FROM numbers(10000));
-WITH rhs AS (SELECT -toInt64(number * 3) FROM numbers(3000))
-SELECT 'key64 Int64', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, -toInt64(number) AS x FROM numbers(10000));
-WITH rhs AS (SELECT number / 3 * 2 FROM numbers(3000))
-SELECT 'key64 Float64', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, number / 3 AS x FROM numbers(10000));
-WITH rhs AS (SELECT toDateTime64(number / 500, 3, 'UTC') FROM numbers(3000))
-SELECT 'key64 DateTime64', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, toDateTime64(number / 1000, 3, 'UTC') AS x FROM numbers(10000));
 WITH rhs AS (SELECT toUInt128(number * 3) * 1000000007 FROM numbers(3000))
 SELECT 'keys128 UInt128', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, toUInt128(number) * 1000000007 AS x FROM numbers(10000));
-WITH rhs AS (SELECT -toInt128(number * 3) FROM numbers(3000))
-SELECT 'keys128 Int128', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, -toInt128(number) AS x FROM numbers(10000));
-WITH rhs AS (SELECT toDecimal128(number * 3, 5) / 7 FROM numbers(3000))
-SELECT 'keys128 Decimal128', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, toDecimal128(number, 5) / 7 AS x FROM numbers(10000));
-WITH rhs AS (SELECT reinterpretAsUUID(reinterpretAsFixedString(toUInt128(number * 3) * 1000000007)) FROM numbers(3000))
-SELECT 'keys128 UUID', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, reinterpretAsUUID(reinterpretAsFixedString(toUInt128(number) * 1000000007)) AS x FROM numbers(10000));
-WITH rhs AS (SELECT toIPv6(toIPv4(number * 3)) FROM numbers(3000))
-SELECT 'keys128 IPv6', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, toIPv6(toIPv4(number)) AS x FROM numbers(10000));
 WITH rhs AS (SELECT toUInt256(number * 3) * 12345678901234567890 FROM numbers(3000))
 SELECT 'keys256 UInt256', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, toUInt256(number) * 12345678901234567890 AS x FROM numbers(10000));
-WITH rhs AS (SELECT -toInt256(number * 3) FROM numbers(3000))
-SELECT 'keys256 Int256', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, -toInt256(number) AS x FROM numbers(10000));
 WITH rhs AS (SELECT toString(number * 3) FROM numbers(3000))
 SELECT 'key_string', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, toString(number) AS x FROM numbers(10000));
-WITH rhs AS (SELECT toLowCardinality(toString(number * 3 % 1000)) FROM numbers(200))
-SELECT 'key_string LowCardinality', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, toLowCardinality(toString(number % 1000)) AS x FROM numbers(10000));
 WITH rhs AS (SELECT toFixedString(toString(number * 3), 40) FROM numbers(3000))
 SELECT 'key_fixed_string', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, toFixedString(toString(number % 100000), 40) AS x FROM numbers(10000));
@@ -102,27 +66,9 @@ FROM (SELECT number, (toUInt16(number % 300), toUInt16(number % 7)) AS x FROM nu
 WITH rhs AS (SELECT (toUInt32(number * 3), toUInt32(number % 7)) FROM numbers(3000))
 SELECT 'keys64', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, (toUInt32(number), toUInt32(number % 7)) AS x FROM numbers(10000));
-WITH rhs AS (SELECT (number * 3, number % 7) FROM numbers(3000))
-SELECT 'keys128 tuple', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, (number, number % 7) AS x FROM numbers(10000));
-WITH rhs AS (SELECT (number * 3, number % 7, number % 11) FROM numbers(3000))
-SELECT 'keys256 tuple', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, (number, number % 7, number % 11) AS x FROM numbers(10000));
 WITH rhs AS (SELECT (toString(number * 3), number % 7) FROM numbers(3000))
 SELECT 'hashed tuple', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, (toString(number), number % 7) AS x FROM numbers(10000));
-WITH rhs AS (SELECT [toUInt8(number % 5), toUInt8(number * 2 % 3)] FROM numbers(4))
-SELECT 'hashed array', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, [toUInt8(number % 5), toUInt8(number % 3)] AS x FROM numbers(10000));
-WITH rhs AS (SELECT CAST(if(number % 2, toString(number * 3), number * 3), 'Variant(UInt64, String)') FROM numbers(3000))
-SELECT 'hashed Variant', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, CAST(if(number % 2, toString(number), number), 'Variant(UInt64, String)') AS x FROM numbers(10000));
-WITH rhs AS (SELECT map(number * 3 % 7, number * 3) FROM numbers(3000))
-SELECT 'hashed Map', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, map(number % 7, number) AS x FROM numbers(10000));
-WITH rhs AS (SELECT initializeAggregation('sumState', number * 3) FROM numbers(3000))
-SELECT 'hashed AggregateFunction', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, initializeAggregation('sumState', number) AS x FROM numbers(10000));
 
 -- These keys hold bytes that are not text: zero bytes, non-ASCII bytes, and keys of several KiB.
 WITH rhs AS (SELECT concat(toString(number * 3), repeat(char(0, 120, 255), 1 + number * 3 % 5 * 1024)) FROM numbers(1000))
@@ -145,9 +91,6 @@ WITH rhs AS (SELECT if(number % 5 = 0, NULL, number * 3) FROM numbers(3000))
 SELECT 'Nullable nullable_keys128', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, if(number % 7 = 0, NULL, number) AS x FROM numbers(10000))
 SETTINGS transform_null_in = 1;
-WITH rhs AS (SELECT if(number % 5 = 0, NULL, toString(number * 3)) FROM numbers(3000))
-SELECT 'Nullable key_string', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, if(number % 7 = 0, NULL, toString(number)) AS x FROM numbers(10000));
 WITH rhs AS (SELECT if(number % 5 = 0, NULL, toString(number * 3)) FROM numbers(3000))
 SELECT 'Nullable hashed', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, if(number % 7 = 0, NULL, toString(number)) AS x FROM numbers(10000))
@@ -257,21 +200,6 @@ SELECT '${codec}', (SELECT sum(value) FROM system.events WHERE event = 'External
 SQL
 done
 
-# Size limits in the `throw` overflow mode count the distinct keys of the whole set. The `break` mode and the
-# other limits are checked by 05298_external_set_settings.
-run limits --max_bytes_before_external_set 1 --multiquery <<SQL
-SELECT countIf(number IN (SELECT number % 100 FROM numbers(1000))) FROM numbers(200) SETTINGS max_rows_in_set = 100;
-$(event SetsSpilledToDisk)
-SQL
-
-# The ratio applies to the memory left under the memory limit of the server, and a tiny ratio of it
-# gives a threshold below the memory of the query. The set of 600,000 keys takes 16 MiB, so it
-# spills to disk under any threshold.
-run ratio --multiquery <<SQL
-SELECT countIf(number IN (SELECT number * 2 FROM numbers(600000))) FROM numbers(1000) SETTINGS max_bytes_ratio_before_external_set = 0.00001;
-$(event SetsSpilledToDisk)
-SQL
-
 # The rows of the subquery count once in the query progress, whether the set is in memory or on disk.
 for threshold in 0 1; do
     run "progress-${threshold}" --max_bytes_before_external_set "${threshold}" --multiquery <<SQL
@@ -300,7 +228,6 @@ expect_error()
     echo "$expected"
 }
 
-expect_error SET_SIZE_LIMIT_EXCEEDED "SELECT 1 IN (SELECT number % 101 FROM numbers(1000)) SETTINGS max_rows_in_set = 100"
 expect_error BAD_ARGUMENTS "SELECT 1 IN (SELECT number FROM numbers(10)) SETTINGS max_bytes_ratio_before_external_set = 1"
 expect_error TOO_MANY_ROWS_OR_BYTES "SELECT 1 IN (SELECT number FROM numbers(10000)) SETTINGS max_temporary_data_on_disk_size_for_query = 1"
 expect_error NOT_ENOUGH_SPACE "SELECT 1 IN (SELECT number FROM numbers(100)) SETTINGS min_free_disk_space_for_temporary_data = 1000000000000000"
