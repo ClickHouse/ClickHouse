@@ -1,0 +1,8 @@
+map survives the round trip	{'k':'v'}
+session is still usable	1
+remote shard reads the setting	1
+comma inside a quoted key	{'a,b':'v'}
+closing bracket inside a quoted value	{'k':'v)'}
+two keys	{'k':'v','k2':'v2'}
+empty map	{}
+scalar	plain string
