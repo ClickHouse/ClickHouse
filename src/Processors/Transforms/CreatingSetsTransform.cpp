@@ -71,11 +71,13 @@ CreatingSetsTransform::CreatingSetsTransform(
     SetAndKeyPtr set_and_key_,
     SizeLimits network_transfer_limits_,
     PreparedSetsCachePtr prepared_sets_cache_,
+    SetSpillSettings spill_settings_,
     bool recoverable_build_)
     : IAccumulatingTransform(std::move(in_header_), std::move(out_header_))
     , set_and_key(std::move(set_and_key_))
     , network_transfer_limits(std::move(network_transfer_limits_))
     , prepared_sets_cache(std::move(prepared_sets_cache_))
+    , spill_settings(std::move(spill_settings_))
     , recoverable_build(recoverable_build_)
 {
 }
@@ -187,6 +189,9 @@ void CreatingSetsTransform::startSubquery()
 
     if ((done_with_set && !set_from_cache) && done_with_table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to do with subquery");
+
+    if (!done_with_set)
+        set_and_key->set->setSpillSettings(std::move(spill_settings));
 
     if (table_out.initialized())
     {

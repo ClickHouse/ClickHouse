@@ -459,19 +459,7 @@ std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys(
             method, std::move(data), std::move(key_types), std::move(key_sizes));
     };
 
-    switch (data->type)
-    {
-        case SetVariants::Type::EMPTY:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Keys cannot be extracted from an uninitialized DISTINCT set");
-
-#define M(NAME) \
-        case SetVariants::Type::NAME: \
-            return create_extractor(*data->NAME);
-        APPLY_FOR_SET_VARIANTS(M)
-#undef M
-    }
-
-    UNREACHABLE();
+    return data->callOnMethod(create_extractor);
 }
 
 ColumnRawPtrs DistinctSetFilter::getKeyColumns(const Columns & columns) const
@@ -618,21 +606,14 @@ DistinctSetFilter::FilterResult DistinctSetFilter::filterImpl(Chunk chunk, const
     IColumn::Filter filter_values(num_rows);
     size_t processed_rows = num_rows;
 
-    switch (data->type)
+    data->callOnMethod([&](auto & method)
     {
-        case SetVariants::Type::EMPTY:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot filter DISTINCT with an uninitialized set");
-#define M(NAME) \
-        case SetVariants::Type::NAME: \
-            if (can_insert) \
-                processed_rows = buildDistinctFilterWithInsertionCheck( \
-                    *data->NAME, column_ptrs, key_sizes, filter_values, num_rows, *data, *can_insert); \
-            else \
-                buildDistinctFilter(*data->NAME, column_ptrs, key_sizes, filter_values, num_rows, *data, mask); \
-        break;
-        APPLY_FOR_SET_VARIANTS(M)
-#undef M
-    }
+        if (can_insert)
+            processed_rows = buildDistinctFilterWithInsertionCheck(
+                method, column_ptrs, key_sizes, filter_values, num_rows, *data, *can_insert);
+        else
+            buildDistinctFilter(method, column_ptrs, key_sizes, filter_values, num_rows, *data, mask);
+    });
 
     const auto new_set_size = data->getTotalRowCount();
     const size_t num_selected = new_set_size - old_set_size;

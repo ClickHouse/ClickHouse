@@ -66,23 +66,12 @@ void DistinctSortedStreamTransform::initChunkProcessing(const Columns & input_co
 template <bool clear_data>
 size_t DistinctSortedStreamTransform::ordinaryDistinctOnRange(IColumnFilter & filter, const size_t range_begin, const size_t range_end)
 {
-    size_t count = 0;
-    switch (data.type)
+    return data.callOnMethod([&](auto & method)
     {
-        case ClearableSetVariants::Type::EMPTY:
-            break;
-            // clang-format off
-#define M(NAME) \
-        case ClearableSetVariants::Type::NAME: \
-            if constexpr (clear_data) data.NAME->data.clear(); \
-            count = buildFilterForRange(*data.NAME, filter, range_begin, range_end); \
-            break;
-
-        APPLY_FOR_SET_VARIANTS(M)
-#undef M
-            // clang-format on
-    }
-    return count;
+        if constexpr (clear_data)
+            method.data.clear();
+        return buildFilterForRange(method, filter, range_begin, range_end);
+    });
 }
 
 template <typename Method>

@@ -1,0 +1,6 @@
+numbers	15000	225000000	15000	spilled	1	while built 0, while used 1
+numbers_threads	15000	225000000	15000	spilled	1	while built 0, while used 1
+strings	15000	225000000	15000	spilled	1	while built 0, while used 1
+nulls	17131	192684858	17131	spilled	1	while built 0, while used 1
+explicit_elements	10000	99990000	10000	selected marks	20	spilled	1	while built 0, while used 1
+small	19000	198991000	19000	spilled	0	while built 0, while used 0

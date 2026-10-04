@@ -713,11 +713,14 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     }
 
     /// CreatingSetStep fills the Set from the pipeline.
+    /// Unlike the sets of `IN`, the set never spills to disk: it only serves index analysis, which needs its
+    /// values, and its own BREAK-mode size limits above bound its memory.
     set_plan.addStep(std::make_unique<CreatingSetStep>(
         set_plan.getCurrentHeader(),
         set_and_key,
         SizeLimits{},
-        nullptr));
+        nullptr,
+        FutureSetSettings{}));
 
     /// The per-partition pre-deduplication for set builds (see `optimizeCreatingSetPerPartition`) is
     /// scoped to `IN (subquery)` set fills; this internal set build has its own BREAK-mode size limits

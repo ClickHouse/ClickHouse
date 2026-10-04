@@ -532,8 +532,7 @@ void ExternalDistinctTransform::extractSuppressionRun(ExtractingSuppression & ex
 
         auto chunk = spill_layout->prepareSuppressionChunk(std::move(key_columns));
         Block block = spill_layout->getSuppressionRunHeader()->cloneWithColumns(chunk.detachColumns());
-        /// Stable sorting preserves binary representatives of sort-equivalent keys. The flag is
-        /// constant within this chunk, so key order also satisfies the run order.
+        /// Stable sorting preserves binary representatives of sort-equivalent keys.
         sortBlock(block, spill_layout->getKeySortDescription(), /*limit=*/ 0, IColumn::PermutationSortStability::Stable);
         const auto rows = block.rows();
         Chunk sorted(block.detachColumns(), rows);
@@ -553,7 +552,7 @@ void ExternalDistinctTransform::extractSuppressionRun(ExtractingSuppression & ex
     }
 
     auto run = prepareRun(spill_layout->getSuppressionRunHeader(), std::move(chunks), bytes,
-        spill_layout->getRunSortDescription(), MergeSorter::Mode::PreserveRows);
+        spill_layout->getKeySortDescription(), MergeSorter::Mode::PreserveRows);
     auto keys = std::move(extracting.keys);
     auto & connecting = state.emplace<ConnectingSuppressionRun>(std::move(run), std::move(keys));
     FailPointInjection::pauseFailPoint(FailPoints::external_distinct_suppression_run_prepared_pause);
@@ -896,7 +895,7 @@ ExternalDistinctTransform::PreparedMerge ExternalDistinctTransform::prepareMerge
     /// The merger cannot consume its inputs until the final in-memory tail has been registered.
     PreparedMerge prepared;
     prepared.merger = std::make_shared<DistinctSortedTransform>(
-        SharedHeaders{}, merged_header, spill_layout->getRunSortDescription(),
+        SharedHeaders{}, merged_header, spill_layout->getKeySortDescription(), spill_layout->getFlagColumnName(),
         max_block_size_rows, /*have_all_inputs=*/ false);
 
     if (spill_layout->preservesInputOrder())
