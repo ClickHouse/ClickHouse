@@ -778,12 +778,14 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             configuration.password = safeGetLiteralValue<String>(positional_arguments[3], engine_name);
         }
 
-        /// An internal metadata replay (server startup / restore, the same distinction
+        /// The server's own replay of stored metadata (server startup, the same distinction
         /// `DatabaseDataLake` uses) must keep loading whatever definition was already persisted:
         /// startup rebuilds every database from persisted metadata with an ATTACH query and
         /// `loadMetadata` aborts on the first exception, so a validation added after the database
         /// was created must not turn its stored definition into a server that cannot boot.
-        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+        /// The loader flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH`
+        /// run user statements as internal ones, and those must stay fail-closed.
+        const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
 
         /// A named collection may specify the endpoint as `addresses_expr`, which fills only
         /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
@@ -811,7 +813,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         /// Enforce the server's outbound-host policy, exactly like the table engine and the table
         /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to open a
         /// long-lived replication connection to a host that `remote_url_allow_hosts` forbids elsewhere.
-        /// Skip it only for an internal metadata replay: enforcing the policy there would turn one
+        /// Skip it only for the server's own metadata replay: enforcing the policy there would turn one
         /// database created before the whitelist was tightened into a server that cannot boot.
         /// A user-issued `ATTACH DATABASE` is not a replay and stays fail-closed, otherwise it
         /// would be a direct bypass of the policy.

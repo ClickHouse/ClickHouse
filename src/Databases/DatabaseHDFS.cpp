@@ -268,9 +268,10 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
           * what turns a stored host into a disallowed one. Every statement a user writes, `CREATE` and
           * `ATTACH` alike, is still checked up front, and the allowlist holds for every use of the
           * database regardless: `DatabaseHDFS::checkUrl` runs it for each table, which is where
-          * `DatabaseS3` enforces it too.
+          * `DatabaseS3` enforces it too. The loader flag, not `internal`, is the discriminator: wrappers
+          * such as `PARALLEL WITH` and `RESTORE DATABASE` run user-controlled statements as internal ones.
           */
-        if (!args.internal && !source_url.empty())
+        if (!args.is_metadata_replay && !source_url.empty())
             args.context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(source_url));
 
         return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.context);
