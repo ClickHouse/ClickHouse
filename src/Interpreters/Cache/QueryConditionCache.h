@@ -100,6 +100,14 @@ public:
     /// either, so the mapping is unambiguous.
     static String makeFilePartName(const String & path, std::string_view version_token);
 
+    /// The `table_id` for the entries of a file-backed table. A `part_name` from `makeFilePartName` that
+    /// identifies the data by itself - an absolute local path with its version token, or the full
+    /// location of a remote object, including the storage it is in, with its ETag (or of an immutable
+    /// data lake file) - needs no table to be unambiguous. So a table without a UUID (the one behind a
+    /// table function like `file` or `s3`, or a table in a database without UUIDs) keeps such entries
+    /// under a fixed id, while a `Nil` `table_id` disables the cache (see `write` and `read`).
+    static UUID getTableIdForFileEntries(const UUID & table_uuid);
+
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
     /// Add an entry to the cache. The passed marks represent ranges of the column with matches of the predicate.
