@@ -1520,10 +1520,8 @@ static const std::unordered_set<std::string_view> changeable_settings_exclusive_
 
 static std::string normalizeSetting(const std::string & name)
 {
-    /// We support this prefix for compatibility.
-    if (name.starts_with("s3queue_"))
-        return name.substr(std::strlen("s3queue_"));
-    return name;
+    /// We support the `s3queue_` prefix and the old setting names for compatibility.
+    return ObjectStorageQueueSettings::resolveName(name);
 }
 
 static void checkNormalizedSetting(const std::string & name)
@@ -1548,6 +1546,17 @@ static bool requiresDetachedMV(const std::string & name)
 {
     checkNormalizedSetting(name);
     return name == "buckets";
+}
+
+/// The values are compared as the setting parses them, so `4` and `'4'` are the same value.
+static bool isSettingValueChanged(const SettingChange & old_setting, const SettingChange & new_setting)
+{
+    if (old_setting.value == new_setting.value)
+        return false;
+    if (!ObjectStorageQueueSettings::hasBuiltin(new_setting.name))
+        return true;
+    return ObjectStorageQueueSettings::castValueUtil(old_setting.name, old_setting.value)
+        != ObjectStorageQueueSettings::castValueUtil(new_setting.name, new_setting.value);
 }
 
 static AlterCommands normalizeAlterCommands(const AlterCommands & alter_commands)
@@ -1615,7 +1624,7 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
                 old_settings->begin(), old_settings->end(),
                 [&](const SettingChange & change) { return change.name == setting.name; });
 
-            setting_changed = it != old_settings->end() && it->value != setting.value;
+            setting_changed = it != old_settings->end() && isSettingValueChanged(*it, setting);
         }
 
         if (setting_changed)
@@ -1743,7 +1752,7 @@ void StorageObjectStorageQueue::alter(
                     old_settings->begin(), old_settings->end(),
                     [&](const SettingChange & change) { return change.name == setting.name; });
 
-                setting_changed = it == old_settings->end() || it->value != setting.value;
+                setting_changed = it == old_settings->end() || isSettingValueChanged(*it, setting);
             }
             if (!setting_changed)
                 continue;
@@ -1771,6 +1780,17 @@ void StorageObjectStorageQueue::alter(
 
             changed_settings.push_back(setting);
         }
+
+        /// Before any state change: reject what `ATTACH` would reject, and give the changed values the types of their settings.
+        auto new_storage_def = make_intrusive<ASTStorage>();
+        new_storage_def->set(new_storage_def->engine, makeASTFunction(getName()));
+        new_storage_def->set(new_storage_def->settings, new_metadata.settings_changes->clone());
+        ObjectStorageQueueSettings new_queue_settings;
+        new_queue_settings.loadFromQuery(*new_storage_def, /*is_attach=*/ true, table_id);
+        validateSettings(new_queue_settings, /*is_attach=*/ true);
+        for (auto & change : changed_settings)
+            change.value = new_queue_settings.get(change.name);
+
         if (requires_detached_mv)
         {
             LOG_TRACE(log, "Deactivating {} streaming tasks", streaming_tasks.size());
