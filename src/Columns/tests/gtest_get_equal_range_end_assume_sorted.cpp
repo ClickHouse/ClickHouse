@@ -750,7 +750,7 @@ void checkSortedKeyRunsWalk(SortedKeyRuns & runs, const ColumnRawPtrs & key, siz
 {
     std::vector<size_t> cached_calls(key.size());
     std::vector<size_t> stateless_calls(key.size());
-    size_t leading_runs = 0;
+    std::vector<size_t> expected_calls(key.size());
     auto counted_cached = [&](size_t i, size_t from, size_t bound)
     {
         ++cached_calls[i];
@@ -768,17 +768,34 @@ void checkSortedKeyRunsWalk(SortedKeyRuns & runs, const ColumnRawPtrs & key, siz
         ASSERT_GT(run_end, begin) << label << ": begin=" << begin << " end=" << end;
         ASSERT_EQ(run_end, oracleKeyRangeEnd(key, begin, end, hint)) << label << ": begin=" << begin << " end=" << end;
         (void)findKeyRangeEndAssumeSorted(key.size(), begin, end, counted_stateless);
-        if (begin == 0 || key[0]->compareAt(begin - 1, begin, *key[0], hint) != 0)
-            ++leading_runs;
+
+        /// Searching forward, column `i` is searched only from the first row of a run of columns `0..i`, and the
+        /// search stops after the first column whose run of columns `0..i` from `begin` is one row long.
+        size_t first_new = 0;
+        if (begin > 0)
+        {
+            while (first_new < key.size() && key[first_new]->compareAt(begin - 1, begin, *key[first_new], hint) == 0)
+                ++first_new;
+            ASSERT_LT(first_new, key.size()) << label << ": begin=" << begin << " is not a run boundary";
+        }
+        for (size_t i = first_new; i < key.size(); ++i)
+        {
+            ++expected_calls[i];
+            const ColumnRawPtrs prefix(key.begin(), key.begin() + i + 1);
+            if (oracleKeyRangeEnd(prefix, begin, end, hint) <= begin + 1)
+                break;
+        }
         begin = run_end;
     }
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    /// `findRunEnd` checks every result against the stateless search through the same callback.
-    for (size_t i = 0; i < key.size(); ++i)
-        cached_calls[i] -= stateless_calls[i];
+    /// `findRunEnd` checks every result for two or more columns against the stateless search through the same callback.
+    if (key.size() >= 2)
+        for (size_t i = 0; i < key.size(); ++i)
+            cached_calls[i] -= stateless_calls[i];
 #endif
-    EXPECT_EQ(cached_calls[0], leading_runs) << label << ": end=" << end;
+    for (size_t i = 0; i < key.size(); ++i)
+        EXPECT_EQ(cached_calls[i], expected_calls[i]) << label << ": column " << i << " end=" << end;
     EXPECT_LE(
         std::accumulate(cached_calls.begin(), cached_calls.end(), size_t{0}),
         std::accumulate(stateless_calls.begin(), stateless_calls.end(), size_t{0}))
