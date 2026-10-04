@@ -377,6 +377,9 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
         getCurrentExceptionMessage(/* with_stacktrace = */ false));
 
 
+    /// Throws the cancellation cause, and is a no-op off-query, so an ordinary network error still retries.
+    CurrentThread::checkIfNotCancelled();
+
     if (auto * s3_exception = current_exception_cast<S3Exception *>())
     {
         if (s3_exception->isAccessTokenExpiredError() && credentials_refresh_callback)
