@@ -1,11 +1,14 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompactSingleBuffer.h>
+#include <Storages/MergeTree/MergeTreeReaderCompactMultipleBuffers.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+
+#include <unordered_set>
 
 
 namespace DB
@@ -91,7 +94,33 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
-    return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
+    /// A separate buffer for every column pays off when the columns are read over enough granules: the buffers of the
+    /// columns then read fewer bytes than the single buffer and can be prefetched in parallel, while for a few granules
+    /// the single buffer makes fewer read requests than one request per column.
+    /// The trade-off depends on the granules this reader will actually touch, not on the size of the whole part:
+    /// a point read of a few granules from a large part is cheaper with the single buffer.
+    /// The buffers are created per physical column of the part, so subcolumns of one column (e.g. paths of `JSON`) share a
+    /// buffer, and columns missing in the part have none: count the distinct columns of the part to read.
+    std::unordered_set<String> physical_columns_to_read;
+    for (const auto & column : columns_to_read)
+    {
+        auto name_in_storage = column.getNameInStorage();
+        if (read_info->getColumnPosition(name_in_storage).has_value())
+            physical_columns_to_read.insert(std::move(name_in_storage));
+    }
+
+    size_t num_granules = mark_ranges.getNumberOfMarks();
+    bool use_single_buffer = num_granules < reader_settings.compact_parts_min_granules_to_multibuffer_read
+        && num_granules < physical_columns_to_read.size();
+
+    if (use_single_buffer)
+        return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
+            read_info, columns_to_read, virtual_fields,
+            storage_snapshot, storage_settings, uncompressed_cache,
+            mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,
+            avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);
+
+    return std::make_unique<MergeTreeReaderCompactMultipleBuffers>(
         read_info, columns_to_read, virtual_fields,
         storage_snapshot, storage_settings, uncompressed_cache,
         mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,
