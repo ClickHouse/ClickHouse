@@ -1,6 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
-#include <Functions/FunctionsComparison.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -144,9 +143,8 @@ bool atomSafelySubstitutable(const ActionsDAG::Node * node, const SubstitutionMa
     if ((!is_comparison && !is_set_check) || node->children.size() != 2)
         return false;
 
-    /// The atom will also run on target rows the source never saw, so it must not throw on them:
-    /// a comparison across type domains parses one side per row and can fail there
-    if (is_comparison && comparisonCanThrow(node->children[0]->result_type, node->children[1]->result_type))
+    /// The atom will also run on target rows the source never saw, so it must not throw on them
+    if (!ActionsDAG::conjunctIsTotal(*node))
         return false;
     if (!node->function_base->isDeterministic())
         return false;
