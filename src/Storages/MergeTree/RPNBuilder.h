@@ -31,8 +31,10 @@ public:
 
     /** Get column name.
       * Function `modulo` is replaced with `moduloLegacy`.
+      * Returns nothing if some `modulo` would return a value that `moduloLegacy` does not return for the same
+      * arguments.
       */
-    std::string getColumnNameWithModuloLegacy() const;
+    std::optional<std::string> getColumnNameWithModuloLegacy() const;
 
     /// Is node function
     bool isFunction() const;

@@ -2896,17 +2896,17 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     {
         /// Let's check another one case.
         /// If our storage was created with moduloLegacy in partition key,
-        /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
+        /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`,
+        /// where the two functions return the same values (see `getColumnNameWithModuloLegacy`).
         /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
         ///
         /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
         /// The case `f(modulo(...))` for totally monotonic `f ` is considered to be rare.
-        ///
-        /// Note: for negative values, we can filter more partitions than needed.
-        expr_name = node.getColumnNameWithModuloLegacy();
-
-        if (!info.key_subexpr_names.contains(expr_name))
+        auto legacy_name = node.getColumnNameWithModuloLegacy();
+        if (!legacy_name || !info.key_subexpr_names.contains(*legacy_name))
             return false;
+
+        expr_name = *legacy_name;
     }
 
     if (out_value.isNull())
@@ -4315,17 +4315,17 @@ bool KeyCondition::canSetValuesBeWrappedByDeterministicFunctions(
     {
         /// Let's check another one case.
         /// If our storage was created with moduloLegacy in partition key,
-        /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
+        /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`,
+        /// where the two functions return the same values (see `getColumnNameWithModuloLegacy`).
         /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
         ///
         /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
         /// The case `f(modulo(...))` for totally monotonic `f ` is considered to be rare.
-        ///
-        /// Note: for negative values, we can filter more partitions than needed.
-        expr_name = node.getColumnNameWithModuloLegacy();
-
-        if (!info.key_subexpr_names.contains(expr_name))
+        auto legacy_name = node.getColumnNameWithModuloLegacy();
+        if (!legacy_name || !info.key_subexpr_names.contains(*legacy_name))
             return false;
+
+        expr_name = *legacy_name;
     }
 
     if (!extractDeterministicFunctionsDagFromKey(expr_name, info, out_key_column_num, out_key_res_column_type, out_transform))
