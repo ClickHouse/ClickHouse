@@ -42,8 +42,10 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Common/FieldAccurateComparison.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -415,10 +417,32 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
             return;
     }
 
+    /// `tryInsert` narrows an integer the key type cannot hold (300 into `UInt8` becomes 44), and `Enum` has no text for
+    /// a number that is not an element. No key equals such a constant.
+    const Field & key_constant = second_argument_constant_node->getValue();
+    const bool is_integer_constant = isInt64OrUInt64FieldType(key_constant.getType());
+    if (is_integer_constant
+        && (!accurateEquals((*tmp_key_column)[0], key_constant)
+            || (isEnum(key_type) && tryConvertFieldToType(key_constant, *key_type).isNull())))
+        return;
+
     /// Serialize the key to its text representation to construct the subcolumn name,
     /// e.g. the string key "foo" becomes the subcolumn suffix "key_foo".
+    const auto key_serialization = key_type->getDefaultSerialization();
     WriteBufferFromOwnString buf;
-    key_type->getDefaultSerialization()->serializeText(*tmp_key_column, 0, buf, FormatSettings());
+    key_serialization->serializeText(*tmp_key_column, 0, buf, FormatSettings());
+
+    /// The subcolumn reads the key parsed back from its name, which can be another key: `Bool` writes 2 as `true`, and
+    /// the two `DateTime` values of a DST switch share one text.
+    if (is_integer_constant && key_type->isValueRepresentedByNumber())
+    {
+        auto parsed_key_column = key_type->createColumn();
+        ReadBufferFromString key_text(buf.str());
+        if (!key_serialization->tryDeserializeWholeText(*parsed_key_column, key_text, FormatSettings())
+            || parsed_key_column->compareAt(0, 0, *tmp_key_column, /*nan_direction_hint=*/1) != 0)
+            return;
+    }
+
     String subcolumn_name = String(DataTypeMap::KEY_SUBCOLUMN_PREFIX) + buf.str();
 
     /// The resulting subcolumn has the map's value type, e.g. `m.key_foo : V` for `Map(K, V)`.
