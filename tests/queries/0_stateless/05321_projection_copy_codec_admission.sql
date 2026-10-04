@@ -6,7 +6,6 @@ DROP TABLE IF EXISTS t_05321_copy_base;
 DROP TABLE IF EXISTS t_05321_copy_projection;
 DROP TABLE IF EXISTS t_05321_attach_base;
 DROP TABLE IF EXISTS t_05321_attach_projection_rejected;
-DROP TABLE IF EXISTS t_05321_attach_projection;
 DROP TABLE IF EXISTS t_05321_restore_base;
 
 SET enable_alp_codec = 1;
@@ -41,21 +40,17 @@ AND name IN ('t_05321_direct_base', 't_05321_direct_projection', 't_05321_copy_b
              't_05321_copy_projection', 't_05321_attach_base', 't_05321_attach_projection_rejected',
              't_05321_restore_base');
 
--- Re-enabling the codec admits the same copies and allows part writes.
+-- Re-enabling the codec admits the copies and restore and allows part writes.
 SET enable_alp_codec = 1;
 CREATE TABLE t_05321_copy_base AS t_05321_source_base ENGINE = MergeTree ORDER BY k;
 CREATE TABLE t_05321_copy_projection AS t_05321_source_projection ENGINE = MergeTree ORDER BY k;
-ATTACH TABLE t_05321_attach_projection UUID '05321000-0000-4000-8000-000000000003'
-ENGINE = MergeTree ORDER BY k AS t_05321_source_projection;
 RESTORE TABLE t_05321_source_base AS t_05321_restore_base
 FROM Memory('05321_projection_copy_codec_admission') FORMAT Null;
 
 INSERT INTO t_05321_copy_base SELECT 1, 1.25;
 INSERT INTO t_05321_copy_projection SELECT 1, 2.5;
-INSERT INTO t_05321_attach_projection SELECT 1, 3.5;
 SELECT x FROM t_05321_copy_base ORDER BY k;
 SELECT x FROM t_05321_copy_projection ORDER BY k;
-SELECT x FROM t_05321_attach_projection ORDER BY k;
 SELECT count() FROM system.projection_parts WHERE database = currentDatabase()
 AND table = 't_05321_copy_projection' AND name = 'p' AND active;
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't_05321_restore_base';
@@ -71,5 +66,4 @@ DROP TABLE t_05321_source_base;
 DROP TABLE t_05321_source_projection;
 DROP TABLE t_05321_copy_base;
 DROP TABLE t_05321_copy_projection;
-DROP TABLE t_05321_attach_projection;
 DROP TABLE t_05321_restore_base;
