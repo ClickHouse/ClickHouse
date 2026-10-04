@@ -1,0 +1,26 @@
+the probes differ from their declared defaults under compatibility 26.7
+enable_group_by_top_k_optimization	1
+input_format_read_datetime_number_as_raw_value	1
+merge_tree_min_bytes_per_read_stream	1
+SET name = DEFAULT
+1
+0
+SET compatibility and the reset in one statement
+1
+SETTINGS name = DEFAULT in a query
+1
+SET compatibility = DEFAULT reverts what it derived
+0
+a reset does not take a value from compatibility that the constraints forbid
+1
+a reset that would change a setting is refused in readonly mode
+Code: 164
+0
+a merge_tree_-prefixed name that Settings owns is checked against the value it lands on
+Code: 164
+65536
+a reset is refused when the declared default is forbidden, as compatibility can move the setting back to it
+SETTING_CONSTRAINT_VIOLATION
+1
+resetting compatibility keeps what make_distributed_plan adjusts
+0

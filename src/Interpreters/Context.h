@@ -1313,7 +1313,7 @@ public:
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
-    /// Reset settings to default value
+    /// Reset settings to the default in effect for them, which under an active `compatibility` is the value of that version.
     void resetSettingsToDefaultValue(const std::vector<String> & names);
 
     /// Returns the current constraints (can return null).
