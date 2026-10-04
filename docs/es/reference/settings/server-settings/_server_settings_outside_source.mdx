@@ -1641,7 +1641,7 @@ El archivo de configuración predeterminado del servidor, `config.xml`, contiene
 
 Solicita la creación de tablas `all_...` junto a las tablas de logs del sistema (`system.all_query_log` para `system.query_log`, `system.all_text_log` para `system.text_log`, etc.). Estas tablas son una unión de la tabla de logs correspondiente, sus versiones rotadas (`query_log_0`, `query_log_1`, ...) y/o las mismas tablas de todas las réplicas de un clúster, y permiten consultarlas todas a la vez sin tener que recordar construcciones como `clusterAllReplicas(default, merge(system, '^query_log'))`.
 
-La sección es opcional. Si está presente, debe especificarse al menos una de las siguientes opciones de configuración:
+La sección es opcional. El archivo de configuración predeterminado del servidor, `config.xml`, incluye esta sección con `merge_rotated_tables` habilitado, por lo que las tablas `all_...` se crean automáticamente en un servidor con la configuración predeterminada: durante el primer vaciado de cada log, o durante el inicio si `prepare_system_log_tables_on_startup` está habilitado; la opción `cluster` debe configurarse explícitamente. Si ya existe una tabla con uno de los nombres `all_...` que no haya sido creada por esta funcionalidad (por ejemplo, una tabla creada manualmente con datos), nunca se reemplaza: se deja intacta, se escribe una advertencia en el log del servidor y la tabla de unión se crea en el siguiente vaciado del log una vez que dicha tabla se elimine o se renombre. Las tablas creadas por esta funcionalidad se identifican por la frase marcador que aparece al final de su comentario: `It is safe to drop this table at any time: it will be recreated automatically.` Si la sección está presente, debe especificarse al menos una de las siguientes opciones de configuración:
 
 | Configuración          | Descripción                                                                                                                                                                                                                                                             |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1656,9 +1656,9 @@ La opción se aplica a todas las tablas de logs del sistema; no permite una conf
   Cuando se utiliza la configuración `cluster`, la definición de la tabla hace referencia al clúster, que debe existir para que la tabla se cargue. Si elimina el clúster de la configuración, elimine también las tablas `all_...` (se recrearán según la nueva configuración en el siguiente vaciado).
 </Note>
 
-<Warning>
-  Una vez habilitada esta sección, los nombres `all_...` de la base de datos `system` quedan reservados para esta funcionalidad. No utilice estos nombres para sus propias tablas: cambie el nombre de cualquier tabla que los use antes de habilitar la sección.
-</Warning>
+<Note>
+  Una tabla con uno de los nombres `all_...` solo se considera creada por esta funcionalidad, y puede reemplazarse si su definición difiere de la esperada, cuando selecciona datos de la función de tabla `merge` o `clusterAllReplicas` y su comentario contiene la frase marcador indicada anteriormente. No copie esta frase en los comentarios de sus propias tablas.
+</Note>
 
 **Ejemplo**
 

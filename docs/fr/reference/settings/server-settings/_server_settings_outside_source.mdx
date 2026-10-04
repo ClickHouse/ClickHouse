@@ -1639,26 +1639,26 @@ Le fichier de configuration du serveur `config.xml` par défaut contient la sect
 
 ## create_union_system_log_tables {#create_union_system_log_tables}
 
-Demande la création de tables `all_...` à côté des tables de logs système (`system.all_query_log` pour `system.query_log`, `system.all_text_log` pour `system.text_log`, etc.). Une telle table est l’union de la table de logs correspondante, de ses versions après rotation (`query_log_0`, `query_log_1`, ...) et/ou de ces mêmes tables sur toutes les répliques d’un cluster. Elle permet de les interroger toutes en une seule fois sans avoir à retenir des constructions telles que `clusterAllReplicas(default, merge(system, '^query_log'))`.
+Demande la création de tables `all_...` à côté des tables de journaux système (`system.all_query_log` pour `system.query_log`, `system.all_text_log` pour `system.text_log`, etc.). Une telle table est l’union de la table de journaux correspondante, de ses versions après rotation (`query_log_0`, `query_log_1`, ...) et/ou de ces mêmes tables sur toutes les répliques d’un cluster. Elle permet de les interroger toutes en une seule fois sans avoir à retenir des constructions telles que `clusterAllReplicas(default, merge(system, '^query_log'))`.
 
-Cette section est facultative. Si elle est présente, au moins l’un des paramètres suivants doit être spécifié :
+Cette section est facultative. Le fichier de configuration par défaut du serveur, `config.xml`, contient cette section avec `merge_rotated_tables` activé : les tables `all_...` sont donc créées automatiquement sur un serveur avec la configuration par défaut, lors du premier flush de chaque journal, ou au démarrage si `prepare_system_log_tables_on_startup` est activé. Le paramètre `cluster`, en revanche, doit être configuré explicitement. Une table qui existe déjà sous l’un des noms `all_...` et qui n’a pas été créée par cette fonctionnalité (par exemple, une table créée manuellement et contenant des données) n’est jamais remplacée : elle est laissée intacte, un avertissement est consigné dans le journal du serveur, et la table d’union est créée lors du flush suivant du journal, une fois cette table supprimée ou renommée. Les tables créées par cette fonctionnalité sont reconnaissables à la phrase marqueur figurant à la fin de leur commentaire : `It is safe to drop this table at any time: it will be recreated automatically.` Si la section est présente, au moins l’un des paramètres suivants doit être spécifié :
 
 | Paramètre              | Description                                                                                                                                                                                                                                                                                   |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `merge_rotated_tables` | Si `true`, la table `all_...` sélectionne les données de la table de logs et de ses versions après rotation à l’aide de la fonction de table `merge`.                                                                                                                                         |
+| `merge_rotated_tables` | Si `true`, la table `all_...` sélectionne les données de la table de journaux et de ses versions après rotation à l’aide de la fonction de table `merge`.                                                                                                                                         |
 | `cluster`              | Si ce paramètre est spécifié, la table `all_...` sélectionne les données de toutes les répliques de ce cluster à l’aide de la fonction de table `clusterAllReplicas` (avec `SETTINGS skip_unavailable_shards = 1`, afin que les répliques indisponibles ne fassent pas échouer les requêtes). |
 
 Si les deux paramètres sont spécifiés, la table est l’union des tables après rotation sur toutes les répliques du cluster.
 
-Cette option s’applique à toutes les tables de logs système ; elle ne permet pas de définir une configuration différente pour chaque log système. Les tables sont créées dans la même base de données que les tables de logs système lors du premier flush de chaque log et sont automatiquement recréées lorsque la structure de la table de logs change (lors d’une rotation). Elles n’ont pas d’état ; vous pouvez donc les supprimer à tout moment sans risque. La création n’est prise en charge que pour les moteurs de base de données `Atomic`, `Replicated` et `Shared`.
+Cette option s’applique à toutes les tables de journaux système ; elle ne permet pas de définir une configuration différente pour chaque journal système. Les tables sont créées dans la même base de données que les tables de journaux système lors du premier flush de chaque journal et sont automatiquement recréées lorsque la structure de la table de journaux change (lors d’une rotation). Elles n’ont pas d’état ; vous pouvez donc les supprimer à tout moment sans risque. La création n’est prise en charge que pour les moteurs de base de données `Atomic`, `Replicated` et `Shared`.
 
 <Note>
   Lorsque le paramètre `cluster` est utilisé, la définition de la table fait référence au cluster, qui doit exister pour que la table puisse être chargée. Si vous supprimez le cluster de la configuration, supprimez également les tables `all_...` (elles seront recréées conformément à la nouvelle configuration lors du prochain flush).
 </Note>
 
-<Warning>
-  Une fois cette section activée, les noms `all_...` de la base de données `system` sont réservés à cette fonctionnalité. N’utilisez pas ces noms pour vos propres tables : renommez toute table concernée avant d’activer la section.
-</Warning>
+<Note>
+  Une table portant l’un des noms `all_...` n’est considérée comme créée par cette fonctionnalité, et n’est susceptible d’être remplacée lorsque sa définition diffère de celle attendue, que si elle sélectionne ses données à partir de la fonction de table `merge` ou `clusterAllReplicas` et que son commentaire contient la phrase marqueur ci-dessus. Ne copiez pas cette phrase dans les commentaires de vos propres tables.
+</Note>
 
 **Exemple**
 
