@@ -947,7 +947,7 @@ UInt64 MemoryTracker::takeMemoryCreditsDelta(Int64 current_amount)
     /// `updateMemoryCredits`), not a MemoryTracker-to-Counters back-reference.
     if (level != VariableContext::Process)
         return 0;
-    if (const auto * loaded_parent = parent.load(std::memory_order_relaxed); loaded_parent && loaded_parent->level == VariableContext::Process)
+    if (const auto * loaded_parent = parent.load(std::memory_order_acquire); loaded_parent && loaded_parent->level == VariableContext::Process)
         return 0;
 
     /// Advance the timestamp on every allocation and free so the next interval is always measured from
@@ -986,9 +986,11 @@ void MemoryTracker::flushMemoryCredits(ProfileEvents::Counters & counters)
     /// only advance the integral on transitions, so a query that still holds memory at finish would otherwise
     /// lose the final segment (from the last alloc/free until now). Charge it here using the currently held
     /// `amount`. The snapshot may be taken on a foreign thread (e.g. SHOW PROCESSLIST, query metric log), so
-    /// charge the passed-in thread-group counters directly instead of the current thread's counters.
+    /// charge the passed-in thread-group counters directly instead of the current thread's counters. For the same
+    /// reason it does not trace: a `ProfileEvent` row in `system.trace_log` would carry the identity of the
+    /// current thread, which may belong to another query or to no query at all.
     if (const UInt64 delta = takeMemoryCreditsDelta(amount.load(std::memory_order_relaxed)))
-        counters.increment(ProfileEvents::MemoryCredits, static_cast<Int64>(delta));
+        counters.incrementNoTrace(ProfileEvents::MemoryCredits, static_cast<Int64>(delta));
 }
 
 

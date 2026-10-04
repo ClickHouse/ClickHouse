@@ -1995,7 +1995,7 @@ void Counters::incrementAtOutermostProcess(Event event, Count amount)
 
     while (current != nullptr)
     {
-        Counters * parent_val = current->parent.load(std::memory_order_relaxed);
+        Counters * parent_val = current->parent.load(std::memory_order_acquire);
         if (current->level == VariableContext::Process
             && (!parent_val || parent_val->level != VariableContext::Process))
             outermost_process = current;
