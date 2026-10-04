@@ -2946,7 +2946,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     /// conversion as the final result: a serialized multi-key table stores a length-prefixed arena
     /// blob, whose size is not the size of the materialized key columns (in particular, every String
     /// key has an offset column). The kept rows are too few to carry the keys' compression ratio, so
-    /// the meter keeps a sample of them.
+    /// the meter keeps a sample of the bucket's keys.
     std::optional<MaterializedKeyBytesMeter<Method>> key_bytes_meter;
     if (untruncated_keys)
         key_bytes_meter.emplace(
