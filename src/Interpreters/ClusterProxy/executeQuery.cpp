@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Interpreters/ClientInfo.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -446,13 +447,44 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     if (context->canUseTaskBasedParallelReplicas())
     {
         bool disable_parallel_replicas = false;
-        if (is_remote_function)
+        if (is_remote_function && cluster.getName().empty())
         {
-            if (cluster.getName().empty()) // disable parallel replicas with remote() table functions w/o configured cluster
-                disable_parallel_replicas = true;
-            else
-                new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
+            /// disable parallel replicas with remote() table functions w/o configured cluster
+            disable_parallel_replicas = true;
         }
+        else
+        {
+            /// Every shard of this dispatch reads with parallel replicas over the `Distributed` cluster,
+            /// scoped to its own shard by the `_shard_num` / `_shard_count` pair, and that pair describes
+            /// this cluster only. Pin `cluster_for_parallel_replicas` to it here, for the local shard plans
+            /// as well as the remote pipes (`ReadFromRemote` used to do this for the remote pipes alone):
+            /// a local shard plan that kept a user-supplied `cluster_for_parallel_replicas` would apply
+            /// this cluster's shard scope to an unrelated cluster, which the pair cannot detect (it carries
+            /// no cluster identity), and either read the wrong replica set or fail on a shard this node
+            /// is not part of.
+            const String & previous_cluster_name = settings[Setting::cluster_for_parallel_replicas];
+            if (log && settings[Setting::cluster_for_parallel_replicas].changed && previous_cluster_name != cluster.getName())
+                LOG_INFO(
+                    log,
+                    "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is used: {}",
+                    previous_cluster_name,
+                    cluster.getName());
+            new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
+
+            /// Any coordinator replica count present here was selected by an outer parallel-replicas
+            /// dispatch, not by the ones this fan-out is about to start: every replica set reached
+            /// through it gets its own coordinator from `executeQueryWithParallelReplicas`, which owns and
+            /// re-sends the count. The context carrier is cleared below, once the context copy exists.
+            new_client_info.obsolete_count_participating_replicas = 0;
+        }
+
+        /// The same holds for the rest of the follower state of an outer parallel-replicas read: when this
+        /// fan-out runs inside a follower query, the local shard plans must not key follower mode off the
+        /// outer `collaborate_with_initiator` (`canUseParallelReplicasOnFollower`) and send read-task requests
+        /// to a coordinator that belongs to another read. The remote pipes never inherit it either
+        /// (`RemoteQueryExecutor::sendQueryUnlocked`).
+        new_client_info.collaborate_with_initiator = false;
+        new_client_info.number_of_current_replica = 0;
 
         if (!disable_parallel_replicas)
         {
@@ -494,6 +526,8 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
     new_context->setClientInfo(new_client_info);
+    if (context->canUseTaskBasedParallelReplicas())
+        new_context->clearParallelReplicasCoordinatorCount();
 
     if (context->canUseParallelReplicasCustomKeyForCluster(cluster))
         new_context->disableOffsetParallelReplicas();
@@ -635,6 +669,7 @@ void executeQuery(
             plans,
             remote_shards,
             static_cast<UInt32>(shards),
+            not_optimized_cluster->getShardScopeIdentity(),
             parallel_replicas_enabled,
             shard_filter_generator,
             unavailable_shard_tracker);
@@ -699,21 +734,52 @@ Block makeShardNumScalar(UInt32 shard_num, const String & shard_scope_identity)
         {DataTypeString().createColumnConst(1, shard_scope_identity), std::make_shared<DataTypeString>(), SHARD_NUM_CLUSTER_COLUMN}};
 }
 
-/// The `_shard_num` scalar shipped by the initiator of a distributed query, or `nullopt` when this query is
-/// not running inside one.
-static std::optional<Block> getShardNumScalar(const ContextPtr & context)
+/// Whether the provenance recorded in a `_shard_num` scalar block says that its shard number indexes the
+/// shards of `cluster`.
+static bool shardNumScalarBelongsTo(const Block & block, const Cluster & cluster)
 {
+    const std::string_view provenance = block.getByName(SHARD_NUM_CLUSTER_COLUMN).column->getDataAt(0);
+    /// Compare the numbering, not the name: a derived cluster keeps the name and may renumber the shards.
+    /// An empty identity authenticates nothing, so it must never compare equal.
+    return !provenance.empty() && provenance == cluster.getShardScopeIdentity();
+}
+
+/// The `_shard_num` scalar of the distributed query this query is running inside, or `nullopt` when it is
+/// not running inside one.
+///
+/// The shard number arrives through two carriers. The remote fan-out ships it as a regular scalar
+/// (`ReadFromRemote` adds it to the scalars sent over the wire), so on the receiving replica it lives in
+/// the query context. A local shard plan never crosses the wire: `createLocalPlan` passes the shard
+/// number in `SelectQueryOptions`, and the interpreter injects it into its context copy with
+/// `addSpecialScalar`, from where context copies inherit it. The special scalar is set by the innermost
+/// interpreter, so it is the more specific scope, and it is used when it belongs to `cluster`, the
+/// `cluster_for_parallel_replicas` of this read. Otherwise it says nothing about this read's shards (for
+/// example, a view re-points `cluster_for_parallel_replicas` at another cluster), and only the regular
+/// scalar is considered, exactly as when there is no special scalar.
+static std::optional<Block> getShardNumScalar(const ContextPtr & context, const Cluster * cluster)
+{
+    if (cluster)
+        if (auto special_scalar = context->tryGetSpecialScalar("_shard_num");
+            special_scalar && special_scalar->has(SHARD_NUM_CLUSTER_COLUMN) && shardNumScalarBelongsTo(*special_scalar, *cluster))
+            return special_scalar;
+
     if (!context->hasQueryContext() || !context->getQueryContext()->hasScalar("_shard_num"))
         return {};
 
     return context->getQueryContext()->getScalar("_shard_num");
 }
 
-/// The shard number the initiator shipped, or 0 when none was. Says nothing about which numbering it
-/// indexes, so it resolves no cluster and cannot fail.
+/// The shard number the initiator shipped, or 0 when none was. Says nothing about which numbering a shipped
+/// number indexes, and cannot fail: `cluster_for_parallel_replicas` is resolved only to decide whether a
+/// special scalar of a local shard plan applies, without `getClusterForParallelReplicas`, which would turn an
+/// unset or unresolvable cluster name into an exception.
 static UInt64 getShippedShardNum(const ContextPtr & context)
 {
-    const auto block = getShardNumScalar(context);
+    ClusterPtr cluster;
+    if (const String cluster_name = context->getSettingsRef()[Setting::cluster_for_parallel_replicas]; !cluster_name.empty())
+        cluster = context->tryGetCluster(cluster_name);
+
+    const auto block = getShardNumScalar(context, cluster.get());
     if (!block)
         return 0;
 
@@ -725,7 +791,7 @@ static UInt64 getShippedShardNum(const ContextPtr & context)
 /// shard scope only when the scalar demonstrably belongs to `cluster`.
 ShardScope getShardScopeForCluster(const ContextPtr & context, const Cluster & cluster)
 {
-    const auto block = getShardNumScalar(context);
+    const auto block = getShardNumScalar(context, &cluster);
     if (!block)
         return {};
 
@@ -737,10 +803,7 @@ ShardScope getShardScopeForCluster(const ContextPtr & context, const Cluster & c
     if (!block->has(SHARD_NUM_CLUSTER_COLUMN))
         return scope;
 
-    const std::string_view provenance = block->getByName(SHARD_NUM_CLUSTER_COLUMN).column->getDataAt(0);
-    /// Compare the numbering, not the name: a derived cluster keeps the name and may renumber the shards.
-    /// An empty identity authenticates nothing, so it must never compare equal.
-    if (provenance.empty() || provenance != cluster.getShardScopeIdentity())
+    if (!shardNumScalarBelongsTo(*block, cluster))
         scope.kind = ShardScopeKind::Foreign;
 
     return scope;
@@ -946,6 +1009,112 @@ static std::vector<bool> getActiveReplicasForParallelReplicas(const ContextPtr &
     return is_active;
 }
 
+/// Find the local (initiator) replica's index in the cluster's replica order, matched by host name + port the
+/// same way `findLocalReplicaIndexAndUpdatePools` does. `count` bounds the search to the liveness vector size.
+static std::optional<size_t> findLocalReplicaIndexForLiveness(const ClusterPtr & cluster, size_t count)
+{
+    const auto & shard = cluster->getShardsInfo().at(0);
+    const auto & addresses = cluster->getShardsAddresses().at(0);
+    for (size_t i = 0; i < count && i < addresses.size(); ++i)
+    {
+        const auto & address = addresses[i];
+        const bool is_local_replica = std::any_of(
+            shard.local_addresses.begin(),
+            shard.local_addresses.end(),
+            [&](const Cluster::Address & local_addr)
+            { return local_addr.host_name == address.host_name && local_addr.port == address.port; });
+        if (is_local_replica)
+            return i;
+    }
+    return {};
+}
+
+/// Turn a replica liveness vector into (available replica count, count capped by `max_parallel_replicas`): the
+/// coordinator sizing. `is_active` is cleared when liveness reports zero active replicas so callers stop
+/// filtering pools by it. Shared by the coordinator (`prepareConnectionPoolsForParallelReplicas`) and the
+/// mark-segment-size heuristic (`getActiveReplicasCountForParallelReplicas`) so both size by the same count.
+static std::pair<size_t, size_t> countAndCapReplicas(
+    std::vector<bool> & is_active, size_t all_nodes_count, const Settings & settings, const LoggerPtr & logger)
+{
+    size_t available_replicas = all_nodes_count;
+    if (!is_active.empty())
+    {
+        available_replicas = std::count(is_active.begin(), is_active.end(), true);
+        /// Safety net: if liveness reports no active replicas (it should not, since this query is running),
+        /// ignore it rather than ending up with an empty replica set / dividing by zero downstream.
+        if (available_replicas == 0)
+        {
+            is_active.clear();
+            available_replicas = all_nodes_count;
+        }
+    }
+
+    size_t max_replicas_to_use = settings[Setting::max_parallel_replicas];
+    if (max_replicas_to_use > available_replicas)
+    {
+        if (logger)
+            LOG_TRACE(
+                logger,
+                "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
+                "Will use the latter number to execute the query.",
+                settings[Setting::max_parallel_replicas].value,
+                available_replicas);
+        max_replicas_to_use = available_replicas;
+    }
+
+    return {available_replicas, max_replicas_to_use};
+}
+
+size_t getActiveReplicasCountForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster)
+{
+    /// A coordinator sized on this server is authoritative. Every dispatch that builds a coordinator
+    /// (`executeQueryWithParallelReplicas`, `createParallelReplicasPlan`, `executeInsertSelectWithParallelReplicas`)
+    /// writes the count it was sized with into this server-owned context carrier before any reading step of
+    /// the query is built, so a coordinated read on this server can never observe a different count than its
+    /// coordinator. No client can write this carrier: it is not part of `ClientInfo` and is never deserialized.
+    /// The carrier is copied into every derived context, so it is scoped to the `cluster_for_parallel_replicas`
+    /// the coordinator was sized for: a nested view or subquery that re-points the setting at another cluster
+    /// does not inherit the outer read's count.
+    if (const auto coordinator_replicas_count
+        = context->getParallelReplicasCoordinatorCount(context->getSettingsRef()[Setting::cluster_for_parallel_replicas]))
+        return *coordinator_replicas_count;
+
+    /// Without a coordinator on this server the read is a follower read: the coordinator lives on the
+    /// initiator, and its count reaches this replica in `ClientInfo`. It is consulted only for a follower
+    /// read (`collaborate_with_initiator`, the same bit that puts `ReadFromMergeTree` into follower mode),
+    /// and it must be used as is: with the non-local-plan path any replica may send the first announcement,
+    /// so independently reading `system.clusters` here could make that announcement disagree with the
+    /// coordinator's snapshot. Whoever sends this field is, by construction, the coordinator of this read
+    /// and owns the count; a client that sets the follower bits on a query of its own is that read's
+    /// coordinator, and there is no locally sized coordinator on this server for the value to diverge from.
+    if (context->getClientInfo().collaborate_with_initiator)
+        if (const auto coordinator_replicas_count = context->getClientInfo().obsolete_count_participating_replicas)
+            return coordinator_replicas_count;
+
+    /// Narrow the cluster to the shard the coordinator is scoped to, exactly like
+    /// `prepareClusterForParallelReplicas` does: with a multi-shard cluster, shard 0 is not necessarily the
+    /// shard this query reads, and its replica set (and liveness) can differ.
+    ClusterPtr shard_cluster = cluster;
+    if (const auto scope = getShardScopeForCluster(context, *cluster); scope.kind == ShardScopeKind::Scoped
+        && scope.shard_num <= cluster->getShardCount() && cluster->getShardCount() > 1)
+        shard_cluster = cluster->getClusterWithSingleShard(scope.shard_num - 1);
+
+    const size_t all_nodes_count = shard_cluster->getShardsInfo().at(0).getAllNodeCount();
+
+    /// Mirror `prepareConnectionPoolsForParallelReplicas` so the mark-segment-size heuristic sizes by the same
+    /// replica count the reading coordinator does: validate liveness against the cluster definition, force the
+    /// local (initiator) replica active, then cap by `max_parallel_replicas`. The two test-only failpoints
+    /// there perturb liveness to exercise the coordinator and are intentionally not applied here.
+    std::vector<bool> is_active = getActiveReplicasForParallelReplicas(context, shard_cluster);
+    if (!is_active.empty() && is_active.size() != all_nodes_count)
+        is_active.clear();
+    if (!is_active.empty())
+        if (auto local_replica_index = findLocalReplicaIndexForLiveness(shard_cluster, is_active.size()))
+            is_active[*local_replica_index] = true;
+
+    return countAndCapReplicas(is_active, all_nodes_count, context->getSettingsRef(), /*logger=*/ nullptr).second;
+}
+
 static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
 {
     const auto & settings = context->getSettingsRef();
@@ -963,22 +1132,7 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
     if (!is_active.empty())
     {
         /// Identify the local replica the same way `findLocalReplicaIndexAndUpdatePools` does (host name + port).
-        const auto & addresses = cluster->getShardsAddresses().at(0);
-        std::optional<size_t> local_replica_index;
-        for (size_t i = 0; i < is_active.size() && i < addresses.size(); ++i)
-        {
-            const auto & address = addresses[i];
-            const bool is_local_replica = std::any_of(
-                shard.local_addresses.begin(),
-                shard.local_addresses.end(),
-                [&](const Cluster::Address & local_addr)
-                { return local_addr.host_name == address.host_name && local_addr.port == address.port; });
-            if (is_local_replica)
-            {
-                local_replica_index = i;
-                break;
-            }
-        }
+        std::optional<size_t> local_replica_index = findLocalReplicaIndexForLiveness(cluster, is_active.size());
 
         /// Test-only: simulate a transient window where the initiator's own `active` znode is momentarily
         /// missing, so liveness reports the local replica as inactive. The forcing below must still keep it;
@@ -1018,30 +1172,7 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
         }
     }
 
-    size_t available_replicas = shard.getAllNodeCount();
-    if (!is_active.empty())
-    {
-        available_replicas = std::count(is_active.begin(), is_active.end(), true);
-        /// Safety net: if liveness reports no active replicas (it should not, since this query is running),
-        /// ignore it rather than ending up with an empty replica set.
-        if (available_replicas == 0)
-        {
-            is_active.clear();
-            available_replicas = shard.getAllNodeCount();
-        }
-    }
-
-    size_t max_replicas_to_use = settings[Setting::max_parallel_replicas];
-    if (max_replicas_to_use > available_replicas)
-    {
-        LOG_TRACE(
-            logger,
-            "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
-            "Will use the latter number to execute the query.",
-            settings[Setting::max_parallel_replicas].value,
-            available_replicas);
-        max_replicas_to_use = available_replicas;
-    }
+    auto [available_replicas, max_replicas_to_use] = countAndCapReplicas(is_active, shard.getAllNodeCount(), settings, logger);
 
     std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> shuffled_pool;
     if (max_replicas_to_use < available_replicas)
@@ -1138,6 +1269,14 @@ void executeQueryWithParallelReplicas(
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
+
+    /// Send the initiator-owned coordinator count to every replica. This occupies a long-standing compatible
+    /// `ClientInfo` field, so older servers continue to deserialize it safely (while ignoring the value).
+    /// The context carrier next to it is the one the initiator's own plan reads: the `ClientInfo` field is
+    /// client-writable, so it is consulted only by follower reads (see `getActiveReplicasCountForParallelReplicas`).
+    new_context->getClientInfo().obsolete_count_participating_replicas = max_replicas_to_use;
+    new_context->setParallelReplicasCoordinatorCount(
+        max_replicas_to_use, new_context->getSettingsRef()[Setting::cluster_for_parallel_replicas]);
 
     auto external_tables = new_context->getExternalTables();
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use);
@@ -1264,6 +1403,9 @@ QueryPlanPtr createParallelReplicasPlan(QueryPlanPtr plan_fragment, ContextPtr c
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
+    new_context->getClientInfo().obsolete_count_participating_replicas = max_replicas_to_use;
+    new_context->setParallelReplicasCoordinatorCount(
+        max_replicas_to_use, new_context->getSettingsRef()[Setting::cluster_for_parallel_replicas]);
     if (connection_pools.size() == 1)
         return nullptr;
 
@@ -1484,9 +1626,10 @@ bool canUseLocalPlanForParallelReplicas(const ContextPtr & context)
 
     /// Inside a Distributed sub-query the initiator can't use local plan (see comment in
     /// `executeQueryWithParallelReplicas`). Only whether a shard number was shipped matters here, which does
-    /// not depend on the numbering it indexes, so no cluster is resolved: this predicate is reached from
-    /// projection analysis on a follower (`ReadFromMergeTree::isParallelReplicasLocalPlanForFollower`), where
-    /// `getClusterForParallelReplicas` would turn an unset or unresolvable cluster name into an exception.
+    /// not depend on the numbering it indexes, so `getShippedShardNum` does not use
+    /// `getClusterForParallelReplicas`: this predicate is reached from projection analysis on a follower
+    /// (`ReadFromMergeTree::isParallelReplicasLocalPlanForFollower`), where it would turn an unset or
+    /// unresolvable cluster name into an exception.
     return getShippedShardNum(context) == 0;
 }
 
@@ -1680,6 +1823,10 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         std::tie(connection_pools, max_replicas_to_use) = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
         connection_pools.resize(max_replicas_to_use);
     }
+
+    new_context->getClientInfo().obsolete_count_participating_replicas = max_replicas_to_use;
+    new_context->setParallelReplicasCoordinatorCount(
+        max_replicas_to_use, new_context->getSettingsRef()[Setting::cluster_for_parallel_replicas]);
 
     String formatted_query;
     {

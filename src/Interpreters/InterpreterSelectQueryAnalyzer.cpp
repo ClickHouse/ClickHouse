@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -138,8 +139,7 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 
     if (select_query_options.shard_num)
         result_context->addSpecialScalar(
-            "_shard_num",
-            Block{{DataTypeUInt32().createColumnConst(1, *select_query_options.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}});
+            "_shard_num", ClusterProxy::makeShardNumScalar(*select_query_options.shard_num, select_query_options.shard_scope_identity));
     if (select_query_options.shard_count)
         result_context->addSpecialScalar(
             "_shard_count",
