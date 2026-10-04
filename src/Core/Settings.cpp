@@ -756,6 +756,10 @@ Check each uploaded object to s3 with head request to be sure that upload was su
 When reading an object from S3 (or an S3-compatible store such as GCS), check that every GET request returns the same ETag that was observed when the object was listed. A single file read issues many ranged GET requests; if the object is overwritten in place between them (for example by an external writer rewriting a fixed key), the reads can otherwise be stitched together from two different object generations and surface as a corrupted checksum or parse error. When a mismatch is detected the read fails with `S3_OBJECT_CHANGED_DURING_READ` instead of returning inconsistent data. Disable only for workloads that intentionally read objects that are being overwritten and can tolerate inconsistent reads.
 )", 0, \
         {"26.7", false, true, "New setting to detect concurrent in-place overwrites of S3/GCS objects during a read by validating the GET response ETag against the listed one. previous_value=false so `compatibility` with versions before 26.7 restores the pre-existing behavior (no validation)."}) \
+    DECLARE(Bool, azure_validate_etag_on_read, true, R"(
+When reading a blob from Azure Blob Storage through the `azureBlobStorage` / `azureBlobStorageCluster` table functions or the `AzureBlobStorage` table engine, pin every `GET` request to the generation of the blob that was observed when it was listed by sending its `ETag` in `If-Match`, and check the `ETag` of the response. A single file read issues many ranged `GET` requests; if the blob is overwritten in place between them (for example by an external writer rewriting a fixed key), the reads can otherwise be stitched together from two different generations of the blob and surface as a corrupted checksum or parse error. The size recorded at listing time is also used as the right bound of the read, so it is only correct for the generation it was recorded for. When a mismatch is detected the read fails with `AZURE_OBJECT_CHANGED_DURING_READ` instead of returning inconsistent data. Disable only for workloads that intentionally read blobs that are being overwritten and can tolerate inconsistent reads.
+)", 0, \
+        {"26.10", false, true, "New setting to detect concurrent in-place overwrites of Azure blobs during a read by pinning every `GET` to the listed `ETag` with `If-Match` and validating the `ETag` of the response, like `s3_validate_etag_on_read` does for S3. `compatibility` with versions before 26.10 restores the previous behavior (no validation)."}) \
     DECLARE(Bool, azure_check_objects_after_upload, false, R"(
 Check each uploaded object in azure blob storage to be sure that upload was successful
 )", 0, \
@@ -966,6 +970,39 @@ Using the uncompressed cache (only for tables in the MergeTree family) can signi
 
 For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically to save space for truly small queries. This means that you can keep the 'use_uncompressed_cache' setting always set to 1.
 )", 0) \
+    DECLARE(Bool, use_columns_cache, false, R"(
+Whether to use the columns cache. Accepts 0 or 1. By default, 0 (disabled).
+The columns cache stores deserialized columns from `MergeTree` tables, eliminating repeated decompression and deserialization for hot data. This can significantly reduce latency for repeated queries on the same data. The cache is keyed by table UUID, data part name, column name, and a stripe of consecutive granules of about 65536 rows.
+
+Because entries are keyed by table UUID, the cache is only active for tables in databases that assign UUIDs, such as `Atomic`, `Replicated`, and `Shared` (the default database engine in ClickHouse Cloud); `MergeTree` tables in legacy `Ordinary` databases have a nil UUID and silently ignore this setting.
+
+The cache currently applies to wide parts only: data in compact parts is not read from or written to the columns cache, so whether a read is accelerated depends on the part format.
+
+An entry holds a contiguous range of granules of one stripe: a granule enters the cache only after it has been read from its first row to its last, a read is served from the cache granule by granule, and ranges written by different reads are merged, so reads that cut a part into different mark ranges share the entries.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New experimental setting to enable columns cache for MergeTree tables, disabled by default."}) \
+    DECLARE(Bool, enable_reads_from_columns_cache, true, R"(
+Whether to read from the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
+)", BETA, \
+        {"26.10", true, true, "New setting to control reading from columns cache"}) \
+    DECLARE(Bool, enable_writes_to_columns_cache, true, R"(
+Whether to write to the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
+)", BETA, \
+        {"26.10", true, true, "New setting to control writing to columns cache"}) \
+    DECLARE(UInt64, columns_cache_max_estimated_bytes_to_write_to_cache, 0, R"(
+If the estimated size of the data a query reads from `MergeTree` parts exceeds this value, writes to the columns cache are inhibited for the entire query. The estimate is made in uncompressed bytes, which is what the cache is charged for, from the size of the columns the query reads (including `PREWHERE`, mutation and patch-part columns) scaled to the selected mark ranges, and the query is charged for all of it before it reads anything. This keeps a single large scan from displacing useful data from the cache, and from copying data into the cache that cannot stay there.
+
+A value of `0` means use half of the size limit the columns cache currently has. That is the configured `columns_cache_size` while the server has memory to spare, but the cache shrinks under memory pressure (see the `ColumnsCacheSizeLimit` metric), and the default budget shrinks with it. With the default `columns_cache_size_ratio`, half of the limit is the size of the probationary segment of the cache, so the data of a query that passes the gate can be cached completely in one pass.
+
+The gate does not apply to a read that drops mark ranges while it runs, which is the case when `use_indexes_refiner_in_read_pools` is enabled: how many of the selected marks such a read really touches is decided only when each task is cut, so the estimate above would be an upper bound that charges marks the query never reads. For those reads the amount written is bounded by `columns_cache_max_bytes_to_write_to_cache` instead.
+)", BETA, \
+        {"26.10", 0, 0, "New setting: cap on the estimated uncompressed bytes a query reads to permit columns cache writes (0 = half of the current columns cache size limit, which shrinks under memory pressure)."}) \
+    DECLARE(UInt64, columns_cache_max_bytes_to_write_to_cache, 0, R"(
+Soft per-query threshold on the bytes a single query writes to the columns cache. The bytes written during the query are counted, and once the counter reaches this value, further cache writes for the rest of the query are skipped. This is an advisory threshold, not a hard cap: a reader accumulates the entries of the granules it has read and writes them to the cache in one batch, and the batch that crosses the threshold is stored in full before the counter is charged. So the actual amount written may exceed this value by up to the entries one reader accumulates between two writes - the columns it reads, one entry per stripe of about 65536 rows each - and, with several readers running at once, by that much per reader. The purpose is to keep a single large scan from displacing useful data from the cache, not to bound cache usage exactly.
+
+A value of `0` means use half of the size limit the columns cache currently has: the configured `columns_cache_size`, or less while the cache is shrunk under memory pressure (see the `ColumnsCacheSizeLimit` metric).
+)", BETA, \
+        {"26.10", 0, 0, "New setting: soft per-query threshold on bytes written to the columns cache; advisory, may be exceeded by up to the entries one reader writes in a batch (0 = half of the current columns cache size limit, which shrinks under memory pressure)."}) \
     DECLARE(Bool, replace_running_query, false, R"(
 When using the HTTP interface, the 'query_id' parameter can be passed. This is any string that serves as the query identifier.
 If a query from the same user with the same 'query_id' already exists at this time, the behaviour depends on the 'replace_running_query' parameter.
@@ -10193,6 +10230,11 @@ Whether to cache text index tokens that are absent from a data part.
 The negative tokens cache uses the text index tokens cache and avoids repeated dictionary lookups for absent tokens.
 )", 0, \
         {"26.8", false, true, "New setting to cache absent text index tokens and avoid repeated dictionary lookups."}) \
+    DECLARE(Bool, use_text_index_pattern_bypass_cache, true, R"(
+Whether to cache text index pattern dictionary scans that exceed `text_index_like_max_postings_to_read`.
+The pattern bypass cache uses the text index tokens cache and avoids repeating dictionary scans that previously fell back to evaluating the original predicate.
+)", 0, \
+        {"26.10", false, true, "New setting to cache text index pattern dictionary scans that exceeded the posting-list threshold."}) \
     DECLARE(Bool, use_text_index_header_cache, true, R"(
 Whether to cache deserialized text index headers in memory.
 Using the text index header cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
