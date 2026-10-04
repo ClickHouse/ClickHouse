@@ -18,8 +18,8 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />当设为 `<true>` (默认) 时，将以异步方式记录日志 (每个输出通道一个后台线程) ；否则，会在调用 LOG 的线程中记录。
 
-<div id="logger.async_queye_max_size">
-  ## logger.async_queye_max_size
+<div id="logger.async_queue_max_size">
+  ## logger.async_queue_max_size
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="65536" changeable_without_restart="No" />使用 async 日志时，队列中等待刷写的消息最大保留数量。超出的消息将被丢弃。向上取整为下一个 2 的幂 (例如，`100000` 变为 `131072`) 。
