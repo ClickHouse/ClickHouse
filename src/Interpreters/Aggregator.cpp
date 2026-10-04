@@ -282,7 +282,8 @@ DB::ColumnNumbersList calculateAggregatesPositions(const DB::Block & header, con
 /// See `AdaptiveArgumentLayout`. The producers stage the normalized argument columns (`LowCardinality` removed,
 /// constant, sparse and replicated columns materialized), so the layout follows the types without `LowCardinality`.
 std::unique_ptr<const DB::AdaptiveArgumentLayout>
-buildAdaptiveArgumentLayout(const DB::Block & header, const DB::ColumnNumbersList & aggregates_positions)
+buildAdaptiveArgumentLayout(
+    const DB::Block & header, const DB::ColumnNumbers & keys_positions, const DB::ColumnNumbersList & aggregates_positions)
 {
     auto layout = std::make_unique<DB::AdaptiveArgumentLayout>();
     std::vector<UInt8> staged;
@@ -304,6 +305,13 @@ buildAdaptiveArgumentLayout(const DB::Block & header, const DB::ColumnNumbersLis
 
             if (values->isFixedAndContiguous())
             {
+                /// A single numeric key stores the argument's exact bytes. Other key layouts may pack
+                /// several fields or null markers, so their arguments need separate storage.
+                if (keys_positions.size() == 1 && position == keys_positions.front() && type->isValueRepresentedByNumber())
+                {
+                    layout->key_field = DB::AdaptiveArgumentLayout::Field{.position = position, .type = std::move(type)};
+                    continue;
+                }
                 const size_t size = column->sizeOfValueIfFixed();
                 layout->fixed_fields.push_back({.position = position, .type = std::move(type), .offset = layout->fixed_bytes, .size = size});
                 layout->fixed_bytes += size;
@@ -918,7 +926,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     if (params.enable_adaptive_aggregator && params.aggregates_size)
     {
-        adaptive_argument_layout = buildAdaptiveArgumentLayout(header_, aggregates_positions);
+        adaptive_argument_layout = buildAdaptiveArgumentLayout(header_, keys_positions, aggregates_positions);
         /// Distinct tuples of all arguments describe one set-valued aggregate. Multiple independent sets
         /// can have different reduction factors, so they cannot share this estimate.
         if (params.aggregates_size == 1)

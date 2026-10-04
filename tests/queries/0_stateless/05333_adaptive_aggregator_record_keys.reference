@@ -1,0 +1,12 @@
+toUInt32(number * 1048573), spill=0
+toInt32(number * 1048573), spill=0
+toFloat32(number - 40000), spill=0
+toUInt32(number * 1048573), spill=1000000
+toInt32(number * 1048573), spill=1000000
+toFloat32(number - 40000), spill=1000000
+toUInt64(number % 5000) as argument
+toUInt128(number % 5000) as argument
+toUInt256(number % 5000) as argument
+toDecimal128(number % 5000, 3) as argument
+toLowCardinality(toUInt32(number % 5000)) as argument
+if(number % 3 = 0, NULL, toUInt32(number % 5000)) as argument

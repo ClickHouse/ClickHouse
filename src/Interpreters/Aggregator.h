@@ -856,10 +856,11 @@ private:
         AdaptiveAggregationProducer & adaptive,
         bool all_keys_are_const) const;
 
-    /// Appends the current block's misses to the producer's partitions as records: the routing hash and the key
-    /// bytes, followed by the run length (`counts_only`), by nothing (no aggregates), or by the row's aggregate
-    /// arguments laid out by `adaptive_argument_layout`. Folds the batch into the thaw sampler.
-    template <typename SharedKey, typename State>
+    /// Appends the current block's misses to the producer's partitions. Each record carries a key and either
+    /// a run length (`counts_only`), no payload (no aggregates), or the row's aggregate arguments laid out by
+    /// `adaptive_argument_layout`. Variable-size records also carry a hash and lengths; fixed-size records
+    /// recover the hash from the key when drained. Folds the batch into the thaw sampler.
+    template <typename RecordKey, typename State>
     void appendDelayedRecords(
         const Columns & columns,
         AdaptiveAggregationProducer & adaptive,

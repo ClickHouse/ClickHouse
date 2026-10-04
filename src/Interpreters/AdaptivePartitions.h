@@ -21,8 +21,9 @@ inline constexpr size_t ADAPTIVE_AGGREGATION_NUM_BUCKETS = 256;
 /// 24..31 for the bucket and the low bits for the slot inside a bucket's table, which keeps a partition's table
 /// well spread up to 2^20 cells. Since the partitions nest in the buckets, every bucket-level contract of the
 /// merge holds unchanged.
-struct AdaptivePartitionLayout
+class AdaptivePartitionLayout
 {
+public:
     /// The partitions of a bucket follow the number of producers, which is also the number of merge tasks. The merge
     /// tasks share the last-level cache, so the more of them there are, the more units a large bucket needs for each
     /// unit's table to stay in a task's share; every partition, though, costs the producers' appends and the merge's
@@ -33,11 +34,21 @@ struct AdaptivePartitionLayout
     /// itself. At most 16 partitions per bucket, the four free hash bits.
     static AdaptivePartitionLayout forProducers(size_t producers, size_t max_bytes_before_external_group_by);
 
-    UInt8 sub_bits = 0;
+    size_t partitionsPerBucket() const { return numPartitions() / ADAPTIVE_AGGREGATION_NUM_BUCKETS; }
+    size_t numPartitions() const { return partition_mask + 1; }
+    size_t partitionOf(UInt64 hash) const { return (hash >> partition_shift) & partition_mask; }
+    size_t bucketOf(size_t partition) const { return partition >> (24 - partition_shift); }
 
-    size_t partitionsPerBucket() const { return size_t{1} << sub_bits; }
-    size_t numPartitions() const { return ADAPTIVE_AGGREGATION_NUM_BUCKETS << sub_bits; }
-    size_t partitionOf(UInt64 hash) const { return (hash >> (24 - sub_bits)) & (numPartitions() - 1); }
+private:
+    explicit AdaptivePartitionLayout(UInt8 sub_bits)
+        : partition_mask(static_cast<UInt32>((ADAPTIVE_AGGREGATION_NUM_BUCKETS << sub_bits) - 1))
+        , partition_shift(24 - sub_bits)
+    {
+    }
+
+    /// Routing runs for every record and its prefetches, so the layout stores the ready shift and mask.
+    UInt32 partition_mask;
+    UInt8 partition_shift;
 };
 
 /// The staged records of one producer: one chain of chunks per partition, appended to by the producer's thread
@@ -76,24 +87,21 @@ public:
 
     const AdaptivePartitionLayout & layout() const { return partition_layout; }
 
-    /// Reserves `bytes` at the end of the partition's records and returns where they go. A record never straddles
-    /// two chunks, and `tail_padding_bytes` of the chunk follow it.
+    /// Appends one record of `bytes` and returns its storage. A record never straddles two chunks, and
+    /// `tail_padding_bytes` of the chunk follow it.
     ALWAYS_INLINE char * append(size_t partition, size_t bytes)
     {
         Cursor & cursor = cursors[partition];
-        if (static_cast<size_t>(cursor.end - cursor.pos) < bytes) [[unlikely]]
-            return startChunk(partition, bytes);
+        if (cursor.remaining < bytes) [[unlikely]]
+            startChunk(partition, bytes);
         char * at = cursor.pos;
         cursor.pos += bytes;
+        cursor.remaining -= bytes;
+        ++cursor.records;
         return at;
     }
 
-    void countRecords(size_t partition, size_t records) { record_counts[partition] += records; }
-
-    /// The two stages of prefetching an append of a later record: its partition's cursor first, and once that is in
-    /// the cache, the place the record goes. An append to a random one of thousands of partitions otherwise stalls
-    /// on both.
-    ALWAYS_INLINE void prefetchCursor(size_t partition) const { __builtin_prefetch(&cursors[partition]); }
+    /// Prefetches the storage of a later record, whose append can target any partition.
     ALWAYS_INLINE void prefetchAppend(size_t partition) const { __builtin_prefetch(cursors[partition].pos, 1); }
 
     /// Records the fill of every partition's last chunk and ends the claims on the blocks being carved, so a block
@@ -106,7 +114,7 @@ public:
     void forEachChunk(size_t partition, Callback && callback) const;
 
     bool hasRecords(size_t partition) const { return chains[partition].first != nullptr; }
-    UInt64 recordsOf(size_t partition) const { return record_counts[partition]; }
+    UInt64 recordsOf(size_t partition) const { return cursors[partition].records; }
 
     /// Releases the partition's chunks; its records are gone afterwards. The merge tasks release distinct
     /// partitions concurrently.
@@ -120,11 +128,13 @@ public:
     void resetHeldBytes() { held_bytes = 0; }
 
 private:
-    /// The hot header of a partition: the append position in its current chunk and that chunk's end.
+    /// The fields updated by every append share a compact header. Chunk capacities and record counts
+    /// are 32-bit, so the remaining capacity and record count fit beside the append pointer.
     struct Cursor
     {
         char * pos = nullptr;
-        char * end = nullptr;
+        UInt32 remaining = 0;
+        UInt32 records = 0;
     };
 
     /// The cold side of a partition: its chunks, linked through their headers.
@@ -143,12 +153,11 @@ private:
     };
 
     /// The cold path of `append`: closes the partition's current chunk and starts one that holds `bytes`.
-    NO_INLINE char * startChunk(size_t partition, size_t bytes);
+    NO_INLINE void startChunk(size_t partition, size_t bytes);
 
     const AdaptivePartitionLayout partition_layout;
     std::unique_ptr<Cursor[]> cursors;
     std::unique_ptr<Chain[]> chains;
-    std::unique_ptr<UInt32[]> record_counts;
     Carver carvers[num_groups];
     size_t held_bytes = 0;
 };

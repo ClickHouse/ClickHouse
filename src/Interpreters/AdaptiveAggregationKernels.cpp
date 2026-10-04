@@ -8,7 +8,6 @@
 #include <limits>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
 #include <Common/CacheLine.h>
@@ -23,6 +22,7 @@
 #include <base/unaligned.h>
 #include <Interpreters/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/RowDataStore.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 namespace ProfileEvents
@@ -57,14 +57,14 @@ namespace
     template <typename Key>
     constexpr bool adaptive_key_stages_bytes = std::is_same_v<Key, std::string_view> || std::is_same_v<Key, PackedStringRef>;
 
-    template <typename Key>
-    ALWAYS_INLINE std::string_view adaptiveStagedKeyBytes(const Key & key)
-    {
-        if constexpr (std::is_same_v<Key, PackedStringRef>)
-            return static_cast<std::string_view>(key);
-        else
-            return key;
-    }
+    /// Records retain the key holder's width. A numeric table may widen a key for its cell layout,
+    /// but staging and rehashing need only the original value.
+    template <typename Method>
+    using AdaptiveKeyHolder = decltype(
+        std::declval<typename Method::StateNoCache &>().getKeyHolder(0, std::declval<DB::Arena &>()));
+
+    template <typename Method>
+    using AdaptiveRecordKey = std::remove_cvref_t<decltype(keyHolderGetKey(std::declval<AdaptiveKeyHolder<Method> &>()))>;
 
     /// How far past a key's bytes a reader may touch. The overflow-tolerant small copy and
     /// compare primitives access up to 15 bytes past the end, which is only legal for bytes
@@ -82,13 +82,12 @@ namespace
         ReadablePadding padding;
     };
 
-    /// Runs `callback` on the row's key bytes while their owner is alive. This is the only
-    /// safe shape: a generic hashing state's key holder may own the bytes itself (an
-    /// exact-size allocation) or roll its scratch-arena allocation back on discard, so a
-    /// pointer must not outlive the holder. States that expose their padded column buffers
-    /// skip the holder entirely; fixed-size keys are copied into a local first. The padding
-    /// in the ref tells the callback which comparison and copy primitives are legal.
-    template <typename SharedKey, typename State, typename Callback>
+    /// Runs `callback` on a string-like key's bytes while their owner is alive. A generic hashing state's
+    /// key holder may own the bytes itself in an exact-size allocation or roll its scratch-arena allocation
+    /// back on discard, so a pointer must not outlive the holder. States that expose their padded column
+    /// buffers skip the holder entirely. The padding in the reference tells the callback which comparison
+    /// and copy primitives are legal.
+    template <typename State, typename Callback>
     void ALWAYS_INLINE withStagedKeyBytes(State & state, size_t row, size_t size, DB::Arena & scratch, Callback && callback)
     {
         /// The fast path requires buffers indexed by the block row directly; the low-cardinality
@@ -100,18 +99,12 @@ namespace
                 = reinterpret_cast<const char *>(state.chars) + state.offsets[static_cast<ssize_t>(row) - 1];
             callback(KeyBytesRef{std::string_view(data, size), ReadablePadding::AtLeast15Bytes});
         }
-        else if constexpr (adaptive_key_stages_bytes<SharedKey>)
-        {
-            auto && key_holder = state.getKeyHolder(row, scratch);
-            callback(KeyBytesRef{adaptiveStagedKeyBytes(keyHolderGetKey(key_holder)), ReadablePadding::Exact});
-            keyHolderDiscardKey(key_holder);
-        }
         else
         {
             auto && key_holder = state.getKeyHolder(row, scratch);
-            const SharedKey widened = keyHolderGetKey(key_holder);
+            const auto key = static_cast<std::string_view>(keyHolderGetKey(key_holder));
+            callback(KeyBytesRef{key, ReadablePadding::Exact});
             keyHolderDiscardKey(key_holder);
-            callback(KeyBytesRef{std::string_view(reinterpret_cast<const char *>(&widened), sizeof(widened)), ReadablePadding::Exact});
         }
     }
 
@@ -132,34 +125,18 @@ namespace
     /// Records the key of a staged miss for the append: the size of a string-like key, whose bytes the append copies
     /// out of the block, or the value of a fixed-width key, which the kernel has at hand, while reading it back from
     /// the key columns would pack it a second time.
-    template <typename SharedKey, typename Key>
+    template <typename RecordKey, typename Key>
     void ALWAYS_INLINE recordStagedKey(DB::AdaptiveAggregationProducer & adaptive, const Key & key)
     {
-        if constexpr (adaptive_key_stages_bytes<SharedKey>)
+        if constexpr (adaptive_key_stages_bytes<RecordKey>)
         {
-            adaptive.miss_key_sizes.push_back(adaptiveStagedKeyBytes(key).size());
+            adaptive.miss_key_sizes.push_back(static_cast<std::string_view>(key).size());
         }
         else
         {
-            const SharedKey staged = key;
+            const RecordKey staged = key;
             const char * bytes = reinterpret_cast<const char *>(&staged);
             adaptive.miss_keys.insert(bytes, bytes + sizeof(staged));
-        }
-    }
-
-    /// Copies a fixed-width argument value; the common widths take a copy of a constant size, which compiles to
-    /// a plain load and store instead of a call.
-    void ALWAYS_INLINE copyFixedValue(char * to, const char * from, size_t size)
-    {
-        switch (size)
-        {
-            case 1: memcpy(to, from, 1); return;
-            case 2: memcpy(to, from, 2); return;
-            case 4: memcpy(to, from, 4); return;
-            case 8: memcpy(to, from, 8); return;
-            case 16: memcpy(to, from, 16); return;
-            case 32: memcpy(to, from, 32); return;
-            default: memcpy(to, from, size); return;
         }
     }
 
@@ -243,10 +220,10 @@ namespace
             return true;
     }
 
-    /// The staged record formats. A record is padded to 4 bytes and never straddles two chunks,
-    /// and nothing in it points outside the record, so a chunk of records can go to disk and come
-    /// back byte for byte. The fields are read and written unaligned, so the padding only keeps a
-    /// record's size a multiple of the narrowest field.
+    /// The staged record formats. A record never straddles two chunks, and nothing in it points
+    /// outside the record, so a chunk can go to disk and come back byte for byte. Fields are read
+    /// and written unaligned. Fixed-stride argument records need no padding; the other formats
+    /// keep their sizes a multiple of the narrowest header field.
     ///
     /// The merge emplaces a staged key with its routing hash, the table's own hash of the key (see
     /// `emplaceStagedKey`). A record of a byte-staged key, and a general record, starts with the
@@ -322,7 +299,7 @@ namespace
         static constexpr size_t key_offset = 0;
         static constexpr size_t arguments_offset = key_offset + sizeof(Key);
 
-        static size_t bytes(size_t fixed_argument_bytes) { return alignStagedRecord(arguments_offset + fixed_argument_bytes); }
+        static size_t bytes(size_t fixed_argument_bytes) { return arguments_offset + fixed_argument_bytes; }
 
         /// The routing hash of the record's key, which `table` hashes as the producer's table did.
         template <typename Table>
@@ -346,6 +323,7 @@ namespace
         static UInt64 hash(const char * record) { return unalignedLoad<UInt64>(record); }
         static size_t bytes(const char * record) { return unalignedLoad<UInt32>(record + 8); }
         static size_t keySize(const char * record) { return unalignedLoad<UInt32>(record + 12); }
+        static size_t keyOffset(size_t fixed_argument_bytes) { return header_bytes + fixed_argument_bytes; }
     };
 
     /// Calls `callback(record, bytes, hash)` for every general record of `ranges`, in the record shape the producers
@@ -585,6 +563,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     AdaptiveAggregationProducer & adaptive,
     bool all_keys_are_const) const
 {
+    using RecordKey = AdaptiveRecordKey<SharedMethod>;
+
     Arena scratch_pool;
 
     typename LocalMethod::StateNoCache local_find_state(key_columns, key_sizes, aggregation_state_cache);
@@ -598,7 +578,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     {
         adaptive.miss_source_rows.push_back(static_cast<UInt32>(row));
         adaptive.miss_hashes.push_back(hash);
-        recordStagedKey<typename SharedMethod::Key>(adaptive, key);
+        recordStagedKey<RecordKey>(adaptive, key);
     };
 
     if (all_keys_are_const)
@@ -612,7 +592,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         if (!local_method.data.find(key, hash))
         {
             stage_miss(key, hash, row_begin);
-            appendDelayedRecords<typename SharedMethod::Key>(
+            appendDelayedRecords<RecordKey>(
                 columns, adaptive, local_find_state, scratch_pool, /*counts_only=*/false, /*key_row_override=*/0);
         }
         keyHolderDiscardKey(key_holder);
@@ -646,7 +626,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         }
     }
 
-    appendDelayedRecords<typename SharedMethod::Key>(
+    appendDelayedRecords<RecordKey>(
         columns, adaptive, local_find_state, scratch_pool, /*counts_only=*/false);
 }
 
@@ -664,6 +644,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     AdaptiveAggregationProducer & adaptive,
     bool all_keys_are_const) const
 {
+    using RecordKey = AdaptiveRecordKey<SharedMethod>;
+
     Arena scratch_pool;
 
     typename LocalMethod::StateNoCache local_find_state(key_columns, key_sizes, aggregation_state_cache);
@@ -727,7 +709,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
             {
                 adaptive.miss_hashes.push_back(hash);
                 adaptive.miss_multiplicities.push_back(static_cast<UInt32>(row_end - row_begin));
-                recordStagedKey<typename SharedMethod::Key>(adaptive, key);
+                recordStagedKey<RecordKey>(adaptive, key);
             }
             else
             {
@@ -735,10 +717,10 @@ void NO_INLINE Aggregator::executeFrozenImpl(
                 {
                     adaptive.miss_source_rows.push_back(static_cast<UInt32>(i));
                     adaptive.miss_hashes.push_back(hash);
-                    recordStagedKey<typename SharedMethod::Key>(adaptive, key);
+                    recordStagedKey<RecordKey>(adaptive, key);
                 }
             }
-            appendDelayedRecords<typename SharedMethod::Key>(
+            appendDelayedRecords<RecordKey>(
                 columns, adaptive, local_find_state, scratch_pool, /*counts_only=*/is_simple_count, /*key_row_override=*/0);
         }
         keyHolderDiscardKey(key_holder);
@@ -748,7 +730,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     if (is_simple_count)
     {
         size_t hits = 0;
-        typename SharedMethod::Key last_staged_key{};
+        RecordKey last_staged_key{};
         [[maybe_unused]] const bool stable_key_views = adaptiveKeyViewsAreBlockStable(local_find_state);
         for (size_t i = row_begin; i < row_end; ++i)
         {
@@ -767,10 +749,10 @@ void NO_INLINE Aggregator::executeFrozenImpl(
                 }
             }
 
-            const typename SharedMethod::Key staged_key = key;
+            const RecordKey staged_key = key;
 
             bool run_continues = !adaptive.miss_hashes.empty() && adaptive.miss_hashes.back() == hash;
-            if constexpr (std::is_same_v<typename SharedMethod::Key, std::string_view>)
+            if constexpr (std::is_same_v<RecordKey, std::string_view>)
                 run_continues = run_continues && stable_key_views && staged_key == last_staged_key;
             else
                 run_continues = run_continues && staged_key == last_staged_key;
@@ -785,13 +767,13 @@ void NO_INLINE Aggregator::executeFrozenImpl(
                 adaptive.miss_multiplicities.push_back(1);
                 /// Fixed-size keys stage no size: it is a compile-time constant the publish
                 /// substitutes, so the hot staging loop skips a dead store per record.
-                recordStagedKey<typename SharedMethod::Key>(adaptive, staged_key);
+                recordStagedKey<RecordKey>(adaptive, staged_key);
 
                 /// A serialized key view points into the reused scratch arena and can only seed
                 /// the run tracking when the views are block-stable; every other key type is
                 /// either a self-contained value or, for a packed reference, points into the
                 /// block's key column, whose bytes outlive the block.
-                if constexpr (std::is_same_v<typename SharedMethod::Key, std::string_view>)
+                if constexpr (std::is_same_v<RecordKey, std::string_view>)
                 {
                     if (stable_key_views)
                         last_staged_key = staged_key;
@@ -805,7 +787,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
             keyHolderDiscardKey(key_holder);
         }
         update_bypass_sampling(hits, row_end - row_begin);
-        appendDelayedRecords<typename SharedMethod::Key>(columns, adaptive, local_find_state, scratch_pool, /*counts_only=*/true);
+        appendDelayedRecords<RecordKey>(columns, adaptive, local_find_state, scratch_pool, /*counts_only=*/true);
         return;
     }
 
@@ -838,7 +820,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
             adaptive.miss_source_rows.push_back(static_cast<UInt32>(i));
             adaptive.miss_hashes.push_back(hash);
 
-            recordStagedKey<typename SharedMethod::Key>(adaptive, key);
+            recordStagedKey<RecordKey>(adaptive, key);
             keyHolderDiscardKey(key_holder);
         }
         return hits;
@@ -849,7 +831,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     {
         const size_t hits = probe_rows.template operator()<false>(nullptr);
         update_bypass_sampling(hits, row_end - row_begin);
-        appendDelayedRecords<typename SharedMethod::Key>(columns, adaptive, local_find_state, scratch_pool, /*counts_only=*/false);
+        appendDelayedRecords<RecordKey>(columns, adaptive, local_find_state, scratch_pool, /*counts_only=*/false);
         return;
     }
 
@@ -864,7 +846,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
 
     const size_t hits = probe_rows.template operator()<true>(places.get());
     update_bypass_sampling(hits, row_end - row_begin);
-    appendDelayedRecords<typename SharedMethod::Key>(columns, adaptive, local_find_state, scratch_pool, /*counts_only=*/false);
+    appendDelayedRecords<RecordKey>(columns, adaptive, local_find_state, scratch_pool, /*counts_only=*/false);
 
     /// With no local hits every place is null and the batch pass would only skip rows; the
     /// staged records carry the block's whole contribution.
@@ -883,7 +865,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
 }
 
 
-template <typename SharedKey, typename State>
+template <typename RecordKey, typename State>
 void NO_INLINE Aggregator::appendDelayedRecords(
     const Columns & columns,
     AdaptiveAggregationProducer & adaptive,
@@ -898,36 +880,40 @@ void NO_INLINE Aggregator::appendDelayedRecords(
 
     auto & partitions = *adaptive.partitions;
     const AdaptivePartitionLayout layout = partitions.layout();
+    const auto * hashes = adaptive.miss_hashes.data();
+    const auto * source_rows = adaptive.miss_source_rows.data();
+    const auto * staged_key_sizes = adaptive.miss_key_sizes.data();
+    const char * staged_keys = adaptive.miss_keys.data();
 
     /// A constant key is read from the key columns' single row, while the arguments of each record stay its own
     /// source row.
-    const auto key_row_of = [&](size_t record) -> size_t { return key_row_override ? *key_row_override : adaptive.miss_source_rows[record]; };
+    const auto key_row_of = [source_rows, key_row_override](size_t record) -> size_t
+    {
+        return key_row_override ? *key_row_override : source_rows[record];
+    };
     const auto key_size_of = [&](size_t record) -> size_t
     {
-        if constexpr (adaptive_key_stages_bytes<SharedKey>)
-            return adaptive.miss_key_sizes[record];
+        if constexpr (adaptive_key_stages_bytes<RecordKey>)
+            return staged_key_sizes[record];
         else
-            return sizeof(SharedKey);
+            return sizeof(RecordKey);
     };
 
-    /// The appends go to random partitions, so the loops below prefetch the cursor of the record
-    /// `adaptive_append_cursor_prefetch_distance` ahead and the append position of the one
-    /// `adaptive_append_prefetch_distance` ahead, whose cursor is in the cache by then.
-    const auto prefetch_append = [&](size_t record) ALWAYS_INLINE
+    /// The appends go to random partitions, so the loops below prefetch the append position of
+    /// the record `adaptive_append_prefetch_distance` ahead.
+    const auto prefetch_append = [&partitions, layout, hashes, total](size_t record) ALWAYS_INLINE
     {
-        if (record + adaptive_append_cursor_prefetch_distance < total)
-            partitions.prefetchCursor(layout.partitionOf(adaptive.miss_hashes[record + adaptive_append_cursor_prefetch_distance]));
         if (record + adaptive_append_prefetch_distance < total)
-            partitions.prefetchAppend(layout.partitionOf(adaptive.miss_hashes[record + adaptive_append_prefetch_distance]));
+            partitions.prefetchAppend(layout.partitionOf(hashes[record + adaptive_append_prefetch_distance]));
     };
 
     const auto write_key = [&](size_t record, size_t key_size, char * to)
     {
-        if constexpr (adaptive_key_stages_bytes<SharedKey>)
-            withStagedKeyBytes<SharedKey>(
+        if constexpr (adaptive_key_stages_bytes<RecordKey>)
+            withStagedKeyBytes(
                 local_find_state, key_row_of(record), key_size, scratch_pool, [&](const KeyBytesRef & key) { copyStagedKeyBytes(to, key); });
         else
-            memcpy(to, adaptive.miss_keys.data() + record * sizeof(SharedKey), sizeof(SharedKey));
+            memcpy(to, staged_keys + record * sizeof(RecordKey), sizeof(RecordKey));
     };
 
     size_t key_bytes = 0;
@@ -935,18 +921,17 @@ void NO_INLINE Aggregator::appendDelayedRecords(
 
     const auto append_key_records = [&]<bool with_count>()
     {
-        using Record = StagedKeyRecord<SharedKey, with_count>;
+        using Record = StagedKeyRecord<RecordKey, with_count>;
         for (size_t i = 0; i < total; ++i)
         {
             prefetch_append(i);
-            const UInt64 hash = adaptive.miss_hashes[i];
+            const UInt64 hash = hashes[i];
             const size_t partition = layout.partitionOf(hash);
             const size_t key_size = key_size_of(i);
             char * record = partitions.append(partition, Record::bytes(key_size));
             Record::writeHeader(record, hash, with_count ? adaptive.miss_multiplicities[i] : 0, key_size);
             write_key(i, key_size, record + Record::key_offset);
             zeroStagedRecordPadding(record + Record::key_offset + key_size);
-            partitions.countRecords(partition, 1);
             key_bytes += key_size;
         }
     };
@@ -962,136 +947,116 @@ void NO_INLINE Aggregator::appendDelayedRecords(
     else
     {
         const auto & argument_layout = *adaptive_argument_layout;
+        const size_t fixed_argument_bytes = argument_layout.fixed_bytes;
 
         /// The arguments are staged in the form the drain rebuilds and the instructions consume: the representation
         /// wrappers stripped recursively, then `LowCardinality` (see `buildAdaptiveArgumentLayout`).
         Columns arguments(argument_layout.num_positions);
-        const auto normalized = [&](size_t position) -> const IColumn &
+        const auto normalize_argument = [&](size_t position) -> const IColumn &
         {
-            if (!arguments[position])
-                arguments[position] = recursiveRemoveLowCardinality(columns[position]->convertToFullIfWrapped());
+            arguments[position] = recursiveRemoveLowCardinality(columns[position]->convertToFullIfWrapped());
             return *arguments[position];
         };
 
-        struct FixedSource
-        {
-            const char * values;
-            const UInt8 * null_map;
-            size_t value_size;
-            size_t offset;
-        };
-        std::vector<FixedSource> fixed_sources;
-        fixed_sources.reserve(argument_layout.fixed_fields.size());
         for (const auto & field : argument_layout.fixed_fields)
-        {
-            const IColumn * values = &normalized(field.position);
-            const UInt8 * null_map = nullptr;
-            if (const auto * nullable = typeid_cast<const ColumnNullable *>(values))
-            {
-                null_map = nullable->getNullMapData().data();
-                values = &nullable->getNestedColumn();
-            }
-            const char * raw_values = values->getRawData().data();
-            fixed_sources.push_back(
-                {.values = raw_values,
-                 .null_map = null_map,
-                 .value_size = null_map ? field.size - 1 : field.size,
-                 .offset = field.offset});
-        }
+            normalize_argument(field.position);
 
         std::vector<const IColumn *> variable_sources;
         variable_sources.reserve(argument_layout.variable_fields.size());
         for (const auto & field : argument_layout.variable_fields)
-            variable_sources.push_back(&normalized(field.position));
-
-        const auto write_fixed_arguments = [&](char * to, size_t row)
-        {
-            for (const auto & source : fixed_sources)
-            {
-                char * field = to + source.offset;
-                if (source.null_map)
-                    *field++ = static_cast<char>(source.null_map[row]);
-                copyFixedValue(field, source.values + row * source.value_size, source.value_size);
-            }
-        };
+            variable_sources.push_back(&normalize_argument(field.position));
 
         bool fixed_stride = false;
-        if constexpr (!adaptive_key_stages_bytes<SharedKey>)
+        if constexpr (!adaptive_key_stages_bytes<RecordKey>)
             fixed_stride = variable_sources.empty();
-
-        if (fixed_stride)
-        {
-            using Record = StagedFixedArgumentRecord<SharedKey>;
-            const size_t bytes = Record::bytes(argument_layout.fixed_bytes);
-            for (size_t i = 0; i < total; ++i)
-            {
-                prefetch_append(i);
-                const size_t partition = layout.partitionOf(adaptive.miss_hashes[i]);
-                char * record = partitions.append(partition, bytes);
-                write_key(i, sizeof(SharedKey), record + Record::key_offset);
-                write_fixed_arguments(record + Record::arguments_offset, adaptive.miss_source_rows[i]);
-                zeroStagedRecordPadding(record + Record::arguments_offset + argument_layout.fixed_bytes);
-                partitions.countRecords(partition, 1);
-            }
-            key_bytes += total * sizeof(SharedKey);
-        }
 
         /// A value whose serialized size cannot be computed in advance is serialized into the scratch arena first and
         /// copied from there.
         const IColumn::SerializationSettings serialization_settings;
         std::vector<std::optional<std::string_view>> serialized_in_scratch(variable_sources.size());
 
-        for (size_t i = 0; i < total && !fixed_stride; ++i)
+        std::array<char *, adaptive_argument_staging_batch_rows> argument_rows{};
+        for (size_t batch_begin = 0; batch_begin < total; batch_begin += argument_rows.size())
         {
-            prefetch_append(i);
-            const UInt64 hash = adaptive.miss_hashes[i];
-            const size_t partition = layout.partitionOf(hash);
-            const size_t key_size = key_size_of(i);
-            const size_t row = adaptive.miss_source_rows[i];
-
-            size_t variable_bytes = 0;
-            for (size_t j = 0; j < variable_sources.size(); ++j)
+            const size_t batch_end = std::min(total, batch_begin + argument_rows.size());
+            if (fixed_stride)
             {
-                if (const auto size = variable_sources[j]->getSerializedValueSize(row, &serialization_settings))
+                using Record = StagedFixedArgumentRecord<RecordKey>;
+                const size_t bytes = Record::bytes(fixed_argument_bytes);
+                for (size_t i = batch_begin; i < batch_end; ++i)
                 {
-                    serialized_in_scratch[j].reset();
-                    variable_bytes += *size;
+                    prefetch_append(i);
+                    const size_t partition = layout.partitionOf(hashes[i]);
+                    char * record = partitions.append(partition, bytes);
+                    write_key(i, sizeof(RecordKey), record + Record::key_offset);
+                    argument_rows[i - batch_begin] = record + Record::arguments_offset;
                 }
-                else
+                key_bytes += (batch_end - batch_begin) * sizeof(RecordKey);
+            }
+            else
+            {
+                for (size_t i = batch_begin; i < batch_end; ++i)
                 {
-                    const char * begin = nullptr;
-                    serialized_in_scratch[j] = variable_sources[j]->serializeValueIntoArena(row, scratch_pool, begin, &serialization_settings);
-                    variable_bytes += serialized_in_scratch[j]->size();
+                    prefetch_append(i);
+                    const UInt64 hash = hashes[i];
+                    const size_t partition = layout.partitionOf(hash);
+                    const size_t key_size = key_size_of(i);
+                    const size_t row = source_rows[i];
+
+                    size_t variable_bytes = 0;
+                    for (size_t j = 0; j < variable_sources.size(); ++j)
+                    {
+                        if (const auto size = variable_sources[j]->getSerializedValueSize(row, &serialization_settings))
+                        {
+                            serialized_in_scratch[j].reset();
+                            variable_bytes += *size;
+                        }
+                        else
+                        {
+                            const char * begin = nullptr;
+                            serialized_in_scratch[j] = variable_sources[j]->serializeValueIntoArena(row, scratch_pool, begin, &serialization_settings);
+                            variable_bytes += serialized_in_scratch[j]->size();
+                        }
+                    }
+
+                    const size_t key_offset = StagedArgumentRecord::keyOffset(fixed_argument_bytes);
+                    const size_t bytes = alignStagedRecord(key_offset + key_size + variable_bytes);
+                    char * record = partitions.append(partition, bytes);
+                    StagedArgumentRecord::writeHeader(record, hash, bytes, key_size);
+
+                    char * fixed = record + StagedArgumentRecord::header_bytes;
+                    argument_rows[i - batch_begin] = fixed;
+
+                    /// The key goes before the variable-size arguments, which overwrite whatever its copy
+                    /// scribbled past it.
+                    char * key = record + key_offset;
+                    write_key(i, key_size, key);
+
+                    char * variable = key + key_size;
+                    for (size_t j = 0; j < variable_sources.size(); ++j)
+                    {
+                        if (const auto & serialized = serialized_in_scratch[j])
+                        {
+                            memcpy(variable, serialized->data(), serialized->size());
+                            variable += serialized->size();
+                        }
+                        else
+                            variable = variable_sources[j]->serializeValueIntoMemory(row, variable, &serialization_settings);
+                    }
+                    zeroStagedRecordPadding(variable);
+
+                    key_bytes += key_size;
+                    variable_argument_bytes += variable_bytes;
                 }
             }
 
-            const size_t bytes = alignStagedRecord(StagedArgumentRecord::header_bytes + argument_layout.fixed_bytes + key_size + variable_bytes);
-            char * record = partitions.append(partition, bytes);
-            StagedArgumentRecord::writeHeader(record, hash, bytes, key_size);
-
-            char * fixed = record + StagedArgumentRecord::header_bytes;
-            write_fixed_arguments(fixed, row);
-
-            /// The key goes before the variable-size arguments, which overwrite whatever its copy scribbled past it.
-            char * key = fixed + argument_layout.fixed_bytes;
-            write_key(i, key_size, key);
-
-            char * variable = key + key_size;
-            for (size_t j = 0; j < variable_sources.size(); ++j)
-            {
-                if (const auto & serialized = serialized_in_scratch[j])
-                {
-                    memcpy(variable, serialized->data(), serialized->size());
-                    variable += serialized->size();
-                }
-                else
-                    variable = variable_sources[j]->serializeValueIntoMemory(row, variable, &serialization_settings);
-            }
-            zeroStagedRecordPadding(variable);
-
-            partitions.countRecords(partition, 1);
-            key_bytes += key_size;
-            variable_argument_bytes += variable_bytes;
+            const size_t batch_rows = batch_end - batch_begin;
+            for (const auto & field : argument_layout.fixed_fields)
+                RowDataStore::gatherFieldToRows(
+                    *arguments[field.position],
+                    {source_rows + batch_begin, batch_rows},
+                    {argument_rows.data(), batch_rows},
+                    field.offset);
         }
     }
 
@@ -1100,7 +1065,7 @@ void NO_INLINE Aggregator::appendDelayedRecords(
     {
         UInt16 * bins = adaptive.count_bins.get();
         for (size_t i = 0; i < total; ++i)
-            addToCountBin(bins[adaptiveCountBin(adaptive.miss_hashes[i])], counts_only ? adaptive.miss_multiplicities[i] : 1);
+            addToCountBin(bins[adaptiveCountBin(hashes[i])], counts_only ? adaptive.miss_multiplicities[i] : 1);
     }
 
     adaptive.total_staged_records += total;
@@ -1136,14 +1101,14 @@ void NO_INLINE Aggregator::appendDelayedRecords(
     {
         chassert(!adaptive_state_bytes_per_distinct_input || aggregates_positions.size() == 1);
         size_t batch_bytes = key_bytes + (counts_only ? total * sizeof(UInt32) : variable_argument_bytes);
-        batch_bytes += total * (sizeof(UInt64) + (adaptive_key_stages_bytes<SharedKey> ? sizeof(UInt64) : 0));
+        batch_bytes += total * (sizeof(UInt64) + (adaptive_key_stages_bytes<RecordKey> ? sizeof(UInt64) : 0));
 
         auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
         frozen.staged_records += total;
         frozen.staged_bytes += batch_bytes;
         for (size_t i = 0; i < total; ++i)
         {
-            const auto hash = adaptive.miss_hashes[i];
+            const auto hash = hashes[i];
             if ((hash & adaptive_thaw_sample_mask) == 0)
             {
                 frozen.distinct_sampled_hashes.insert(hash);
@@ -1152,7 +1117,7 @@ void NO_INLINE Aggregator::appendDelayedRecords(
                     SipHash input_hash;
                     input_hash.update(hash);
                     for (const auto position : aggregates_positions[0])
-                        columns[position]->updateHashWithValue(adaptive.miss_source_rows[i], input_hash);
+                        columns[position]->updateHashWithValue(source_rows[i], input_hash);
                     frozen.addSampledInputHash(input_hash.get64());
                 }
             }
@@ -1179,7 +1144,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
     RowStorePointers & records,
     bool count_only) const
 {
-    using Key = typename Method::Key;
+    using Key = AdaptiveRecordKey<Method>;
 
     /// Walks the partition's records in order. The table slot of the record
     /// `adaptive_drain_prefetch_look_ahead` positions ahead is prefetched only into a table that
@@ -1334,7 +1299,8 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
 
         const auto key_of = [&](const char * record) ALWAYS_INLINE
         {
-            return std::pair{record + StagedArgumentRecord::header_bytes + argument_layout.fixed_bytes, StagedArgumentRecord::keySize(record)};
+            return std::pair{
+                record + StagedArgumentRecord::keyOffset(argument_layout.fixed_bytes), StagedArgumentRecord::keySize(record)};
         };
 
         if (count_only)
@@ -1430,6 +1396,16 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
             /// The arguments are rebuilt into dense columns while the records are hot, so the
             /// ordinary batch executor, and the compiled functions, apply to them as to a block.
             Columns arguments(argument_layout.num_positions);
+            if (const auto & field = argument_layout.key_field)
+            {
+                const size_t key_offset = fixed_stride
+                    ? StagedFixedArgumentRecord<Key>::key_offset : StagedArgumentRecord::keyOffset(argument_layout.fixed_bytes);
+                auto column = field->type->createColumn();
+                const size_t key_size = column->sizeOfValueIfFixed();
+                chassert(key_size == sizeof(Key));
+                column->fillFromRowStorePtrs(field->type, records, key_offset, key_size, 0, rows);
+                arguments[field->position] = std::move(column);
+            }
             for (const auto & field : argument_layout.fixed_fields)
             {
                 auto column = field.type->createColumn();
@@ -1606,7 +1582,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
 
     const AdaptivePartitionLayout layout = session.layout;
     const size_t partitions_per_bucket = layout.partitionsPerBucket();
-    const size_t first_partition = static_cast<size_t>(bucket) << layout.sub_bits;
+    const size_t first_partition = static_cast<size_t>(bucket) * partitions_per_bucket;
 
     /// The spilled records of the bucket stay in memory until the bucket is done: the units' tables point into them.
     const auto spilled = readSpilledBucket(session, bucket);
@@ -1736,7 +1712,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         {
             if constexpr (MapAggregationMethod<Method>)
             {
-                using Key = typename Method::Key;
+                using Key = AdaptiveRecordKey<Method>;
 
                 /// The first pass counts the groups in the table, each count kept in the mapped value as a lone
                 /// `count()` keeps it: a source cell adds its count state, a record one row.

@@ -28,9 +28,11 @@ namespace DB
 constexpr size_t adaptive_bypass_sample_rows = 65'536;
 /// Probing the frozen table pays off only while at least one row in this many hits it.
 constexpr size_t adaptive_bypass_hit_rate_inverse = 4;
-/// Lookaheads of the two-stage prefetch of the appends into the producer's partitions (see `appendDelayedRecords`).
-constexpr size_t adaptive_append_cursor_prefetch_distance = 16;
+/// Lookahead of the append-position prefetch into the producer's partitions (see `appendDelayedRecords`).
 constexpr size_t adaptive_append_prefetch_distance = 8;
+/// Fixed-width arguments are gathered column by column into bounded batches of staged records, so
+/// width and nullability are dispatched once per field while the destination rows remain in cache.
+constexpr size_t adaptive_argument_staging_batch_rows = 1024;
 /// Fixed lookahead of the drain's hash prefetch.
 constexpr size_t adaptive_drain_prefetch_look_ahead = 16;
 /// How much of the next range of records the drain requests ahead of its prefetch cursor: a page, the most a
@@ -118,10 +120,11 @@ constexpr size_t adaptive_thaw_staged_share_inverse = 4;
 constexpr size_t adaptive_staging_min_state_bytes_per_key = 75;
 
 /// The record layout of the aggregate arguments that general payloads stage, fixed for the query by the header.
-/// The fixed-size arguments come first, at fixed offsets and in the form `RowDataStore` uses (a Nullable field is a
-/// null byte followed by the value), so the drain rebuilds each of them with one `IColumn::fillFromRowStorePtrs`
-/// over the records; the variable-size arguments follow the key, serialized one after another in this order. A
-/// column read by several aggregates is staged once.
+/// Fixed-size arguments have offsets within their argument area and use the `RowDataStore` representation:
+/// a `Nullable` field is a null byte followed by the value. The drain rebuilds each of these arguments with
+/// one `IColumn::fillFromRowStorePtrs` over the records. Variable-size arguments follow the key, serialized
+/// one after another in their layout order. A column read by several aggregates is staged once. A single
+/// numeric key used as an argument shares its key bytes instead of occupying another field.
 struct AdaptiveArgumentLayout
 {
     struct FixedField
@@ -132,14 +135,16 @@ struct AdaptiveArgumentLayout
         size_t size;
     };
 
-    struct VariableField
+    struct Field
     {
         size_t position;
         DataTypePtr type;
     };
 
     std::vector<FixedField> fixed_fields;
-    std::vector<VariableField> variable_fields;
+    std::vector<Field> variable_fields;
+    /// A single numeric grouping key used as an argument is read from the key's bytes in the record.
+    std::optional<Field> key_field;
     size_t fixed_bytes = 0;
     /// One past the highest argument position, the size of the column vectors the positions index.
     size_t num_positions = 0;

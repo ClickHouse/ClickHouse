@@ -22,7 +22,7 @@ AdaptivePartitionLayout AdaptivePartitionLayout::forProducers(size_t producers, 
         const size_t affordable_per_bucket = std::max<size_t>(streams / threads / ADAPTIVE_AGGREGATION_NUM_BUCKETS, 1);
         sub_bits = std::min<size_t>(sub_bits, std::countr_zero(std::bit_floor(affordable_per_bucket)));
     }
-    return {.sub_bits = static_cast<UInt8>(sub_bits)};
+    return AdaptivePartitionLayout(static_cast<UInt8>(sub_bits));
 }
 
 struct alignas(64) AdaptivePartitionBuffers::Block
@@ -50,7 +50,6 @@ AdaptivePartitionBuffers::AdaptivePartitionBuffers(AdaptivePartitionLayout layou
     : partition_layout(layout_)
     , cursors(std::make_unique<Cursor[]>(layout_.numPartitions()))
     , chains(std::make_unique<Chain[]>(layout_.numPartitions()))
-    , record_counts(std::make_unique<UInt32[]>(layout_.numPartitions()))
 {
 }
 
@@ -63,7 +62,7 @@ AdaptivePartitionBuffers::~AdaptivePartitionBuffers()
             releaseBlockReference(carver.block);
 }
 
-char * AdaptivePartitionBuffers::startChunk(size_t partition, size_t bytes)
+void AdaptivePartitionBuffers::startChunk(size_t partition, size_t bytes)
 {
     Cursor & cursor = cursors[partition];
     Chain & chain = chains[partition];
@@ -71,7 +70,7 @@ char * AdaptivePartitionBuffers::startChunk(size_t partition, size_t bytes)
         chain.last->used = static_cast<UInt32>(cursor.pos - chain.last->records());
 
     /// A chunk is sized in multiples of the header's alignment, so the chunk carved after it in the block starts
-    /// aligned: the records are 4-byte aligned only, and a chunk for a record larger than the doubled capacity is
+    /// aligned. Records need no alignment, and a chunk for a record larger than the doubled capacity is
     /// sized by that record.
     const size_t needed = ::Memory::alignUp(sizeof(ChunkHeader) + bytes + tail_padding_bytes, alignof(ChunkHeader));
     size_t capacity = 0;
@@ -84,7 +83,7 @@ char * AdaptivePartitionBuffers::startChunk(size_t partition, size_t bytes)
     }
     else
     {
-        Carver & carver = carvers[(partition >> partition_layout.sub_bits) / buckets_per_group];
+        Carver & carver = carvers[partition_layout.bucketOf(partition) / buckets_per_group];
         if (static_cast<size_t>(carver.end - carver.pos) < needed)
         {
             char * memory = static_cast<char *>(Allocator<false, false>().alloc(block_bytes));
@@ -113,9 +112,8 @@ char * AdaptivePartitionBuffers::startChunk(size_t partition, size_t bytes)
     chain.last = chunk;
     held_bytes += capacity;
 
-    char * records = chunk->records();
-    cursor = {records + bytes, data + capacity - tail_padding_bytes};
-    return records;
+    cursor.pos = chunk->records();
+    cursor.remaining = static_cast<UInt32>(capacity - sizeof(ChunkHeader) - tail_padding_bytes);
 }
 
 void AdaptivePartitionBuffers::finishAppending()
@@ -144,7 +142,6 @@ void AdaptivePartitionBuffers::releasePartition(size_t partition)
         chunk = next;
     }
     chains[partition] = {};
-    record_counts[partition] = 0;
     cursors[partition] = {};
 }
 
