@@ -84,7 +84,7 @@ bool DatabaseSQLite::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &, bool) const
+DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name, bool) const
 {
     std::lock_guard lock(mutex);
 
@@ -99,8 +99,11 @@ DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_con
     {
         auto sqlite_db = openConnection();
         auto table_names = fetchTablesList(sqlite_db.get());
+        /// Apply the filter before `fetchTable`: it reads the structure of one table, so a query
+        /// that names the tables it wants must not pay for the whole database.
         for (const auto & table_name : table_names)
-            tables[table_name] = fetchTable(sqlite_db, table_name, local_context, true);
+            if (!filter_by_table_name || filter_by_table_name(table_name))
+                tables[table_name] = fetchTable(sqlite_db, table_name, local_context, true);
     }
     catch (...)
     {
