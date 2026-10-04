@@ -152,6 +152,7 @@ def setup_cluster(request):
         + request.param,
         user_configs=[
             "configs/zookeeper_retries.xml",
+            "configs/users.xml",
         ],
         with_minio=True,
         # The test compares some S3 events. We disable the remote DB disk, so it doesn't affect the comparing events.

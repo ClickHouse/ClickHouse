@@ -7097,6 +7097,8 @@ For example, if `url_base` is `https://example.com/def/`, then:
 - `data.csv` resolves to `https://example.com/def/data.csv`
 - `/test/data.csv` resolves to `https://example.com/test/data.csv`
 - `//other.com/test/data.csv` resolves to `https://other.com/test/data.csv`
+
+When the relative URL comes from a [named collection](/concepts/features/configuration/server-config/named-collections), resolving it counts as an override of the `url` key of the collection and requires the `SHOW NAMED COLLECTIONS SECRETS` privilege on that collection.
 )", 0, \
         {"26.5", "", "", "New setting to specify the base URL for resolving relative URLs in the url table function and URL table engine."}) \
     DECLARE(String, s3_base, "", R"(
@@ -7107,6 +7109,8 @@ When set, a URL without a scheme is resolved against `s3_base` per RFC 3986, usi
 For example, if `s3_base` is `s3://clickhouse-public-datasets/`, then `s3('hits_compatible/hits.csv')` reads `s3://clickhouse-public-datasets/hits_compatible/hits.csv`.
 
 The base URL can use any form accepted by the `s3` table function, e.g. `s3://bucket/`, `https://bucket.s3.amazonaws.com/` or `https://endpoint/bucket/`.
+
+When the relative URL comes from a [named collection](/concepts/features/configuration/server-config/named-collections), resolving it counts as an override of the `url` key of the collection and requires the `SHOW NAMED COLLECTIONS SECRETS` privilege on that collection.
 )", 0, \
         {"26.8", "", "", "New setting to specify the base URL for resolving relative URLs in the s3 table function and the S3 table engine."}) \
     DECLARE(UInt64, database_replicated_initial_query_timeout_sec, 300, R"(
@@ -8966,9 +8970,6 @@ a   Tuple(
 Allow to create *MergeTree tables with empty primary key when ORDER BY and PRIMARY KEY not specified
 )", 0, \
         {"25.11", false, true, "Better usability"}) \
-    DECLARE(Bool, allow_named_collection_override_by_default, true, R"(
-Allow named collections' fields override by default.
-)", 0) \
     DECLARE(SQLSecurityType, default_normal_view_sql_security, SQLSecurityType::INVOKER, R"(
 Allows to set default `SQL SECURITY` option while creating a normal view. [More about SQL security](/reference/statements/create/view#sql_security).
 
@@ -10890,6 +10891,8 @@ Enable experimental table function `eval`.
         {"24.10", 1, 1, "A setting for ClickHouse Cloud"}) \
     MAKE_OBSOLETE(M, Float, text_index_lazy_intersection_density_threshold, 0.2f, \
         {"26.7", 0.2, 0.2, "Renamed from `text_index_density_threshold` (kept as an alias); selects the posting list intersection algorithm in lazy posting list apply mode."}) \
+    MAKE_OBSOLETE(M, Bool, allow_named_collection_override_by_default, true, \
+        {"26.10", true, true, "Obsolete. Overriding named collection keys requires `SHOW NAMED COLLECTIONS SECRETS`."}) \
     MAKE_OBSOLETE(M, Float, text_index_density_threshold, 0.2f, \
         {"26.6", 0.2, 0.2, "New setting for lazy posting list density threshold"}) \
     MAKE_OBSOLETE(M, Bool, use_compact_format_in_distributed_parts_names, true, \

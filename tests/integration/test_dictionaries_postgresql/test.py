@@ -20,6 +20,7 @@ node1 = cluster.add_instance(
         "configs/named_collections.xml",
         "configs/bg_reconnect.xml",
     ],
+    user_configs=["configs/users.xml"],
     with_postgres=True,
     with_postgres_cluster=True,
 )
