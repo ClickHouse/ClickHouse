@@ -5690,9 +5690,9 @@ Enables or disables optimization by transforming some functions to reading subco
 
 These functions can be transformed:
 
-- [length](/reference/functions/regular-functions/array-functions#length) to read the [size0](/reference/data-types/array#array-size) subcolumn.
-- [empty](/reference/functions/regular-functions/array-functions#empty) to read the [size0](/reference/data-types/array#array-size) subcolumn.
-- [notEmpty](/reference/functions/regular-functions/array-functions#notEmpty) to read the [size0](/reference/data-types/array#array-size) subcolumn.
+- [length](/reference/functions/regular-functions/array-functions#length) to read the [size0](/reference/data-types/array#array-size) subcolumn for arrays or the `size` subcolumn for `String` columns.
+- [empty](/reference/functions/regular-functions/array-functions#empty) to read the [size0](/reference/data-types/array#array-size) subcolumn for arrays or the `size` subcolumn for `String` columns.
+- [notEmpty](/reference/functions/regular-functions/array-functions#notEmpty) to read the [size0](/reference/data-types/array#array-size) subcolumn for arrays or the `size` subcolumn for `String` columns.
 - [isNull](/reference/functions/regular-functions/functions-for-nulls#isNull) to read the [null](/reference/data-types/nullable#finding-null) subcolumn.
 - [isNotNull](/reference/functions/regular-functions/functions-for-nulls#isNotNull) to read the [null](/reference/data-types/nullable#finding-null) subcolumn.
 - [count](/reference/functions/aggregate-functions/count) to read the [null](/reference/data-types/nullable#finding-null) subcolumn.
@@ -5702,12 +5702,37 @@ These functions can be transformed:
 - [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike) to read the [keys](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 - [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) to read the [values](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 
+String filters in `PREWHERE` can also use the `size` subcolumn when the full String is needed elsewhere, if [`optimize_string_size_subcolumn_with_full_read`](#optimize_string_size_subcolumn_with_full_read) is enabled.
+On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, this can avoid reading String payloads for rejected granules.
+On legacy `single_stream` parts, `size` is virtual and still requires the regular String stream. The reader can read the String and its size together when a filtering step already needs the full String. Strings needed only after `PREWHERE` remain deferred; reading their sizes skips materializing the payloads but still traverses the regular stream.
+
+When `apply_mutations_on_fly = 1`, all automatic String-size rewrites are disabled, including queries that do not need the full String. Pending updates can change the String while its stored size still describes the pre-mutation value.
+
 Possible values:
 
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 )", 0, \
         {"24.8", false, true, "Enabled settings by default"}) \
+    DECLARE(Bool, optimize_string_size_subcolumn_with_full_read, false, R"(
+Allows `length`, `empty`, and `notEmpty` filters on `String` columns in `PREWHERE` to read the `size` subcolumn when the query also needs the full String.
+Requires [`optimize_functions_to_subcolumns`](#optimize_functions_to_subcolumns) to be enabled.
+
+On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, filtering on sizes can avoid reading String payloads for rejected granules.
+The optimization is disabled by default because reading sizes separately can add overhead when the filter does not reject whole granules.
+Enable it for workloads where measurements show a benefit, such as clustered or sufficiently rare String-length outliers.
+
+On legacy `single_stream` parts, `size` is virtual and still requires the regular String stream. The reader can read the String and its size together when a filtering step already needs the full String. Strings needed only after `PREWHERE` remain deferred; reading their sizes skips materializing the payloads but still traverses the regular stream.
+This setting does not disable size-subcolumn rewrites when the full String is not needed, and does not affect explicit subcolumn access.
+
+When `apply_mutations_on_fly = 1`, all automatic String-size rewrites are disabled, including queries that do not need the full String. Pending updates can change the String while its stored size still describes the pre-mutation value.
+
+Possible values:
+
+- 0 - Disabled (default).
+- 1 - Enabled.
+)", 0, \
+        {"26.10", false, false, "New setting to opt in to String size-subcolumn filters when the query also reads the full String."}) \
     DECLARE(Bool, optimize_using_constraints, false, R"(
 Use [constraints](/reference/statements/create/table#constraints) for query optimization. The default is `false`.
 

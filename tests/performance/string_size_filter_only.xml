@@ -1,0 +1,187 @@
+<test run_all_queries="1">
+    <!-- Keep this benchmark reference-compatible. The stateless test verifies
+         the opt-in analyzer rewrite; here explicit s.size expressions measure
+         the resulting read shape against full-String controls on both binaries. -->
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>4</max_insert_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <use_uncompressed_cache>0</use_uncompressed_cache>
+        <optimize_functions_to_subcolumns>0</optimize_functions_to_subcolumns>
+        <optimize_move_to_prewhere>0</optimize_move_to_prewhere>
+    </settings>
+
+    <create_query>
+        CREATE TABLE string_size_filter_only_perf
+        (
+            id UInt64,
+            s String
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS
+            serialization_info_version = 'with_types',
+            string_serialization_version = 'with_size_stream',
+            ratio_of_defaults_for_sparse_serialization = 1,
+            index_granularity = 8192,
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0
+    </create_query>
+    <fill_query>
+        INSERT INTO string_size_filter_only_perf
+        SELECT
+            number AS id,
+            if(number &lt; 5000, '', randomString(1024)) AS s
+        FROM numbers_mt(500000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE string_size_filter_only_perf FINAL SETTINGS mutations_sync = 1</fill_query>
+
+    <!-- Empty rows are clustered in the first 1%. This is the read shape produced
+         by the opt-in analyzer rewrite and can skip the remaining String payloads. -->
+    <query tag="String size filter-only optimized shape">
+        SELECT s
+        FROM string_size_filter_only_perf
+        PREWHERE s.size = 0
+        FORMAT Null
+    </query>
+
+    <!-- Full-String control for the same selective predicate. -->
+    <query tag="String full-read filter-only control">
+        SELECT s
+        FROM string_size_filter_only_perf
+        PREWHERE empty(s)
+        FORMAT Null
+    </query>
+
+    <!-- Most granules survive: the extra size-stream read may not help. -->
+    <query tag="String size nonselective optimized shape">
+        SELECT s
+        FROM string_size_filter_only_perf
+        PREWHERE s.size != 0
+        FORMAT Null
+    </query>
+
+    <!-- Full-String control for the nonselective predicate. -->
+    <query tag="String full-read nonselective control">
+        SELECT s
+        FROM string_size_filter_only_perf
+        PREWHERE notEmpty(s)
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS string_size_filter_only_perf</drop_query>
+    <create_query>
+        CREATE TABLE string_size_filter_only_legacy_perf
+        (
+            id UInt64,
+            s String
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS
+            serialization_info_version = 'with_types',
+            string_serialization_version = 'single_stream',
+            ratio_of_defaults_for_sparse_serialization = 0,
+            index_granularity = 8192,
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0
+    </create_query>
+    <fill_query>
+        INSERT INTO string_size_filter_only_legacy_perf
+        SELECT
+            number AS id,
+            if(number &lt; 5000, '', concat(if(number % 10 = 0, 'foo', 'bar'), randomString(1021))) AS s
+        FROM numbers_mt(500000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE string_size_filter_only_legacy_perf FINAL SETTINGS mutations_sync = 1</fill_query>
+
+    <!-- Legacy sizes are virtual, but size-only reads still avoid materializing
+         rejected payloads. Keep output-only Strings deferred until after PREWHERE.
+         Explicit s.size keeps this regression query runnable on both binaries. -->
+    <query tag="Legacy String size filter-only">
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE s.size = 0
+        FORMAT Null
+    </query>
+
+    <query tag="Legacy String full-read filter-only control">
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE empty(s)
+        FORMAT Null
+    </query>
+
+    <!-- Legacy multi-step PREWHERE, with the size predicate written first. -->
+    <query tag="Legacy String size-first filter-only">
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE s.size != 0 AND id &gt; 0 AND like(s, '%foo%')
+        FORMAT Null
+        SETTINGS enable_multiple_prewhere_read_steps = 1
+    </query>
+
+    <!-- Same legacy workload with the full-String predicate written first. -->
+    <query tag="Legacy String full-first filter-only">
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE like(s, '%foo%') AND id &gt; 0 AND s.size != 0
+        FORMAT Null
+        SETTINGS enable_multiple_prewhere_read_steps = 1
+    </query>
+
+    <!-- Append coverage without changing the indices or data of the existing queries.
+         Output-only Strings must also retain the reference read shape when most or
+         none of the rows survive, rather than guessing selectivity in the planner. -->
+    <query tag="Legacy String output-only nonselective">
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE s.size != 0
+        FORMAT Null
+    </query>
+
+    <query tag="Legacy String output-only nonselective control">
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE notEmpty(s)
+        FORMAT Null
+    </query>
+
+    <query tag="Legacy String output-only reject-all">
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE s.size &gt; 2048
+        FORMAT Null
+    </query>
+
+    <query tag="Legacy String output-only reject-all control">
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE length(s) &gt; 2048
+        FORMAT Null
+    </query>
+    <!-- Exercise the actual analyzer path added by this PR. The opt-in query is
+         expected to be backward-incompatible with the reference binary because
+         the new setting does not exist there; perf.py still measures it on the
+         patched binary. The control keeps the same analyzer setting but leaves
+         the new optimization disabled. -->
+    <query tag="String analyzer opt-in selective">
+        SELECT s
+        FROM string_size_filter_only_perf
+        PREWHERE empty(s)
+        FORMAT Null
+        SETTINGS
+            optimize_functions_to_subcolumns = 1,
+            optimize_string_size_subcolumn_with_full_read = 1
+    </query>
+
+    <query tag="String analyzer opt-out selective control">
+        SELECT s
+        FROM string_size_filter_only_perf
+        PREWHERE empty(s)
+        FORMAT Null
+        SETTINGS optimize_functions_to_subcolumns = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS string_size_filter_only_legacy_perf</drop_query>
+</test>
