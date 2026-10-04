@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/ThreadStatus.h>
 
 #include <string_view>
 
