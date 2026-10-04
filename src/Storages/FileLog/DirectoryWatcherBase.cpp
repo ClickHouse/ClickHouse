@@ -14,6 +14,8 @@
 #include <Common/logger_useful.h>
 
 #if defined(OS_LINUX)
+#include <algorithm>
+#include <deque>
 #include <sys/inotify.h>
 #elif defined(OS_DARWIN)
 #include <map>
@@ -42,6 +44,8 @@ namespace FileLogSetting
 
 #if defined(OS_LINUX)
 static constexpr int buffer_size = 4096;
+/// An item moved out of the directory never gets its IN_MOVED_TO, so old cookies are evicted.
+static constexpr size_t max_unpaired_move_cookies = 1024;
 #endif
 
 DirectoryWatcherBase::DirectoryWatcherBase(
@@ -98,6 +102,7 @@ void DirectoryWatcherBase::watchFunc()
 
     std::string buffer;
     buffer.resize(buffer_size);
+    std::deque<uint32_t> unpaired_move_cookies;
     pollfd pfds[2];
     /// inotify descriptor
     pfds[0].fd = inotify_fd;
@@ -138,13 +143,31 @@ void DirectoryWatcherBase::watchFunc()
                         }
                         if ((p_event->mask & IN_MOVED_FROM) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_FROM))
                         {
+                            unpaired_move_cookies.push_back(p_event->cookie);
+                            if (unpaired_move_cookies.size() > max_unpaired_move_cookies)
+                                unpaired_move_cookies.pop_front();
                             DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_FROM);
                             owner.onItemMovedFrom(ev);
                         }
-                        if ((p_event->mask & IN_MOVED_TO) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_TO))
+                        if (p_event->mask & IN_MOVED_TO)
                         {
-                            DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_TO);
-                            owner.onItemMovedTo(ev);
+                            /// Only a rename inside the directory delivers both halves. An item moved in from elsewhere
+                            /// is new here, even if it has the inode of a file just deleted from the directory.
+                            auto paired = std::find(unpaired_move_cookies.begin(), unpaired_move_cookies.end(), p_event->cookie);
+                            if (paired != unpaired_move_cookies.end())
+                            {
+                                unpaired_move_cookies.erase(paired);
+                                if (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_TO)
+                                {
+                                    DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_TO);
+                                    owner.onItemMovedTo(ev);
+                                }
+                            }
+                            else if (eventMask() & DirectoryWatcherBase::DW_ITEM_ADDED)
+                            {
+                                DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_ADDED);
+                                owner.onItemAdded(ev);
+                            }
                         }
                     }
 
@@ -479,6 +502,9 @@ void DirectoryWatcherBase::watchFunc()
             auto sc = snapshot_inode_count.find(inode);
             auto cc = current_inode_count.find(inode);
             if (sc == snapshot_inode_count.end() || cc == current_inode_count.end() || sc->second != 1 || cc->second != 1)
+                return false;
+            /// An unlinked name is not a rename source, even when a hard link brings its inode back.
+            if (deleted.contains(snapshot_inode_name.at(inode)))
                 return false;
             return snapshot_inode_name.at(inode) != current_inode_name.at(inode);
         };

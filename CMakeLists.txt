@@ -109,7 +109,7 @@ if (NOT ENABLE_XRAY)
     set (ENABLE_XRAY 0)
 endif()
 
-if (NOT ((ARCH_AMD64 OR ARCH_AARCH64) AND OS_LINUX) OR SANITIZE OR USE_MUSL)
+if (NOT ((ARCH_AMD64 OR ARCH_AARCH64) AND OS_LINUX) OR SANITIZE)
     message (STATUS "Not using LLVM XRay, only Linux on amd64 and aarch64 is supported without sanitizers")
     set (ENABLE_XRAY 0)
 endif()
@@ -857,9 +857,19 @@ if (FUZZER)
                 # runtimes (musl, clang_rt_*): their startup code (CRT, __init_libc)
                 # runs before any coverage runtime exists, so every executable would
                 # crash at startup.
+                #
+                # The PC table that -fsanitize=fuzzer-no-link implies is left out. `clickhouse_fuzzer`
+                # links every `src/` library into a single image that keeps outgrowing the 2 GiB reach of
+                # the small code model's `R_X86_64_PC32` relocations, and the link fails with `relocation
+                # R_X86_64_PC32 out of range`. The table takes 16 bytes per instrumented edge - about a
+                # quarter of the instrumented `.text` - in a writable section that the linker places
+                # between `.text` and `.bss`, right in that range. libFuzzer does not need it to fuzz:
+                # coverage feedback comes from the inline 8-bit counters, and the table only serves
+                # reporting (`cov:` in the progress lines - `ft:` stays - `NEW_FUNC`, `-print_pcs`,
+                # `-print_coverage`, `-print_funcs`) and `-focus_function`.
                 get_target_property(target_compile_options ${target} COMPILE_OPTIONS)
                 if (NOT target_compile_options MATCHES "-fno-sanitize=all")
-                    target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
+                    target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link" "-fno-sanitize-coverage=pc-table")
                 endif()
             endif()
             if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")
