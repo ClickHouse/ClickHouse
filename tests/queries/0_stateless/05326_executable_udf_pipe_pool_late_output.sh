@@ -63,12 +63,10 @@ shm_local "
 "
 
 echo "--- under throw, stderr a previous borrow left is not thrown at the next query"
-# The bytes are the earlier query's, which has already succeeded. The next borrow logs a few KiB of
-# them and drains the rest without its own reaction - with a pipe of the default size the burst is
-# larger than what is logged, so the drain is exercised too - and keeps the worker. The burst fits in
-# the pipe and the borrow comes once it has been written whole: a command still in the middle of one
-# could write its tail during the next request, and there is no telling those bytes from the
-# request's own.
+# The bytes are the earlier query's, which has already succeeded. The next borrow does not build on
+# that worker: nothing tells whether the command has finished writing them, and a tail written during
+# the next request could not be told from that request's own stderr. So the worker is discarded and a
+# replacement answers - every query gets a process of its own, and none of them fails.
 shm_local "
     CREATE TABLE pids (pid UInt64) ENGINE = Memory;
     INSERT INTO pids SELECT pipe_flood_throw(0);
@@ -80,7 +78,7 @@ shm_local "
     INSERT INTO pids SELECT pipe_flood_throw(2);
     SELECT count(), uniqExact(pid) FROM pids;
 "
-shm_log_contains "A pooled command had unread output on its stderr when it was borrowed"
+shm_log_contains "borrowed under stderr_reaction 'throw', so it wrote after the response of an earlier invocation"
 
 echo "--- under throw, stderr written with the rows fails the query that caused it"
 # A pooled worker that satisfied the row count goes back to the pool without being waited for, so the

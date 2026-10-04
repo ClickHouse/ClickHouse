@@ -4061,6 +4061,31 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             worker_is_reused = false;
         }
 
+        /// Under `throw`, stderr found here goes as well, for the reason the shared-memory path
+        /// gives (`inspectPooledWorkerBeforeTheBorrow`): the bytes are an earlier borrow's and can
+        /// be drained without the reaction (`quarantineReusedWorker`), but nothing tells when the
+        /// command has finished writing them. A command in the middle of a burst writes the rest
+        /// once room is made, possibly after any drain of a fixed length, and this query would
+        /// fail for a diagnostic it did not cause. Under every other reaction stray stderr only
+        /// lands in a log line, and the worker is kept.
+        if (worker_is_reused && configuration.stderr_reaction == ExternalCommandStderrReaction::THROW
+            && TimeoutReadBufferFromFileDescriptor::pipeHasPendingOutput(process->err.getFD()))
+        {
+            const String leftover_stderr = readLeftoverStderrOfExitedProcess(*process);
+            LOG_WARNING(
+                getLogger("ShellCommandSource"),
+                "The process of a pooled command (pid {}) had unread output on its stderr when it was borrowed under "
+                "stderr_reaction 'throw', so it wrote after the response of an earlier invocation and may still be "
+                "writing; it is discarded and a replacement is started for this borrow. Stderr: {}",
+                process->getPid(),
+                leftover_stderr);
+
+            process->closeInputs();
+            process.reset();
+            process = process_holder->buildCommand();
+            worker_is_reused = false;
+        }
+
         /// Borrow acquired: capture pid for procfs sampling. The pre-snapshot
         /// runs here so `clear_refs` and the utime/stime baseline cover only
         /// the work attributable to this borrow.

@@ -76,12 +76,15 @@ def process(input_data, region, region_size):
         region.flush()
         return output_offset, len(output)
 
-    # Input format is TabSeparated: one UInt64 per line.
+    # Input format is TabSeparated: one UInt64 per line. With `--echo` each row is answered with
+    # itself, so the query decides whether the answer parses as the return type.
     output = bytearray()
     for line in input_data.split(b"\n"):
         if line == b"":
             continue
-        if "--report-pid" in sys.argv:
+        if "--echo" in sys.argv:
+            output += line + b"\n"
+        elif "--report-pid" in sys.argv:
             output += str(os.getpid()).encode("ascii") + b"\n"
         else:
             output += b"Key " + line + b"\n"
