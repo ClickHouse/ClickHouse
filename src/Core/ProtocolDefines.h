@@ -125,9 +125,21 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// it would reject the name, and its own joins treat `max_rows_in_join` / `max_bytes_in_join` as a
 /// spill trigger, so a plan arriving without the name is read back as legacy mode, and a plan that
 /// needs the new contract is not serialized for such a peer at all.
-/// Version 21 registers the `BlocksMarshalling` step, so a plan fragment that pre-serializes its
+/// Version 20 also registers the `BlocksMarshalling` step, so a plan fragment that pre-serializes its
 /// result blocks can be shipped. A peer below it does not know the name and rejects the whole plan.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
+///
+/// Rules for this version:
+/// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
+///   in the same release reuse the value. Whoever bumps it also updates the "Last bumped for release" line below.
+/// - What needs it: a new step name, or a new plan setting name written by `serializeSettings`. An older
+///   peer cannot read either, so the writer sends them only to a peer at the value of the current release
+///   or above.
+/// - What does not need it: a change to the bytes a step writes in `IQueryPlanStep::serialize`. The step
+///   bumps its own serialization version instead, with the value of the current release as `since_plan_version`
+///   (see `QueryPlanStepRegistry::StepVersions`).
+///
+/// Last bumped for release 26.10.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -136,7 +148,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_RE
 /// First query-plan serialization version that registers a `BlocksMarshalling` step. It is the step's
 /// introduction version in the registry, so `QueryPlanStepRegistry::versionToWrite` refuses to write
 /// the step into an older stream.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCKS_MARSHALLING_STEP = 21;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCKS_MARSHALLING_STEP = 20;
 /// First query-plan serialization version that knows `legacy_join_size_limits_trigger_spilling`. Below it, a join
 /// step whose spilling depends on the unified trigger is refused rather than downgraded: the older peer still reads
 /// `max_rows_in_join` / `max_bytes_in_join` as the spill trigger and its standalone `grace_hash` ignores
