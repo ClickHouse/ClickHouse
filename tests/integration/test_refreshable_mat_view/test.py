@@ -28,6 +28,7 @@ node2 = cluster.add_instance(
     stay_alive=True,
     macros={"shard": 1, "replica": 2},
 )
+STOP_ON_STARTUP_CONFIG = "/etc/clickhouse-server/users.d/stop_rmv_on_startup.xml"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -364,7 +365,9 @@ def get_rmv_info(
 
 
 def parse_ch_datetime(date_str):
-    if date_str is None:
+    # A NULL timestamp can reach here as a float nan rather than None: helpers/client.py maps both,
+    # but `.replace(np.nan, None)` is a no-op on an all-NULL float column in newer pandas.
+    if not isinstance(date_str, str):
         return None
     return datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
 
@@ -520,3 +523,164 @@ def test_query_retry(fn3_setup_tables):
     )
     assert rmv["retry"] == 11
     assert "FUNCTION_THROW_IF_VALUE_IS_NON_ZERO" in rmv["exception"]
+
+
+def create_daily_rmv(instance, name):
+    """A view that refreshes once now and then not again for a day.
+
+    AFTER, not EVERY: EVERY 1 DAY without OFFSET is due at the next calendar midnight, so a run that
+    straddles midnight would legitimately refresh again and read as a stampede. AFTER has no
+    calendar boundary (RefreshSchedule::advance returns completion + the period).
+    No EMPTY: the stored metadata does not keep the EMPTY flag, and an EMPTY view has no completed
+    refresh anyway, while last_success_time is what these tests compare across a restart.
+    """
+    instance.query(f"DROP TABLE IF EXISTS {name}")
+    instance.query(
+        f"CREATE MATERIALIZED VIEW {name} REFRESH AFTER 1 DAY (a DateTime, b UInt64) "
+        f"ENGINE = MergeTree ORDER BY tuple() AS SELECT now() a, number b FROM numbers(2)"
+    )
+    return get_rmv_info(
+        instance, name, condition=lambda x: x["last_success_time"] is not None
+    )["last_success_time"]
+
+
+def test_schedule_survives_restart(fn_setup_tables):
+    node.query("DROP TABLE IF EXISTS test_rmv_dep_child SYNC")
+    node.query("DROP TABLE IF EXISTS test_rmv_dep_tgt SYNC")
+    names = ["test_rmv_restart_a", "test_rmv_restart_b"]
+    before = {name: create_daily_rmv(node, name) for name in names}
+
+    # A third view depending on the first one. Its schedule anchor is not a timeslot but a per
+    # dependency threshold (last_success_dependencies), and an epoch threshold makes every
+    # dependency look advanced, so this arm covers a payload field the two views above do not.
+    node.query(
+        "CREATE TABLE test_rmv_dep_tgt (a DateTime, b UInt64) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    # REFRESH DEPENDS ON is the parser's shorthand for REFRESH AFTER 0 SECOND DEPENDS ON, so the
+    # child refreshes as soon as its prerequisite advances, with no period to wait out.
+    node.query(
+        f"CREATE MATERIALIZED VIEW test_rmv_dep_child REFRESH DEPENDS ON {names[0]} APPEND "
+        f"TO test_rmv_dep_tgt AS SELECT now() a, number b FROM numbers(2)"
+    )
+    child_before = get_rmv_info(
+        node,
+        "test_rmv_dep_child",
+        condition=lambda x: x["last_success_time"] is not None,
+    )["last_success_time"]
+    rows_before = int(node.query("SELECT count() FROM test_rmv_dep_tgt").strip())
+
+    node.restart_clickhouse()
+
+    for name in names:
+        get_rmv_info(node, name, wait_status="Scheduled")
+    # A stampede lands within milliseconds of the server accepting connections, so by now it would
+    # already have moved last_success_time. That is the oracle: next_refresh_time would shift only by
+    # however long the restart took, which is not something to assert on.
+    time.sleep(3)
+
+    for name in names:
+        info = get_rmv_info(node, name)
+        assert info["last_success_time"] == before[name], f"{name} refreshed at startup"
+
+    child = get_rmv_info(node, "test_rmv_dep_child")
+    assert child["last_success_time"] == child_before, "the child refreshed at startup"
+    assert (
+        int(node.query("SELECT count() FROM test_rmv_dep_tgt").strip()) == rows_before
+    ), "the dependency checkpoint was lost, so the child re-ran and appended its result again"
+
+    # The other direction: a restored checkpoint must not stall the chain either.
+    node.query(f"SYSTEM REFRESH VIEW {names[0]}")
+    node.query(f"SYSTEM WAIT VIEW {names[0]}")
+    appended = node.query_with_retry(
+        "SELECT count() FROM test_rmv_dep_tgt",
+        check_callback=lambda x: int(x.strip()) == 2 * rows_before,
+        retry_count=60,
+        sleep_time=0.5,
+    ).strip()
+    assert int(appended) == 2 * rows_before, "the child did not follow its dependency"
+    time.sleep(3)
+    assert (
+        int(node.query("SELECT count() FROM test_rmv_dep_tgt").strip())
+        == 2 * rows_before
+    ), "the child refreshed more than once for one dependency refresh"
+
+    for name in names:
+        node.query(f"DROP TABLE {name}")
+    node.query("DROP TABLE test_rmv_dep_child SYNC")
+    node.query("DROP TABLE test_rmv_dep_tgt SYNC")
+
+
+def test_incremental_cursor_survives_restart():
+    node.query("DROP TABLE IF EXISTS test_incr_mv")
+    node.query("DROP TABLE IF EXISTS test_incr_src")
+    node.query("DROP TABLE IF EXISTS test_incr_tgt")
+    node.query(
+        "CREATE TABLE test_incr_src (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k "
+        "SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1"
+    )
+    node.query(
+        "CREATE TABLE test_incr_tgt (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k"
+    )
+    # EVERY, unlike its siblings above, which use AFTER to stay off a calendar boundary: this one's
+    # boundary is decennial, and the test drives every refresh with SYSTEM REFRESH VIEW anyway.
+    node.query(
+        "CREATE MATERIALIZED VIEW test_incr_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL "
+        "TO test_incr_tgt EMPTY AS SELECT k, v FROM test_incr_src"
+    )
+
+    try:
+        node.query(
+            "INSERT INTO test_incr_src SELECT number, number * 10 FROM numbers(5)"
+        )
+        node.query("SYSTEM REFRESH VIEW test_incr_mv")
+        node.query("SYSTEM WAIT VIEW test_incr_mv")
+        assert node.query("SELECT count(), uniqExact(k) FROM test_incr_tgt") == "5\t5\n"
+
+        node.restart_clickhouse()
+
+        node.query(
+            "INSERT INTO test_incr_src SELECT number, number * 10 FROM numbers(5, 5)"
+        )
+        node.query("SYSTEM REFRESH VIEW test_incr_mv")
+        node.query("SYSTEM WAIT VIEW test_incr_mv")
+        # A lost cursor restarts the stream from the beginning and appends rows 0..4 a second time.
+        assert (
+            node.query("SELECT count(), uniqExact(k) FROM test_incr_tgt") == "10\t10\n"
+        )
+    finally:
+        node.query("DROP TABLE IF EXISTS test_incr_mv")
+        node.query("DROP TABLE IF EXISTS test_incr_src")
+        node.query("DROP TABLE IF EXISTS test_incr_tgt")
+
+
+def test_start_views_after_startup_stop_does_not_stampede(fn_setup_tables):
+    name = "test_rmv_startup_stop"
+    before = create_daily_rmv(node, name)
+
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "printf '%s' '<clickhouse><profiles><default>"
+            "<stop_refreshable_materialized_views_on_startup>1"
+            "</stop_refreshable_materialized_views_on_startup>"
+            f"</default></profiles></clickhouse>' > {STOP_ON_STARTUP_CONFIG}",
+        ]
+    )
+    try:
+        node.restart_clickhouse()
+
+        info = get_rmv_info(node, name, wait_status="Disabled")
+        # Only the znode-derived columns are meaningful while the view is Disabled: doScheduling
+        # returns before it assigns next_refresh_time, so that one reads as the epoch regardless.
+        assert info["last_success_time"] == before
+
+        node.query("SYSTEM START VIEWS")
+        get_rmv_info(node, name, wait_status="Scheduled")
+        time.sleep(3)
+        released = get_rmv_info(node, name)
+        assert released["last_success_time"] == before, "SYSTEM START VIEWS stampeded"
+    finally:
+        node.exec_in_container(["bash", "-c", f"rm -f {STOP_ON_STARTUP_CONFIG}"])
+        node.restart_clickhouse()
+        node.query(f"DROP TABLE IF EXISTS {name}")
