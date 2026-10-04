@@ -257,12 +257,6 @@ A suíte completa é executada nas configurações de binário debug e padrão, 
 
 Executa os [testes de integração](/pt-BR/resources/develop-contribute/contribute/tests#integration-tests).
 
-## Cobertura LLVM {#llvm-coverage}
-
-A cada commit, a branch master executa os testes sem estado, de integração e unitários em uma compilação com instrumentação de cobertura LLVM e publica o relatório de cobertura.
-Os pull requests só executam esses jobs quando têm o rótulo `ci-coverage`; adicione-o para obter o relatório de cobertura do pull request e a cobertura das linhas alteradas.
-Sem o rótulo, os pull requests executam as mesmas configurações de testes sem estado e de integração na compilação `arm_binary`; os testes unitários já são executados com sanitizadores.
-
 ## Verificação de validação de correção de bug {#bugfix-validate-check}
 
 Verifica se há um novo teste (funcional ou de integração) ou testes alterados que falham com o binário compilado na branch master.
