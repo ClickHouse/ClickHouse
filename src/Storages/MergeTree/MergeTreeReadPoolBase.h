@@ -78,10 +78,9 @@ protected:
     const MutationsSnapshotPtr mutations_snapshot;
     const VirtualFields shared_virtual_fields;
     const IndexReadTasks index_read_tasks;
-    const FilterDAGInfoPtr row_level_filter;
-    const PrewhereInfoPtr prewhere_info;
-    const ExpressionActionsSettings actions_settings;
     const MergeTreeReaderSettings reader_settings;
+    /// Not part-specific: built once here and reused for every part in `buildReadTaskInfo`.
+    const PrewhereExprInfo prewhere_actions;
     const Names column_names;
     const PoolSettings pool_settings;
     const MergeTreeReadTask::BlockSizeParams block_size_params;
