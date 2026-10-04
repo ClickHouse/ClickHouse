@@ -318,14 +318,38 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             path_to_manifest_file_,
             f_schema);
 
-    Poco::Dynamic::Var json = parser.parse(*schema_json_string);
-    const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
-    Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
+    const bool tolerate_conflicting_manifest_schemas = context_->getSettingsRef()[Setting::iceberg_tolerate_conflicting_manifest_schemas];
 
-    schema_processor.addIcebergTableSchema(
-        schema_object,
-        IcebergSchemaProcessor::SchemaSource::ManifestFile,
-        context_->getSettingsRef()[Setting::iceberg_tolerate_conflicting_manifest_schemas]);
+    std::optional<Int32> header_schema_id;
+    if (auto schema_id_string = manifest_file_deserializer_->tryGetAvroMetadataValue(f_schema_id))
+        header_schema_id = parse<Int32>(*schema_id_string);
+
+    Int32 manifest_schema_id = 0;
+    if (header_schema_id.has_value() && tolerate_conflicting_manifest_schemas
+        && schema_processor.isSchemaRegisteredFromMetadata(*header_schema_id))
+    {
+        manifest_schema_id = *header_schema_id;
+    }
+    else
+    {
+        Poco::Dynamic::Var json = parser.parse(*schema_json_string);
+        const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
+        Int32 embedded_schema_id = schema_object->getValue<int>(f_schema_id);
+        if (header_schema_id.has_value() && *header_schema_id != embedded_schema_id)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Manifest file '{}' has header key '{}' = {} that differs from the '{}' = {} of its '{}' header",
+                path_to_manifest_file_,
+                f_schema_id,
+                *header_schema_id,
+                f_schema_id,
+                embedded_schema_id,
+                f_schema);
+        manifest_schema_id = embedded_schema_id;
+
+        schema_processor.addIcebergTableSchema(
+            schema_object, IcebergSchemaProcessor::SchemaSource::ManifestFile, tolerate_conflicting_manifest_schemas);
+    }
 
     /// Every entry of this manifest carries one partition value per spec field, including the
     /// fields skipped in buildPartitionKeyFromSpec, so this count is the arity its partition tuples must have.
@@ -510,6 +534,12 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
 
     auto entry = std::make_shared<ProcessedManifestFileEntry>(
         parsed_entry, common_partition_specification, resolved_sequence_number, resolved_schema_id);
+
+    /// Decode the partition values once, against the schema of the manifest that wrote them, so that
+    /// pruning, identity-column projection, delete matching, compaction and `system.iceberg_files` all
+    /// see the same value regardless of how this particular manifest encoded it.
+    entry->normalized_partition_key_value = normalizePartitionKeyValue(
+        parsed_entry->partition_key_value, *common_partition_specification, *schema_processor_ptr, manifest_schema_id);
 
     if (parsed_entry->parsed_first_row_id.has_value())
         entry->first_row_id = parsed_entry->parsed_first_row_id;

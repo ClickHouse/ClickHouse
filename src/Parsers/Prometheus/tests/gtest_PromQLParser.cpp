@@ -132,6 +132,48 @@ TEST(PromQLParser, DuplicateMetricName)
 }
 
 
+TEST(PromQLParser, SelectorRequiresNonEmptyMatcher)
+{
+    for (const auto * const query : {
+             R"({__name__=~".*"})",
+             R"({job=~".*"})",
+             R"({job!="demo"})",
+             R"({job=""})",
+             R"({job!~".+"})",
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_message, "vector selector must contain at least one non-empty matcher") << query;
+    }
+
+    for (const auto * const query : {
+             R"({job!=""})",
+             R"({job!~".*"})",
+             R"({__name__=~".+"})",
+             R"({__name__=~".+", job=~".*"})",
+             R"(up{job=~".*"})",
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_TRUE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query << ": " << error_message;
+    }
+
+    /// Regex syntax is validated even when another matcher already makes the selector non-empty.
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(query_tree.tryParse(R"({__name__=~".+", job=~"(.*"})", 3, &error_message, &error_pos));
+        EXPECT_NE(error_message.find("invalid regular expression in label matcher"), String::npos);
+    }
+}
+
+
 TEST(PromQLParser, CaseInsensitiveAggregationOperators)
 {
     EXPECT_EQ(parse("SuM(up)"), R"(
@@ -463,13 +505,13 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse(R"(
-        {__name__=~".*"}
+        {__name__=~".+"}
         )"), R"(
-{__name__=~".*"}
+{__name__=~".+"}
 
 PrometheusQueryTree(INSTANT_VECTOR):
     InstantSelector:
-        __name__ RE '.*'
+        __name__ RE '.+'
 )");
 
     /// Aggregation operators.
@@ -1734,6 +1776,36 @@ TEST(PromQLParser, DurationUnitOrder)
 }
 
 
+TEST(PromQLParser, LineComments)
+{
+    /// A line comment is terminated either by an end of line or by the end of the query.
+    for (const auto * const query : {
+             "up # comment",
+             "up # comment\n",
+             "up # comment\r",
+             "up # comment\r\n",
+             "up #!comment",
+         })
+        EXPECT_NO_THROW(PrometheusQueryTree{query}) << query;
+
+    PrometheusQueryTree query_tree;
+    String error_message;
+    size_t error_pos = String::npos;
+
+    EXPECT_FALSE(query_tree.tryParse("# comment", 3, &error_message, &error_pos));
+    EXPECT_EQ(error_pos, 9);
+
+    /// EOF comments use the same `# ` / `#!` prefix contract as the shared SQL lexer.
+    for (const auto * const query : {"up #", "up #comment"})
+    {
+        error_message.clear();
+        error_pos = String::npos;
+        EXPECT_FALSE(query_tree.tryParse(query, 0, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_pos, 3) << query;
+    }
+}
+
+
 TEST(PromQLParser, ErrorPosition)
 {
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
@@ -1810,6 +1882,33 @@ world`)"), "hello\nworld");
     EXPECT_EQ(parseStringLiteral(R"("hello\nworld")"), "hello\nworld");
     EXPECT_EQ(parseStringLiteral(R"('hello\nworld')"), "hello\nworld");
     EXPECT_EQ(parseStringLiteral("\"hello\rworld\""), "hello\rworld");
+}
+
+TEST(PromQLParser, RejectOverlappingOnAndGroupLabels)
+{
+    auto expect_rejected = [](std::string_view query, std::string_view expected_error_message)
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos));
+        EXPECT_EQ(error_message, expected_error_message);
+        EXPECT_EQ(error_pos, 6);
+    };
+
+    expect_rejected("foo + on(job) group_left(job) bar", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected("foo + on(job) group_right(job) bar", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected("foo + on(job,job,job) group_left(job,job,job) bar", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected("foo + on(job,instance) group_left(instance,job) bar", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected("foo + on(job,instance) group_left(zone,instance) bar", R"(label "instance" must not occur in ON and GROUP clause at once)");
+    expect_rejected(R"(foo + on("job") group_left(job) bar)", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected(R"(foo + on(job) group_left("job") bar)", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected(R"(foo + on("a\"b") group_left("a\"b") bar)", R"(label "a\"b" must not occur in ON and GROUP clause at once)");
+    expect_rejected(R"(foo + on("\v") group_left("\v") bar)", R"(label "\v" must not occur in ON and GROUP clause at once)");
+
+    EXPECT_NO_THROW(PrometheusQueryTree{"foo + on(job) group_left(instance) bar"});
+    EXPECT_NO_THROW(PrometheusQueryTree{"foo + on(a,a,a) group_left(b,b,b) bar"});
+    EXPECT_NO_THROW(PrometheusQueryTree{"foo + ignoring(job) group_left(job) bar"});
 }
 
 

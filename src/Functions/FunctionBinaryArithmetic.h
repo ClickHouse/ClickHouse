@@ -296,6 +296,12 @@ struct BinaryOperation
         /// and re-inserting, bloating the loop ~3-5x for no benefit. Operations
         /// that use div/mod set `no_vectorize = true` to opt out; `Op` types that
         /// don't define the member are treated as opting in to vectorization.
+        ///
+        /// This is a workaround for the LLVM cost model, which was fixed upstream
+        /// on 2026-09-11. On clang 24+ the vectorized integer division becomes
+        /// faster than the scalar loop (`intDivOrZero` on `Int8` is 8.6x faster
+        /// on trunk), so the opt-out becomes harmful and should be removed once
+        /// the minimum supported compiler is clang 24.
         static constexpr bool disable_vectorization = []
         {
             if constexpr (requires { Op::no_vectorize; })
@@ -3138,9 +3144,10 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             /// keys, so it is pruned via the plain wider-of-the-two-original-types rule below,
             /// unconditionally on width.
             /// A `UInt256` operand cannot be widened to a signed type that holds its full range (no
-            /// 512-bit integer type exists), so `modulo`/`moduloOrNull` are not pruned for it: the
-            /// direct kernel needs no such cast and stays exact for every width.
+            /// 512-bit integer type exists), so a mixed-sign `modulo`/`moduloOrNull` pair with it is not
+            /// pruned: the direct kernel needs no such cast and stays exact for every width.
             constexpr bool modulo_unsigned_operand_too_wide_to_prune = (is_modulo || IsOperation<Op>::modulo_or_null)
+                && (is_signed_v<T0> || is_signed_v<T1>)
                 && ((is_unsigned_v<T0> && sizeof(T0) == 32) || (is_unsigned_v<T1> && sizeof(T1) == 32));
             constexpr bool op_is_prunable_modulo = (is_modulo || IsOperation<Op>::modulo_or_null || IsOperation<Op>::modulo_legacy)
                 && is_integer<T0> && is_integer<T1>
@@ -3279,6 +3286,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     /// on that single type reproduces. This is deliberately not the `ModuloImpl`
                     /// (non-legacy) rule below: legacy must keep the historical, sometimes
                     /// unsigned-computed behaviour byte for byte.
+                    using CommonType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
+                    return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
+                }
+                else if constexpr (is_unsigned_v<T0> && is_unsigned_v<T1>)
+                {
+                    /// For two unsigned operands `ModuloImpl` takes the plain remainder in the wider type.
                     using CommonType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
                     return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
                 }

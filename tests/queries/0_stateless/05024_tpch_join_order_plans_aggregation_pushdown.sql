@@ -138,7 +138,6 @@ SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
 SET query_plan_merge_filter_into_join_condition = 1;
 SET query_plan_merge_filters = 1;
 SET query_plan_remove_unused_columns = 1;
-SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_extract_common_expressions = 1;
 SET optimize_syntax_fuse_functions = 1;
@@ -187,7 +186,8 @@ FROM customer, orders, lineitem
 WHERE o_orderkey IN (SELECT l_orderkey FROM lineitem GROUP BY l_orderkey HAVING sum(l_quantity) > 300)
     AND c_custkey = o_custkey AND o_orderkey = l_orderkey
 GROUP BY c_name, c_custkey, o_orderkey, o_orderdate, o_totalprice
-ORDER BY o_totalprice DESC, o_orderdate LIMIT 100;
+ORDER BY o_totalprice DESC, o_orderdate LIMIT 100
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- The same query with the explicit `IN` -> `JOIN` rewrite: the semi join can reorder with the
 -- other joins, at the price of a second full `lineitem` aggregation on the probe side.
