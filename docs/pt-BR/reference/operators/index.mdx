@@ -106,6 +106,41 @@ Para subtração de tuplas: [tupleMinus](/pt-BR/reference/functions/regular-func
 
 `a !~* b` – A função `notMatchCaseInsensitive(a, b)` (verifica se `a` não corresponde à expressão regular `b`, sem diferenciar maiúsculas de minúsculas).
 
+### FUNCTION similarTo {#similarto-function}
+
+`a SIMILAR TO b` – A FUNCTION `similarTo(a, b)`.
+
+### FUNCTION notSimilarTo {#notsimilarto-function}
+
+`a NOT SIMILAR TO b` – A FUNCTION `notSimilarTo(a, b)`.
+
+`SIMILAR TO` é o predicado de correspondência de padrões definido pelo padrão SQL. Seu pattern combina os wildcards do `LIKE`, `%` (qualquer quantidade de caracteres arbitrários) e `_` (um único caractere arbitrário), com os metacaracteres de expressão regular `|`, `*`, `+`, `?`, `{`, `}`, `(`, `)`, `[` e `]`. Os metacaracteres `^`, `$` e `.` **não** fazem parte da gramática do `SIMILAR TO` e, fora de expressões entre colchetes, representam os próprios caracteres literais. Dentro de uma expressão entre colchetes, um `^` no início mantém seu significado habitual e nega a classe; por exemplo, `[^aeiou]` corresponde a um único caractere que não seja uma vogal. O pattern deve corresponder ao operando esquerdo inteiro, e não apenas a uma substring dele. `\` faz o escape de qualquer um dos metacaracteres e de si mesmo.
+
+```sql title="Query"
+SELECT
+    'ClickHouse' SIMILAR TO 'Cl_ck[hH]ouse'    AS matches,
+    'ClickHouse' NOT SIMILAR TO 'Cl%ck[0-9]ouse' AS does_not_match;
+```
+
+```text title="Response"
+┌─matches─┬─does_not_match─┐
+│       1 │              1 │
+└─────────┴────────────────┘
+```
+
+### Cláusula ESCAPE {#escape-clause}
+
+`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `SIMILAR TO` e `NOT SIMILAR TO` aceitam, opcionalmente, uma cláusula `ESCAPE 'c'` ao final, em que `c` é um único caractere ASCII. Esse caractere substitui a barra invertida padrão como caractere de escape, e a barra invertida perde seu significado especial (passa a representar uma barra invertida literal):
+
+```sql
+SELECT 'a%b' SIMILAR TO 'a#%b' ESCAPE '#';  -- 1: `#%` is a literal `%`
+SELECT 'axb' SIMILAR TO 'a#%b' ESCAPE '#';  -- 0
+```
+
+Um caractere de escape *personalizado* deve ser seguido por um caractere especial do predicado ou por ele mesmo; qualquer outro caso, incluindo `^`, `$`, `.` e a barra invertida (caracteres comuns em `SIMILAR TO` fora de expressões entre colchetes), gera um erro, pois um escape antes de um caractere comum não tem efeito. Esse rigor vale apenas para caracteres de escape personalizados: a barra invertida *padrão* mantém o comportamento legado do `LIKE` e representa uma barra invertida literal quando precede um caractere comum. Assim, `'\\mabc' SIMILAR TO '%\\mabc%'` retorna `1`, enquanto `'mabc' SIMILAR TO '%#mabc%' ESCAPE '#'` é rejeitado. Dentro de uma expressão entre colchetes, como `[...]`, o caractere de escape não é especial e representa a si mesmo, seguindo o comportamento do POSIX e do PostgreSQL.
+
+A cláusula `ESCAPE` também pode ser combinada com o quantificador de array `SOME` / `ALL` descrito [abaixo](#some-all-on-arrays), por exemplo: `'a%b' SIMILAR TO SOME(['a#%b', 'z%']) ESCAPE '#'`.
+
 ### Função BETWEEN {#between-function}
 
 `a BETWEEN b AND c` – Equivale a `a >= b AND a <= c`.
@@ -227,7 +262,7 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 
 ### `SOME` / `ALL` em arrays {#some-all-on-arrays}
 
-Além da forma de subconsulta descrita acima, o lado direito de `SOME` / `ALL` pode ser uma expressão de array (um literal de array, uma coluna do tipo array ou qualquer expressão que retorne um array). Esta é a sintaxe de quantificador de array no estilo do PostgreSQL. Ela é reconhecida durante o parse e reescrita como funções de array, portanto não é necessária nenhuma reescrita manual:
+Além da forma de subconsulta descrita acima, o lado direito de `SOME` / `ALL` pode ser uma expressão de array (um literal de array, uma coluna do tipo array ou qualquer expressão que retorne um array). Esta é a sintaxe de quantificador de array no estilo do PostgreSQL. Ela é reconhecida durante o parse e reescrita como FUNCTIONS de array, portanto não é necessária nenhuma reescrita manual:
 
 | Sintaxe                                                  | Reescrito como                     |
 | -------------------------------------------------------- | ---------------------------------- |
@@ -236,16 +271,18 @@ Além da forma de subconsulta descrita acima, o lado direito de `SOME` / `ALL` p
 | `expr OP SOME(arr)` (qualquer outro operador compatível) | `arrayExists(x -> expr OP x, arr)` |
 | `expr OP ALL(arr)` (qualquer outro operador compatível)  | `arrayAll(x -> expr OP x, arr)`    |
 
-`SOME` é o quantificador existencial (o sinônimo em SQL de `ANY`). `=` e `<>` recebem tratamento especial e são reescritos como `has` / `NOT has` porque têm uma implementação otimizada; a forma geral recorre às funções de ordem superior `arrayExists` / `arrayAll`.
+`SOME` é o quantificador existencial (o sinônimo em SQL de `ANY`). `=` e `<>` recebem tratamento especial e são reescritos como `has` / `NOT has` porque têm uma implementação otimizada; a forma geral recorre às FUNCTIONS de ordem superior `arrayExists` / `arrayAll`.
 
-A forma com array é reconhecida para os operadores de comparação `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`, os predicados de comparação com palavras-chave `IS DISTINCT FROM` e `IS NOT DISTINCT FROM`, e os predicados de busca em string `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE` e `REGEXP`. Os predicados de comparação com palavras-chave e os predicados de busca em string são reconhecidos apenas para a forma com array, não para a forma com subconsulta (que é reduzida a `IN`/`NOT IN`). Operadores que não têm significado de quantificador de array — por exemplo, o próprio `IN` — **não** são reescritos e mantêm seu significado normal.
+A forma com array é reconhecida para os operadores de comparação `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`, os predicados de comparação com palavras-chave `IS DISTINCT FROM` e `IS NOT DISTINCT FROM`, e os predicados de busca em string `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`, `SIMILAR TO` e `NOT SIMILAR TO`. Os predicados de comparação com palavras-chave e os predicados de busca em string são reconhecidos apenas para a forma com array, não para a forma com subconsulta (que é reduzida a `IN`/`NOT IN`). Operadores que não têm significado de quantificador de array — por exemplo, o próprio `IN` — **não** são reescritos e mantêm seu significado normal.
 
-Os predicados de busca em string funcionam porque `MatchImpl` (a implementação por trás de `LIKE` / `ILIKE` / `REGEXP`) oferece suporte a um haystack constante com uma needle não constante. Por exemplo, `'abc' LIKE SOME(['a%', 'b%'])` é reescrito como `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`, e `'abc' NOT LIKE ALL(['x%', 'y%'])` como `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`. Isso compara uma string com vários patterns; para fazer a correspondência em uma única passagem combinada, você ainda pode usar uma função de busca multipadrão, como `multiMatchAny` (expressões regulares) ou `multiSearchAny` (substrings).
+Os predicados de busca em string funcionam porque `MatchImpl` (a implementação por trás de `LIKE` / `ILIKE` / `REGEXP` / `SIMILAR TO`) oferece suporte a um haystack constante com uma needle não constante. Por exemplo, `'abc' LIKE SOME(['a%', 'b%'])` é reescrito como `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`, e `'abc' NOT LIKE ALL(['x%', 'y%'])` como `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`. Isso compara uma string com vários patterns; para fazer a correspondência em uma única passagem combinada, você ainda pode usar uma FUNCTION de busca multipadrão, como `multiMatchAny` (expressões regulares) ou `multiSearchAny` (substrings).
+
+Os predicados que oferecem suporte a uma [cláusula `ESCAPE`](#escape-clause) a mantêm na forma com array: um `ESCAPE 'c'` colocado após o quantificador se aplica a todos os patterns do array. Por exemplo, `'a%b' SIMILAR TO SOME(['a#%b', 'z%']) ESCAPE '#'` é reescrito como `arrayExists(x -> similarTo('a%b', x, '#'), ['a#%b', 'z%'])`.
 
 <Info>
   **`ANY` não tem suporte na forma com array**
 
-  Somente `SOME` e `ALL` aceitam um array no lado direito. `ANY` foi excluído porque `any` também é uma função de agregação, então uma expressão no formato `expr = any(x)` mantém o significado de chamada de função. Use `SOME` para o quantificador de array.
+  Somente `SOME` e `ALL` aceitam um array no lado direito. `ANY` foi excluído porque `any` também é uma FUNCTION de agregação, então uma expressão no formato `expr = any(x)` mantém o significado de chamada de FUNCTION. Use `SOME` para o quantificador de array.
 </Info>
 
 ```sql title="Query"

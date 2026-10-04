@@ -106,6 +106,41 @@ Para la resta de tuplas: [tupleMinus](/es/reference/functions/regular-functions/
 
 `a !~* b`: la función `notMatchCaseInsensitive(a, b)` (comprueba que `a` no coincida con la expresión regular `b`, sin distinguir entre mayúsculas y minúsculas).
 
+### FUNCTION similarTo {#similarto-function}
+
+`a SIMILAR TO b` – La FUNCTION `similarTo(a, b)`.
+
+### FUNCTION notSimilarTo {#notsimilarto-function}
+
+`a NOT SIMILAR TO b` – La FUNCTION `notSimilarTo(a, b)`.
+
+`SIMILAR TO` es el predicado de coincidencia de patrones del estándar SQL. Su patrón combina los comodines de `LIKE` `%` (cualquier número de caracteres arbitrarios) y `_` (un único carácter arbitrario) con los metacaracteres de expresiones regulares `|`, `*`, `+`, `?`, `{`, `}`, `(`, `)`, `[` y `]`. Los metacaracteres `^`, `$` y `.` **no** forman parte de la gramática de `SIMILAR TO` y, fuera de las expresiones entre corchetes, representan los caracteres literales correspondientes. Dentro de una expresión entre corchetes, un `^` al principio conserva su significado habitual y niega la clase; por ejemplo, `[^aeiou]` coincide con un único carácter que no sea una vocal. El patrón debe coincidir con el operando izquierdo completo, no solo con una subcadena de este. `\` sirve para escapar cualquiera de los metacaracteres y también a sí mismo.
+
+```sql title="Query"
+SELECT
+    'ClickHouse' SIMILAR TO 'Cl_ck[hH]ouse'    AS matches,
+    'ClickHouse' NOT SIMILAR TO 'Cl%ck[0-9]ouse' AS does_not_match;
+```
+
+```text title="Response"
+┌─matches─┬─does_not_match─┐
+│       1 │              1 │
+└─────────┴────────────────┘
+```
+
+### Cláusula ESCAPE {#escape-clause}
+
+`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `SIMILAR TO` y `NOT SIMILAR TO` admiten, al final, una cláusula opcional `ESCAPE 'c'`, donde `c` es un único carácter ASCII. Este carácter sustituye a la barra invertida predeterminada como carácter de escape, y la barra invertida pasa a perder su significado especial (representa una barra invertida literal):
+
+```sql
+SELECT 'a%b' SIMILAR TO 'a#%b' ESCAPE '#';  -- 1: `#%` is a literal `%`
+SELECT 'axb' SIMILAR TO 'a#%b' ESCAPE '#';  -- 0
+```
+
+Un carácter de escape *personalizado* debe ir seguido de un carácter especial del predicado o de sí mismo; cualquier otra cosa, incluidos `^`, `$`, `.` y la barra invertida (caracteres ordinarios en `SIMILAR TO` fuera de las expresiones entre corchetes), produce un error, ya que escapar un carácter ordinario no tiene ningún efecto. Esta estrictez se aplica únicamente a los caracteres de escape personalizados: la barra invertida *predeterminada* conserva el comportamiento heredado de `LIKE` y representa una barra invertida literal cuando precede a un carácter ordinario, por lo que `'\\mabc' SIMILAR TO '%\\mabc%'` devuelve `1`, mientras que `'mabc' SIMILAR TO '%#mabc%' ESCAPE '#'` se rechaza. Dentro de una expresión entre corchetes como `[...]`, el carácter de escape no tiene significado especial y se representa a sí mismo, de acuerdo con el comportamiento de POSIX y PostgreSQL.
+
+La cláusula `ESCAPE` también se puede combinar con el cuantificador de array `SOME` / `ALL` descrito [más abajo](#some-all-on-arrays), por ejemplo `'a%b' SIMILAR TO SOME(['a#%b', 'z%']) ESCAPE '#'`.
+
 ### Función BETWEEN {#between-function}
 
 `a BETWEEN b AND c` – Equivale a `a >= b AND a <= c`.
@@ -227,7 +262,7 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 
 ### `SOME` / `ALL` en arrays {#some-all-on-arrays}
 
-Además de la forma de subconsulta descrita anteriormente, el lado derecho de `SOME` / `ALL` puede ser una expresión de array (un literal de array, una columna de tipo array o cualquier expresión que devuelva un array). Esta es la sintaxis de cuantificador de array al estilo de PostgreSQL. Se reconoce durante el análisis y se reescribe como funciones de array, por lo que no hace falta ninguna reescritura manual:
+Además de la forma de subconsulta descrita anteriormente, el lado derecho de `SOME` / `ALL` puede ser una expresión de array (un literal de array, una columna de tipo array o cualquier expresión que devuelva un array). Esta es la sintaxis de cuantificador de array al estilo de PostgreSQL. Se reconoce durante el análisis y se reescribe como FUNCTIONS de array, por lo que no hace falta ninguna reescritura manual:
 
 | Sintaxis                                                 | Reescrito como                     |
 | -------------------------------------------------------- | ---------------------------------- |
@@ -236,16 +271,18 @@ Además de la forma de subconsulta descrita anteriormente, el lado derecho de `S
 | `expr OP SOME(arr)` (cualquier otro operador compatible) | `arrayExists(x -> expr OP x, arr)` |
 | `expr OP ALL(arr)` (cualquier otro operador compatible)  | `arrayAll(x -> expr OP x, arr)`    |
 
-`SOME` es el cuantificador existencial (el sinónimo de SQL de `ANY`). `=` y `<>` se tratan de forma especial como `has` / `NOT has` porque tienen una implementación optimizada; en la forma general se usan las funciones de orden superior `arrayExists` / `arrayAll`.
+`SOME` es el cuantificador existencial (el sinónimo de SQL de `ANY`). `=` y `<>` se tratan de forma especial como `has` / `NOT has` porque tienen una implementación optimizada; en la forma general se usan las FUNCTIONS de orden superior `arrayExists` / `arrayAll`.
 
-La forma de array se reconoce para los operadores de comparación `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`, los predicados de comparación con palabras clave `IS DISTINCT FROM` y `IS NOT DISTINCT FROM`, y los predicados de búsqueda de cadenas `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE` y `REGEXP`. Los predicados de comparación con palabras clave y los predicados de búsqueda de cadenas se reconocen solo para la forma de array, no para la forma con subconsulta (que se reduce a `IN`/`NOT IN`). Los operadores que no tienen significado como cuantificador de array —por ejemplo, `IN` en sí mismo— **no** se reescriben y conservan su significado habitual.
+La forma de array se reconoce para los operadores de comparación `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`, los predicados de comparación con palabras clave `IS DISTINCT FROM` y `IS NOT DISTINCT FROM`, y los predicados de búsqueda de cadenas `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`, `SIMILAR TO` y `NOT SIMILAR TO`. Los predicados de comparación con palabras clave y los predicados de búsqueda de cadenas se reconocen solo para la forma de array, no para la forma con subconsulta (que se reduce a `IN`/`NOT IN`). Los operadores que no tienen significado como cuantificador de array —por ejemplo, `IN` en sí mismo— **no** se reescriben y conservan su significado habitual.
 
-Los predicados de búsqueda de cadenas funcionan porque `MatchImpl` (la implementación subyacente de `LIKE` / `ILIKE` / `REGEXP`) admite un haystack constante con un needle no constante. Por ejemplo, `'abc' LIKE SOME(['a%', 'b%'])` se reescribe como `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`, y `'abc' NOT LIKE ALL(['x%', 'y%'])` como `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`. Esto compara una cadena con varios patterns; para hacer la comparación en una sola pasada combinada, puede seguir usando una función de búsqueda multipatrón como `multiMatchAny` (expresiones regulares) o `multiSearchAny` (subcadenas).
+Los predicados de búsqueda de cadenas funcionan porque `MatchImpl` (la implementación subyacente de `LIKE` / `ILIKE` / `REGEXP` / `SIMILAR TO`) admite un haystack constante con un needle no constante. Por ejemplo, `'abc' LIKE SOME(['a%', 'b%'])` se reescribe como `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`, y `'abc' NOT LIKE ALL(['x%', 'y%'])` como `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`. Esto compara una cadena con varios patrones; para hacer la comparación en una sola pasada combinada, puede seguir usando una FUNCTION de búsqueda multipatrón como `multiMatchAny` (expresiones regulares) o `multiSearchAny` (subcadenas).
+
+Los predicados que admiten una [cláusula `ESCAPE`](#escape-clause) la conservan en la forma de array: un `ESCAPE 'c'` final después del cuantificador se aplica a todos los patrones del array. Por ejemplo, `'a%b' SIMILAR TO SOME(['a#%b', 'z%']) ESCAPE '#'` se reescribe como `arrayExists(x -> similarTo('a%b', x, '#'), ['a#%b', 'z%'])`.
 
 <Info>
   **`ANY` no es compatible con la forma de array**
 
-  Solo `SOME` y `ALL` aceptan un array en el lado derecho. `ANY` se excluye porque `any` también es una función de agregación, por lo que una expresión con la forma `expr = any(x)` conserva el significado de una llamada de función. Use `SOME` para el cuantificador de array.
+  Solo `SOME` y `ALL` aceptan un array en el lado derecho. `ANY` se excluye porque `any` también es una FUNCTION de agregación, por lo que una expresión con la forma `expr = any(x)` conserva el significado de una llamada de FUNCTION. Use `SOME` para el cuantificador de array.
 </Info>
 
 ```sql title="Query"
