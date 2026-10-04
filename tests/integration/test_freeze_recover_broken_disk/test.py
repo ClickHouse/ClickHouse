@@ -71,6 +71,143 @@ def unmount(instance, path):
         pass
 
 
+SHADOW = "/var/lib/clickhouse/shadow"
+COUNTER = f"{SHADOW}/increment.txt"
+# Every disk of `node` has its own `shadow/`, and recovery scans all of them.
+NODE_SHADOW_ROOTS = " ".join(
+    [
+        SHADOW,
+        "/var/lib/clickhouse/cold/shadow",
+        "/var/lib/clickhouse/enc_base/shadow",
+        "/var/lib/clickhouse/enc_base/inner/shadow",
+        "/var/lib/clickhouse/enc_base/inner/outer/shadow",
+    ]
+)
+
+
+def run(instance, command):
+    return instance.exec_in_container(["bash", "-c", command]).strip()
+
+
+def is_dir(instance, path):
+    return run(instance, f"test -d {path} && echo yes || echo no") == "yes"
+
+
+def freeze_unnamed(instance, table):
+    rows = instance.query(
+        f"ALTER TABLE {table} FREEZE FORMAT TSVWithNames "
+        "SETTINGS alter_partition_verbose_result = 1"
+    ).splitlines()
+    # backup_name is the fourth column of the verbose FREEZE result.
+    return rows[1].split("\t")[3]
+
+
+def reset_to_empty_counter(instance):
+    run(
+        instance,
+        f"rm -rf {NODE_SHADOW_ROOTS} && mkdir -p {SHADOW} && : > {COUNTER}",
+    )
+
+
+def test_freeze_recovers_from_empty_counter(started_cluster):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/105719: an
+    # empty `shadow/increment.txt` made every FREEZE fail with ATTEMPT_TO_READ_AFTER_EOF
+    # until an operator removed the file. Each case starts from an empty counter and
+    # only the backups it plants, so the allocated identifiers are exact.
+    table = "t_empty_counter"
+    cold_table = "t_empty_counter_cold"
+    try:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node.query(f"DROP TABLE IF EXISTS {cold_table} SYNC")
+        node.query(f"CREATE TABLE {table} (id UInt64) ENGINE = MergeTree ORDER BY id")
+        node.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+
+        # The reported reproducer: an unnamed FREEZE on an empty counter.
+        reset_to_empty_counter(node)
+        assert freeze_unnamed(node, table) == "1"
+        assert run(node, f"cat {COUNTER}") == "1"
+
+        # A named FREEZE on an empty counter, with and without an earlier backup.
+        reset_to_empty_counter(node)
+        node.query(f"ALTER TABLE {table} FREEZE WITH NAME 'backup_a'")
+        run(node, f": > {COUNTER}")
+        node.query(f"ALTER TABLE {table} FREEZE WITH NAME 'backup_b'")
+
+        # An unnamed FREEZE names its directory after the counter, so recovery must
+        # clear the largest existing numeric backup instead of reusing `shadow/1`.
+        reset_to_empty_counter(node)
+        run(node, f"mkdir {SHADOW}/1")
+        assert freeze_unnamed(node, table) == "2"
+        assert is_dir(node, f"{SHADOW}/1")
+
+        # A name above the Int64 counter range can never be allocated. Folding it into
+        # the bound would wrap or exhaust the recovered counter.
+        reset_to_empty_counter(node)
+        run(node, f"mkdir {SHADOW}/1 {SHADOW}/9223372036854775808")
+        assert freeze_unnamed(node, table) == "2"
+        assert is_dir(node, f"{SHADOW}/9223372036854775808")
+
+        # A non-canonical spelling is a different path from the identifier it parses
+        # to, so `shadow/09223372036854775807` must not exhaust the namespace.
+        reset_to_empty_counter(node)
+        run(node, f"mkdir {SHADOW}/1 {SHADOW}/09223372036854775807")
+        assert freeze_unnamed(node, table) == "2"
+        assert is_dir(node, f"{SHADOW}/09223372036854775807")
+
+        # A numeric plain file is not a backup.
+        reset_to_empty_counter(node)
+        run(node, f"mkdir {SHADOW}/10 && touch {SHADOW}/4000")
+        assert freeze_unnamed(node, table) == "11"
+
+        # A numeric named FREEZE reserves its name on an empty counter: the counter
+        # lock is released before the directory is created, so a concurrent unnamed
+        # FREEZE reads the counter while the directory is still absent.
+        reset_to_empty_counter(node)
+        node.query(f"ALTER TABLE {table} FREEZE WITH NAME '1000'")
+        assert run(node, f"cat {COUNTER}") == "1000"
+        assert freeze_unnamed(node, table) == "1001"
+
+        # The reservation happens BEFORE the directory is created: when creating it
+        # fails, the counter still holds the name.
+        reset_to_empty_counter(node)
+        run(node, f"touch {SHADOW}/7000")
+        with pytest.raises(Exception):
+            node.query(f"ALTER TABLE {table} FREEZE WITH NAME '7000'")
+        assert run(node, f"cat {COUNTER}") == "7000"
+        assert run(node, f"test -f {SHADOW}/7000 && echo yes || echo no") == "yes"
+
+        # Against a healthy counter, naming the very next identifier consumes it.
+        reset_to_empty_counter(node)
+        run(node, f"echo 3999 > {COUNTER}")
+        node.query(f"ALTER TABLE {table} FREEZE WITH NAME '4000'")
+        assert freeze_unnamed(node, table) == "4001"
+
+        # A non-numeric named FREEZE cannot collide with an identifier, so it leaves an
+        # empty counter alone and recovery stays pending for the next unnamed FREEZE.
+        reset_to_empty_counter(node)
+        run(node, f"mkdir {SHADOW}/3000")
+        node.query(f"ALTER TABLE {table} FREEZE WITH NAME 'backup_o'")
+        assert run(node, f"stat -c %s {COUNTER}") == "0"
+        assert freeze_unnamed(node, table) == "3001"
+
+        # Each part is frozen onto its own disk, so a backup on a disk the recovering
+        # table does not use must still raise the bound.
+        node.query(
+            f"CREATE TABLE {cold_table} (id UInt64) ENGINE = MergeTree ORDER BY id "
+            "SETTINGS storage_policy = 'cold_policy'"
+        )
+        node.query(f"INSERT INTO {cold_table} VALUES (1), (2), (3)")
+        reset_to_empty_counter(node)
+        node.query(f"ALTER TABLE {cold_table} FREEZE WITH NAME '2000'")
+        assert is_dir(node, "/var/lib/clickhouse/cold/shadow/2000")
+        run(node, f": > {COUNTER}")
+        assert freeze_unnamed(node, table) == "2001"
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node.query(f"DROP TABLE IF EXISTS {cold_table} SYNC")
+        run(node, f"rm -rf {NODE_SHADOW_ROOTS}")
+
+
 def test_freeze_recovery_skips_broken_disk(started_cluster):
     # Regression test for https://github.com/ClickHouse/ClickHouse/issues/105719.
     #
@@ -286,12 +423,6 @@ def test_freeze_recovery_refuses_exhausted_namespace(started_cluster):
     # stop at a lower name and the next unnamed FREEZE reuse this directory. There
     # is no id above it, so the only safe outcome is a refusal, and the existing
     # backup must survive it.
-    #
-    # This lives here rather than in the stateless suite because the name cannot be
-    # varied: it is the boundary itself. On the shared stateless server a copy
-    # leaked by an interrupted run makes it unplantable, and while it exists every
-    # recovery correctly refuses, which breaks unrelated scenarios. Each integration
-    # instance has its own `shadow/`, so the fixed name is safe.
     max_id = "9223372036854775807"
     max_id_minus_one = "9223372036854775806"
     try:
@@ -502,14 +633,6 @@ def test_named_freeze_tolerates_only_recoverable_counter_states(started_cluster)
     # Every state below is therefore driven with a non-numeric name AND with a numeric
     # one: the numeric cases are the only ones that enter the recovery-and-reserve
     # path, so they are what pin its error filter.
-    #
-    # These live here rather than in the stateless suite because each state has to be
-    # written into `shadow/increment.txt` itself and none of them is recoverable -
-    # this fix self-heals only an empty or missing counter. The shared stateless
-    # `shadow/increment.txt` is deliberately never restored on cleanup, since other
-    # tests use it, and a run killed inside one of these scenarios would leave every
-    # later FREEZE on that server failing. Each integration instance owns its own
-    # counter.
     max_id = "9223372036854775807"
     counter = "/var/lib/clickhouse/shadow/increment.txt"
     try:
