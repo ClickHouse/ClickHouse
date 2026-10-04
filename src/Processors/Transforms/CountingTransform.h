@@ -36,6 +36,12 @@ public:
         process_elem = elem;
     }
 
+    /// Skip the InsertedRows / InsertedBytes profile-event increments in onConsume.
+    void disableProfileEventsCounting()
+    {
+        count_profile_events = false;
+    }
+
     void onConsume(Chunk chunk) override;
     GenerateResult onGenerate() override
     {
@@ -51,6 +57,7 @@ protected:
     /// Quota is used to limit amount of written bytes.
     std::shared_ptr<const EnabledQuota> quota;
     UInt64 normalized_query_hash = 0;
+    bool count_profile_events = true;
     Chunk cur_chunk;
 };
 

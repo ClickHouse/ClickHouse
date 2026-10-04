@@ -1079,7 +1079,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         context);
 
     QueryPipeline pipeline
-        = buildPushPipelineFromDependencies(insert_dependencies, context, table, max_threads, no_squash, async_insert);
+        = buildPushPipelineFromDependencies(insert_dependencies, context, table, max_threads, no_squash, async_insert, skip_write_accounting);
 
     if (query.hasInlinedData() && !async_insert)
     {
@@ -1101,7 +1101,8 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
     const StoragePtr & table,
     size_t max_threads_,
     bool no_squash_,
-    bool async_insert_)
+    bool async_insert_,
+    bool skip_write_accounting_)
 {
     const Settings & settings = context_->getSettingsRef();
 
@@ -1145,9 +1146,18 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
             settings[Setting::shrink_over_allocated_columns_min_waste_bytes]));
 
     {
-        auto counting = std::make_shared<CountingTransform>(insert_header, context_->getQuota(), context_->getNormalizedQueryHash());
-        counting->setProcessListElement(context_->getProcessListElement());
-        counting->setProgressCallback(context_->getProgressCallback());
+        /// Added even when accounting is skipped: `pipeline_input` comes from the first head transform.
+        auto counting = std::make_shared<CountingTransform>(
+            insert_header,
+            skip_write_accounting_ ? nullptr : context_->getQuota(),
+            context_->getNormalizedQueryHash());
+        if (skip_write_accounting_)
+            counting->disableProfileEventsCounting();
+        else
+        {
+            counting->setProcessListElement(context_->getProcessListElement());
+            counting->setProgressCallback(context_->getProgressCallback());
+        }
         add_head_transform(std::move(counting));
     }
 
