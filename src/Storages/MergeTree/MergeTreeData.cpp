@@ -8944,6 +8944,26 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
 
             const auto & part_columns = part->getColumns();
             const auto & table_columns = table_metadata_snapshot->getColumns();
+            bool share_nested_offsets = (*getSettings())[MergeTreeSetting::share_nested_offsets];
+
+            /// Matches the columns that `AlterConversions::isColumnDropped` treats as dropped by `DROP COLUMN name`:
+            /// with shared nested offsets, dropping a whole `Nested` column `n` drops all of its `n.*` columns.
+            auto part_has_dropped_column = [&](const String & name)
+            {
+                if (part_columns.contains(name))
+                    return true;
+                if (!share_nested_offsets)
+                    return false;
+                return std::ranges::any_of(part_columns, [&](const auto & column)
+                {
+                    return column.name.size() > name.size() && column.name.starts_with(name) && column.name[name.size()] == '.';
+                });
+            };
+            auto table_has_dropped_column = [&](const String & name)
+            {
+                return share_nested_offsets ? table_columns.hasColumnOrNested(GetColumnsOptions::All, name) : table_columns.has(name);
+            };
+
             for (const auto & command : commands)
             {
                 bool is_lossy = false;
@@ -8952,7 +8972,7 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
                 /// `CLEAR COLUMN` is also a `DROP_COLUMN` (with `clear`), but it is a data rewrite that is tracked
                 /// by the part's data version, not by its metadata version, so the missing file does not matter.
                 else if (command.type == MutationCommand::DROP_COLUMN && !command.clear)
-                    is_lossy = part_columns.contains(command.column_name) && table_columns.has(command.column_name);
+                    is_lossy = part_has_dropped_column(command.column_name) && table_has_dropped_column(command.column_name);
 
                 if (!is_lossy)
                     continue;

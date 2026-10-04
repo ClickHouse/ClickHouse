@@ -743,3 +743,39 @@ def test_attach_part_without_metadata_version_after_add_column(started_cluster):
     assert node.query(f"SELECT count(), sum(a), sum(d) FROM {table}") == "1000\t499500\t7000\n"
 
     node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_attach_part_without_metadata_version_after_drop_nested(started_cluster):
+    # `DROP COLUMN n` of a whole `Nested` column drops all of its `n.*` columns, while the mutation
+    # command only names `n`. A part without `metadata_version.txt` that predates dropping and re-adding
+    # `n` must not be attached, or its stale `n.*` values would be read instead of the defaults.
+    table = "t_metadata_version_drop_nested"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table} (id UInt64, n Nested(x UInt32, y UInt32))
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{table}', '1')
+        ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, storage_policy = 'default'
+        """
+    )
+    node.query(f"INSERT INTO {table} SELECT number, [number], [number] FROM numbers(1000)")
+    node.query(f"ALTER TABLE {table} DETACH PARTITION tuple()")
+    node.query(f"ALTER TABLE {table} DROP COLUMN n")
+    node.query(f"ALTER TABLE {table} ADD COLUMN n Nested(x UInt32, y UInt32)")
+
+    part_path = (
+        node.query(
+            f"SELECT path FROM system.detached_parts WHERE database = 'default' AND table = '{table}'"
+        )
+        .strip()
+        .rstrip("/")
+    )
+    exec_root(f"rm {part_path}/metadata_version.txt")
+
+    error = node.query_and_get_error(f"ALTER TABLE {table} ATTACH PARTITION tuple()")
+    assert "has no metadata_version.txt" in error
+    assert "`n` was dropped" in error
+    assert node.query(f"SELECT count() FROM {table}") == "0\n"
+
+    node.query(f"DROP TABLE {table} SYNC")
