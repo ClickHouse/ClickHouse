@@ -1,0 +1,10 @@
+<clickhouse>
+    <compression>
+        <case>
+            <!-- No conditions, so this case always matches: PCO would become the default codec of
+                 every part. PCO is experimental and requires a column type, so the selector must
+                 reject it when the configuration is loaded, instead of failing later at write time. -->
+            <method>PCO</method>
+        </case>
+    </compression>
+</clickhouse>

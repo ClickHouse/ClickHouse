@@ -1,0 +1,5 @@
+first_load	1000
+first_load_part_codec	ZSTD(7)
+after_alter	1000
+second_load	2000
+part_codecs_agree	['ZSTD(7)']

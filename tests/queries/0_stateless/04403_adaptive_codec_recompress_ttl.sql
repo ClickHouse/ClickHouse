@@ -27,9 +27,10 @@ INSERT INTO t_v SELECT now() - INTERVAL 1 DAY, number FROM numbers(100000);
 OPTIMIZE TABLE t_v FINAL;
 
 -- RECOMPRESS CODEC(Default): adaptive still applies, so monotonic `n` becomes T64.
+-- `CODEC(Default)` resolves to the table's default codec, which is pinned so that the chained codec is deterministic.
 CREATE TABLE t_def (dt DateTime, n UInt64) ENGINE = MergeTree ORDER BY n
 TTL dt + INTERVAL 1 SECOND RECOMPRESS CODEC(Default)
-SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1, default_compression_codec = 'ZSTD(1)';
 
 INSERT INTO t_def SELECT now() - INTERVAL 1 DAY, number FROM numbers(100000);
 

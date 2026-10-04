@@ -159,6 +159,7 @@ private:
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
+    const bool spill_codec_authorized = false;
     const UInt64 temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     const size_t output_by_rowlist_perkey_rows_threshold = 0;
     const size_t sort_right_minimum_perkey_rows = 0;
@@ -344,6 +345,7 @@ public:
     size_t maxBytesInLeftBuffer() const { return partial_merge_join_left_table_buffer_bytes; }
     size_t maxFilesToMerge() const { return max_files_to_merge; }
     const String & temporaryFilesCodec() const { return temporary_files_codec; }
+    bool spillCodecAuthorized() const { return spill_codec_authorized; }
     UInt64 temporaryFilesBufferSize() const { return temporary_files_buffer_size; }
     bool needStreamWithNonJoinedRows() const;
     bool enableColumnsLazyReplication() const { return enable_lazy_columns_replication; }

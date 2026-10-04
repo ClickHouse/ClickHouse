@@ -40,6 +40,8 @@ extern const SettingsNonZeroUInt64 max_block_size;
 extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
 extern const SettingsMaxThreads max_threads;
 extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
+extern const SettingsString temporary_files_codec;
+extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace ServerSetting
@@ -272,6 +274,9 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*max_bytes_before_external_group_by_=*/0,
             /*empty_result_for_aggregation_by_empty_set_=*/true,
             /*tmp_data_scope_=*/nullptr,
+            settings[Setting::temporary_files_codec],
+            spillCodecAuthorizedBySession(settings),
+            settings[Setting::temporary_files_buffer_size],
             /*max_threads_=*/settings[Setting::max_threads],
             /*min_free_disk_space_=*/0,
             /*compile_aggregate_expressions_=*/false,

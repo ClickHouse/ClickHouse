@@ -1,0 +1,3 @@
+before	LZ4
+after	ZSTD(3)
+10000	49995000

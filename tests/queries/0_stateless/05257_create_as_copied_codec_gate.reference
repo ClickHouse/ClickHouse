@@ -1,0 +1,4 @@
+t_codec_as_clone	CODEC(ZXC(3))
+t_codec_as_copy	CODEC(ZXC(3))
+6
+CODEC(Delta(8))
