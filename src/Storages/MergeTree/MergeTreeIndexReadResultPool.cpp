@@ -239,7 +239,12 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
     res->index_granules = std::move(index_granules);
 
-    if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker)
+    /// The minmax index for TopK filtering is subject to the same staleness check as the other skip
+    /// indexes: a pending mutation that rewrites, drops or renames its column leaves the part with an
+    /// index file that does not describe the values a read returns, so pruning marks by the running
+    /// threshold against it would drop rows the query has to see.
+    if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker
+        && MergeTreeDataSelectExecutor::canUseIndex(skip_indexes.skip_index_for_top_k_filtering, metadata_snapshot, all_updated_columns))
     {
         res->min_max_index_for_top_k = MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
             part_info,

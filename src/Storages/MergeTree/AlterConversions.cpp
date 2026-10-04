@@ -319,6 +319,18 @@ std::string AlterConversions::getColumnOldName(const std::string & new_name) con
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} was not renamed", new_name);
 }
 
+NameSet AlterConversions::getColumnsInvalidatingIndexes() const
+{
+    NameSet res = all_updated_columns;
+    res.insert(dropped_columns.begin(), dropped_columns.end());
+    for (const auto & [name_to, name_from] : rename_map)
+    {
+        res.insert(name_to);
+        res.insert(name_from);
+    }
+    return res;
+}
+
 bool AlterConversions::isColumnDropped(const std::string & name, bool share_nested_offsets) const
 {
     /// Check exact match (e.g. DROP COLUMN `n.s`)
