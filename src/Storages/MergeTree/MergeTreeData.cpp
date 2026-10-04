@@ -7189,7 +7189,23 @@ bool MergeTreeData::implicitIndicesChanged(const StorageInMemoryMetadata & old_m
         return names;
     };
 
-    return implicit_index_names(old_metadata.secondary_indices) != implicit_index_names(new_metadata.secondary_indices);
+    if (implicit_index_names(old_metadata.secondary_indices) != implicit_index_names(new_metadata.secondary_indices))
+        return true;
+
+    /// A projection inherits the table's implicit-index policy (see `ProjectionDescription::getProjectionFromAST`),
+    /// and its implicit indices can change even when the table's own set does not, e.g. when every column of
+    /// the table already has an explicit min-max index, which suppresses the implicit one only in the table.
+    for (const auto & new_projection : new_metadata.projections)
+    {
+        if (!old_metadata.projections.has(new_projection.name))
+            continue;
+        const auto & old_projection = old_metadata.projections.get(new_projection.name);
+        if (!old_projection.metadata || !new_projection.metadata)
+            continue;
+        if (implicit_index_names(old_projection.metadata->secondary_indices) != implicit_index_names(new_projection.metadata->secondary_indices))
+            return true;
+    }
+    return false;
 }
 
 void MergeTreeData::PartsTemporaryRename::addPart(const String & part_name, const String & old_dir, const String & new_dir, const DiskPtr & disk)

@@ -217,16 +217,26 @@ void recomputeImplicitIndexPolicy(
     if (metadata.add_minmax_index_for_block_offset_column)
         effective_settings.applyChange({"add_minmax_index_for_block_offset_column", true}, context, /*is_loading_from_existing_metadata=*/true);
 
+    const bool column_policy_changed
+        = metadata.add_minmax_index_for_numeric_columns != effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns]
+        || metadata.add_minmax_index_for_string_columns != effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns]
+        || metadata.add_minmax_index_for_temporal_columns != effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
+
     metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
     metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
     metadata.add_minmax_index_for_temporal_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
     metadata.add_minmax_index_for_block_number_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && effective_settings[MergeTreeSetting::enable_block_number_column];
     metadata.add_minmax_index_for_block_offset_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && effective_settings[MergeTreeSetting::enable_block_offset_column];
 
-    /// A settings-only ALTER that changes only virtual-column settings must not rebuild
-    /// physical-column indices. A preceding MODIFY COLUMN may have deliberately removed
-    /// an implicit index because its files were built for the previous column definition.
-    if (touches(column_implicit_index_policy_settings))
+    /// Physical-column indices are rebuilt only when a per-column-kind policy really changes value.
+    /// A preceding `MODIFY COLUMN` or `REMOVE ALIAS` may have deliberately removed an implicit index
+    /// because the files of the existing parts were built for the previous column definition (e.g. over
+    /// an alias expression); re-creating it would silently reuse those stale files. So neither a
+    /// settings-only ALTER that changes only virtual-column settings nor one that restates or resets a
+    /// policy setting to the value it already has (the settings are read-only, so this is the only
+    /// form `MergeTreeData::checkAlterEligibility` lets through for a table with stored settings) may
+    /// re-create such an index.
+    if (column_policy_changed && touches(column_implicit_index_policy_settings))
     {
         for (const auto & column : metadata.columns)
         {
