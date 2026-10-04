@@ -978,7 +978,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         else
         {
             fmt::print("Users config file {} already exists, will keep it and extract users info from it.\n", users_config_file.string());
+        }
 
+        /// Also check a just created users config: the existing fragments in its companion `users.d` directory
+        /// may remove the default user or set up its authentication.
+        if (has_users_xml_config && fs::exists(users_config_file))
+        {
             /// The server looks up the default user in the XML users configs in order and uses the first one that defines it,
             /// so check whether it is defined anywhere and whether its first definition has a password.
             is_default_user_removed = true;
