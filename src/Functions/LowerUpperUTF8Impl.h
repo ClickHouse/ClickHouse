@@ -14,6 +14,9 @@
 #    include <Common/StringUtils.h>
 
 #    include <algorithm>
+#    include <array>
+#    include <string>
+#    include <string_view>
 
 #    if defined(__aarch64__) && defined(__ARM_NEON)
 #        include <arm_neon.h>
@@ -66,7 +69,15 @@ struct LowerUpperUTF8Impl
             ucasemap_close(case_map);
         });
 
+        const auto & two_byte_table = getTwoByteTable(case_map);
+
         size_t curr_offset = 0;
+
+        auto ensure_capacity = [&](size_t size)
+        {
+            if (curr_offset > res_data.size() || size > res_data.size() - curr_offset)
+                res_data.resize(curr_offset + size);
+        };
 
         auto process_ascii_run = [&](size_t first_row, size_t last_row)
         {
@@ -77,8 +88,7 @@ struct LowerUpperUTF8Impl
             const size_t src_end_offset = offsets[last_row - 1];
             const size_t src_size = src_end_offset - src_begin_offset;
 
-            if (curr_offset > res_data.size() || src_size > res_data.size() - curr_offset)
-                res_data.resize(curr_offset + src_size);
+            ensure_capacity(src_size);
 
             const size_t dst_begin_offset = curr_offset;
             LowerUpperImpl<not_case_lower_bound, not_case_upper_bound>::vectorRaw(
@@ -102,6 +112,14 @@ struct LowerUpperUTF8Impl
 
             process_ascii_run(ascii_run_start, row_i);
             ascii_run_start = row_i + 1;
+
+            ensure_capacity(src_size);
+            if (tryMapTwoByteRow(data.data() + src_begin_offset, src_size, res_data.data() + curr_offset, two_byte_table))
+            {
+                curr_offset += src_size;
+                res_offsets[row_i] = curr_offset;
+                continue;
+            }
 
             const auto * src = reinterpret_cast<const char *>(data.data() + src_begin_offset);
 
@@ -194,6 +212,86 @@ struct LowerUpperUTF8Impl
     }
 
 private:
+    /// (first << 8) | second output byte for each code point U+0080..U+07FF, 0 if a row containing it goes to ICU.
+    using TwoByteTable = std::array<UInt16, 0x800 - 0x80>;
+
+    static const TwoByteTable & getTwoByteTable(const UCaseMap * case_map)
+    {
+        static const TwoByteTable table = buildTwoByteTable(case_map);
+        return table;
+    }
+
+    /// The entries are ICU's own mappings. The context probes drop mappings that depend on the neighbouring
+    /// characters (Final_Sigma in the root locale).
+    static TwoByteTable buildTwoByteTable(const UCaseMap * case_map)
+    {
+        auto map = [case_map](UInt32 code_point, std::string_view src)
+        {
+            constexpr int32_t capacity = 32;
+            char dst[capacity];
+            UErrorCode error_code = U_ZERO_ERROR;
+            int32_t dst_size = 0;
+            if constexpr (upper)
+                dst_size = ucasemap_utf8ToUpper(case_map, dst, capacity, src.data(), static_cast<int32_t>(src.size()), &error_code);
+            else
+                dst_size = ucasemap_utf8ToLower(case_map, dst, capacity, src.data(), static_cast<int32_t>(src.size()), &error_code);
+
+            if (error_code != U_ZERO_ERROR)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Error calling {} for code point U+{:04X}: {}",
+                    upper ? "ucasemap_utf8ToUpper" : "ucasemap_utf8ToLower",
+                    code_point,
+                    u_errorName(error_code));
+
+            return std::string(dst, static_cast<size_t>(dst_size));
+        };
+
+        const std::string letter = map('A', "A");
+
+        TwoByteTable table{};
+        for (UInt32 code_point = 0x80; code_point < 0x800; ++code_point)
+        {
+            const std::string c{static_cast<char>(0xC0 | (code_point >> 6)), static_cast<char>(0x80 | (code_point & 0x3F))};
+            const std::string mapped = map(code_point, c);
+            if (mapped.size() == 2
+                && map(code_point, "A" + c) == letter + mapped
+                && map(code_point, c + "A") == mapped + letter
+                && map(code_point, "A" + c + "A") == letter + mapped + letter)
+                table[code_point - 0x80] = static_cast<UInt16>(static_cast<UInt8>(mapped[0]) << 8 | static_cast<UInt8>(mapped[1]));
+        }
+        return table;
+    }
+
+    /// Maps a row whose non-ASCII characters all have a table entry. Returns false for any other row.
+    static bool tryMapTwoByteRow(const UInt8 * src, size_t size, UInt8 * dst, const TwoByteTable & table)
+    {
+        constexpr UInt8 flip_case_mask = 'A' ^ 'a';
+        for (size_t i = 0; i < size;)
+        {
+            const UInt8 c = src[i];
+            if (c < 0x80)
+            {
+                dst[i] = c ^ ((c >= not_case_lower_bound && c <= not_case_upper_bound) ? flip_case_mask : UInt8(0));
+                ++i;
+                continue;
+            }
+
+            if (c < 0xC2 || c > 0xDF || i + 1 >= size || (src[i + 1] & 0xC0) != 0x80)
+                return false;
+
+            const size_t code_point = static_cast<size_t>(c & 0x1F) << 6 | static_cast<size_t>(src[i + 1] & 0x3F);
+            const UInt16 mapped = table[code_point - 0x80];
+            if (mapped == 0)
+                return false;
+
+            dst[i] = static_cast<UInt8>(mapped >> 8);
+            dst[i + 1] = static_cast<UInt8>(mapped);
+            i += 2;
+        }
+        return true;
+    }
+
     static bool isAllASCIIWithEarlyExit(const UInt8 * data, size_t size)
     {
         size_t i = 0;
