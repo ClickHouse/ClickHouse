@@ -3,6 +3,9 @@
         reload "20ms"
         fallthrough
     }
-    forward . 127.0.0.11
+    # Reverse lookups are answered from the hosts file only, so an address missing from it has no PTR record.
+    forward . 127.0.0.11 {
+        except in-addr.arpa ip6.arpa
+    }
     log
 }
