@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
 
 #include <Core/Joins.h>
+#include <Compression/ICompressionCodec.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
@@ -22,6 +23,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -815,8 +817,20 @@ void considerEnablingParallelReplicas(
 
     bool table_data_drifted_significantly = true;
 
+    /// The recorded output bytes are compressed with the wire codec (`network_compression_method` and its
+    /// level), so statistics collected under one codec do not describe the transfer under another. Key the
+    /// cache by the codec as well, so that a change of the codec recollects the statistics instead of reusing them.
+    size_t stats_cache_key = single_replica_plan_node_hash;
+    if (optimization_settings.network_compression_codec)
+    {
+        SipHash hash;
+        hash.update(single_replica_plan_node_hash);
+        hash.update(optimization_settings.network_compression_codec->getHash());
+        stats_cache_key = hash.get64();
+    }
+
     const auto & stats_cache = getRuntimeDataflowStatisticsCache();
-    if (const auto stats = stats_cache.getStats(single_replica_plan_node_hash))
+    if (const auto stats = stats_cache.getStats(stats_cache_key))
     {
         bool apply_plan_with_parallel_replicas = optimization_settings.automatic_parallel_replicas_mode != 2;
         if (std::max<size_t>(stats->total_rows_to_read, rows_to_read) > std::min<size_t>(stats->total_rows_to_read, rows_to_read) * 2)
@@ -951,14 +965,15 @@ void considerEnablingParallelReplicas(
     }
     else
     {
-        LOG_DEBUG(getLogger("optimizeTree"), "No stats found for hash {}", single_replica_plan_node_hash);
+        LOG_DEBUG(getLogger("optimizeTree"), "No stats found for hash {}", stats_cache_key);
     }
 
     if (table_data_drifted_significantly
         || optimization_settings.automatic_parallel_replicas_mode == 2 // automatic_parallel_replicas_mode == 2 enforces statistics recollection
     )
     {
-        auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(single_replica_plan_node_hash, rows_to_read);
+        auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(
+            stats_cache_key, rows_to_read, optimization_settings.network_compression_codec);
         source_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
         corresponding_node_in_single_replica_plan->step->setRuntimeDataflowStatisticsCacheUpdater(updater);
         /// Share the updater with the lazy half of the same read so its bytes land in the same
