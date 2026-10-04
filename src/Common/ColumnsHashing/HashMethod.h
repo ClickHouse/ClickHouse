@@ -298,10 +298,9 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
     ///
     /// Computing the hash inside `build` keeps a single pass over the string data:
     /// a separate per-block hashing pass would read every key twice and allocate a
-    /// hash array per block. The flip side is that when the `Aggregator` prefetch
-    /// pipeline is active (hash table larger than L2), the look-ahead `getKeyHolder`
-    /// call rebuilds the key and hashes it a second time - the same behaviour as the
-    /// `StringHashTable` prefetch path this method replaces.
+    /// hash array per block. When the `Aggregator` prefetches (hash table larger than
+    /// L2) it builds a row's key ahead of the row; its plain `count()` loop keeps that
+    /// key, the other loops build and hash it again.
     ///
     /// A 32-bit hash is sufficient for in-memory aggregation hash tables; external
     /// aggregation derives a 64-bit hash via a dedicated conversion path.
