@@ -26,7 +26,7 @@ namespace DB::Runtime::Wyrd
 
 #if defined(WYRD_SIMULATION)
 
-std::pair<UInt64, size_t> seedsFromEnvironment()
+static std::pair<UInt64, size_t> seedsFromEnvironment()
 {
     if (const char * seed = std::getenv("WYRD_SEED")) // NOLINT(concurrency-mt-unsafe)
         return {std::stoull(seed), 1};
@@ -61,7 +61,7 @@ void runTest(std::function<void()> body)
 
 #elif defined(WYRD_ADVERSARY)
 
-std::chrono::seconds watchdogTimeoutFromEnvironment()
+static std::chrono::seconds watchdogTimeoutFromEnvironment()
 {
     const char * seconds = std::getenv("WYRD_WATCHDOG_SECONDS"); // NOLINT(concurrency-mt-unsafe)
     return std::chrono::seconds(seconds ? std::stoull(seconds) : 60);
