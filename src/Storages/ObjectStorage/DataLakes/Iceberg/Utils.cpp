@@ -1704,9 +1704,21 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::J
     if (!metadata_object->has(f_schema))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_schema);
     Poco::JSON::Object::Ptr schema = metadata_object->getObject(f_schema);
-    if (!schema->has(f_schema_id))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in schema", f_schema_id);
-    auto current_schema_id = schema->getValue<int>(f_schema_id);
+    Int32 current_schema_id = 0;
+    if (schema->has(f_schema_id) && !schema->isNull(f_schema_id))
+    {
+        current_schema_id = schema->getValue<int>(f_schema_id);
+    }
+    else if (metadata_object->has(f_current_schema_id) && !metadata_object->isNull(f_current_schema_id))
+    {
+        current_schema_id = metadata_object->getValue<int>(f_current_schema_id);
+        schema->set(f_schema_id, current_schema_id);
+    }
+    else
+    {
+        current_schema_id = 0;
+        schema->set(f_schema_id, 0);
+    }
     return {schema, current_schema_id};
 }
 
@@ -1715,7 +1727,10 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
     std::unordered_map<Int64, String> source_id_to_column_name;
-    auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
+    auto [schema, current_schema_id] = metadata_object->has(f_schemas)
+        ? parseTableSchemaV2Method(metadata_object)
+        : parseTableSchemaV1Method(metadata_object);
+
 
     auto mapper = createColumnMapper(schema)->getStorageColumnEncoding();
     for (const auto & [col_name, source_id] : mapper)

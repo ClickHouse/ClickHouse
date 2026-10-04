@@ -1,0 +1,108 @@
+{
+  "format-version": 2,
+  "table-uuid": "eb98021f-8ad2-44b3-ae10-728b7b3ea12e",
+  "location": "/tmp/clickhouse-iceberg-optional-snapshot-schema-id/default/iceberg_optional_snapshot_schema_id",
+  "last-sequence-number": 0,
+  "last-updated-ms": 1790216488445,
+  "last-column-id": 1,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "c",
+          "required": false,
+          "type": "int"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "last-partition-id": 999,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "properties": {
+    "owner": "clickhouse",
+    "write.parquet.compression-codec": "uncompressed"
+  },
+  "current-snapshot-id": 188621025199674556,
+  "snapshots": [
+    {
+      "snapshot-id": 2955404582934922446,
+      "timestamp-ms": 1790216422831,
+      "summary": {
+        "operation": "append",
+        "spark.app.id": "local-1790216420468",
+        "added-data-files": "1",
+        "added-records": "1",
+        "added-files-size": "357",
+        "changed-partition-count": "1",
+        "total-records": "1",
+        "total-data-files": "1",
+        "total-delete-files": "0",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0"
+      },
+      "manifest-list": "/tmp/clickhouse-iceberg-optional-snapshot-schema-id/default/iceberg_optional_snapshot_schema_id/metadata/snap-2955404582934922446-1-212fb513-59ab-41ea-8b25-3484583caa8b.avro",
+      "schema-id": null
+    },
+    {
+      "snapshot-id": 188621025199674556,
+      "parent-snapshot-id": 2955404582934922446,
+      "timestamp-ms": 1790216422984,
+      "summary": {
+        "operation": "append",
+        "spark.app.id": "local-1790216420468",
+        "added-data-files": "1",
+        "added-records": "1",
+        "added-files-size": "357",
+        "changed-partition-count": "1",
+        "total-records": "2",
+        "total-data-files": "2",
+        "total-delete-files": "0",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0"
+      },
+      "manifest-list": "/tmp/clickhouse-iceberg-optional-snapshot-schema-id/default/iceberg_optional_snapshot_schema_id/metadata/snap-188621025199674556-1-b41443c2-8580-4d3a-b01d-8b85bbd94232.avro",
+      "schema-id": null
+    }
+  ],
+  "snapshot-log": [
+    {
+      "timestamp-ms": 1790216422831,
+      "snapshot-id": 2955404582934922446
+    },
+    {
+      "timestamp-ms": 1790216422984,
+      "snapshot-id": 188621025199674556
+    }
+  ],
+  "metadata-log": [
+    {
+      "timestamp-ms": 1790216421880,
+      "metadata-file": "/tmp/clickhouse-iceberg-optional-snapshot-schema-id/default/iceberg_optional_snapshot_schema_id/metadata/v1.metadata.json"
+    },
+    {
+      "timestamp-ms": 1790216422831,
+      "metadata-file": "/tmp/clickhouse-iceberg-optional-snapshot-schema-id/default/iceberg_optional_snapshot_schema_id/metadata/v2.metadata.json"
+    },
+    {
+      "timestamp-ms": 1790216422984,
+      "metadata-file": "/tmp/clickhouse-iceberg-optional-snapshot-schema-id/default/iceberg_optional_snapshot_schema_id/metadata/v3.metadata.json"
+    }
+  ]
+}

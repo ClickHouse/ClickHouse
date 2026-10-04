@@ -396,10 +396,25 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
     if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
         schema_processor->updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
-    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
-    for (UInt32 j = 0; j < schemas->size(); ++j)
+    if (metadata_object->has(f_schemas))
     {
-        auto schema = schemas->getObject(j);
+        auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
+        for (UInt32 j = 0; j < schemas->size(); ++j)
+        {
+            auto schema = schemas->getObject(j);
+            schema_processor->addIcebergTableSchema(schema);
+        }
+    }
+    else if (metadata_object->has(f_schema))
+    {
+        auto schema = metadata_object->getObject(f_schema);
+        if (!schema->has(f_schema_id) || schema->isNull(f_schema_id))
+        {
+            const Int32 schema_id = metadata_object->has(f_current_schema_id) && !metadata_object->isNull(f_current_schema_id)
+                ? metadata_object->getValue<Int32>(f_current_schema_id)
+                : 0;
+            schema->set(f_schema_id, schema_id);
+        }
         schema_processor->addIcebergTableSchema(schema);
     }
     Poco::JSON::Object::Ptr current_snapshot = nullptr;
@@ -407,10 +422,13 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-        auto current_snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
-        auto current_schema_id = snapshot->getValue<Int32>(f_schema_id);
-        schema_processor->registerSnapshotWithSchemaId(current_snapshot_id, current_schema_id);
-        if (snapshot->getValue<Int64>(f_metadata_snapshot_id) == snapshot_id)
+        const auto current_snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
+        if (snapshot->has(f_schema_id) && !snapshot->isNull(f_schema_id))
+        {
+            const auto current_schema_id = snapshot->getValue<Int32>(f_schema_id);
+            schema_processor->registerSnapshotWithSchemaId(current_snapshot_id, current_schema_id);
+        }
+        if (current_snapshot_id == snapshot_id)
         {
             current_snapshot = snapshot;
         }
@@ -419,7 +437,11 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
 }
 
 IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSON(
-    Poco::JSON::Object::Ptr metadata_object, Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const
+    Poco::JSON::Object::Ptr metadata_object,
+    Poco::JSON::Object::Ptr snapshot_object,
+    Int64 snapshot_id,
+    Int32 fallback_schema_id,
+    ContextPtr local_context) const
 {
     if (!snapshot_object->has(f_manifest_list))
         throw Exception(
@@ -454,9 +476,9 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
             refresh_cursor = summary_object->getValue<String>(f_refresh_cursor);
     }
 
-    if (!snapshot_object->has(f_schema_id))
-        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No schema id found for snapshot id `{}`", snapshot_id);
-    Int32 schema_id = snapshot_object->getValue<Int32>(f_schema_id);
+    const Int32 schema_id = snapshot_object->has(f_schema_id) && !snapshot_object->isNull(f_schema_id)
+        ? snapshot_object->getValue<Int32>(f_schema_id)
+        : fallback_schema_id;
 
 
     return std::make_shared<IcebergDataSnapshot>(
@@ -479,14 +501,14 @@ std::optional<String> IcebergMetadata::getRefreshCursor(ContextPtr local_context
     return state.first->refresh_cursor;
 }
 
-IcebergDataSnapshotPtr
-IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const
+IcebergDataSnapshotPtr IcebergMetadata::getIcebergDataSnapshot(
+    Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, Int32 fallback_schema_id, ContextPtr local_context) const
 {
     auto object = traverseMetadataAndFindNecessarySnapshotObject(metadata_object, snapshot_id, persistent_components.schema_processor);
     if (!object)
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot found for id `{}`", snapshot_id);
 
-    return createIcebergDataSnapshotFromSnapshotJSON(metadata_object, object, snapshot_id, local_context);
+    return createIcebergDataSnapshotFromSnapshotJSON(metadata_object, object, snapshot_id, fallback_schema_id, local_context);
 }
 
 bool IcebergMetadata::optimize(
@@ -612,6 +634,7 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
             "Time travel with timestamp and snapshot id for iceberg table by path {} cannot be changed simultaneously",
             persistent_components.table_path);
     }
+    const Int32 current_table_schema_id = parseTableSchema(metadata_object, *persistent_components.schema_processor, log);
     if (timestamp_changed)
     {
         if (!metadata_object->has(f_snapshot_log))
@@ -640,31 +663,29 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
                 ErrorCodes::BAD_ARGUMENTS,
                 "No snapshot found in snapshot log before requested timestamp for iceberg table {}",
                 persistent_components.table_path);
-        auto data_snapshot = getIcebergDataSnapshot(metadata_object, *current_snapshot_id, local_context);
+        auto data_snapshot = getIcebergDataSnapshot(metadata_object, *current_snapshot_id, current_table_schema_id, local_context);
         return {data_snapshot, static_cast<Int32>(data_snapshot->schema_id_on_snapshot_commit)};
     }
     else if (snapshot_id_changed)
     {
         Int64 current_snapshot_id = local_context->getSettingsRef()[Setting::iceberg_snapshot_id];
-        auto data_snapshot = getIcebergDataSnapshot(metadata_object, current_snapshot_id, local_context);
+        auto data_snapshot = getIcebergDataSnapshot(metadata_object, current_snapshot_id, current_table_schema_id, local_context);
         return {data_snapshot, static_cast<Int32>(data_snapshot->schema_id_on_snapshot_commit)};
     }
     else
     {
-        auto schema_id = parseTableSchema(metadata_object, *persistent_components.schema_processor, log);
         if (!metadata_object->has(f_current_snapshot_id))
         {
-            return {nullptr, schema_id};
+            return {nullptr, current_table_schema_id};
         }
-        Int64 current_snapshot_id = metadata_object->isNull(f_current_snapshot_id)
-            ? -1
-            : metadata_object->getValue<Int64>(f_current_snapshot_id);
+        Int64 current_snapshot_id
+            = metadata_object->isNull(f_current_snapshot_id) ? -1 : metadata_object->getValue<Int64>(f_current_snapshot_id);
         if (current_snapshot_id < 0)
         {
-            return {nullptr, schema_id};
+            return {nullptr, current_table_schema_id};
         }
-        auto data_snapshot = getIcebergDataSnapshot(metadata_object, current_snapshot_id, local_context);
-        return {data_snapshot, schema_id};
+        auto data_snapshot = getIcebergDataSnapshot(metadata_object, current_snapshot_id, current_table_schema_id, local_context);
+        return {data_snapshot, current_table_schema_id};
     }
 }
 
@@ -1061,7 +1082,8 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
         metadata_object, *table_state_snapshot.snapshot_id, persistent_components.schema_processor);
 
-    return createIcebergDataSnapshotFromSnapshotJSON(metadata_object, snapshot_object, *table_state_snapshot.snapshot_id, local_context);
+    return createIcebergDataSnapshotFromSnapshotJSON(
+        metadata_object, snapshot_object, *table_state_snapshot.snapshot_id, table_state_snapshot.schema_id, local_context);
 }
 
 DataLakeMetadataPtr IcebergMetadata::create(
@@ -1711,7 +1733,9 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         persistent_components.metadata_compression_method,
         persistent_components.table_uuid);
 
-    auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
+    auto [schema, current_schema_id] = metadata_object->has(f_schemas)
+        ? parseTableSchemaV2Method(metadata_object)
+        : parseTableSchemaV1Method(metadata_object);
     auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickHouseTableSchemaById(current_schema_id), local_context);
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     result.sort_order_id = sort_order_id;
