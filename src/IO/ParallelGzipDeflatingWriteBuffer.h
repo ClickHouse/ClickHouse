@@ -75,6 +75,9 @@ private:
     int compression_level;
     bool compress_empty = true;
     bool header_written = false;
+    /// `out->count()` right before the gzip header was written, to know how many bytes of the nested
+    /// buffer belong to this one.
+    size_t nested_start_count = 0;
     std::string filename;
     /// Number of compression passes whose output has been written to the nested buffer.
     size_t passes_written = 0;

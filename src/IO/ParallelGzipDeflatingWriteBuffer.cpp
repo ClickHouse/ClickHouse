@@ -49,8 +49,19 @@ void ParallelGzipDeflatingWriteBuffer::cancelImpl() noexcept
     /// buffer overflows. A pass that fails in between is still fully recoverable. This is exactly the
     /// same predicate `WriteBufferFromHTTPServerResponse::cancelWithException` uses to decide whether
     /// the already-written body can be discarded.
+    ///
+    /// The bytes this buffer has already written into the nested one (the gzip header and the output of
+    /// the passes that succeeded) are discarded here: they form a truncated gzip stream, and a caller
+    /// that finalizes the nested buffer during cleanup (e.g. `ClientBase` with an auto-detected `gzip`
+    /// stdout) must not flush them. Since nothing has been sent yet, all of them are still in the nested
+    /// working buffer, right before its current position.
     if ((out->count() == out->offset()) && !owning_holder)
+    {
+        /// A failed compression pass has already rewound the nested buffer, then there is nothing left.
+        if (header_written && out->count() > nested_start_count)
+            out->position() -= std::min(out->count() - nested_start_count, out->offset());
         return;
+    }
 
     WriteBufferWithOwnMemoryDecorator::cancelImpl();
 }
@@ -99,6 +110,7 @@ void ParallelGzipDeflatingWriteBuffer::ensureHeaderWritten()
 {
     if (header_written)
         return;
+    nested_start_count = out->count();
     writeHeader();
     header_written = true;
 }
