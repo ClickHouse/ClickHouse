@@ -2,6 +2,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -35,6 +36,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -440,6 +442,22 @@ QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands,
     pipeline.addResources(std::move(target_resources));
 
     return pipeline;
+}
+
+void StorageAlias::deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr local_context)
+{
+    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
+    /// The caller refused a Replicated database for the alias's own database, not for the target's.
+    if (DatabaseCatalog::instance().getDatabase(target_storage->getStorageID().database_name)->shouldReplicateQuery(local_context, query_ptr))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "DELETE on UNIQUE KEY tables is not supported inside a Replicated database");
+
+    /// The caller locks the alias, not the target.
+    auto lock = target_storage->lockForShare(
+        local_context->getCurrentQueryId(),
+        local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    target_storage->deleteByUniqueKey(query_ptr, local_context);
 }
 
 CancellationCode StorageAlias::killMutation(const String & mutation_id)

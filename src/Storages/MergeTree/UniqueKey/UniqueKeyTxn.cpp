@@ -94,11 +94,16 @@ std::mutex & UniqueKeyTxnManager::partitionLock(const String & partition_id)
     return partition_locks[partition_id];
 }
 
-MergeTreeTransactionHolder beginUniqueKeyTransaction(const MergeTreeTransactionPtr & current, std::string_view operation)
+void throwIfInsideTransaction(const MergeTreeTransactionPtr & current, std::string_view operation)
 {
     if (current)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "{} on a UNIQUE KEY table is not supported inside an explicit transaction", operation);
+}
+
+MergeTreeTransactionHolder beginUniqueKeyTransaction(const MergeTreeTransactionPtr & current, std::string_view operation)
+{
+    throwIfInsideTransaction(current, operation);
 
     return MergeTreeTransactionHolder(TransactionManager::instance().beginTransaction(), /*autocommit=*/false);
 }
