@@ -98,6 +98,7 @@ namespace FailPoints
     extern const char object_storage_queue_fail_after_insert[];
     extern const char object_storage_queue_fail_startup[];
     extern const char object_storage_queue_pause_after_commit[];
+    extern const char object_storage_queue_pause_before_wait_retry_check[];
 }
 
 namespace ServerSetting
@@ -128,6 +129,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsBool parallel_inserts;
     extern const ObjectStorageQueueSettingsUInt64 buckets;
     extern const ObjectStorageQueueSettingsUInt64 tracked_file_ttl_sec;
+    extern const ObjectStorageQueueSettingsUInt64 failed_files_ttl_sec;
     extern const ObjectStorageQueueSettingsUInt64 tracked_files_limit;
     extern const ObjectStorageQueueSettingsString last_processed_path;
     extern const ObjectStorageQueueSettingsUInt64 loading_retries;
@@ -1420,6 +1422,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "after_processing",
     "tracked_files_limit",
     "tracked_file_ttl_sec",
+    "failed_files_ttl_sec",
     "polling_min_timeout_ms",
     "polling_max_timeout_ms",
     "polling_backoff_ms",
@@ -1945,6 +1948,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::partition_regex] = table_metadata.partition_regex;
     settings[ObjectStorageQueueSetting::partition_component] = table_metadata.partition_component;
     settings[ObjectStorageQueueSetting::tracked_file_ttl_sec] = table_metadata.tracked_files_ttl_sec;
+    settings[ObjectStorageQueueSetting::failed_files_ttl_sec] = table_metadata.failed_files_ttl_sec;
     settings[ObjectStorageQueueSetting::tracked_files_limit] = table_metadata.tracked_files_limit;
     settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
 
@@ -2100,16 +2104,36 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     /// failed, return or throw immediately regardless of dependency/streaming guards.
     {
         std::string failure_message;
-        const auto state = file_metadata->getPathState(failure_message);
+        UInt64 keeper_retries = 0;
+        bool is_terminal = false;
+        const auto state = file_metadata->getPathState(failure_message, &keeper_retries, &is_terminal);
         if (state == ObjectStorageQueueIFileMetadata::PathState::Processed)
         {
             LOG_DEBUG(log, "Path '{}' has been processed by {}", path, getStorageID().getNameForLogs());
             return;
         }
+        FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_before_wait_retry_check);
         if (state == ObjectStorageQueueIFileMetadata::PathState::Failed)
-            throw Exception(ErrorCodes::ABORTED,
-                "Path '{}' failed to be processed by {}: {}",
-                path, getStorageID().getNameForLogs(), failure_message);
+        {
+            /// A terminal /failed/<hash> node is permanent and never retryable, regardless
+            /// of a later-raised s3queue_loading_retries - only a live `.retriable` marker
+            /// is subject to the live retry-limit comparison below.
+            if (is_terminal)
+                throw Exception(ErrorCodes::ABORTED,
+                    "Path '{}' failed to be processed by {}: {}",
+                    path, getStorageID().getNameForLogs(), failure_message);
+
+            /// Read the retry limit live from table metadata rather than the long-lived
+            /// file_metadata snapshot: s3queue_loading_retries is alterable at runtime via
+            /// ALTER TABLE ... MODIFY SETTING, and this wait can run for a while (no deadline
+            /// is passed from SYSTEM FLUSH OBJECT STORAGE QUEUE), so a stale threshold could
+            /// make this either hang forever against a now-terminal marker (limit lowered) or
+            /// abort early on a still-retryable marker (limit raised).
+            if (keeper_retries >= metadata->getTableMetadata().loading_retries.load())
+                throw Exception(ErrorCodes::ABORTED,
+                    "Path '{}' failed to be processed by {}: {}",
+                    path, getStorageID().getNameForLogs(), failure_message);
+        }
     }
 
     auto event = std::make_shared<Poco::Event>();
@@ -2183,14 +2207,21 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
         }
 
         std::string failure_message;
-        const auto state = file_metadata->getPathState(failure_message);
+        UInt64 keeper_retries = 0;
+        bool is_terminal = false;
+        const auto state = file_metadata->getPathState(failure_message, &keeper_retries, &is_terminal);
 
         if (state == ObjectStorageQueueIFileMetadata::PathState::Processed)
         {
             LOG_DEBUG(log, "Path '{}' has been processed by {}", path, getStorageID().getNameForLogs());
             return;
         }
-        if (state == ObjectStorageQueueIFileMetadata::PathState::Failed)
+        /// Same reasoning as above: read the live limit, not the stale file_metadata snapshot,
+        /// and only apply that live-limit comparison to a live `.retriable` marker - a terminal
+        /// /failed/<hash> node is permanent and never retryable.
+        FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_before_wait_retry_check);
+        if (state == ObjectStorageQueueIFileMetadata::PathState::Failed
+            && (is_terminal || keeper_retries >= metadata->getTableMetadata().loading_retries.load()))
         {
             throw Exception(ErrorCodes::ABORTED,
                 "Path '{}' failed to be processed by {}: {}",

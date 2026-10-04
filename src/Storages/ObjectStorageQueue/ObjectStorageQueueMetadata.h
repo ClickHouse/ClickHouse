@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <mutex>
 #include <unordered_set>
@@ -218,8 +219,19 @@ public:
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
-    void cleanupPersistentProcessingNodes();
-    void cleanupTrackedNodes(const std::string & nodes_path, std::string_view description);
+    void cleanupPersistentProcessingNodes(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client);
+    /// Both take the client that owns the cleanup lock and do not retry on it: a hardware error may
+    /// mean the session, and with it the lock, is gone, and retrying would delete nodes while another
+    /// replica legitimately holds the lock. The caller abandons the sweep instead; the next scheduled
+    /// run is the retry.
+    void cleanupTrackedNodes(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+        const std::string & nodes_path, std::string_view description, UInt64 ttl_seconds, UInt64 nodes_limit);
+
+    size_t removeStaleFailedCacheEntries(const std::unordered_map<std::string, uint64_t> & failed_generations,
+        const std::function<bool(const std::string &)> & path_filter = [](const std::string &) { return true; });
+    /// Reconcile local cache with Keeper state by removing cache entries for files that no
+    /// longer have /failed nodes in Keeper (e.g. removed by another replica's cleanup sweep).
+    void reconcileFailedFilesCache();
 
     void migrateToBucketsInKeeper(size_t value);
 
@@ -237,7 +249,8 @@ private:
     const std::string zookeeper_name;
     const fs::path zookeeper_path;
     const size_t keeper_multiread_batch_size;
-
+    /// Whether this table can ever need each kind of cleanup. Coarse and computed once: the sweep
+    /// re-derives the precise conditions per run, because the settings behind them are alterable.
     const bool cleanup_processed_files = false;
     const bool cleanup_failed_files = false;
     const bool cleanup_processing_files = false;
