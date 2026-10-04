@@ -316,19 +316,29 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
 
             /// The task can be dispatched before the query is cancelled and start running after it:
             /// skip the whole default evaluation instead of running one action of it.
-            if (isCancelled())
+            auto skip_if_cancelled = [&]
             {
+                if (!isCancelled())
+                    return false;
                 {
                     std::lock_guard lock(current_actions_mutex);
                     current_actions.reset();
                 }
                 chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
-                return;
-            }
+                return true;
+            };
 
-            /// The cancellation can also land between the check above and the evaluation. The
-            /// actions are already published, so `onCancel` reaches the running function.
+            if (skip_if_cancelled())
+                return;
+
             FailPointInjection::pauseFailPoint(FailPoints::adding_defaults_transform_before_execute_pause);
+
+            /// Check again immediately before the evaluation: `cancelExecution` is a no-op for most
+            /// functions, so the published actions alone do not stop a built-in function that
+            /// would start after the cancellation. A cancellation landing after this check reaches
+            /// the running function through the published actions, if it supports interruption.
+            if (skip_if_cancelled())
+                return;
 
             actions->execute(evaluate_block, false, false, &getCancellationFlag());
 

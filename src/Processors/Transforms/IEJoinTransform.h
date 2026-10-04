@@ -105,6 +105,8 @@ public:
     /// Interrupt the functions of the residual expression that may be executing right now.
     void cancelResidual() noexcept;
 
+    bool isCancelled() const { return is_cancelled && is_cancelled->load(std::memory_order_acquire); }
+
 private:
     /// Stages of building the join state (the L1 union, the L2 permutation and the bit array),
     /// in execution order. One stage runs per merge() call, so that between the whole-input

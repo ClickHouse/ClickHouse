@@ -1152,11 +1152,14 @@ IColumn::Filter IEJoinAlgorithm::evaluateResidualMask(const ColumnUInt64 & left_
     /// `executeOnColumns` reports the count its actions produced through the same reference, so
     /// comparing it is a backstop against a row-count-changing action; it compares totals only.
     size_t num_rows_after_execute = num_pairs;
+    /// The query may be cancelled before the residual is evaluated or while it is evaluated. Do not
+    /// start (or use) the evaluation then: the returned mask is meaningless, and `merge` sees the
+    /// cancellation and finishes the join without emitting anything of the current batch.
+    if (isCancelled())
+        return IColumn::Filter(num_pairs, 0);
     Columns results = residual->actions->executeOnColumns(
         std::move(expression_columns), residual_input_header, residual_input_positions, num_rows_after_execute, /*dry_run=*/ false, is_cancelled);
-    /// The query was cancelled while the residual was evaluated: its result is incomplete, but the
-    /// output of a cancelled processor is discarded, so no candidate pair has to be decided.
-    if (is_cancelled && is_cancelled->load(std::memory_order_acquire))
+    if (isCancelled())
         return IColumn::Filter(num_pairs, 0);
     if (num_rows_after_execute != num_pairs)
     {
@@ -1250,7 +1253,21 @@ IMergingAlgorithm::Status IEJoinAlgorithm::merge()
     if (produce_done)
         return Status({}, true);
 
+    /// A cancelled join stops instead of continuing the scan: the residual is not evaluated after
+    /// the cancellation, so the rows of the current batch, and any unmatched rows that would
+    /// follow, are not decided correctly and must not be emitted.
+    if (isCancelled())
+    {
+        produce_done = true;
+        return Status({}, true);
+    }
+
     Chunk result = produceBatch();
+    if (isCancelled())
+    {
+        produce_done = true;
+        return Status({}, true);
+    }
     return Status(std::move(result), produce_done);
 }
 
