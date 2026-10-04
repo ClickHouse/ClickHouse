@@ -283,6 +283,15 @@ namespace
         if (r_arg.store_method == StoreMethod::EMPTY)
             return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
 
+        /// An empty vector has no time grid of its own, so it takes the grid of this operator.
+        if (vector_arg.store_method == StoreMethod::EMPTY)
+        {
+            const auto & node_range = context.node_range_getter.get(operator_node);
+            vector_arg.start_time = node_range.start_time;
+            vector_arg.end_time = node_range.end_time;
+            vector_arg.step = node_range.step;
+        }
+
         vector_arg = toVectorGrid(std::move(vector_arg), context);
 
         RatioArgument ratio = getRatio(std::move(r_arg), context);

@@ -93,6 +93,12 @@ promql_nan_ratio_error "limit_ratio(scalar(up), clamp(up, 1, -1))"
 echo "-- limit_ratio(1, clamp(up, 1, -1)): a valid ratio over such a vector gives an empty result."
 promql_count "limit_ratio(1, clamp(up, 1, -1))"
 
+echo "-- Such an empty result keeps the evaluation time grid, in an instant and in a range query."
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --promql_evaluation_time 1700000000 \
+    -q "limit_ratio(1, clamp(up, 1, -1)) or vector(7)"
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 \
+    -q "SELECT * FROM prometheusQueryRange(ts, 'limit_ratio(1, clamp(up, 1, -1)) or vector(7)', 1699999940, 1700000000, 30)"
+
 echo "-- limit_ratio(0.5, up) and limit_ratio(-0.5, up) keep complementary, reproducible subsets."
 echo -n "r=0.5:  "; promql_instances "limit_ratio(0.5, up)"
 echo -n "r=-0.5: "; promql_instances "limit_ratio(-0.5, up)"

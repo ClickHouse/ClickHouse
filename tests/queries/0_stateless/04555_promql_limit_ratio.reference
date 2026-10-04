@@ -18,6 +18,9 @@ Ratio of aggregation operator limit_ratio must not be NaN
 Ratio of aggregation operator limit_ratio must not be NaN
 -- limit_ratio(1, clamp(up, 1, -1)): a valid ratio over such a vector gives an empty result.
 0
+-- Such an empty result keeps the evaluation time grid, in an instant and in a range query.
+[]	2023-11-14 22:13:20.000	7
+[]	[('2023-11-14 22:12:20.000',7),('2023-11-14 22:12:50.000',7),('2023-11-14 22:13:20.000',7)]
 -- limit_ratio(0.5, up) and limit_ratio(-0.5, up) keep complementary, reproducible subsets.
 r=0.5:  host2 host4 host6 
 r=-0.5: host1 host3 host5 
