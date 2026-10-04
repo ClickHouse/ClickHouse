@@ -456,6 +456,7 @@ public:
     void adoptFiltersFrom(const ReadFromMergeTree & other)
     {
         indexes = other.indexes;
+        indexes_built_by_apply_filters = other.indexes_built_by_apply_filters;
 
         filter_actions_dag = other.filter_actions_dag;
         query_info.filter_actions_dag = filter_actions_dag;
@@ -692,6 +693,8 @@ private:
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
+    /// True if `applyFilters` built `indexes` from the filters pushed down to this step.
+    bool indexes_built_by_apply_filters = false;
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan

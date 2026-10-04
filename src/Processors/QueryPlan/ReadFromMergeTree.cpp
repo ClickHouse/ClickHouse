@@ -3301,6 +3301,14 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
     if (query_info.isStream())
         return;
 
+    /// If `indexes` were built before the filters were pushed down to this step, they do not use those
+    /// filters. Drop them and the range analysis made with them; `indexes` are rebuilt below.
+    if (indexes && !indexes_built_by_apply_filters)
+    {
+        indexes.reset();
+        analyzed_result_ptr.reset();
+    }
+
     if (!indexes)
     {
         auto node_name_to_input = query_info.buildNodeNameToInputNodeColumn();
@@ -3389,6 +3397,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             query_info,
             storage_snapshot->metadata,
             skip_partition_pruning);
+        indexes_built_by_apply_filters = true;
 
         /// Build sets for PREWHERE and row_level_filter synchronously during applyFilters.
         /// PREWHERE is evaluated at the storage level during data reading, before the
