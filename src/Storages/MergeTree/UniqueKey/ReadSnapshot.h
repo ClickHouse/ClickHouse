@@ -13,6 +13,7 @@ namespace DB
 class DeleteBitmapStore;
 class IMergeTreeDataPart;
 class MergeTreeTransactionHolder;
+struct RangesInDataParts;
 struct StorageSnapshot;
 
 /// What a read needs to resolve any part's delete bitmap: the reading transaction's snapshot
@@ -34,6 +35,9 @@ public:
 
     /// `part`'s rows minus the ones its bitmap kills.
     size_t liveRows(const IMergeTreeDataPart & part) const;
+
+    /// Drops the granules whose rows are all dead at this snapshot, and the parts left with none.
+    void dropFullyDeadGranules(RangesInDataParts & parts) const;
 
     CSN snapshotCSN() const { return csn; }
 

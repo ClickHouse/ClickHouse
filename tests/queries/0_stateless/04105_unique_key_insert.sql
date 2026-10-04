@@ -3,6 +3,7 @@
 --   1. partitions: the same key in two partitions coexists
 --   2. oldest part: one INSERT kills rows in three of 10 parts, the oldest included
 --   3. one INSERT, many parts: keys repeating across its own blocks keep the last value
+--   4. PREWHERE: an overwritten row is dropped before PREWHERE, so an expression never sees its old value
 -- no-async-insert: one part per INSERT is asserted. `ignore` is 04168's, `abort` 04174's.
 
 SET enable_unique_key = 1;
@@ -13,6 +14,7 @@ SET optimize_use_implicit_projections = 0;
 DROP TABLE IF EXISTS uk_dedup_part;
 DROP TABLE IF EXISTS uk_many_parts;
 DROP TABLE IF EXISTS uk_mp_ow;
+DROP TABLE IF EXISTS uk_prewhere;
 
 -- 1. partitions: red if the INSERT probes every partition for its keys (`1 42 part1` goes).
 CREATE TABLE uk_dedup_part (part_key UInt32, id UInt32, v String)
@@ -84,6 +86,21 @@ SELECT 'many_parts_last_value', v FROM uk_mp_ow WHERE id = 5;  -- 1805
 
 SET max_threads = DEFAULT;
 
+-- 4. PREWHERE: red if a read throws ILLEGAL_DIVISION on the overwritten `s = '0'`.
+-- One granule, so the dead row's granule is read rather than skipped whole.
+CREATE TABLE uk_prewhere (id UInt32, s String)
+ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+SYSTEM STOP MERGES uk_prewhere;
+
+INSERT INTO uk_prewhere VALUES (1, '0'), (2, '1');
+INSERT INTO uk_prewhere VALUES (1, '5');
+
+-- `id` is read as well, so the condition on `s` moves to PREWHERE.
+SELECT 'moved_to_prewhere', sum(id) FROM uk_prewhere WHERE intDiv(10, toUInt32(s)) > 0
+SETTINGS optimize_move_to_prewhere = 1;
+
 DROP TABLE uk_dedup_part;
 DROP TABLE uk_many_parts;
 DROP TABLE uk_mp_ow;
+DROP TABLE uk_prewhere;
