@@ -1,0 +1,8 @@
+<clickhouse>
+    <!-- The test asserts which merge algorithm ran, so part_log must be on. -->
+    <part_log>
+        <database>system</database>
+        <table>part_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </part_log>
+</clickhouse>

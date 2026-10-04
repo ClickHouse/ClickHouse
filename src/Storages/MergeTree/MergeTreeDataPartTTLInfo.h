@@ -74,6 +74,11 @@ struct MergeTreeDataPartTTLInfos
     /// The earliest time at which a column TTL becomes due. Zero if there is no unfinished column TTL.
     time_t getMinimalNonFinishedColumnTTL() const;
 
+    /// Recomputes `part_min_ttl` / `part_max_ttl` from the current maps. `updatePartMinMaxTTL` only
+    /// accumulates, so a caller that replaces a map after the bounds were taken needs this to drop
+    /// what the replaced entries had contributed.
+    void recalculatePartMinMaxTTL();
+
     void updatePartMinMaxTTL(const MergeTreeDataPartTTLInfo & ttl_info)
     {
         if (ttl_info.finished())
