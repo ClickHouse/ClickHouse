@@ -147,7 +147,8 @@ namespace
         size_t cleared = 0;
         for (; it != r.end() && *it < end; ++it)
         {
-            filter[*it - begin] = 0;
+            const UInt64 row = *it;
+            filter[row - begin] = 0;
             ++cleared;
         }
         return cleared;
