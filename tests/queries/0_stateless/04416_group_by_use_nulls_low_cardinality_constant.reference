@@ -1,4 +1,6 @@
 LowCardinality(Nullable(String))
+LowCardinality(Nullable(String))
+Nullable(String)
 Nullable(String)
 1
 1
