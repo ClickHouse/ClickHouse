@@ -1,4 +1,5 @@
 #include <memory>
+#include <optional>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Parsers/ASTSubquery.h>
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
@@ -13,6 +14,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
 
 
@@ -56,6 +58,74 @@ public:
     }
 };
 
+/// A filter on the columns of one side of a join may run in that side's scan only when the join neither
+/// extends that side with default or NULL rows nor picks one row per key from it: a pre-filter changes
+/// which row is picked.
+bool isFilterPushDownToJoinSideSafe(const JoinNode & join_node, JoinTableSide side)
+{
+    auto kind = join_node.getKind();
+    if (isCrossOrComma(kind))
+        return true;
+    if (isFull(kind) || isPaste(kind))
+        return false;
+    if ((isLeft(kind) && side == JoinTableSide::Right) || (isRight(kind) && side == JoinTableSide::Left))
+        return false;
+
+    switch (join_node.getStrictness())
+    {
+        case JoinStrictness::All:
+        case JoinStrictness::Semi:
+        case JoinStrictness::Anti:
+            return true;
+        case JoinStrictness::Any:
+            /// INNER ANY builds each key's row from the first row of either side that reaches it.
+            return !isInner(kind);
+        case JoinStrictness::RightAny:
+            /// The legacy ANY pairs every left row with the first right row of its key.
+            return side == JoinTableSide::Left;
+        case JoinStrictness::Asof:
+            /// The right side is searched for the closest row.
+            return side == JoinTableSide::Left;
+        case JoinStrictness::Unspecified:
+            return false;
+    }
+}
+
+/// `std::nullopt` when `table_expression` is not under `join_tree_node`.
+std::optional<bool> isFilterPushDownToTableExpressionSafe(
+    const QueryTreeNodePtr & join_tree_node, const QueryTreeNodePtr & table_expression)
+{
+    if (join_tree_node == table_expression)
+        return true;
+
+    switch (join_tree_node->getNodeType())
+    {
+        case QueryTreeNodeType::JOIN:
+        {
+            const auto & join_node = join_tree_node->as<const JoinNode &>();
+            if (auto result = isFilterPushDownToTableExpressionSafe(join_node.getLeftTableExpressionNode(), table_expression))
+                return *result && isFilterPushDownToJoinSideSafe(join_node, JoinTableSide::Left);
+            if (auto result = isFilterPushDownToTableExpressionSafe(join_node.getRightTableExpressionNode(), table_expression))
+                return *result && isFilterPushDownToJoinSideSafe(join_node, JoinTableSide::Right);
+            return std::nullopt;
+        }
+        case QueryTreeNodeType::CROSS_JOIN:
+        {
+            for (const auto & table_expression_node : join_tree_node->as<const CrossJoinNode &>().getTableExpressions())
+                if (auto result = isFilterPushDownToTableExpressionSafe(table_expression_node, table_expression))
+                    return result;
+            return std::nullopt;
+        }
+        case QueryTreeNodeType::ARRAY_JOIN:
+        {
+            const auto & array_join_node = join_tree_node->as<const ArrayJoinNode &>();
+            return isFilterPushDownToTableExpressionSafe(array_join_node.getTableExpressionNode(), table_expression);
+        }
+        default:
+            return std::nullopt;
+    }
+}
+
 }
 
 ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTreeNodePtr & query_tree, const TableExpressionNodePtr & table_expression)
@@ -68,16 +138,8 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
     auto * query_node = new_tree->as<QueryNode>();
 
     const auto & join_tree = query_node->getJoinTreeNode();
-    bool allow_where = true;
-    if (const auto * join_node = join_tree->as<JoinNode>())
-    {
-        if (join_node->getKind() == JoinKind::Left)
-            allow_where = join_node->getLeftTableExpressionNode()->isEqual(*replacement_table_expression);
-        else if (join_node->getKind() == JoinKind::Right)
-            allow_where = join_node->getRightTableExpressionNode()->isEqual(*replacement_table_expression);
-        else
-            allow_where = (join_node->getKind() == JoinKind::Inner);
-    }
+    /// `cloneAndReplace` splices `replacement_table_expression` itself into the clone, so the walk finds it by pointer.
+    bool allow_where = isFilterPushDownToTableExpressionSafe(join_tree, replacement_table_expression).value_or(false);
 
     /// Remove all sub-expressions (operands of AND) that depend on columns from other tables.
     /// This is needed for a correct push-down of these filters to an external storage.

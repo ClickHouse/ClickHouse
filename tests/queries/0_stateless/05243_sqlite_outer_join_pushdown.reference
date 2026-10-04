@@ -1,0 +1,73 @@
+-- LEFT JOIN, then CROSS JOIN
+3
+4
+3
+4
+-- LEFT JOIN, then comma join
+3
+4
+3
+4
+-- LEFT JOIN, then INNER JOIN
+3
+4
+3
+4
+-- LEFT JOIN, then ARRAY JOIN
+3
+4
+3
+4
+-- two LEFT JOINs, then CROSS JOIN, filter on the second
+2
+3
+4
+2
+3
+4
+-- two LEFT JOINs, then CROSS JOIN, filter on the first
+3
+4
+3
+4
+-- RIGHT JOIN, then CROSS JOIN
+3
+4
+3
+4
+-- FULL JOIN, then CROSS JOIN
+3
+4
+3
+4
+-- LEFT ANY JOIN, then CROSS JOIN
+3
+4
+3
+4
+-- the default value of an unmatched non-Nullable column
+3
+4
+3
+4
+-- ASOF JOIN: the closest row must be chosen among all rows
+5
+5
+-- the preserving side of a nested outer join
+1
+1
+1
+1
+-- a bare column of the joined table is not sent to SQLite, wherever the join sits
+1
+1
+1
+1
+-- external_table_strict_query: nothing is pushed down from the non-preserving side, so nothing is rejected
+2
+2
+-- the query sent to SQLite
+SELECT "id", "description" FROM "products"
+SELECT "id", "description" FROM "products" WHERE "description" = 'one'
+SELECT "k" FROM "flags"
+SELECT "id", "description" FROM "products" WHERE "description" = 'one'
