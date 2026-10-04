@@ -1,0 +1,38 @@
+the keys
+│  Join conditions: a IS NULL = a IS NULL AND if(a IS NULL, 0, assumeNotNull(a)) = if(a IS NULL, 0, assumeNotNull(a))
+│  Join conditions: a IS NULL = a IS NULL AND if(a IS NULL, 0, assumeNotNull(a)) = if(a IS NULL, 0, assumeNotNull(a)) AND b IS NULL = b IS NULL AND if(b IS NULL, \'\', assumeNotNull(b)) = if(b IS NULL, \'\', assumeNotNull(b)) AND c IS NULL = c IS NULL AND if(c IS NULL, \'\', assumeNotNull(c)) = if(c IS NULL, \'\', assumeNotNull(c)) AND d IS NULL = d IS NULL AND if(d IS NULL, \'1970-01-01\', assumeNotNull(d)) = if(d IS NULL, \'1970-01-01\', assumeNotNull(d))
+│  Join conditions: a IS NULL = CAST(id AS Nullable(UInt64)) IS NULL AND if(a IS NULL, 0, assumeNotNull(a)) = if(CAST(id AS Nullable(UInt64)) IS NULL, 0, assumeNotNull(CAST(id AS Nullable(UInt64))))
+NULL matches NULL and nothing else, for every kind
+1237	667	244288
+1237	667	244288
+338	83	59847
+338	83	59847
+489	93	87522
+489	93	87522
+1081	29	53
+1081	29	53
+140
+60
+133
+the right key column is the stored one, not the derived key
+\N	\N	\N
+1	1	1
+2	2	2
+\N	\N
+1	1
+2	2
+one nullable side
+133	13267
+133	13267
+every algorithm
+1237	244288
+1237	244288
+1237	244288
+1237	244288
+1237	244288
+compound and Nothing keys keep the tuple
+\N	\N
+│  Join conditions: tuple(NULL) <=> tuple(NULL)
+6	4
+2
+│  Join conditions: tuple(if(number MOD 3 = 0, NULL, tuple(if(number MOD 5, NULL, number)))) <=> tuple(if(number MOD 3 = 0, NULL, tuple(if(number MOD 5, NULL, number))))
