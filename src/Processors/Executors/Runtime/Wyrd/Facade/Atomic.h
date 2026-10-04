@@ -3,9 +3,11 @@
 
 #include <atomic>
 #include <type_traits>
+#include <limits>
 
 #if defined(WYRD_SIMULATION)
 #    include <Processors/Executors/Runtime/Wyrd/Simulation/InjectFault.h>
+#    include <Processors/Executors/Runtime/Wyrd/Simulation/Syscall.h>
 #elif defined(WYRD_ADVERSARY)
 #    include <Processors/Executors/Runtime/Wyrd/Adversary/InjectFault.h>
 #endif
@@ -98,6 +100,59 @@ public:
     {
         return fetch_sub(1);
     }
+
+    T operator+=(T delta) requires std::is_integral_v<T>
+    {
+        return fetch_add(delta) + delta;
+    }
+
+    T operator-=(T delta) requires std::is_integral_v<T>
+    {
+        return fetch_sub(delta) - delta;
+    }
+
+#if defined(WYRD_SIMULATION)
+
+    void wait(T old)
+    {
+        injectFault("atomic::wait");
+        while (impl.load() == old)
+            futexWait(this);
+    }
+
+    void notify_one()
+    {
+        injectFault("atomic::notify_one");
+        futexWake(this, 1);
+    }
+
+    void notify_all()
+    {
+        injectFault("atomic::notify_all");
+        futexWake(this, std::numeric_limits<size_t>::max());
+    }
+
+#else
+
+    void wait(T old)
+    {
+        injectFault("atomic::wait");
+        impl.wait(old);
+    }
+
+    void notify_one()
+    {
+        injectFault("atomic::notify_one");
+        impl.notify_one();
+    }
+
+    void notify_all()
+    {
+        injectFault("atomic::notify_all");
+        impl.notify_all();
+    }
+
+#endif
 
     operator T() const /// NOLINT(google-explicit-constructor)
     {
