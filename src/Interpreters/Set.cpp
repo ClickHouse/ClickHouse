@@ -9,6 +9,10 @@
 
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
+#include <Common/ProfileEvents.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnDecimal.h>
 
@@ -21,6 +25,9 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <Interpreters/Set.h>
+#include <Interpreters/DiskSet.h>
+#include <Interpreters/DiskSetBuilder.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <DataTypes/NullableUtils.h>
@@ -32,10 +39,16 @@
 
 #include <Storages/MergeTree/KeyCondition.h>
 
+#include <base/arithmeticOverflow.h>
 #include <base/range.h>
 #include <base/sort.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event SetsSpilledToDisk;
+}
 
 namespace DB
 {
@@ -52,6 +65,176 @@ Set::Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transfor
     :  limits(limits_), transform_null_in(transform_null_in_), max_elements_to_fill(max_elements_to_fill_)
     , log(getLogger("Set")), cast_cache(std::make_unique<InternalCastFunctionCache>())
 {}
+
+
+Set::~Set() = default;
+
+namespace
+{
+
+/// On disk, a set keeps the same keys as its method of `SetVariants` keeps in memory, except for strings:
+/// - Numbers (`key8` to `key64`) and packed keys (`keys32` to `keys256`, `nullable_keys128`,
+///   `nullable_keys256`) stay as they are.
+/// - `hashed` keys are already a 128-bit hash of the key columns and stay as they are.
+/// - `key_string` and `key_fixed_string` keep the whole string in memory, but on disk only its 128-bit hash,
+///   computed as the `hashed` method computes it.
+/// `DiskSetMethod<Method>` is the method whose keys go to disk: `Method` itself, or `hashed` for strings.
+template <typename Method>
+using DiskSetMethod = std::conditional_t<
+    std::is_same_v<typename Method::Key, std::string_view>,
+    decltype(SetVariants::hashed)::element_type,
+    Method>;
+
+/// A set on disk stores the keys of its `DiskSetMethod` at the same width as in memory.
+template <typename Method>
+using DiskSetKey = typename DiskSetMethod<Method>::Key;
+
+/// Converts key columns to fixed-width disk keys, skipping the rows marked in `null_map`.
+/// Without a null map, the keys retain their input row positions for batched lookups.
+template <typename Method>
+ColumnPtr computeDiskSetKeys(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, ConstNullMapPtr null_map)
+{
+    typename Method::State state(key_columns, key_sizes, nullptr);
+    Arena pool;
+    auto keys = ColumnVector<typename Method::Key>::create();
+    keys->reserve(rows);
+    for (size_t row = 0; row < rows; ++row)
+    {
+        if (null_map && (*null_map)[row])
+            continue;
+        auto key_holder = state.getKeyHolder(row, pool);
+        keys->getData().push_back(keyHolderGetKey(key_holder));
+    }
+    return keys;
+}
+
+}
+
+void Set::setSpillSettings(SetSpillSettings spill_settings_)
+{
+    chassert(!isCreated());
+    spill_settings = std::move(spill_settings_);
+}
+
+void Set::finishInsert()
+{
+    /// Only a set that `CreatingSetsTransform` fills can spill, and such a set is read only after
+    /// `is_created` publishes it, so publishing the disk set takes no lock.
+    if (disk_set_builder)
+    {
+        disk_set = disk_set_builder->finish();
+        is_truncated = disk_set_builder->isTruncated();
+        disk_set_builder.reset();
+    }
+    is_created = true;
+}
+
+bool Set::isLargeEnoughToSpill() const
+{
+    return data->getTotalByteCount() >= DiskSetBuilder::getMinBytesInRun(spill_settings.max_bytes_before_external_set);
+}
+
+bool Set::isSpillNeededBeforeInsert(const ColumnRawPtrs & key_columns, size_t rows) const
+{
+    const size_t threshold = spill_settings.max_bytes_before_external_set;
+
+    /// Query accounting can briefly become negative while a concurrent free saturates its counter.
+    const UInt64 query_memory_usage = std::max<Int64>(0, getCurrentQueryMemoryUsage());
+    const UInt64 available_memory = threshold - std::min<UInt64>(threshold, query_memory_usage);
+
+    /// Spilling needs memory while the table still exists.
+    const size_t spill_memory = DiskSetBuilder::estimateMemoryToWriteRun(
+        threshold, spill_settings.max_block_size, getDiskSetKeyBytes(), spill_settings.tmp_data->getSettings().buffer_size);
+    if (spill_memory > available_memory)
+        return true;
+
+    size_t growth_memory = data->estimateGrowthMemory(key_columns, rows);
+
+    if (fill_set_elements)
+    {
+        /// Explicit elements copy the new keys.
+        for (const auto * column : key_columns)
+        {
+            if (common::addOverflow(growth_memory, column->byteSize(), growth_memory))
+                return true;
+        }
+    }
+
+    return growth_memory > available_memory - spill_memory;
+}
+
+void Set::spill(std::string_view reason)
+{
+    LOG_TRACE(log, "Switching the set of IN to external mode: {} "
+        "(keys in memory: {}, set memory: {}, query memory: {}, spill threshold: {})",
+        reason,
+        data->getTotalRowCount(),
+        formatReadableSizeWithBinarySuffix(data->getTotalByteCount()),
+        formatReadableSizeWithBinarySuffix(std::max<Int64>(0, getCurrentQueryMemoryUsage())),
+        formatReadableSizeWithBinarySuffix(spill_settings.max_bytes_before_external_set));
+
+    /// `fill_set_elements` mainly serves index analysis. Since the set itself has to be spilled, it is safe
+    /// to assume that its elements would not fit in memory for index analysis later either. Index analysis
+    /// could possibly work on disk, but this is not implemented yet.
+    fill_set_elements = false;
+    set_elements.clear();
+
+    data->callOnMethod([&](const auto & method) { moveKeysToDiskSet(method); });
+
+    data.reset();
+    ProfileEvents::increment(ProfileEvents::SetsSpilledToDisk);
+}
+
+size_t Set::getDiskSetKeyBytes() const
+{
+    return data->callOnMethod([]<typename Method>(const Method &) { return sizeof(DiskSetKey<Method>); });
+}
+
+template <typename Method>
+void Set::moveKeysToDiskSet(const Method & method)
+{
+    using Key = DiskSetKey<Method>;
+    compute_disk_set_keys = computeDiskSetKeys<DiskSetMethod<Method>>;
+
+    disk_set_builder = createDiskSetBuilder<Key>(
+        spill_settings.tmp_data,
+        limits,
+        spill_settings.max_bytes_before_external_set,
+        spill_settings.max_block_size,
+        spill_settings.min_free_disk_space,
+        spill_settings.process_list_element);
+
+    const size_t max_rows_in_column = spill_settings.max_block_size;
+    auto keys = ColumnVector<Key>::create();
+    for (auto it = method.data.begin(); it != method.data.end(); ++it)
+    {
+        /// Every method except `key_string` and `key_fixed_string` keeps the disk keys themselves in its
+        /// table: numbers, packed keys and the hashes of `hashed`. The string methods keep strings, and their
+        /// disk keys are the keys that the `hashed` method computes for them.
+        if constexpr (std::is_same_v<DiskSetMethod<Method>, Method>)
+            keys->getData().push_back(it->getValue());
+        else
+            keys->getData().push_back(Method::getHashedKey(it->getValue()));
+
+        if (keys->size() == max_rows_in_column)
+            disk_set_builder->add(std::exchange(keys, ColumnVector<Key>::create()));
+    }
+
+    if (!keys->empty())
+        disk_set_builder->add(std::move(keys));
+}
+
+void Set::executeDiskSet(const ColumnRawPtrs & key_columns, ColumnUInt8::Container & vec_res, bool negative, ConstNullMapPtr null_map) const
+{
+    const size_t rows = vec_res.size();
+    auto keys = compute_disk_set_keys(key_columns, key_sizes, rows, /*null_map=*/nullptr);
+
+    disk_set->containsBatch(*keys, {vec_res.data(), rows});
+
+    /// Keys with a `NULL` component are not in the set, as in `executeImplCase`.
+    for (size_t row = 0; row < rows; ++row)
+        vec_res[row] = negative ^ (vec_res[row] && !(null_map && (*null_map)[row]));
+}
 
 
 template <typename Method>
@@ -134,7 +317,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
 {
     std::lock_guard lock(rwlock);
 
-    if (!data.empty())
+    if (!data->empty())
         return;
 
     keys_size = header.size();
@@ -183,7 +366,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
     }
 
     /// Choose data structure to use for the set.
-    data.init(SetVariants::chooseMethod(key_columns, key_sizes));
+    data->init(SetVariants::chooseMethod(key_columns, key_sizes));
 }
 
 void Set::fillSetElements()
@@ -215,7 +398,7 @@ bool Set::insertFromColumns(const Columns & columns)
     bool inserted = insertFromColumns(columns, holder);
     if (inserted && fill_set_elements)
     {
-        if (max_elements_to_fill && max_elements_to_fill < data.getTotalRowCount())
+        if (max_elements_to_fill && max_elements_to_fill < data->getTotalRowCount())
         {
             /// Drop filled elementes
             fill_set_elements = false;
@@ -232,7 +415,7 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
 {
     std::lock_guard lock(rwlock);
 
-    if (data.empty())
+    if (data && data->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method Set::setHeader must be called before Set::insertFromBlock");
 
     holder.key_columns.reserve(keys_size);
@@ -253,21 +436,30 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
     if (!transform_null_in)
         null_map_holder = extractNestedColumnsAndNullMap(holder.key_columns, null_map);
 
-    switch (data.type)
+    if (spill_settings.max_bytes_before_external_set && !disk_set_builder && isLargeEnoughToSpill()
+        && isSpillNeededBeforeInsert(holder.key_columns, rows))
+        spill("the projected growth of the set exceeds the memory left under the spill threshold");
+
+    if (disk_set_builder)
     {
-        case SetVariants::Type::EMPTY:
-            break;
-#define M(NAME) \
-        case SetVariants::Type::NAME: \
-            insertFromBlockImpl(*data.NAME, holder.key_columns, rows, data, null_map, holder.filter ? &holder.filter->getData() : nullptr); \
-            break;
-        APPLY_FOR_SET_VARIANTS(M)
-#undef M
+        auto keys = compute_disk_set_keys(holder.key_columns, key_sizes, rows, null_map);
+        if (!keys->empty())
+            disk_set_builder->add(std::move(keys));
+        return true;
     }
 
-    bool within_limits = limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    data->callOnMethod([&](auto & method)
+    {
+        insertFromBlockImpl(method, holder.key_columns, rows, *data, null_map, holder.filter ? &holder.filter->getData() : nullptr);
+    });
+
+    bool within_limits = limits.check(data->getTotalRowCount(), data->getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     if (!within_limits)
         is_truncated = true;
+    /// Actual allocations and concurrent operators can consume more memory than projected before insertion.
+    else if (spill_settings.max_bytes_before_external_set && isLargeEnoughToSpill()
+        && getCurrentQueryMemoryUsage() > static_cast<Int64>(spill_settings.max_bytes_before_external_set))
+        spill("query memory exceeds the spill threshold after insertion");
     return within_limits;
 }
 
@@ -545,7 +737,10 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     if (!transform_null_in)
         null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
-    executeOrdinary(key_columns, vec_res, negative, null_map);
+    if (disk_set)
+        executeDiskSet(key_columns, vec_res, negative, null_map);
+    else
+        data->callOnMethod([&](auto & method) { executeImpl(method, key_columns, vec_res, negative, vec_res.size(), null_map); });
 
     return res;
 }
@@ -572,19 +767,29 @@ bool Set::hasNull() const
 bool Set::empty() const
 {
     std::shared_lock lock(rwlock);
-    return data.empty();
+    return data && data->empty();
 }
 
 size_t Set::getTotalRowCount() const
 {
     std::shared_lock lock(rwlock);
-    return data.getTotalRowCount();
+
+    if (disk_set)
+        return disk_set->getTotalRowCount();
+
+    chassert(data);
+    return data->getTotalRowCount();
 }
 
 size_t Set::getTotalByteCount() const
 {
     std::shared_lock lock(rwlock);
-    return data.getTotalByteCount();
+
+    if (disk_set)
+        return disk_set->getTotalByteCount();
+
+    chassert(data);
+    return data->getTotalByteCount();
 }
 
 
@@ -635,27 +840,6 @@ void NO_INLINE Set::executeImplCase(
     }
 }
 
-
-void Set::executeOrdinary(
-    const ColumnRawPtrs & key_columns,
-    ColumnUInt8::Container & vec_res,
-    bool negative,
-    ConstNullMapPtr null_map) const
-{
-    size_t rows = key_columns[0]->size();
-
-    switch (data.type)
-    {
-        case SetVariants::Type::EMPTY:
-            break;
-#define M(NAME) \
-        case SetVariants::Type::NAME: \
-            executeImpl(*data.NAME, key_columns, vec_res, negative, rows, null_map); \
-            break;
-    APPLY_FOR_SET_VARIANTS(M)
-#undef M
-    }
-}
 
 void Set::checkColumnsNumber(size_t num_key_columns) const
 {

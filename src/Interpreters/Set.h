@@ -28,6 +28,29 @@ struct ColumnWithTypeAndName;
 using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
 
 class Chunk;
+class DiskSet;
+class DiskSetBuilder;
+class TemporaryDataOnDiskScope;
+using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
+class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+
+/// These settings decide when and where a `Set` spills to disk, as described at `Set::setSpillSettings`.
+/// The defaults keep the set in memory.
+struct SetSpillSettings
+{
+    /// This is the threshold of tracked query memory for spilling. With 0, the set stays in memory
+    /// and needs no other setting.
+    size_t max_bytes_before_external_set = 0;
+
+    /// Holds the runs of the external sort and the finished set.
+    TemporaryDataOnDiskScopePtr tmp_data;
+    size_t min_free_disk_space = 0;
+
+    /// This is the number of rows in the blocks that the external sort merges and in the moved key columns.
+    size_t max_block_size = 0;
+    QueryStatusPtr process_list_element;
+};
 
 /** Data structure for implementation of IN expression.
   */
@@ -39,6 +62,22 @@ public:
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
     Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_);
+
+    ~Set();
+
+    /// Configures when the set spills to disk while it is filled. Call it before inserting rows. With a
+    /// nonzero threshold, the set spills once it outgrows the threshold of tracked query memory: before
+    /// inserting a chunk whose projected growth, plus the memory that spilling needs, exceeds the memory
+    /// left under the threshold, or after inserting a chunk when query memory exceeds the threshold. Either
+    /// way, the set spills only once its keys take as much memory as the smallest run of its builder, the
+    /// smaller of 16 MiB and the threshold. The keys then go to a `DiskSet`, and explicit elements are
+    /// dropped, as when there are more of them than `max_elements_to_fill`.
+    /// Once on disk, the size limits apply to the distinct keys and to the memory of the set when the keys
+    /// are merged into the file, so the set receives every chunk. In the `break` overflow mode, it then keeps
+    /// the keys that come first in the order of their disk keys rather than the first ones to arrive. Disk
+    /// keys compare as unsigned integers, so this order matches the order of values only for a single key
+    /// stored as an unsigned integer, such as `UInt64`, `Date` or `DateTime`.
+    void setSpillSettings(SetSpillSettings spill_settings_);
 
     bool transformNullIn() const { return transform_null_in; }
 
@@ -59,7 +98,7 @@ public:
     void appendSetElements(SetKeyColumns & holder);
 
     /// Call after all blocks were inserted. To get the information that set is already created.
-    void finishInsert() { is_created = true; }
+    void finishInsert();
 
     /// finishInsert and isCreated are thread-safe
     bool isCreated() const { return is_created.load(); }
@@ -85,7 +124,7 @@ public:
     const DataTypes & getDataTypes() const { return data_types; }
     const DataTypes & getElementsTypes() const { return set_elements_types; }
 
-    bool hasExplicitSetElements() const { return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data.getTotalRowCount()); }
+    bool hasExplicitSetElements() const { return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data->getTotalRowCount()); }
     bool hasSetElements() const { return !set_elements.empty(); }
     Columns getSetElements() const;
 
@@ -114,7 +153,18 @@ private:
     size_t keys_size = 0;
     Sizes key_sizes;
 
-    SetVariants data;
+    /// This holds the keys in memory. Spilling releases the table and its arena.
+    std::unique_ptr<SetVariants> data = std::make_unique<SetVariants>();
+
+    SetSpillSettings spill_settings;
+
+    /// A set that spilled keeps its keys in the builder while it is filled, then in the finished disk set.
+    std::unique_ptr<DiskSetBuilder> disk_set_builder;
+    std::unique_ptr<DiskSet> disk_set;
+
+    /// Computes the disk keys of key columns. It is selected when the set spills.
+    using ComputeDiskSetKeys = ColumnPtr (*)(const ColumnRawPtrs &, const Sizes &, size_t, ConstNullMapPtr);
+    ComputeDiskSetKeys compute_disk_set_keys = nullptr;
 
     /** How IN works with Nullable types.
       *
@@ -149,13 +199,6 @@ private:
 
     /// Whether the set was truncated due to overflow with OverflowMode::BREAK.
     std::atomic<bool> is_truncated = false;
-
-    /// If in the left part columns contains the same types as the elements of the set.
-    void executeOrdinary(
-        const ColumnRawPtrs & key_columns,
-        ColumnUInt8::Container & vec_res,
-        bool negative,
-        const PaddedPODArray<UInt8> * null_map) const;
 
     /// Collected elements of `Set`.
     /// It is necessary for the index to work on the primary key in the IN statement.
@@ -208,6 +251,27 @@ private:
         bool negative,
         size_t rows,
         ConstNullMapPtr null_map) const;
+
+    /// Returns whether the keys of the set, its table and arena, take at least the smallest run of its
+    /// builder (see `DiskSetBuilder::getMinBytesInRun`). Spilling fewer keys would release less
+    /// memory than that, part of which the builder would hold again until it writes a run, while the set
+    /// would lose its explicit elements for index analysis and its lookups would read the disk.
+    bool isLargeEnoughToSpill() const;
+
+    /// Returns whether inserting `rows` keys could need more memory than the query has left under the
+    /// spill threshold. The set then spills to disk before the insertion, because a single insertion can
+    /// overshoot the threshold (e.g. hash table resize).
+    bool isSpillNeededBeforeInsert(const ColumnRawPtrs & key_columns, size_t rows) const;
+
+    /// Moves the keys of the table to a `DiskSetBuilder`, which takes later insertions, and frees the table.
+    void spill(std::string_view reason);
+
+    size_t getDiskSetKeyBytes() const;
+
+    template <typename Method>
+    void moveKeysToDiskSet(const Method & method);
+
+    void executeDiskSet(const ColumnRawPtrs & key_columns, ColumnUInt8::Container & vec_res, bool negative, ConstNullMapPtr null_map) const;
 };
 
 using SetPtr = std::shared_ptr<Set>;
