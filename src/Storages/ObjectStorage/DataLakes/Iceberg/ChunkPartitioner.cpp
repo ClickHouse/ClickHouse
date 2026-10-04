@@ -6,6 +6,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <DataTypes/FieldToDataType.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context_fwd.h>
@@ -59,13 +61,23 @@ ChunkPartitioner::ChunkPartitioner(
         auto function = factory.get(transform_and_argument->transform_name, context);
 
         ColumnsWithTypeAndName columns_for_function;
+        DataTypePtr param_type;
         if (transform_and_argument->argument)
+        {
+            /// `icebergTruncate`'s value depends on the width argument's TYPE: an unsigned divisor at
+            /// least as wide as the source converts a negative source to unsigned first. Every Iceberg
+            /// read path derives that type from an `ASTLiteral`, so derive it identically here.
+            param_type = applyVisitor(FieldToDataType(), Field(static_cast<UInt64>(*transform_and_argument->argument)));
+            /// Type resolution stays on `UInt64`: `result_data_types` is published as the manifest's
+            /// Avro partition type, so it must not move. `partitionChunk` converts into it.
             columns_for_function.push_back(ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeUInt64>(), ""));
+        }
         columns_for_function.push_back(sample_block_->getByName(column_name));
 
         result_data_types.push_back(function->getReturnType(columns_for_function));
         functions.push_back(function);
         function_params.push_back(transform_and_argument->argument);
+        function_param_types.push_back(param_type);
         columns_to_apply.push_back(column_name);
     }
 }
@@ -102,15 +114,17 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
         ColumnsWithTypeAndName arguments;
         if (function_params[transform_ind].has_value())
         {
-            auto type = std::make_shared<DataTypeUInt64>();
-            auto column_value = ColumnUInt64::create();
+            const auto & type = function_param_types[transform_ind];
+            auto column_value = type->createColumn();
             column_value->insert(*function_params[transform_ind]);
             auto const_column = ColumnConst::create(std::move(column_value), chunk.getNumRows());
             arguments.push_back(ColumnWithTypeAndName(const_column->clone(), type, "#"));
         }
         arguments.push_back(name_to_column[columns_to_apply[transform_ind]]);
-        auto result
-            = functions[transform_ind]->build(arguments)->execute(arguments, result_data_types[transform_ind], chunk.getNumRows(), false);
+        auto transform = functions[transform_ind]->build(arguments);
+        auto result = transform->execute(arguments, transform->getResultType(), chunk.getNumRows(), false);
+        if (!transform->getResultType()->equals(*result_data_types[transform_ind]))
+            result = castColumn({result, transform->getResultType(), ""}, result_data_types[transform_ind]);
         functions_columns.push_back(result);
         raw_columns.push_back(result.get());
 

@@ -1,0 +1,41 @@
+=== Int32 / icebergTruncate(10, k) ===
+total	8
+pred_negative	1
+pred_positive	1
+all_rows	[-4,-3,-2,-1,0,1,2,3]
+stored	Int64	(-10)
+stored	Int64	(0)
+=== Int32 / icebergTruncate(1000, k) ===
+total	8
+pred_negative	1
+pred_positive	1
+all_rows	[-4,-3,-2,-1,0,1,2,3]
+stored	Int64	(-1000)
+stored	Int64	(0)
+=== Int32 / icebergTruncate(100000, k) ===
+total	8
+pred_negative	1
+pred_positive	1
+all_rows	[-4,-3,-2,-1,0,1,2,3]
+agrees	Int64	1
+agrees	Int64	1
+=== Int64 / icebergTruncate(10, k) ===
+total	8
+pred_negative	1
+pred_positive	1
+all_rows	[-4,-3,-2,-1,0,1,2,3]
+stored	Int64	(-10)
+stored	Int64	(0)
+=== Int32 / icebergBucket(10, k) ===
+total	8
+pred_negative	1
+pred_positive	1
+all_rows	[-4,-3,-2,-1,0,1,2,3]
+stored	Int32	(1)
+stored	Int32	(2)
+stored	Int32	(5)
+stored	Int32	(6)
+=== mutation control: DELETE on Int32 / icebergTruncate(10, k) ===
+after_delete_total	7
+after_delete_rows	[-4,-3,-1,0,1,2,3]
+delete_files	1	partition_matches_a_data_file	1	orphaned	0
