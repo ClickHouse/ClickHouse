@@ -1,0 +1,6 @@
+uniqExact(n)
+uniqExact(n % 1000000)
+uniqExact(toString(n))
+uniqExactTuple(tuple(n, toString(n)))
+uniqExactIf(n, n % 2 = 0)
+uniqExact(if(n % 2 = 0, n, NULL))

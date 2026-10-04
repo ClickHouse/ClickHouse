@@ -1102,6 +1102,8 @@ void NO_INLINE Aggregator::appendDelayedRecords(
             addToCountBin(bins[adaptiveCountBin(adaptive.miss_hashes[i])], counts_only ? adaptive.miss_multiplicities[i] : 1);
     }
 
+    adaptive.total_staged_records += total;
+
     /// The thaw evidence of the thread (see `adaptiveStagingRepeats`). A batch updates:
     ///
     /// - `staged_records` grows by the batch's record count.
@@ -1478,43 +1480,55 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
     return skipped;
 }
 
-void Aggregator::addAdaptiveCountsToBins(AggregatedDataVariants & variants, UInt16 * bins) const
+size_t Aggregator::collectAdaptiveTableStatistics(AggregatedDataVariants & variants, UInt16 * bins) const
 {
+    size_t work = 0;
 #define M(NAME) \
     else if (variants.type == AggregatedDataVariants::Type::NAME) \
-        addAdaptiveCountsToBins(*variants.NAME, variants.aggregates_pool, bins);
+        work = collectAdaptiveTableStatistics(*variants.NAME, variants.aggregates_pool, bins);
 
     if (variants.empty()) {} // NOLINT
     APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
     else
-        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "The adaptive aggregation cannot count the rows of variant {}", variants.getMethodName());
+        throw Exception(
+            ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT,
+            "The adaptive aggregation cannot collect table statistics for variant {}", variants.getMethodName());
+    return work;
 }
 
 template <typename Method>
-void Aggregator::addAdaptiveCountsToBins(Method & method, Arena * arena, UInt16 * bins) const
+size_t Aggregator::collectAdaptiveTableStatistics(Method & method, Arena * arena, UInt16 * bins) const
 {
+    size_t work = 0;
     if constexpr (MapAggregationMethod<Method>)
     {
         /// A `uniqExact` or `uniqExactIf` rank adds the distinct count of the cell: the distinct count of a merged group
         /// is at most the sum of those of the cells and records merged into it, so the bins bound it as they bound a row
         /// count.
-        const size_t rank_offset = offsets_of_aggregate_states[params.bucket_top_k_rank_index];
-        auto scratch = ColumnUInt64::create();
+        ColumnUInt64::MutablePtr scratch;
+        if (bins && !is_simple_count && !bucket_top_k_ranks_by_count_state)
+            scratch = ColumnUInt64::create();
         const auto rank_count = [&](AggregateDataPtr & mapped) -> UInt64
         {
             if (is_simple_count)
                 return getInlineCountState(mapped);
             if (bucket_top_k_ranks_by_count_state)
-                return getCountState(mapped + rank_offset);
+                return getCountState(mapped + offsets_of_aggregate_states[params.bucket_top_k_rank_index]);
             return finalizeBucketTopKRank(mapped, *scratch, arena);
         };
         const auto add = [&](auto & table)
         {
-            forEachMappedCellWithHash(
+            forEachMappedCellWithHashOnDemand(
                 table,
-                [&](const auto &, AggregateDataPtr & mapped, size_t hash) { addToCountBin(bins[adaptiveCountBin(hash)], rank_count(mapped)); });
+                [&](AggregateDataPtr & mapped, const auto & hash_of)
+                {
+                    if (bins)
+                        addToCountBin(bins[adaptiveCountBin(hash_of())], rank_count(mapped));
+                    for (size_t i : adaptive_parallel_merge_indices)
+                        work += aggregate_functions[i]->getEstimatedMergeWork(mapped + offsets_of_aggregate_states[i]);
+                });
         };
         if constexpr (requires { method.data.impls; })
         {
@@ -1526,6 +1540,7 @@ void Aggregator::addAdaptiveCountsToBins(Method & method, Arena * arena, UInt16 
             add(method.data);
         }
     }
+    return work;
 }
 
 Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucket(
@@ -1812,7 +1827,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                     }
                     source_place = nullptr;
                 }
-                mergeAdaptiveSourceStates(scratch, arena, is_cancelled);
+                mergeAdaptiveSourceStates(scratch, session, arena, is_cancelled);
                 for (size_t partition = unit_first_partition; partition < unit_first_partition + partitions_per_unit; ++partition)
                 {
                     collectPartitionRecords(session, spilled, partition, partition - first_partition, scratch.ranges);
@@ -1870,7 +1885,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                     }
                     source_place = nullptr;
                 }
-                mergeAdaptiveSourceStates(scratch, arena, is_cancelled);
+                mergeAdaptiveSourceStates(scratch, session, arena, is_cancelled);
             }
             else
             {

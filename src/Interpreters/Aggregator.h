@@ -588,6 +588,8 @@ private:
     /// The record layout of the staged aggregate arguments; set when the adaptive aggregation is engaged and the
     /// query has aggregate functions.
     std::unique_ptr<const AdaptiveArgumentLayout> adaptive_argument_layout;
+    /// Per-query aggregate metadata used to estimate the cost of merging states.
+    std::vector<size_t> adaptive_parallel_merge_indices;
 
     AggregatedDataVariants::Type method_chosen;
 
@@ -794,9 +796,10 @@ private:
     void freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const;
 
     /// Merges the source states of a merge unit into their destinations (`scratch.places` and `scratch.source_places`)
-    /// and destroys the sources. A function whose states can be giant sets (`uniqExact`) merges the states of a group
-    /// many producers hold on the pool, bucket by bucket of the sets, instead of one source after another.
-    void mergeAdaptiveSourceStates(AdaptiveMergeScratch & scratch, Arena * arena, std::atomic<bool> & is_cancelled) const;
+    /// and destroys the sources. A group's states use the pool when their combined work can amortize its setup
+    /// or hold up the remaining merge; smaller groups retain the parallelism across buckets.
+    void mergeAdaptiveSourceStates(
+        AdaptiveMergeScratch & scratch, const AdaptiveAggregationSession & session, Arena * arena, std::atomic<bool> & is_cancelled) const;
 
     /// Whether a frozen producer of the session may thaw at all: not with `adaptive_aggregator_disable_thaw`, and not
     /// under the top-K pruning.
@@ -893,10 +896,11 @@ private:
         RowStorePointers & records,
         bool count_only = false) const;
 
-    /// Adds the rank count of every group of a producer's own table to its count bins (see `AdaptiveTopKPruning`).
-    void addAdaptiveCountsToBins(AggregatedDataVariants & variants, UInt16 * bins) const;
+    /// Estimates the work of the selected aggregate states and, when requested, adds rank counts to the producer's
+    /// top-K bins. Both statistics visit the same cells before the producer hands its table to the merge.
+    size_t collectAdaptiveTableStatistics(AggregatedDataVariants & variants, UInt16 * bins) const;
     template <typename Method>
-    void addAdaptiveCountsToBins(Method & method, Arena * arena, UInt16 * bins) const;
+    size_t collectAdaptiveTableStatistics(Method & method, Arena * arena, UInt16 * bins) const;
 
     /// Checks that every producer handed its count bins over, which the bounds rely on, and orders the buckets for the
     /// merge by their bounds; drops the pruning otherwise. Called with the merge's producers before the merge starts.

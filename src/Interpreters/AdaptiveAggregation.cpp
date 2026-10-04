@@ -72,12 +72,15 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     /// The bins take the rows of the producer's own table as well, whatever its phase: a producer that never froze
     /// has no records but its table is a source of the merge.
     std::optional<AdaptiveTopKPruning::ProducerBins> bins;
+    if (shared.top_k_pruning && !adaptive.count_bins)
+        adaptive.count_bins = std::make_unique<UInt16[]>(adaptive_count_bins);
+
+    size_t estimated_merge_work = adaptive.total_staged_records * adaptive_parallel_merge_indices.size();
+    if (adaptive.count_bins || !adaptive_parallel_merge_indices.empty())
+        estimated_merge_work += collectAdaptiveTableStatistics(local_variants, adaptive.count_bins.get());
+
     if (shared.top_k_pruning)
     {
-        if (!adaptive.count_bins)
-            adaptive.count_bins = std::make_unique<UInt16[]>(adaptive_count_bins);
-        addAdaptiveCountsToBins(local_variants, adaptive.count_bins.get());
-
         bins.emplace();
         bins->bins = std::move(adaptive.count_bins);
         for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
@@ -98,6 +101,8 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
         adaptive.partitions->finishAppending();
 
     std::lock_guard lock(shared.producer_buffers_mutex);
+    shared.estimated_merge_work += estimated_merge_work;
+    ++shared.finished_producers;
     if (adaptive.partitions)
         shared.producer_buffers.push_back(std::move(adaptive.partitions));
     if (bins)
@@ -240,11 +245,21 @@ AggregatedDataVariantsPtr Aggregator::createAdaptiveExternalMergeDestination() c
     return destination;
 }
 
-void Aggregator::mergeAdaptiveSourceStates(AdaptiveMergeScratch & scratch, Arena * arena, std::atomic<bool> & is_cancelled) const
+void Aggregator::mergeAdaptiveSourceStates(
+    AdaptiveMergeScratch & scratch, const AdaptiveAggregationSession & session, Arena * arena, std::atomic<bool> & is_cancelled) const
 {
     auto & places = scratch.places;
     auto & source_places = scratch.source_places;
     const size_t merges = places.size();
+    chassert(merges == source_places.size());
+    chassert(params.max_threads > 0 && session.finished_producers > 0);
+
+    /// A group larger than a worker's share can hold up the merge. Very large states amortize the pool even
+    /// when other groups are busy, while small states do not justify its setup even with idle workers.
+    const size_t min_parallel_work = std::clamp(
+        session.estimated_merge_work / std::min(params.max_threads, session.finished_producers),
+        adaptive_parallel_merge_min_work,
+        adaptive_parallel_merge_max_work);
 
     auto & order = scratch.merge_order;
     bool ordered = false;
@@ -275,13 +290,16 @@ void Aggregator::mergeAdaptiveSourceStates(AdaptiveMergeScratch & scratch, Arena
             size_t end = begin + 1;
             while (end < merges && places[order[end]] == places[order[begin]])
                 ++end;
-            if (end - begin < adaptive_parallel_merge_min_sources)
+            size_t group_work = function.getEstimatedMergeWork(places[order[begin]] + offset);
+            for (size_t k = begin; k < end; ++k)
+                group_work += function.getEstimatedMergeWork(source_places[order[k]] + offset);
+
+            if (group_work <= min_parallel_work)
             {
                 for (size_t k = begin; k < end; ++k)
                 {
-                    AggregateDataPtr destination = places[order[k]];
-                    AggregateDataPtr source = source_places[order[k]];
-                    function.mergeAndDestroyBatch(&destination, &source, 1, offset, *thread_pool, is_cancelled, arena);
+                    function.merge(places[order[k]] + offset, source_places[order[k]] + offset, arena);
+                    function.destroy(source_places[order[k]] + offset);
                 }
             }
             else

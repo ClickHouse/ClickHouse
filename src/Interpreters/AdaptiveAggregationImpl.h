@@ -52,10 +52,11 @@ constexpr size_t adaptive_spill_min_buffer_bytes = 4 << 10;
 /// table, grown to hold them, stays in the cache while the unit is drained and converted; a bucket smaller than a
 /// unit is merged as one, which spares a small bucket the fixed cost of every further unit.
 constexpr size_t adaptive_merge_unit_records = 16'384;
-/// A group whose state many producers hold merges their states on the pool, bucket by bucket of the states (see
-/// `Aggregator::mergeAdaptiveSourceStates`), once it has this many source states: a merge of a few states gains nothing
-/// from the pool, and the states that can be giant sets are held by most producers.
-constexpr size_t adaptive_parallel_merge_min_sources = 8;
+/// Groups below this work estimate use the existing parallelism across merge buckets. Above the upper
+/// bound, a group has enough work to amortize additional merge tasks even while other buckets are busy.
+/// Between the bounds, the threshold follows the estimated work per worker for this query.
+constexpr size_t adaptive_parallel_merge_min_work = 16'384;
+constexpr size_t adaptive_parallel_merge_max_work = 1'000'000;
 /// The count bins of the top-K pruning (see `AdaptiveTopKPruning`) sit on the hash bits 14..31, the bucket's and the
 /// ten right below them, so every bucket owns 1024 consecutive bins and every partition or merge unit a run of them. A
 /// bin then holds a few hundred rows of a hundred-million-row aggregation, which keeps the bounds of most bins below
@@ -195,6 +196,12 @@ struct AdaptiveAggregationSession
     std::mutex producer_buffers_mutex;
     std::vector<AdaptivePartitionBuffersPtr> producer_buffers;
 
+    /// Published under the same mutex and read after the finish barrier. Retained states contribute their
+    /// merge-work estimates, and each staged record contributes one unit per aggregate using this merge.
+    /// The total and the producer count estimate each worker's share of the merge.
+    size_t estimated_merge_work = 0;
+    size_t finished_producers = 0;
+
     /// The aggregation's temporary data scope with the buffer size of the spill streams (see
     /// `adaptive_spill_min_buffer_bytes`), set by the first freeze when the aggregation may spill.
     TemporaryDataOnDiskScopePtr spill_scope;
@@ -303,6 +310,8 @@ struct AdaptiveAggregationProducer
     /// The records this producer staged, created by its freeze; a producer that stands down keeps them for the
     /// merge. Handed over to the session when the producer finishes.
     AdaptivePartitionBuffersPtr partitions;
+    /// The producer's staged records, including those already written to disk, for the merge-work estimate.
+    size_t total_staged_records = 0;
 
     /// The current block's misses, one entry per delayed record, in staging order: the source row, the routing hash,
     /// the run length of a count record, and the key, as its size for a string-like key or its value for a

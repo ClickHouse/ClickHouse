@@ -917,7 +917,12 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
     if (params.enable_adaptive_aggregator && params.aggregates_size)
+    {
         adaptive_argument_layout = buildAdaptiveArgumentLayout(header_, aggregates_positions);
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+            if (aggregate_functions[i]->isAbleToParallelizeMerge() && aggregate_functions[i]->isParallelizeMergePrepareNeeded())
+                adaptive_parallel_merge_indices.push_back(i);
+    }
 
 #if USE_EMBEDDED_COMPILER
     compileAggregateFunctionsIfNeeded();
