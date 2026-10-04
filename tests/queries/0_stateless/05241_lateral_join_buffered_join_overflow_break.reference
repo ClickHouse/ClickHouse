@@ -1,0 +1,6 @@
+-- limit not reached
+100	4950	300
+-- limit reached, INNER
+-- limit reached, LEFT
+-- limit not reached, LEFT
+100	4950	300

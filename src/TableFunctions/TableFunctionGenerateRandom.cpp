@@ -49,6 +49,7 @@ public:
     static constexpr auto name = "generateRandom";
     std::string getName() const override { return name; }
     bool hasStaticStructure() const override { return structure != "auto"; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     bool needStructureHint() const override { return structure == "auto"; }
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
