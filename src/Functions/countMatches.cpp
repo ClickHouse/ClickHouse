@@ -71,7 +71,7 @@ public:
         if (col_pattern_const == nullptr)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Pattern argument is not const");
 
-        const OptimizedRegularExpression re = Regexps::createRegexp</*is_like*/ false, /*no_capture*/ true, CountMatchesBase::case_insensitive>(col_pattern_const->getValue<String>());
+        const OptimizedRegularExpression re = Regexps::createRegexp</*is_like*/ false, /*is_similar_to*/ false, /*no_capture*/ true, CountMatchesBase::case_insensitive>(col_pattern_const->getValue<String>());
 
         const IColumn * col_haystack = arguments[0].column.get();
         OptimizedRegularExpression::MatchVec matches;

@@ -6,7 +6,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -256,19 +255,6 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
 
     if (!supported_types.contains(tokenizer->getType()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' does not support the '{}' tokenizer.", name, tokenizer_name);
-
-    /// Such a tokenizer keeps the zero padding of a `FixedString` inside a token, which no needle holds.
-    auto input_type = removeNullable(recursiveRemoveLowCardinality(arguments[arg_input].type));
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(input_type.get()))
-        input_type = removeNullable(array_type->getNestedType());
-
-    if (isFixedString(input_type) && !ITokenizer::splitsAtZeroByte(tokenizer->getType()))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Function '{}' does not support a FixedString input with the '{}' tokenizer, because the zero byte "
-            "padding of the input would become part of a token.",
-            name,
-            tokenizer_name);
 
     auto phrase_tokens = initializePhraseTokens(arguments, *tokenizer, getName());
     return std::make_shared<FunctionBaseHasPhrase>(std::move(tokenizer), std::move(phrase_tokens), std::move(argument_types), return_type);
