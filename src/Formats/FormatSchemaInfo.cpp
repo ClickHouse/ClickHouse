@@ -301,9 +301,12 @@ void FormatSchemaInfo::storeSchemaOnDisk(const fs::path & file_path, const Strin
         out.sync();
         out.close();
 
-        if (fs::exists(file_path))
-            DB::renameExchange(temp_path, file_path);
-        else
+        /// The schema file is content-addressed, so if `file_path` already exists (possibly
+        /// published by a concurrent writer) it has the same content as our temporary copy.
+        /// Keep the published file and discard our copy instead of exchanging them: an
+        /// exchange is not atomic on all filesystems and would briefly make `file_path`
+        /// disappear, which a concurrent reader could observe as `FILE_DOESNT_EXIST`.
+        if (!fs::exists(file_path))
             DB::renameNoReplace(temp_path, file_path);
 
         fs::remove(temp_path);
