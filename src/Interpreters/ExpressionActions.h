@@ -90,6 +90,7 @@ public:
     const ActionsDAG & getActionsDAG() const { return actions_dag; }
     const ColumnNumbers & getResultPositions() const { return result_positions; }
     const ExpressionActionsSettings & getSettings() const { return settings; }
+    bool projectInputs() const { return project_inputs; }
 
     /// Get a list of input columns.
     Names getRequiredColumns() const;

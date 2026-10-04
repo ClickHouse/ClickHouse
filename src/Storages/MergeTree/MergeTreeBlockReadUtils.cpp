@@ -530,7 +530,14 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         }
 
         /// Add results of the step to the list of already "known" columns so that we don't read or compute them again.
-        if (step.actions)
+        if (step.actions && step.actions->projectInputs())
+        {
+            /// Nothing but the outputs of a step that projects its inputs is left in the block.
+            columns_from_previous_steps.clear();
+            for (const auto * output : step.actions->getActionsDAG().getOutputs())
+                columns_from_previous_steps.insert(output->result_name);
+        }
+        else if (step.actions)
         {
             for (const auto & name : step.actions->getActionsDAG().getNames())
                 columns_from_previous_steps.insert(name);

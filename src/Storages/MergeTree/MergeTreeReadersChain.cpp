@@ -423,6 +423,14 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         MergeTreeRangeReader::filterColumns(read_columns, result.final_filter);
     }
 
+    /// An earlier step may have read and dropped this column: discard what it left so the column is patched as a first read.
+    for (const auto & column : range_reader.getReadSampleBlock())
+    {
+        if (result.additional_columns.has(column.name))
+            result.additional_columns.erase(column.name);
+        removeDataVersionForColumn(result.patch_versions_block, column.name);
+    }
+
     auto patch_max_version = getMaxPatchVersionForStep(range_reader);
     const auto & result_header = range_reader.getReadSampleBlock();
     auto columns_for_patches = getColumnsForPatches(result_header, read_columns);
