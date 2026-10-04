@@ -458,6 +458,12 @@ CREATE TABLE tab_projection_default_codec_fresh
     (k UInt64, x Float64 CODEC(NONE),
      PROJECTION p (x CODEC(Default)) AS (SELECT k, x ORDER BY k))
     ENGINE = MergeTree ORDER BY k SETTINGS default_compression_codec = 'SZ3'; -- { serverError BAD_ARGUMENTS }
+-- Parameterized SZ3 must fail at the same table-default gate, even with the codec opt-in.
+CREATE TABLE tab_projection_default_codec_fresh
+    (k UInt64, x Float64 CODEC(NONE),
+     PROJECTION p (x CODEC(Default)) AS (SELECT k, x ORDER BY k))
+    ENGINE = MergeTree ORDER BY k
+    SETTINGS default_compression_codec = 'SZ3(''ALGO_INTERP'', ''ABS'', 0.1)'; -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'tab_projection_default_codec_fresh';
 
 DROP TABLE IF EXISTS tab_projection_default_codec_source;
@@ -467,8 +473,13 @@ CREATE TABLE tab_projection_default_codec_source
     ENGINE = MergeTree ORDER BY k SETTINGS default_compression_codec = 'LZ4';
 ALTER TABLE tab_projection_default_codec_source
     MODIFY SETTING default_compression_codec = 'SZ3'; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE tab_projection_default_codec_source
+    MODIFY SETTING default_compression_codec = 'SZ3(''ALGO_INTERP'', ''ABS'', 0.1)'; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE tab_projection_default_codec_copy AS tab_projection_default_codec_source
     ENGINE = MergeTree ORDER BY k SETTINGS default_compression_codec = 'SZ3'; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab_projection_default_codec_copy AS tab_projection_default_codec_source
+    ENGINE = MergeTree ORDER BY k
+    SETTINGS default_compression_codec = 'SZ3(''ALGO_INTERP'', ''ABS'', 0.1)'; -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'tab_projection_default_codec_copy';
 SELECT position(create_table_query, 'SZ3') = 0 FROM system.tables
     WHERE database = currentDatabase() AND name = 'tab_projection_default_codec_source';
