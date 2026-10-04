@@ -9,6 +9,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -26,6 +27,7 @@
 
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 
 namespace DB
@@ -51,7 +53,8 @@ namespace
 
 void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTree *> & steps)
 {
-    if (!node)
+    /// a subquery that only builds a set for `IN` is not the read to estimate
+    if (!node || typeid_cast<const CreatingSetStep *>(node->step.get()))
         return;
 
     if (auto * read_step = dynamic_cast<ReadFromMergeTree *>(node->step.get()))
@@ -325,6 +328,9 @@ WhatIfResult estimateHypotheticalIndexes(
     std::vector<String> forced_strings;
     stripWhatIfControlledSettings(select_query_copy.get(), forced_strings);
 
+    /// the plans of the statement cannot see hypothetical projections, so a forced projection must not fail them
+    local_context->setSkipForcedProjectionCheck();
+
     if (forced_strings.empty() && context->getSettingsRef()[Setting::force_data_skipping_indexes].changed)
         forced_strings.push_back(context->getSettingsRef()[Setting::force_data_skipping_indexes]);
 
@@ -340,10 +346,7 @@ WhatIfResult estimateHypotheticalIndexes(
         plan = std::move(interpreter).extractQueryPlan();
     }
 
-    /// plan as the query would, but a forced projection that is not used must not fail the statement
-    QueryPlanOptimizationSettings optimization_settings(plan_context);
-    optimization_settings.force_use_projection = false;
-    plan.optimize(optimization_settings);
+    plan.optimize(QueryPlanOptimizationSettings(plan_context));
 
     std::vector<ReadFromMergeTree *> read_steps;
     collectReadSteps(plan.getRootNode(), read_steps);
@@ -552,7 +555,8 @@ WhatIfResult estimateHypotheticalIndexes(
 
     for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
         result.candidates.push_back(
-            evaluateProjection(projection, read_step, analysis, baseline_parts, settings, plan.getRootNode(), plan_context));
+            evaluateProjection(
+                projection, read_step, analysis, baseline_parts, settings, plan.getRootNode(), plan_context));
 
     if (result.candidates.empty())
         appendNoCandidatesRow(result);
