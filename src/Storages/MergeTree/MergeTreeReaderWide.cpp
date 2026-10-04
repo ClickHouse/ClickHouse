@@ -285,12 +285,12 @@ void MergeTreeReaderWide::addStreams(
         partially_read_columns.insert(name_and_type.name);
 }
 
-MergeTreeReaderStream * MergeTreeReaderWide::FileStreams::getOrCreate(const String & stream_name, const StreamFactory & factory)
+MergeTreeReaderStream & MergeTreeReaderWide::FileStreams::getOrCreate(const String & stream_name, const StreamFactory & factory)
 {
     {
         std::lock_guard lock(mutex);
         if (auto it = streams.find(stream_name); it != streams.end())
-            return it->second.get();
+            return *it->second;
     }
 
     auto stream = factory();
@@ -298,7 +298,7 @@ MergeTreeReaderStream * MergeTreeReaderWide::FileStreams::getOrCreate(const Stri
     std::lock_guard lock(mutex);
     auto [it, inserted] = streams.try_emplace(stream_name, std::move(stream));
     chassert(inserted);
-    return it->second.get();
+    return *it->second;
 }
 
 MergeTreeReaderStream * MergeTreeReaderWide::FileStreams::find(const String & stream_name) const
@@ -356,7 +356,7 @@ void MergeTreeReaderWide::FileStreams::clearPrefetched()
     prefetched.clear();
 }
 
-MergeTreeReaderStream * MergeTreeReaderWide::getOrAddStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name)
+MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name)
 {
     return streams.getOrCreate(stream_name, [&]() -> std::unique_ptr<MergeTreeReaderStream>
     {
@@ -442,15 +442,15 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     /// If we didn't create requested stream, but file with this path exists, create a stream for it.
     /// It may happen during reading of columns with dynamic subcolumns, because all streams are known
     /// only after deserializing of binary bulk prefix.
-    auto * stream = getOrAddStream(substream_path, *stream_name);
-    stream->adjustRightMark(last_mark_to_read);
+    auto & stream = getOrAddStream(substream_path, *stream_name);
+    stream.adjustRightMark(last_mark_to_read);
 
     if (seek_to_start)
-        stream->seekToStart();
+        stream.seekToStart();
     else if (seek_to_mark)
-        stream->seekToMark(from_mark);
+        stream.seekToMark(from_mark);
 
-    return stream->getDataBuffer();
+    return stream.getDataBuffer();
 }
 
 void MergeTreeReaderWide::deserializePrefix(
@@ -491,9 +491,9 @@ void MergeTreeReaderWide::deserializePrefix(
             if (from_mark != 0)
                 streams.unmarkPrefetched(*stream_name);
 
-            auto * stream = getOrAddStream(substream_path, *stream_name);
-            stream->adjustRightMark(last_mark_to_read);
-            stream->seekToStart();
+            auto & stream = getOrAddStream(substream_path, *stream_name);
+            stream.adjustRightMark(last_mark_to_read);
+            stream.seekToStart();
         };
         /// Add streams for newly discovered dynamic subcolumns to start async marks loading beforehand if needed.
         deserialize_settings.dynamic_subcolumns_callback = [&](const ISerialization::SubstreamPath & substream_path)
@@ -546,8 +546,8 @@ void MergeTreeReaderWide::deserializePrefix(
                 return false;
 
             /// Bucket and dynamic streams are opened lazily; the verdict must not depend on which column opened them first.
-            auto * stream = getOrAddStream(substream_path, *stream_name);
-            return stream->hasAtMostNDistinctMarks(allowed_distinct_marks);
+            auto & stream = getOrAddStream(substream_path, *stream_name);
+            return stream.hasAtMostNDistinctMarks(allowed_distinct_marks);
         };
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_state_map[name], &deserialize_states_cache);
     }
