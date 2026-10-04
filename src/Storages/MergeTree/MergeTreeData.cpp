@@ -8085,6 +8085,14 @@ MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_conte
     if (mutation_counters.num_alter > 0)
         return ColumnDefaultnessStatsUnavailableReason::AlterMutations;
 
+    /// Pending metadata mutations (`RENAME COLUMN`, `DROP COLUMN` possibly followed by re-adding a
+    /// column with the same name) are applied to reads on the fly, while `serialization.json`
+    /// stays keyed by the on-disk column names. The counter looked up by the queried name would
+    /// then describe a different column's data, or the data of a dropped column whose reads are
+    /// already filled with the new default.
+    if (mutation_counters.num_metadata > 0)
+        return ColumnDefaultnessStatsUnavailableReason::MetadataMutations;
+
     /// Masking policies rewrite values at read time without touching `serialization.json`,
     /// so the recorded `num_defaults` does not describe what the masked user reads.
     if (hasEnabledMaskingPolicies(query_context))
@@ -8117,6 +8125,7 @@ const char * MergeTreeData::columnDefaultnessStatsUnavailableReasonToString(Colu
         case ColumnDefaultnessStatsUnavailableReason::PatchParts: return "table has patch parts";
         case ColumnDefaultnessStatsUnavailableReason::DataMutations: return "pending data mutations";
         case ColumnDefaultnessStatsUnavailableReason::AlterMutations: return "pending alter mutations";
+        case ColumnDefaultnessStatsUnavailableReason::MetadataMutations: return "pending metadata mutations";
         case ColumnDefaultnessStatsUnavailableReason::MaskingPolicy: return "table has a masking policy";
         case ColumnDefaultnessStatsUnavailableReason::UniqueKey: return "table has a unique key";
     }

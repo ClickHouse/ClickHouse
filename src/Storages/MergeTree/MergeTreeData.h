@@ -669,6 +669,7 @@ public:
         PatchParts,
         DataMutations,
         AlterMutations,
+        MetadataMutations,
         MaskingPolicy,
         UniqueKey,
     };

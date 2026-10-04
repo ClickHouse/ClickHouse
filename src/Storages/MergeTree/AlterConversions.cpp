@@ -136,6 +136,14 @@ AlterConversions::AlterConversions(
     for (const auto & patch : patch_parts_)
         addPatchPart(patch);
 
+    columns_with_stale_indexes = all_updated_columns;
+    for (const auto & [rename_to, rename_from] : rename_map)
+    {
+        columns_with_stale_indexes.insert(rename_to);
+        columns_with_stale_indexes.insert(rename_from);
+    }
+    columns_with_stale_indexes.insert(dropped_columns.begin(), dropped_columns.end());
+
     /// Do not throw if there are no mutations or patches.
     if (number_of_alter_mutations > 1)
     {
