@@ -550,6 +550,10 @@ bool applyTrivialCountIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
+    /// `totalRows` counts the live table, not the snapshot pinned for this query.
+    if (query_context->getPinnedStorageSnapshot(storage->getStorageID().uuid))
+        return false;
+
     if (getEffectiveRowPolicyFilter(*storage, query_context))
         return false;
 
@@ -571,7 +575,7 @@ bool applyTrivialCountIfPossible(
     if (aggregates.size() != 1)
         return false;
 
-    const auto & function_node = aggregates.front().get()->as<const FunctionNode &>();
+    const auto & function_node = aggregates.front()->as<const FunctionNode &>();
     chassert(function_node.getAggregateFunction() != nullptr);
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
     if (!count_func)
@@ -685,6 +689,10 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
+    /// The column stats describe the live table, not the snapshot pinned for this query.
+    if (query_context->getPinnedStorageSnapshot(storage->getStorageID().uuid))
+        return false;
+
     if (getEffectiveRowPolicyFilter(*storage, query_context))
         return false;
 
@@ -711,7 +719,7 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     QueryTreeNodes aggregates = collectAggregateFunctionNodes(query_tree);
     if (aggregates.size() != 1)
         return false;
-    const auto & function_node = aggregates.front().get()->as<const FunctionNode &>();
+    const auto & function_node = aggregates.front()->as<const FunctionNode &>();
     chassert(function_node.getAggregateFunction() != nullptr);
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
     if (!count_func)
@@ -1580,6 +1588,10 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
     if (!table_ptr->isMergeTree())
         return false;
 
+    /// TODO(unique-key): support parallel replicas.
+    if (table_ptr->hasUniqueKey())
+        return false;
+
     if (!table_ptr->supportsReplication() && !query_settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
         return false;
 
@@ -2101,7 +2113,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// that node cannot tell whether the policy was pushed down, so keep the policy as an
                     /// explicit filter step of the plan, ahead of the PREWHERE filter step, so that the
                     /// user's conditions never see the excluded rows.
-                    if (select_query_options.build_logical_plan && storage->supportedPrewhereColumns().has_value())
+                    /// A table function read directly on that node loses a pushed-down policy whatever its contract.
+                    if (select_query_options.build_logical_plan
+                        && (storage->supportedPrewhereColumns().has_value() || (table_function_node && can_push_down_filter)))
                         where_filters.emplace(where_filters.begin(), std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
                     /// TODO: Never put row-level security filter in WHERE clause for storages that do not support PREWHERE to avoid merging of filters.
                     else if (can_push_down_filter)
