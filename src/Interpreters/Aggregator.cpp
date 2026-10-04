@@ -4388,6 +4388,9 @@ Aggregator::AggregatedChunk Aggregator::prepareChunkAndFillWithoutKey(Aggregated
     }
 
     Chunk chunk = finalizeChunk(params, std::move(out_cols), final);
+    /// Without keys and aggregate functions there is no column to carry the row.
+    if (!chunk.hasColumns())
+        chunk.setColumns(Columns{}, rows);
 
     if (final)
         destroyWithoutKey(data_variants);
