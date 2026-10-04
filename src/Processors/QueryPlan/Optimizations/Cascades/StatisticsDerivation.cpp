@@ -407,25 +407,28 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
             const ActionsDAG::Node * prewhere_node = prewhere_info
                 ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                 : nullptr;
-            auto relation_profile = estimator->estimateRelationProfile(nullptr, nullptr, prewhere_node);
+            if (!estimator->filterReadsOnlyColumnsWithoutStatistics(read_step.getStorageMetadata(), nullptr, prewhere_node))
+            {
+                auto relation_profile = estimator->estimateRelationProfile(nullptr, nullptr, prewhere_node);
 
-            /// Index analysis already bounds the read: it cannot emit more than `selected_rows`.
-            /// Without a `PREWHERE` the profile carries no filter, its row count is only the
-            /// statistics' total, so the index-analysis estimate stays.
-            if (prewhere_node)
-                statistics.estimated_row_count = analyzed_result
-                    ? std::min(Float64(relation_profile.rows), Float64(analyzed_result->selected_rows))
-                    : Float64(relation_profile.rows);
-            for (const auto & [column_name, column_stats] : relation_profile.column_stats)
-                statistics.column_statistics[column_name].num_distinct_values = column_stats.num_distinct_values;
-            /// The profile carries no byte sizes; leaving the default 1 byte per row would make wide
-            /// tables look nearly free to move over the network.
-            fillReadColumnWidths(statistics, read_step, table_name);
-            statistics.estimated_bytes_per_row = estimateReadBytesPerRow(read_step, statistics);
-            fillPhysicalReadBytes(statistics, physical_selected_rows);
+                /// Index analysis already bounds the read: it cannot emit more than `selected_rows`.
+                /// Without a `PREWHERE` the profile carries no filter, its row count is only the
+                /// statistics' total, so the index-analysis estimate stays.
+                if (prewhere_node)
+                    statistics.estimated_row_count = analyzed_result
+                        ? std::min(Float64(relation_profile.rows), Float64(analyzed_result->selected_rows))
+                        : Float64(relation_profile.rows);
+                for (const auto & [column_name, column_stats] : relation_profile.column_stats)
+                    statistics.column_statistics[column_name].num_distinct_values = column_stats.num_distinct_values;
+                /// The profile carries no byte sizes; leaving the default 1 byte per row would make wide
+                /// tables look nearly free to move over the network.
+                fillReadColumnWidths(statistics, read_step, table_name);
+                statistics.estimated_bytes_per_row = estimateReadBytesPerRow(read_step, statistics);
+                fillPhysicalReadBytes(statistics, physical_selected_rows);
 
-            LOG_TEST(log, "Estimate statistics for table {}: {}", table_name, statistics.dump());
-            return statistics;
+                LOG_TEST(log, "Estimate statistics for table {}: {}", table_name, statistics.dump());
+                return statistics;
+            }
         }
     }
 

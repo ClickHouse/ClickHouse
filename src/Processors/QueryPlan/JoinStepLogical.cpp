@@ -1734,8 +1734,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
             eligible_conditions += tryGetIEJoinKeyCondition(condition).has_value();
         if (eligible_conditions > 2)
         {
-            planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[0]).column_stats;
-            planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats;
+            planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[0], nullptr, /*value_ranges_only=*/ true).column_stats;
+            planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[1], nullptr, /*value_ranges_only=*/ true).column_stats;
         }
     }
 

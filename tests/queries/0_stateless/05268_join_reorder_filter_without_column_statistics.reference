@@ -1,0 +1,9 @@
+filters on JSON paths only
+Join: x0[no_stats] ⋈ x1[no_stats] ⋈ x2[no_stats] ⋈ x3[no_stats]
+Join: x0[no_stats] ⋈ x1[no_stats] ⋈ x2[no_stats]
+Join: x0[no_stats] ⋈ x1[no_stats]
+22500
+filters that also read a column with statistics
+1
+1
+1

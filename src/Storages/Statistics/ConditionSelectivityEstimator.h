@@ -68,6 +68,10 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
     RelationProfile estimateRelationProfile() const;
 
+    /// Whether `filter` or `prewhere` reads at least one column and none of the columns it reads has
+    /// statistics; a column read only inside `indexHint` or a runtime filter does not count.
+    bool filterReadsOnlyColumnsWithoutStatistics(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
+
     /// Return true if the estimator was built from a different ordered sequence of data parts.
     bool isStale(const std::vector<DataPartPtr> & data_parts) const;
     /// Perform the same check against an analyzed query part set. Mark ranges are intentionally

@@ -13,3 +13,5 @@ Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
 Conditions: __table1.a1 > __table2.lo AND __table1.a1 < __table2.hi
 79	1028580
 79	1028580
+-- a filter on a JSON path keeps the choice by selectivity
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
