@@ -8,15 +8,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # A `local` object storage removes the directories of a deleted blob that became empty, but it must stop at
 # its own root: that directory is created once, when the disk is created, and is not recreated afterwards.
 
-server_path=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.disks WHERE name = 'default'")
-
 disk_name="${CLICKHOUSE_TEST_UNIQUE_NAME}"
-# Do not use `disks/${disk_name}/` here: that is where the `local` metadata of the disk goes.
-disk_root="${server_path%/}/disks/${disk_name}_blobs"
+# The `path` of a custom `local` disk must be inside `custom_local_disks_base_directory`, which is
+# `CLICKHOUSE_DISKS_FILES` in tests. Do not use `${disk_name}/` here: that may be where the `local` metadata of the disk goes.
+disk_root="${CLICKHOUSE_DISKS_FILES%/}/${disk_name}_blobs"
 # The `path` of the disk is not in the canonical form, so the keys of the blobs, which are built from it, are not
 # either, while the root that the removal of empty directories stops at is canonicalized. A relative `path` has
 # the same effect, but it is resolved against the working directory of the server, which the test cannot rely on.
-disk_path="${server_path%/}/disks/../disks/${disk_name}_blobs/"
+disk_path="${CLICKHOUSE_DISKS_FILES%/}/../$(basename "${CLICKHOUSE_DISKS_FILES%/}")/${disk_name}_blobs/"
 
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE test (a Int32) ENGINE = MergeTree ORDER BY a
