@@ -1,0 +1,31 @@
+<test>
+    <create_query>DROP TABLE IF EXISTS perf_has_all_lc</create_query>
+    <create_query>CREATE TABLE perf_has_all_lc(
+        tags Array(LowCardinality(String)),
+        tags_plain Array(String)
+        ) ENGINE = MergeTree() ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO perf_has_all_lc
+        SELECT arr, arr
+        FROM
+        (
+            SELECT arrayConcat(
+                arrayMap(j -> concat('t', toString(cityHash64(number, j) % 5000)), range(8)),
+                if(number % 2 = 0, ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7'], [])) AS arr
+            FROM numbers(20000000)
+        )
+    </fill_query>
+
+    <query>SELECT count() FROM perf_has_all_lc WHERE hasAll(tags, ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7'])</query>
+    <query>SELECT count() FROM perf_has_all_lc WHERE hasAny(tags, ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7'])</query>
+    <query>SELECT count() FROM perf_has_all_lc WHERE hasAll(tags, ['t1'])</query>
+    <query>SELECT count() FROM perf_has_all_lc WHERE hasAny(tags, ['absent'])</query>
+
+    <query>SELECT count() FROM perf_has_all_lc WHERE hasAll(tags_plain, ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7'])</query>
+    <query>SELECT count() FROM perf_has_all_lc WHERE hasSubstr(tags, ['c0', 'c1'])</query>
+    <query>SELECT count() FROM perf_has_all_lc WHERE hasAll(tags, materialize(['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7']))</query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_has_all_lc</drop_query>
+</test>
