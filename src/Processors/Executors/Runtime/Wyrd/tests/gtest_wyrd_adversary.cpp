@@ -6,6 +6,7 @@
 #include <Processors/Executors/Runtime/Wyrd/Testing/LockFree.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Run.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/WaitGroup.h>
+#include <base/types.h>
 
 #include <gtest/gtest.h>
 
@@ -63,12 +64,18 @@ TEST(Wyrd, AdversarySuspendsInsideLockFreeScope)
         []
         {
             Atomic<size_t> counter{0};
+            Atomic<UInt32> arrived{0};
 
             WaitGroup group;
             group.add(
                 3,
                 [&](size_t)
                 {
+                    ++arrived;
+                    arrived.notify_all();
+                    for (UInt32 seen = arrived.load(); seen < 3; seen = arrived.load())
+                        arrived.wait(seen);
+
                     LockFreeScope scope;
                     for (size_t i = 0; i < 200; ++i)
                     {

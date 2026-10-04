@@ -1,5 +1,6 @@
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
+#include <Processors/Executors/Runtime/Wyrd/Testing/WaitGroup.h>
 #include <base/types.h>
 
 using namespace DB::Runtime::Wyrd;
@@ -34,6 +35,52 @@ WYRD_TEST(Wyrd, AtomicIntegerOperations)
     counter = 4;
     UInt64 copy = counter;
     EXPECT_EQ(copy, 4u);
+
+    EXPECT_EQ(counter += 3, 7u);
+    EXPECT_EQ(counter -= 2, 5u);
+    EXPECT_EQ(counter.load(), 5u);
+}
+
+WYRD_TEST(Wyrd, AtomicWaitAndNotify)
+{
+    Atomic<UInt32> stage{0};
+    Atomic<size_t> woken{0};
+
+    WaitGroup group;
+    group.add(
+        2,
+        [&](size_t)
+        {
+            stage.wait(0);
+            ++woken;
+        });
+    group.add(
+        1,
+        [&](size_t)
+        {
+            stage.store(1);
+            stage.notify_all();
+        });
+    group.join();
+
+    EXPECT_EQ(woken.load(), 2u);
+
+    WaitGroup pair;
+    pair.add(
+        1,
+        [&](size_t)
+        {
+            stage.wait(1);
+            EXPECT_EQ(stage.load(), 2u);
+        });
+    pair.add(
+        1,
+        [&](size_t)
+        {
+            stage.store(2);
+            stage.notify_one();
+        });
+    pair.join();
 }
 
 WYRD_TEST(Wyrd, AtomicEnumAndPointer)

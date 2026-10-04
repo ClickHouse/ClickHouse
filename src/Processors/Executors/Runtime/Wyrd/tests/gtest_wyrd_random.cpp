@@ -1,10 +1,10 @@
 #include <Processors/Executors/Runtime/Wyrd/Random.h>
 
-#include <gtest/gtest.h>
+#include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
 
 using namespace DB::Runtime::Wyrd;
 
-TEST(Wyrd, RandomSeedReplaysTheSequence)
+WYRD_TEST(Wyrd, RandomSeedReplaysTheSequence)
 {
     setRandomSeed(7);
     UInt64 first = randomNumber();
@@ -18,7 +18,7 @@ TEST(Wyrd, RandomSeedReplaysTheSequence)
     EXPECT_NE(randomNumber(), first);
 }
 
-TEST(Wyrd, RandomEventFrequencies)
+WYRD_TEST(Wyrd, RandomEventFrequencies)
 {
     for (size_t i = 0; i < 100; ++i)
     {
