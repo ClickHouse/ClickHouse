@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -98,11 +99,8 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
         auto iterator = db.second->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false);
         for (; iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            auto table = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip);
             if (!table)
-                continue;
-
-            if (!dynamic_cast<const MergeTreeData *>(table.get()))
                 continue;
 
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
@@ -152,6 +150,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
         std::vector<MergeTreeMutationStatus> statuses;
         {
             const IStorage * storage = merge_tree_tables[database][table].get();
+            /// NOLINT(storage-cast): `merge_tree_tables` is filled with already resolved storages.
             if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage))
                 statuses = merge_tree->getMutationsStatus();
         }
