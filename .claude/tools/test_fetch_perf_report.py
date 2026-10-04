@@ -87,6 +87,15 @@ def _write_fixture(path):
             f.write("\t".join(fields) + "\n")
 
 
+def _zstd_compress(data):
+    import subprocess as _sp
+
+    if shutil.which("zstd") is None:
+        return None
+    result = _sp.run(["zstd", "-cq"], input=data, capture_output=True, check=True)
+    return result.stdout
+
+
 def test_classification_matches_compare_sh():
     if shutil.which("clickhouse") is None:
         print("SKIP: clickhouse binary not available")
@@ -154,12 +163,14 @@ def test_summary_counts():
 
 def test_maybe_decompress_handles_plain_gzip_zstd():
     import gzip as _gzip
-    import subprocess as _sp
 
     plain = b"metric\tleft\tright\nmemory_usage\t100\t90\n"
     assert fpr.maybe_decompress(plain) == plain
     assert fpr.maybe_decompress(_gzip.compress(plain)) == plain
-    zst = _sp.run(["zstd", "-cq"], input=plain, capture_output=True).stdout
+    zst = _zstd_compress(plain)
+    if zst is None:
+        print("SKIP: zstd binary not available")
+        return
     assert zst[:4] == b"\x28\xb5\x2f\xfd"  # sanity: really zstd-framed
     assert fpr.maybe_decompress(zst) == plain
 
@@ -167,11 +178,14 @@ def test_maybe_decompress_handles_plain_gzip_zstd():
 def test_stream_to_file_handles_plain_gzip_zstd():
     import gzip as _gzip
     import io as _io
-    import subprocess as _sp
 
     plain = b"metric\tleft\tright\n" + b"memory_usage\t100\t90\n" * 10000  # >4 bytes, multi-chunk
-    zst = _sp.run(["zstd", "-cq"], input=plain, capture_output=True).stdout
-    variants = {"plain": plain, "gzip": _gzip.compress(plain), "zstd": zst}
+    variants = {"plain": plain, "gzip": _gzip.compress(plain)}
+    zst = _zstd_compress(plain)
+    if zst is not None:
+        variants["zstd"] = zst
+    else:
+        print("SKIP: zstd binary not available; plain and gzip cases still ran")
 
     with tempfile.TemporaryDirectory() as tmp:
         for name, body in variants.items():
@@ -186,11 +200,13 @@ def test_stream_to_file_zstd_cli_fallback():
     # Force the `zstd` CLI path even where `zstandard` is installed, so the fallback the PR
     # advertises is exercised regardless of the host's optional dependencies.
     import io as _io
-    import subprocess as _sp
     import sys as _sys
 
     plain = b"metric\tleft\tright\n" + b"memory_usage\t100\t90\n" * 10000
-    zst = _sp.run(["zstd", "-cq"], input=plain, capture_output=True).stdout
+    zst = _zstd_compress(plain)
+    if zst is None:
+        print("SKIP: zstd binary not available")
+        return
 
     saved = _sys.modules.get("zstandard", "MISSING")
     _sys.modules["zstandard"] = None  # makes `import zstandard` raise ImportError
@@ -215,6 +231,10 @@ def test_stream_to_file_zstd_cli_times_out():
     import stat as _stat
     import sys as _sys
     import time as _time
+
+    if shutil.which("zstd") is None:
+        print("SKIP: zstd binary not available")
+        return
 
     saved_mod = _sys.modules.get("zstandard", "MISSING")
     saved_path = os.environ["PATH"]
