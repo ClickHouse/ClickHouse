@@ -256,6 +256,8 @@ void HedgedConnections::sendQuery(
             "enable_packed_string_keys_in_aggregation",
             static_cast<bool>(modified_settings[Setting::enable_packed_string_keys_in_aggregation]));
 
+        min_queried_server_revision = std::min<UInt64>(min_queried_server_revision, replica.connection->getServerRevision(timeouts));
+
         replica.connection->sendQuery(
             timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
 
@@ -525,7 +527,8 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
         case Protocol::Server::Data:
             /// If we received the first not empty data packet and still can change replica,
             /// disable changing replica with this offset.
-            if (offset_states[replica_location.offset].can_change_replica && packet.block.rows() > 0)
+            if (offset_states[replica_location.offset].can_change_replica
+                && (packet.block.rows() > 0 || packet.block.info.num_rows_without_columns > 0))
                 disableChangingReplica(replica_location);
             replica_with_last_received_packet = replica_location;
             break;

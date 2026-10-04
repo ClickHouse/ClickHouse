@@ -179,6 +179,8 @@ void MultiplexedConnections::sendQuery(
         if (!replica.connection)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "MultiplexedConnections: Internal error");
 
+        min_queried_server_revision = std::min<UInt64>(min_queried_server_revision, replica.connection->getServerRevision(timeouts));
+
         if (replica.connection->getServerRevision(timeouts) < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
         {
             /// Disable two-level aggregation due to version incompatibility.

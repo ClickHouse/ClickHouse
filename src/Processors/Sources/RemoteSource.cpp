@@ -211,7 +211,11 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     else
         block = query_executor->readBlock();
 
-    if (block.empty())
+    /// A block with no columns carries its number of rows in the block info; it is the end of the data
+    /// only when it has no rows either.
+    UInt64 num_rows = block.empty() ? block.info.num_rows_without_columns : block.rows();
+
+    if (block.empty() && num_rows == 0)
     {
         if (manually_add_rows_before_limit_counter)
             rows_before_limit->add(rows);
@@ -219,7 +223,6 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         return {};
     }
 
-    UInt64 num_rows = block.rows();
     rows += num_rows;
     Chunk chunk(block.getColumns(), num_rows);
 
