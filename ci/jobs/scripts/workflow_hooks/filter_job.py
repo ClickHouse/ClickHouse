@@ -3,6 +3,12 @@ from pathlib import PurePosixPath
 
 from ci.defs.defs import BuildTypes, JobNames
 from ci.defs.job_configs import JobConfigs, build_digest_config
+from ci.jobs.scripts.clang_tidy_changed_files import (
+    is_analyzed_path as is_analyzed_by_clang_tidy,
+    is_generator_input,
+    is_tidy_config_path,
+    normalize_changed_path as normalize_tidy_path,
+)
 from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_functional_tests,
     has_new_integration_tests,
@@ -866,25 +872,46 @@ def should_skip_merge_queue_job(job_name):
     """Config-time filter for the `MergeQueueCI` workflow.
 
     The merge queue runs a small, fixed set of jobs (style check, fast test, the
-    `amd_binary` build, the stateless flaky check, and the docs examples). Only
-    the flaky check is conditional: it reruns the PR's new/changed stateless
-    tests as a drift guard, so a PR that changes no stateless tests has nothing
-    for it to do. Filter it out here, at config time, so such a PR does not
-    schedule the runner, restore `CH_AMD_BINARY`, and enter the test container
-    only to exit `SKIPPED`. This is the merge-queue counterpart to the `flaky`
-    branch of `should_skip_job`, kept deliberately minimal so it cannot skip the
-    build/style/fast-test/docs-examples jobs the queue always needs. The skip
-    condition matches the in-job selection in `functional_tests.py` (both rely
-    on `Targeting.get_changed_tests`), so the early exit and the config-time
-    skip never disagree. `get_changed_tests` resolves data fixtures (a
-    `.parquet`/`.tsv` under `tests/queries/0_stateless/`, even one nested in a
-    subdirectory) back to the tests that consume them, so a fixture-only PR
-    still reruns the affected test surface instead of being skipped here as
-    "no changed tests".
+    `amd_binary` build, the stateless flaky check, the docs examples, and the
+    limited clang-tidy check). Two of them are conditional. The limited
+    clang-tidy check has nothing to analyze when the change touches neither a C
+    or C++ file, nor an input of a code generator producing C++, nor the
+    clang-tidy configuration or the check's own logic, so a docs- or test-only
+    PR does not need to claim a large runner for it. And the flaky check reruns
+    the PR's new/changed stateless tests as a drift guard, so a PR that changes
+    no stateless tests has nothing for it to do. Filter it out here, at config
+    time, so such a PR does not schedule the runner, restore `CH_AMD_BINARY`,
+    and enter the test container only to exit `SKIPPED`. This is the merge-queue
+    counterpart to the `flaky` branch of `should_skip_job`, kept deliberately
+    minimal so it cannot skip the build/style/fast-test/docs-examples jobs the
+    queue always needs. The skip condition matches the in-job selection in
+    `functional_tests.py` (both rely on `Targeting.get_changed_tests`), so the
+    early exit and the config-time skip never disagree. `get_changed_tests`
+    resolves data fixtures (a `.parquet`/`.tsv` under
+    `tests/queries/0_stateless/`, even one nested in a subdirectory) back to the
+    tests that consume them, so a fixture-only PR still reruns the affected test
+    surface instead of being skipped here as "no changed tests".
     """
     global _info_cache
     if _info_cache is None:
         _info_cache = Info()
+
+    if job_name == JobNames.CLANG_TIDY_CHANGED_FILES:
+        # Fail-close: with the changed files unknown there is no basis for a
+        # skip, so run the job - it refuses to report a selection it could not
+        # compute, rather than passing on an empty one.
+        changed_files = _info_cache.get_changed_files()
+        if changed_files is not None and not any(
+            is_analyzed_by_clang_tidy(normalize_tidy_path(f))
+            or is_tidy_config_path(normalize_tidy_path(f))
+            or is_generator_input(normalize_tidy_path(f))
+            for f in changed_files
+        ):
+            return (
+                True,
+                "Skipped, the change touches no C or C++ file that clang-tidy analyzes",
+            )
+        return False, ""
 
     if "flaky" not in job_name.lower() or "stateless" not in job_name.lower():
         return False, ""
