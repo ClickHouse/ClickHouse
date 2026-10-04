@@ -951,9 +951,13 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
         auto responses = zookeeper->exists(metadata_znode_paths);
         for (size_t i = 0; i != table_names.size(); ++i)
         {
+            /// The `metadata` znode must exist for a live replicated table. Any error (including a connection loss
+            /// reported per path by the batched `exists`) fails the backup: silently omitting the version would
+            /// make RESTORE assume version 0, which is the bug this file is meant to prevent.
             const auto & response = responses[i];
-            if (response.error == Coordination::Error::ZOK)
-                add_metadata_version_entry(table_infos.at(table_names[i]).metadata_path_in_backup, response.stat.version);
+            if (response.error != Coordination::Error::ZOK)
+                throw zkutil::KeeperException::fromPath(response.error, metadata_znode_paths[i]);
+            add_metadata_version_entry(table_infos.at(table_names[i]).metadata_path_in_backup, response.stat.version);
         }
     }
 }
