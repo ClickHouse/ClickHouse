@@ -48,6 +48,8 @@ multiple buffers
 780	115
 single buffer
 6	60	6	6
+subcolumns of one column
+15	15	30	6	45
 multi-substream first column
 60	780	115
 first stripe of one granule
@@ -58,5 +60,6 @@ first stripe of one granule
 05113 multiple buffers, four columns	5
 05113 multiple buffers, two columns	3
 05113 single buffer, four columns	2
+05113 multiple buffers, subcolumns of one column	3
 05113 multiple buffers, multi-substream first column	4
 05113 multiple buffers, first stripe of one granule	4

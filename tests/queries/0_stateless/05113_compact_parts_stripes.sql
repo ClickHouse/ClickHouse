@@ -158,6 +158,23 @@ SETTINGS max_threads = 1, log_comment = '05113 single buffer, four columns';
 
 DROP TABLE t_compact_stripes;
 
+-- Subcolumns of one column share a buffer, so the reader is chosen by the number of columns of the part to read:
+-- here 3 granules and five requested subcolumns and columns, but only two columns of the part.
+CREATE TABLE t_compact_stripes (a UInt64, json JSON)
+ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 2, min_bytes_for_wide_part = '1G', ratio_of_defaults_for_sparse_serialization = 1.0,
+    storage_policy = 'default';
+
+SYSTEM STOP MERGES t_compact_stripes;
+INSERT INTO t_compact_stripes SELECT number, concat('{"k":', toString(number), ',"l":', toString(number * 2), ',"m":"x","n":', toString(number * 3), '}')::JSON FROM numbers(6);
+
+SELECT 'subcolumns of one column';
+SYSTEM CLEAR MARK CACHE;
+SELECT sum(a), sum(json.k::UInt64), sum(json.l::UInt64), count(json.m), sum(json.n::UInt64) FROM t_compact_stripes
+SETTINGS max_threads = 1, log_comment = '05113 multiple buffers, subcolumns of one column';
+
+DROP TABLE t_compact_stripes;
+
 -- The first column of a part may have several substreams (the marks of all its substreams of a granule are adjacent
 -- in both layouts), so the stripes are detected by the marks of the first substreams of the first two columns.
 CREATE TABLE t_compact_stripes (arr Array(UInt64), a UInt64, s String)
