@@ -1,0 +1,10 @@
+direct IN, lookup ON (no access):
+subquery IN, lookup ON (no access):
+direct IN, lookup OFF (no access):
+subquery IN, lookup OFF (no access):
+direct IN, lookup ON (with access):
+1
+3
+subquery IN, lookup ON (with access):
+1
+3

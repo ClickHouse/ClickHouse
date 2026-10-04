@@ -377,6 +377,7 @@
                 "reference/engines/table-engines/mergetree-family/collapsingmergetree",
                 "reference/engines/table-engines/mergetree-family/custom-partitioning-key",
                 "reference/engines/table-engines/mergetree-family/graphitemergetree",
+                "reference/engines/table-engines/mergetree-family/lookupindexes",
                 "reference/engines/table-engines/mergetree-family/replacingmergetree",
                 "reference/engines/table-engines/mergetree-family/replication",
                 "reference/engines/table-engines/mergetree-family/summingmergetree",

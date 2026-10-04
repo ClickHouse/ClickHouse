@@ -10013,6 +10013,10 @@ Allows creation of tables with the [TimeSeries](/reference/engines/table-engines
 )", PRIVATE_PREVIEW, allow_experimental_time_series_table, \
         {"26.9", false, false, "The `TimeSeries` table engine and the `promql` dialect were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_table`."}, \
         {"24.8", false, false, "Added new setting to allow the TimeSeries table engine. At the time the setting was named `allow_experimental_time_series_table`, which is now an alias of it."}) \
+    DECLARE(Bool, allow_experimental_lookup_index, false, R"(
+Allows using `LOOKUP INDEX` for `MergeTree` tables.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to gate the experimental `LOOKUP INDEX` clause on `MergeTree`-family tables."}) \
     DECLARE(Bool, time_series_prefer_recent_samples_table, true, R"(
 Read from the recent samples table of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table instead of the main samples table when the whole requested time range fits in the TTL window of the recent samples table (see the `recent_samples_ttl_seconds` setting of the TimeSeries table engine).
 )", PRIVATE_PREVIEW, \
