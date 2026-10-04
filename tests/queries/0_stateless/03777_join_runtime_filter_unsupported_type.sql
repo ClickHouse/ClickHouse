@@ -5,6 +5,8 @@ SET join_algorithm = 'hash,parallel_hash';
 SET query_plan_optimize_join_order_algorithm='greedy';
 SET query_plan_optimize_join_order_limit=1;
 SET query_plan_join_swap_table=0;
+-- Pinned (randomized in CI): a tiny bloom filter saturates and flips the asserted filter counters.
+SET join_runtime_bloom_filter_bytes = 524288;
 
 
 SELECT '============ Filter key count greater than exact values limit';

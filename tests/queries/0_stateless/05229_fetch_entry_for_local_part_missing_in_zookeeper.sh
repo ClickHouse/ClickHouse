@@ -24,11 +24,14 @@ ${CLICKHOUSE_CLIENT} -q "
 DROP TABLE IF EXISTS t_fetch_missing_znode_r1 SYNC;
 DROP TABLE IF EXISTS t_fetch_missing_znode_r2 SYNC;
 
+-- The non-recursive \`rm\` below fails on the part's znode if the full header gives it children.
 CREATE TABLE t_fetch_missing_znode_r1 (id UInt64, v UInt64)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_fetch_missing_znode', 'r1') ORDER BY id;
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_fetch_missing_znode', 'r1') ORDER BY id
+SETTINGS use_minimalistic_part_header_in_zookeeper = 1;
 
 CREATE TABLE t_fetch_missing_znode_r2 (id UInt64, v UInt64)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_fetch_missing_znode', 'r2') ORDER BY id;
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_fetch_missing_znode', 'r2') ORDER BY id
+SETTINGS use_minimalistic_part_header_in_zookeeper = 1;
 
 INSERT INTO t_fetch_missing_znode_r1 SELECT number, number FROM numbers(100);
 SYSTEM SYNC REPLICA t_fetch_missing_znode_r2;

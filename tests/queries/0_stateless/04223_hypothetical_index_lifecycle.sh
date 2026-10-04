@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database
+# Tags: long, no-replicated-database, no-random-settings, no-random-merge-tree-settings
 # no-replicated-database: hypothetical indexes are session-scoped and not replicated
+# no-random-settings, no-random-merge-tree-settings: the test asserts exact EXPLAIN WHATIF
+#   diagnostics (plan shape, applicability, statistical-vs-applicability source, part/mark
+#   counts) that shift under randomized optimizer/statistics settings — e.g.
+#   materialize_statistics_on_insert makes auto-stats materialize so WHATIF reports
+#   'source: statistical', and query_plan_optimize_lazy_final rewrites the FINAL plan.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

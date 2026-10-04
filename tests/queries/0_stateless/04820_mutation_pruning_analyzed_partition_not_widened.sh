@@ -30,7 +30,8 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT rmt_mutation_prune_pause_before_analysis;
 "
 
-$CLICKHOUSE_CLIENT --query "ALTER TABLE t_mut_prune_no_widen DELETE WHERE p = 1 SETTINGS mutations_sync = 1" &
+# Pruning is what this test is about, so pin it against the randomizer.
+$CLICKHOUSE_CLIENT --query "ALTER TABLE t_mut_prune_no_widen DELETE WHERE p = 1 SETTINGS mutations_sync = 1, optimize_mutations_with_partition_pruning = 1" &
 
 # Wait until the mutation is paused right before the pruning analysis.
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT rmt_mutation_prune_pause_before_analysis PAUSE"

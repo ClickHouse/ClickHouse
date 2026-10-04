@@ -4,6 +4,8 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/121954
 
 SET optimize_and_compare_chain = 1;
+-- Pinned (randomized in CI): a tiny work budget stops the derivation the EXPLAIN checks below count.
+SET optimize_and_compare_chain_max_hash_work = 5000000;
 
 SELECT count()
 FROM

@@ -51,7 +51,9 @@ report() { # report <counter> <tag>...
 
 echo '--- A0 a filter on the column returns every row that matches it ---'
 # A bound that comes back inverted prunes the data file that holds the row, so these lose rows.
-${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
+# `use_iceberg_partition_pruning` gates the whole manifest filter DAG (`makeManifestFilterDag`),
+# min/max bounds included, and CI randomizes it off - which makes every count below vacuous.
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --use_iceberg_partition_pruning=1 --query "
     SELECT count() FROM high;
     SELECT count() FROM high WHERE d = toDecimal128('0.99', 38);
     SELECT count() FROM high WHERE d = toDecimal128('-0.99', 38);
@@ -62,7 +64,7 @@ echo '--- A1 a probe outside one file min/max-prunes it, and only it ---'
 # `low` is the control: its shift stays inside `Int128` whatever the reader does with an overflow.
 # Each `high` probe sits outside exactly one of the two shifted bounds, so one file is pruned and
 # the other is read - the row counts say the surviving file is the one that could hold a match.
-${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --use_iceberg_partition_pruning=1 --query "
     SELECT count() FROM low WHERE d = toDecimal128('0.95', 38) SETTINGS log_comment = '${CLICKHOUSE_DATABASE}_low_pos';
     SELECT count() FROM low WHERE d = toDecimal128('-0.95', 38) SETTINGS log_comment = '${CLICKHOUSE_DATABASE}_low_neg';
     SELECT count() FROM high WHERE d = toDecimal128('0.5', 38) SETTINGS log_comment = '${CLICKHOUSE_DATABASE}_high_pos';
@@ -71,7 +73,7 @@ ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
 report IcebergMinMaxIndexPrunedFiles low_pos low_neg high_pos high_neg
 
 echo '--- A2 a value inside both shifted bounds prunes nothing ---'
-${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --use_iceberg_partition_pruning=1 --query "
     SELECT count() FROM high WHERE d = toDecimal128('0.0', 38) SETTINGS log_comment = '${CLICKHOUSE_DATABASE}_high_zero';
     SYSTEM FLUSH LOGS query_log;"
 report IcebergMinMaxIndexPrunedFiles high_zero
@@ -108,13 +110,13 @@ PATCH_MANIFESTS
 
 # A table function reads the patched manifests afresh; the `high` table above still holds the ones
 # it wrote. Every bound is now `±1.0`, so one data file declares `[0, 1)` and the other `(-1, 0]`.
-${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --use_iceberg_partition_pruning=1 --query "
     SELECT count() FROM icebergLocal('${ROOT}/high/');
     SELECT count() FROM icebergLocal('${ROOT}/high/') WHERE d = toDecimal128('0.99', 38);
     SELECT count() FROM icebergLocal('${ROOT}/high/') WHERE d = toDecimal128('-0.99', 38);"
 
 echo '--- B1 the saturated bounds prune the file that cannot hold the probe ---'
-${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --use_iceberg_partition_pruning=1 --query "
     SELECT count() FROM icebergLocal('${ROOT}/high/') WHERE d = toDecimal128('0.5', 38)
         SETTINGS log_comment = '${CLICKHOUSE_DATABASE}_rounded_pos';
     SELECT count() FROM icebergLocal('${ROOT}/high/') WHERE d = toDecimal128('-0.5', 38)

@@ -6,6 +6,9 @@ SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET query_plan_text_index_add_hint = 1;
 SET query_plan_merge_filters = 1;
+-- The PREWHERE condition is truth-tested as `ifNull('prod' = map[...], 0)`, and unwrapping that
+-- `ifNull` for index analysis is gated behind this setting (CI randomizes it off).
+SET allow_key_condition_coalesce_rewrite = 1;
 
 DROP TABLE IF EXISTS t_stream_text_index;
 

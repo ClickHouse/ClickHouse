@@ -46,12 +46,14 @@ $CLICKHOUSE_CLIENT $settings -q "
 
 echo "-- correctness does not depend on lazy FINAL"
 $CLICKHOUSE_CLIENT $settings -q "SELECT count(), uniqExact(m['k']) FROM t_lazy_final_text_index FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 0"
-$CLICKHOUSE_CLIENT $settings -q "SELECT count(), uniqExact(m['k']) FROM t_lazy_final_text_index FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0"
+$CLICKHOUSE_CLIENT $settings -q "SELECT count(), uniqExact(m['k']) FROM t_lazy_final_text_index FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0, max_bytes_for_lazy_final = 0"
 
 echo "-- the text index is consulted for the set the query owns"
+# The set of key values must not hit a byte limit: a truncated set disables lazy FINAL before index
+# analysis runs (0 means unlimited), and the randomizer picks a 1-byte limit.
 $CLICKHOUSE_CLIENT $settings -q "
     SELECT count() FROM t_lazy_final_text_index FINAL WHERE status = 'target'
-    SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0
+    SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0, max_bytes_for_lazy_final = 0
 " --send_logs_level='debug' 2>&1 \
     | grep -c -F 'LazyFinalKeyAnalysisTransform: Index `idx_keys` has dropped' \
     | sed 's/^0$/no/; s/^[1-9][0-9]*$/yes/'

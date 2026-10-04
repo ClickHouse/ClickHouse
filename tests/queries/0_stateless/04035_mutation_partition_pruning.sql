@@ -4,6 +4,9 @@
 -- because they use partition-based block number allocation.
 
 SET mutations_sync = 1;
+-- The affected-partition assertions below require the optimization; it is randomized in CI, and
+-- test 7 turns it off explicitly to assert the unpruned fallback.
+SET optimize_mutations_with_partition_pruning = 1;
 
 -- ============================================================
 -- Phase 1: Automatic WHERE-based partition pruning

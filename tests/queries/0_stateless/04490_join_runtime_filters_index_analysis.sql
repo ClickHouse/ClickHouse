@@ -40,6 +40,9 @@ SET query_plan_join_swap_table = 'false';
 -- exercise the feature (the ParallelReplicas CI job otherwise forces it on).
 SET enable_parallel_replicas = 0;
 SET join_runtime_filter_min_probe_rows = 0;
+-- Pinned (randomized in CI): an exact set of join keys is what index analysis prunes by; a bloom
+-- filter (tiny limit or byte budget) prunes nothing.
+SET join_runtime_filter_exact_values_limit = 10000, join_runtime_bloom_filter_bytes = 524288;
 
 -- PK join
 SELECT s1.id, s1.country, s1.amount

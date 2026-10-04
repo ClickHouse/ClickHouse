@@ -26,7 +26,9 @@ SELECT 'Horizontal merge';
 SELECT column, type, substreams, filenames FROM system.parts_columns where database=currentDatabase() and table = 'test' and active;
 SELECT '-------------------------------------------------------------------------';
 
-ALTER TABLE test MODIFY SETTING vertical_merge_algorithm_min_rows_to_activate=1, vertical_merge_algorithm_min_columns_to_activate=1;
+-- The activation thresholds only choose between the two algorithms once vertical is enabled at
+-- all, and `enable_vertical_merge_algorithm` is randomized off in CI.
+ALTER TABLE test MODIFY SETTING enable_vertical_merge_algorithm=1, vertical_merge_algorithm_min_rows_to_activate=1, vertical_merge_algorithm_min_columns_to_activate=1;
 INSERT INTO test SELECT 42, 'str', tuple(42, [1, 2, 3]), '{"a" : 42, "b" : ["a", "b", "c"], "d" : "Hello", "e" : 42, "f" : [{"g" : 42, "k" : [1, 2, 3]}]}', [1, 2, 3], [1, 2, 3];
 OPTIMIZE TABLE test FINAL;
 SELECT 'Vertical merge';
