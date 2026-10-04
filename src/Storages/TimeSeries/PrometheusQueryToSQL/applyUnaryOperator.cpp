@@ -4,6 +4,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/dropHistogramValues.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 
 
@@ -82,16 +83,17 @@ SQLQueryPiece applyUnaryOperator(
             return res;
         }
 
+        case StoreMethod::HISTOGRAM_GRID:
+        {
+            /// Unary '-' computes new float values, so the histogram payloads of a combined grid are dropped.
+            return applyUnaryOperator(operator_node, dropHistogramValues(std::move(argument), context), context);
+        }
+
         case StoreMethod::SCALAR_GRID:
         case StoreMethod::VECTOR_GRID:
         {
-            /// For scalar grid:
-            /// SELECT arrayMap(x -> -x, values) AS values
-            /// FROM <scalar_grid>
-            ///
-            /// For vector grid:
-            /// SELECT group, arrayMap(x -> -x, values) AS values
-            /// FROM <vector_grid>
+            /// SELECT [group,] arrayMap(x -> -x, values) AS values
+            /// FROM <scalar_grid | vector_grid>
             SelectQueryBuilder builder;
             if (argument.store_method == StoreMethod::VECTOR_GRID)
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
@@ -116,6 +118,7 @@ SQLQueryPiece applyUnaryOperator(
 
         case StoreMethod::CONST_STRING:
         case StoreMethod::RAW_DATA:
+        case StoreMethod::HISTOGRAM_RAW_DATA:
         {
             /// Can't get in here because these store methods are incompatible with the allowed argument types
             /// (see checkArgumentTypes()).
