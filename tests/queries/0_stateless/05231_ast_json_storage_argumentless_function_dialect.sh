@@ -33,6 +33,8 @@ send() {
         grep -oEm1 "for key '[a-z_]+' has no 'arguments' list"
 }
 
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS mvk"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS tkd"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS tk"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS tk2"
 
@@ -73,12 +75,15 @@ send "$(payload "UPDATE tk SET a = 1 WHERE a IN (1)" "$ARGS_A_1")"
 # That visitor also walks a restored `select` slot before analysis, in three readers: a view definition
 # (`InterpreterCreateQuery`), `MODIFY QUERY` (`InterpreterAlterQuery`), and an `INSERT ... SELECT` whose
 # destination is `Distributed` (`StorageDistributed::distributedWrite`, which the default
-# `parallel_distributed_insert_select = 2` selects). One payload per reader.
+# `parallel_distributed_insert_select = 2` selects). One payload per reader. `ASTSelectQuery::readJSON`
+# screens its own slots first, so the reported key is the inner one the function actually sits in.
 ${CLICKHOUSE_CLIENT} --query "CREATE MATERIALIZED VIEW mvk ENGINE = MergeTree ORDER BY a AS SELECT a FROM tk"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE tkd AS tk ENGINE = Distributed(test_shard_localhost, currentDatabase(), tk)"
 send "$(payload "CREATE VIEW vk AS SELECT a FROM tk WHERE a IN (1)" "$ARGS_A_1")"
 send "$(payload "ALTER TABLE mvk MODIFY QUERY SELECT a FROM tk WHERE a IN (1)" "$ARGS_A_1")"
 send "$(payload "INSERT INTO tkd SELECT a FROM tk WHERE a IN (1)" "$ARGS_A_1")"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE mvk"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE tkd"
 
 # The mutation predicate of `ALTER ... UPDATE`/`DELETE` reaches it too, through
 # `replaceNonDeterministicToScalars`, which `InterpreterAlterQuery` runs when
