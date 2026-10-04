@@ -1,0 +1,100 @@
+=== written as binary and as text, read back into the same Variants ===
+Row 1:
+──────
+mode:    binary
+a_type:  JSON
+a_value: {"x":1}
+b_type:  QBit(BFloat16, 3)
+b_value: [1,2,3]
+c_type:  AggregateFunction(sum, UInt64)
+c_value: 9
+
+Row 2:
+──────
+mode:    binary
+a_type:  String
+a_value: plain
+b_type:  UInt64
+b_value: 7
+c_type:  String
+c_value: 0
+
+Row 3:
+──────
+mode:    binary
+a_type:  None
+a_value: 
+b_type:  None
+b_value: 
+c_type:  None
+c_value: 0
+Row 1:
+──────
+mode:    text
+a_type:  JSON
+a_value: {"x":1}
+b_type:  QBit(BFloat16, 3)
+b_value: [1,2,3]
+c_type:  AggregateFunction(sum, UInt64)
+c_value: 9
+
+Row 2:
+──────
+mode:    text
+a_type:  String
+a_value: plain
+b_type:  UInt64
+b_value: 7
+c_type:  String
+c_value: 0
+
+Row 3:
+──────
+mode:    text
+a_type:  None
+a_value: 
+b_type:  None
+b_value: 
+c_type:  None
+c_value: 0
+Row 1:
+──────
+mode:    original
+a_type:  JSON
+a_value: {"x":1}
+b_type:  QBit(BFloat16, 3)
+b_value: [1,2,3]
+c_type:  AggregateFunction(sum, UInt64)
+c_value: 9
+
+Row 2:
+──────
+mode:    original
+a_type:  String
+a_value: plain
+b_type:  UInt64
+b_value: 7
+c_type:  String
+c_value: 0
+
+Row 3:
+──────
+mode:    original
+a_type:  None
+a_value: 
+b_type:  None
+b_value: 
+c_type:  None
+c_value: 0
+Row 1:
+──────
+mode:    untagged request
+b_type:  String
+b_value: 03803F00404040
+=== a request omitting the tagged type, where String is already taken ===
+multiple children mapping to the same ClickHouse type
+=== an unselected slot holding undefined bytes is not read ===
+dense_extra	JSON	{"x":1}
+dense_extra	UInt64	7
+sparse	JSON	{"x":1}
+sparse	UInt64	7
