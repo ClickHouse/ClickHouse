@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/convertColumnToType.h>
 
 #include <Analyzer/Utils.h>
@@ -35,12 +36,14 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool external_table_strict_query;
     extern const SettingsBool transform_null_in;
     extern const SettingsBool validate_enum_literals_in_operators;
 }
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_QUERY;
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
 }
@@ -139,6 +142,59 @@ std::optional<ColumnWithTypeAndName> renderEnumLeaves(const ColumnPtr & column, 
     if (!result)
         return {};
     return ColumnWithTypeAndName{result, result_type, ""};
+}
+
+bool holdsEnumConstant(const QueryTreeNodePtr & node)
+{
+    if (const auto * constant_node = node->as<ConstantNode>())
+        if (holdsEnumValue(constant_node->getColumn()->getDataColumnPtr(), constant_node->getResultType()))
+            return true;
+
+    for (const auto & child : node->getChildren())
+        if (child && holdsEnumConstant(child))
+            return true;
+    return false;
+}
+
+/// A constant that still holds an `Enum` value would reach the external database as its number; a conjunct with one is applied locally only.
+void removeConjunctsHoldingEnumConstants(QueryTreeNodePtr & filter, const ContextPtr & context)
+{
+    auto throw_if_strict = [&]
+    {
+        if (context->getSettingsRef()[Setting::external_table_strict_query])
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Query contains expressions that cannot be pushed down (and external_table_strict_query=true)");
+    };
+
+    auto * function = filter->as<FunctionNode>();
+    if (!function || function->getFunctionName() != "and")
+    {
+        if (holdsEnumConstant(filter))
+        {
+            throw_if_strict();
+            filter = {};
+        }
+        return;
+    }
+
+    auto & conjuncts = function->getArguments().getNodes();
+    if (std::erase_if(conjuncts, holdsEnumConstant) == 0)
+        return;
+    throw_if_strict();
+
+    if (conjuncts.empty())
+    {
+        filter = {};
+    }
+    else if (conjuncts.size() == 1)
+    {
+        QueryTreeNodePtr remaining = conjuncts.front();
+        filter = std::move(remaining);
+    }
+    else
+    {
+        const auto function_impl = FunctionFactory::instance().get("and", context);
+        function->resolveAsFunction(function_impl->build(function->getArgumentColumns()));
+    }
 }
 
 class PrepareForExternalDatabaseVisitor : public InDepthQueryTreeVisitor<PrepareForExternalDatabaseVisitor>
@@ -296,8 +352,12 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
     {
         if (query_node->hasPrewhere())
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
+        if (query_node->hasPrewhere())
+            removeConjunctsHoldingEnumConstants(query_node->getPrewhere(), context);
         if (query_node->hasWhere())
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
+        if (query_node->hasWhere())
+            removeConjunctsHoldingEnumConstants(query_node->getWhere(), context);
     }
 
     /// The external database parses this text itself, so a date-time constant must stay in its text form.

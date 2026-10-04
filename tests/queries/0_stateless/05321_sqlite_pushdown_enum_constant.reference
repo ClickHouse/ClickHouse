@@ -96,3 +96,16 @@ tuple(s) IN (tuple(E), tuple(E2))
 Query: SELECT `s` FROM `tbl` WHERE (`s`) IN ('3', '4')
 (s, n) < (E, x)
 TYPE_MISMATCH
+(s, n) < (E, n)
+3
+Query: SELECT `s`, `n` FROM `tbl`
+(s, n) < (E, n) AND n = 3
+3
+Query: SELECT `s`, `n` FROM `tbl` WHERE `n` = 3
+(s, n) IN ((E, NULL))
+
+Query: SELECT `s`, `n` FROM `tbl`
+strict (s, n) < (E, n)
+INCORRECT_QUERY
+strict s = E
+7

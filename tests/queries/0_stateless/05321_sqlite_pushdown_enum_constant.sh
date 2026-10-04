@@ -77,8 +77,19 @@ check '(s, n) < Nullable((E, 4))' "(s, n) < toNullable(($E, 4))"
 check '(s, n) < Dynamic((E, 4))' "(s, n) < CAST(($E, 4) AS Dynamic)"
 check '(s, n) < Variant((E, 4))' "(s, n) < $VT"
 check '(s, n) IN (Nullable((E, 3)))' "(s, n) IN (toNullable(($E, 3)))"
+# A one-element tuple key: the local set holds the Enum's value as text, and the pushed filter follows it.
 check 'tuple(s) IN (tuple(E))' "tuple(s) IN (tuple($E))"
 check 'tuple(s) IN (tuple(E), tuple(E2))' "tuple(s) IN (tuple($E), tuple($E2))"
 
 echo '(s, n) < (E, x)'
 ${CLICKHOUSE_CLIENT} --query "SELECT s FROM t_05321 WHERE (s, n) < ($E, 'x')" 2>&1 | grep -o 'TYPE_MISMATCH' | head -1
+
+# An Enum constant the filter cannot be written with keeps its conjunct local.
+check '(s, n) < (E, n)' "(s, n) < ($E, n)"
+check '(s, n) < (E, n) AND n = 3' "(s, n) < ($E, n) AND n = 3"
+check '(s, n) IN ((E, NULL))' "(s, n) IN (($E, NULL))"
+
+echo 'strict (s, n) < (E, n)'
+${CLICKHOUSE_CLIENT} --query "SELECT s FROM t_05321 WHERE (s, n) < ($E, n) SETTINGS external_table_strict_query = 1" 2>&1 | grep -o 'INCORRECT_QUERY' | head -1
+echo 'strict s = E'
+${CLICKHOUSE_CLIENT} --query "SELECT s FROM t_05321 WHERE s = $E SETTINGS external_table_strict_query = 1"
