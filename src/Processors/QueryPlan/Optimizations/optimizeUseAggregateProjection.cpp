@@ -44,6 +44,7 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/ProjectionsDescription.h>
 
+#include <algorithm>
 #include <unordered_map>
 
 namespace DB
@@ -241,6 +242,8 @@ static const ActionsDAG::Node * buildResidualFilterNode(
         filter_root = filter_root->children.front();
 
     auto query_atoms = ActionsDAG::extractConjunctionAtoms(filter_root);
+    /// `extractConjunctionAtoms` yields the atoms right to left, while the rebuilt `and` is evaluated left to right.
+    std::ranges::reverse(query_atoms);
 
     std::vector<ASTPtr> proj_conjuncts;
     extractConjunctsFromAST(projection_where, proj_conjuncts);

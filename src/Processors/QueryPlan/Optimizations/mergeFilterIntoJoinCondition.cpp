@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 
+#include <ranges>
 #include <unordered_map>
 #include <vector>
 
@@ -252,6 +253,29 @@ bool subtreeContainsNonDeterministicFunction(const ActionsDAG::Node * node)
     return false;
 }
 
+/// Unlike `getConjunctsList`, shared nodes are not de-duplicated: each occurrence is reported.
+ActionsDAG::NodeRawConstPtrs getConjunctsInWrittenOrder(const ActionsDAG::Node * predicate)
+{
+    ActionsDAG::NodeRawConstPtrs conjuncts;
+    std::vector<const ActionsDAG::Node *> stack{predicate};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
+        {
+            for (const auto * child : node->children | std::ranges::views::reverse)
+                stack.push_back(child);
+        }
+        else if (node->type == ActionsDAG::ActionType::ALIAS)
+            stack.push_back(node->children.front());
+        else
+            conjuncts.push_back(node);
+    }
+    return conjuncts;
+}
+
 std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     ActionsDAG & filter_dag,
     const std::string & filter_name,
@@ -348,6 +372,33 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
         }
         else if (rejected_conjuncts.size() > 1)
         {
+            /// `and` is evaluated left to right, so a guard stays ahead of the conjunct it guards.
+            /// `getConjunctsList` de-duplicates shared nodes and can report one twice through its ALIAS branch.
+            std::unordered_map<const ActionsDAG::Node *, size_t> remaining_occurrences;
+            for (const auto * conjunct : rejected_conjuncts)
+                ++remaining_occurrences[conjunct];
+
+            ActionsDAG::NodeRawConstPtrs ordered_conjuncts;
+            ordered_conjuncts.reserve(rejected_conjuncts.size());
+            for (const auto * conjunct : getConjunctsInWrittenOrder(predicate))
+            {
+                auto it = remaining_occurrences.find(conjunct);
+                if (it != remaining_occurrences.end() && it->second != 0)
+                {
+                    --it->second;
+                    ordered_conjuncts.push_back(conjunct);
+                }
+            }
+
+            if (ordered_conjuncts.size() != rejected_conjuncts.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Reordering the residual filter lost {} of {} conjuncts. DAG:\n{}",
+                    rejected_conjuncts.size() - ordered_conjuncts.size(),
+                    rejected_conjuncts.size(),
+                    filter_dag.dumpDAG());
+
+            rejected_conjuncts = std::move(ordered_conjuncts);
+
             /// `and` of the remaining conjuncts normalizes the values itself.
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
             filter_dag.addOrReplaceInOutputs(createResultPredicate(
