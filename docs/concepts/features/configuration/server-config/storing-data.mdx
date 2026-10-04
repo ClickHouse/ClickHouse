@@ -624,7 +624,7 @@ Example of disk configuration:
 It is possible to configure local cache over disks in storage configuration starting from version 22.3.
 For versions 22.3 - 22.7 cache is supported only for `s3` disk type. For versions >= 22.8 cache is supported for any disk type: S3, Azure, Local, Encrypted, etc.
 For versions >= 23.5 cache is supported only for remote disk types: S3, Azure, HDFS (unsupported).
-Cache uses `LRU` cache policy.
+Cache uses the `cache_policy` setting (default `SLRU`) for eviction, listed on [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings). The full list of cache-disk settings is in [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings).
 
 Example of configuration for versions later or equal to 22.8:
 
@@ -684,24 +684,33 @@ Example of configuration for versions earlier than 22.8:
 </clickhouse>
 ```
 
-File Cache **disk configuration settings**:
+File Cache **disk configuration settings** (common settings):
 
-These settings should be defined in the disk configuration section.
+These settings should be defined in the disk configuration section. This table lists commonly used cache-disk knobs, not every key accepted from config. Runtime values and the full setting list are in [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings).
 
 | Parameter                             | Type    | Default    | Description                                                                                                                                                                                  |
 |---------------------------------------|---------|------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `path`                                | String  | -          | **Required**. Path to the directory where cache will be stored.                                                                                                                              |
-| `max_size`                            | Size    | -          | **Required**. Maximum cache size in bytes or readable format (e.g., `10Gi`). Files are evicted using LRU policy when the limit is reached. Supports `ki`, `Mi`, `Gi` formats (since v22.10). |
+| `max_size`                            | Size    | -          | Maximum cache size in bytes or readable format (e.g., `10Gi`). **Required unless** `max_size_ratio_to_total_space` is set; the two cannot be set together. Files are evicted using the policy from `cache_policy` (SLRU by default) when the limit is reached. Supports `ki`, `Mi`, `Gi` formats (since v22.10). |
+| `max_size_ratio_to_total_space`       | Double  | -          | Alternative to `max_size`: fraction of total disk space used as the cache size, in `(0, 1]`. **Required unless** `max_size` is set. Cannot be specified together with `max_size`. |
+| `cache_policy`                        | Enum    | `SLRU`     | Cache eviction policy. Possible values: `LRU`, `SLRU` (default), `SLRU_OVERCOMMIT`, `LRU_OVERCOMMIT`. Overcommit policies require a build with distributed-cache support and cannot be combined with `use_split_cache` (startup rejects both cases).                               |
+| `slru_size_ratio`                     | Double  | `0.6`      | For `SLRU` / `SLRU_OVERCOMMIT`, ratio of protected cache to probationary cache.                                                                                                                                                    |
+| `reserve_granularity`                 | Size    | `4Mi`      | When reserving space for a file-segment download, reserve at least this many bytes ahead (capped at the file-segment size). `0` reserves exactly the requested size.                                                               |
 | `cache_on_write_operations`           | Boolean | `false`    | Enables write-through cache for `INSERT` queries and background merges. Can be overridden per query with `enable_filesystem_cache_on_write_operations`.                                      |
 | `enable_filesystem_query_cache_limit` | Boolean | `false`    | Enables per-query cache size limits based on `filesystem_cache_max_download_size`.                                                                                                                         |
 | `cache_hits_threshold`                | Integer | `0`        | Deprecated; has no effect.                                                                                                                          |
 | `enable_bypass_cache_with_threshold`  | Boolean | `false`    | Skips cache for large read ranges.                                                                                                                                                           |
 | `bypass_cache_threshold`              | Size    | `256Mi`    | Read range size that triggers cache bypass (requires `enable_bypass_cache_with_threshold`).                                                                                                  |
 | `max_file_segment_size`               | Size    | `32Mi`     | Maximum size of a single cache file in bytes or readable format.                                                                                                                             |
+| `boundary_alignment`                  | Size    | `4Mi`      | Alignment of file segment boundaries in the cache. Must not exceed `max_file_segment_size` (startup rejects a larger value).                                                                 |
 | `max_elements`                        | Integer | `10000000` | Maximum number of cache files.                                                                                                                                                               |
 | `load_metadata_threads`               | Integer | `16`       | Number of threads for loading cache metadata at startup.                                                                                                                                     |
+| `background_download_threads`         | UInt64  | `5`        | Number of threads for background download of file segments. `0` disables background download.                                                                                                |
+| `background_download_queue_size_limit` | UInt64 | `5000`    | Maximum number of segments waiting in the background download queue. `0` means no limit (the queue is not disabled). Background download itself is disabled only when `background_download_threads` is `0`. |
+| `background_download_max_file_segment_size` | Size | `4Mi` | Alignment-rounded threshold for how far a segment is prefetched in the background. The download size is rounded up to `boundary_alignment`, so this is not a hard cap (for example `1Mi` with `boundary_alignment` `4Mi` still downloads `4Mi`). |
+| `load_metadata_asynchronously`        | Boolean | `false`    | Load cache metadata asynchronously on server startup.                                                                                                                                        |
 | `use_real_disk_size`                  | Boolean | `false`    | Accounts cache reservations in filesystem block-aligned units instead of reserved bytes. This approximates the reservation footprint on disk but is not the exact allocated size; it affects `current_size` of this cache in `system.filesystem_cache_settings`. The process-wide `FilesystemCacheSize` metric and the eviction-size profile events are summed over all caches, so they uniformly reflect the reservation footprint only when all caches use the same mode. The per-segment `size` in `system.filesystem_cache` remains the logical range size; use `downloaded_size` for bytes written to a partial segment. Restart is required to change this setting. |
-| `use_split_cache`                     | Boolean | `false`    | Use separation of files to system/data.                                                                                                                                     |
+| `use_split_cache`                     | Boolean | `false`    | Use separation of files to system/data. Not supported with `SLRU_OVERCOMMIT` or `LRU_OVERCOMMIT`.                                                                                                         |
 | `split_cache_ratio`                   | Double | `0.1`    | Ratio of system segment to total size of cache for split_cache.                                                                                                                                     |
 
 > **Note**: Size values support units like `ki`, `Mi`, `Gi`, etc. (e.g., `10Gi`).
