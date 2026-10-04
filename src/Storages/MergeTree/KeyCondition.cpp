@@ -2225,11 +2225,20 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
             /// not create a relaxed atom for `!=` on this path.
             ///
             /// The same holds for `ifNull(d, c)` and `coalesce(d, c)` with a constant `c`: a non-`NULL`
-            /// `d` keeps its value (converted to the common supertype, which preserves order), and a
-            /// `NULL` row gets the key value `c`, which can only keep a granule as a false positive.
+            /// `d` keeps its value, and a `NULL` row gets the key value `c`, which can only keep a
+            /// granule as a false positive. This requires the conversion of `d` to the common type to
+            /// preserve order, which holds for the same type and for numbers, but not, for example,
+            /// for an `Enum` converted to `String`.
             const auto name = func.getName();
-            if (name == "assumeNotNull" || name == "ifNull" || name == "coalesce")
+            if (name == "assumeNotNull")
                 return true;
+
+            if (name == "ifNull" || name == "coalesce")
+            {
+                const auto arg_type = removeLowCardinalityAndNullable(type.getPtr());
+                const auto result_type = removeLowCardinalityAndNullable(func.getResultType());
+                return arg_type->equals(*result_type) || (isNumber(arg_type) && isNumber(result_type));
+            }
 
             /// Range is irrelevant in this case.
             /// Monotonicity on defined values only is enough here: stored key values always

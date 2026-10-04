@@ -17,5 +17,11 @@ SELECT count() FROM t_ifnull WHERE y <= 0 SETTINGS optimize_use_implicit_project
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_coalesce WHERE y >= 5) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 Condition: (coalesce(y, 0) in [5, +Inf))
 Granules: 3/5
+-- `ifNull` converts the `Enum` to `String`, which is ordered differently, so the key is not used.
+SELECT count() FROM t_enum WHERE y > 'z';
+2
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_enum WHERE y > 'z') WHERE explain LIKE '%Condition%';
+Condition: true
 DROP TABLE t_ifnull;
 DROP TABLE t_coalesce;
+DROP TABLE t_enum;
