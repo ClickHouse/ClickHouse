@@ -34,6 +34,7 @@
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/ReadFromDistributedPlanSource.h>
 
@@ -916,7 +917,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     if (effective_settings.remove_redundant_sorting)
         QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
-    QueryPlanOptimizations::optimizeTreeFirstPass(effective_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeFirstPass(effective_settings, *root, nodes, *this);
     QueryPlanOptimizations::optimizeTreeSecondPass(effective_settings, *root, nodes, *this);
 
     /// Defer set/CTE expansion: a distributed plan builds the sets on the initiator and ships
@@ -941,6 +942,31 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 }
 
 
+/// Drop every `StreamInQueryResultCacheStep` from the plan. The step buffers the rows passing through
+/// it into a `QueryResultCacheWriter`, which is node-local state without a serialized representation,
+/// so a fragment carrying it cannot be shipped to a worker. It is a pass-through, so removing it only
+/// means the subquery result is not written to the cache - which is what a distributed query did
+/// before the step was allowed into the plan at all. The step is kept when `convertToDistributed`
+/// takes the local fallback below: nothing is serialized there, and the cache works as usual.
+static void removeQueryResultCacheWriteSteps(QueryPlan::Node *& root)
+{
+    while (typeid_cast<const StreamInQueryResultCacheStep *>(root->step.get()))
+        root = root->children.front();
+
+    std::vector<QueryPlan::Node *> stack = {root};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        for (auto *& child : node->children)
+        {
+            while (typeid_cast<const StreamInQueryResultCacheStep *>(child->step.get()))
+                child = child->children.front();
+            stack.push_back(child);
+        }
+    }
+}
+
 void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// A non-serializable step found here
@@ -955,6 +981,9 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "make_distributed_plan error: the query resolved {} {} of the initiator after the plan was accepted for distributed execution.",
                 DistributedPlanLocalObject::kindName(entry->kind), entry->name);
+
+    /// The plan is really split into fragments, so no cache write step may survive into one.
+    removeQueryResultCacheWriteSteps(root);
 
     /// Take the IN-subquery sets out of the plan before it is split into fragments, so the
     /// fragments never carry their placeholder steps; the sets are added back below.
@@ -1217,7 +1246,7 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
 //             throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} {} is not used", node->step->getName(), reinterpret_cast<const void *>(node));
 // }
 
-QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
+QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes, size_t max_threads, bool concurrency_control)
 {
     std::unordered_set<Node *> used;
     std::stack<Node *> stack;
@@ -1238,6 +1267,8 @@ QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
 
     QueryPlan new_plan;
     new_plan.root = root;
+    new_plan.max_threads = max_threads;
+    new_plan.concurrency_control = concurrency_control;
 
     auto it = nodes.begin();
     while (it != nodes.end())

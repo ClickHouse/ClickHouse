@@ -34,6 +34,8 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    QueryPlanStepPtr clone() const override;
+
     bool hasCorrelatedExpressions() const override { return false; }
 
     /// The fraction is resolved against the whole result, so `apply_prelimit` never pushes this to a
