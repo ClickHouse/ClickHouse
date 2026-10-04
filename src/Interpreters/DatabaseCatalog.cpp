@@ -588,9 +588,11 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         }
     }
 
-    if (!table)
+    /// A hierarchical name: try the other splits of the name (see the header). Only when the table as written does not
+    /// exist: when it exists but cannot be got (e.g. it failed to load), the name as written still wins, and its
+    /// exception is reported rather than hidden behind another split.
+    if (!table && !(exception && exception->has_value() && database->isTableExist(table_id.table_name, context_)))
     {
-        /// A hierarchical name: try the other splits of the name (see the header).
         String current_database = context_->getCurrentDatabase();
         for (const auto & candidate : getHierarchicalNameCandidates(table_id, current_database))
         {
