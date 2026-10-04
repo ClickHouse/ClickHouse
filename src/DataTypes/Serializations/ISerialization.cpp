@@ -265,6 +265,33 @@ void ISerialization::serializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
+void ISerialization::deserializeBinaryBulkWithRowRanges(
+    IColumn & column,
+    ReadBuffer & istr,
+    size_t limit,
+    const RowRanges * row_ranges,
+    double avg_value_size_hint) const
+{
+    if (!row_ranges)
+    {
+        deserializeBinaryBulk(column, istr, limit, avg_value_size_hint);
+        return;
+    }
+
+    if (!column.isFixedAndContiguous())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot skip values of column {} with variable size", column.getName());
+
+    const size_t value_size = column.sizeOfValueIfFixed();
+    size_t pos = 0;
+    for (const auto & [begin, end] : *row_ranges)
+    {
+        istr.ignore((begin - pos) * value_size);
+        deserializeBinaryBulk(column, istr, end - begin, avg_value_size_hint);
+        pos = end;
+    }
+    istr.ignore((limit - pos) * value_size);
+}
+
 void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
     size_t limit,
@@ -284,7 +311,7 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
         double avg_value_size_hint = 0.0;
         if (settings.get_avg_value_size_hint_callback)
             avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);
-        deserializeBinaryBulk(column, *stream, limit, avg_value_size_hint);
+        deserializeBinaryBulkWithRowRanges(column, *stream, limit, settings.row_ranges, avg_value_size_hint);
         size_t num_read_rows = column.size() - prev_size;
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), num_read_rows);
         if (settings.update_avg_value_size_hint_callback)

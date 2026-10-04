@@ -63,11 +63,29 @@ MergeTreeReaderWide::MergeTreeReaderWide(
 {
     try
     {
+        const bool can_read_with_row_filter = settings.filtered_deserialization_max_ratio > 0;
+        columns_read_with_row_filter.resize(can_read_with_row_filter ? columns_to_read.size() : 0);
         for (size_t i = 0; i < columns_to_read.size(); ++i)
         {
             /// Column was dropped by a pending mutation or invalidated. Don't read stale data;
             if (!isColumnDroppedByPendingMutation(i) && !isSystemColumnInvalidated(i))
-                addStreams(columns_to_read[i], serializations[i]);
+            {
+                bool has_all_streams = addStreams(columns_to_read[i], serializations[i]);
+                if (can_read_with_row_filter)
+                    columns_read_with_row_filter[i] = has_all_streams && serializations[i]->supportsRowRanges();
+            }
+        }
+
+        /// Columns read from the same storage column share the substreams cache, which holds either filtered or unfiltered rows.
+        if (can_read_with_row_filter)
+        {
+            NameSet storage_columns_read_without_row_filter;
+            for (size_t i = 0; i < columns_to_read.size(); ++i)
+                if (!columns_read_with_row_filter[i])
+                    storage_columns_read_without_row_filter.insert(columns_to_read[i].getNameInStorage());
+            for (size_t i = 0; i < columns_to_read.size(); ++i)
+                if (storage_columns_read_without_row_filter.contains(columns_to_read[i].getNameInStorage()))
+                    columns_read_with_row_filter[i] = false;
         }
     }
     catch (...)
@@ -157,6 +175,30 @@ size_t MergeTreeReaderWide::readRows(
     size_t from_mark, bool continue_reading, size_t max_rows_to_read,
     MutableColumns & res_columns)
 {
+    return readRowsWithFilter(from_mark, continue_reading, max_rows_to_read, res_columns, nullptr);
+}
+
+size_t MergeTreeReaderWide::readRowsWithFilter(
+    size_t from_mark, bool continue_reading, size_t max_rows_to_read,
+    MutableColumns & res_columns, const UInt8 * row_filter)
+{
+    ISerialization::RowRanges row_ranges;
+    size_t num_selected_rows = 0;
+    if (row_filter)
+    {
+        for (size_t row = 0; row < max_rows_to_read;)
+        {
+            while (row < max_rows_to_read && !row_filter[row])
+                ++row;
+            size_t begin = row;
+            while (row < max_rows_to_read && row_filter[row])
+                ++row;
+            if (begin != row)
+                row_ranges.emplace_back(begin, row);
+            num_selected_rows += row - begin;
+        }
+    }
+
     size_t read_rows = 0;
     if (prefetched_from_mark != -1 && static_cast<size_t>(prefetched_from_mark) != from_mark)
     {
@@ -191,6 +233,8 @@ size_t MergeTreeReaderWide::readRows(
             if (!column)
                 column = column_to_read.type->createColumn(*serializations[pos]);
 
+            const bool read_with_row_filter = row_filter && isColumnReadWithRowFilter(pos);
+
             try
             {
                 size_t column_size_before_reading = column->size();
@@ -205,11 +249,18 @@ size_t MergeTreeReaderWide::readRows(
                     continue_reading,
                     max_rows_to_read,
                     cache,
-                    deserialize_states_cache);
+                    deserialize_states_cache,
+                    read_with_row_filter ? &row_ranges : nullptr);
 
+                /// All streams of a column read with the row filter are present, so it reads all rows.
+                if (read_with_row_filter)
+                {
+                    chassert(column->size() - column_size_before_reading == num_selected_rows);
+                    read_rows = std::max(read_rows, max_rows_to_read);
+                }
                 /// For elements of Nested, column_size_before_reading may be greater than column size
                 ///  if offsets are not empty and were already read, but elements are empty.
-                if (!column->empty())
+                else if (!column->empty())
                     read_rows = std::max(read_rows, column->size() - column_size_before_reading);
             }
             catch (Exception & e)
@@ -219,7 +270,7 @@ size_t MergeTreeReaderWide::readRows(
                 throw;
             }
 
-            if (column->empty() && max_rows_to_read > 0)
+            if (column->empty() && max_rows_to_read > 0 && !read_with_row_filter)
                 res_columns[pos] = nullptr;
         }
 
@@ -251,7 +302,7 @@ size_t MergeTreeReaderWide::readRows(
     return read_rows;
 }
 
-void MergeTreeReaderWide::addStreams(
+bool MergeTreeReaderWide::addStreams(
     const NameAndTypePair & name_and_type,
     const SerializationPtr & serialization)
 {
@@ -283,6 +334,8 @@ void MergeTreeReaderWide::addStreams(
 
     if (has_any_stream && !has_all_streams)
         partially_read_columns.insert(name_and_type.name);
+
+    return has_any_stream && has_all_streams;
 }
 
 MergeTreeReaderStream * MergeTreeReaderWide::FileStreams::getOrCreate(const String & stream_name, const StreamFactory & factory)
@@ -696,9 +749,11 @@ void MergeTreeReaderWide::readData(
     bool continue_reading,
     size_t max_rows_to_read,
     ISerialization::SubstreamsCache & cache,
-    ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache)
+    ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
+    const ISerialization::RowRanges * row_ranges)
 {
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
+    deserialize_settings.row_ranges = row_ranges;
     deserialize_settings.data_part_type = MergeTreeDataPartType::Wide;
     /// Only the columns whose data files are partly there (see `addStreams`) are refilled by
     /// `IMergeTreeReader::fillMissingColumns`; any other column has to be read in full.

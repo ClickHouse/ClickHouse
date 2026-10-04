@@ -37,6 +37,13 @@ public:
         size_t max_rows_to_read,
         MutableColumns & res_columns) override;
 
+    size_t readRowsWithFilter(
+        size_t from_mark,
+        bool continue_reading,
+        size_t max_rows_to_read,
+        MutableColumns & res_columns,
+        const UInt8 * row_filter) override;
+
     bool canReadIncompleteGranules() const override { return true; }
 
     void prefetchBeginOfRange(Priority priority) override;
@@ -86,7 +93,8 @@ private:
         bool continue_reading,
         bool deserialize_prefixes);
 
-    void addStreams(
+    /// Returns true if all streams of the column are present in the part.
+    bool addStreams(
         const NameAndTypePair & name_and_type,
         const SerializationPtr & serialization);
 
@@ -109,7 +117,8 @@ private:
         bool continue_reading,
         size_t max_rows_to_read,
         ISerialization::SubstreamsCache & cache,
-        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache);
+        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
+        const ISerialization::RowRanges * row_ranges);
 
     /// Make next readData more simple by calling 'prefetch' of all related ReadBuffers (column streams).
     void prefetchForColumn(

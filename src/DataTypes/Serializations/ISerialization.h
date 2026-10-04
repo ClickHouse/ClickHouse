@@ -517,10 +517,18 @@ public:
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
     };
 
+    /// Half-open ranges `[first, second)` of rows, sorted and non-overlapping.
+    using RowRanges = std::vector<std::pair<size_t, size_t>>;
+
     struct DeserializeBinaryBulkSettings
     {
         InputStreamGetter getter;
         SubstreamPath path;
+
+        /// If set, out of the next `limit` rows only the rows inside these ranges are appended to the column, the others
+        /// are skipped. Set only for serializations with `supportsRowRanges`. The substreams cache then holds the
+        /// filtered rows, except for the sizes of `Array`, which are needed for all rows to skip the elements.
+        const RowRanges * row_ranges = nullptr;
 
         /// True if continue reading from previous positions in file. False if made fseek to the start of new granule.
         bool continuous_reading = true;
@@ -631,12 +639,16 @@ public:
         SerializeBinaryBulkStatePtr & state) const;
 
     /// Read no more than limit values and append them into column.
+    /// An override has to support `DeserializeBinaryBulkSettings::row_ranges` or make `supportsRowRanges` return false.
     virtual void deserializeBinaryBulkWithMultipleStreams(
         IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const;
+
+    /// Whether `deserializeBinaryBulkWithMultipleStreams` supports `DeserializeBinaryBulkSettings::row_ranges`.
+    virtual bool supportsRowRanges() const { return false; }
 
     /** Override these methods for data types that require just single stream (most of data types).
       */
@@ -645,6 +657,15 @@ public:
         IColumn & column,
         ReadBuffer & istr,
         size_t limit,
+        double avg_value_size_hint) const;
+
+    /// Reads `limit` values with `deserializeBinaryBulk` and appends only the values inside `row_ranges` (all of them if it is null).
+    /// The values outside `row_ranges` are skipped, which requires a column of values of fixed size.
+    void deserializeBinaryBulkWithRowRanges(
+        IColumn & column,
+        ReadBuffer & istr,
+        size_t limit,
+        const RowRanges * row_ranges,
         double avg_value_size_hint) const;
 
     /** Serialization/deserialization of individual values.
