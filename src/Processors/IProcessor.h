@@ -31,6 +31,12 @@ using Processors = std::list<ProcessorPtr>;
 
 class StepWallClock;
 
+namespace Runtime::V1
+{
+class ExecutionThreadContext;
+class ExecutingGraph;
+}
+
 
 using StepWallClockPtr = std::shared_ptr<StepWallClock>;
 
@@ -276,6 +282,14 @@ public:
     /// May be used to stop execution in rare cases.
     virtual void onUpdatePorts() {}
 
+    /// Called by the executor once the whole pipeline has finished successfully, and the read progress of every
+    /// source has been reported. The progress of a source may arrive after all its consumers have finished
+    /// (e.g. `RemoteSource` drains the remaining packets of a connection after `LIMIT`), so anything that depends
+    /// on the final statistics, such as the epilogue of an output format, belongs here.
+    /// A query broken off by `timeout_overflow_mode = 'break'` also returns its partial result as a success,
+    /// so the hook is called for it as well, even though not every processor is finished in that case.
+    virtual void onPipelineFinished() {}
+
     virtual ~IProcessor() = default;
 
     auto & getInputs() { return inputs; }
@@ -406,11 +420,11 @@ private:
     /// - elapsed_ns
     /// - num_executed_jobs
     /// - query_plan_step_wall_clock_ptr
-    friend class ExecutionThreadContext;
+    friend class Runtime::V1::ExecutionThreadContext;
     /// For
     /// - input_wait_elapsed_ns
     /// - output_wait_elapsed_ns
-    friend class ExecutingGraph;
+    friend class Runtime::V1::ExecutingGraph;
 
     std::string processor_description;
 
