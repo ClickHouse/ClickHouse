@@ -105,3 +105,99 @@ def test_modify_projection_requires_local_table_before_cluster_dispatch(started_
     assert "index_granularity = 128" in unavailable.query(
         "SHOW CREATE TABLE projection_cluster_db.t"
     )
+
+
+def test_legacy_create_as_does_not_split_on_unavailable_projection(started_cluster):
+    initiator = nodes["initiator"]
+    unavailable = nodes["unavailable"]
+    available = nodes["available"]
+    source = "default.legacy_projection_copy_source"
+    destination = "default.legacy_projection_copy_destination"
+    clone_destination = "default.legacy_projection_clone_destination"
+    plain_source = "default.legacy_projection_plain_source"
+    plain_destination = "default.legacy_projection_plain_destination"
+    projection_count = (
+        "SELECT count() FROM system.projections "
+        "WHERE database = 'default' AND table = 'legacy_projection_copy_source'"
+    )
+
+    for node in nodes.values():
+        node.query(f"DROP TABLE IF EXISTS {destination} SYNC")
+        node.query(f"DROP TABLE IF EXISTS {clone_destination} SYNC")
+        node.query(f"DROP TABLE IF EXISTS {source} SYNC")
+        node.query(f"DROP TABLE IF EXISTS {plain_destination} SYNC")
+        node.query(f"DROP TABLE IF EXISTS {plain_source} SYNC")
+        node.query(
+            f"CREATE TABLE {source} (a UInt64, b String, "
+            "PROJECTION pp (SELECT b, a GROUP BY 1, 2)) "
+            "ENGINE = MergeTree ORDER BY a"
+        )
+
+    positional_config = "/etc/clickhouse-server/users.d/positional.xml"
+    unavailable.exec_in_container(["rm", positional_config])
+    try:
+        unavailable.restart_clickhouse()
+        assert unavailable.query(projection_count).strip() == "0"
+        assert available.query(projection_count).strip() == "1"
+
+        legacy_settings = {
+            "distributed_ddl_entry_format_version": 1,
+            "distributed_ddl_task_timeout": 30,
+            "distributed_ddl_output_mode": "throw",
+        }
+        error = initiator.query_and_get_error(
+            f"CREATE TABLE {destination} ON CLUSTER projection_cluster AS {source} "
+            "ENGINE = MergeTree ORDER BY a",
+            settings=legacy_settings,
+        )
+        assert "Cannot copy projections with CREATE TABLE" in error, error
+        published = {
+            name: node.query(f"EXISTS TABLE {destination}").strip()
+            for name, node in nodes.items()
+        }
+        assert published == dict.fromkeys(nodes, "0"), published
+
+        error = initiator.query_and_get_error(
+            f"CREATE TABLE {destination} ON CLUSTER projection_cluster AS {source} "
+            "ENGINE = MergeTree ORDER BY a",
+            settings={**legacy_settings, "distributed_ddl_entry_format_version": 2},
+        )
+        assert "Cannot copy projections with CREATE TABLE" in error, error
+        for node in nodes.values():
+            assert node.query(f"EXISTS TABLE {destination}").strip() == "0"
+
+        # `CLONE AS` still needs the worker's local source parts, so it cannot use
+        # initiator normalization in a legacy multi-host DDL entry.
+        error = initiator.query_and_get_error(
+            f"CREATE TABLE {clone_destination} ON CLUSTER projection_cluster "
+            f"CLONE AS {source}",
+            settings=legacy_settings,
+        )
+        assert "CLONE AS" in error and "multi-host cluster" in error, error
+        for node in nodes.values():
+            assert node.query(f"EXISTS TABLE {clone_destination}").strip() == "0"
+
+        # A source without projections can be normalized once and copied to every host,
+        # even when that source table exists only on the initiator.
+        initiator.query(
+            f"CREATE TABLE {plain_source} (a UInt64) ENGINE = MergeTree ORDER BY a"
+        )
+        initiator.query(
+            f"CREATE TABLE {plain_destination} ON CLUSTER projection_cluster "
+            f"AS {plain_source} ENGINE = MergeTree ORDER BY a",
+            settings=legacy_settings,
+        )
+        for node in nodes.values():
+            assert node.query(f"EXISTS TABLE {plain_destination}").strip() == "1"
+    finally:
+        unavailable.copy_file_to_container(
+            os.path.join(os.path.dirname(__file__), "configs/positional.xml"),
+            positional_config,
+        )
+        unavailable.restart_clickhouse()
+        for node in nodes.values():
+            node.query(f"DROP TABLE IF EXISTS {destination} SYNC")
+            node.query(f"DROP TABLE IF EXISTS {clone_destination} SYNC")
+            node.query(f"DROP TABLE IF EXISTS {source} SYNC")
+            node.query(f"DROP TABLE IF EXISTS {plain_destination} SYNC")
+            node.query(f"DROP TABLE IF EXISTS {plain_source} SYNC")

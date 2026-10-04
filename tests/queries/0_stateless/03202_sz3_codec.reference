@@ -56,6 +56,8 @@ SZ3 is lossy and cannot be used where the column data type is unknown
 1
 A lossy TTL recompression codec is accepted with allow_suspicious_ttl_expressions and the table still loads on ATTACH
 0
+1
+1.125
 Legacy error-bound-mode aliases (ABS_OR_REL, NORM) stay loadable for backward compatibility
 1	1
 A compression block size that is not a multiple of the float width

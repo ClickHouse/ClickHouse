@@ -3934,7 +3934,29 @@ BlockIO InterpreterCreateQuery::execute()
                 "ATTACH AS [NOT] REPLICATED is not supported for ON CLUSTER queries");
 
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value;
-        if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
+        bool normalize_legacy_source_copy = false;
+        if (!is_create_database && on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION
+            && !create.attach && !create.columns_list && !create.as_table.empty())
+        {
+            const auto cluster_name = getContext()->getMacros()->expand(create.cluster);
+            const auto cluster = getContext()->getCluster(cluster_name);
+            if (cluster->filterAddressesByShardOrReplica(0, 0).size() > 1)
+            {
+                /// A legacy entry leaves `AS source` for each worker to resolve locally. With more
+                /// than one host, one worker could publish a copied projection while another rejects
+                /// an unavailable copy. Normalize the source on the initiator before enqueueing.
+                /// `CLONE AS` still needs the worker's source parts, so it cannot use that rewrite.
+                if (create.is_clone_as)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "CREATE TABLE ... CLONE AS ... ON CLUSTER with distributed_ddl_entry_format_version < {} "
+                        "is not supported on a multi-host cluster; use a newer DDL entry format",
+                        DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION);
+                normalize_legacy_source_copy = true;
+            }
+        }
+        const bool legacy_without_normalization
+            = on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION && !normalize_legacy_source_copy;
+        if (is_create_database || legacy_without_normalization)
         {
             if (!is_create_database)
             {

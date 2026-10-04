@@ -147,6 +147,22 @@ void validateProjectionMetadataAdmission(
                 ProjectionDescription::validateDynamicDefaultCodec(definition->as<const ASTProjectionDeclaration &>());
     }
 
+    /// `InterpreterCreateQuery` normalizes multi-host legacy `CREATE ... AS source` on the
+    /// initiator. Its old DDL entry format cannot tell workers that a copied projection was
+    /// already validated there, so a worker unable to analyze that projection could still
+    /// reject the normalized definition after another host has published it. Refuse this copy
+    /// before enqueueing; a source with no projections can safely ship its normalized schema.
+    if (source == ProjectionDefinitionSource::NewQuery && isInitialProjectionMetadataQuery(context)
+        && copies_source_projections && copied_projections && !create.cluster.empty()
+        && context->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value
+            < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION
+        && !copied_projections->getDefinitionsInDeclarationOrder().empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot copy projections with CREATE TABLE ... AS ... ON CLUSTER using "
+            "distributed_ddl_entry_format_version < {} on a multi-host cluster. "
+            "Use a newer DDL entry format",
+            DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION);
+
     /// Old `ON CLUSTER` entries expand `AS source_table` on each worker. Check the copied
     /// projections there too, since the source may not exist on the initiator.
     const bool validate_distributed_source_copy = source == ProjectionDefinitionSource::NewQuery

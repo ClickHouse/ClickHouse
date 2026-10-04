@@ -501,6 +501,25 @@ ATTACH TABLE tab_ttl_codec_attach;
 SELECT count() FROM tab_ttl_codec_attach;
 DROP TABLE tab_ttl_codec_attach;
 
+-- A TTL can be admitted with the suspicious-expression opt-in, but it must not silently
+-- recompress a `CODEC(Default)` projection with lossy SZ3. The untyped part-default codec
+-- rejects MATERIALIZE TTL before publishing a recompressed part.
+DROP TABLE IF EXISTS tab_projection_default_ttl_codec;
+SET allow_suspicious_ttl_expressions = 1;
+CREATE TABLE tab_projection_default_ttl_codec
+    (d Date, k UInt64, x Float64 CODEC(NONE),
+     PROJECTION p (x CODEC(Default)) AS (SELECT k, x ORDER BY k))
+    ENGINE = MergeTree ORDER BY k
+    TTL d + INTERVAL 1 DAY RECOMPRESS CODEC(SZ3('ALGO_INTERP', 'ABS', 0.1));
+SET allow_suspicious_ttl_expressions = 0;
+INSERT INTO tab_projection_default_ttl_codec VALUES ('2020-01-01', 1, 1.125);
+ALTER TABLE tab_projection_default_ttl_codec MATERIALIZE TTL SETTINGS mutations_sync = 2; -- { serverError UNFINISHED }
+KILL MUTATION WHERE database = currentDatabase() AND table = 'tab_projection_default_ttl_codec' FORMAT Null;
+SELECT count() FROM system.projection_parts WHERE database = currentDatabase()
+    AND table = 'tab_projection_default_ttl_codec' AND name = 'p' AND active;
+SELECT x FROM tab_projection_default_ttl_codec WHERE k = 1;
+DROP TABLE tab_projection_default_ttl_codec;
+
 SELECT 'Legacy error-bound-mode aliases (ABS_OR_REL, NORM) stay loadable for backward compatibility';
 -- The original experimental SZ3 codec parsed the error-bound mode string directly through `SZ3::EB_MAP`, so it
 -- accepted every mode name, including 'ABS_OR_REL' and 'NORM' (L2 norm). Column codecs are reparsed on metadata
