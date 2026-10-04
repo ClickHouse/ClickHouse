@@ -6556,6 +6556,83 @@ If enabled, schema is reloaded from the DeltaLake metadata before each query exe
 consistency between the schema used during query analysis and the schema used during execution.
 )", 0, \
         {"26.3", false, false, "New setting to control whether DeltaLake reloads schema before each query for consistency."}) \
+    DECLARE(Bool, lance_query_dataset_reuse, true, R"(
+If enabled, Lance reuses a single dataset handle (and the process-wide Tokio runtime) within one query
+for snapshot pin, schema load, and scan. Disable only for debugging.
+)", 0, \
+        {"26.10", false, true, "New setting to reuse a single Lance dataset handle within one query (analysis + execution)."}) \
+    DECLARE(Bool, lance_enable_predicate_pushdown, true, R"(
+Controls only the verified Lance predicate pushdown whitelist. If disabled, no predicate is sent to
+Lance and ClickHouse evaluates the complete residual filter.
+)", 0, \
+        {"26.10", false, true, "New setting to disable Lance predicate pushdown while retaining the complete ClickHouse filter."}) \
+    DECLARE(UInt64, lance_runtime_threads, 0, R"(
+Number of worker threads for the process-wide Lance Tokio runtime. 0 means an automatic bounded default
+(at most 8). Only the first initialization is effective.
+)", 0, \
+        {"26.10", 0, 0, "New setting for the process-wide Lance Tokio runtime worker thread count (0 = automatic bounded default)."}) \
+    DECLARE(Bool, lance_scan_in_order, false, R"(
+If true, Lance scans return batches in deterministic fragment order and use one conversion Source.
+The default false mode allows multiple conversion Sources and higher internal fragment concurrency.
+)", 0, \
+        {"26.10", true, false, "Changed the Lance scan default to unordered so one producer can feed multiple conversion Sources."}) \
+    DECLARE(UInt64, lance_fragment_readahead, 0, R"(
+Number of fragments to read ahead inside one Lance scanner. 0 means the Lance library default.
+Only effective when `lance_scan_in_order` is false.
+)", 0, \
+        {"26.10", 0, 0, "New setting for Lance scanner fragment readahead (0 = library default; effective when lance_scan_in_order=0)."}) \
+    DECLARE(UInt64, lance_batch_readahead, 0, R"(
+Number of batches to prefetch inside one Lance scanner. 0 means the Lance library default.
+)", 0, \
+        {"26.10", 0, 0, "New setting for Lance scanner batch readahead (0 = library default)."}) \
+    DECLARE(UInt64, lance_io_buffer_size, 0, R"(
+Maximum bytes queued in the Lance I/O buffer. 0 means the Lance library default.
+Do not set very small values: Lance may deadlock if a single batch exceeds the buffer.
+)", 0, \
+        {"26.10", 0, 0, "New setting for Lance scanner I/O buffer size in bytes (0 = library default)."}) \
+    DECLARE(UInt64, lance_batch_queue_capacity, 0, R"(
+Maximum number of Arrow batches in the bounded Lance producer queue. 0 automatically selects
+twice the effective conversion Source count, with a minimum of 2.
+)", 0, \
+        {"26.10", 0, 0, "New setting for the bounded Lance producer queue batch capacity (0 = automatic)."}) \
+    DECLARE(UInt64, lance_batch_queue_bytes, 0, R"(
+Hard limit for estimated Arrow bytes reserved by the Lance producer queue. 0 selects 64 MiB.
+A single batch larger than this limit raises an exception instead of waiting indefinitely.
+)", 0, \
+        {"26.10", 0, 0, "New setting for the bounded Lance producer queue byte limit (0 = 64 MiB)."}) \
+    DECLARE(UInt64, lance_max_batch_sources, 0, R"(
+Maximum number of ClickHouse conversion Sources consuming one Lance scan. 0 uses the requested
+pipeline stream count. Ordered scans and count-only reads always use one Source.
+)", 0, \
+        {"26.10", 0, 0, "New setting limiting ClickHouse conversion Sources per Lance scan (0 = requested stream count)."}) \
+    DECLARE(Bool, lance_enable_fragment_parallelism, true, R"(
+Controls coarse fragment-group tasks for distributed Lance reads. Local reads ignore this setting
+and always use one dataset scan with a bounded queue and multiple conversion Sources.
+)", 0, \
+        {"26.10", false, true, "New setting to create coarse fragment-group tasks for distributed Lance reads; local reads use one dataset scan."}) \
+    DECLARE(String, lance_fragment_pack_mode, "auto", R"(
+How distributed Lance reads group fragments into coarse scan tasks when `lance_enable_fragment_parallelism` is on.
+
+Possible values:
+- `one` — one fragment per pack (then capped by `lance_max_fragment_packs` / `max_threads` via packing).
+- `pack` — always pack fragments into approximately `target` packs (LPT).
+- `auto` — use `one` when fragment count ≤ target packs, otherwise `pack`.
+)", 0, \
+        {"26.10", "auto", "auto", "New setting for distributed Lance fragment-group task packing (one/pack/auto)."}) \
+    DECLARE(UInt64, lance_max_fragment_packs, 0, R"(
+Upper bound on distributed Lance fragment-group tasks. 0 means align with `max_threads`.
+Workers run one coarse task scanner at a time and share its batches across conversion Sources.
+Local dataset reads ignore this setting.
+)", 0, \
+        {"26.10", 0, 0, "New setting bounding distributed Lance coarse tasks (0 = align with max_threads)."}) \
+    DECLARE(UInt64, lance_min_rows_per_pack, 0, R"(
+Soft minimum rows per distributed Lance fragment-group task when row counts are known. 0 disables the threshold.
+)", 0, \
+        {"26.10", 0, 0, "New setting for the soft minimum rows per distributed Lance fragment-group task (0 = ignore)."}) \
+    DECLARE(UInt64, lance_min_bytes_per_pack, 0, R"(
+Soft minimum bytes per distributed Lance fragment-group task when size estimates are known. 0 disables the threshold.
+)", 0, \
+        {"26.10", 0, 0, "New setting for the soft minimum bytes per distributed Lance fragment-group task (0 = ignore)."}) \
     DECLARE(IcebergMetadataLogLevel, iceberg_metadata_log_level, IcebergMetadataLogLevel::None, R"(
 Controls the level of metadata logging for Iceberg tables to system.iceberg_metadata_log.
 Usually this setting can be modified for debugging purposes.
@@ -10572,6 +10649,10 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
 )", PRIVATE_PREVIEW, evaluation_time, \
         {"25.9", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."}, \
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
+    DECLARE(Bool, allow_experimental_lance, false, R"(
+Allow creating tables with the `LanceLocal` and `LanceS3` table engines and using the `lanceLocal`, `lanceS3`, and `lanceS3Cluster` table functions.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to enable the experimental `Lance` table engines and table functions."}) \
     DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
 Allow to create tables with Paimon* table engines.
 )", EXPERIMENTAL, \

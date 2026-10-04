@@ -342,14 +342,14 @@ void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
     }
     else if ((name == "s3") || (name == "cosn") || (name == "oss") || (name == "deltaLake") || (name == "deltaLakeS3")
              || (name == "hudi") || (name == "iceberg") || (name == "gcs") || (name == "icebergS3") || (name == "paimon")
-             || (name == "paimonS3"))
+             || (name == "paimonS3") || (name == "lanceS3"))
     {
         /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
         find_secrets = [this] { findS3FunctionSecretArguments(/* is_cluster_function= */ false); };
     }
     else if ((name == "s3Cluster") || (name == "hudiCluster") || (name == "deltaLakeCluster") || (name == "deltaLakeS3Cluster")
              || (name == "icebergS3Cluster") || (name == "icebergCluster") || (name == "paimonCluster")
-             || (name == "paimonS3Cluster"))
+             || (name == "paimonS3Cluster") || (name == "lanceS3Cluster"))
     {
         /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
         find_secrets = [this] { findS3FunctionSecretArguments(/* is_cluster_function= */ true); };

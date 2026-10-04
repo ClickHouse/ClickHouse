@@ -18,9 +18,18 @@ endif()
 option (ENABLE_PRQL "Enable prql" ${ENABLE_LIBRARIES})
 option (ENABLE_SKIM "Enable skim" ${ENABLE_LIBRARIES})
 option (ENABLE_POLYGLOT "Enable polyglot SQL transpiler" ${ENABLE_LIBRARIES})
+option (ENABLE_LANCE "Enable Lance DataLake adapter" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_POLYGLOT)
-    message(STATUS "prql, skim, and polyglot are disabled")
+# The Lance crates depend on `ring` (through `object_store` and `rustls`), the same as `delta-kernel-rs`:
+# - MSan: `ring` disables its assembly under MSan, but still calls the assembly functions, so the link fails.
+# - NO_ARMV81_OR_HIGHER: `ring` assumes that Neon is available on ARM.
+if (ENABLE_LANCE AND ((SANITIZE STREQUAL "memory") OR NO_ARMV81_OR_HIGHER))
+    message (STATUS "Disabling Lance because the `ring` crate does not support this build")
+    set (ENABLE_LANCE OFF)
+endif()
+
+if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_POLYGLOT AND NOT ENABLE_LANCE)
+    message(STATUS "prql, skim, polyglot, and lance are disabled")
     return()
 endif()
 
@@ -94,6 +103,55 @@ if (ENABLE_SKIM)
     clickhouse_config_crate_flags(_ch_rust_skim_rust)
     target_include_directories(_ch_rust_skim_rust INTERFACE skim/include)
     add_library(ch_rust::skim ALIAS _ch_rust_skim_rust)
+endif()
+
+if (ENABLE_LANCE)
+    if (NOT TARGET protoc)
+        message (FATAL_ERROR "Lance requires Protobuf: enable ENABLE_PROTOBUF or build with -DENABLE_LANCE=OFF")
+    endif()
+
+    clickhouse_config_crate_flags(_ch_rust_lance)
+    target_include_directories(_ch_rust_lance INTERFACE lance/include)
+    add_library(ch_rust::lance ALIAS _ch_rust_lance)
+
+    # The Lance crates generate Rust code from `.proto` files with `prost-build`, which needs a
+    # `protoc` binary at build time. Point it at the one ClickHouse builds from
+    # `contrib/google-protobuf` so the build does not silently depend on a host installation.
+    # When cross-compiling, `protoc` comes from the nested native build, the same way
+    # `protobuf_generate` uses it.
+    if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
+        set (_lance_protoc "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
+    else ()
+        set (_lance_protoc "$<TARGET_FILE:protoc>")
+        # `contrib` is added with `EXCLUDE_FROM_ALL`, so `protoc` is only built when something asks for it.
+        add_dependencies (cargo-build__ch_rust_lance protoc)
+    endif()
+    corrosion_set_env_vars(_ch_rust_lance "PROTOC=${_lance_protoc}")
+    # `prost-build` only ships the well-known types (`google/protobuf/empty.proto` and friends)
+    # alongside its own vendored `protoc`, so an external one has to be told where to find them.
+    corrosion_set_env_vars(_ch_rust_lance "PROTOC_INCLUDE=${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src")
+
+    # The Lance crates bundle their own copies of lz4 (`lz4-sys`) and zstd (`zstd-sys`), which can win
+    # over `contrib/lz4` and `contrib/zstd` at link time depending on the link order. Localize every
+    # symbol that the Lance archive defines and our contrib libraries also define, so that the binary
+    # (including the Lance crates) uses our copies.
+    if (TARGET localize_rust_c__ch_rust_lance AND TARGET _lz4 AND TARGET _zstd)
+        get_target_property(_lance_lib _ch_rust_lance IMPORTED_LOCATION)
+        if (NOT _lance_lib OR _lance_lib MATCHES "NOTFOUND")
+            set(_lance_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_lance.a")
+        endif()
+        add_custom_target(localize_rust_contrib_symbols__ch_rust_lance
+            COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/localize_rust_c_symbols.sh"
+                "${_lance_lib}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${NM_PATH}"
+                "$<TARGET_FILE:_lz4>" "$<TARGET_FILE:_zstd>"
+            COMMENT "Localizing lz4 and zstd symbols in _ch_rust_lance"
+            VERBATIM
+        )
+        # Both targets rewrite the same archive, so they must not run concurrently.
+        add_dependencies(localize_rust_contrib_symbols__ch_rust_lance
+            localize_rust_c__ch_rust_lance _lz4 _zstd)
+        add_dependencies(_ch_rust_lance localize_rust_contrib_symbols__ch_rust_lance)
+    endif()
 endif()
 
 add_subdirectory (wasmtime)

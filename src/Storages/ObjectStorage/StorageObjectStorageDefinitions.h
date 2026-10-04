@@ -112,6 +112,28 @@ struct DeltaLakeLocalDefinition
     static constexpr auto object_storage_type = "local";
 };
 
+struct LanceLocalDefinition
+{
+    static constexpr auto name = "lanceLocal";
+    static constexpr auto storage_engine_name = "LanceLocal";
+    static constexpr auto object_storage_type = "local";
+};
+
+struct LanceS3Definition
+{
+    static constexpr auto name = "lanceS3";
+    static constexpr auto storage_engine_name = "LanceS3";
+    static constexpr auto object_storage_type = "s3";
+};
+
+struct LanceS3ClusterDefinition
+{
+    static constexpr auto name = "lanceS3Cluster";
+    static constexpr auto storage_engine_name = "LanceS3Cluster";
+    static constexpr auto non_clustered_storage_engine_name = LanceS3Definition::storage_engine_name;
+    static constexpr auto object_storage_type = "s3";
+};
+
 struct HudiDefinition
 {
     static constexpr auto name = "hudi";
