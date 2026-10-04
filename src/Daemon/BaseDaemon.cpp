@@ -24,6 +24,7 @@
 
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
+#include <Poco/Util/MapConfiguration.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
 #include <Poco/Pipe.h>
@@ -257,6 +258,23 @@ void BaseDaemon::initialize(Application & self)
     bool is_daemon = config().getBool("application.runAsDaemon", false);
     if (is_daemon)
     {
+        /// Resolve relative paths from the command line against the directory the server was started from:
+        /// `ServerApplication::run` has already changed the current directory to `/` in daemon mode.
+        /// The command line arguments are stored in a read-only layer, so put the resolved paths into a layer above it.
+        Poco::AutoPtr<Poco::Util::MapConfiguration> absolute_paths = new Poco::Util::MapConfiguration;
+        for (const auto * key : {"config-file", "pid", "logger.log", "logger.errorlog"})
+        {
+            if (config().has(key))
+            {
+                std::string value = config().getString(key);
+                if (!fs::path(value).is_absolute())
+                {
+                    absolute_paths->setString(key, (fs::path(original_working_directory) / value).lexically_normal().string());
+                }
+            }
+        }
+        config().add(absolute_paths, PRIO_APPLICATION - 101);
+
         /** When creating pid file and looking for config, will search for paths relative to the working path of the program when started.
           */
         std::string path = fs::path(config().getString("application.path")).replace_filename("");
