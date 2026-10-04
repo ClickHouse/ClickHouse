@@ -1,0 +1,52 @@
+-- { echo }
+
+SELECT arraySort(groupArray(ifNull(toString(y), 'NULL'))) FROM t_ifnull WHERE y >= 5;
+['5','6','7','8']
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull WHERE y >= 5) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+Condition: (ifNull(y, 0) in [5, +Inf))
+Granules: 3/6
+-- The granule with the NULL rows (key 0) is a false positive.
+SELECT arraySort(groupArray(ifNull(toString(y), 'NULL'))) FROM t_ifnull WHERE y < 3;
+['0','1','2']
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull WHERE y < 3) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+Condition: (ifNull(y, 0) in (-Inf, 3])
+Granules: 3/6
+-- The atom is relaxed, so exact counting must not count the NULL rows.
+SELECT count() FROM t_ifnull WHERE y <= 0 SETTINGS optimize_use_implicit_projections = 1;
+1
+-- NULL rows have the key 0, as does the non-NULL row 0.
+SELECT count() FROM t_ifnull WHERE isNull(y) SETTINGS optimize_use_implicit_projections = 1;
+2
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull WHERE isNull(y)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+Condition: (ifNull(y, 0) in [0, 0])
+Granules: 2/6
+SELECT count() FROM t_ifnull WHERE y <=> NULL SETTINGS optimize_use_implicit_projections = 1;
+2
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull WHERE y <=> NULL) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+Condition: (ifNull(y, 0) in [0, 0])
+Granules: 2/6
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_coalesce WHERE y >= 5) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+Condition: (coalesce(y, 0) in [5, +Inf))
+Granules: 3/6
+-- `ifNull` converts the `Enum` to `String`, which is ordered differently, so the key is not used.
+SELECT count() FROM t_enum WHERE y > 'z';
+2
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_enum WHERE y > 'z') WHERE explain LIKE '%Condition%';
+Condition: true
+SELECT arraySort(groupArray(s)) FROM t_string WHERE s LIKE 'c%';
+['ca','cb']
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_string WHERE s LIKE 'c%') WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+Condition: (ifNull(s, \'\') in [\'c\', \'d\'))
+Granules: 2/4
+-- A pattern is not pushed through `ifNull` to `FixedString(3)`, which would pad it.
+SELECT count() FROM t_fixed WHERE startsWith(y, 'a') SETTINGS use_query_condition_cache = 0;
+4
+-- `ifNull('abc', s)` is not `s`.
+SELECT count() FROM t_const_first WHERE match(s, '^xyz') SETTINGS use_query_condition_cache = 0;
+4
+DROP TABLE t_ifnull;
+DROP TABLE t_coalesce;
+DROP TABLE t_enum;
+DROP TABLE t_fixed;
+DROP TABLE t_string;
+DROP TABLE t_const_first;

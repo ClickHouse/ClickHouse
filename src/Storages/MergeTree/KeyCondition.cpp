@@ -2144,7 +2144,8 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     DataTypePtr & out_key_column_type,
     Field & out_value,
     DataTypePtr & out_type,
-    bool & out_chain_is_positive)
+    bool & out_chain_is_positive,
+    bool is_order_comparison)
 {
     out_chain_is_positive = true;
 
@@ -2167,7 +2168,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         out_key_column_type,
         transform_functions,
         chain_is_positive,
-        [this](const IFunctionBase & func, const IDataType & type)
+        [this, is_order_comparison](const IFunctionBase & func, const IDataType & type, bool is_first_argument)
         {
             if (!func.hasInformationAboutMonotonicity())
                 return false;
@@ -2223,8 +2224,28 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
             /// It does not apply to `!=`: `notEquals` is in `no_relaxed_atom_functions`, so if
             /// analysis would need to push the constant through a monotonic function chain, we do
             /// not create a relaxed atom for `!=` on this path.
-            if (func.getName() == "assumeNotNull")
+            ///
+            /// The same holds for `ifNull(d, c)` and `coalesce(d, c)` with a constant `c`: a non-`NULL`
+            /// `d` keeps its value, and a `NULL` row gets the key value `c`, which can only keep a
+            /// granule as a false positive. Order comparisons need an order-preserving conversion to the
+            /// common type (not, e.g., `Enum` to `String`); a pattern (`LIKE`, `startsWith`, `match`) must
+            /// pass through unchanged, which holds for `String` but not `FixedString`, which pads it.
+            const auto name = func.getName();
+            if (name == "assumeNotNull")
                 return true;
+
+            if (name == "ifNull" || name == "coalesce")
+            {
+                /// `ifNull(c, d)` is `c`, not `d`.
+                if (!is_first_argument)
+                    return false;
+
+                const auto arg_type = removeLowCardinalityAndNullable(type.getPtr());
+                const auto result_type = removeLowCardinalityAndNullable(func.getResultType());
+                if (is_order_comparison)
+                    return arg_type->equals(*result_type) || (isNumber(arg_type) && isNumber(result_type));
+                return arg_type->equals(*result_type) && isString(arg_type);
+            }
 
             /// Range is irrelevant in this case.
             /// Monotonicity on defined values only is enough here: stored key values always
@@ -4152,7 +4173,7 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
     DataTypePtr & out_key_column_type,
     MonotonicFunctionsChain & out_functions_chain,
     bool & out_chain_is_positive,
-    std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const
+    std::function<bool(const IFunctionBase &, const IDataType &, bool)> always_monotonic) const
 {
     out_chain_is_positive = true;
 
@@ -4195,7 +4216,8 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     /// next_node is the non-constant child of cur_node, so next_node->result_type
                     /// is the child's output type, which is the input type to cur_node's function.
                     if (is_valid_chain)
-                        is_valid_chain = always_monotonic(*cur_node->function_base, *next_node->result_type);
+                        is_valid_chain = always_monotonic(
+                            *cur_node->function_base, *next_node->result_type, next_node == cur_node->children.front());
 
                     cur_node = next_node;
                 }
@@ -4834,11 +4856,37 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return atom_it->second(out, const_value);
         };
 
+        /// For a key `ifNull(expr, c)` or `coalesce(expr, c)`, `expr IS NULL` implies `key = c`.
+        /// The converse does not hold, so the atom is relaxed.
+        auto analyze_is_null_with_if_null_key = [&, this](const RPNBuilderTreeNode & expr) -> bool
+        {
+            MonotonicFunctionsChain key_chain;
+            bool unused_chain_is_positive;
+            if (!extractMonotonicFunctionsChainFromKey(
+                    func.getContext(), expr.getColumnName(), info, key_column_num, key_expr_type, key_chain, unused_chain_is_positive,
+                    [](const IFunctionBase & key_func, const IDataType &, bool is_first_argument)
+                    { return is_first_argument && (key_func.getName() == "ifNull" || key_func.getName() == "coalesce"); })
+                || key_chain.size() != 1)
+                return false;
+
+            const auto & replace_null = *key_chain.front();
+            const auto null_type = getArgumentTypeOfMonotonicFunction(replace_null);
+            const auto key_of_null = replace_null.execute(
+                {{null_type->createColumnConstWithDefaultValue(1), null_type, ""}}, replace_null.getResultType(), 1, /* dry_run = */ false);
+            const Field value = (*key_of_null)[0];
+            if (value.isNull() || value.isNaN())
+                return false;
+
+            out.key_columns.push_back(key_column_num);
+            out.relaxed = true;
+            return atom_map.find("equals")->second(out, value);
+        };
+
         if (num_args == 1)
         {
             if (!(isKeyPossiblyWrappedByMonotonicFunctions(
                 func.getArgumentAt(0), info, key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain)))
-                return false;
+                return func_name == "isNull" && analyze_is_null_with_if_null_key(func.getArgumentAt(0));
 
             if (key_column_num == static_cast<size_t>(-1))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
@@ -4910,14 +4958,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             {
                 /// `key <=> NULL` means "key IS NULL", not "key = NULL". Reuse the existing `isNull`
                 /// atom (same handling as bare `key IS NULL`) so a Nullable PK / minmax index prunes
-                /// to the NULL granule exactly, instead of declining and scanning every granule.
+                /// to the NULL granule exactly, instead of declining and scanning every granule. For a
+                /// key `ifNull(expr, c)`, `expr <=> NULL` is handled like `isNull(expr)`.
                 if (func_name == "isNotDistinctFrom")
                 {
                     size_t key_arg_pos = 1 - const_arg_pos;
                     auto key_arg = func.getArgumentAt(key_arg_pos);
                     if (!isKeyPossiblyWrappedByMonotonicFunctions(
                             key_arg, info, key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain))
-                        return false;
+                        return analyze_is_null_with_if_null_key(key_arg);
 
                     if (key_column_num == static_cast<size_t>(-1))
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
@@ -5002,7 +5051,8 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             else if (
                 !no_relaxed_atom_functions.contains(func_name)
                 && canConstantBeWrappedByMonotonicFunctions(
-                    key_arg, info, key_column_num, key_expr_type, const_value, const_type, constant_chain_is_positive))
+                    key_arg, info, key_column_num, key_expr_type, const_value, const_type, constant_chain_is_positive,
+                    /* is_order_comparison = */ !reverseComparisonOperator(func_name).empty()))
             {
                 condition_is_relaxed = true;
             }
