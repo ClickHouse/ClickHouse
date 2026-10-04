@@ -90,6 +90,7 @@ CREATE TABLE table
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
                                             | keyValuePairs
+                                            | jsonStringValues
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -109,7 +110,7 @@ Text indexes can be defined on columns of these types:
 - [String](/reference/data-types/string) and [FixedString](/reference/data-types/fixedstring),
 - [Array(String)](/reference/data-types/array) and [Array(FixedString)](/reference/data-types/array),
 - [Map](/reference/data-types/map), either on the `Map` column using the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer, or only on the map keys or values using the [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) or [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) function, and
-- [JSON](/reference/data-types/newjson) (via [JSONAllPaths](/reference/functions/regular-functions/json-functions#JSONAllPaths) and [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) functions).
+- [JSON](/reference/data-types/newjson), either via the [JSONAllPaths](/reference/functions/regular-functions/json-functions#JSONAllPaths) and [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) functions, or directly with the [`jsonStringValues`](#json-indexes-jsonstringvalues) tokenizer.
 
 Columns of type [Nullable(T)](/reference/data-types/nullable) and [LowCardinality()](/reference/data-types/lowcardinality) are also supported, including `Array(Nullable(String or FixedString))`.
 
@@ -130,6 +131,7 @@ ALTER TABLE table
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
                                             | keyValuePairs
+                                            | jsonStringValues
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -1252,6 +1254,38 @@ SELECT * FROM events WHERE has(data.tags::Array(String), 'bug')
 ```sql
 SELECT * FROM events WHERE data.level IN ('error', 'critical');
 ```
+
+#### Path-scoped String values with `jsonStringValues` {#json-indexes-jsonstringvalues}
+
+Use the `jsonStringValues` tokenizer to index the values of all `String` leaves in a `JSON` column without mixing values from different paths:
+
+```sql title="Query"
+CREATE TABLE events
+(
+    id UInt64,
+    data JSON,
+    INDEX json_idx data TYPE text(tokenizer = jsonStringValues)
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+Each indexed token consists of the full JSON path and one token of its `String` value, so `hasToken(data.status, 'error')` does not match a row where only `data.message` contains `error`. Values are split with the rules of the `splitByNonAlpha` tokenizer. Non-string values and arrays are not indexed.
+
+The index can answer `hasToken`, `hasAllTokens`, and `hasAnyTokens` on:
+
+- a typed `String` path, such as `data.status`;
+- a typed `Nullable(String)` path, such as `data.note`;
+- an explicit dynamic-path String access, such as `data.message.:`String``.
+
+With direct reads enabled, these predicates can also be answered exactly from the index, including under `NOT` and in `AND` combinations. As with ordinary `Nullable(String)` text indexes, a `NULL` value produces no posting, so `NOT hasToken(data.note, 'error')` includes rows whose `data.note` is `NULL`.
+
+The tokenizer has these restrictions:
+
+- It must be created directly on one bare `JSON` column identifier, not on `JSONAllValues`, another expression, or a subcolumn.
+- `preprocessor`, `postprocessor`, and `support_phrase_search` are rejected.
+- Queries on the bare dynamic path or on a non-`String` variant are not answered by this index. For a dynamic path, use the explicit `.:`String`` form.
+- String needles are tokenized with `splitByNonAlpha`, while array elements are used as complete tokens.
 
 ### Phrase search {#text-index-phrase-search}
 

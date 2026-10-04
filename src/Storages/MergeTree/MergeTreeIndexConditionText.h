@@ -201,6 +201,15 @@ private:
         const Field & value_field,
         RPNElement & out) const;
 
+    /// Everything a `jsonStringValues` index supports: hasToken / hasAnyTokens / hasAllTokens
+    /// on typed String, typed Nullable(String), or explicit `.:String`.
+    bool traverseJSONStringValuesNode(
+        const String & function_name,
+        const RPNBuilderTreeNode & index_column_node,
+        const DataTypePtr & value_type,
+        const Field & value_field,
+        RPNElement & out) const;
+
     /// `mapContainsKeyValue(m, 'key', 'value')`: both pair tokens, searched as one `Any` query.
     bool traverseMapContainsKeyValueNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
