@@ -1,0 +1,4 @@
+<clickhouse>
+    <!-- The main config.xml comes from the current sources and may contain elements unknown to an older server version. -->
+    <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
+</clickhouse>

@@ -1875,7 +1875,7 @@ Possible values:
 - `log` - the system call is allowed, and only recorded. No system call is refused, so this mode enforces no policy at all; use it to check the policy against your workload before turning it on. `PR_SET_NO_NEW_PRIVS` is still set in this mode, because the kernel asks for it before it accepts a filter at all, so a setuid program the server runs does not get to elevate even here.
 - `disabled` - no filter is installed.
 
-The default is `log`, so that the policy enforces nothing until it has been validated against a workload: run the server with it, watch the kernel audit log for a system call the policy does not cover, and only then switch the setting to `trap`, `kill` or `errno`.
+The default is `log`, so that the policy enforces nothing until it has been validated against a workload: run the server with it, watch the kernel audit log for a system call the policy does not cover, and only then switch the setting to `trap`, `kill` or `errno`. The configuration file shipped with the server packages and the Docker image sets it to `trap`.
 
 Where the kernel cannot install a filter with the `log` action - it predates Linux 4.14, it is built without `CONFIG_SECCOMP_FILTER`, or an outer sandbox such as a container runtime refuses the `seccomp` system call - the `log` mode logs a warning with the reason and the server runs without a filter, since there is nothing the filter would have enforced. `PR_SET_NO_NEW_PRIVS` is set all the same. The enforcing modes do not do that: if their filter cannot be installed, the server does not start.
 

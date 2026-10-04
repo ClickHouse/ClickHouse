@@ -506,6 +506,13 @@ mlock_executable: true
 # Reallocate memory for machine code ("text") using huge pages. Highly experimental.
 remap_executable: false
 
+# Allow the server to make only the system calls it uses (a seccomp filter, Linux only).
+# With "trap", a system call outside the policy terminates the server with SIGSYS, writing the system call number
+# and a stack trace to the log. Other values: "kill", "errno", "log" (only record, the default without this line), "disabled".
+# If the filter cannot be installed, for example because a container runtime refuses the seccomp system call,
+# the server does not start: set it to "log" or "disabled" in that case.
+seccomp: trap
+
 # Uncomment below in order to use JDBC table engine and function.
 # To install and run JDBC bridge in background:
 # * [Debian/Ubuntu]
