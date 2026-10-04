@@ -660,7 +660,7 @@ While ZIP and TAR archives can be accessed from any supported storage location, 
 
 ## Inserting Data {#inserting-data}
 
-Note that rows can only be inserted into new files. There are no merge cycles or file split operations. Once a file is written, subsequent inserts will fail. See more details [here](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
+Note that rows can only be inserted into new files. There are no merge cycles. Once a file is written, subsequent inserts will fail. To avoid this you can use the `s3_truncate_on_insert` and `s3_create_new_file_on_insert` settings. A single `INSERT` can be split into several numbered files of approximately a given size with the [s3_split_on_write_by_size_bytes](/reference/settings/session-settings/s3#s3_split_on_write_by_size_bytes) setting. See more details [here](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
 ## Virtual Columns {#virtual-columns}
 
@@ -716,6 +716,7 @@ SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 
 - [s3_truncate_on_insert](/reference/settings/session-settings/s3#s3_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
 - [s3_create_new_file_on_insert](/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [s3_split_on_write_by_size_bytes](/reference/settings/session-settings/s3#s3_split_on_write_by_size_bytes) - splits the written data into multiple numbered objects of approximately the specified size. Disabled by default.
 - [s3_skip_empty_files](/reference/settings/session-settings/s3#s3_skip_empty_files) - allows to skip empty files while reading. Enabled by default.
 - [s3_base](/reference/settings/session-settings/s3#s3_base) - base URL for resolving relative URLs passed to the `s3` function. Empty (disabled) by default.
 
@@ -1262,6 +1263,13 @@ FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st
 1 row in set. Elapsed: 0.153 sec.
 ```
 
+## Storage Settings {#storage-settings}
+
+- [azure_truncate_on_insert](/reference/settings/session-settings/azure#azure_truncate_on_insert) - allows to truncate the blob before insert into it. Disabled by default.
+- [azure_create_new_file_on_insert](/reference/settings/session-settings/azure#azure_create_new_file_on_insert) - allows to create a new blob on each insert if the format has a suffix. Disabled by default.
+- [azure_split_on_write_by_size_bytes](/reference/settings/session-settings/azure#azure_split_on_write_by_size_bytes) - splits the written data into multiple numbered blobs of approximately the specified size. Disabled by default.
+- [azure_skip_empty_files](/reference/settings/session-settings/azure#azure_skip_empty_files) - allows to skip empty blobs while reading. Disabled by default.
+
 ## Related {#related}
 - [AzureBlobStorage Table Engine](/reference/engines/table-engines/integrations/azureBlobStorage)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
@@ -1388,6 +1396,7 @@ SELECT * FROM HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parque
 
 - [hdfs_truncate_on_insert](/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
 - [hdfs_create_new_file_on_insert](/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [hdfs_split_on_write_by_size_bytes](/reference/settings/session-settings/hdfs#hdfs_split_on_write_by_size_bytes) - splits the written data into multiple numbered files of approximately the specified size. Disabled by default.
 - [hdfs_skip_empty_files](/reference/settings/session-settings/hdfs#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 
 ## Related {#related}

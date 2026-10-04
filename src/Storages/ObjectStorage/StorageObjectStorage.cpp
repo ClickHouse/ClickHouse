@@ -1,11 +1,14 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <algorithm>
+
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/parseGlobs.h>
+#include <base/scope_guard.h>
 #include <Core/LogsLevel.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -22,6 +25,7 @@
 
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/NumberedFileName.h>
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -456,7 +460,7 @@ size_t StorageObjectStorage::getMaxReadStreams(size_t num_streams, ContextPtr)
         return num_streams;
 
     /// A static list of keys: the read creates at most one source per key.
-    return std::min(num_streams, std::max(1uz, configuration->getPaths().size()));
+    return std::min(num_streams, std::max(1uz, configuration->getPathsCount()));
 }
 
 bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) const
@@ -927,20 +931,129 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     }
 
     auto paths = configuration->getPaths();
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
-    {
-        paths.push_back({*new_key});
-    }
-    configuration->setPaths(paths);
 
-    return std::make_shared<StorageObjectStorageSink>(
-        paths.back().path,
+    /// The key this insert starts with. With `*_create_new_file_on_insert`, the insert steps aside from an existing
+    /// object into a new key - which is registered in the table only after the object has been written and committed,
+    /// see below.
+    String first_key = paths.front().path;
+    /// When the data is split by size, the objects after the first one are named as `data.1.parquet`, `data.2.parquet`, ...
+    /// The numbering is derived from the key of the table: the next objects are `data.tsv` -> `data.1.tsv`, ...,
+    /// and an insert that had to step aside from an existing object into a numbered key continues the numbering from there.
+    const NumberedFileNames numbered_keys = getNumberedFileNames(first_key);
+    size_t sequence_number = 1;
+    /// Every key this insert writes - the one it starts with, and every generated one - is reserved until the
+    /// insert is over, so that a concurrent insert into the same table picks a different one: a key is published
+    /// for the readers only after its object has been committed, and until then the object storage does not have
+    /// it either, so nothing else would tell the two inserts apart and one of them would overwrite the data of the other.
+    ///
+    /// This is done before a truncating insert deletes anything: it fails when a concurrent insert is writing the
+    /// same starting key, see `checkAndGetNewFileOnInsertIfNeeded`. A truncating insert keeps the starting key, so
+    /// the cleanup below does not change it.
+    auto reservations = std::make_shared<WrittenPathReservations>(configuration);
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
+            *object_storage, *configuration, settings, first_key, numbered_keys, sequence_number, *reservations))
+        first_key = *new_key;
+
+    /// The new objects are registered in the configuration, so that they are visible for reading from the same table.
+    StorageObjectStorageSink::GetNextPathCallback get_next_path;
+    StorageObjectStorageSink::PublishPathCallback publish_path;
+    if (settings.split_on_write_by_size_bytes)
+    {
+        get_next_path = [storage = object_storage, config = configuration, settings, numbered_keys, sequence_number, reservations]() mutable -> String
+        {
+            return getNextKeyForSplittingBySize(*storage, *config, settings, numbered_keys, sequence_number, *reservations);
+        };
+    }
+
+    /// A new key - the first one of the insert when it had to step aside from an existing object, or any next
+    /// one of an insert split by size - becomes visible for the readers of this table only after the object
+    /// has been committed: a `SELECT` running concurrently with the insert never plans a key whose object is
+    /// still being written, or was never created at all because the insert failed. The registration is a
+    /// single atomic step on the shared list, so that a `SELECT` that snapshots it concurrently sees either
+    /// the list without this key or the list with it, and never a copy of a vector that is being
+    /// reallocated under it.
+    ///
+    /// The reservations are captured here as well, so that they outlive the sink: the sink calls the callback
+    /// only for a key that is not published yet, but the starting key of a plain insert is reserved as well,
+    /// and it has to stay reserved until the insert is over even though nothing is ever published for it.
+    ///
+    /// The starting key of a plain insert is in the list of the paths whether its object exists or not, so the list
+    /// does not tell the next insert that it is taken. Once its object is committed, it is kept as committed in the
+    /// configuration instead, before the reservation is released, so that the next insert with
+    /// `*_create_new_file_on_insert` steps aside from it even if the object storage does not report it yet.
+    publish_path = [config = configuration, reservations, raw_key = paths.front().path](const String & new_key)
+    {
+        if (new_key == raw_key)
+            config->commitPathWrittenByInsert(new_key);
+        else
+            config->appendPath({new_key});
+    };
+
+    auto sink = std::make_shared<StorageObjectStorageSink>(
+        first_key,
         object_storage,
         format_settings,
         sample_block,
         local_context,
         configuration->format,
-        configuration->compression_method);
+        configuration->compression_method,
+        settings.split_on_write_by_size_bytes,
+        std::move(get_next_path),
+        std::move(publish_path),
+        /* path_is_published = */ false);
+
+    /// A truncating insert overwrites the table: it starts from the base key, the split objects
+    /// of the previous inserts are forgotten, and the numbering starts over, overwriting them one by one.
+    /// It does not matter whether the current insert is split by size: a rewrite with
+    /// `*_split_on_write_by_size_bytes` turned back to 0 has to drop the numbered tail of the previous
+    /// split insert as well, otherwise both this table and the readers of a wildcard path over the same
+    /// prefix keep seeing the stale rows.
+    ///
+    /// The cleanup is done only after the sink has started writing the first object of this insert, so that
+    /// an insert that cannot even start it fails without deleting a part of the old data. Starting an object
+    /// does not replace the old one in S3 or Azure - that happens only when the object is committed - so a failed
+    /// cleanup leaves the first object intact as well. HDFS is different: opening the first file for a rewrite
+    /// truncates it immediately, exactly as for any insert with `hdfs_truncate_on_insert`, so there a failed cleanup
+    /// leaves the base file already emptied - the same as an insert that fails in the middle of writing the data.
+    /// Running the cleanup first would not help: a failure to open the file would then lose the tail instead.
+    if (settings.truncate_on_insert)
+    {
+        /// The same logger the storage uses; the sink is created from a static context.
+        const auto log = getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), storage_id.getFullTableName()));
+
+        if (paths.size() > 1)
+        {
+            /// These objects were written by this table, and are deleted whatever their keys are - unless
+            /// a concurrent insert is still writing them, see `removeStaleSplitObjects`.
+            std::vector<String> stale_keys;
+            stale_keys.reserve(paths.size() - 1);
+            for (auto it = paths.begin() + 1; it != paths.end(); ++it)
+                stale_keys.push_back(it->path);
+
+            /// A key is dropped from the list of the paths only after the object is gone, so that a failure to
+            /// remove one leaves the table reading exactly the objects that are still there: neither the whole
+            /// tail when nothing could be removed, nor a key whose object the cleanup has already deleted.
+            removeStaleSplitObjects(
+                *object_storage,
+                *configuration,
+                stale_keys,
+                [&](const String & removed_key) { configuration->retirePath(removed_key); },
+                log);
+        }
+        else if (settings.split_on_write_by_size_bytes)
+        {
+            /// The table has no numbered tail of its own to delete - it either never had one, or lost it
+            /// on a reload. Only a truncating insert that is split by size claims the numbered sequence.
+            removeStaleSplitObjectsByNumber(
+                *object_storage,
+                *configuration,
+                getNumberedFileNames(paths.front().path),
+                settings.create_new_file_on_insert,
+                log);
+        }
+    }
+
+    return sink;
 }
 
 bool StorageObjectStorage::optimize(
@@ -993,12 +1106,63 @@ void StorageObjectStorage::truncate(
             path.path);
     }
 
-    StoredObjects objects;
-    for (const auto & key : configuration->getPaths())
+    auto paths = configuration->getPaths();
+
+    /// The keys after the first one were written by the inserts into this table - with `*_create_new_file_on_insert`
+    /// or by splitting the data by size. They are deleted before the first key, and the first key is deleted last:
+    /// the first key is the table itself, and it stays in the list of the paths whatever happens, so its object
+    /// has to remain readable until everything else is gone - otherwise a removal that fails part-way through
+    /// the tail would leave the table planning reads of an object that does not exist anymore, and every
+    /// following `SELECT` would fail with `FILE_DOESNT_EXIST` until an insert recreates the object.
+    ///
+    /// The table forgets each of the tail keys as soon as its object is gone. The removal can succeed only
+    /// partially - the object storages report which objects they did delete - so the keys are retired from
+    /// the reported set even when the removal throws, exactly like the truncating insert retires the keys
+    /// one by one.
+    if (paths.size() > 1)
     {
-        objects.emplace_back(key.path);
+        StoredObjects tail_objects;
+        tail_objects.reserve(paths.size() - 1);
+        for (auto it = paths.begin() + 1; it != paths.end(); ++it)
+            tail_objects.emplace_back(it->path);
+
+        StoredObjects successful_objects;
+        SCOPE_EXIT({
+            for (const auto & object : successful_objects)
+            {
+                /// Logged here rather than left to the object storage: not every one of them logs the objects it deletes.
+                LOG_INFO(log, "Removed the object {} written by a previous insert into the truncated table", object.remote_path);
+                configuration->retirePath(object.remote_path);
+            }
+        });
+
+        object_storage->removeObjectsIfExist(tail_objects, &successful_objects);
     }
-    object_storage->removeObjectsIfExist(objects);
+
+    object_storage->removeObjectIfExists(StoredObject(paths.front().path));
+    configuration->forgetPathCommittedByInsert(paths.front().path);
+    LOG_INFO(log, "Removed the object {} of the truncated table", paths.front().path);
+
+    /// The table only ever deletes the numbered keys it remembers, and it remembers only the ones written since
+    /// it was loaded: the engine keeps no metadata about the objects it has written, and a `DETACH` / `ATTACH` or
+    /// a server restart rebuilds the list of the paths from the single configured key. A numbered object left over
+    /// from an earlier split insert is therefore not attributable to this table anymore, and `TRUNCATE TABLE`
+    /// leaves it where it is rather than deleting an object that may as well belong to someone else. That is not
+    /// worth an error - the truncated table does not read those objects either - but it is worth a warning, so
+    /// that the leftovers that a glob pattern over the bucket still sees do not come as a surprise.
+    if (paths.size() == 1)
+    {
+        const auto numbered_keys = getNumberedFileNames(paths.front().path);
+        const String forgotten_key = numbered_keys.getName(1);
+        if (object_storage->exists(StoredObject(forgotten_key)))
+            LOG_WARNING(
+                log,
+                "The truncated table {} has left the object {} in place: it was written by an insert split by size "
+                "before the table was reloaded, and the table no longer attributes it to itself. "
+                "Remove it manually if it is not needed.",
+                getStorageID().getNameForLogs(),
+                forgotten_key);
+    }
 }
 
 void StorageObjectStorage::drop()

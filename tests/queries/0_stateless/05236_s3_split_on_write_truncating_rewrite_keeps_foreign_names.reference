@@ -1,0 +1,14 @@
+--- A large insert skips the taken keys
+1000	0	999
+--- A truncating rewrite that needs the numbered keys as well
+1000	0	999
+--- The keys the rewrite does not own are intact
+111111
+333333
+--- The objects of the previous insert are deleted, and the rewrite has stepped over the foreign keys
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.4.tsv
+data.5.tsv
+data.tsv
