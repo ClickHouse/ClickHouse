@@ -1531,13 +1531,16 @@ try
         metrics.reserve(servers_to_start_before_tables.size() + servers.size() + introspection_servers.size());
 
         for (const auto & server : servers_to_start_before_tables)
-            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+            metrics.emplace_back(ProtocolServerMetrics{
+                server.getPortName(), server.getProtocolType(), server.currentThreads(), server.refusedConnections()});
 
         for (const auto & server : servers)
-            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+            metrics.emplace_back(ProtocolServerMetrics{
+                server.getPortName(), server.getProtocolType(), server.currentThreads(), server.refusedConnections()});
 
         for (const auto & server : introspection_servers)
-            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+            metrics.emplace_back(ProtocolServerMetrics{
+                server.getPortName(), server.getProtocolType(), server.currentThreads(), server.refusedConnections()});
         return metrics;
     };
     const unsigned async_metrics_update_period_s = server_settings[ServerSetting::asynchronous_metrics_update_period_s];
@@ -3069,6 +3072,7 @@ try
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::END,
                         "Keeper (tcp): " + address.toString(),
                         std::make_unique<TCPServer>(
                             new KeeperTCPHandlerFactory(
@@ -3095,6 +3099,7 @@ try
                     return ProtocolServerAdapter(
                         listen_host,
                         secure_port_name,
+                        ServerType::Type::END,
                         "Keeper with secure protocol (tcp_secure): " + address.toString(),
                         std::make_unique<TCPServer>(
                             new KeeperTCPHandlerFactory(
@@ -3134,6 +3139,7 @@ try
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::END,
                         "HTTP Control: http://" + address.toString(),
                         std::make_unique<HTTPServer>(
                             std::move(http_context),
@@ -3170,6 +3176,7 @@ try
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::END,
                         "HTTPS Control: https://" + address.toString(),
                         std::make_unique<HTTPServer>(
                             std::move(http_context),
@@ -3940,6 +3947,30 @@ catch (...)
 namespace
 {
 
+/// Maps a `<protocols>` stack onto the ServerType of its innermost layer, so that a composable
+/// protocol is reported under the same metrics as the equivalent built-in port.
+ServerType::Type protocolStackType(const std::string & leaf_type, bool is_secure, bool has_proxy)
+{
+    if (leaf_type == "tcp")
+    {
+        if (is_secure)
+            return ServerType::Type::TCP_SECURE;
+        return has_proxy ? ServerType::Type::TCP_WITH_PROXY : ServerType::Type::TCP;
+    }
+    if (leaf_type == "http")
+        return is_secure ? ServerType::Type::HTTPS : ServerType::Type::HTTP;
+    if (leaf_type == "interserver")
+        return is_secure ? ServerType::Type::INTERSERVER_HTTPS : ServerType::Type::INTERSERVER_HTTP;
+    if (leaf_type == "mysql")
+        return ServerType::Type::MYSQL;
+    if (leaf_type == "postgres")
+        return ServerType::Type::POSTGRESQL;
+    if (leaf_type == "prometheus")
+        return ServerType::Type::PROMETHEUS;
+
+    return ServerType::Type::END;
+}
+
 /// Walk a composable protocol's `impl` chain and return the effective `default_session_user`:
 /// the value closest to the endpoint wins. Used both when the protocol stack is built and when it is
 /// decided whether a configuration reload has to restart the endpoint.
@@ -4090,7 +4121,8 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     const std::string & protocol,
     Poco::Net::HTTPServerParams::Ptr http_params,
     AsynchronousMetrics & async_metrics,
-    bool & is_secure)
+    bool & is_secure,
+    ServerType::Type & protocol_type)
 {
     /// The default session user for the endpoint: the `default_session_user` key looked up
     /// from the endpoint's protocol module towards the referenced (`impl`) modules; the value
@@ -4160,6 +4192,11 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
 
     bool has_interserver = false;
 
+    /// `tls` and `proxy1` only wrap another protocol; the innermost layer of the chain is
+    /// what the server actually speaks, and it determines which metrics are reported for it.
+    std::string leaf_type;
+    bool has_proxy = false;
+
     while (true)
     {
         // if there is no "type" - it's a reference to another protocol and this is just an endpoint
@@ -4172,6 +4209,11 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
                     throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' contains more than one TLS layer", protocol);
                 is_secure = true;
             }
+            else if (type == "proxy1")
+                has_proxy = true;
+            else
+                leaf_type = type;
+
             if (type == "interserver")
                 has_interserver = true;
 
@@ -4205,6 +4247,8 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         throw Exception(
             ErrorCodes::INVALID_CONFIG_PARAMETER,
             "Introspection protocol '{}' must end in a 'tcp' layer", protocol);
+
+    protocol_type = protocolStackType(leaf_type, is_secure, has_proxy);
 
     return stack;
 }
@@ -4275,7 +4319,9 @@ void Server::createServers(
         for (const auto & host : hosts)
         {
             bool is_secure = false;
-            auto stack = buildProtocolStackFromConfig(config, server_settings, protocol, http_params, async_metrics, is_secure);
+            auto protocol_type = ServerType::Type::END;
+            auto stack = buildProtocolStackFromConfig(
+                config, server_settings, protocol, http_params, async_metrics, is_secure, protocol_type);
 
             if (stack->empty())
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' stack empty", protocol);
@@ -4290,6 +4336,7 @@ void Server::createServers(
                 return ProtocolServerAdapter(
                     host,
                     port_name.c_str(),
+                    protocol_type,
                     description + ": " + address.toString(),
                     std::make_unique<TCPServer>(
                         stack.release(),
@@ -4329,6 +4376,7 @@ void Server::createServers(
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::HTTP,
                         "http://" + address.toString(),
                         std::make_unique<HTTPServer>(
                             httpContext(), handler_factory, server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
@@ -4355,6 +4403,7 @@ void Server::createServers(
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::HTTPS,
                         "https://" + address.toString(),
                         std::make_unique<HTTPServer>(
                             httpContext(), handler_factory, server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
@@ -4379,6 +4428,7 @@ void Server::createServers(
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
+                    ServerType::Type::TCP,
                     "native protocol (tcp): " + address.toString(),
                     std::make_unique<TCPServer>(
                         new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
@@ -4402,6 +4452,7 @@ void Server::createServers(
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
+                    ServerType::Type::TCP_WITH_PROXY,
                     "native protocol (tcp) with PROXY: " + address.toString(),
                     std::make_unique<TCPServer>(
                         new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ true, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
@@ -4427,6 +4478,7 @@ void Server::createServers(
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
+                    ServerType::Type::ARROW_FLIGHT,
                     "Arrow Flight compatibility protocol: " + address.toString(),
                     std::unique_ptr<IGRPCServer>(new ArrowFlightServer(*this, address)),
                     true);
@@ -4448,6 +4500,7 @@ void Server::createServers(
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
+                    ServerType::Type::TCP_SECURE,
                     "secure native protocol (tcp_secure): " + address.toString(),
                     std::make_unique<TCPServer>(
                         new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
@@ -4480,6 +4533,7 @@ void Server::createServers(
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::TCP_SSH,
                         "SSH PTY: " + address.toString(),
                         std::make_unique<TCPServer>(
                             new SSHPtyHandlerFactory(*this, config),
@@ -4507,6 +4561,7 @@ void Server::createServers(
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
+                    ServerType::Type::MYSQL,
                     "MySQL compatibility protocol: " + address.toString(),
                     std::make_unique<TCPServer>(
                          new MySQLHandlerFactory(*this, secure_required, ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes),
@@ -4530,6 +4585,7 @@ void Server::createServers(
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
+                    ServerType::Type::POSTGRESQL,
                     "PostgreSQL compatibility protocol: " + address.toString(),
 #if USE_SSL
                     std::make_unique<TCPServer>(
@@ -4560,6 +4616,7 @@ void Server::createServers(
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
+                    ServerType::Type::GRPC,
                     "gRPC protocol: " + server_address.toString(),
                     std::make_unique<GRPCServer>(*this, server_address));
             });
@@ -4584,6 +4641,7 @@ void Server::createServers(
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::PROMETHEUS,
                         "Prometheus: http://" + address.toString(),
                         std::make_unique<HTTPServer>(
                             httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
@@ -4615,6 +4673,7 @@ void Server::createServers(
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::ICEBERG_REST_CATALOG,
                         "Iceberg REST catalog: http://" + address.toString(),
                         std::make_unique<HTTPServer>(
                             httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
@@ -4660,6 +4719,7 @@ void Server::createInterserverServers(
                 return ProtocolServerAdapter(
                     interserver_listen_host,
                     port_name,
+                    ServerType::Type::INTERSERVER_HTTP,
                     "replica communication (interserver): http://" + address.toString(),
                     std::make_unique<HTTPServer>(
                         httpContext(),
@@ -4686,6 +4746,7 @@ void Server::createInterserverServers(
                 return ProtocolServerAdapter(
                     interserver_listen_host,
                     port_name,
+                    ServerType::Type::INTERSERVER_HTTPS,
                     "secure replica communication (interserver): https://" + address.toString(),
                     std::make_unique<HTTPServer>(
                         httpContext(),
