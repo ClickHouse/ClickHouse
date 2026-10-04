@@ -90,7 +90,12 @@ TransactionManager::TransactionManager()
     , fault_probability_before_commit(global_context->getConfigRef().getDouble("transaction_log.fault_probability_before_commit", 0))
     , fault_probability_after_commit(global_context->getConfigRef().getDouble("transaction_log.fault_probability_after_commit", 0))
 {
-    auto component_guard = Coordination::setCurrentComponent("TransactionManager::TransactionManager");
+}
+
+void TransactionManager::start()
+{
+    std::lock_guard lock{mutex};
+    auto component_guard = Coordination::setCurrentComponent("TransactionManager::start");
 
     /// Fail-close before any list-with-data, multi-read or check-stat call runs. Without
     /// `CHECK_STAT` Keeper answers `Unsupported operation: CheckStat` and drops the session, which
