@@ -785,11 +785,15 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             cross_type_equivalent_columns.insert(replaced_name);
 
             /// A source that already has the supertype is not cast by the JOIN either, so it can stand in
-            /// under its own name provided that name denotes a single type here: the JOIN republishes an
-            /// input's name at its output type, and a pushed filter binds its inputs to those outputs by name.
+            /// under its own name, provided that name carries the source's type wherever it also occurs in
+            /// the JOIN output, and does occur at that type in the input of the stream this filter is pushed to.
+            const auto & source_stream_input_header
+                = source.fromLeft() ? *left_stream_input_header : *right_stream_input_header;
             const auto * source_in_output = join_output_header.findByName(source.getColumnName());
+            const auto * source_in_stream = source_stream_input_header.findByName(source.getColumnName());
             if (source.getType()->equals(*supertype)
-                && (!source_in_output || source_in_output->type->equals(*source.getType())))
+                && (!source_in_output || source_in_output->type->equals(*source.getType()))
+                && source_in_stream && source_in_stream->type->equals(*source.getType()))
             {
                 equivalent_columns[replaced_name] = source.getColumn();
                 return;
