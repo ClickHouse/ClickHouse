@@ -66,6 +66,11 @@ ALTER TABLE t_prune_in_table_alias DELETE WHERE t_prune_in_table_alias.is_hit;
 -- Pruned to partition 1: a `DEFAULT` column is read as it was stored, so its definition is not
 -- evaluated again and does not hide a deferred set.
 ALTER TABLE t_prune_in_table_alias DELETE WHERE is_hit_stored AND p = 1;
+-- Pruned to partition 1: inside the lambda, `is_hit` is the lambda parameter, which shadows the
+-- `ALIAS` column of the same name.
+ALTER TABLE t_prune_in_table_alias DELETE WHERE p = 1 AND arrayExists(is_hit -> is_hit = 1, [p]);
+-- Not pruned: a name not bound by the lambda still reaches the `ALIAS` column from its body.
+ALTER TABLE t_prune_in_table_alias DELETE WHERE arrayExists(y -> is_hit AND y = 1, [p]);
 
 SYSTEM SYNC REPLICA t_prune_in_table_alias PULL;
 
