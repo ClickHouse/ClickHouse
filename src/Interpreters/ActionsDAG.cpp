@@ -3517,15 +3517,43 @@ struct ConjunctionNodes
     ActionsDAG::NodeRawConstPtrs rejected;
 };
 
+/// indexHint keeps its arguments in its own dag, so they are not children of the node, and hints may nest
+template <typename Predicate>
+bool allIndexHintInputs(const ActionsDAG::Node & node, const Predicate & predicate)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || node.function_base->getName() != "indexHint")
+        return true;
+
+    const auto & adaptor = assert_cast<const FunctionToFunctionBaseAdaptor &>(*node.function_base);
+    const auto & dag = assert_cast<const FunctionIndexHint &>(*adaptor.getFunction()).getActions();
+    return std::ranges::all_of(dag.getInputs(), predicate)
+        && std::ranges::all_of(dag.getNodes(), [&](const auto & inner) { return allIndexHintInputs(inner, predicate); });
+}
+
 /// Take a node which result is a predicate.
 /// Assuming predicate is a conjunction (probably, trivial).
 /// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
 /// Allowed predicate is a predicate which can be calculated using only nodes from the allowed_nodes set.
-ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes, bool allow_non_deterministic_functions)
+ConjunctionNodes getConjunctionNodes(
+    ActionsDAG::Node * predicate,
+    const ActionsDAG::NodeRawConstPtrs & inputs,
+    std::unordered_set<const ActionsDAG::Node *> allowed_nodes,
+    bool allow_non_deterministic_functions,
+    bool allow_index_hints = true)
 {
     ConjunctionNodes conjunction;
     std::unordered_set<const ActionsDAG::Node *> allowed;
     std::unordered_set<const ActionsDAG::Node *> rejected;
+
+    std::unordered_set<std::string_view> rejected_input_names;
+    for (const auto * input : inputs)
+        if (!allowed_nodes.contains(input))
+            rejected_input_names.insert(input->result_name);
+
+    auto is_index_hint_input_allowed = [&](const ActionsDAG::Node * input)
+    {
+        return allow_index_hints && !rejected_input_names.contains(input->result_name);
+    };
 
     /// Parts of predicate in case predicate is conjunction (or just predicate itself).
     std::unordered_set<const ActionsDAG::Node *> predicates;
@@ -3598,7 +3626,8 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
 
                 if (cur.node->type != ActionsDAG::ActionType::ARRAY_JOIN
                     && cur.node->type != ActionsDAG::ActionType::INPUT
-                    && !is_deprecated_function)
+                    && !is_deprecated_function
+                    && allIndexHintInputs(*cur.node, is_index_hint_input_allowed))
                     allowed_nodes.emplace(cur.node);
             }
 
@@ -3805,7 +3834,8 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     bool removes_filter,
     const Names & available_inputs,
     const ColumnsWithTypeAndName & all_inputs,
-    bool allow_non_deterministic_functions)
+    bool allow_non_deterministic_functions,
+    bool allow_index_hints)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -3838,7 +3868,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
         }
     }
 
-    auto conjunction = getConjunctionNodes(predicate, allowed_nodes, allow_non_deterministic_functions);
+    auto conjunction = getConjunctionNodes(predicate, inputs, allowed_nodes, allow_non_deterministic_functions, allow_index_hints);
 
     if (conjunction.allowed.empty())
         return {};
@@ -3904,9 +3934,9 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto right_stream_allowed_nodes = get_input_nodes(right_stream_available_columns_to_push_down);
     auto both_streams_allowed_nodes = get_input_nodes(equivalent_columns_to_push_down);
 
-    auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, left_stream_allowed_nodes, false);
-    auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes, false);
-    auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, both_streams_allowed_nodes, false);
+    auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, inputs, left_stream_allowed_nodes, false);
+    auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, inputs, right_stream_allowed_nodes, false);
+    auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, inputs, both_streams_allowed_nodes, false);
 
     /// A cross-type equivalent input is replaced below by a cast of the opposite side's key rather than
     /// renamed to an equal-typed column, so it can be constant where the input is not and is computed a
