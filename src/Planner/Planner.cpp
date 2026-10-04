@@ -92,6 +92,7 @@
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
+#include <Planner/PlannerUncorrelatedSubqueries.h>
 #include <Planner/PlannerExpressionAnalysis.h>
 #include <Planner/PlannerJoins.h>
 #include <Planner/PlannerJoinTree.h>
@@ -671,7 +672,8 @@ ALWAYS_INLINE void addExpressionStep(
     const CorrelatedSubtrees & correlated_subtrees,
     const SelectQueryOptions & select_query_options,
     const char (&step_description)[size],
-    UsefulSets & useful_sets)
+    UsefulSets & useful_sets,
+    const InToJoinAnalysisResults & in_to_join = {})
 {
     NameSet input_columns_set;
     for (const auto & column : query_plan.getCurrentHeader()->getColumnsWithTypeAndName())
@@ -688,6 +690,18 @@ ALWAYS_INLINE void addExpressionStep(
                     query_plan.getCurrentHeader()->dumpNames());
         }
         buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
+    }
+    for (const auto & in_to_join_subquery : in_to_join)
+    {
+        if (auto key_actions = in_to_join_subquery.key_actions)
+            addExpressionStep(
+                planner_context, query_plan, key_actions, in_to_join_subquery.key_correlated_subtrees,
+                select_query_options, "Compute the left arguments of IN", useful_sets);
+        buildQueryPlanForUncorrelatedInSubquery(
+            planner_context, query_plan, in_to_join_subquery.subquery, select_query_options,
+            std::make_shared<GlobalPlannerContext>(
+                nullptr, nullptr, nullptr,
+                collectFiltersForAnalysis(in_to_join_subquery.subquery.subquery, select_query_options, /*post_filter=*/ nullptr)));
     }
 
     auto actions = std::move(expression_actions->dag);
@@ -712,6 +726,18 @@ ALWAYS_INLINE void addFilterStep(
     for (const auto & correlated_subquery : filter_analysis_result.correlated_subtrees.subqueries)
     {
         buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
+    }
+    for (const auto & in_to_join_subquery : filter_analysis_result.in_to_join)
+    {
+        if (auto key_actions = in_to_join_subquery.key_actions)
+            addExpressionStep(
+                planner_context, query_plan, key_actions, in_to_join_subquery.key_correlated_subtrees,
+                select_query_options, "Compute the left arguments of IN", useful_sets);
+        buildQueryPlanForUncorrelatedInSubquery(
+            planner_context, query_plan, in_to_join_subquery.subquery, select_query_options,
+            std::make_shared<GlobalPlannerContext>(
+                nullptr, nullptr, nullptr,
+                collectFiltersForAnalysis(in_to_join_subquery.subquery.subquery, select_query_options, /*post_filter=*/ nullptr)));
     }
 
     auto actions = std::move(filter_analysis_result.filter_actions->dag);
@@ -1579,6 +1605,10 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
             interpolate_actions_dag.removeUnusedActions();
         }
 
+        /// The actions of `INTERPOLATE` are the one expression of a query that reaches no other
+        /// `appendSetsFromActionsDAG`, so without this the sets they read are never built.
+        appendSetsFromActionsDAG(interpolate_actions_dag, useful_sets);
+
         Aliases empty_aliases;
         interpolate_description = std::make_shared<InterpolateDescription>(std::move(interpolate_actions_dag), empty_aliases);
     }
@@ -1892,7 +1922,8 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
             {},
             select_query_options,
             "Before LIMIT BY",
-            useful_sets);
+            useful_sets,
+            limit_by_analysis_result.in_to_join);
         /// We don't apply LIMIT BY on remote nodes at all in the old infrastructure.
         /// https://github.com/ClickHouse/ClickHouse/blob/67c1e89d90ef576e62f8b1c68269742a3c6f9b1e/src/Interpreters/InterpreterSelectQuery.cpp#L1697-L1705
         /// Let's be optimistic and only don't skip offset (it will be skipped on the initiator).
@@ -2937,7 +2968,8 @@ void Planner::buildPlanForQueryNode()
                     /*correlated_subtrees=*/{},
                     select_query_options,
                     "Before GROUP BY",
-                    useful_sets);
+                    useful_sets,
+                    aggregation_analysis_result.in_to_join);
 
             /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET`
             /// keys. Unlike the settings-based rewrite of `OptimizeTrivialGroupByLimitPass`
@@ -3000,7 +3032,8 @@ void Planner::buildPlanForQueryNode()
                         /*correlated_subtrees=*/{},
                         select_query_options,
                         "Before WINDOW",
-                        useful_sets);
+                        useful_sets,
+                        window_analysis_result.in_to_join);
             }
             else
             {
@@ -3016,7 +3049,8 @@ void Planner::buildPlanForQueryNode()
                     projection_analysis_result.correlated_subtrees,
                     select_query_options,
                     "Projection",
-                    useful_sets);
+                    useful_sets,
+                    projection_analysis_result.in_to_join);
 
                 if (query_node.isDistinct())
                 {
@@ -3039,7 +3073,8 @@ void Planner::buildPlanForQueryNode()
                         /*correlated_subtrees=*/{},
                         select_query_options,
                         "Before ORDER BY",
-                        useful_sets);
+                        useful_sets,
+                        sort_analysis_result.in_to_join);
                 }
             }
         }
@@ -3103,7 +3138,8 @@ void Planner::buildPlanForQueryNode()
                         /*correlated_subtrees=*/{},
                         select_query_options,
                         "Before window functions",
-                        useful_sets);
+                        useful_sets,
+                        window_analysis_result.in_to_join);
 
                 addWindowSteps(query_plan, planner_context, window_analysis_result, select_query_options.max_step_description_length);
             }
@@ -3119,7 +3155,8 @@ void Planner::buildPlanForQueryNode()
                 projection_analysis_result.correlated_subtrees,
                 select_query_options,
                 "Projection",
-                useful_sets);
+                useful_sets,
+                projection_analysis_result.in_to_join);
 
             if (query_node.isDistinct())
             {
@@ -3142,7 +3179,8 @@ void Planner::buildPlanForQueryNode()
                     /*correlated_subtrees=*/{},
                     select_query_options,
                     "Before ORDER BY",
-                    useful_sets);
+                    useful_sets,
+                    sort_analysis_result.in_to_join);
             }
         }
         else
@@ -3203,7 +3241,8 @@ void Planner::buildPlanForQueryNode()
                 /*correlated_subtrees=*/{},
                 select_query_options,
                 "Before LIMIT BY",
-                useful_sets);
+                useful_sets,
+                limit_by_analysis_result.in_to_join);
             addLimitByStep(
                 query_plan,
                 limit_by_analysis_result,

@@ -4,3 +4,8 @@ Less, LHS
 2	b
 4	d
 5	R
+Like, LHS - plan
+SELECT\n    __table1.color_id AS color_id,\n    __table1.payload AS payload\nFROM default.t AS __table1\nWHERE in(__table1.color_id, (\n    SELECT id AS id\n    FROM dictionary(\'default.colors\')\n    WHERE like(name, \'r%\')\n))\nORDER BY\n    __table1.color_id ASC,\n    __table1.payload ASC
+Like, LHS
+1	a
+3	c

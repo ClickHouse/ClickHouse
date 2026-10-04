@@ -1,0 +1,15 @@
+-- IN with a constant left argument
+0	1
+-- IN inside PREWHERE
+0	1
+-- IN inside a lambda
+0	1
+-- `nullIn`
+0	1
+-- IN inside INTERPOLATE
+0	1
+[(1,1),(2,3),(3,4),(4,4)]
+-- A `DateTime64` key against a column that cannot hold its sub-second part
+0	1
+-- `Array(UInt8)` against `Array(Bool)`, a cast that throws on a value the element type cannot hold
+0	1

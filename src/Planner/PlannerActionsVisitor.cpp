@@ -1306,6 +1306,20 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     if (actions_stack.size() == 1 && actions_stack.front().containsNode(function_node_name))
         return {function_node_name, Levels(0)};
 
+    /// A join below this expression evaluates this `IN`, so its result is a column of the stream that
+    /// `analyzeInToJoin` added the joins to, and here it is read rather than computed.
+    if (planner_context->isInSubqueryForJoinRewrite(node))
+    {
+        if (!actions_stack.front().containsInputOrConstantNode(function_node_name))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "'{}' is evaluated with a join, but no join below this expression delivers it", function_node_name);
+
+        for (auto & scope : actions_stack)
+            scope.addInputColumnIfNecessary(function_node_name, function_node.getResultType());
+
+        return {function_node_name, Levels(0)};
+    }
+
     const bool is_in_function = isNameOfInFunction(function_node.getFunctionName());
 
     /// The `IgnoreSet` variants resolve types without a set: no set is registered for them, and they
