@@ -562,6 +562,9 @@ protected:
     bool is_internal_query = false;
     /// A flag, used to detect sub-operations of background operations - in this case we won't need to build another background contexts
     bool is_background_operation = false;
+    /// True when this context belongs to the inner query of an expanded view.
+    /// Such a query reads its own tables, not the inserted block of a materialized view.
+    bool is_view_inner_query = false;
     /// Set for queries created internally by the server for DDL replication (ON CLUSTER, DatabaseReplicated)
     /// and internal backup coordination.
     /// Unlike query_kind == SECONDARY_QUERY (which comes from the client and can be spoofed),
@@ -1049,6 +1052,7 @@ public:
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
+    void clearViewSource();
 
     String getCurrentDatabase() const;
     String getCurrentQueryId() const { return client_info.current_query_id; }
@@ -1608,6 +1612,9 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
+
+    bool isViewInnerQuery() const { return is_view_inner_query; }
+    void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
 
     bool isDDLOrOnClusterInternal() const { return is_ddl_or_on_cluster_internal; }
     void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }
