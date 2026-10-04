@@ -32,10 +32,14 @@ DROP TABLE t_dt64_in_set;
 SELECT toTime64(-1, 0) IN (toUInt64(18446744073709551615));
 SELECT toTime64(-1, 0) IN (toInt64(-1));
 
--- The same conversion materializes a value in `values`, where an unrepresentable constant is reported
--- rather than stored as a wrapped tick count.
+-- The same conversion materializes a value in `values`, where an unrepresentable constant is never stored as a
+-- wrapped tick count: it follows `date_time_overflow_behavior` exactly like `CAST` - reported under `throw`,
+-- saturated to the extreme representable tick under `saturate` and the default `ignore`.
 
-SELECT x FROM values('x DateTime64(3, \'UTC\')', toUInt64(18446744073709551615)); -- { serverError ARGUMENT_OUT_OF_BOUND }
-SELECT x FROM values('x DateTime64(3, \'UTC\')', toUInt64(9223372036854776)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT x FROM values('x DateTime64(3, \'UTC\')', toUInt64(18446744073709551615)) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT x FROM values('x DateTime64(3, \'UTC\')', toUInt64(9223372036854776)) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT x FROM values('x DateTime64(3, \'UTC\')', toUInt64(1));
-SELECT x FROM values('x Time64(0)', toUInt64(18446744073709551615)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT x FROM values('x Time64(0)', toUInt64(18446744073709551615)) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT x, x = CAST(toUInt64(18446744073709551615) AS DateTime64(3, 'UTC')) FROM values('x DateTime64(3, \'UTC\')', toUInt64(18446744073709551615)) SETTINGS date_time_overflow_behavior = 'saturate';
+SELECT x, x = CAST(toUInt64(9223372036854776) AS DateTime64(3, 'UTC')) FROM values('x DateTime64(3, \'UTC\')', toUInt64(9223372036854776));
+SELECT x, x = CAST(toUInt64(18446744073709551615) AS Time64(0)) FROM values('x Time64(0)', toUInt64(18446744073709551615));
