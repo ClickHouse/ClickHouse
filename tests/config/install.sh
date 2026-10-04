@@ -12,14 +12,19 @@ SRC_PATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 # Below we rm -rf config.d and write into config.d, users.d and the client config directory; refuse if any of them
 # is the same directory as the source tree or one of its subdirectories, since that would destroy or pollute the tracked test configs.
 # Compare directory identity (device + inode) with -ef, so that bind mounts are detected as well as symlinks.
-for dest_dir in "$DEST_SERVER_PATH" "$DEST_SERVER_PATH/config.d" "$DEST_SERVER_PATH/users.d" "$DEST_CLIENT_PATH"; do
-    for src_dir in "$SRC_PATH" "$SRC_PATH/config.d" "$SRC_PATH/users.d" "$SRC_PATH/top_level_domains"; do
-        if [ "$dest_dir" -ef "$src_dir" ]; then
-            echo "Refusing to install: destination directory $dest_dir is the same directory as source directory $src_dir. This script deletes and repopulates the destination configs, which would destroy or pollute the tracked test configs." >&2
-            exit 1
-        fi
+function refuse_if_dest_aliases_source()
+{
+    for dest_dir in "$@"; do
+        for src_dir in "$SRC_PATH" "$SRC_PATH/config.d" "$SRC_PATH/users.d" "$SRC_PATH/top_level_domains"; do
+            if [ "$dest_dir" -ef "$src_dir" ]; then
+                echo "Refusing to install: destination directory $dest_dir is the same directory as source directory $src_dir. This script deletes and repopulates the destination configs, which would destroy or pollute the tracked test configs." >&2
+                exit 1
+            fi
+        done
     done
-done
+}
+
+refuse_if_dest_aliases_source "$DEST_SERVER_PATH" "$DEST_SERVER_PATH/config.d" "$DEST_SERVER_PATH/users.d" "$DEST_CLIENT_PATH"
 
 if [ $# -ge 2 ]; then
     shift 2
@@ -646,6 +651,10 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ch_server_2_path=$DEST_SERVER_PATH/../clickhouse-server2
     mkdir -p $ch_server_1_path
     mkdir -p $ch_server_2_path
+    # The configs are copied into and edited in these sibling directories; check them only now, when they exist,
+    # so that `..` is resolved the same way as by the commands below.
+    refuse_if_dest_aliases_source "$ch_server_1_path" "$ch_server_1_path/config.d" "$ch_server_1_path/users.d" \
+        "$ch_server_2_path" "$ch_server_2_path/config.d" "$ch_server_2_path/users.d"
 #    chown clickhouse $ch_server_1_path
 #    chown clickhouse $ch_server_2_path
 #    chgrp clickhouse $ch_server_1_path

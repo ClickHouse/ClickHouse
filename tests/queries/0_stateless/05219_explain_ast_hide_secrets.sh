@@ -7,9 +7,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `EXPLAIN AST optimize = 1` inlines the body of a view the user may only SELECT from, and the dump
-# prints every literal verbatim. The secret arguments must be hidden as `SHOW CREATE` hides them.
+# `EXPLAIN AST optimize = 1` inlines the body of a view the user may SELECT from, and the dump prints
+# every literal verbatim. The secret arguments must be hidden as `SHOW CREATE` hides them.
 # The stateless test server keeps `display_secrets_in_show_and_select` off, so the gate always hides here.
+# Only a `SQL SECURITY INVOKER` view gets inlined here: a `DEFINER` view that computes anything beyond the
+# stored columns of its table is sealed and read as a table, so its body is not inlined at all (checked below).
 
 user="user_05219_${CLICKHOUSE_DATABASE}_$RANDOM"
 db=${CLICKHOUSE_DATABASE}
@@ -17,16 +19,22 @@ key='Sixteen byte key'
 
 ${CLICKHOUSE_CLIENT} <<EOSQL
 DROP TABLE IF EXISTS $db.private_plaintext;
-CREATE TABLE $db.private_plaintext (secret String) ENGINE = Memory;
+CREATE TABLE $db.private_plaintext (secret String) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO $db.private_plaintext VALUES ('customer_token=prod_live_9fd17c2a');
 
-CREATE VIEW $db.encrypted_view SQL SECURITY DEFINER AS
+CREATE VIEW $db.encrypted_view SQL SECURITY INVOKER AS
+    SELECT hex(encrypt('aes-128-ecb', secret, '$key')) AS encrypted_secret
+    FROM $db.private_plaintext;
+
+CREATE VIEW $db.sealed_view SQL SECURITY DEFINER AS
     SELECT hex(encrypt('aes-128-ecb', secret, '$key')) AS encrypted_secret
     FROM $db.private_plaintext;
 
 DROP USER IF EXISTS $user;
 CREATE USER $user;
+GRANT SELECT ON $db.private_plaintext TO $user;
 GRANT SELECT ON $db.encrypted_view TO $user;
+GRANT SELECT ON $db.sealed_view TO $user;
 EOSQL
 
 echo "-- the inlined view body hides the key"
@@ -37,6 +45,9 @@ ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST optimize = 1 SELECT * F
 
 echo "-- the graph dump hides it too"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST optimize = 1, graph = 1 SELECT * FROM $db.encrypted_view" | grep -o -E 'Literal [^"]*' | grep -F -e "$key" -e '[HIDDEN]'
+
+echo "-- a sealed view is read as a table: its body is not inlined at all"
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST optimize = 1 SELECT * FROM $db.sealed_view"
 
 echo "-- a secret typed into the explained query itself is hidden as well"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST SELECT encrypt('aes-128-ecb', 'plain', '$key', leftPad('iv', 16, '*'))"
@@ -61,4 +72,5 @@ ${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM $db.encrypted_v
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER $user"
 ${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.encrypted_view"
+${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.sealed_view"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $db.private_plaintext"
