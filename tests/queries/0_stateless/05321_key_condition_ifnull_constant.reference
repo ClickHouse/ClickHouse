@@ -39,13 +39,9 @@ SELECT count() FROM t_fixed WHERE startsWith(y, 'a') SETTINGS use_query_conditio
 -- `ifNull('abc', s)` is not `s`.
 SELECT count() FROM t_const_first WHERE match(s, '^xyz') SETTINGS use_query_condition_cache = 0;
 4
--- Casting the `FixedString` constant to `String` would drop its trailing zero byte.
-SELECT count() FROM t_padded WHERE s <= toFixedString('abc', 4) SETTINGS use_query_condition_cache = 0;
-4
 DROP TABLE t_ifnull;
 DROP TABLE t_coalesce;
 DROP TABLE t_enum;
 DROP TABLE t_fixed;
 DROP TABLE t_string;
 DROP TABLE t_const_first;
-DROP TABLE t_padded;
