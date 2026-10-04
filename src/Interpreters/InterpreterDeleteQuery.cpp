@@ -109,7 +109,8 @@ BlockIO InterpreterDeleteQuery::execute()
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         /// TODO(unique-key): support DELETE in a Replicated database.
-        if (table->hasUniqueKey())
+        /// Resolved: a lazily loaded table reports no keys until it is loaded.
+        if (resolveStorageProxyLoading(table)->hasUniqueKey())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "DELETE on UNIQUE KEY tables is not supported inside a Replicated database");
 
