@@ -1528,6 +1528,7 @@ Há diferentes caches de servidor disponíveis para armazenar em buffer, na mem�
 Atualmente, há caches para os cabeçalhos desserializados, tokens e lista de postings do índice de texto, para reduzir a E/S.
 Use as configurações [use&#95;text&#95;index&#95;header&#95;cache](/pt-BR/reference/settings/session-settings/use-text#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/pt-BR/reference/settings/session-settings/use-text#use_text_index_tokens_cache) e [use&#95;text&#95;index&#95;postings&#95;cache](/pt-BR/reference/settings/session-settings/use-text#use_text_index_postings_cache) para desabilitar a leitura e a gravação nos caches individuais pelas consultas.
 O armazenamento em cache de tokens ausentes de uma parte de dados é habilitado por padrão e pode ser controlado independentemente com [`use_text_index_negative_tokens_cache`](/pt-BR/reference/settings/session-settings/use-text).
+O armazenamento em cache de varreduras de dicionário de padrões que excederam o limiar da lista de postings é habilitado por padrão e pode ser controlado independentemente com `use_text_index_pattern_bypass_cache`.
 
 Para limpar os caches, use a instrução [SYSTEM CLEAR TEXT INDEX CACHES](/pt-BR/reference/statements/system#drop-text-index-caches)
 

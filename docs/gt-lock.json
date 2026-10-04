@@ -7,42 +7,42 @@
       "versionId": "c807d94da2ee4f8e793fcb38246cc1620a6229874ae3eb80f6075390c12aede6",
       "translations": {
         "ar": {
-          "updatedAt": "2026-10-04T00:25:54.346Z",
+          "updatedAt": "2026-10-04T02:25:17.780Z",
           "fileName": "docs.json",
           "postProcessHash": "eda0d9f7ea382c696df98fc4a60614d3f8719a1d4de8441249b51578567632f3"
         },
         "zh": {
-          "updatedAt": "2026-10-04T00:25:54.105Z",
+          "updatedAt": "2026-10-04T02:25:17.505Z",
           "fileName": "docs.json",
           "postProcessHash": "eda0d9f7ea382c696df98fc4a60614d3f8719a1d4de8441249b51578567632f3"
         },
         "es": {
-          "updatedAt": "2026-10-04T00:25:52.872Z",
+          "updatedAt": "2026-10-04T02:25:16.165Z",
           "fileName": "docs.json",
           "postProcessHash": "eda0d9f7ea382c696df98fc4a60614d3f8719a1d4de8441249b51578567632f3"
         },
         "ja": {
-          "updatedAt": "2026-10-04T00:25:53.123Z",
+          "updatedAt": "2026-10-04T02:25:16.448Z",
           "fileName": "docs.json",
           "postProcessHash": "eda0d9f7ea382c696df98fc4a60614d3f8719a1d4de8441249b51578567632f3"
         },
         "ru": {
-          "updatedAt": "2026-10-04T00:25:53.865Z",
+          "updatedAt": "2026-10-04T02:25:17.240Z",
           "fileName": "docs.json",
           "postProcessHash": "eda0d9f7ea382c696df98fc4a60614d3f8719a1d4de8441249b51578567632f3"
         },
         "fr": {
-          "updatedAt": "2026-10-04T00:25:54.599Z",
+          "updatedAt": "2026-10-04T02:25:18.044Z",
           "fileName": "docs.json",
           "postProcessHash": "eda0d9f7ea382c696df98fc4a60614d3f8719a1d4de8441249b51578567632f3"
         },
         "ko": {
-          "updatedAt": "2026-10-04T00:25:53.364Z",
+          "updatedAt": "2026-10-04T02:25:16.711Z",
           "fileName": "docs.json",
           "postProcessHash": "eda0d9f7ea382c696df98fc4a60614d3f8719a1d4de8441249b51578567632f3"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-04T00:25:53.606Z",
+          "updatedAt": "2026-10-04T02:25:16.978Z",
           "fileName": "docs.json",
           "postProcessHash": "eda0d9f7ea382c696df98fc4a60614d3f8719a1d4de8441249b51578567632f3"
         }
@@ -87063,47 +87063,47 @@
     },
     {
       "fileId": "aa2cf12758c94e9cc9c6ccdf36c67298cbc02e781bfc8522aedc5d39a5e5cfe9",
-      "versionId": "a39ef12c466f5238f6e4882d19ed20d0ebeaed1b18f8ee9145d72b4036299659",
+      "versionId": "70bc3d6ed149e84358c314f1407f23fb142111e344e409c4740de734579bfb29",
       "translations": {
-        "es": {
-          "updatedAt": "2026-10-02T03:44:46.042Z",
-          "fileName": "es/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "a6ce810a6dcfd857917c0767f5fb59f2cfe5aac74e3c30543b48078801ebc496"
+        "pt-BR": {
+          "updatedAt": "2026-10-04T02:25:22.732Z",
+          "fileName": "pt-BR/reference/engines/table-engines/mergetree-family/textindexes.mdx",
+          "postProcessHash": "b9be4eec06348e38508b15c6fba2ad74fa1056b2f53a3a7851eefef19a3c469b"
         },
         "ja": {
-          "updatedAt": "2026-10-02T03:44:46.044Z",
+          "updatedAt": "2026-10-04T02:25:22.733Z",
           "fileName": "ja/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "4cf37c2a212d0025c1f503b1d8959828c75719dfb904d626fcd72532dcc6f34e"
+          "postProcessHash": "b0c85f0732ef36d8874f49e812afae07348765750ad6dee62fd3a290bcf27ef7"
         },
         "ko": {
-          "updatedAt": "2026-10-02T03:44:46.045Z",
+          "updatedAt": "2026-10-04T02:25:22.735Z",
           "fileName": "ko/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "1ff10a50a4d4a37f007d76081ae3d7e5765ca42efab5dcf5816cd1805864a208"
+          "postProcessHash": "d07abce8254574fe96a43c8894a139bb8dfd8dad8ff34a6d85da66feb43bea8c"
         },
-        "pt-BR": {
-          "updatedAt": "2026-10-02T03:44:46.046Z",
-          "fileName": "pt-BR/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "1bf53fcfad9ca4ea3400cf7c4005e599bfd07c2d56a6d82b1d36266b6078188b"
+        "es": {
+          "updatedAt": "2026-10-04T02:25:22.736Z",
+          "fileName": "es/reference/engines/table-engines/mergetree-family/textindexes.mdx",
+          "postProcessHash": "8a2f65dc8544415ca852e609937e1fdcb3ee96fb8791c841956250e880c1fc75"
         },
         "ru": {
-          "updatedAt": "2026-10-02T03:44:46.047Z",
+          "updatedAt": "2026-10-04T02:25:22.737Z",
           "fileName": "ru/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "02598ed257e36a1e2bf3ba193b9c4641e64d7ff5b97b643f9a93f26757c367f8"
+          "postProcessHash": "301a2fbd50249a0d279448e92130dfd883bd5fae61c561f309224160565864c0"
         },
         "zh": {
-          "updatedAt": "2026-10-02T03:44:46.048Z",
+          "updatedAt": "2026-10-04T02:25:22.738Z",
           "fileName": "zh/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "5e4c3966e00ce77700d69e39feba9ea5ebf0d504ad0983c0ed1c7cd90816f44d"
+          "postProcessHash": "da85fc46d98b3292d14c4d71ec64bda85fca423de4e22c9c542bdcdeb76115cc"
         },
         "ar": {
-          "updatedAt": "2026-10-02T03:44:46.049Z",
+          "updatedAt": "2026-10-04T02:25:22.739Z",
           "fileName": "ar/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "6c2f3e232e47e7c59efa18ec3d956f51197c17234cb746cd3169fe4223155aaa"
+          "postProcessHash": "26a5fe4955dbc13b81a173933d4744326e9ca4a61cc93b6a180bc025934fc4d0"
         },
         "fr": {
-          "updatedAt": "2026-10-02T03:44:46.050Z",
+          "updatedAt": "2026-10-04T02:25:22.740Z",
           "fileName": "fr/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "a96799e2628a1815c89f5f6d48b8c9b21ce9ee251634537f97aa6a9c9080418b"
+          "postProcessHash": "97c48dfe891629fe8ad2de4b06016508fedda8489c2840dd0cfeb6a6a2b728f0"
         }
       },
       "fileName": "reference/engines/table-engines/mergetree-family/textindexes.mdx"

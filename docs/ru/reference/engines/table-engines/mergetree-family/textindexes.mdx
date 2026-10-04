@@ -1528,6 +1528,7 @@ Aggregating
 В настоящее время доступны кэши для десериализованных заголовков, токенов и списков вхождений текстового индекса, чтобы сократить I/O.
 Используйте настройки [use&#95;text&#95;index&#95;header&#95;cache](/ru/reference/settings/session-settings/use-text#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/ru/reference/settings/session-settings/use-text#use_text_index_tokens_cache) и [use&#95;text&#95;index&#95;postings&#95;cache](/ru/reference/settings/session-settings/use-text#use_text_index_postings_cache), чтобы отключить для запросов чтение из отдельных кэшей и запись в них.
 Кэширование токенов, отсутствующих в части данных, включено по умолчанию и может независимо управляться с помощью [`use_text_index_negative_tokens_cache`](/ru/reference/settings/session-settings/use-text).
+Кэширование результатов сканирования по словарю для шаблонов, у которых был превышен порог размера списка вхождений, включено по умолчанию и может независимо управляться с помощью `use_text_index_pattern_bypass_cache`.
 
 Чтобы очистить кэши, используйте оператор [SYSTEM CLEAR TEXT INDEX CACHES](/ru/reference/statements/system#drop-text-index-caches)
 

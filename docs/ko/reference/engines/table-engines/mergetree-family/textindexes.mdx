@@ -1528,6 +1528,7 @@ Aggregating
 현재는 I/O를 줄이기 위해 텍스트 인덱스의 역직렬화된 헤더, 토큰, 포스팅 리스트에 대한 캐시가 제공됩니다.
 쿼리가 개별 캐시를 읽고 쓰지 않도록 하려면 [use&#95;text&#95;index&#95;header&#95;cache](/ko/reference/settings/session-settings/use-text#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/ko/reference/settings/session-settings/use-text#use_text_index_tokens_cache), [use&#95;text&#95;index&#95;postings&#95;cache](/ko/reference/settings/session-settings/use-text#use_text_index_postings_cache) 설정을 사용하십시오.
 데이터 파트에 없는 토큰을 캐싱하는 기능은 기본적으로 활성화되어 있으며, [`use_text_index_negative_tokens_cache`](/ko/reference/settings/session-settings/use-text)로 독립적으로 제어할 수 있습니다.
+포스팅 리스트 임계값을 초과한 패턴 딕셔너리 스캔 결과를 캐싱하는 기능은 기본적으로 활성화되어 있으며, `use_text_index_pattern_bypass_cache`로 독립적으로 제어할 수 있습니다.
 
 캐시를 지우려면 [SYSTEM CLEAR TEXT INDEX CACHES](/ko/reference/statements/system#drop-text-index-caches) SQL 문을 사용하십시오.
 

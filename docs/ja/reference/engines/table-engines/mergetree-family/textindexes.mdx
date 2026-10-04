@@ -1528,6 +1528,7 @@ Aggregating
 現在、I/O を削減するために、テキスト索引のデシリアライズ済みヘッダー、トークン、ポスティングリスト用の cache が用意されています。
 設定 [use&#95;text&#95;index&#95;header&#95;cache](/ja/reference/settings/session-settings/use-text#use_text_index_header_cache)、[use&#95;text&#95;index&#95;tokens&#95;cache](/ja/reference/settings/session-settings/use-text#use_text_index_tokens_cache)、および [use&#95;text&#95;index&#95;postings&#95;cache](/ja/reference/settings/session-settings/use-text#use_text_index_postings_cache) を使用すると、クエリによる個々の cache への読み取りと書き込みを無効にできます。
 データパーツに存在しないトークンのキャッシュはデフォルトで有効になっており、[`use_text_index_negative_tokens_cache`](/ja/reference/settings/session-settings/use-text) を使用して個別に制御できます。
+ポスティングリストのしきい値を超えたパターンによる辞書スキャンの結果のキャッシュはデフォルトで有効になっており、`use_text_index_pattern_bypass_cache` を使用して個別に制御できます。
 
 cache をクリアするには、ステートメント [SYSTEM CLEAR TEXT INDEX CACHES](/ja/reference/statements/system#drop-text-index-caches) を使用します。
 

@@ -1524,10 +1524,11 @@ L’optimisation est contrôlée par [query&#95;plan&#95;optimize&#95;count&#95;
 
 ### Mise en cache {#caching}
 
-Il existe différents caches à l’échelle du serveur pour conserver en mémoire certaines parties de l’index de texte (voir la section [Détails d’implémentation](#implementation)) :
+Il existe différents caches à l’échelle du serveur pour conserver en mémoire certaines parties de l’index de texte (voir la section [Détails d’implémentation](#implementation)) :
 À l’heure actuelle, il existe des caches pour les en-têtes désérialisés, les tokens et les listes de postings de l’index de texte afin de réduire les opérations d’E/S.
 Utilisez les paramètres [use&#95;text&#95;index&#95;header&#95;cache](/fr/reference/settings/session-settings/use-text#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/fr/reference/settings/session-settings/use-text#use_text_index_tokens_cache) et [use&#95;text&#95;index&#95;postings&#95;cache](/fr/reference/settings/session-settings/use-text#use_text_index_postings_cache) pour désactiver, pour les requêtes, la lecture et l’écriture dans les caches individuels.
-La mise en cache des tokens absents d’une data part est activée par défaut et peut être contrôlée indépendamment avec [`use_text_index_negative_tokens_cache`](/fr/reference/settings/session-settings/use-text).
+La mise en cache des tokens absents d’une partie de données est activée par défaut et peut être contrôlée indépendamment avec [`use_text_index_negative_tokens_cache`](/fr/reference/settings/session-settings/use-text).
+La mise en cache des parcours de dictionnaire par motif ayant dépassé le seuil de la liste de postings est activée par défaut et peut être contrôlée indépendamment avec `use_text_index_pattern_bypass_cache`.
 
 Pour vider les caches, utilisez l’instruction [SYSTEM CLEAR TEXT INDEX CACHES](/fr/reference/statements/system#drop-text-index-caches)
 
