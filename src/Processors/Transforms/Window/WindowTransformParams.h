@@ -32,6 +32,7 @@ public:
         const std::vector<WindowFunctionDescription> & functions);
 
     bool arePeers(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row) const;
+    bool haveEqualOrderByValues(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row) const;
 };
 
 }

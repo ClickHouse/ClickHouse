@@ -95,6 +95,8 @@ void WindowTransform::initWorkspaces(const std::vector<WindowFunctionDescription
         /// Currently we have slightly wrong mixup of the interfaces of Window and Aggregate functions.
         workspace.window_function_impl = dynamic_cast<IWindowFunction *>(const_cast<IAggregateFunction *>(aggregate_function.get()));
 
+        needs_order_by_peer_group |= workspace.window_function_impl && workspace.window_function_impl->needsOrderByPeerGroup();
+
         if (workspace.window_function_impl && !workspace.window_function_impl->checkWindowFrameType(this))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported window frame type for function '{}'", workspace.aggregate_function->getName());
 
@@ -266,6 +268,12 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
     }
 
     return params.arePeers(blocks.blockAt(x.block).materialized_columns, x.row, blocks.blockAt(y.block).materialized_columns, y.row);
+}
+
+bool WindowTransform::haveEqualOrderByValues(const RowNumber & x, const RowNumber & y) const
+{
+    return params.haveEqualOrderByValues(
+        blocks.blockAt(x.block).materialized_columns, x.row, blocks.blockAt(y.block).materialized_columns, y.row);
 }
 
 void WindowTransform::advanceFrameEndCurrentRow()
@@ -823,6 +831,25 @@ void WindowTransform::computeReadyRows()
                 peer_group_start = current_row;
                 peer_group_start_row_number = current_row_number;
                 ++peer_group_number;
+
+                // For RANGE and GROUPS this transition is exactly the ORDER BY peer group boundary.
+                if (params.window_description.frame.type != WindowFrame::FrameType::ROWS)
+                {
+                    order_by_peer_group_start_row_number = current_row_number;
+                    ++order_by_peer_group_number;
+                }
+            }
+
+            // Under ROWS the check above compares nothing, so find the boundary here: equal
+            // ORDER BY rows are contiguous, the input being sorted by PARTITION BY + ORDER BY.
+            // The row number guard keeps this idempotent: the loop below can re-run this row.
+            if (needs_order_by_peer_group
+                && params.window_description.frame.type == WindowFrame::FrameType::ROWS
+                && current_row_number > order_by_peer_group_start_row_number
+                && !haveEqualOrderByValues(blocks.prev(current_row), current_row))
+            {
+                order_by_peer_group_start_row_number = current_row_number;
+                ++order_by_peer_group_number;
             }
 
             // Advance the frame start.
@@ -938,6 +965,8 @@ void WindowTransform::startNextPartition()
     peer_group_start = partition_start;
     peer_group_start_row_number = 1;
     peer_group_number = 1;
+    order_by_peer_group_start_row_number = 1;
+    order_by_peer_group_number = 1;
     frame_start_group_number = 1;
     frame_end_group_number = 1;
 
@@ -1102,7 +1131,15 @@ void WindowTransform::releaseUnusedBlocks()
     // frame pointers ahead of the current row, so peer_group_start can be the
     // trailing pointer.
     chassert(prev_frame_start <= frame_start);
-    const auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current_row.block, peer_group_start.block});
+    auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current_row.block, peer_group_start.block});
+    if (needs_order_by_peer_group)
+    {
+        // The ORDER BY peer group boundary check reads the row before the current one, so its
+        // block must stay alive. Derived arithmetically, since SlidingBlocks::prev asserts liveness.
+        const auto prev_row_block = (current_row.row > 0 || current_row.block == 0)
+            ? current_row.block : current_row.block - 1;
+        first_used_block = std::min(first_used_block, prev_row_block);
+    }
     while (blocks.begin().block < first_used_block)
         blocks.pop();
 

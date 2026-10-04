@@ -248,6 +248,12 @@ bool WindowTransformParams::arePeers(const Columns & lhs, size_t lhs_row, const 
         return false;
 
     // For RANGE and GROUPS frames, rows that compare equal on the ORDER BY key are peers; without ORDER BY all rows are.
+    return haveEqualOrderByValues(lhs, lhs_row, rhs, rhs_row);
+}
+
+bool WindowTransformParams::haveEqualOrderByValues(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row) const
+{
+    // Unlike arePeers, this does not depend on the frame type.
     for (const size_t key : order_by_indices)
         if (lhs[key]->compareAt(lhs_row, rhs_row, *rhs[key], /*nan_direction_hint=*/1) != 0)
             return false;
