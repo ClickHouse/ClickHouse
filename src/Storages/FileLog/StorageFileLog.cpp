@@ -242,10 +242,10 @@ StorageFileLog::StorageFileLog(
 
         if (path_is_directory)
         {
-            std::unordered_set<UInt64> read_inodes;
+            std::unordered_map<UInt64, String> read_files;
             for (const auto & [inode, meta] : file_infos.meta_by_inode)
-                read_inodes.insert(inode);
-            directory_watch = std::make_unique<FileLogDirectoryWatcher>(root_data_path, *this, std::move(read_inodes), getContext());
+                read_files.emplace(inode, meta.file_name);
+            directory_watch = std::make_unique<FileLogDirectoryWatcher>(root_data_path, *this, std::move(read_files), getContext());
         }
 
         auto thread = getContext()->getSchedulePool()->createTask(getStorageID(), log->name(), [this] { threadFunc(); });

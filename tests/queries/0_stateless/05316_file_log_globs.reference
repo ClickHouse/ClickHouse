@@ -53,6 +53,10 @@ app.log	35
 app.log	36
 -- matching hard link to a rotated file removed after attach
 chain.log.2	37
+-- rotated with a hard link
+rot.log	60
+-- rotated with a hard link left in place
+rot.log.1	61
 -- directory name with glob characters
 a.log	1
 -- errors

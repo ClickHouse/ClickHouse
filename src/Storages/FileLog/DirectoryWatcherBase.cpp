@@ -22,7 +22,9 @@
 #elif defined(OS_DARWIN)
 #include <map>
 #include <set>
+#include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 #include <fcntl.h>
 #include <sys/event.h>
@@ -239,11 +241,18 @@ void DirectoryWatcherBase::watchFunc()
     /// A file created and renamed to a name the globs exclude between two scans is never listed under the matching
     /// name, so it is not read; this is inherent to comparing listings (the rename is indistinguishable from a new
     /// excluded file) and is documented for the engine.
-    std::unordered_set<UInt64> followed_inodes = owner.read_inodes;
+    /// `followed_files` maps the inode of each followed file to the name it was watched (or read) under.
+    std::unordered_map<UInt64, std::string> followed_files = owner.read_files;
 
-    auto scan = [this, &followed_inodes](std::map<std::string, FileState> & out)
+    /// A followed file is listed under at most one name the globs exclude, and not at all when a matching name lists
+    /// it. Otherwise a hard link left next to a rotated log would list its inode under two names on both sides of the
+    /// rotation, which is not recognized as a rename, so the table would stop reading the rotated log. The name the
+    /// file was followed under is preferred, so that an unchanged alias is not reported as a rename.
+    auto scan = [this, &followed_files](std::map<std::string, FileState> & out)
     {
         out.clear();
+        std::map<UInt64, std::pair<std::string, FileState>> followed_aliases;
+        std::unordered_set<UInt64> matching_inodes;
         for (const auto & entry : std::filesystem::directory_iterator(path))
         {
             if (!entry.is_regular_file())
@@ -252,14 +261,32 @@ void DirectoryWatcherBase::watchFunc()
             if (::stat(entry.path().c_str(), &st) != 0)
                 continue;
             std::string name = entry.path().filename().string();
-            if (!owner.storage.fileNameMatches(name) && !followed_inodes.contains(static_cast<UInt64>(st.st_ino)))
+            const auto inode = static_cast<UInt64>(st.st_ino);
+            const FileState state{
+                inode,
+                static_cast<Int64>(st.st_mtimespec.tv_sec) * 1'000'000'000 + st.st_mtimespec.tv_nsec,
+                static_cast<Int64>(st.st_size)};
+            if (owner.storage.fileNameMatches(name))
+            {
+                matching_inodes.insert(inode);
+                out.emplace(std::move(name), state);
                 continue;
-            out.emplace(
-                std::move(name),
-                FileState{
-                    static_cast<UInt64>(st.st_ino),
-                    static_cast<Int64>(st.st_mtimespec.tv_sec) * 1'000'000'000 + st.st_mtimespec.tv_nsec,
-                    static_cast<Int64>(st.st_size)});
+            }
+            auto followed_it = followed_files.find(inode);
+            if (followed_it == followed_files.end())
+                continue;
+            auto [alias_it, inserted] = followed_aliases.try_emplace(inode, name, state);
+            if (inserted)
+                continue;
+            /// Pick one alias deterministically: the followed name, otherwise the smallest name.
+            const auto & chosen = alias_it->second.first;
+            if (chosen != followed_it->second && (name == followed_it->second || name < chosen))
+                alias_it->second = {std::move(name), state};
+        }
+        for (auto & [inode, alias] : followed_aliases)
+        {
+            if (!matching_inodes.contains(inode))
+                out.emplace(std::move(alias.first), alias.second);
         }
     };
 
@@ -461,9 +488,9 @@ void DirectoryWatcherBase::watchFunc()
 
     auto follow_snapshot = [&]
     {
-        followed_inodes.clear();
+        followed_files.clear();
         for (const auto & [name, state] : snapshot)
-            followed_inodes.insert(state.inode);
+            followed_files.emplace(state.inode, name);
     };
     follow_snapshot();
 

@@ -6,6 +6,8 @@
 
 #include <memory>
 #include <mutex>
+#include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -39,10 +41,10 @@ public:
         std::string error_msg = {};
     };
 
-    /// `read_inodes_` are the files the table reads when the watcher is created, including the ones whose names the
-    /// globs of the path exclude.
+    /// `read_files_` maps the inodes of the files the table reads when the watcher is created to the names it reads them
+    /// under, including the names that the globs of the path exclude.
     FileLogDirectoryWatcher(
-        const std::string & path_, StorageFileLog & storage_, std::unordered_set<uint64_t> read_inodes_, ContextPtr context_);
+        const std::string & path_, StorageFileLog & storage_, std::unordered_map<uint64_t, std::string> read_files_, ContextPtr context_);
     ~FileLogDirectoryWatcher() = default;
 
     Events getEventsAndReset();
@@ -68,7 +70,7 @@ private:
     StorageFileLog & storage;
 
     /// Used only by the watcher thread on macOS, which watches only the files the table may read.
-    const std::unordered_set<uint64_t> read_inodes;
+    const std::unordered_map<uint64_t, std::string> read_files;
 
     /// Note, in order to avoid data race found by fuzzer, put events before dw,
     /// such that when this class destruction, dw will be destructed before events.

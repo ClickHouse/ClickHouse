@@ -6,6 +6,7 @@
 # A file renamed from a matching name before the table read it is read, also after a second rename, and a rotation chain renamed while detached keeps its offsets.
 # An unread file never becomes read by passing through a read name, and a read file renamed over a new file keeps its offset.
 # A hard link to a read file is not read again, also under a name the glob matches (also for a rotated file), and removing it does not stop the reading.
+# A read file keeps being read after rotation when a hard link with a non-matching name is left in place.
 # An existing directory whose name has glob characters is taken literally.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -173,6 +174,13 @@ $CLICKHOUSE_CLIENT -q "ATTACH TABLE file_log"
 rm "$dir/chain_alias.log"
 printf '37\n' >> "$dir/chain.log.2"
 read_rows "matching hard link to a rotated file removed after attach"
+
+printf '60\n' > "$dir/rot.log"
+read_rows "rotated with a hard link"
+ln "$dir/rot.log" "$dir/rot.bak"
+mv "$dir/rot.log" "$dir/rot.log.1"
+printf '61\n' >> "$dir/rot.log.1"
+read_rows "rotated with a hard link left in place"
 
 echo "-- directory name with glob characters"
 printf '1\n' > "$braces/a.log"
