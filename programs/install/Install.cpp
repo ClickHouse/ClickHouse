@@ -36,6 +36,7 @@
 #include <Poco/Util/XMLConfiguration.h>
 
 #include "config.h"
+#include "config_tools.h"
 
 /// Embedded configuration files used inside the install program
 constexpr unsigned char resource_config_xml[] =
@@ -443,6 +444,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-format",
             "clickhouse-extract-from-config",
             "clickhouse-keeper",
+#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+            "clickhouse-keeper-client",
+#endif
             "clickhouse-keeper-converter",
             "clickhouse-disks",
 #if USE_CHDIG
