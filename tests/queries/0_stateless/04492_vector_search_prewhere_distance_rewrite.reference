@@ -1,0 +1,46 @@
+PREWHERE filters on _distance instead of recomputing the distance
+1
+and the vector column is dropped from the read list
+1
+and no plan step reads the vector column
+0
+results match the brute-force baseline
+0
+1
+0
+1
+a PREWHERE on a different reference vector must NOT be rewritten
+0
+1
+2
+3
+1
+2
+3
+a PREWHERE that uses the vector column any other way must NOT be rewritten
+0
+a PREWHERE on a non-vector column keeps bailing out
+0
+rescoring mode is unaffected
+0
+L2Distance is rewritten with the sqrt that usearch skips
+1
+0
+1
+2
+0
+1
+2
+a WHERE above the read that needs the vector column keeps bailing out
+0
+0
+1
+a WHERE that does not touch the vector column is still rewritten
+1
+0
+an explicit PREWHERE under FINAL keeps bailing out
+0
+0
+1
+0
+1
