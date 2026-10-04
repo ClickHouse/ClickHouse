@@ -931,6 +931,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         }
         if (cached_storage)
         {
+            /// NOLINT(storage-cast): a storage this database built and cached itself, never a proxy.
             if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(cached_storage.get()))
                 object_storage_table->getObjectStorageConfiguration()->setExplicitMetadataFilePath(explicit_metadata_location);
             return cached_storage;
@@ -1086,6 +1087,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         {
             /// Lost a race to another query; keep the already-cached storage and drop ours.
             result_storage->shutdown(/*is_drop*/ false);
+            /// NOLINT(storage-cast): a storage this database built and cached itself, never a proxy.
             if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(cached_storage.get()))
                 object_storage_table->getObjectStorageConfiguration()->setExplicitMetadataFilePath(explicit_metadata_location);
             return cached_storage;
