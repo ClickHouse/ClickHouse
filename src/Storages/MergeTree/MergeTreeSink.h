@@ -13,7 +13,6 @@ namespace DB
 {
 
 class StorageMergeTree;
-class BlockAllocation;
 struct UniqueKeyInsertOutcome;
 struct BlockWithPartition;
 
@@ -82,12 +81,6 @@ protected:
     virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block, const MergeTreeTransactionPtr & txn);
 
 private:
-    friend class UniqueKeyTxnCommit;
-
-    /// Allocate the part's block number and register it in the dedup log.
-    std::unique_ptr<BlockAllocation> allocateBlock(
-        MutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes);
-
     UniqueKeyInsertOutcome commitUniqueKeyPart(
         MergeTreeDelayedChunk::Partition & partition, const std::vector<DeduplicationHash> & deduplication_hashes);
 };

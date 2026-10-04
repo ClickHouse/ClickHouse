@@ -1,8 +1,3 @@
-ignore_count	4
-ignore_rows	1	a
-ignore_rows	2	b
-ignore_rows	3	c
-ignore_rows	4	d
-ignore_partitioned	0	2	b
-ignore_partitioned	0	4	d
-altered_policy	1	third
+conflict	probe_1	part all_1_1_0 (row 0)
+conflict	probe_3	part all_2_2_0 (row 1)
+conflict	reattached_1	part all_1_1_0 (row 0)
