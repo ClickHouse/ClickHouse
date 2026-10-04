@@ -165,7 +165,7 @@ protected:
 
     /// The S3 URL itself can carry credentials: a userinfo part and presigned-URL query parameters.
     /// If the url positional does, replace it with a partially masked copy that keeps the host and
-    /// path visible. The field set mirrors `BackupInfo::removeCredentialsFromS3URL`.
+    /// path visible.
     void maskS3UrlArgument(const std::vector<size_t> & positional, size_t url_slot);
 
     /// The shape shared by most external-storage engines: an explicit positional form with the secret at
