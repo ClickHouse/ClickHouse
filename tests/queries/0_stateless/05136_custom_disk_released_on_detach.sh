@@ -45,6 +45,21 @@ DROP TABLE test_custom_disk SYNC;
 SELECT 'after drop', count() FROM system.disks WHERE name = '$table_disk';
 "
 
+# Unlike a table, whose storage `DETACH ... SYNC` waits to be released, a database object can be held
+# for a short while after it is detached by a thread that took it a moment earlier (for example the
+# asynchronous metrics that iterate over all databases), and its disks are released together with it.
+function wait_for_database_disks_released()
+{
+    local count
+    for _ in {1..600}
+    do
+        count=$($CLIENT -q "SELECT count() FROM system.disks WHERE name IN ('$table_disk', '$database_disk')")
+        [[ "$count" == "0" ]] && break
+        sleep 0.1
+    done
+    echo -e "$1\t$count"
+}
+
 # The same for a database that keeps its metadata on such a disk, together with a table of its own.
 $CLIENT -q "
 DROP DATABASE IF EXISTS $database SYNC;
@@ -61,7 +76,7 @@ SELECT 'database disks', count() FROM system.disks WHERE name IN ('$table_disk',
 DETACH DATABASE $database;
 "
 
-$CLIENT -q "SELECT 'after detach database', count() FROM system.disks WHERE name IN ('$table_disk', '$database_disk')"
+wait_for_database_disks_released 'after detach database'
 
 $CLIENT -q "
 ATTACH DATABASE $database;
@@ -71,4 +86,4 @@ SELECT 'after attach database', count() FROM system.disks WHERE name IN ('$table
 DROP DATABASE $database SYNC;
 "
 
-$CLIENT -q "SELECT 'after drop database', count() FROM system.disks WHERE name IN ('$table_disk', '$database_disk')"
+wait_for_database_disks_released 'after drop database'
