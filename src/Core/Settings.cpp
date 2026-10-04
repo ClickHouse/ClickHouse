@@ -1124,7 +1124,7 @@ Move all viable conditions from WHERE to PREWHERE
 Move more conditions from WHERE to PREWHERE and do reads from disk and filtering in multiple steps if there are multiple conditions combined with AND
 )", 0) \
     DECLARE(Float, filtered_deserialization_max_ratio, 0.1f, R"(
-When reading from `MergeTree` after `PREWHERE` (or a previous `PREWHERE` step), deserialize the remaining columns only for the rows that passed the filter, if the fraction of such rows is at most this value. Applies to wide parts and to columns of types that support skipping rows: numbers, dates, `Decimal`, `UUID`, IP addresses, `FixedString`, and `Array`, `Nullable`, `Tuple`, `Map` of them. 0 disables the optimization.
+When reading from `MergeTree` after `PREWHERE` (or a previous `PREWHERE` step), deserialize the remaining columns only for the rows that passed the filter, if the fraction of such rows is at most this value. Applies to `Array` and `Map` columns of wide parts with elements of numbers, dates, `Decimal`, `UUID`, IP addresses, `FixedString`, and `Array`, `Nullable`, `Tuple`, `Map` of them. Other columns are deserialized and filtered as before. 0 disables the optimization.
 )", 0, \
         {"26.10", 0.0, 0.1, "New setting."}) \
     DECLARE(Bool, move_primary_key_columns_to_end_of_prewhere, true, R"(

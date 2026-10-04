@@ -71,8 +71,10 @@ MergeTreeReaderWide::MergeTreeReaderWide(
             if (!isColumnDroppedByPendingMutation(i) && !isSystemColumnInvalidated(i))
             {
                 bool has_all_streams = addStreams(columns_to_read[i], serializations[i]);
+                /// Only arrays win: the values of other types are as cheap to deserialize as to skip in the decompressed stream.
+                const auto & type = columns_to_read[i].type;
                 if (can_read_with_row_filter)
-                    columns_read_with_row_filter[i] = has_all_streams && serializations[i]->supportsRowRanges();
+                    columns_read_with_row_filter[i] = has_all_streams && (isArray(type) || isMap(type)) && serializations[i]->supportsRowRanges();
             }
         }
 

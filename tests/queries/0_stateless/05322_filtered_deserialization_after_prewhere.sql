@@ -150,6 +150,15 @@ SELECT 'compact', count(), sum(cityHash64(toString(tuple(*)))) FROM t_filtered_d
 SELECT 'compact', count(), sum(cityHash64(toString(tuple(*)))) FROM t_filtered_deserialization_compact PREWHERE id % 41 = 7 SETTINGS filtered_deserialization_max_ratio = 1, log_comment = '05322_compact';
 DROP TABLE t_filtered_deserialization_compact;
 
+-- The limits on read bytes count the skipped rows.
+DROP TABLE IF EXISTS t_filtered_deserialization_bytes;
+CREATE TABLE t_filtered_deserialization_bytes (id UInt64, s String, arr Array(UInt64))
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = '10Mi', ratio_of_defaults_for_sparse_serialization = 1;
+INSERT INTO t_filtered_deserialization_bytes SELECT number, repeat('a', 1000), range(100) FROM numbers(10000);
+SELECT count() FROM t_filtered_deserialization_bytes PREWHERE id % 97 = 3 WHERE NOT ignore(s) SETTINGS filtered_deserialization_max_ratio = 1, max_bytes_to_read = 1000000, max_threads = 1; -- { serverError TOO_MANY_BYTES }
+SELECT count() FROM t_filtered_deserialization_bytes PREWHERE id % 97 = 3 WHERE NOT ignore(arr) SETTINGS filtered_deserialization_max_ratio = 1, max_bytes_to_read = 1000000, max_threads = 1; -- { serverError TOO_MANY_BYTES }
+DROP TABLE t_filtered_deserialization_bytes;
+
 -- The rows filtered out by PREWHERE are not deserialized from wide parts.
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['RowsSkippedByFilteredDeserialization'] > 0 FROM system.query_log
