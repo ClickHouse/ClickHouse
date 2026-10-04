@@ -1,0 +1,7 @@
+--- PostgreSQL-style cast over input() (expect: 3 2) ---
+3	2
+--- lexically foreign query over input() (expect: 18 4) ---
+18	4
+--- the same text in the plain ClickHouse dialect (expect: SYNTAX_ERROR, table unchanged: 18 4) ---
+SYNTAX_ERROR
+18	4
