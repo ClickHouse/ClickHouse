@@ -319,19 +319,16 @@ void MergeTreeBlockSizePredictor::startBlock()
 }
 
 /// TODO: add last_read_row_in_part parameter to take into account gaps between adjacent ranges
-void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay)
+void MergeTreeBlockSizePredictor::update(const Block & result_sample_block, const Columns & result_columns, const Block & read_sample_block, size_t num_rows, double decay)
 {
-    if (columns.size() != sample_block.columns())
+    if (result_columns.size() != result_sample_block.columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent number of columns passed to MergeTreeBlockSizePredictor. "
                         "Have {} in sample block and {} columns in list",
-                        toString(sample_block.columns()), toString(columns.size()));
+                        toString(result_sample_block.columns()), toString(result_columns.size()));
 
-    if (!is_initialized_in_update)
-    {
-        /// Reinitialize with read block to update estimation for DEFAULT and MATERIALIZED columns without data.
-        initialize(sample_block, columns, {}, true);
-        is_initialized_in_update = true;
-    }
+    /// Do not re-initialize from the result sample block: after PREWHERE, wide columns
+    /// read only for the filter may be absent from the result header and must stay in the estimate.
+    is_initialized_in_update = true;
 
     if (num_rows < block_size_rows)
     {
@@ -352,11 +349,25 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
     max_size_per_row_dynamic = 0;
     for (auto & info : dynamic_columns_infos)
     {
-        size_t new_size = columns[sample_block.getPositionByName(info.name)]->byteSize();
-        size_t diff_size = new_size - info.size_bytes;
+        size_t new_size{0};
+        if (result_sample_block.has(info.name))
+        {
+            new_size = result_columns[result_sample_block.getPositionByName(info.name)]->byteSize();
+            size_t diff_size = new_size - info.size_bytes;
 
-        double local_bytes_per_row = static_cast<double>(diff_size) / static_cast<double>(diff_rows);
-        info.bytes_per_row = alpha * info.bytes_per_row + (1. - alpha) * local_bytes_per_row;
+            double local_bytes_per_row = static_cast<double>(diff_size) / static_cast<double>(diff_rows);
+            info.bytes_per_row = alpha * info.bytes_per_row + (1. - alpha) * local_bytes_per_row;
+        }
+        else if (read_sample_block.has(info.name))
+        {
+            /// Column was read in some PREWHERE/main step but is not in the result header.
+            info.bytes_per_row = std::max(info.bytes_per_row, info.bytes_per_row_global);
+            new_size = static_cast<size_t>(info.bytes_per_row * static_cast<double>(num_rows));
+        }
+        else
+        {
+            new_size = static_cast<size_t>(info.bytes_per_row * static_cast<double>(num_rows));
+        }
 
         /// For subcolumns, the output column size can be much smaller than what was
         /// actually read from disk (e.g. a Map subcolumn reads the entire Map but
@@ -371,6 +382,12 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
 
         max_size_per_row_dynamic = std::max<double>(max_size_per_row_dynamic, info.bytes_per_row);
     }
+}
+
+void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay)
+{
+    static const Block empty_block;
+    update(sample_block, columns, empty_block, num_rows, decay);
 }
 
 PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column)

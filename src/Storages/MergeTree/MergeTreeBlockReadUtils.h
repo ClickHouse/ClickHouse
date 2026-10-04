@@ -56,6 +56,8 @@ struct MergeTreeBlockSizePredictor
     /// Updates statistic for more accurate prediction
     void update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay = calculateDecay());
 
+    void update(const Block & result_sample_block, const Columns & result_columns, const Block & read_sample_block, size_t num_rows, double decay = calculateDecay());
+
     /// Return current block size (after update())
     size_t getBlockSize() const
     {

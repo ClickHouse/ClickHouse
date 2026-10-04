@@ -1,3 +1,5 @@
+#include <Core/Block.h>
+#include <Core/Names.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
@@ -62,6 +64,26 @@ const Block & MergeTreeReadersChain::getSampleBlock() const
 {
     static const Block empty_block;
     return range_readers.empty() ? empty_block : range_readers.back().getSampleBlock();
+}
+
+Block MergeTreeReadersChain::getReadSampleBlock() const
+{
+    static const Block empty_block;
+    if (range_readers.empty()) return empty_block;
+
+    Block out;
+    NameSet seen;
+    for (const auto & reader : range_readers)
+    {
+        for (const auto & col : reader.getReadSampleBlock())
+        {
+            if (seen.insert(col.name).second)
+            {
+                out.insert(col);
+            }
+        }
+    }
+    return out;
 }
 
 bool MergeTreeReadersChain::isCurrentRangeFinished() const
