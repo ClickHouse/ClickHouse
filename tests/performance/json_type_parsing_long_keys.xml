@@ -1,0 +1,15 @@
+<test>
+    <!-- Object keys here are about 32 bytes, past the inline buffer of a small `std::string`, so building
+         a path for one allocates. `json_type_parsing.xml` only has keys of 2-8 bytes, which stay
+         inline and hide every per-key allocation on this path. -->
+    <fill_query>INSERT INTO FUNCTION file(test_json_parsing_long_keys.txt, Raw) SELECT toJSONString(arrayMap(x -> tuple('long_json_object_key_padding_' || x, x::UInt32), range(2048))::Map(String, Dynamic)) FROM numbers(1000) SETTINGS use_variant_as_common_type=1, engine_file_truncate_on_insert=1</fill_query>
+
+    <!-- Every key goes to shared data. -->
+    <query>SELECT * FROM file(test_json_parsing_long_keys.txt, JSONAsObject, 'json JSON(max_dynamic_paths=0)') FORMAT Null</query>
+    <!-- Same, with the dots in keys escaped. -->
+    <query>SELECT * FROM file(test_json_parsing_long_keys.txt, JSONAsObject, 'json JSON(max_dynamic_paths=0)') FORMAT Null SETTINGS json_type_escape_dots_in_keys = 1</query>
+    <!-- Default `JSON`: 2048 keys per object exhaust the 1024 dynamic paths, so half go to shared data. -->
+    <query>SELECT * FROM file(test_json_parsing_long_keys.txt, JSONAsObject, 'json JSON') FORMAT Null</query>
+
+    <drop_query>INSERT INTO FUNCTION file(test_json_parsing_long_keys.txt) SELECT * FROM numbers(0) SETTINGS engine_file_truncate_on_insert=1</drop_query>
+</test>
