@@ -12,6 +12,8 @@
 #include <Common/quoteString.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -23,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
+    extern const int BAD_ARGUMENTS;
 }
 
 KeyDescription::KeyDescription(const KeyDescription & other)
@@ -257,6 +260,32 @@ KeyDescription KeyDescription::buildEmptyKey()
     result.expression_list_ast = make_intrusive<ASTExpressionList>();
     result.expression = std::make_shared<ExpressionActions>(ActionsDAG(), ExpressionActionsSettings{});
     return result;
+}
+
+void KeyDescription::checkNoAlias(const IAST * definition_ast, std::string_view clause)
+{
+    if (!definition_ast)
+        return;
+
+    if (const String alias = definition_ast->tryGetAlias(); !alias.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias '{}' is not allowed in {}", alias, clause);
+
+    /// Aliases inside a subquery are local to it.
+    if (definition_ast->as<ASTSubquery>())
+        return;
+
+    for (const auto & child : definition_ast->children)
+        checkNoAlias(child.get(), clause);
+
+    /// `GROUP BY` keys, `SET` assignments and the `RECOMPRESS` codec of a `TTL` rule are not among its children.
+    if (const auto * ttl_element = definition_ast->as<ASTTTLElement>())
+    {
+        for (const auto & key : ttl_element->group_by_key)
+            checkNoAlias(key.get(), clause);
+        for (const auto & assignment : ttl_element->group_by_assignments)
+            checkNoAlias(assignment.get(), clause);
+        checkNoAlias(ttl_element->recompression_codec.get(), clause);
+    }
 }
 
 KeyDescription KeyDescription::parse(

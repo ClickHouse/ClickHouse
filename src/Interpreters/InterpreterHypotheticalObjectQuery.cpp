@@ -16,6 +16,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -109,6 +110,8 @@ BlockIO createHypotheticalIndex(
         if (metadata->getSecondaryIndices().has(index_ast.name))
             return {};
     }
+
+    KeyDescription::checkNoAlias(query.index_decl.get(), "INDEX");
 
     auto index_desc = IndexDescription::getIndexFromAST(
         query.index_decl,
