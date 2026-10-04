@@ -23,6 +23,13 @@ public:
     bool isCompatibleWith(const IStatistics & other) const override;
 
     String getNameForLogs() const override { return "Uniq : " + std::to_string(estimateCardinality()); }
+
+    /// The `uniq` state is a `UniquesHashSet` whose buffer lives on the heap (not the arena)
+    /// and is not observable from here; account its documented ceiling (2^17 * 4 bytes) so the
+    /// cache budget cannot be exceeded ~100x by full sets. Overestimating evicts early, which
+    /// is the safe direction for a cache.
+    size_t memoryUsageBytes() const override { return sizeof(*this) + collector->sizeOfData() + arena->allocatedBytes() + (1ULL << 17) * sizeof(UInt32); }
+
 private:
     std::unique_ptr<Arena> arena;
     AggregateFunctionPtr collector;
