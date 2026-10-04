@@ -107,9 +107,6 @@
                 "$ref": "./clickstack/navigation.json"
               },
               {
-                "$ref": "./products/agentic-data-stack/navigation.json"
-              },
-              {
                 "$ref": "./chdb/navigation.json"
               },
               {

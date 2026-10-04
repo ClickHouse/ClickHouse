@@ -14,7 +14,6 @@
     '/images/icons/icon-postgres.svg',
     '/images/icons/icon-clickstack.svg',
     '/images/icons/logo-langfuse.svg',
-    '/images/icons/icon-agentic-data-stack.svg',
     '/images/icons/icon-chdb.svg',
     '/images/icons/icon-kubernetes-operator.svg',
     '/images/icons/icon-clickpipes.svg',

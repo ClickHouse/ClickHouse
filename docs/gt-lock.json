@@ -13619,102 +13619,6 @@
       "staged": false
     },
     {
-      "fileId": "b66e8435e09cae166b2517ae6a76074e4ca6ea5ef70fe158a5f13c81ff34244b",
-      "versionId": "d306950270a02fdc07efcf238eca59449d7095bfb3bdafbdfc65778fdb041c10",
-      "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:05.952Z",
-          "fileName": "es/products/agentic-data-stack/docker-setup.mdx",
-          "postProcessHash": "9b8509797041d243ee34b76907fc95aa145de587d501bb34c3167a4cfdc8a399"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.952Z",
-          "fileName": "ja/products/agentic-data-stack/docker-setup.mdx",
-          "postProcessHash": "ea7158882a8260ccb71f57cebf714792c05a0b7960c96192162c120a683718ac"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:05.952Z",
-          "fileName": "ko/products/agentic-data-stack/docker-setup.mdx",
-          "postProcessHash": "5204e6353f182ede8c8ea2c270701ae434f355925c78b1ab310e93859fb7308c"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.952Z",
-          "fileName": "pt-BR/products/agentic-data-stack/docker-setup.mdx",
-          "postProcessHash": "17d0b4a828be0a9034ffcb4e8db8382f70ad4a61a77d313e4c27f03eedfe7f14"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:05.953Z",
-          "fileName": "ru/products/agentic-data-stack/docker-setup.mdx",
-          "postProcessHash": "b62218774cb23995554281bca6f89fc242954f800ec85d97ff4bb677c5be3b53"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:05.953Z",
-          "fileName": "zh/products/agentic-data-stack/docker-setup.mdx",
-          "postProcessHash": "174f9df53fd69faeef4e0e6cdade49fb5119ef2819d30951c27799a8c3571969"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:05.953Z",
-          "fileName": "ar/products/agentic-data-stack/docker-setup.mdx",
-          "postProcessHash": "2a74f9bcf74acefc467af58226b07694c7d3eea8cc8d29b271636a8142ba983d"
-        },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:05.953Z",
-          "fileName": "fr/products/agentic-data-stack/docker-setup.mdx",
-          "postProcessHash": "65c7442ac2cf1fb9bbe710e3b14f741130a12d5e8364d1b5c67b000193cae9ed"
-        }
-      },
-      "fileName": "products/agentic-data-stack/docker-setup.mdx",
-      "staged": false
-    },
-    {
-      "fileId": "f614b678732933512aed01429030965e4c0eef90d82a4b685469c2960e69ac46",
-      "versionId": "fe15bed314f0e35ecb6e8f7a1cf67471f927b996063dae3691f9c9e980c44909",
-      "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:05.953Z",
-          "fileName": "es/products/agentic-data-stack/overview.mdx",
-          "postProcessHash": "b54e2cd1072e052430e2b0380ebdb8b6801f814a2f6d87702d5554d7399b91b9"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.953Z",
-          "fileName": "ja/products/agentic-data-stack/overview.mdx",
-          "postProcessHash": "a0ac2cdad459e0c7d4576f8e2881a8a659440a217504ac9f216d88f6df05ffa2"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:05.953Z",
-          "fileName": "ko/products/agentic-data-stack/overview.mdx",
-          "postProcessHash": "6026a43dbe71db1bbff02b9ede92d3cb666213c9a67a2dccf73e46eddba4ae0e"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.954Z",
-          "fileName": "pt-BR/products/agentic-data-stack/overview.mdx",
-          "postProcessHash": "093bf6ae6ab6d13de2442659f8227ed5b0f5862a690e22880587d1b92419b301"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:05.954Z",
-          "fileName": "ru/products/agentic-data-stack/overview.mdx",
-          "postProcessHash": "190863612ab63056dae3ad8bdb9ad3fab0c060f445b55c45ec9631e56d4e4b23"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:05.954Z",
-          "fileName": "zh/products/agentic-data-stack/overview.mdx",
-          "postProcessHash": "af1ed8dfb7192b869b83eff3b9483ab49fa6f6a383ad71b62e161bdf28ea290b"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:05.954Z",
-          "fileName": "ar/products/agentic-data-stack/overview.mdx",
-          "postProcessHash": "201444c6067ce643df364b7b5e3c68199b62e5412463334dfe8b8a583d6b51fc"
-        },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:05.954Z",
-          "fileName": "fr/products/agentic-data-stack/overview.mdx",
-          "postProcessHash": "634b670dcd4e85ce45d6d7253dc63cce48c6ffdc8c6995018787b0e404eb5d8c"
-        }
-      },
-      "fileName": "products/agentic-data-stack/overview.mdx",
-      "staged": false
-    },
-    {
       "fileId": "f54303a963419a2fae34c5070c7441e60031193f7ef69f92b4f3482b78e20feb",
       "versionId": "3fdf7d0839146da2409943202e4d72a548501c885981a13dda1b3c80300814b8",
       "translations": {
@@ -42131,150 +42035,6 @@
         }
       },
       "fileName": "integrations/language-clients/third-party/moose-olap.mdx",
-      "staged": false
-    },
-    {
-      "fileId": "569cc10519f465770e19b31896fe4231de09b915fc39ce676cb94b03731d3467",
-      "versionId": "2ee73a7a27117db05650be077e9101ffd888a3bf7bb61a4cd20e7bb07f11a3a4",
-      "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.648Z",
-          "fileName": "es/products/agentic-data-stack/components/langfuse.mdx",
-          "postProcessHash": "63506f7265771d69de075f41ab9943f346bce7027507031994e7ac286c87dd1f"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.648Z",
-          "fileName": "ja/products/agentic-data-stack/components/langfuse.mdx",
-          "postProcessHash": "f531045776a8b00a1bd0456314a062e856fc0af0ac1d356c79d6da11eeeedd39"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.648Z",
-          "fileName": "ko/products/agentic-data-stack/components/langfuse.mdx",
-          "postProcessHash": "bf02bab92ab61f82af9b0b649699886ecbb35751328f8e4f442dc341cb2003e0"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.648Z",
-          "fileName": "pt-BR/products/agentic-data-stack/components/langfuse.mdx",
-          "postProcessHash": "a6f2e3569a371a53231027973982c4cf59d09acb01e1f421ee3d17c1cca756fb"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.648Z",
-          "fileName": "ru/products/agentic-data-stack/components/langfuse.mdx",
-          "postProcessHash": "7ba6d150d755d4ceac75e8214ef741e5c4c1c71d0da1f5a20600c0f00503f35a"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.648Z",
-          "fileName": "zh/products/agentic-data-stack/components/langfuse.mdx",
-          "postProcessHash": "a1dc72e44fab8bfbaced46fd05c32471e05c961f4d7b81c2cda57c070e8096ee"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.648Z",
-          "fileName": "ar/products/agentic-data-stack/components/langfuse.mdx",
-          "postProcessHash": "314401b5517297d3f7a1a48341a4027c6a00b2ba6b4fb8b4a16ca557da4ad638"
-        },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:06.648Z",
-          "fileName": "fr/products/agentic-data-stack/components/langfuse.mdx",
-          "postProcessHash": "e6ca7112978a2fab7c021ede6d41bbc29b7d7a40e98462a42460ff54f359294e"
-        }
-      },
-      "fileName": "products/agentic-data-stack/components/langfuse.mdx",
-      "staged": false
-    },
-    {
-      "fileId": "b6d6d51808d57bb6568dc4a735f85f6e73a79c2b77298537228f9d3bae14146d",
-      "versionId": "6d23c9645d916778eb5974c1db8429f37c8438b7a95dc89d3b3e5682ff0d487c",
-      "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.649Z",
-          "fileName": "es/products/agentic-data-stack/components/librechat.mdx",
-          "postProcessHash": "de1fcec4125c85fd6a5df037a3f898ae4767407c5646e31fc33a3062a38ace40"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.649Z",
-          "fileName": "ja/products/agentic-data-stack/components/librechat.mdx",
-          "postProcessHash": "fb127035603c5a221b747d5db474a224bf721771b3e46b2a75d20e1a1e7b48e3"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.649Z",
-          "fileName": "ko/products/agentic-data-stack/components/librechat.mdx",
-          "postProcessHash": "d9665a68f7dce02209cf752014b6b2dd13aa7d09475b1b1326a95292df2433cb"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.649Z",
-          "fileName": "pt-BR/products/agentic-data-stack/components/librechat.mdx",
-          "postProcessHash": "4a7bfa5039509cad5ca39fa0de2f792b26aaad811c0dba19cd3e2d0b3cdcf6d1"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.649Z",
-          "fileName": "ru/products/agentic-data-stack/components/librechat.mdx",
-          "postProcessHash": "7bf693e575de084a5c43f62e4248405c1fee861ee1133e9c9701ca25b16e6712"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.649Z",
-          "fileName": "zh/products/agentic-data-stack/components/librechat.mdx",
-          "postProcessHash": "ee355444f1cc3dbb3300dc3ccbd129901776fac789259f4769e2982f03b71e68"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.649Z",
-          "fileName": "ar/products/agentic-data-stack/components/librechat.mdx",
-          "postProcessHash": "edb58463d282a37265bd9a1a44fefe428b5e91d20a500634acbb6f7ab1e376c1"
-        },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:06.649Z",
-          "fileName": "fr/products/agentic-data-stack/components/librechat.mdx",
-          "postProcessHash": "9434fbc0cb80319c827285305f992f49ac09a2469083098cd0d7d4453174c05f"
-        }
-      },
-      "fileName": "products/agentic-data-stack/components/librechat.mdx",
-      "staged": false
-    },
-    {
-      "fileId": "5df351fde6baa92fe41f751502f8cd4320537e969bd8154ca48dc55b937df585",
-      "versionId": "07079c0b2356943fd7a9f7266048fec79766f00b58a2c20440cb52ea6631a378",
-      "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.649Z",
-          "fileName": "es/products/agentic-data-stack/components/mcp-server.mdx",
-          "postProcessHash": "3f6e426b8a8c5b4f8c7e26b175eaf0cb6c7c5c45c5a9330d4eeeb570df300aea"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.649Z",
-          "fileName": "ja/products/agentic-data-stack/components/mcp-server.mdx",
-          "postProcessHash": "80f4b2d41b367f201e7422487834e20443bb52847588e9acbe5148c14eb92c50"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.649Z",
-          "fileName": "ko/products/agentic-data-stack/components/mcp-server.mdx",
-          "postProcessHash": "47adb3eeefd1cdcb9812c783be2829c8f5f0f67f7de71e292dc2e239daff61df"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.649Z",
-          "fileName": "pt-BR/products/agentic-data-stack/components/mcp-server.mdx",
-          "postProcessHash": "78bd7c868f64255ba823520c8cbcbc915e31eaaf813e4e56beaa38bafdd3b7d3"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.650Z",
-          "fileName": "ru/products/agentic-data-stack/components/mcp-server.mdx",
-          "postProcessHash": "c2cdf853ac0f7f2ad3ce96cf7c90b42f6da3682957dfe5e34492587ae11fd8eb"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.650Z",
-          "fileName": "zh/products/agentic-data-stack/components/mcp-server.mdx",
-          "postProcessHash": "65dbfb1a1fed785236633b348eb33da1228d3fc74a7a635e02ad3de4d29a7f6a"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.650Z",
-          "fileName": "ar/products/agentic-data-stack/components/mcp-server.mdx",
-          "postProcessHash": "bd8fcfaa3c491545b7e88f9d74a5773a78855520015c8abc584df5a53d675a37"
-        },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:06.650Z",
-          "fileName": "fr/products/agentic-data-stack/components/mcp-server.mdx",
-          "postProcessHash": "53ab190c72b371ee46d95966618f233a945175f0e4f747c0cf65e8dc9349ffeb"
-        }
-      },
-      "fileName": "products/agentic-data-stack/components/mcp-server.mdx",
       "staged": false
     },
     {
@@ -98504,46 +98264,46 @@
       "translations": {
         "es": {
           "updatedAt": "2026-08-14T10:41:08.613Z",
-          "fileName": "es/products/cloud/features/ai-ml/aichat/customizing-semantic-layer.mdx",
+          "fileName": "es/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer.mdx",
           "postProcessHash": "483a90fae7233548620a308f450c925c6df6150259da1eebcbabdb79f97cc2c3"
         },
         "ja": {
           "updatedAt": "2026-08-14T10:41:08.613Z",
-          "fileName": "ja/products/cloud/features/ai-ml/aichat/customizing-semantic-layer.mdx",
+          "fileName": "ja/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer.mdx",
           "postProcessHash": "0b8702720296e9d7225354138e6940e210ad244cbcb65112ec5bff0b891809ff"
         },
         "ko": {
           "updatedAt": "2026-08-14T10:41:08.613Z",
-          "fileName": "ko/products/cloud/features/ai-ml/aichat/customizing-semantic-layer.mdx",
+          "fileName": "ko/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer.mdx",
           "postProcessHash": "325ae60526956dedd719b645c4848642c474366cff7daf26f39c8e876c635286"
         },
         "pt-BR": {
           "updatedAt": "2026-08-14T10:41:08.613Z",
-          "fileName": "pt-BR/products/cloud/features/ai-ml/aichat/customizing-semantic-layer.mdx",
+          "fileName": "pt-BR/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer.mdx",
           "postProcessHash": "84b3898d93d32c8adb11540cf7798cb3b5bf21f4dac434e474ed96cba665ab08"
         },
         "ru": {
           "updatedAt": "2026-08-14T10:41:08.613Z",
-          "fileName": "ru/products/cloud/features/ai-ml/aichat/customizing-semantic-layer.mdx",
+          "fileName": "ru/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer.mdx",
           "postProcessHash": "2d7e7b7c36f3c1497644b6ade91aa3be89f1d8a19d033cbd3634400bf50154cd"
         },
         "zh": {
           "updatedAt": "2026-08-14T10:41:08.613Z",
-          "fileName": "zh/products/cloud/features/ai-ml/aichat/customizing-semantic-layer.mdx",
+          "fileName": "zh/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer.mdx",
           "postProcessHash": "ff31e4f2970486841a8800fdcfe2fe91104156a18e9383bbf31059b252fad369"
         },
         "ar": {
           "updatedAt": "2026-08-14T10:41:08.614Z",
-          "fileName": "ar/products/cloud/features/ai-ml/aichat/customizing-semantic-layer.mdx",
+          "fileName": "ar/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer.mdx",
           "postProcessHash": "72b22ed8823efa0f0dc550c4ff678a8ebdeec564ff155f9413ff6783b092f396"
         },
         "fr": {
           "updatedAt": "2026-08-14T10:41:08.614Z",
-          "fileName": "fr/products/cloud/features/ai-ml/aichat/customizing-semantic-layer.mdx",
+          "fileName": "fr/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer.mdx",
           "postProcessHash": "9255e8042a9ce613ddc02f952244305c3694da4f701e10bdadb8cede96630ae0"
         }
       },
-      "fileName": "products/cloud/features/ai-ml/aichat/customizing-semantic-layer.mdx",
+      "fileName": "products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer.mdx",
       "staged": false
     },
     {
@@ -98552,46 +98312,46 @@
       "translations": {
         "es": {
           "updatedAt": "2026-08-26T08:10:32.373Z",
-          "fileName": "es/products/cloud/features/ai-ml/aichat/using-ai-chat.mdx",
+          "fileName": "es/products/cloud/features/ai-ml/agents/assistant/using-ai-chat.mdx",
           "postProcessHash": "4c2177a146acc7002cafa879d754ede7199ad8a8dbf2a6266004920dc073a6a0"
         },
         "ja": {
           "updatedAt": "2026-08-26T08:10:32.373Z",
-          "fileName": "ja/products/cloud/features/ai-ml/aichat/using-ai-chat.mdx",
+          "fileName": "ja/products/cloud/features/ai-ml/agents/assistant/using-ai-chat.mdx",
           "postProcessHash": "8c19f5d2f912e0497c30e76fc40ee60edc5deffaeda7a643b1c933c8dc018179"
         },
         "ko": {
           "updatedAt": "2026-08-26T08:10:32.374Z",
-          "fileName": "ko/products/cloud/features/ai-ml/aichat/using-ai-chat.mdx",
+          "fileName": "ko/products/cloud/features/ai-ml/agents/assistant/using-ai-chat.mdx",
           "postProcessHash": "9438454531431fc4fd294dee15a41ceb2a3b1200aab185162b1799f6bcc5a94a"
         },
         "pt-BR": {
           "updatedAt": "2026-08-26T08:10:32.374Z",
-          "fileName": "pt-BR/products/cloud/features/ai-ml/aichat/using-ai-chat.mdx",
+          "fileName": "pt-BR/products/cloud/features/ai-ml/agents/assistant/using-ai-chat.mdx",
           "postProcessHash": "58b239664e59660165b7fc36614744f72186a92701adc3f6daf0c2a9a90917f8"
         },
         "ru": {
           "updatedAt": "2026-08-26T08:10:32.375Z",
-          "fileName": "ru/products/cloud/features/ai-ml/aichat/using-ai-chat.mdx",
+          "fileName": "ru/products/cloud/features/ai-ml/agents/assistant/using-ai-chat.mdx",
           "postProcessHash": "c6def6affe41a395f6555cbe46a87ebafa09531b4a743cbf19367e6677ed5ec0"
         },
         "zh": {
           "updatedAt": "2026-08-26T08:10:32.375Z",
-          "fileName": "zh/products/cloud/features/ai-ml/aichat/using-ai-chat.mdx",
+          "fileName": "zh/products/cloud/features/ai-ml/agents/assistant/using-ai-chat.mdx",
           "postProcessHash": "a77668a90a2006b556e959476e1547136b01a70894f4c4409bb8f4f18b53938e"
         },
         "ar": {
           "updatedAt": "2026-08-26T08:10:32.376Z",
-          "fileName": "ar/products/cloud/features/ai-ml/aichat/using-ai-chat.mdx",
+          "fileName": "ar/products/cloud/features/ai-ml/agents/assistant/using-ai-chat.mdx",
           "postProcessHash": "3d52a5de3802a2072115eb681eb39399a38a6d2c52f8df96aee644ba3768d799"
         },
         "fr": {
           "updatedAt": "2026-08-26T08:10:32.377Z",
-          "fileName": "fr/products/cloud/features/ai-ml/aichat/using-ai-chat.mdx",
+          "fileName": "fr/products/cloud/features/ai-ml/agents/assistant/using-ai-chat.mdx",
           "postProcessHash": "d80aac830cbee259bf7f1cd0a83434ed4c8e11d35a710a8bab0aca2c2b168a04"
         }
       },
-      "fileName": "products/cloud/features/ai-ml/aichat/using-ai-chat.mdx"
+      "fileName": "products/cloud/features/ai-ml/agents/assistant/using-ai-chat.mdx"
     },
     {
       "fileId": "da9809a950af4870dc4cb70cc755db0d35e56dabf4605f05ed3ba0e16a52a1ea",

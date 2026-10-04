@@ -1656,11 +1656,11 @@
     "source": "/cloud/features/ai-ml/agents/sharing-and-access"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/aichat/using-ai-chat",
+    "destination": "/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
     "source": "/cloud/features/ai-ml/ask-ai"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/aichat/using-ai-chat",
+    "destination": "/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
     "source": "/products/cloud/features/ai-ml/ask-ai"
   },
   {
@@ -1732,19 +1732,19 @@
     "source": "/cloud/get-started/cloud/resource-tour"
   },
   {
-    "destination": "/get-started/use-cases/agentic-analytics",
+    "destination": "/products/cloud/features/ai-ml/agents",
     "source": "/cloud/get-started/cloud/use-cases/ai_ml"
   },
   {
-    "destination": "/get-started/use-cases/agentic-analytics",
+    "destination": "/products/cloud/features/ai-ml/agents",
     "source": "/cloud/get-started/cloud/use-cases/ai_ml/agent_facing_analytics"
   },
   {
-    "destination": "/get-started/use-cases/agentic-analytics",
+    "destination": "/products/cloud/features/ai-ml/agents",
     "source": "/cloud/get-started/cloud/use-cases/AI_ML"
   },
   {
-    "destination": "/get-started/use-cases/agentic-analytics",
+    "destination": "/products/cloud/features/ai-ml/agents",
     "source": "/cloud/get-started/cloud/use-cases/AI_ML/agent_facing_analytics"
   },
   {
@@ -15548,11 +15548,11 @@
     "source": "/jp/use-cases/AI/qbit-vector-search"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/aichat/using-ai-chat",
+    "destination": "/ja/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
     "source": "/jp/use-cases/AI_ML/AIChat"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
+    "destination": "/ja/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
     "source": "/jp/use-cases/AI_ML/AIChat/semantic-layer"
   },
   {
@@ -26308,11 +26308,11 @@
     "source": "/ko/use-cases/AI/qbit-vector-search"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/aichat/using-ai-chat",
+    "destination": "/ko/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
     "source": "/ko/use-cases/AI_ML/AIChat"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
+    "destination": "/ko/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
     "source": "/ko/use-cases/AI_ML/AIChat/semantic-layer"
   },
   {
@@ -38424,11 +38424,11 @@
     "source": "/ru/use-cases/AI/qbit-vector-search"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/aichat/using-ai-chat",
+    "destination": "/ru/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
     "source": "/ru/use-cases/AI_ML/AIChat"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
+    "destination": "/ru/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
     "source": "/ru/use-cases/AI_ML/AIChat/semantic-layer"
   },
   {
@@ -41732,11 +41732,11 @@
     "source": "/use-cases/AI/qbit-vector-search"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/aichat/using-ai-chat",
+    "destination": "/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
     "source": "/use-cases/AI_ML/AIChat"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
+    "destination": "/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
     "source": "/use-cases/AI_ML/AIChat/semantic-layer"
   },
   {
@@ -52004,11 +52004,11 @@
     "source": "/zh/use-cases/AI/qbit-vector-search"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/aichat/using-ai-chat",
+    "destination": "/zh/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
     "source": "/zh/use-cases/AI_ML/AIChat"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
+    "destination": "/zh/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
     "source": "/zh/use-cases/AI_ML/AIChat/semantic-layer"
   },
   {
@@ -55658,5 +55658,261 @@
   {
     "destination": "/zh/resources/develop-contribute/native-protocol/format#data-types",
     "source": "/zh/resources/develop-contribute/native-protocol/columns"
+  },
+  {
+    "destination": "/products/cloud/features/ai-ml/agents",
+    "source": "/get-started/use-cases/agentic-analytics"
+  },
+  {
+    "destination": "/products/cloud/features/ai-ml",
+    "source": "/products/agentic-data-stack/overview"
+  },
+  {
+    "destination": "/products/cloud/features/ai-ml",
+    "source": "/products/agentic-data-stack/docker-setup"
+  },
+  {
+    "destination": "/products/cloud/features/ai-ml",
+    "source": "/products/agentic-data-stack/components/librechat"
+  },
+  {
+    "destination": "/products/cloud/features/ai-ml",
+    "source": "/products/agentic-data-stack/components/mcp-server"
+  },
+  {
+    "destination": "/products/cloud/features/ai-ml",
+    "source": "/products/agentic-data-stack/components/langfuse"
+  },
+  {
+    "destination": "/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/products/cloud/features/ai-ml/aichat/using-ai-chat"
+  },
+  {
+    "destination": "/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "source": "/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
+  },
+  {
+    "destination": "/ar/products/cloud/features/ai-ml",
+    "source": "/ar/products/agentic-data-stack/overview"
+  },
+  {
+    "destination": "/ar/products/cloud/features/ai-ml",
+    "source": "/ar/products/agentic-data-stack/docker-setup"
+  },
+  {
+    "destination": "/ar/products/cloud/features/ai-ml",
+    "source": "/ar/products/agentic-data-stack/components/librechat"
+  },
+  {
+    "destination": "/ar/products/cloud/features/ai-ml",
+    "source": "/ar/products/agentic-data-stack/components/mcp-server"
+  },
+  {
+    "destination": "/ar/products/cloud/features/ai-ml",
+    "source": "/ar/products/agentic-data-stack/components/langfuse"
+  },
+  {
+    "destination": "/ar/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/ar/products/cloud/features/ai-ml/aichat/using-ai-chat"
+  },
+  {
+    "destination": "/ar/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "source": "/ar/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
+  },
+  {
+    "destination": "/es/products/cloud/features/ai-ml",
+    "source": "/es/products/agentic-data-stack/overview"
+  },
+  {
+    "destination": "/es/products/cloud/features/ai-ml",
+    "source": "/es/products/agentic-data-stack/docker-setup"
+  },
+  {
+    "destination": "/es/products/cloud/features/ai-ml",
+    "source": "/es/products/agentic-data-stack/components/librechat"
+  },
+  {
+    "destination": "/es/products/cloud/features/ai-ml",
+    "source": "/es/products/agentic-data-stack/components/mcp-server"
+  },
+  {
+    "destination": "/es/products/cloud/features/ai-ml",
+    "source": "/es/products/agentic-data-stack/components/langfuse"
+  },
+  {
+    "destination": "/es/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/es/products/cloud/features/ai-ml/aichat/using-ai-chat"
+  },
+  {
+    "destination": "/es/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "source": "/es/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
+  },
+  {
+    "destination": "/fr/products/cloud/features/ai-ml",
+    "source": "/fr/products/agentic-data-stack/overview"
+  },
+  {
+    "destination": "/fr/products/cloud/features/ai-ml",
+    "source": "/fr/products/agentic-data-stack/docker-setup"
+  },
+  {
+    "destination": "/fr/products/cloud/features/ai-ml",
+    "source": "/fr/products/agentic-data-stack/components/librechat"
+  },
+  {
+    "destination": "/fr/products/cloud/features/ai-ml",
+    "source": "/fr/products/agentic-data-stack/components/mcp-server"
+  },
+  {
+    "destination": "/fr/products/cloud/features/ai-ml",
+    "source": "/fr/products/agentic-data-stack/components/langfuse"
+  },
+  {
+    "destination": "/fr/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/fr/products/cloud/features/ai-ml/aichat/using-ai-chat"
+  },
+  {
+    "destination": "/fr/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "source": "/fr/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
+  },
+  {
+    "destination": "/ja/products/cloud/features/ai-ml",
+    "source": "/ja/products/agentic-data-stack/overview"
+  },
+  {
+    "destination": "/ja/products/cloud/features/ai-ml",
+    "source": "/ja/products/agentic-data-stack/docker-setup"
+  },
+  {
+    "destination": "/ja/products/cloud/features/ai-ml",
+    "source": "/ja/products/agentic-data-stack/components/librechat"
+  },
+  {
+    "destination": "/ja/products/cloud/features/ai-ml",
+    "source": "/ja/products/agentic-data-stack/components/mcp-server"
+  },
+  {
+    "destination": "/ja/products/cloud/features/ai-ml",
+    "source": "/ja/products/agentic-data-stack/components/langfuse"
+  },
+  {
+    "destination": "/ja/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/ja/products/cloud/features/ai-ml/aichat/using-ai-chat"
+  },
+  {
+    "destination": "/ja/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "source": "/ja/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
+  },
+  {
+    "destination": "/ko/products/cloud/features/ai-ml",
+    "source": "/ko/products/agentic-data-stack/overview"
+  },
+  {
+    "destination": "/ko/products/cloud/features/ai-ml",
+    "source": "/ko/products/agentic-data-stack/docker-setup"
+  },
+  {
+    "destination": "/ko/products/cloud/features/ai-ml",
+    "source": "/ko/products/agentic-data-stack/components/librechat"
+  },
+  {
+    "destination": "/ko/products/cloud/features/ai-ml",
+    "source": "/ko/products/agentic-data-stack/components/mcp-server"
+  },
+  {
+    "destination": "/ko/products/cloud/features/ai-ml",
+    "source": "/ko/products/agentic-data-stack/components/langfuse"
+  },
+  {
+    "destination": "/ko/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/ko/products/cloud/features/ai-ml/aichat/using-ai-chat"
+  },
+  {
+    "destination": "/ko/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "source": "/ko/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/features/ai-ml",
+    "source": "/pt-BR/products/agentic-data-stack/overview"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/features/ai-ml",
+    "source": "/pt-BR/products/agentic-data-stack/docker-setup"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/features/ai-ml",
+    "source": "/pt-BR/products/agentic-data-stack/components/librechat"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/features/ai-ml",
+    "source": "/pt-BR/products/agentic-data-stack/components/mcp-server"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/features/ai-ml",
+    "source": "/pt-BR/products/agentic-data-stack/components/langfuse"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/pt-BR/products/cloud/features/ai-ml/aichat/using-ai-chat"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "source": "/pt-BR/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
+  },
+  {
+    "destination": "/ru/products/cloud/features/ai-ml",
+    "source": "/ru/products/agentic-data-stack/overview"
+  },
+  {
+    "destination": "/ru/products/cloud/features/ai-ml",
+    "source": "/ru/products/agentic-data-stack/docker-setup"
+  },
+  {
+    "destination": "/ru/products/cloud/features/ai-ml",
+    "source": "/ru/products/agentic-data-stack/components/librechat"
+  },
+  {
+    "destination": "/ru/products/cloud/features/ai-ml",
+    "source": "/ru/products/agentic-data-stack/components/mcp-server"
+  },
+  {
+    "destination": "/ru/products/cloud/features/ai-ml",
+    "source": "/ru/products/agentic-data-stack/components/langfuse"
+  },
+  {
+    "destination": "/ru/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/ru/products/cloud/features/ai-ml/aichat/using-ai-chat"
+  },
+  {
+    "destination": "/ru/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "source": "/ru/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
+  },
+  {
+    "destination": "/zh/products/cloud/features/ai-ml",
+    "source": "/zh/products/agentic-data-stack/overview"
+  },
+  {
+    "destination": "/zh/products/cloud/features/ai-ml",
+    "source": "/zh/products/agentic-data-stack/docker-setup"
+  },
+  {
+    "destination": "/zh/products/cloud/features/ai-ml",
+    "source": "/zh/products/agentic-data-stack/components/librechat"
+  },
+  {
+    "destination": "/zh/products/cloud/features/ai-ml",
+    "source": "/zh/products/agentic-data-stack/components/mcp-server"
+  },
+  {
+    "destination": "/zh/products/cloud/features/ai-ml",
+    "source": "/zh/products/agentic-data-stack/components/langfuse"
+  },
+  {
+    "destination": "/zh/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/zh/products/cloud/features/ai-ml/aichat/using-ai-chat"
+  },
+  {
+    "destination": "/zh/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "source": "/zh/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   }
 ]
