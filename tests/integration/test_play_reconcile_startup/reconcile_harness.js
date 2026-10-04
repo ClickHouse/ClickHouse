@@ -1710,15 +1710,20 @@ async function main() {
             historyState: null,
             seedTabs: [],
             seedMeta: null,
-            /// Both servers answer the probe: the terminal exists at each of them.
-            fetch: async () => ({
-                ok: true,
-                status: 200,
-                statusText: 'OK',
-                headers: { get: () => null },
-                text: async () => '',
-                json: async () => ({}),
-            }),
+            /// The terminal exists at both servers, but `/webterminal` carries no CORS headers, so a
+            /// cross-origin probe of it is rejected by the browser: the icon must not depend on it.
+            fetch: async (url, opts) => {
+                if (opts && opts.method === 'HEAD' && !String(url).startsWith('https://a.example/'))
+                    throw new TypeError('Failed to fetch');
+                return {
+                    ok: true,
+                    status: 200,
+                    statusText: 'OK',
+                    headers: { get: () => null },
+                    text: async () => '',
+                    json: async () => ({}),
+                };
+            },
             open: (href, target) => { opened.push({ href, target }); return null; },
         });
         const terminal_icon = r.sandbox.document.getElementById('terminal-icon');
@@ -1742,7 +1747,7 @@ async function main() {
         };
 
         await point_at('https://b.example/');
-        check('cross-origin-terminal', 'the probe of a cross-origin server shows the icon',
+        check('cross-origin-terminal', 'the icon of a cross-origin server is shown without a readable probe',
             terminal_icon.style.display === '', terminal_icon.style.display);
         const href = terminal_icon.getAttribute('href');
         check('cross-origin-terminal', 'the icon links to the terminal of that server',

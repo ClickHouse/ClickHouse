@@ -22655,6 +22655,14 @@ document.getElementById('download-button').addEventListener('click', async funct
     /// icon is hidden the moment the address changes and shown again only when a probe of the CURRENT
     /// address succeeds; a late response for a superseded address is dropped by the generation counter,
     /// exactly like `checkURL` does for the connectivity indicator.
+    ///
+    /// Only a same-origin terminal can be probed: `/webterminal` is served without
+    /// `Access-Control-Allow-Origin`, so the browser rejects a cross-origin `fetch` of it even when the
+    /// page exists, and a probe would hide the icon for every other server - also in the setup where
+    /// the SQL interface itself reaches that server through `add_http_cors_header`. The icon of a
+    /// cross-origin HTTP(S) server is therefore shown unprobed; a click opens its terminal in a new tab
+    /// (or inline, when the handover is accepted, see `terminalAcceptsHandover`), and a server without
+    /// one answers there with its own error page.
     terminalIcon.style.display = 'none';
     let terminal_probe_generation = 0;
     function probeTerminal() {
@@ -22666,6 +22674,10 @@ document.getElementById('download-button').addEventListener('click', async funct
         updateTerminalHref();
         const probe_url = getTerminalURL();
         if (!probe_url) return;
+        if (new URL(probe_url).origin !== location.origin) {
+            terminalIcon.style.display = '';
+            return;
+        }
         fetch(probe_url, {method: 'HEAD'}).then(function(resp) {
             if (generation == terminal_probe_generation && resp.ok) terminalIcon.style.display = '';
         }).catch(function() {});
