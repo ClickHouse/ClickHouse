@@ -203,12 +203,13 @@ public:
     /// 2. ignore_ast_optimizations is set.
     bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
 
-    /// True when this plan is built to be serialized and shipped to another node (a shard under
-    /// `serialize_query_plan`, or a replica in the plan-based parallel replicas mode). Everything
-    /// materialized while planning must then survive serialization, which rules out a JIT-compiled
-    /// expression: a compiled function has no name in `FunctionFactory`, so the receiving node
-    /// cannot resolve it.
-    bool isLogicalPlan() const { return is_logical_plan; }
+    /// True when this plan, or a fragment of it, may be serialized and shipped to another node: a
+    /// logical plan built for a shard under `serialize_query_plan`, or a local plan from which
+    /// plan-based parallel replicas (`parallel_replicas_plan_based`) later cut a fragment for the
+    /// replicas. Everything materialized while planning must then survive serialization, which rules
+    /// out a JIT-compiled expression: a compiled function has no name in `FunctionFactory`, so the
+    /// receiving node cannot resolve it.
+    bool mayBeSerializedForRemoteExecution() const { return may_be_serialized_for_remote_execution; }
 
 private:
 
@@ -224,7 +225,7 @@ private:
 
     bool is_ast_level_optimization_allowed;
 
-    bool is_logical_plan = false;
+    bool may_be_serialized_for_remote_execution = false;
 
     /// Column node to column identifier
     std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;
