@@ -302,7 +302,8 @@ Pipe YTsaurusSourceFactory::createPipe(
     auto yt_node_type = client->getNodeType(cypress_path);
 
     if (yt_node_type == YTsaurusNodeType::STATIC_TABLE)
-        return createPipeForStaticTable(client, cypress_path, table_cypress_path, source_options, sample_block, max_block_size, max_streams);    else if (yt_node_type == YTsaurusNodeType::DYNAMIC_TABLE)
+        return createPipeForStaticTable(client, cypress_path, table_cypress_path, source_options, sample_block, max_block_size, max_streams);
+    else if (yt_node_type == YTsaurusNodeType::DYNAMIC_TABLE)
         return createPipeForDynamicTable(client, cypress_path, source_options, sample_block, max_block_size);
     else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Node {} has unsupported type.", cypress_path);

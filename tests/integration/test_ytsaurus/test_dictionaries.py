@@ -585,8 +585,9 @@ def test_yt_lookups_throttler_proxy_failover(started_cluster):
     A permanently dead first proxy cannot exercise this path: the node type `get` that precedes every selective
     load already fails over to the healthy proxy and moves `recently_used_url_index` there, so the lookup itself
     never retries. Instead, the ClickHouse HTTP port acts as a fake proxy (`configs/fake_yt_proxy_http_handlers.xml`):
-    it answers `get`, so it stays the preferred proxy, but rejects `lookup_rows` with a non-retriable `404`, so the
-    failing attempt returns instantly and the client retries the same logical lookup against the real proxy.
+    it answers `get`, so it stays the preferred proxy, and names itself in `/hosts`, so the heavy proxy redirection
+    keeps the `lookup_rows` attempt on it, but rejects `lookup_rows` with a non-retriable `404`, so the failing attempt
+    returns instantly and the client retries the same logical lookup against the real proxy.
 
     `lookup_max_rows_per_query = 0` keeps the whole miss set in ONE logical lookup, so the only way to consume a
     second token within the one-second refill period of a `1` requests-per-second throttler is the retry attempt.
