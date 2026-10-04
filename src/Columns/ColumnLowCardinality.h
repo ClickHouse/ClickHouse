@@ -261,6 +261,16 @@ public:
         return false;
     }
 
+    /// The type of the indexes depends on the size of the dictionary of each block and does not change the set of
+    /// streams of the column. Otherwise a writer would rebuild every block of a `JSON` column with a `LowCardinality`
+    /// typed path to the structure of its first block, see `MergeTreeDataPartWriterOnDisk::prepareBlockForWriting`.
+    bool dynamicStructureEquals(const IColumn & rhs) const override
+    {
+        if (const auto * rhs_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&rhs))
+            return dictionary.getColumnUnique().dynamicStructureEquals(rhs_low_cardinality->dictionary.getColumnUnique());
+        return false;
+    }
+
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
         return getIndexes().getRatioOfDefaultRows(sample_ratio);
