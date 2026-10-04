@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Poco/Net/NetException.h>
+#include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -59,7 +60,7 @@ bool StreamingExchangeSource::connect(const Stopwatch & handshake_watch)
 {
     LOG_TRACE(log, "Connecting to {}:{} for query id {} exchange stream {}", host, port, query_id, stream_name);
     socket = std::make_unique<Poco::Net::StreamSocket>();
-    Poco::Net::SocketAddress address(host, port);
+    Poco::Net::SocketAddress address = DNSResolver::instance().resolveAddress(host, port);
     /// Apply a connect timeout so a blackholed or filtered peer cannot stall the worker
     /// thread for the default kernel connect timeout (minutes) and ignore cancellation.
     socket->connectNB(address);
