@@ -1,4 +1,4 @@
--- Tags: stateful
+-- Tags: stateful, long
 
 -- To avoid too slow test execution
 set remote_filesystem_read_method='threadpool', allow_prefetched_read_pool_for_remote_filesystem=1, filesystem_prefetch_step_marks=0, filesystem_prefetch_step_bytes='100Mi';
@@ -15,6 +15,10 @@ SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_
 SET use_uncompressed_cache=0;
 
 SET use_query_condition_cache=0;
+
+-- The columns cache serves repeated reads from memory, which lowers `ReadCompressedBytes` below the
+-- estimate for every query after the first one.
+SET use_columns_cache=0;
 
 create table t(a UInt64) engine=MergeTree order by a;
 insert into t select number from numbers_mt(1e6);

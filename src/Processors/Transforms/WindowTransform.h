@@ -4,7 +4,9 @@
 
 #include <Interpreters/WindowDescription.h>
 
+#include <Processors/Transforms/Window/Partition.h>
 #include <Processors/Transforms/Window/SlidingBlocks.h>
+#include <Processors/Transforms/Window/SlidingIndexes.h>
 #include <Processors/Transforms/Window/WindowTransformParams.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
@@ -68,8 +70,6 @@ public:
 
     /* Implementation details.
      */
-    void advancePartitionEnd();
-
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
 
     void advanceFrameStartRowsOffset();
@@ -120,19 +120,14 @@ public:
     std::unique_ptr<Arena> arena;
 
     SlidingBlocks blocks;
+    SlidingIndexes indexes;
     // The next block we are going to pass to the consumer.
     Int64 next_output_block_number = 0;
 
-    // Boundaries of the current partition.
-    // partition_start doesn't point to a valid block, because we want to drop
-    // the blocks early to save memory. We still have to track it so that we can
-    // cut off a PRECEDING frame at the partition start.
-    // The `partition_end` is past-the-end, as usual. When
-    // partition_ended = false, it still haven't ended, and partition_end is the
-    // next row to check.
-    RowNumber partition_start;
-    RowNumber partition_end;
-    bool partition_ended = false;
+    // The current partition. Its start doesn't point to a valid block, because
+    // we want to drop the blocks early to save memory. We still have to track it
+    // so that we can cut off a PRECEDING frame at the partition start.
+    Partition partition;
 
     // The row for which we are now computing the window functions.
     RowNumber current_row;

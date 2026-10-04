@@ -1,4 +1,5 @@
 #pragma once
+#include <mutex>
 #include <Storages/MergeTree/MergeTreeReadRangesRefiner.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -11,6 +12,8 @@ namespace DB
 
 class UncompressedCache;
 using UncompressedCachePtr = std::shared_ptr<UncompressedCache>;
+class ColumnsCache;
+using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;
 
 class MergeTreeReadPoolBase : public IMergeTreeReadPool, protected WithContext
 {
@@ -25,6 +28,7 @@ public:
         size_t preferred_block_size_bytes = 0;
 
         bool use_uncompressed_cache = false;
+        bool use_columns_cache = false;
         bool do_not_steal_tasks = false;
         bool use_const_size_tasks_for_remote_reading = false;
 
@@ -87,10 +91,30 @@ protected:
     const MergeTreeReadTask::BlockSizeParams block_size_params;
     const MarkCachePtr owned_mark_cache;
     const UncompressedCachePtr owned_uncompressed_cache;
+    const ColumnsCachePtr owned_columns_cache;
     const PatchJoinCachePtr patch_join_cache;
     const Block header;
 
     MergeTreeReadTaskInfo buildReadTaskInfo(const RangesInDataPart & part_with_ranges, const Settings & settings) const;
+
+    /// Stage the columns cache write estimate of one part - the uncompressed size of the columns
+    /// its readers can write to the cache (result, prewhere, mutation and patch-part columns),
+    /// scaled to the selected mark ranges. Called per part after the read task info is built.
+    /// The estimate is only accumulated here; `commitColumnsCacheWriteEstimate` charges the
+    /// pool's total against the query-wide budget.
+    void stageColumnsCacheWriteEstimate(
+        const RangesInDataPart & part_with_ranges, const MergeTreeReadTaskInfo & read_task_info, const Settings & settings);
+
+    /// Charge the staged estimate of this pool against the query-wide budget and disable cache
+    /// writes for the query once the budget is exceeded. Runs once, from `createTask`, so that
+    /// it happens before any task is handed out but after the caller has installed the read
+    /// ranges refiner (see `setReadRangesRefiner`): a pool that has one cannot be gated on the
+    /// estimate at all, because the refiner decides how many of the selected marks are really
+    /// read only when a task is cut.
+    void commitColumnsCacheWriteEstimate() const;
+
+    /// The body of the above, run exactly once under `columns_cache_estimate_committed`.
+    void chargeStagedColumnsCacheWriteEstimate() const;
 
     void fillPerPartInfos(const Settings & settings);
     std::vector<size_t> getPerPartSumMarks() const;
@@ -102,18 +126,21 @@ protected:
         std::vector<MarkRanges> patches_ranges,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
 
+    /// `read_request_map` narrows the part's map, e.g. to the assignment of parallel replicas.
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,
         MarkRanges ranges,
         std::vector<MarkRanges> patches_ranges,
         MergeTreeReadTask * previous_task,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr,
+        const MarkRangesPtr & read_request_map = nullptr) const;
 
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,
         MarkRanges ranges,
         MergeTreeReadTask * previous_task,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr,
+        const MarkRangesPtr & read_request_map = nullptr) const;
 
     MergeTreeReadTask::Extras getExtras() const;
 
@@ -121,13 +148,53 @@ protected:
     /// May block (see IMergeTreeReadRangesRefiner), do not call under the pool scheduling mutex.
     MarkRanges refineReadRanges(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const;
 
+    /// The initial map without the ranges that the refiner has dropped so far. The initial map is `replica_map`
+    /// for a parallel replica's task, or the part's map from the index analysis when `replica_map` is null.
+    MarkRangesPtr getActualReadRequestMap(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & replica_map) const;
+
+    /// The read request maps of the patch parts for `actual_map`. Empty when `actual_map` is the part's map
+    /// from the index analysis, because the task info already holds the patch maps for it.
+    std::vector<MarkRangesPtr> getActualPatchReadRequestMaps(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & actual_map) const;
+
     MergeTreeReadRangesRefinerPtr ranges_refiner;
+
+    /// Uncompressed bytes the selected mark ranges of this pool are estimated to read into the
+    /// columns cache, and the budget they are compared against. Filled by
+    /// `stageColumnsCacheWriteEstimate`, consumed once by `commitColumnsCacheWriteEstimate`.
+    /// A budget of 0 means half of the size limit the cache has when the estimate is charged.
+    size_t staged_columns_cache_estimate_bytes = 0;
+    size_t columns_cache_estimate_budget = 0;
+    /// `call_once` rather than a flag: a second thread that reaches `createTask` first must
+    /// wait for the gate to be decided, otherwise its task could be handed out - and its rows
+    /// written to the cache - while the first thread is still charging the estimate.
+    mutable std::once_flag columns_cache_estimate_committed;
 
     std::vector<MergeTreeReadTaskInfoPtr> per_part_infos;
     RangesInPatchParts ranges_in_patch_parts;
     std::vector<bool> is_part_on_remote_disk;
 
     ReadBufferFromFileBase::ProfileCallback profile_callback;
+
+private:
+    /// Cached narrowed maps of a part, so that its tasks share one map until it changes.
+    struct PartReadRequestMaps
+    {
+        /// Held, not only compared, so that a new assignment cannot reuse its address.
+        MarkRangesPtr initial_map;
+        /// Appended as the refiner drops them; each new batch is sorted in place when it is applied.
+        MarkRanges dropped;
+        /// `actual_map` is `initial_map` without the first `dropped_in_map` entries of `dropped`.
+        size_t dropped_in_map = 0;
+        MarkRangesPtr actual_map;
+        /// `actual_patch_maps` come from `patch_maps_source`.
+        MarkRangesPtr patch_maps_source;
+        std::vector<MarkRangesPtr> actual_patch_maps;
+    };
+
+    void recordDroppedRanges(const MergeTreeReadTaskInfo & info, MarkRanges cut, MarkRanges refined) const;
+
+    mutable std::mutex part_read_request_maps_mutex;
+    mutable std::unordered_map<const MergeTreeReadTaskInfo *, PartReadRequestMaps> part_read_request_maps TSA_GUARDED_BY(part_read_request_maps_mutex);
 };
 
 }

@@ -532,6 +532,13 @@
       -->
     <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 
+    <!-- Size of cache for deserialized columns from MergeTree tables.
+         In bytes. Cache is single for server. Memory is allocated only on demand.
+         Cache is used when the experimental 'use_columns_cache' user setting is explicitly enabled.
+         When not set, the cache is sized to 'columns_cache_size_to_ram_ratio' (10% by default)
+         of the memory available to the server. -->
+    <!-- <columns_cache_size>17179869184</columns_cache_size> -->
+
     <!-- Approximate size of mark cache, used in tables of MergeTree family.
          In bytes. Cache is single for server. Memory is allocated only on demand.
          You should not lower this value. -->
@@ -1210,6 +1217,35 @@
         <asynchronous_metrics>true</asynchronous_metrics>
     </prometheus>
     -->
+
+    <!-- Create `all_...` union tables next to the system log tables:
+         `system.all_query_log` for `system.query_log`, `system.all_text_log` for `system.text_log`, and so on.
+         Such a table is a union of the corresponding log table, its rotated versions
+         (`query_log_0`, `query_log_1`, ...) and/or the same tables across all replicas of a cluster,
+         and allows querying them all at once without remembering constructs like
+         `clusterAllReplicas(default, merge(system, '^query_log'))`.
+         The option applies to all system log tables at once.
+         The tables have no state of their own, so it is safe to drop them at any time:
+         they will be recreated at the next flush of the corresponding log.
+         A pre-existing table under one of these names that was not created by this option
+         is never replaced: it is left intact and a warning is written to the log;
+         the union table is created at the next flush after the table is dropped or renamed.
+    -->
+    <create_union_system_log_tables>
+        <!-- Select from the log table and its rotated versions with the `merge` table function. -->
+        <merge_rotated_tables>true</merge_rotated_tables>
+
+        <!-- Select from the corresponding tables across all replicas of the specified cluster
+             with the `clusterAllReplicas` table function (with `SETTINGS skip_unavailable_shards = 1`,
+             so that unavailable replicas do not fail the queries).
+             Note: the definitions of the `all_...` tables will reference the cluster,
+             so the cluster has to exist for the tables to be loaded. If you remove the cluster
+             from the configuration, also drop the `all_...` tables: they will be recreated
+             according to the new configuration at the next flush.
+
+        <cluster>default</cluster>
+        -->
+    </create_union_system_log_tables>
 
     <!-- Embedded Iceberg REST catalog server (experimental). Not recommended for production use.
          The catalog state is stored in Keeper under <zookeeper_path>/<warehouse>.
